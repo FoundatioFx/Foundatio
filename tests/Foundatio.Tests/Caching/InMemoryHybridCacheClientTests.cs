@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Logging;
@@ -32,6 +32,18 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTests
     public override Task CanTryGetAsync()
     {
         return base.CanTryGetAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllAsync()
+    {
+        return base.CanRemoveAllAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllKeysAsync()
+    {
+        return base.CanRemoveAllKeysAsync();
     }
 
     [Fact]
@@ -90,19 +102,19 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTests
         return base.WillWorkWithSets();
     }
 
-    [Fact(Skip = "Performance Test")]
+    [Fact]
     public override Task MeasureThroughputAsync()
     {
         return base.MeasureThroughputAsync();
     }
 
-    [Fact(Skip = "Performance Test")]
+    [Fact]
     public override Task MeasureSerializerSimpleThroughputAsync()
     {
         return base.MeasureSerializerSimpleThroughputAsync();
     }
 
-    [Fact(Skip = "Performance Test")]
+    [Fact]
     public override Task MeasureSerializerComplexThroughputAsync()
     {
         return base.MeasureSerializerComplexThroughputAsync();

@@ -357,6 +357,64 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task CanRemoveAllAsync()
+    {
+        const int COUNT = 10000;
+
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var dictionary = Enumerable.Range(0, COUNT).ToDictionary(i => $"remove-all:{i}");
+
+            var sw = Stopwatch.StartNew();
+            await cache.SetAllAsync(dictionary);
+            sw.Stop();
+            _logger.LogInformation("Set All Time: {Elapsed:g}", sw.Elapsed);
+
+            sw = Stopwatch.StartNew();
+            Assert.Equal(COUNT, await cache.RemoveAllAsync());
+            sw.Stop();
+            _logger.LogInformation("Remove All Time: {Elapsed:g}", sw.Elapsed);
+
+            Assert.False(await cache.ExistsAsync("remove-all:0"));
+            Assert.False(await cache.ExistsAsync($"remove-all:{COUNT - 1}"));
+        }
+    }
+
+    public virtual async Task CanRemoveAllKeysAsync()
+    {
+        const int COUNT = 10000;
+
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var dictionary = Enumerable.Range(0, COUNT).ToDictionary(i => $"remove-all-keys:{i}");
+
+            var sw = Stopwatch.StartNew();
+            await cache.SetAllAsync(dictionary);
+            sw.Stop();
+            _logger.LogInformation("Set All Time: {Elapsed:g}", sw.Elapsed);
+
+            sw = Stopwatch.StartNew();
+            Assert.Equal(COUNT, await cache.RemoveAllAsync(dictionary.Keys));
+            sw.Stop();
+            _logger.LogInformation("Remove All Time: {Elapsed:g}", sw.Elapsed);
+
+            Assert.False(await cache.ExistsAsync("remove-all-keys:0"));
+            Assert.False(await cache.ExistsAsync($"remove-all-keys:{COUNT - 1}"));
+        }
+    }
+
     public virtual async Task CanRemoveByPrefixAsync()
     {
         var cache = GetCacheClient();
@@ -1036,7 +1094,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 await cache.SetAsync("test", 13422);
                 await cache.SetAsync("flag", true);
                 Assert.Equal(13422, (await cache.GetAsync<int>("test")).Value);
-                Assert.Null(await cache.GetAsync<int>("test2"));
+                Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                 Assert.True((await cache.GetAsync<bool>("flag")).Value);
             }
             sw.Stop();
