@@ -66,6 +66,10 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
     {
+        // NOTE: Batch size matches default page size (RedisBase.CursorUtils.DefaultLibraryPageSize)
+        int batchSize = 250;
+
+        long deleted = 0;
         if (keys == null)
         {
             var endpoints = _options.ConnectionMultiplexer.GetEndPoints();
@@ -80,52 +84,50 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
                 try
                 {
+                    long dbSize = await server.DatabaseSizeAsync().AnyContext();
                     await server.FlushDatabaseAsync().AnyContext();
+                    deleted += dbSize;
                     continue;
                 }
                 catch (Exception ex)
                 {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Unable to flush database");
+                    _logger.LogError(ex, "Unable to flush database: {Message}", ex.Message);
                 }
 
                 try
                 {
+                    // NOTE: We need to use a HashSet to avoid duplicate counts due to SCAN is non-deterministic.
+                    // A Performance win could be had if we are sure dbSize didn't fail and we know nothing was changing
+                    // keys while we were deleting.
+                    var seen = new HashSet<RedisKey>();
                     await foreach (var key in server.KeysAsync().ConfigureAwait(false))
-                        await Database.KeyDeleteAsync(key).AnyContext();
+                        seen.Add(key);
+
+                    foreach (var batch in seen.Batch(batchSize))
+                        deleted += await Database.KeyDeleteAsync(batch.ToArray()).AnyContext();
                 }
                 catch (Exception ex)
                 {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Unable to delete all");
+                    _logger.LogError(ex, "Error deleting all keys: {Message}", ex.Message);
                 }
             }
         }
         else
         {
-            var redisKeys = keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).ToArray();
-            if (redisKeys.Length <= 0)
-                return 0;
-
-            int count = 0;
-            foreach (var key in redisKeys)
+            foreach (var redisKeys in keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).Batch(batchSize))
             {
                 try
                 {
-                    if (await Database.KeyDeleteAsync(key).AnyContext())
-                        count++;
+                    deleted += await Database.KeyDeleteAsync(redisKeys).AnyContext();
                 }
                 catch (Exception ex)
                 {
-                    if (_logger.IsEnabled(LogLevel.Error))
-                        _logger.LogError(ex, "Unable to delete key {Key}", key);
+                    _logger.LogError(ex, "Unable to delete keys ({Keys}): {Message}", redisKeys, ex.Message);
                 }
             }
-
-            return count;
         }
 
-        return 0;
+        return (int)deleted;
     }
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
@@ -153,8 +155,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     /// <summary>
     /// Scan for keys matching the prefix
     /// </summary>
-    /// <remarks>SCAN, SSCAN, HSCAN and ZSCAN return a two elements multi-bulk reply, where the first element
-    /// is a string representing an unsigned 64 bit number (the cursor), and the second element is a multi-bulk
+    /// <remarks>SCAN, SSCAN, HSCAN and ZSCAN return a two-element multi-bulk reply, where the first element
+    /// is a string representing an unsigned 64-bit number (the cursor), and the second element is a multi-bulk
     /// with an array of elements.</remarks>
     private async Task<(int, string[])> ScanKeysAsync(string prefix, int index, int chunkSize)
     {
@@ -168,7 +170,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         var redisValue = await Database.StringGetAsync(key, _options.ReadMode).AnyContext();
         return RedisValueToCacheValue<T>(redisValue);
