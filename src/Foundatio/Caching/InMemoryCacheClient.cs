@@ -715,7 +715,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (isTraceLogLevelEnabled) _logger.LogTrace("Set cache key: {Key}", key);
         }
 
-        await StartMaintenanceAsync(true).AnyContext();
+        await StartMaintenanceAsync(ShouldCompact).AnyContext();
         return wasUpdated;
     }
 
@@ -957,17 +957,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (compactImmediately)
             await CompactAsync().AnyContext();
 
-        if (TimeSpan.FromMilliseconds(100) < utcNow - _lastMaintenance)
+        if (TimeSpan.FromMilliseconds(250) < utcNow - _lastMaintenance)
         {
             _lastMaintenance = utcNow;
             _ = Task.Run(DoMaintenanceAsync);
         }
     }
 
+    private bool ShouldCompact => _maxItems.HasValue && _memory.Count > _maxItems;
+
     private async Task CompactAsync()
     {
-        if (!_maxItems.HasValue || _memory.Count <= _maxItems)
+        if (!ShouldCompact)
             return;
+
+        _logger.LogTrace("CompactAsync: Compacting cache");
 
         string expiredKey = null;
         using (await _lock.LockAsync().AnyContext())
@@ -1014,7 +1018,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             foreach (var kvp in _memory.ToArray())
             {
                 bool lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
-                if (lastAccessTimeIsInfrequent && kvp.Value.ExpiresAt < DateTime.MaxValue && kvp.Value.ExpiresAt <= utcNow)
+                if (!lastAccessTimeIsInfrequent)
+                    continue;
+
+                var expiresAt = kvp.Value.ExpiresAt;
+                if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
                 {
                     _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
                     RemoveKeyIfExpired(kvp.Key);
@@ -1023,10 +1031,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error trying to find expired cache items");
+            _logger.LogError(ex, "Error trying to find expired cache items: {Message}", ex.Message);
         }
 
-        await CompactAsync().AnyContext();
+        if (ShouldCompact)
+            await CompactAsync().AnyContext();
     }
 
     public void Dispose()

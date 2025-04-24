@@ -78,6 +78,18 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanRemoveAllAsync()
+    {
+        return base.CanRemoveAllAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllKeysAsync()
+    {
+        return base.CanRemoveAllKeysAsync();
+    }
+
+    [Fact]
     public override Task CanRemoveByPrefixAsync()
     {
         return base.CanRemoveByPrefixAsync();
@@ -188,9 +200,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task MeasureThroughputAsync()
+    {
+        return base.MeasureThroughputAsync();
+    }
+
+    [Fact]
+    public override Task MeasureSerializerSimpleThroughputAsync()
+    {
+        return base.MeasureSerializerSimpleThroughputAsync();
+    }
+
+    [Fact]
+    public override Task MeasureSerializerComplexThroughputAsync()
+    {
+        return base.MeasureSerializerComplexThroughputAsync();
+    }
+
+    [Fact]
     public async Task CanSetMaxItems()
     {
-        // run in tight loop so that the code is warmed up and we can catch timing issues
+        // run in a tight loop so that the code is warmed up and we can catch timing issues
         for (int x = 0; x < 5; x++)
         {
             var cache = new InMemoryCacheClient(o => o.MaxItems(10).CloneValues(true));

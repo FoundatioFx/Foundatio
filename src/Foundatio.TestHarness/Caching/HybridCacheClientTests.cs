@@ -82,6 +82,18 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     }
 
     [Fact]
+    public override Task CanRemoveAllAsync()
+    {
+        return base.CanRemoveAllAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllKeysAsync()
+    {
+        return base.CanRemoveAllKeysAsync();
+    }
+
+    [Fact]
     public override Task CanRemoveByPrefixAsync()
     {
         return base.CanRemoveByPrefixAsync();
