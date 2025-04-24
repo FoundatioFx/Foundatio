@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
@@ -42,6 +42,18 @@ public class RedisHybridCacheClientTests : HybridCacheClientTests
     public override Task CanTryGetAsync()
     {
         return base.CanTryGetAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllAsync()
+    {
+        return base.CanRemoveAllAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllKeysAsync()
+    {
+        return base.CanRemoveAllKeysAsync();
     }
 
     [Fact]
