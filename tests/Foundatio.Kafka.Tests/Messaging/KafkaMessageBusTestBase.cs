@@ -13,7 +13,6 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
 
     public KafkaMessageBusTestBase(ITestOutputHelper output) : base(output)
     {
-        //Log.DefaultMinimumLevel = LogLevel.Trace;
         EnableTopicDeletion = true;
     }
 
