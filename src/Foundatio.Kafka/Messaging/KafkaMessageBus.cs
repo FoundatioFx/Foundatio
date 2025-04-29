@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -214,12 +214,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
                 .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
                 .Build();
 
-            consumer.Subscribe(_options.Topic);
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
-
             try
             {
+                consumer.Subscribe(_options.Topic);
+                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+
                 while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
                 {
                     var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
@@ -308,9 +307,13 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
                 }
                 else
                 {
-                    throw new CreateTopicsException(new List<CreateTopicReport> {
-                        new() { Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"), Topic = _options.Topic }
-                    });
+                    throw new CreateTopicsException([
+                        new()
+                        {
+                            Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"),
+                            Topic = _options.Topic
+                        }
+                    ]);
                 }
             }
         }
