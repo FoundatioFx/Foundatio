@@ -130,7 +130,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             {
                 _subscribers.TryRemove(subscriber.Id, out _);
                 if (_subscribers.Count == 0)
+                {
+                    _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
                     RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
+                }
             });
         }
 

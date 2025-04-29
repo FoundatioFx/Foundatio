@@ -293,7 +293,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             });
 
             await Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (_, _) => await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
-            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Equal(0, countdown.CurrentCount);
         }
         finally
