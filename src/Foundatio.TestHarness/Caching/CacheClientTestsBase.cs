@@ -368,6 +368,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
+            Assert.Equal(0, await cache.RemoveAllAsync());
 
             var dictionary = Enumerable.Range(0, COUNT).ToDictionary(i => $"remove-all:{i}");
 
