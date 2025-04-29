@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -161,6 +161,9 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
             await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
             await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
             Assert.Equal(0, countdownEvent.CurrentCount);
+
+            // Cleanup
+            cts.Dispose();
         }
         finally
         {
