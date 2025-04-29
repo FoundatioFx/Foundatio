@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -74,5 +74,11 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
             // swallow exceptions from subscriber handlers for the in memory bus
             _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
         }
+    }
+
+    public override void Dispose()
+    {
+        _messageCounts.Clear();
+        base.Dispose();
     }
 }

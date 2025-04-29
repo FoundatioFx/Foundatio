@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -37,7 +37,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanUseMessageOptionsAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -98,7 +98,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSendMessageAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -133,7 +133,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanHandleNullMessageAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -161,7 +161,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSendDerivedMessageAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -193,7 +193,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSendMappedMessageAsync()
     {
-        var messageBus = GetMessageBus(b =>
+        using var messageBus = GetMessageBus(b =>
         {
             b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
             return b;
@@ -230,7 +230,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
     public virtual async Task CanSendDelayedMessageAsync()
     {
         const int numConcurrentMessages = 1000;
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -276,7 +276,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
     public virtual async Task CanSubscribeConcurrentlyAsync()
     {
         const int iterations = 100;
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -367,7 +367,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSendMessageToMultipleSubscribersAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -405,7 +405,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanTolerateSubscriberFailureAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -422,10 +422,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 Assert.Equal("Hello", msg.Data);
                 countdown.Signal();
             });
-            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-            {
-                throw new Exception();
-            });
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg => throw new Exception());
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
                 Assert.Equal("Hello", msg.Data);
@@ -452,7 +449,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task WillOnlyReceiveSubscribedMessageTypeAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -484,7 +481,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task WillReceiveDerivedMessageTypesAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -520,7 +517,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSubscribeToRawMessagesAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -558,7 +555,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanSubscribeToAllMessageTypesAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -593,7 +590,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task WontKeepMessagesWithNoSubscribersAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -623,7 +620,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanCancelSubscriptionAsync()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
@@ -641,8 +638,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 countdown.Signal();
             }, cancellationTokenSource.Token);
 
-            await messageBus.SubscribeAsync<object>(msg => countdown.Signal());
-
+            // NOTE: This subscriber will not be canceled.
+            await messageBus.SubscribeAsync<object>(_ => countdown.Signal());
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello"
@@ -652,7 +649,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             Assert.Equal(0, countdown.CurrentCount);
             Assert.Equal(1, messageCount);
 
-            countdown = new AsyncCountdownEvent(1);
+            countdown.AddCount(1);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello"
@@ -670,7 +667,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanReceiveFromMultipleSubscribersAsync()
     {
-        var messageBus1 = GetMessageBus();
+        using var messageBus1 = GetMessageBus();
         if (messageBus1 == null)
             return;
 
@@ -683,7 +680,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 countdown1.Signal();
             });
 
-            var messageBus2 = GetMessageBus();
+            using var messageBus2 = GetMessageBus();
             try
             {
                 var countdown2 = new AsyncCountdownEvent(1);
@@ -698,9 +695,9 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                     Data = "Hello"
                 });
 
-                await countdown1.WaitAsync(TimeSpan.FromSeconds(20));
+                await countdown1.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown1.CurrentCount);
-                await countdown2.WaitAsync(TimeSpan.FromSeconds(20));
+                await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(0, countdown2.CurrentCount);
             }
             finally
@@ -716,10 +713,13 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual void CanDisposeWithNoSubscribersOrPublishers()
     {
-        var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        using (messageBus) { }
+        using (messageBus)
+        {
+            // Empty using statement to ensure Dispose is called
+        }
     }
 }
