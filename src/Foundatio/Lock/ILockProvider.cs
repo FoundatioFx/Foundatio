@@ -53,7 +53,7 @@ public static class LockProviderExtensions
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, string resource, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationToken).AnyContext();
+        await using var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationToken).AnyContext();
         if (l == null)
             return false;
 
@@ -71,7 +71,7 @@ public static class LockProviderExtensions
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, string resource, Func<Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationToken).AnyContext();
+        await using var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationToken).AnyContext();
         if (l == null)
             return false;
 
@@ -90,7 +90,7 @@ public static class LockProviderExtensions
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, string resource, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires = null, TimeSpan? acquireTimeout = null)
     {
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource();
-        var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+        await using var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
         if (l == null)
             return false;
 
@@ -109,7 +109,7 @@ public static class LockProviderExtensions
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, string resource, Func<Task> work, TimeSpan? timeUntilExpires = null, TimeSpan? acquireTimeout = null)
     {
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource();
-        var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+        await using var l = await locker.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
         if (l == null)
             return false;
 
@@ -226,7 +226,7 @@ public static class LockProviderExtensions
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, IEnumerable<string> resources, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationToken).AnyContext();
+        await using var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationToken).AnyContext();
         if (l == null)
             return false;
 
@@ -244,7 +244,7 @@ public static class LockProviderExtensions
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, IEnumerable<string> resources, Func<Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationToken).AnyContext();
+        await using var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationToken).AnyContext();
         if (l == null)
             return false;
 
@@ -263,7 +263,7 @@ public static class LockProviderExtensions
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, IEnumerable<string> resources, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)
     {
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource();
-        var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+        await using var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
         if (l == null)
             return false;
 
@@ -282,7 +282,7 @@ public static class LockProviderExtensions
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, IEnumerable<string> resources, Func<Task> work, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)
     {
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource();
-        var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+        await using var l = await locker.AcquireAsync(resources, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
         if (l == null)
             return false;
 

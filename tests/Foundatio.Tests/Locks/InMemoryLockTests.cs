@@ -42,6 +42,12 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task LockWontTimeoutEarly()
+    {
+        return base.LockWontTimeoutEarly();
+    }
+
+    [Fact]
     public override Task LockOneAtATimeAsync()
     {
         return base.LockOneAtATimeAsync();

@@ -16,7 +16,9 @@ namespace Foundatio.Tests.Locks;
 
 public abstract class LockTestBase : TestWithLoggingBase
 {
-    protected LockTestBase(ITestOutputHelper output) : base(output) { }
+    protected LockTestBase(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected virtual ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)
     {
@@ -36,13 +38,14 @@ public abstract class LockTestBase : TestWithLoggingBase
         if (locker == null)
             return;
 
-        var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        await using var lock1 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
 
         try
         {
             Assert.NotNull(lock1);
-            Assert.True(await locker.IsLockedAsync("test"));
-            var lock2Task = locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(250));
+            Assert.True(await locker.IsLockedAsync(lockName));
+            var lock2Task = locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(250));
             await Task.Delay(TimeSpan.FromMilliseconds(250));
             Assert.Null(await lock2Task);
         }
@@ -51,13 +54,13 @@ public abstract class LockTestBase : TestWithLoggingBase
             await lock1.ReleaseAsync();
         }
 
-        Assert.False(await locker.IsLockedAsync("test"));
+        Assert.False(await locker.IsLockedAsync(lockName));
 
         int counter = 0;
 
         await Parallel.ForEachAsync(Enumerable.Range(1, 25), async (_, _) =>
         {
-            bool success = await locker.TryUsingAsync("test", () =>
+            bool success = await locker.TryUsingAsync(lockName, () =>
             {
                 Interlocked.Increment(ref counter);
             }, acquireTimeout: TimeSpan.FromSeconds(10));
@@ -74,22 +77,23 @@ public abstract class LockTestBase : TestWithLoggingBase
         if (locker == null)
             return;
 
-        var lock1 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        var lock1 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
         await lock1.ReleaseAsync();
-        Assert.False(await locker.IsLockedAsync("test"));
+        Assert.False(await locker.IsLockedAsync(lockName));
 
-        var lock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
+        await using var lock2 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
 
         // has already been released, should not release other people's lock
         await lock1.ReleaseAsync();
-        Assert.True(await locker.IsLockedAsync("test"));
+        Assert.True(await locker.IsLockedAsync(lockName));
 
         // has already been released, should not release other people's lock
         await lock1.DisposeAsync();
-        Assert.True(await locker.IsLockedAsync("test"));
+        Assert.True(await locker.IsLockedAsync(lockName));
 
         await lock2.ReleaseAsync();
-        Assert.False(await locker.IsLockedAsync("test"));
+        Assert.False(await locker.IsLockedAsync(lockName));
     }
 
     public virtual async Task LockWillTimeoutAsync()
@@ -102,20 +106,89 @@ public abstract class LockTestBase : TestWithLoggingBase
         if (locker == null)
             return;
 
-        _logger.LogInformation("Acquiring lock #1");
-        var testLock = await locker.AcquireAsync("test", timeUntilExpires: TimeSpan.FromMilliseconds(250));
-        _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        _logger.LogInformation("Acquiring lock attempt #1");
+        var testLock = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #1");
+        else
+            _logger.LogError("Unable to acquire lock attempt #1");
         Assert.NotNull(testLock);
 
-        _logger.LogInformation("Acquiring lock #2");
-        testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(50));
-        _logger.LogInformation(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
+        _logger.LogInformation("Acquiring lock attempt #2");
+        testLock = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(50));
+        if (testLock is not null)
+            _logger.LogError("Acquired lock attempt #2");
+        else
+            _logger.LogInformation("Unable to acquire lock attempt #2");
         Assert.Null(testLock);
 
-        _logger.LogInformation("Acquiring lock #3");
-        testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(10));
-        _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
+        _logger.LogInformation("Acquiring lock attempt #3");
+        testLock = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(10));
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #3");
+        else
+            _logger.LogError("Unable to acquire lock attempt #3");
         Assert.NotNull(testLock);
+
+        // Cleanup
+        await testLock.DisposeAsync();
+    }
+
+    [Fact]
+    public virtual async Task LockWontTimeoutEarly()
+    {
+        Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
+        Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
+        Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
+
+        var locker = GetLockProvider();
+        if (locker == null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        _logger.LogInformation("Acquiring lock attempt #1");
+        var testLock = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(1));
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #1");
+        else
+            _logger.LogError("Unable to acquire lock attempt #1");
+        Assert.NotNull(testLock);
+
+        _logger.LogInformation("Acquiring lock attempt #2");
+        var testLock2 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(500));
+        if (testLock2 is not null)
+            _logger.LogError("Acquired lock attempt #2");
+        else
+            _logger.LogInformation("Unable to acquire lock attempt #2");
+        Assert.Null(testLock2);
+
+        _logger.LogInformation("Renew lock attempt #1");
+        await testLock.RenewAsync(timeUntilExpires: TimeSpan.FromSeconds(1));
+
+        _logger.LogInformation("Acquiring lock attempt #3");
+        testLock = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(500));
+        if (testLock is not null)
+            _logger.LogError("Acquired lock attempt #3");
+        else
+            _logger.LogInformation("Unable to acquire lock attempt #3");
+        Assert.Null(testLock);
+
+        var sw = Stopwatch.StartNew();
+        _logger.LogInformation("Acquiring lock attempt #4");
+        testLock = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(5));
+        sw.Stop();
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #4");
+        else
+            _logger.LogError("Unable to acquire lock attempt #4");
+        Assert.NotNull(testLock);
+        Assert.True(sw.ElapsedMilliseconds > 400);
+
+        // Cleanup
+        await testLock.DisposeAsync();
     }
 
     public virtual async Task CanAcquireMultipleResources()
@@ -129,20 +202,29 @@ public abstract class LockTestBase : TestWithLoggingBase
             return;
 
         var resources = new List<string> { "test1", "test2", "test3", "test4", "test5" };
-        var testLock = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
-        _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #1");
+        else
+            _logger.LogError("Unable to acquire lock attempt #1");
         Assert.NotNull(testLock);
 
         resources.Add("other");
-        var testLock2 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
-        _logger.LogInformation(testLock2 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock2 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+        if (testLock2 is not null)
+            _logger.LogError("Acquired lock attempt #2");
+        else
+            _logger.LogInformation("Unable to acquire lock attempt #2");
         Assert.Null(testLock2);
 
         await testLock.RenewAsync();
         await testLock.ReleaseAsync();
 
-        var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
-        _logger.LogInformation(testLock3 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+        if (testLock3 is not null)
+            _logger.LogInformation("Acquired lock attempt #3");
+        else
+            _logger.LogError("Unable to acquire lock attempt #3");
         Assert.NotNull(testLock3);
     }
 
@@ -159,20 +241,29 @@ public abstract class LockTestBase : TestWithLoggingBase
         locker = new ScopedLockProvider(locker, "myscope");
 
         var resources = new List<string> { "test1", "test2", "test3", "test4", "test5" };
-        var testLock = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
-        _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        if (testLock is not null)
+            _logger.LogInformation("Acquired lock attempt #1");
+        else
+            _logger.LogError("Unable to acquire lock attempt #1");
         Assert.NotNull(testLock);
 
         resources.Add("other");
-        var testLock2 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
-        _logger.LogInformation(testLock2 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock2 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+        if (testLock2 is not null)
+            _logger.LogError("Acquired lock attempt #2");
+        else
+            _logger.LogInformation("Unable to acquire lock attempt #2");
         Assert.Null(testLock2);
 
         await testLock.RenewAsync();
         await testLock.ReleaseAsync();
 
-        var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
-        _logger.LogInformation(testLock3 != null ? "Acquired lock #1" : "Unable to acquire lock #1");
+        await using var testLock3 = await locker.AcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250), acquireTimeout: TimeSpan.FromMilliseconds(10));
+        if (testLock3 is not null)
+            _logger.LogInformation("Acquired lock attempt #3");
+        else
+            _logger.LogError("Unable to acquire lock attempt #3");
         Assert.NotNull(testLock3);
     }
 
@@ -188,10 +279,11 @@ public abstract class LockTestBase : TestWithLoggingBase
         int current = 1;
         var used = new List<int>();
         int concurrency = 0;
+        string lockName = Guid.NewGuid().ToString("N")[..10];
 
         await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
         {
-            await using var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            await using var myLock = await locker.AcquireAsync(lockName, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             Assert.NotNull(myLock);
 
             int currentConcurrency = Interlocked.Increment(ref concurrency);
@@ -224,10 +316,11 @@ public abstract class LockTestBase : TestWithLoggingBase
         int current = 1;
         var used = new List<int>();
         int concurrency = 0;
+        string lockName = Guid.NewGuid().ToString("N")[..10];
 
         await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
         {
-            await using var myLock = await locker.AcquireAsync("test", TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            await using var myLock = await locker.AcquireAsync(lockName, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             Assert.NotNull(myLock);
 
             int currentConcurrency = Interlocked.Increment(ref concurrency);
@@ -258,10 +351,11 @@ public abstract class LockTestBase : TestWithLoggingBase
         int current = 1;
         var used = new List<int>();
         int concurrency = 0;
+        string lockName = Guid.NewGuid().ToString("N")[..10];
 
         await Parallel.ForEachAsync(Enumerable.Range(1, COUNT), async (_, ct) =>
         {
-            await using var myLock = await locker.AcquireAsync(["test", "test2"], TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+            await using var myLock = await locker.AcquireAsync([lockName, $"{lockName}2"], TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
             Assert.NotNull(myLock);
 
             int currentConcurrency = Interlocked.Increment(ref concurrency);
@@ -333,7 +427,7 @@ public abstract class LockTestBase : TestWithLoggingBase
         Assert.Equal(2, successCount);
     }
 
-    private Task<bool> DoLockedWorkAsync(ILockProvider locker)
+    private static Task<bool> DoLockedWorkAsync(ILockProvider locker)
     {
         return locker.TryUsingAsync("DoLockedWork", async () => await Task.Delay(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
     }
@@ -350,9 +444,9 @@ public abstract class LockTestBase : TestWithLoggingBase
         if (locker == null)
             return;
 
-        string lockName = Guid.NewGuid().ToString("N").Substring(0, 10);
+        string lockName = Guid.NewGuid().ToString("N")[..10];
 
-        // sleep until start of throttling period
+        // sleep until the start of the throttling period
         while (DateTime.UtcNow.Ticks % period.Ticks < TimeSpan.TicksPerMillisecond * 100)
             Thread.Sleep(10);
 
@@ -379,5 +473,8 @@ public abstract class LockTestBase : TestWithLoggingBase
         sw.Stop();
         _logger.LogInformation("Time to acquire lock: {Elapsed:g}", sw.Elapsed);
         Assert.NotNull(result);
+
+        // Cleanup
+        await result.DisposeAsync();
     }
 }
