@@ -3,17 +3,17 @@ using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Jobs;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Jobs;
 
-public class RedisJobQueueTests : JobQueueTestsBase
+public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
 {
     public RedisJobQueueTests(ITestOutputHelper output) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
     }
 
     protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay)
@@ -48,5 +48,18 @@ public class RedisJobQueueTests : JobQueueTestsBase
     public override Task ActivityWillFlowThroughQueueJobAsync()
     {
         return base.ActivityWillFlowThroughQueueJobAsync();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        return Task.CompletedTask;
     }
 }

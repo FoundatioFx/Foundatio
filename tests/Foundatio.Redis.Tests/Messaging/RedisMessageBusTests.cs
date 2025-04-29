@@ -9,17 +9,17 @@ using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Queue;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Messaging;
 
-public class RedisMessageBusTests : MessageBusTestBase
+public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
 {
     public RedisMessageBusTests(ITestOutputHelper output) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
     }
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
@@ -189,5 +189,18 @@ public class RedisMessageBusTests : MessageBusTestBase
                 }
             }
         }
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        return Task.CompletedTask;
     }
 }

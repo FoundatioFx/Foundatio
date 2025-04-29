@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
@@ -12,12 +11,10 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching;
 
-public class RedisCacheClientTests : CacheClientTestsBase
+public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
 {
     public RedisCacheClientTests(ITestOutputHelper output) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
     }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
@@ -262,5 +259,18 @@ public class RedisCacheClientTests : CacheClientTestsBase
     public override Task MeasureSerializerComplexThroughputAsync()
     {
         return base.MeasureSerializerComplexThroughputAsync();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        return Task.CompletedTask;
     }
 }

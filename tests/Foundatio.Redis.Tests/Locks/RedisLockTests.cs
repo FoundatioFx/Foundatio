@@ -1,19 +1,18 @@
 using System;
-using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Locks;
 
-public class RedisLockTests : LockTestBase, IDisposable
+public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 {
     private readonly ICacheClient _cache;
     private readonly IMessageBus _messageBus;
@@ -21,7 +20,6 @@ public class RedisLockTests : LockTestBase, IDisposable
     public RedisLockTests(ITestOutputHelper output) : base(output)
     {
         var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
         _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(Log));
     }
@@ -106,7 +104,20 @@ public class RedisLockTests : LockTestBase, IDisposable
     {
         _cache.Dispose();
         _messageBus.Dispose();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        Dispose();
+
+        return Task.CompletedTask;
     }
 }
