@@ -58,7 +58,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanQueueAndDequeueWorkItemAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -114,7 +114,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanQueueAndDequeueWorkItemWithDelayAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -168,7 +168,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanUseQueueOptionsAsync()
     {
-        var queue = GetQueue(retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retryDelay: TimeSpan.Zero);
         if (queue == null)
             return;
 
@@ -249,7 +249,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanDiscardDuplicateQueueEntriesAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -341,24 +341,24 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
     }
 
-    public virtual Task VerifyRetryAttemptsAsync()
+    public virtual async Task VerifyRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, [1]);
+        using var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.Zero, [1]);
         if (queue == null)
-            return Task.CompletedTask;
+            return;
 
-        return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(10));
+        await VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(10));
     }
 
-    public virtual Task VerifyDelayedRetryAttemptsAsync()
+    public virtual async Task VerifyDelayedRetryAttemptsAsync()
     {
         const int retryCount = 2;
-        var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), [1]);
+        using var queue = GetQueue(retryCount, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1), [1]);
         if (queue == null)
-            return Task.CompletedTask;
+            return;
 
-        return VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(30));
+        await VerifyRetryAttemptsImplAsync(queue, retryCount, TimeSpan.FromSeconds(30));
     }
 
     private async Task VerifyRetryAttemptsImplAsync(IQueue<SimpleWorkItem> queue, int retryCount, TimeSpan waitTime)
@@ -429,7 +429,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     /// <returns></returns>
     public virtual async Task CanDequeueWithCancelledTokenAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -476,7 +476,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         const int iterations = 100;
 
-        var queue = GetQueue(runQueueMaintenance: false);
+        using var queue = GetQueue(runQueueMaintenance: false);
         if (queue == null)
             return;
 
@@ -521,7 +521,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
     {
         const int iterations = 10;
 
-        var queue = GetQueue(runQueueMaintenance: false);
+        using var queue = GetQueue(runQueueMaintenance: false);
         if (queue == null)
             return;
 
@@ -557,7 +557,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanQueueAndDequeueMultipleWorkItemsAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -608,7 +608,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WillNotWaitForItemAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -632,7 +632,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WillWaitForItemAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -674,7 +674,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task DequeueWaitWillGetSignaledAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -707,7 +707,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanUseQueueWorkerAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -748,7 +748,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanHandleErrorInWorkerAsync()
     {
-        var queue = GetQueue(retries: 0);
+        using var queue = GetQueue(retries: 0);
         if (queue == null)
             return;
 
@@ -792,7 +792,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WorkItemsWillTimeoutAsync()
     {
-        var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromSeconds(1));
+        using var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: TimeSpan.FromSeconds(1));
         if (queue == null)
             return;
 
@@ -843,7 +843,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task WorkItemsWillGetMovedToDeadletterAsync()
     {
-        var queue = GetQueue(retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retryDelay: TimeSpan.Zero);
         if (queue == null)
             return;
 
@@ -887,7 +887,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanAutoCompleteWorkerAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -929,7 +929,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanHaveMultipleQueueInstancesAsync()
     {
-        var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
         if (queue == null)
             return;
 
@@ -1017,7 +1017,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanDelayRetryAsync()
     {
-        var queue = GetQueue(workItemTimeout: TimeSpan.FromSeconds(1), retryDelay: TimeSpan.FromSeconds(1));
+        using var queue = GetQueue(workItemTimeout: TimeSpan.FromSeconds(1), retryDelay: TimeSpan.FromSeconds(1));
         if (queue == null)
             return;
 
@@ -1131,7 +1131,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         // Slightly shorter than the timeout to ensure we haven't lost the lock
         var renewWait = TimeSpan.FromSeconds(workItemTimeout.TotalSeconds * .25d);
 
-        var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
+        using var queue = GetQueue(retryDelay: TimeSpan.Zero, workItemTimeout: workItemTimeout);
         if (queue == null)
             return;
 
@@ -1172,7 +1172,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanAbandonQueueEntryOnceAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -1232,7 +1232,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanCompleteQueueEntryOnceAsync()
     {
-        var queue = GetQueue();
+        using var queue = GetQueue();
         if (queue == null)
             return;
 
@@ -1287,7 +1287,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     protected async Task CanDequeueWithLockingImpAsync(CacheLockProvider distributedLock)
     {
-        var queue = GetQueue(retryDelay: TimeSpan.Zero, retries: 0);
+        using var queue = GetQueue(retryDelay: TimeSpan.Zero, retries: 0);
         if (queue == null)
             return;
 
@@ -1341,7 +1341,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     protected async Task CanHaveMultipleQueueInstancesWithLockingImplAsync(CacheLockProvider distributedLock)
     {
-        var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
         if (queue == null)
             return;
 
@@ -1483,7 +1483,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
     {
-        var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromSeconds(1), retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retries: 0, workItemTimeout: TimeSpan.FromSeconds(1), retryDelay: TimeSpan.Zero);
         if (queue == null)
             return;
         try
@@ -1533,9 +1533,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual async Task CanHandleAutoAbandonInWorker()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
-        // create queue with short work item timeout so it will be auto abandoned
-        var queue = GetQueue(workItemTimeout: TimeSpan.FromSeconds(1));
+        // create queue with short work item timeout so it will be auto-abandoned
+        using var queue = GetQueue(workItemTimeout: TimeSpan.FromSeconds(1));
         if (queue == null)
             return;
 
@@ -1602,8 +1601,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     public virtual void Dispose()
     {
-        var queue = GetQueue();
-        if (queue == null)
+        using var queue = GetQueue();
+        if (queue is null)
             return;
 
         using (queue)

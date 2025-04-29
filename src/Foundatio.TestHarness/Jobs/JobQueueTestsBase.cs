@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -50,7 +50,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         parentActivity = _activitySource.StartActivity("Parent");
         Assert.NotNull(parentActivity);
 
-        var enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem
+        string enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem
         {
             Created = DateTime.UtcNow,
             Path = "somepath"
