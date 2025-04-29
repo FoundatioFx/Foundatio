@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
@@ -315,6 +314,7 @@ public class RedisQueueTests : QueueTestBase
         Assert.Equal(4, await muxer.CountAllKeysAsync());
 
         workItem = await queue.DequeueAsync();
+        Assert.NotNull(workItem);
         Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
@@ -460,10 +460,9 @@ public class RedisQueueTests : QueueTestBase
     [Fact]
     public async Task VerifyFirstDequeueTimeout()
     {
-
         var workItemTimeout = TimeSpan.FromMilliseconds(100);
-        var itemData = "blah";
-        var itemId = 1;
+        string itemData = "blah";
+        int itemId = 1;
 
         var queue = GetQueue(retries: 0, workItemTimeout: workItemTimeout, retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
         if (queue == null)
@@ -486,6 +485,8 @@ public class RedisQueueTests : QueueTestBase
             Id = itemId
         });
 
+        Assert.NotNull(id);
+
         // Run DoMaintenanceWorkAsync to verify that our item will not be auto-abandoned.
         await queue.DoMaintenanceWorkAsync();
 
@@ -502,7 +503,7 @@ public class RedisQueueTests : QueueTestBase
     // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
     //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
     [Fact]
-    public async Task DatabaseTimeoutDuringDequeueHandledCorectly_Issue64()
+    public async Task DatabaseTimeoutDuringDequeueHandledCorrectly()
     {
         // not using GetQueue() here because I need to change the ops timeout in the redis connection string
         const int OPS_TIMEOUT_MS = 100;
@@ -557,7 +558,6 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         bool success = false;
         while (stopwatch.Elapsed.TotalSeconds < 10)
         {
-
             string workListName = $"q:{QUEUE_NAME}:work";
             long workListLen = await database.ListLengthAsync(new RedisKey(workListName));
             var item = await database.ListLeftPopAsync(workListName);
@@ -570,8 +570,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
                 break;
             }
 
-            var timeoutCancellationTokenSource = new CancellationTokenSource();
-            var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100), timeoutCancellationTokenSource.Token));
+            var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100)));
             if (completion.Task == completedTask)
             {
                 success = true;
@@ -583,7 +582,6 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     }
 
     // TODO: Need to write tests that verify the cache data is correct after each operation.
-
     [Fact(Skip = "Performance Test")]
     public async Task MeasureThroughputWithRandomFailures()
     {
@@ -732,7 +730,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
     private IQueue<T> CreateQueue<T>(bool allQueuesTheSameName = true) where T : class
     {
-        var name = typeof(T).FullName.Trim().Replace(".", string.Empty).ToLower();
+        string name = typeof(T).FullName.Trim().Replace(".", String.Empty).ToLower();
 
         if (allQueuesTheSameName)
             name = "cmd";
@@ -751,7 +749,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command1>();
 
-        return q.StartWorkingAsync((entry, token) =>
+        return q.StartWorkingAsync((entry, _) =>
         {
             _logger.LogInformation("{UtcNow}: Handler1 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 100, 199);
@@ -763,7 +761,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command2>();
 
-        return q.StartWorkingAsync((entry, token) =>
+        return q.StartWorkingAsync((entry, _) =>
         {
             _logger.LogInformation("{UtcNow}: Handler2 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 200, 299);
@@ -775,7 +773,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command1>();
 
-        for (var i = 0; i < 10; i++)
+        for (int i = 0; i < 10; i++)
         {
             var cmd = new Command1(100 + i);
             _logger.LogInformation("{UtcNow}: Publish Command1 {CmdId}", DateTime.UtcNow, cmd.Id);
@@ -787,7 +785,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command2>();
 
-        for (var i = 0; i < 10; i++)
+        for (int i = 0; i < 10; i++)
         {
             var cmd = new Command2(200 + i);
             _logger.LogInformation("{UtcNow}: Publish Command2 {CmdId}", DateTime.UtcNow, cmd.Id);
@@ -795,27 +793,6 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         }
     }
 
-    public class Command1
-    {
-        public Command1() { }
-
-        public Command1(int id)
-        {
-            Id = id;
-        }
-
-        public int Id { get; set; }
-    }
-
-    public class Command2
-    {
-        public Command2() { }
-
-        public Command2(int id)
-        {
-            Id = id;
-        }
-
-        public int Id { get; set; }
-    }
+    private record Command1(int Id);
+    private record Command2(int Id);
 }
