@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -438,7 +438,7 @@ public class RedisQueueTests : QueueTestBase
         {
             var workItem = await queue.DequeueAsync();
             await workItem.AbandonAsync();
-            _logger.LogTrace("Abandoning: " + workItem.Id);
+            _logger.LogTrace("Abandoning: {Id}", workItem.Id);
         }
 
         workItemIds.Reverse();
@@ -446,7 +446,7 @@ public class RedisQueueTests : QueueTestBase
 
         foreach (object id in workItemIds.Take(3))
         {
-            _logger.LogTrace("Checking: " + id);
+            _logger.LogTrace("Checking: {Id}", id);
             Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
         }
 
@@ -619,7 +619,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
         }
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.True(stats.Dequeued >= workItemCount);
@@ -627,7 +627,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact(Skip = "Performance Test")]
@@ -662,7 +662,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             workItem = await queue.DequeueAsync(TimeSpan.Zero);
         }
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(workItemCount, stats.Dequeued);
@@ -670,7 +670,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact(Skip = "Performance Test")]
@@ -707,7 +707,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         await countdown.WaitAsync(TimeSpan.FromMinutes(1));
         Assert.Equal(0, countdown.CurrentCount);
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(workItemCount, stats.Dequeued);
@@ -715,7 +715,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact]
@@ -753,7 +753,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
         return q.StartWorkingAsync((entry, token) =>
         {
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Handler1\t{entry.Value.GetType().Name} {entry.Value.Id}");
+            _logger.LogInformation("{UtcNow}: Handler1 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 100, 199);
             return Task.CompletedTask;
         });
@@ -765,7 +765,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
         return q.StartWorkingAsync((entry, token) =>
         {
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Handler2\t{entry.Value.GetType().Name} {entry.Value.Id}");
+            _logger.LogInformation("{UtcNow}: Handler2 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 200, 299);
             return Task.CompletedTask;
         }, true);
@@ -778,7 +778,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         for (var i = 0; i < 10; i++)
         {
             var cmd = new Command1(100 + i);
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand1 {cmd.Id}");
+            _logger.LogInformation("{UtcNow}: Publish Command1 {CmdId}", DateTime.UtcNow, cmd.Id);
             await q.EnqueueAsync(cmd);
         }
     }
@@ -790,7 +790,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         for (var i = 0; i < 10; i++)
         {
             var cmd = new Command2(200 + i);
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand2 {cmd.Id}");
+            _logger.LogInformation("{UtcNow}: Publish Command2 {CmdId}", DateTime.UtcNow, cmd.Id);
             await q.EnqueueAsync(cmd);
         }
     }

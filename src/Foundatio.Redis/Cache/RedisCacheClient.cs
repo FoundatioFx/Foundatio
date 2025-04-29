@@ -193,9 +193,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             }
             catch (Exception ex)
             {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
-
+                _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}: {Message}", redisValue, typeof(T).FullName, ex.Message);
                 if (_options.ShouldThrowOnSerializationError)
                     throw;
             }
@@ -216,9 +214,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
-
+            _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}: {Message}", redisValue, typeof(T).FullName, ex.Message);
             if (_options.ShouldThrowOnSerializationError)
                 throw;
 
@@ -269,7 +265,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (expiresIn?.Ticks < 0)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+            _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
             return false;
         }
@@ -367,14 +363,14 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 .SortedSetRemoveRangeByScoreAsync(key, 0, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds())
                 .AnyContext();
 
-            if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
+            if (expiredValues > 0)
                 _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
         }
         catch (RedisServerException ex) when (ex.Message.StartsWith("WRONGTYPE"))
         {
-            _logger.LogInformation(ex, "Migrating legacy set to sortedset for key: {Key}", key);
+            _logger.LogInformation(ex, "Migrating legacy set to sorted set for key: {Key}", key);
 
-            // convert legacy set to sortedset
+            // convert legacy set to sorted set
             var oldItems = await Database.SetMembersAsync(key).AnyContext();
             await Database.KeyDeleteAsync(key).AnyContext();
 
@@ -539,7 +535,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (expiresIn?.Ticks < 0)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+            _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
             return -1;
         }
@@ -561,7 +557,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (expiresIn?.Ticks < 0)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+            _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
             return -1;
         }
@@ -638,7 +634,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
-        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored");
+        _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
     }
 

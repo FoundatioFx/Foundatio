@@ -33,24 +33,20 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
             if (_isSubscribed)
                 return;
 
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
+            _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
             _channelMessageQueue = await _options.Subscriber.SubscribeAsync(RedisChannel.Literal(_options.Topic)).AnyContext();
             _channelMessageQueue.OnMessage(OnMessage);
             _isSubscribed = true;
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
+            _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
         }
     }
 
     private async Task OnMessage(ChannelMessage channelMessage)
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
-
+        _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
         if (_subscribers.IsEmpty || !channelMessage.Message.HasValue)
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("No subscribers ({Channel})", channelMessage.Channel);
+            _logger.LogTrace("No subscribers ({Channel})", channelMessage.Channel);
             return;
         }
 
@@ -83,12 +79,12 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         var mappedType = GetMappedMessageType(messageType);
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
             return;
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message Publish: {MessageType}", messageType);
+        _logger.LogTrace("Message Publish: {MessageType}", messageType);
         byte[] bodyData = SerializeMessageBody(messageType, message);
         byte[] data = _serializer.SerializeToBytes(new RedisMessageEnvelope
         {
@@ -115,12 +111,11 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
                 if (!_isSubscribed)
                     return;
 
-                bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
+                _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
                 _channelMessageQueue?.Unsubscribe(CommandFlags.FireAndForget);
                 _channelMessageQueue = null;
                 _isSubscribed = false;
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
+                _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
             }
         }
     }
