@@ -107,7 +107,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
             // What to do if message type is null?
             var message = ConvertToMessage(messageType, consumeResult.Message);
-
             await SendMessageToSubscribersAsync(message).AnyContext();
 
             if (!_subscribers.IsEmpty)
