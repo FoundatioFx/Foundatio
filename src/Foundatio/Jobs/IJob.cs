@@ -39,7 +39,7 @@ public static class JobExtensions
     /// <summary>
     /// Runs the job continuously until the cancellation token is set or the iteration limit is reached.
     /// </summary>
-    /// <returns>Returns the iteration count for normal jobs. For queue based jobs this will be the amount of items processed successfully.</returns>
+    /// <returns>Returns the iteration count for normal jobs. For queue-based jobs this will be the number of items processed successfully.</returns>
     public static Task<int> RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1,
         CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
     {
@@ -66,7 +66,7 @@ public static class JobExtensions
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + options.Name);
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"Job: {options.Name}");
 
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, options.Name);
@@ -114,7 +114,7 @@ public static class JobExtensions
         {
             logger.LogInformation(
                 "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times (Limit={IterationLimit})",
-                options.Name, Environment.MachineName, options.IterationLimit, iterations);
+                options.Name, Environment.MachineName, iterations, options.IterationLimit);
         }
         else
         {

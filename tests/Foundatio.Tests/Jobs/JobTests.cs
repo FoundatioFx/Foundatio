@@ -17,7 +17,9 @@ namespace Foundatio.Tests.Jobs;
 
 public class JobTests : TestWithLoggingBase
 {
-    public JobTests(ITestOutputHelper output) : base(output) { }
+    public JobTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     [Fact]
     public async Task CanCancelJob()
@@ -139,22 +141,26 @@ public class JobTests : TestWithLoggingBase
     public async Task CanRunThrottledJobs()
     {
         using var client = new InMemoryCacheClient(o => o.LoggerFactory(Log));
-        var jobs = new List<ThrottledJob>(new[] { new ThrottledJob(client, Log), new ThrottledJob(client, Log), new ThrottledJob(client, Log) });
+        var jobs = new List<ThrottledJob>([
+            new ThrottledJob(client, Log),
+            new ThrottledJob(client, Log),
+            new ThrottledJob(client, Log)
+        ]);
 
         var sw = Stopwatch.StartNew();
-        using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
+        var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         await Task.WhenAll(jobs.Select(job => job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: timeoutCancellationTokenSource.Token)));
         sw.Stop();
 
         Assert.InRange(jobs.Sum(j => j.RunCount), 4, 14);
-        _logger.LogInformation(jobs.Sum(j => j.RunCount).ToString());
+        _logger.LogInformation("Job run count: {RunCount}", jobs.Sum(j => j.RunCount).ToString());
         Assert.InRange(sw.ElapsedMilliseconds, 20, 1500);
     }
 
     [Fact]
     public async Task CanRunJobsWithInterval()
     {
-        var time = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var time = DateTimeOffset.UnixEpoch;
         var timeProvider = new FakeTimeProvider(time);
         var interval = TimeSpan.FromHours(.75);
 
@@ -173,7 +179,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunJobsWithIntervalBetweenFailingJob()
     {
-        var time = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var time = DateTimeOffset.UnixEpoch;
         var interval = TimeSpan.FromHours(.75);
         var timeProvider = new FakeTimeProvider(time) { AutoAdvanceAmount = interval };
 
