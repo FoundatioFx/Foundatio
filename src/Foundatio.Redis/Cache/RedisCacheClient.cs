@@ -112,6 +112,24 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 }
             }
         }
+        else if (Database.Multiplexer.IsCluster())
+        {
+            foreach (var redisKeys in keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).Batch(batchSize))
+            {
+                foreach (var hashSlotGroup in redisKeys.GroupBy(k => Database.Multiplexer.HashSlot(k)))
+                {
+                    var hashSlotKeys = hashSlotGroup.ToArray();
+                    try
+                    {
+                        deleted += await Database.KeyDeleteAsync(hashSlotKeys).AnyContext();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unable to delete {HashSlot} keys ({Keys}): {Message}", hashSlotGroup.Key, hashSlotKeys, ex.Message);
+                    }
+                }
+            }
+        }
         else
         {
             foreach (var redisKeys in keys.Where(k => !String.IsNullOrEmpty(k)).Select(k => (RedisKey)k).Batch(batchSize))
@@ -132,37 +150,41 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
-        const int chunkSize = 2500;
+        var endpoints = _options.ConnectionMultiplexer.GetEndPoints();
+        if (endpoints.Length == 0)
+            return 0;
+
+        const int batchSize = 250;
+        bool isCluster = _options.ConnectionMultiplexer.IsCluster();
         string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
-        string regex = normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*";
+        string pattern = normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*";
 
-        int total = 0;
-        int index = 0;
-
-        (int cursor, string[] keys) = await ScanKeysAsync(regex, index, chunkSize).AnyContext();
-
-        while (keys.Length != 0 || index < chunkSize)
+        long deleted = 0;
+        foreach (var endpoint in endpoints)
         {
-            total += await RemoveAllAsync(keys).AnyContext();
+            var server = _options.ConnectionMultiplexer.GetServer(endpoint);
+            if (server.IsReplica)
+                continue;
 
-            index += chunkSize;
-            (cursor, keys) = await ScanKeysAsync(regex, cursor, chunkSize).AnyContext();
+            await foreach (var keys in server.KeysAsync(
+                               database: Database.Database,
+                               pattern: pattern,
+                               pageSize: batchSize
+                           ).BatchAsync(batchSize).ConfigureAwait(false))
+            {
+                if (isCluster)
+                {
+                    foreach (var slotGroup in keys.GroupBy(k => _options.ConnectionMultiplexer.HashSlot(k)))
+                        deleted += await Database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
+                }
+                else
+                {
+                    deleted += await Database.KeyDeleteAsync(keys).AnyContext();
+                }
+            }
         }
 
-        return total;
-    }
-
-    /// <summary>
-    /// Scan for keys matching the prefix
-    /// </summary>
-    /// <remarks>SCAN, SSCAN, HSCAN and ZSCAN return a two-element multi-bulk reply, where the first element
-    /// is a string representing an unsigned 64-bit number (the cursor), and the second element is a multi-bulk
-    /// with an array of elements.</remarks>
-    private async Task<(int, string[])> ScanKeysAsync(string prefix, int index, int chunkSize)
-    {
-        var result = await Database.ExecuteAsync("scan", index, "match", prefix, "count", chunkSize).AnyContext();
-        var value = (RedisResult[])result;
-        return ((int)value![0], (string[])value[1]);
+        return (int)deleted;
     }
 
     private static readonly RedisValue _nullValue = "@@NULL";
@@ -224,12 +246,27 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        string[] keyArray = keys.ToArray();
-        var values = await Database.StringGetAsync(keyArray.Select(k => (RedisKey)k).ToArray(), _options.ReadMode).AnyContext();
+        var redisKeys = keys.Distinct().Select(k => (RedisKey)k).ToArray();
+        var result = new Dictionary<string, CacheValue<T>>(redisKeys.Length);
+        if (redisKeys.Length == 0)
+            return result;
 
-        var result = new Dictionary<string, CacheValue<T>>();
-        for (int i = 0; i < keyArray.Length; i++)
-            result.Add(keyArray[i], RedisValueToCacheValue<T>(values[i]));
+        if (_options.ConnectionMultiplexer.IsCluster())
+        {
+            foreach (var hashSlotGroup in redisKeys.GroupBy(k => _options.ConnectionMultiplexer.HashSlot(k)))
+            {
+                var hashSlotKeys = hashSlotGroup.ToArray();
+                var values = await Database.StringGetAsync(hashSlotKeys, _options.ReadMode).AnyContext();
+                for (int i = 0; i < hashSlotKeys.Length; i++)
+                    result[hashSlotKeys[i]] = RedisValueToCacheValue<T>(values[i]);
+            }
+        }
+        else
+        {
+            var values = await Database.StringGetAsync(redisKeys, _options.ReadMode).AnyContext();
+            for (int i = 0; i < redisKeys.Length; i++)
+                result[redisKeys[i]] = RedisValueToCacheValue<T>(values[i]);
+        }
 
         return result;
     }
