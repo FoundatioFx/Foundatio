@@ -51,18 +51,16 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
             if (_isSubscribed)
                 return;
 
-            bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribing to cache lock released");
+            _logger.LogTrace("Subscribing to cache lock released");
             await _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleasedAsync).AnyContext();
             _isSubscribed = true;
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Subscribed to cache lock released");
+            _logger.LogTrace("Subscribed to cache lock released");
         }
     }
 
     private Task OnLockReleasedAsync(CacheLockReleased msg, CancellationToken cancellationToken = default)
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Got lock released message: {Resource} ({LockId})", msg.Resource, msg.LockId);
+        _logger.LogTrace("Got lock released message: {Resource} ({LockId})", msg.Resource, msg.LockId);
 
         if (_autoResetEvents.TryGetValue(msg.Resource, out var autoResetEvent))
             autoResetEvent.Target.Set();
@@ -84,15 +82,11 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-        bool isDebugLogLevelEnabled = _logger.IsEnabled(LogLevel.Debug);
         bool shouldWait = !cancellationToken.IsCancellationRequested;
         string lockId = GenerateNewLockId();
         timeUntilExpires ??= TimeSpan.FromMinutes(20);
 
-        if (isDebugLogLevelEnabled)
-            _logger.LogDebug("Attempting to acquire lock {Resource} ({LockId})", resource, lockId);
-
+        _logger.LogDebug("Attempting to acquire lock {Resource} ({LockId})", resource, lockId);
         using var activity = StartLockActivity(resource);
 
         bool gotLock = false;
@@ -110,19 +104,16 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
                 }
                 catch (Exception ex)
                 {
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace(ex, "Error acquiring lock {Resource} ({LockId})", resource, lockId);
+                    _logger.LogDebug(ex, "Error acquiring lock {Resource} ({LockId})", resource, lockId);
                 }
 
                 if (gotLock)
                     break;
 
-                if (isDebugLogLevelEnabled)
-                    _logger.LogDebug("Failed to acquire lock {Resource} ({LockId})", resource, lockId);
-
+                _logger.LogDebug("Failed to acquire lock {Resource} ({LockId})", resource, lockId);
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    if (isTraceLogLevelEnabled && shouldWait)
+                    if (shouldWait)
                         _logger.LogTrace("Cancellation requested while acquiring lock {Resource} ({LockId})", resource, lockId);
 
                     break;
@@ -141,8 +132,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
                 else if (delayAmount > TimeSpan.FromSeconds(3))
                     delayAmount = TimeSpan.FromSeconds(3);
 
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})", delayAmount, resource, lockId);
+                _logger.LogTrace("Will wait {Delay:g} before retrying to acquire lock {Resource} ({LockId})", delayAmount, resource, lockId);
 
                 // wait until we get a message saying the lock was released or 3 seconds has elapsed or cancellation has been requested
                 using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -179,17 +169,17 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
         {
             _lockTimeoutCounter.Add(1);
 
-            if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
+            if (cancellationToken.IsCancellationRequested)
                 _logger.LogTrace("Cancellation requested for lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
-            else if (_logger.IsEnabled(LogLevel.Warning))
+            else
                 _logger.LogWarning("Failed to acquire lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
 
             return null;
         }
 
-        if (sw.Elapsed > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Warning))
+        if (sw.Elapsed > TimeSpan.FromSeconds(5))
             _logger.LogWarning("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
-        else if (_logger.IsEnabled(LogLevel.Debug))
+        else
             _logger.LogDebug("Acquired lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
 
         return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
@@ -197,20 +187,18 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        var result = await Run.WithRetriesAsync(() => _cacheClient.ExistsAsync(resource), logger: _logger).AnyContext();
+        bool result = await Run.WithRetriesAsync(() => _cacheClient.ExistsAsync(resource), logger: _logger).AnyContext();
         return result;
     }
 
     public async Task ReleaseAsync(string resource, string lockId)
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
+        _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
         await Run.WithRetriesAsync(() => _cacheClient.RemoveIfEqualAsync(resource, lockId), 15, logger: _logger).AnyContext();
         await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
 
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
+        _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
     }
 
     public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
@@ -218,9 +206,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
         if (!timeUntilExpires.HasValue)
             timeUntilExpires = TimeSpan.FromMinutes(20);
 
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
-
+        _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
         return Run.WithRetriesAsync(() => _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value));
     }
 

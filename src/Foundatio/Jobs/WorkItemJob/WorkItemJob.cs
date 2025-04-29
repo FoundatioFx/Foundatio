@@ -107,8 +107,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
         var lockValue = await handler.GetWorkItemLockAsync(workItemData, cancellationToken).AnyContext();
         if (lockValue is null)
         {
-            if (handler.Log.IsEnabled(LogLevel.Information))
-                handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock", queueEntry.Value.Type, queueEntry.Id);
+            handler.Log.LogInformation("Abandoning {TypeName} work item: {Id}: Unable to acquire work item lock", queueEntry.Value.Type, queueEntry.Id);
 
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
@@ -127,14 +126,12 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
                 }
                 catch (Exception ex)
                 {
-                    if (handler.Log.IsEnabled(LogLevel.Error))
-                        handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
+                    handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
                 }
             }
 
             await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-            if (handler.Log.IsEnabled(LogLevel.Information))
-                handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
+            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
         });
 
         try
@@ -240,8 +237,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
                 }
                 catch (Exception ex)
                 {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error getting work item type: {WorkItemType}", type);
+                    _logger.LogWarning(ex, "Error getting work item type: {WorkItemType}", type);
 
                     return null;
                 }
@@ -263,8 +259,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
         }
         catch (Exception ex)
         {
-            if (handler.Log.IsEnabled(LogLevel.Error))
-                handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
+            handler.Log.LogError(ex, "Error sending progress report: {Message}", ex.Message);
         }
     }
 }

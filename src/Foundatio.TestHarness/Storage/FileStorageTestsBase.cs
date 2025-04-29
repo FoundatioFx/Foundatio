@@ -676,8 +676,9 @@ public static class StorageExtensions
         }
         catch (Exception ex)
         {
-            if (logger != null && logger.IsEnabled(LogLevel.Error))
+            if (logger != null)
                 logger.LogError(ex, "Error retrieving event post data {Path}: {Message}", path, ex.Message);
+
             return null;
         }
 
@@ -692,7 +693,7 @@ public static class StorageExtensions
         }
         catch (Exception ex)
         {
-            if (logger != null && logger.IsEnabled(LogLevel.Error))
+            if (logger != null)
                 logger.LogError(ex, "Error deleting work marker {Path}: {Message}", path, ex.Message);
         }
 
@@ -722,7 +723,7 @@ public static class StorageExtensions
         }
         catch (Exception ex)
         {
-            if (logger != null && logger.IsEnabled(LogLevel.Error))
+            if (logger != null)
                 logger?.LogError(ex, "Error archiving event post data {Path}: {Message}", path, ex.Message);
             return false;
         }

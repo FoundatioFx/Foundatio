@@ -46,8 +46,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Error cleaning up queue");
+            _logger.LogError(ex, "Error cleaning up queue: {Message}", ex.Message);
         }
         finally
         {
@@ -541,7 +540,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             _logger.LogTrace("Starting dequeue loop");
             for (int index = 0; index < iterations; index++)
             {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("[{Index}] Calling Dequeue", index);
+                _logger.LogTrace("[{Index}] Calling Dequeue", index);
                 var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));
                 Assert.NotNull(item);
                 await item.CompleteAsync();
@@ -590,7 +589,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 await workItem.CompleteAsync();
             }
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             Assert.InRange(sw.Elapsed.TotalSeconds, 0, 5);
 
             if (_assertStats)
@@ -621,7 +620,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             var sw = Stopwatch.StartNew();
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             Assert.Null(workItem);
             Assert.InRange(sw.Elapsed.TotalMilliseconds, 0, 100);
         }
@@ -645,7 +644,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             var sw = Stopwatch.StartNew();
             var workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             Assert.Null(workItem);
             Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(5000));
 
@@ -661,7 +660,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             sw.Restart();
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             Assert.True(sw.Elapsed > TimeSpan.FromMilliseconds(400));
             Assert.NotNull(workItem);
             await workItem.CompleteAsync();
@@ -696,7 +695,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             var sw = Stopwatch.StartNew();
             var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             Assert.NotNull(workItem);
             Assert.InRange(sw.Elapsed.TotalSeconds, 0, 2);
         }
@@ -777,8 +776,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 if (_assertStats)
                 {
                     var stats = await queue.GetQueueStatsAsync();
-                    if (_logger.IsEnabled(LogLevel.Information))
-                        _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
+                    _logger.LogInformation("Completed: {Completed} Errors: {Errors} Deadletter: {Deadletter} Working: {Working} ", stats.Completed, stats.Errors, stats.Deadletter, stats.Working);
                     Assert.Equal(0, stats.Completed);
                     Assert.Equal(1, stats.Errors);
                     Assert.Equal(1, stats.Deadletter);
@@ -952,7 +950,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 for (int i = 0; i < workerCount; i++)
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
+                    _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
                     await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
@@ -964,14 +962,13 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         Data = "Hello",
                         Id = i
                     });
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
+                    _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
                 });
 
                 await countdown.WaitAsync(cancellationTokenSource.Token);
                 await Task.Delay(50, cancellationTokenSource.Token);
 
-                if (_logger.IsEnabled(LogLevel.Information))
-                    _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
                 // In memory queue doesn't share state.
@@ -993,8 +990,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     for (int i = 0; i < workers.Count; i++)
                     {
                         var stats = await workers[i].GetQueueStatsAsync();
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("Worker#{Id} Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                        _logger.LogInformation("Worker#{Id} Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                         workerStats.Add(stats);
                     }
 
@@ -1045,7 +1041,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
             var elapsed = DateTime.UtcNow.Subtract(startTime);
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed}", elapsed);
+            _logger.LogTrace("Time {Elapsed}", elapsed);
             Assert.NotNull(workItem);
             Assert.InRange(elapsed, TimeSpan.FromMilliseconds(900), TimeSpan.FromSeconds(10));
             await workItem.CompleteAsync();
@@ -1152,15 +1148,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             Assert.NotNull(entry);
             Assert.Equal("Hello", entry.Value.Data);
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} before renewing lock", renewWait);
+            _logger.LogTrace("Waiting for {RenewWait:g} before renewing lock", renewWait);
             await Task.Delay(renewWait);
             _logger.LogTrace("Renewing lock");
             await entry.RenewLockAsync();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waiting for {RenewWait:g} to see if lock was renewed", renewWait);
+            _logger.LogTrace("Waiting for {RenewWait:g} to see if lock was renewed", renewWait);
             await Task.Delay(renewWait);
 
             // We shouldn't get another item here if RenewLock works.
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Attempting to dequeue item that shouldn't exist");
+            _logger.LogTrace("Attempting to dequeue item that shouldn't exist");
             var nullWorkItem = await queue.DequeueAsync(TimeSpan.Zero);
             Assert.Null(nullWorkItem);
             await entry.CompleteAsync();
@@ -1369,22 +1365,18 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     int instanceCount = i;
                     await q.StartWorkingAsync(async w =>
                     {
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {QueueEntryId}", instanceCount, w.Id);
+                        _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {QueueEntryId}", instanceCount, w.Id);
                         var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
                         Assert.NotNull(l);
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Acquired distributed lock: {QueueEntryId}", instanceCount, w.Id);
+                        _logger.LogInformation("[{Instance}] Acquired distributed lock: {QueueEntryId}", instanceCount, w.Id);
                         await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Released distributed lock: {QueueEntryId}", instanceCount, w.Id);
+                        _logger.LogInformation("[{Instance}] Released distributed lock: {QueueEntryId}", instanceCount, w.Id);
 
                         await w.CompleteAsync();
                         info.IncrementCompletedCount();
                         countdown.Signal();
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("[{Instance}] Signaled countdown: {QueueEntryId}", instanceCount, w.Id);
+                        _logger.LogInformation("[{Instance}] Signaled countdown: {QueueEntryId}", instanceCount, w.Id);
                     }, cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
@@ -1396,15 +1388,14 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                         Data = "Hello",
                         Id = i
                     });
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
+                    _logger.LogTrace("Enqueued Index: {Instance} Id: {QueueEntryId}", i, id);
                 });
 
                 await countdown.WaitAsync(TimeSpan.FromSeconds(5));
                 await Task.Delay(50, cancellationTokenSource.Token);
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                _logger.LogTrace("Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
 
-                if (_logger.IsEnabled(LogLevel.Information))
-                    _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
+                _logger.LogInformation("Work Info Stats: Completed: {Completed} Abandoned: {Abandoned} Error: {Errors}", info.CompletedCount, info.AbandonCount, info.ErrorCount);
                 Assert.Equal(workItemCount, info.CompletedCount + info.AbandonCount + info.ErrorCount);
 
                 // In memory queue doesn't share state.
@@ -1419,8 +1410,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                     for (int i = 0; i < workers.Count; i++)
                     {
                         var stats = await workers[i].GetQueueStatsAsync();
-                        if (_logger.IsEnabled(LogLevel.Information))
-                            _logger.LogInformation("Worker#{Id} Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                        _logger.LogInformation("Worker#{Id} Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                         workerStats.Add(stats);
                     }
 
@@ -1442,7 +1432,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
 
     protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info)
     {
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Starting: {Id}", w.Value.Id);
+        _logger.LogTrace("Starting: {Id}", w.Value.Id);
         Assert.Equal("Hello", w.Value.Data);
 
         try
@@ -1450,26 +1440,26 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
             // randomly complete, abandon or blowup.
             if (RandomData.GetBool())
             {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Completing: {Id}", w.Value.Id);
+                _logger.LogTrace("Completing: {Id}", w.Value.Id);
                 await w.CompleteAsync();
                 info.IncrementCompletedCount();
             }
             else if (RandomData.GetBool())
             {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Abandoning: {Id}", w.Value.Id);
+                _logger.LogTrace("Abandoning: {Id}", w.Value.Id);
                 await w.AbandonAsync();
                 info.IncrementAbandonCount();
             }
             else
             {
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Erroring: {Id}", w.Value.Id);
+                _logger.LogTrace("Erroring: {Id}", w.Value.Id);
                 info.IncrementErrorCount();
                 throw new Exception();
             }
         }
         finally
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Signal {CurrentCount}", countdown.CurrentCount);
+            _logger.LogTrace("Signal {CurrentCount}", countdown.CurrentCount);
             countdown.Signal();
         }
     }

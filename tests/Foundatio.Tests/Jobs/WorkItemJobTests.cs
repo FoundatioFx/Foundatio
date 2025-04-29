@@ -82,7 +82,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             Assert.Equal("Test", jobData.SomeData);
 
             int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
-            if (jobData.Index % 100 == 0 && _logger.IsEnabled(LogLevel.Trace))
+            if (jobData.Index % 100 == 0)
                 _logger.LogTrace("Job {JobId} processing work item #: {JobWorkTotal}", ctx.JobId, jobWorkTotal);
 
             for (int i = 0; i < 10; i++)
@@ -106,7 +106,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         object completedItemsLock = new();
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>
         {
-            if (status.Progress == 100 && _logger.IsEnabled(LogLevel.Trace))
+            if (status.Progress == 100)
                 _logger.LogTrace("Progress: {Progress}", status.Progress);
 
             if (status.Progress < 100)
@@ -138,13 +138,11 @@ public class WorkItemJobTests : TestWithLoggingBase
         }
         catch (OperationCanceledException ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
+            _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
         }
 
         await Task.Delay(100);
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
+        _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
         Assert.Equal(workItemCount, completedItems.Count + errors);
         Assert.Equal(3, jobIds.Count);
         Assert.Equal(workItemCount, jobIds.Sum(kvp => kvp.Value));
@@ -168,7 +166,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         var countdown = new AsyncCountdownEvent(11);
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+            _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
         });
@@ -206,7 +204,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         var countdown = new AsyncCountdownEvent(11);
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+            _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
         });
@@ -316,7 +314,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         var countdown = new AsyncCountdownEvent(2);
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Progress: {Progress}", status.Progress);
+            _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
         });

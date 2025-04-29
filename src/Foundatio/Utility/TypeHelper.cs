@@ -38,15 +38,17 @@ public static class TypeHelper
         var type = Type.GetType(fullTypeName);
         if (type == null)
         {
-            if (logger != null && logger.IsEnabled(LogLevel.Error))
+            if (logger != null)
                 logger.LogError("Unable to resolve type: {TypeFullName}.", fullTypeName);
+
             return null;
         }
 
         if (expectedBase != null && !expectedBase.IsAssignableFrom(type))
         {
-            if (logger != null && logger.IsEnabled(LogLevel.Error))
+            if (logger != null)
                 logger.LogError("Type {TypeFullName} must be assignable to type: {ExpectedFullName}.", fullTypeName, expectedBase.FullName);
+
             return null;
         }
 

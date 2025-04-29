@@ -23,8 +23,7 @@ public class HelloWorldJob : JobBase
         RunCount++;
         Interlocked.Increment(ref GlobalRunCount);
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("HelloWorld Running: instance={Id} runs={RunCount} global={GlobalRunCount}", _id, RunCount, GlobalRunCount);
+        _logger.LogTrace("HelloWorld Running: instance={Id} runs={RunCount} global={GlobalRunCount}", _id, RunCount, GlobalRunCount);
 
         return Task.FromResult(JobResult.Success);
     }
@@ -45,8 +44,7 @@ public class FailingJob : JobBase
     {
         RunCount++;
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("FailingJob Running: instance={Id} runs={RunCount}", _id, RunCount);
+        _logger.LogTrace("FailingJob Running: instance={Id} runs={RunCount}", _id, RunCount);
 
         return Task.FromResult(JobResult.FailedWithMessage("Test failure"));
     }
@@ -72,7 +70,7 @@ public class LongRunningJob : JobBase
             if (context.CancellationToken.IsCancellationRequested)
                 break;
 
-            if (_iterationCount % 10000 == 0 && _logger.IsEnabled(LogLevel.Trace))
+            if (_iterationCount % 10000 == 0)
                 _logger.LogTrace("LongRunningJob Running: instance={Id} iterations={IterationCount}", _id, IterationCount);
         } while (true);
 

@@ -38,27 +38,25 @@ public class ScheduledTimer : IDisposable
         if (!utcDate.HasValue || utcDate.Value < utcNow)
             utcDate = utcNow;
 
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled) _logger.LogTrace("ScheduleNext called: value={NextRun:O}", utcDate.Value);
+        _logger.LogTrace("ScheduleNext called: value={NextRun:O}", utcDate.Value);
 
         if (utcDate == DateTime.MaxValue)
         {
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Ignoring MaxValue");
+            _logger.LogTrace("Ignoring MaxValue");
             return;
         }
 
         // already have an earlier scheduled time
         if (_next > utcNow && utcDate > _next)
         {
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
+            _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
             return;
         }
 
         // ignore duplicate times
         if (_next == utcDate)
         {
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Ignoring because already scheduled for same time");
+            _logger.LogTrace("Ignoring because already scheduled for same time");
             return;
         }
 
@@ -67,15 +65,14 @@ public class ScheduledTimer : IDisposable
             // already have an earlier scheduled time
             if (_next > utcNow && utcDate > _next)
             {
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
+                _logger.LogTrace("Ignoring because already scheduled for earlier time: {PreviousNextRun:O} Next: {NextRun:O}", utcDate.Value, _next);
                 return;
             }
 
             // ignore duplicate times
             if (_next == utcDate)
             {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Ignoring because already scheduled for same time");
+                _logger.LogTrace("Ignoring because already scheduled for same time");
                 return;
             }
 
@@ -84,7 +81,7 @@ public class ScheduledTimer : IDisposable
             if (_last == DateTime.MinValue)
                 _last = _next;
 
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Scheduling next: delay={Delay}", delay);
+            _logger.LogTrace("Scheduling next: delay={Delay}", delay);
             if (delay > 0)
                 _timer.Change(delay, Timeout.Infinite);
             else
@@ -94,12 +91,9 @@ public class ScheduledTimer : IDisposable
 
     private async Task RunCallbackAsync()
     {
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (_isRunning)
         {
-            if (isTraceLogLevelEnabled)
-                _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
-
+            _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
             _shouldRunAgainImmediately = true;
             return;
         }
@@ -107,14 +101,12 @@ public class ScheduledTimer : IDisposable
         // If the callback runs before the next time, then store it here before we reset it and use it for scheduling.
         DateTime? nextTimeOverride = null;
 
-        if (isTraceLogLevelEnabled) _logger.LogTrace("Starting RunCallbackAsync");
+        _logger.LogTrace("Starting RunCallbackAsync");
         using (await _lock.LockAsync().AnyContext())
         {
             if (_isRunning)
             {
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
-
+                _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
                 _shouldRunAgainImmediately = true;
                 return;
             }
@@ -141,22 +133,20 @@ public class ScheduledTimer : IDisposable
             }
             catch (Exception ex)
             {
-                if (_logger.IsEnabled(LogLevel.Error))
-                    _logger.LogError(ex, "Error running scheduled timer callback: {Message}", ex.Message);
-
+                _logger.LogError(ex, "Error running scheduled timer callback: {Message}", ex.Message);
                 _shouldRunAgainImmediately = true;
             }
             finally
             {
                 sw.Stop();
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Callback took: {Elapsed:g}", sw.Elapsed);
+                _logger.LogTrace("Callback took: {Elapsed:g}", sw.Elapsed);
             }
 
             if (_minimumInterval > TimeSpan.Zero)
             {
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
+                _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
                 await _timeProvider.Delay(_minimumInterval).AnyContext();
-                if (isTraceLogLevelEnabled) _logger.LogTrace("Finished sleeping");
+                _logger.LogTrace("Finished sleeping");
             }
 
             var nextRun = _timeProvider.GetUtcNow().UtcDateTime.AddMilliseconds(10);
@@ -170,8 +160,7 @@ public class ScheduledTimer : IDisposable
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Error running schedule next callback: {Message}", ex.Message);
+            _logger.LogError(ex, "Error running schedule next callback: {Message}", ex.Message);
         }
         finally
         {
@@ -179,7 +168,7 @@ public class ScheduledTimer : IDisposable
             _shouldRunAgainImmediately = false;
         }
 
-        if (isTraceLogLevelEnabled) _logger.LogTrace("Finished RunCallbackAsync");
+        _logger.LogTrace("Finished RunCallbackAsync");
     }
 
     public void Dispose()

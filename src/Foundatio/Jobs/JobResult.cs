@@ -80,7 +80,7 @@ public static class JobResultExtensions
             logger.LogError(result.Error, "Job run {JobName} failed: {Message}", jobName, result.Message);
         else if (!String.IsNullOrEmpty(result.Message))
             logger.LogInformation("Job run {JobName} succeeded: {Message}", jobName, result.Message);
-        else if (logger.IsEnabled(LogLevel.Debug))
+        else
             logger.LogDebug("Job run {JobName} succeeded", jobName);
     }
 }

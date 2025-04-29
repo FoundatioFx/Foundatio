@@ -95,8 +95,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
                 }
                 catch (Exception ex)
                 {
-                    if (_logger.IsEnabled(LogLevel.Warning))
-                        _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+                    _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
 
                     return null;
                 }
@@ -117,8 +116,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             {
                 if (message is not T)
                 {
-                    if (_logger.IsEnabled(LogLevel.Trace))
-                        _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
+                    _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                     return Task.CompletedTask;
                 }
 
@@ -142,7 +140,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             subscriber.GenericType = typeof(Message<>).MakeGenericType(modelType);
         }
 
-        if (!_subscribers.TryAdd(subscriber.Id, subscriber) && _logger.IsEnabled(LogLevel.Error))
+        if (!_subscribers.TryAdd(subscriber.Id, subscriber))
             _logger.LogError("Unable to add subscriber {SubscriberId}", subscriber.Id);
 
         return Task.CompletedTask;
@@ -150,8 +148,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
 
     public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
+        _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
 
         await SubscribeImplAsync(handler, cancellationToken).AnyContext();
         await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
@@ -170,9 +167,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
         var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
         if (clrType is null)
         {
-            if (_logger.IsEnabled(LogLevel.Warning))
-                _logger.LogWarning("Unable to resolve CLR type for message body type: ClrType={MessageClrType} Type={MessageType}", message.ClrType, message.Type);
-
+            _logger.LogWarning("Unable to resolve CLR type for message body type: ClrType={MessageClrType} Type={MessageType}", message.ClrType, message.Type);
             return false;
         }
 
@@ -203,8 +198,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
+            _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
 
             return null;
         }
@@ -214,11 +208,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
 
     protected async Task SendMessageToSubscribersAsync(IMessage message)
     {
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         var subscribers = GetMessageSubscribers(message);
 
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Found {SubscriberCount} subscribers for message type: ClrType={MessageClrType} Type={MessageType}", subscribers.Count, message.ClrType, message.Type);
+        _logger.LogTrace("Found {SubscriberCount} subscribers for message type: ClrType={MessageClrType} Type={MessageType}", subscribers.Count, message.ClrType, message.Type);
 
         if (subscribers.Count == 0)
             return;
@@ -229,10 +221,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             {
                 if (_subscribers.TryRemove(subscriber.Id, out _))
                 {
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
+                    _logger.LogTrace("Removed cancelled subscriber: {SubscriberId}", subscriber.Id);
                 }
-                else if (isTraceLogLevelEnabled)
+                else
                 {
                     _logger.LogTrace("Unable to remove cancelled subscriber: {SubscriberId}", subscriber.Id);
                 }
@@ -244,15 +235,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             {
                 if (subscriber.CancellationToken.IsCancellationRequested)
                 {
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
-
+                    _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
                     return;
                 }
 
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
-
+                _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
                 using var activity = StartHandleMessageActivity(message);
 
                 using (_logger.BeginScope(s => s
@@ -275,8 +262,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
                     }
                 }
 
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
+                _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
             });
         });
 
@@ -291,8 +277,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
             throw;
         }
 
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
+        _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
     }
 
     protected virtual Activity StartHandleMessageActivity(IMessage message)
@@ -307,7 +292,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
         activity.DisplayName = $"Message: {message.ClrType?.Name ?? message.Type}";
 
         EnrichHandleMessageActivity(activity, message);
-
         return activity;
     }
 
@@ -354,17 +338,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where 
         {
             await _timeProvider.SafeDelay(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
 
-            bool isTraceLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
             if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
             {
-                if (isTraceLevelEnabled)
-                    _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
+                _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
                 return;
             }
 
-            if (isTraceLevelEnabled)
-                _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
-
+            _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
             await PublishAsync(messageType, message).AnyContext();
         });
     }

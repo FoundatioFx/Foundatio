@@ -56,7 +56,7 @@ public static class Run
 
         do
         {
-            if (attempts > 1 && logger != null && logger.IsEnabled(LogLevel.Information))
+            if (attempts > 1 && logger != null)
                 logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), timeProvider.GetUtcNow().Subtract(startTime));
 
             try
@@ -68,7 +68,7 @@ public static class Run
                 if (attempts >= maxAttempts)
                     throw;
 
-                if (logger != null && logger.IsEnabled(LogLevel.Error))
+                if (logger != null)
                     logger.LogError(ex, "Retry error: {Message}", ex.Message);
 
                 await timeProvider.SafeDelay(TimeSpan.FromMilliseconds(currentBackoffTime), cancellationToken).AnyContext();

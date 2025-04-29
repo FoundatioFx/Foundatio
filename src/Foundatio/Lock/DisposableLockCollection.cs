@@ -41,14 +41,12 @@ internal class DisposableLockCollection : ILock
 
     public async Task RenewAsync(TimeSpan? lockExtension = null)
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogTrace("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
 
         await Task.WhenAll(_locks.Select(l => l.RenewAsync(lockExtension))).AnyContext();
         _renewalCount++;
 
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
     }
 
     public async Task ReleaseAsync()
@@ -64,8 +62,7 @@ internal class DisposableLockCollection : ILock
             _isReleased = true;
             _duration.Stop();
 
-            if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
+            _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
 
             await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
         }
@@ -73,9 +70,7 @@ internal class DisposableLockCollection : ILock
 
     public async ValueTask DisposeAsync()
     {
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Disposing {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogTrace("Disposing {LockCount} locks {Resource}", _locks.Count, Resource);
 
         try
         {
@@ -83,11 +78,9 @@ internal class DisposableLockCollection : ILock
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Unable to release {LockCount} locks {Resource}", _locks.Count, Resource);
+            _logger.LogError(ex, "Unable to release {LockCount} locks {Resource}", _locks.Count, Resource);
         }
 
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Disposed {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogTrace("Disposed {LockCount} locks {Resource}", _locks.Count, Resource);
     }
 }

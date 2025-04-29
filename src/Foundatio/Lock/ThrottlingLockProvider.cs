@@ -36,8 +36,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled) _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
+        _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 
         bool allowLock = false;
         byte errors = 0;
@@ -50,12 +49,10 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
 
             try
             {
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().UtcDateTime.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
+                _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().UtcDateTime.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
                 var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
+                _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
                     hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod)).AnyContext();
@@ -67,9 +64,9 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
                         break;
                     }
 
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Max hits exceeded after increment for {Resource}.", resource);
+                    _logger.LogTrace("Max hits exceeded after increment for {Resource}.", resource);
                 }
-                else if (isTraceLogLevelEnabled)
+                else
                 {
                     _logger.LogTrace("Max hits exceeded for {Resource}.", resource);
                 }
@@ -80,12 +77,12 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
                 var sleepUntil = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                 if (sleepUntil > _timeProvider.GetUtcNow())
                 {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
+                    _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
                     await _timeProvider.SafeDelay(sleepUntil - _timeProvider.GetUtcNow(), cancellationToken).AnyContext();
                 }
                 else
                 {
-                    if (isTraceLogLevelEnabled) _logger.LogTrace("Default sleep");
+                    _logger.LogTrace("Default sleep");
                     await _timeProvider.SafeDelay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
                 }
             }
@@ -104,15 +101,13 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
             }
         } while (!cancellationToken.IsCancellationRequested);
 
-        if (cancellationToken.IsCancellationRequested && isTraceLogLevelEnabled)
+        if (cancellationToken.IsCancellationRequested)
             _logger.LogTrace("Cancellation requested");
 
         if (!allowLock)
             return null;
 
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("Allowing lock: {Resource}", resource);
-
+        _logger.LogTrace("Allowing lock: {Resource}", resource);
         sw.Stop();
         return new DisposableLock(resource, lockId, sw.Elapsed, this, _logger, releaseOnDispose);
     }

@@ -74,14 +74,12 @@ public abstract class WorkItemHandlerBase : IWorkItemHandler
 
     public virtual void LogProcessingQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem)
     {
-        if (Log.IsEnabled(LogLevel.Information))
-            Log.LogInformation("Processing {TypeName} work item queue entry: {QueueEntryId}", workItemDataType.Name, queueEntry.Id);
+        Log.LogInformation("Processing {TypeName} work item queue entry: {QueueEntryId}", workItemDataType.Name, queueEntry.Id);
     }
 
     public virtual void LogAutoCompletedQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem)
     {
-        if (Log.IsEnabled(LogLevel.Information))
-            Log.LogInformation("Auto completed {TypeName} work item queue entry: {QueueEntryId}", workItemDataType.Name, queueEntry.Id);
+        Log.LogInformation("Auto completed {TypeName} work item queue entry: {QueueEntryId}", workItemDataType.Name, queueEntry.Id);
     }
 
     public abstract Task HandleItemAsync(WorkItemContext context);

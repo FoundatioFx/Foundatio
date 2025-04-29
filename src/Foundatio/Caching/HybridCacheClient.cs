@@ -46,7 +46,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (!args.SendNotification)
             return Task.CompletedTask;
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache expired event: key={Key}", args.Key);
+        _logger.LogTrace("Local cache expired event: key={Key}", args.Key);
         return _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [args.Key], Expired = true });
     }
 
@@ -55,7 +55,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (!String.IsNullOrEmpty(message.CacheId) && String.Equals(_cacheId, message.CacheId))
             return Task.CompletedTask;
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? []));
+        _logger.LogTrace("Invalidating local cache from remote: id={CacheId} expired={Expired} keys={Keys}", message.CacheId, message.Expired, String.Join(",", message.Keys ?? []));
         Interlocked.Increment(ref _invalidateCacheCalls);
         if (message.FlushAll)
         {
@@ -126,17 +126,17 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogTrace("Local cache hit: {Key}", key);
             Interlocked.Increment(ref _localCacheHits);
             return cacheValue;
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogTrace("Local cache miss: {Key}", key);
         cacheValue = await _distributedCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
         {
             var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
             await _localCache.SetAsync(key, cacheValue.Value, expiration).AnyContext();
             return cacheValue;
@@ -152,7 +152,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
+        _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         if (added)
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -162,7 +162,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
+        _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         await _localCache.SetAsync(key, value, expiresIn).AnyContext();
         bool set = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -175,7 +175,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (values == null || values.Count == 0)
             return 0;
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Adding keys {Keys} to local cache with expiration: {Expiration}", values.Keys, expiresIn);
+        _logger.LogTrace("Adding keys {Keys} to local cache with expiration: {Expiration}", values.Keys, expiresIn);
         await _localCache.SetAllAsync(values, expiresIn).AnyContext();
         int set = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = values.Keys.ToArray() }).AnyContext();
@@ -306,17 +306,17 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache hit: {Key}", key);
+            _logger.LogTrace("Local cache hit: {Key}", key);
             Interlocked.Increment(ref _localCacheHits);
             return cacheValue;
         }
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Local cache miss: {Key}", key);
+        _logger.LogTrace("Local cache miss: {Key}", key);
         cacheValue = await _distributedCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
         {
             var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
             await _localCache.ListAddAsync(key, cacheValue.Value, expiration).AnyContext();
         }

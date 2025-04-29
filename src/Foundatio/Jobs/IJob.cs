@@ -57,14 +57,12 @@ public static class JobExtensions
     {
         int iterations = 0;
         var logger = job.GetLogger();
-        bool isInformationLogLevelEnabled = logger.IsEnabled(LogLevel.Information);
 
         int queueItemsProcessed = 0;
         bool isQueueJob = job.GetType().GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IQueueJob<>));
 
         using var _ = logger.BeginScope(new Dictionary<string, object> { { "job", options.Name } });
-        if (isInformationLogLevelEnabled)
-            logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", options.Name, Environment.MachineName);
+        logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", options.Name, Environment.MachineName);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -103,29 +101,26 @@ public static class JobExtensions
                 if (!await continuationCallback().AnyContext())
                     break;
             }
-            catch (Exception ex) when (logger.IsEnabled(LogLevel.Error))
+            catch (Exception ex)
             {
                 logger.LogError(ex, "Error in continuation callback: {Message}", ex.Message);
             }
         }
 
-        if (cancellationToken.IsCancellationRequested && logger.IsEnabled(LogLevel.Trace))
+        if (cancellationToken.IsCancellationRequested)
             logger.LogTrace("Job cancellation requested");
 
-        if (isInformationLogLevelEnabled)
+        if (options.IterationLimit > 0)
         {
-            if (options.IterationLimit > 0)
-            {
-                logger.LogInformation(
-                    "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times (Limit={IterationLimit})",
-                    options.Name, Environment.MachineName, options.IterationLimit, iterations);
-            }
-            else
-            {
-                logger.LogInformation(
-                    "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times",
-                    options.Name, Environment.MachineName, iterations);
-            }
+            logger.LogInformation(
+                "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times (Limit={IterationLimit})",
+                options.Name, Environment.MachineName, options.IterationLimit, iterations);
+        }
+        else
+        {
+            logger.LogInformation(
+                "Stopping continuous job type {JobName} on machine {MachineName}: Job ran {Iterations} times",
+                options.Name, Environment.MachineName, iterations);
         }
 
         return isQueueJob ? queueItemsProcessed : iterations;

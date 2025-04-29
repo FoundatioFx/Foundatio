@@ -90,8 +90,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         Task<DateTime?> Callback()
         {
             Interlocked.Increment(ref hits);
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Callback called for the #{Hits} time", hits);
+            _logger.LogInformation("Callback called for the #{Hits} time", hits);
             if (hits == 1)
                 throw new Exception("Error in callback");
 

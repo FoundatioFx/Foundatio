@@ -58,9 +58,7 @@ try
         builder.Services.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
         {
             var logger = sp.GetRequiredService<ILogger<Program>>();
-            if (logger.IsEnabled(LogLevel.Information))
-                logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
-
+            logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
             await Task.Delay(TimeSpan.FromSeconds(5));
         });
 

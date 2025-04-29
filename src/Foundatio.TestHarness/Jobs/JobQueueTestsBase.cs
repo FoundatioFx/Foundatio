@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -170,8 +170,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             for (int i = 0; i < queues.Count; i++)
             {
                 var stats = await queues[i].GetQueueStatsAsync();
-                if (_logger.IsEnabled(LogLevel.Information))
-                    _logger.LogInformation("Queue#{Id}: Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
+                _logger.LogInformation("Queue#{Id}: Working: {Working} Completed: {Completed} Abandoned: {Abandoned} Error: {Errors} Deadletter: {Deadletter}", i, stats.Working, stats.Completed, stats.Abandoned, stats.Errors, stats.Deadletter);
                 queueStats.Add(stats);
             }
             _logger.LogInformation("Done getting queue stats");

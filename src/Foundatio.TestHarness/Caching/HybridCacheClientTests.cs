@@ -225,8 +225,7 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
 
         void ExpiredHandler(object sender, ItemExpiredEventArgs args)
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("First local cache expired: {Key}", args.Key);
+            _logger.LogTrace("First local cache expired: {Key}", args.Key);
             firstResetEvent.Set();
         }
 
@@ -238,8 +237,7 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
 
             void ExpiredHandler2(object sender, ItemExpiredEventArgs args)
             {
-                if (_logger.IsEnabled(LogLevel.Trace))
-                    _logger.LogTrace("Second local cache expired: {Key}", args.Key);
+                _logger.LogTrace("Second local cache expired: {Key}", args.Key);
                 secondResetEvent.Set();
             }
 
@@ -261,7 +259,7 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
                 await firstResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                 await secondResetEvent.WaitAsync(TimeSpan.FromSeconds(2));
                 sw.Stop();
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+                _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
             }
         }
     }

@@ -150,10 +150,7 @@ public static class LockProviderExtensions
         if (renewTime > TimeSpan.Zero)
             renewTime = TimeSpan.FromTicks(renewTime.Ticks / 2) > TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : TimeSpan.FromTicks(renewTime.Ticks / 2);
 
-        bool isTraceLogLevelEnabled = logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled)
-            logger.LogTrace("Acquiring {LockCount} locks {Resource} RenewTime={RenewTime:g}", resourceList.Length, resourceList, renewTime);
-
+        logger.LogTrace("Acquiring {LockCount} locks {Resource} RenewTime={RenewTime:g}", resourceList.Length, resourceList, renewTime);
         var sw = Stopwatch.StartNew();
 
         var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewed)>(resourceList.Length);
@@ -175,8 +172,7 @@ public static class LockProviderExtensions
                     await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
                     locksToRenew.ForEach(al => al.LastRenewed = utcNow);
 
-                    if (isTraceLogLevelEnabled)
-                        logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);
+                    logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);
                 }
             }
 
@@ -201,20 +197,17 @@ public static class LockProviderExtensions
 
             if (unacquiredResources.Count > 0)
             {
-                if (isTraceLogLevelEnabled)
-                    logger.LogTrace("Unable to acquire all {LockCount} locks {UnacquiredResources} releasing acquired locks: {Resource}", unacquiredResources.Count, unacquiredResources, acquiredResources);
+                logger.LogTrace("Unable to acquire all {LockCount} locks {UnacquiredResources} releasing acquired locks: {Resource}", unacquiredResources.Count, unacquiredResources, acquiredResources);
 
                 await Task.WhenAll(locks.Select(l => l.ReleaseAsync())).AnyContext();
 
-                if (isTraceLogLevelEnabled)
-                    logger.LogTrace("Released {LockCount} locks {Resource}", acquiredResources.Length, acquiredResources);
+                logger.LogTrace("Released {LockCount} locks {Resource}", acquiredResources.Length, acquiredResources);
 
                 return null;
             }
         }
 
-        if (isTraceLogLevelEnabled)
-            logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
+        logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", resourceList.Length, resourceList, sw.Elapsed);
 
         return new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
     }

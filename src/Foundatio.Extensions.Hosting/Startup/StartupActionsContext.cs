@@ -37,7 +37,7 @@ public class StartupActionsContext
             if (IsStartupComplete)
                 return Result;
 
-            if (isFirstWaiter && DateTime.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5) && _logger.IsEnabled(LogLevel.Information))
+            if (isFirstWaiter && DateTime.UtcNow.Subtract(lastStatus) > TimeSpan.FromSeconds(5))
             {
                 lastStatus = DateTime.UtcNow;
                 _logger.LogInformation("Waiting for startup actions to be completed for {Duration:mm\\:ss}...", DateTime.UtcNow.Subtract(startTime));
@@ -46,7 +46,7 @@ public class StartupActionsContext
             await Task.Delay(1000, cancellationToken).AnyContext();
         }
 
-        if (isFirstWaiter && _logger.IsEnabled(LogLevel.Error))
+        if (isFirstWaiter)
             _logger.LogError("Timed out waiting for startup actions to be completed after {Duration:mm\\:ss}", DateTime.UtcNow.Subtract(startTime));
 
         return new RunStartupActionsResult { Success = false, ErrorMessage = $"Timed out waiting for startup actions to be completed after {DateTime.UtcNow.Subtract(startTime):mm\\:ss}" };

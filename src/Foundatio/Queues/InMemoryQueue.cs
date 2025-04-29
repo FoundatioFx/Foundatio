@@ -389,8 +389,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "DoMaintenance Error: {Message}", ex.Message);
+            _logger.LogError(ex, "DoMaintenance Error: {Message}", ex.Message);
         }
 
         // Add a tiny buffer just in case the schedule next timer fires early.

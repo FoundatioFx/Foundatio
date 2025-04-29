@@ -119,7 +119,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
+        _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
         return Task.FromResult(_memory.TryRemove(key, out _));
     }
 
@@ -128,9 +128,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         bool wasExpectedValue = false;
         bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
@@ -138,9 +136,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
-                if (isTraceLogLevelEnabled)
-                    _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
-
+                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
                 existingEntry.ExpiresAt = DateTime.MinValue;
                 wasExpectedValue = true;
             }
@@ -152,9 +148,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         await StartMaintenanceAsync().AnyContext();
 
-        if (isTraceLogLevelEnabled)
-            _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-
+        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
         return success;
     }
 
@@ -167,14 +161,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(count);
         }
 
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         int removed = 0;
         foreach (string key in keys)
         {
             if (String.IsNullOrEmpty(key))
                 continue;
 
-            if (isTraceLogLevelEnabled) _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
+            _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
             if (_memory.TryRemove(key, out _))
                 removed++;
         }
@@ -195,8 +188,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
+            _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
         }
 
         return RemoveAllAsync(keysToRemove);
@@ -211,7 +203,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removing expired key: {Key}", key);
+        _logger.LogTrace("Removing expired key: {Key}", key);
         if (_memory.TryRemove(key, out _))
         {
             OnItemExpired(key, sendNotification);
@@ -271,8 +263,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         catch (Exception ex)
         {
-            if (_logger.IsEnabled(LogLevel.Error))
-                _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", existingEntry.Value, typeof(T).FullName);
+            _logger.LogError(ex, "Unable to deserialize value {Value} to type {TypeFullName}", existingEntry.Value, typeof(T).FullName);
 
             if (_shouldThrowOnSerializationErrors)
                 throw;
@@ -573,7 +564,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
         int expiredValues = expiredValueKeys.Count(dictionary.Remove);
-        if (expiredValues > 0 && _logger.IsEnabled(LogLevel.Trace))
+        if (expiredValues > 0)
             _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, existingKey);
 
         return expiredValues;
@@ -609,7 +600,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
                 }
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+                _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
@@ -637,7 +628,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
                 }
 
-                if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+                _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
                 return existingEntry;
             });
 
@@ -685,7 +676,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         bool wasUpdated = true;
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (addOnly)
         {
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
@@ -696,8 +686,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 // check to see if existing entry is expired
                 if (existingEntry.IsExpired)
                 {
-                    if (isTraceLogLevelEnabled)
-                        _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
+                    _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
 
                     wasUpdated = true;
                     return entry;
@@ -706,13 +695,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            if (wasUpdated && isTraceLogLevelEnabled)
+            if (wasUpdated)
                 _logger.LogTrace("Added cache key: {Key}", key);
         }
         else
         {
             _memory.AddOrUpdate(key, entry, (_, _) => entry);
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Set cache key: {Key}", key);
+            _logger.LogTrace("Set cache key: {Key}", key);
         }
 
         await StartMaintenanceAsync(ShouldCompact).AnyContext();
@@ -771,8 +760,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
+        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         Interlocked.Increment(ref _writes);
 
@@ -796,8 +784,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         success = success && wasExpectedValue;
         await StartMaintenanceAsync().AnyContext();
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
+        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
 
         return success;
     }

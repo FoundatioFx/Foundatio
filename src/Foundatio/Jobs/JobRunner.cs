@@ -149,8 +149,7 @@ public class JobRunner
 
         using (_logger.BeginScope(s => s.Property("job", _options.Name)))
         {
-            if (_logger.IsEnabled(LogLevel.Information))
-                _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
+            _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
 
             if (job is IAsyncLifetime jobLifetime)
             {

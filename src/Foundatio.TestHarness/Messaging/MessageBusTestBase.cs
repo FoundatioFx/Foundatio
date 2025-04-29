@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -242,7 +242,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
                 if (++messages % 50 == 0)
-                    if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Total Processed {Messages} messages", messages);
+                    _logger.LogTrace("Total Processed {Messages} messages", messages);
 
                 Assert.Equal("Hello", msg.Data);
                 countdown.Signal();
@@ -263,7 +263,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await countdown.WaitAsync(TimeSpan.FromSeconds(30));
             sw.Stop();
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
+            _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
             Assert.Equal(0, countdown.CurrentCount);
             Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
         }

@@ -27,8 +27,7 @@ public class InMemoryQueueTests : QueueTestBase
                 .TimeProvider(timeProvider)
                 .MetricsPollingInterval(TimeSpan.Zero)
                 .LoggerFactory(Log));
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
+        _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
         return _queue;
     }
 
@@ -246,12 +245,12 @@ public class InMemoryQueueTests : QueueTestBase
             var sw = Stopwatch.StartNew();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
 
             sw.Restart();
             await q.EnqueueAsync(new SimpleWorkItem());
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
+            _logger.LogTrace("Time {Elapsed:g}", sw.Elapsed);
         }
         finally
         {
