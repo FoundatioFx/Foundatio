@@ -8,7 +8,6 @@ namespace Foundatio.Kafka.Tests.Messaging;
 
 public class KafkaMessageBusFanOutTests : KafkaMessageBusTestBase
 {
-
     public KafkaMessageBusFanOutTests(ITestOutputHelper output) : base(output) { }
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
@@ -18,9 +17,7 @@ public class KafkaMessageBusFanOutTests : KafkaMessageBusTestBase
             .Topic(Topic)
             .TopicReplicationFactor(1)
             .TopicNumberOfPartitions(1)
-            .GroupId(Guid.NewGuid().ToString("N"))
-            .EnableAutoCommit(false)
-            .EnableAutoOffsetStore(false)
+            .GroupId(Guid.NewGuid().ToString("N")[..10])
             .AllowAutoCreateTopics(true)
             .LoggerFactory(Log)
         );

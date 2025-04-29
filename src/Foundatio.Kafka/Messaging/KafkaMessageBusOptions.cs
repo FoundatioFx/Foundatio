@@ -492,7 +492,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.AutoOffsetReset"/>
     /// </summary>
-    public AutoOffsetReset? AutoOffsetReset { get; set; }
+    public AutoOffsetReset? AutoOffsetReset { get; set; } = Confluent.Kafka.AutoOffsetReset.Earliest;
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.GroupInstanceId"/>
@@ -532,12 +532,12 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.EnableAutoCommit"/>
     /// </summary>
-    public bool? EnableAutoCommit { get; set; }
+    public bool? EnableAutoCommit { get; set; } = false;
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.EnableAutoOffsetStore"/>
     /// </summary>
-    public bool? EnableAutoOffsetStore { get; set; }
+    public bool? EnableAutoOffsetStore { get; set; } = false;
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.QueuedMinMessages"/>
