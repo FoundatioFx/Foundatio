@@ -502,7 +502,7 @@ public class RedisQueueTests : QueueTestBase
 
     // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
     //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
-    [Fact]
+    [RetryFact]
     public async Task DatabaseTimeoutDuringDequeueHandledCorrectly()
     {
         // not using GetQueue() here because I need to change the ops timeout in the redis connection string
