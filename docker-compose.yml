@@ -1,7 +1,6 @@
 services:
   redis-node-0:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7000:7000"        # client
       - "17000:17000"      # cluster bus
@@ -14,7 +13,6 @@ services:
 
   redis-node-1:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7001:7001"
       - "17001:17001"
@@ -27,7 +25,6 @@ services:
 
   redis-node-2:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7002:7002"
       - "17002:17002"
@@ -40,7 +37,6 @@ services:
 
   redis-node-3:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7003:7003"
       - "17003:17003"
@@ -53,7 +49,6 @@ services:
 
   redis-node-4:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7004:7004"
       - "17004:17004"
@@ -66,7 +61,6 @@ services:
 
   redis-node-5:
     image: bitnami/redis-cluster:7.4.3
-    network_mode: host
     ports:
       - "7005:7005"
       - "17005:17005"
@@ -80,7 +74,6 @@ services:
       - REDIS_CLUSTER_CREATOR=yes
 
   ready:
-    network_mode: host
     image: andrewlock/wait-for-dependencies
     depends_on:
       - redis-node-0
