@@ -1,0 +1,13 @@
+services:
+  redis:
+    image: bitnami/redis:7.4.3
+    environment:
+      ALLOW_EMPTY_PASSWORD: yes
+    ports:
+      - '6379:6379'
+
+  ready:
+    image: andrewlock/wait-for-dependencies
+    command: redis:6379
+    depends_on:
+      - redis
