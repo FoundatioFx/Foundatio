@@ -64,6 +64,12 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     }
 
     [Fact]
+    public override Task CanGetAsync()
+    {
+        return base.CanGetAsync();
+    }
+
+    [Fact]
     public override Task CanTryGetAsync()
     {
         return base.CanTryGetAsync();
@@ -120,6 +126,12 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     }
 
     [Fact]
+    public override Task CanSetMinMaxExpirationAsync()
+    {
+        return base.CanSetMinMaxExpirationAsync();
+    }
+
+    [Fact]
     public override Task CanIncrementAsync()
     {
         return base.CanIncrementAsync();
@@ -129,6 +141,18 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     public override Task CanIncrementAndExpireAsync()
     {
         return base.CanIncrementAndExpireAsync();
+    }
+
+    [Fact]
+    public override Task CanReplaceIfEqual()
+    {
+        return base.CanReplaceIfEqual();
+    }
+
+    [Fact]
+    public override Task CanRemoveIfEqual()
+    {
+        return base.CanRemoveIfEqual();
     }
 
     [Fact]
@@ -189,6 +213,24 @@ public class HybridCacheClientTests : CacheClientTestsBase, IDisposable
     public override Task CanManageListRemoveExpirationAsync()
     {
         return base.CanManageListRemoveExpirationAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureThroughputAsync()
+    {
+        return base.MeasureThroughputAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureSerializerSimpleThroughputAsync()
+    {
+        return base.MeasureSerializerSimpleThroughputAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureSerializerComplexThroughputAsync()
+    {
+        return base.MeasureSerializerComplexThroughputAsync();
     }
 
     [Fact]
