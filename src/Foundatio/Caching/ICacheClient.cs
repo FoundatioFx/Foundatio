@@ -26,7 +26,7 @@ public interface ICacheClient : IDisposable
     Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null);
     Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null);
     Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null);
-    Task<long> ListAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null);
-    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiresIn = null);
+    Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
+    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
     Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100);
 }
