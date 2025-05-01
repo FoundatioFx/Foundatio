@@ -123,6 +123,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task CanSetMinMaxExpirationAsync()
+    {
+        return base.CanSetMinMaxExpirationAsync();
+    }
+
+    [Fact]
     public override Task CanIncrementAsync()
     {
         return base.CanIncrementAsync();
@@ -135,9 +141,9 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public override Task CanGetAndSetDateTimeAsync()
+    public override Task CanReplaceIfEqual()
     {
-        return base.CanGetAndSetDateTimeAsync();
+        return base.CanReplaceIfEqual();
     }
 
     [Fact]
@@ -147,9 +153,9 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public override Task CanReplaceIfEqual()
+    public override Task CanGetAndSetDateTimeAsync()
     {
-        return base.CanReplaceIfEqual();
+        return base.CanGetAndSetDateTimeAsync();
     }
 
     [Fact]
@@ -168,6 +174,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     public override Task CanManageListsAsync()
     {
         return base.CanManageListsAsync();
+    }
+
+    [Fact]
+    public override Task CanManageListsWithNullItemsAsync()
+    {
+        return base.CanManageListsWithNullItemsAsync();
     }
 
     [Fact]
@@ -198,6 +210,24 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     public override Task CanManageListRemoveExpirationAsync()
     {
         return base.CanManageListRemoveExpirationAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureThroughputAsync()
+    {
+        return base.MeasureThroughputAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureSerializerSimpleThroughputAsync()
+    {
+        return base.MeasureSerializerSimpleThroughputAsync();
+    }
+
+    [Fact(Skip = "Performance Test")]
+    public override Task MeasureSerializerComplexThroughputAsync()
+    {
+        return base.MeasureSerializerComplexThroughputAsync();
     }
 
     [Fact]
@@ -241,24 +271,6 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
             listItems = await cache.GetListAsync<string>(key);
             Assert.Equal(items.Count - 1, listItems.Value.Count);
         }
-    }
-
-    [Fact(Skip = "Performance Test")]
-    public override Task MeasureThroughputAsync()
-    {
-        return base.MeasureThroughputAsync();
-    }
-
-    [Fact(Skip = "Performance Test")]
-    public override Task MeasureSerializerSimpleThroughputAsync()
-    {
-        return base.MeasureSerializerSimpleThroughputAsync();
-    }
-
-    [Fact(Skip = "Performance Test")]
-    public override Task MeasureSerializerComplexThroughputAsync()
-    {
-        return base.MeasureSerializerComplexThroughputAsync();
     }
 
     public Task InitializeAsync()
