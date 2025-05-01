@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -46,8 +46,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     protected override Task RemoveTopicSubscriptionAsync()
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("RemoveTopicSubscriptionAsync");
+        _logger.LogTrace("RemoveTopicSubscriptionAsync");
 
         return CloseSubscriberConnectionAsync();
     }
@@ -84,8 +83,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             consumer.ShutdownAsync += OnConsumerShutdownAsync;
 
             await _subscriberChannel.BasicConsumeAsync(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, consumer, cancellationToken: cancellationToken).AnyContext();
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
+            _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
         }
     }
 
@@ -97,13 +95,11 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private async Task OnMessageAsync(object sender, BasicDeliverEventArgs envelope)
     {
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
+        _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
 
         if (_subscribers.IsEmpty)
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties?.MessageId);
+            _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties?.MessageId);
 
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
@@ -188,8 +184,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 await CreateRegularExchangeAsync(_publisherChannel).AnyContext();
             }
 
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
+            _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
         }
     }
 
@@ -212,8 +207,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         if (!_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             var mappedType = GetMappedMessageType(messageType);
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
 
             await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
             return;
@@ -246,17 +240,17 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             // and the data will be delivered immediately.
             basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds) } };
 
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
         }
         else
         {
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
+            _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
         }
 
         using (await _lock.LockAsync().AnyContext())
             await _publisherChannel.BasicPublishAsync<BasicProperties>(_options.Topic, String.Empty, mandatory: false, basicProperties, data, cancellationToken: cancellationToken).AnyContext();
 
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
+        _logger.LogTrace("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
     }
 
     /// <summary>
@@ -364,8 +358,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         using (_lock.Lock())
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("ClosePublisherConnection");
+            _logger.LogTrace("ClosePublisherConnection");
 
             if (_publisherChannel != null)
             {
@@ -388,8 +381,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         using (await _lock.LockAsync().AnyContext())
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("ClosePublisherConnectionAsync");
+            _logger.LogTrace("ClosePublisherConnectionAsync");
 
             if (_publisherChannel != null)
             {
@@ -412,8 +404,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         using (_lock.Lock())
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("CloseSubscriberConnection");
+            _logger.LogTrace("CloseSubscriberConnection");
 
             if (_subscriberChannel != null)
             {
@@ -436,8 +427,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         using (await _lock.LockAsync().AnyContext())
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("CloseSubscriberConnectionAsync");
+            _logger.LogTrace("CloseSubscriberConnectionAsync");
 
             if (_subscriberChannel != null)
             {
