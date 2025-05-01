@@ -22,7 +22,7 @@ public class AzureStorageQueueTests : QueueTestBase
         if (String.IsNullOrEmpty(connectionString))
             return null;
 
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue Id: {Name}", _queueName);
+        _logger.LogDebug("Queue Id: {Name}", _queueName);
         return new AzureStorageQueue<SimpleWorkItem>(o => o
             .ConnectionString(connectionString)
             .Name(_queueName)
