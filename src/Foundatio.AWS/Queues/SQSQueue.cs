@@ -152,8 +152,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         // receive message local function
         Task<ReceiveMessageResponse> ReceiveMessageAsync()
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-                _logger.LogTrace("Checking for SQS message... IsCancellationRequested={IsCancellationRequested} VisibilityTimeout={VisibilityTimeout} WaitTimeSeconds={WaitTimeSeconds}", linkedCancellationToken.IsCancellationRequested, visibilityTimeout, waitTimeout);
+            _logger.LogTrace("Checking for SQS message... IsCancellationRequested={IsCancellationRequested} VisibilityTimeout={VisibilityTimeout} WaitTimeSeconds={WaitTimeSeconds}", linkedCancellationToken.IsCancellationRequested, visibilityTimeout, waitTimeout);
 
             // The aws sdk will not abort a http long pull operation when the cancellation token is cancelled.
             // The aws sdk will throw the OperationCanceledException after the long poll http call is returned and
@@ -189,8 +188,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         Interlocked.Increment(ref _dequeuedCount);
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Received message {MessageId} IsCancellationRequested={IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
+        _logger.LogTrace("Received message {MessageId} IsCancellationRequested={IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
 
         var message = response.Messages.First();
         string body = message.Body;
@@ -204,7 +202,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
     public override async Task RenewLockAsync(IQueueEntry<T> queueEntry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, queueEntry.Id);
+        _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, queueEntry.Id);
 
         var entry = ToQueueEntry(queueEntry);
         int visibilityTimeout = (int)Math.Round(_options.WorkItemTimeout.TotalSeconds, MidpointRounding.AwayFromZero);
@@ -218,13 +216,12 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
 
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Renew lock done: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", queueEntry.Id, entry.UnderlyingMessage.MessageId, visibilityTimeout);
+        _logger.LogTrace("Renew lock done: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", queueEntry.Id, entry.UnderlyingMessage.MessageId, visibilityTimeout);
     }
 
     public override async Task CompleteAsync(IQueueEntry<T> queueEntry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, queueEntry.Id);
+        _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, queueEntry.Id);
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
@@ -240,13 +237,12 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         Interlocked.Increment(ref _completedCount);
         queueEntry.MarkCompleted();
         await OnCompletedAsync(queueEntry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {QueueEntryId}", queueEntry.Id);
+        _logger.LogTrace("Complete done: {QueueEntryId}", queueEntry.Id);
     }
 
     public override async Task AbandonAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug))
-            _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {QueueEntryId}", _options.Name, QueueId, entry.Id);
+        _logger.LogDebug("Queue {QueueName}:{QueueId} abandon item: {QueueEntryId}", _options.Name, QueueId, entry.Id);
 
         if (entry.IsAbandoned || entry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
@@ -263,15 +259,13 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         };
 
         await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", sqsQueueEntry.Id, sqsQueueEntry.UnderlyingMessage.MessageId, visibilityTimeout);
+        _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", sqsQueueEntry.Id, sqsQueueEntry.UnderlyingMessage.MessageId, visibilityTimeout);
 
         Interlocked.Increment(ref _abandonedCount);
         entry.MarkAbandoned();
 
         await OnAbandonedAsync(sqsQueueEntry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace))
-            _logger.LogTrace("Abandon complete: {QueueEntryId}", entry.Id);
+        _logger.LogTrace("Abandon complete: {QueueEntryId}", entry.Id);
     }
 
     protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken)
@@ -380,12 +374,11 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         Task.Run(async () =>
         {
-            bool isTraceLevelLogging = _logger.IsEnabled(LogLevel.Trace);
-            if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
+            _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
             while (!linkedCancellationToken.IsCancellationRequested)
             {
-                if (isTraceLevelLogging) _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
+                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> entry = null;
                 try
@@ -406,14 +399,14 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
                 catch (Exception ex)
                 {
                     Interlocked.Increment(ref _workerErrorCount);
-                    if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                    _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
                     if (!entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
                         await entry.AbandonAsync().AnyContext();
                 }
             }
 
-            if (isTraceLevelLogging) _logger.LogTrace("Worker exiting: {QueueName} IsCancellationRequested={IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
+            _logger.LogTrace("Worker exiting: {QueueName} IsCancellationRequested={IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
         }, linkedCancellationToken.Token).ContinueWith(_ => linkedCancellationToken.Dispose());
     }
 
@@ -460,7 +453,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         var deadAttributeRequest = new GetQueueAttributesRequest(_deadUrl, attributeNames);
         var deadAttributeResponse = await _client.Value.GetQueueAttributesAsync(deadAttributeRequest).AnyContext();
 
-        var maxReceiveCount = Math.Max(_options.Retries + 1, 1);
+        int maxReceiveCount = Math.Max(_options.Retries + 1, 1);
         // step 4, set retry policy
         var redrivePolicy = new JsonData
         {
