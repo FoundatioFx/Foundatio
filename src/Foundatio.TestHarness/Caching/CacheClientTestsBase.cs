@@ -861,9 +861,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(String.Empty, 1));
-
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(key, null as List<int>));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(String.Empty, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(key, null as List<int>));
 
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
@@ -906,6 +907,33 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 await cache.AddAsync("key1", 1);
                 await cache.ListAddAsync("key1", 1);
             });
+        }
+    }
+
+    public virtual async Task CanManageListsWithNullItemsAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:null-values";
+
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(key, null as List<string>));
+            Assert.Equal(0, await cache.ListAddAsync<string>(key, [null]));
+            Assert.Equal(1, await cache.ListAddAsync(key, ["1", null]));
+            var result = await cache.GetListAsync<string>(key);
+            Assert.NotNull(result);
+            Assert.Single(result.Value);
+
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(key, null as List<string>));
+            Assert.Equal(0, await cache.ListRemoveAsync<string>(key, [null]));
+            Assert.Equal(1, await cache.ListRemoveAsync(key, ["1", null]));
+            result = await cache.GetListAsync<string>(key);
+            Assert.NotNull(result);
+            Assert.Empty(result.Value);
         }
     }
 

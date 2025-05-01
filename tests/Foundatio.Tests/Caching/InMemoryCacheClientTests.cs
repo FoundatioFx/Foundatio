@@ -170,6 +170,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanManageListsWithNullItemsAsync()
+    {
+        return base.CanManageListsWithNullItemsAsync();
+    }
+
+    [Fact]
     public override Task CanManageStringListsAsync()
     {
         return base.CanManageStringListsAsync();

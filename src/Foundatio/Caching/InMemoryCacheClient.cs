@@ -534,7 +534,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else
         {
-            var items = new HashSet<T>(values).ToDictionary(k => k, _ => expiresAt);
+            var items = new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k, _ => expiresAt);
             if (items.Count == 0)
                 return 0;
 
@@ -608,7 +608,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else
         {
-            var items = new HashSet<T>(values);
+            var items = new HashSet<T>(values.Where(v => v is not null));
             if (items.Count == 0)
                 return Task.FromResult<long>(0);
 
