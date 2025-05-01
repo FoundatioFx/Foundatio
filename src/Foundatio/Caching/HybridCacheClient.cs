@@ -97,8 +97,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
-        bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
-        await _localCache.RemoveAsync(key).AnyContext();
+        bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
+        await _localCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return removed;
     }
@@ -192,8 +192,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
-        await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
-        bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
+        await _localCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
+        bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return replaced;
     }
