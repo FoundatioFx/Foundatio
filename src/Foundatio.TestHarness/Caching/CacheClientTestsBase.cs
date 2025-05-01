@@ -607,18 +607,59 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             var expires = DateTime.MaxValue - now.AddDays(1);
             Assert.True(await cache.SetAsync("test1", 1, expires));
-            Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
-            Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
-            Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
-
             Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
-            Assert.InRange((await cache.GetExpirationAsync("test1")).Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
+            var actualExpiration = await cache.GetExpirationAsync("test1");
+            Assert.NotNull(actualExpiration);
+            Assert.InRange(actualExpiration.Value, expires.Subtract(TimeSpan.FromSeconds(10)), expires);
 
+            // MinValue expires items.
+            Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
             Assert.False(await cache.ExistsAsync("test2"));
+
+            // MaxValue never expires.
+            Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
             Assert.Equal(1, (await cache.GetAsync<int>("test3")).Value);
-            Assert.False((await cache.GetExpirationAsync("test3")).HasValue);
+            actualExpiration = await cache.GetExpirationAsync("test3");
+            Assert.NotNull(actualExpiration);
+
+            // Really high expiration value.
+            Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
             Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
-            Assert.False((await cache.GetExpirationAsync("test4")).HasValue);
+            actualExpiration = await cache.GetExpirationAsync("test4");
+            Assert.NotNull(actualExpiration);
+
+            // No Expiration
+            Assert.True(await cache.SetAsync("test5", 1));
+            Assert.Null(await cache.GetExpirationAsync("test5"));
+
+            // Expire in an hour.
+            var expiration = now.AddHours(1);
+            await cache.SetExpirationAsync("test5", expiration);
+            actualExpiration = await cache.GetExpirationAsync("test5");
+            Assert.NotNull(actualExpiration);
+            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - now);
+
+            // Change expiration to MaxValue.
+            await cache.SetExpirationAsync("test5", DateTime.MaxValue);
+            Assert.NotNull(actualExpiration);
+
+            // Change expiration to MinValue.
+            await cache.SetExpirationAsync("test5", DateTime.MinValue);
+            Assert.Null(await cache.GetExpirationAsync("test5"));
+            Assert.False(await cache.ExistsAsync("test5"));
+
+            // Ensure keys are not added as they are already expired
+            Assert.Equal(0, await cache.SetAllAsync(new Dictionary<string, object>
+            {
+                { "test6", 1 },
+                { "test7", 1 },
+                { "test8", 1 }
+            }, DateTime.MinValue));
+
+            // Expire time right now
+            Assert.False(await cache.SetAsync("test9", 1, now));
+            Assert.False(await cache.ExistsAsync("test9"));
+            Assert.Null(await cache.GetExpirationAsync("test9"));
         }
     }
 

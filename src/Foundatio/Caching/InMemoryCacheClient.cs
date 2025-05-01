@@ -287,7 +287,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), true);
     }
 
@@ -296,7 +296,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone));
     }
 
@@ -305,7 +305,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
@@ -314,7 +314,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -353,7 +353,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
@@ -362,7 +362,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         long difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -401,7 +401,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
@@ -410,7 +410,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -449,14 +449,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
         }
 
         long difference = value;
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -499,7 +499,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             throw new ArgumentNullException(nameof(values));
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
         if (expiresAt < utcNow)
         {
             await ListRemoveAsync(key, values).AnyContext();
@@ -510,7 +510,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (values is string stringValue)
         {
-            var items = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase)
+            var items = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
             {
                 { stringValue, expiresAt }
             };
@@ -518,14 +518,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not IDictionary<string, DateTime> dictionary)
+                if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
 
                 ExpireListValues(dictionary, existingKey);
 
                 dictionary[stringValue] = expiresAt;
                 existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Max();
+                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+
                 return existingEntry;
             });
 
@@ -541,7 +542,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             var entry = new CacheEntry(items, expiresAt, _timeProvider, _shouldClone);
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is not IDictionary<T, DateTime> dictionary)
+                if (existingEntry.Value is not IDictionary<T, DateTime?> dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
                 ExpireListValues(dictionary, existingKey);
@@ -550,7 +551,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     dictionary[kvp.Key] = kvp.Value;
 
                 existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Max();
+                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
                 return existingEntry;
             });
 
@@ -559,7 +560,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    private int ExpireListValues<T>(IDictionary<T, DateTime> dictionary, string existingKey)
+    private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey)
     {
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiredValueKeys = dictionary.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray();
@@ -586,9 +587,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             var items = new HashSet<string>([stringValue]);
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is IDictionary<string, DateTime> { Count: > 0 } dictionary)
+                if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
                 {
-                    ExpireListValues(dictionary, existingKey);
+                    int expired = ExpireListValues(dictionary, existingKey);
 
                     foreach (string value in items)
                     {
@@ -596,11 +597,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                             Interlocked.Increment(ref removed);
                     }
 
-                    existingEntry.Value = dictionary;
-                    existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
+                    if (expired > 0 || removed > 0)
+                    {
+                        existingEntry.Value = dictionary;
+                        if (dictionary.Count > 0)
+                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                        else
+                            existingEntry.ExpiresAt = DateTime.MinValue;
+                    }
                 }
 
-                _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+                if (removed > 0)
+                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+
                 return existingEntry;
             });
 
@@ -614,9 +623,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             _memory.TryUpdate(key, (existingKey, existingEntry) =>
             {
-                if (existingEntry.Value is IDictionary<T, DateTime> { Count: > 0 } dictionary)
+                if (existingEntry.Value is IDictionary<T, DateTime?> { Count: > 0 } dictionary)
                 {
-                    ExpireListValues(dictionary, existingKey);
+                    int expired = ExpireListValues(dictionary, existingKey);
 
                     foreach (var value in items)
                     {
@@ -624,11 +633,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                             Interlocked.Increment(ref removed);
                     }
 
-                    existingEntry.Value = dictionary;
-                    existingEntry.ExpiresAt = dictionary.Count > 0 ? dictionary.Values.Max() : DateTime.MinValue;
+                    if (expired > 0 || removed > 0)
+                    {
+                        existingEntry.Value = dictionary;
+                        if (dictionary.Count > 0)
+                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                        else
+                            existingEntry.ExpiresAt = DateTime.MinValue;
+                    }
                 }
 
-                _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+                if (removed > 0)
+                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+
                 return existingEntry;
             });
 
@@ -644,13 +661,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 
-        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime>>(key);
+        var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key);
         if (!dictionaryCacheValue.HasValue)
             return new CacheValue<ICollection<T>>([], false);
 
         // Filter out expired keys instead of mutating them via ExpireListValues.
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
+        var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value is null || kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
         if (nonExpiredKeys.Length is 0)
             return new CacheValue<ICollection<T>>([], false);
 
@@ -713,6 +730,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values == null || values.Count == 0)
             return 0;
 
+        if (expiresIn?.Ticks <= 0)
+        {
+            foreach (string key in values.Keys)
+                RemoveExpiredKey(key);
+
+            return 0;
+        }
+
         int limit = Math.Min(_maxItems.GetValueOrDefault(values.Count), values.Count);
         if (_maxItems.HasValue && values.Count > _maxItems)
         {
@@ -721,6 +746,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 values.Count, _maxItems, limit);
         }
 
+
         // NOTE: Would be great to target Parallel.ForEachAsync but we need .NET 6+;
 
         // Use the whole dictionary when possible, otherwise copy just the slice we need.
@@ -728,6 +754,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             ? (IReadOnlyDictionary<string, T>)values
             : values.Skip(values.Count - limit).ToDictionary(kv => kv.Key, kv => kv.Value);
 
+        int count = 0;
         const int batchSize = 1_024;
 
         // Local function satisfies the ValueTask-returning delegate
@@ -736,12 +763,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             for (int i = 0; i < slice.Span.Length; i++)
             {
                 var pair = slice.Span[i];
-                await SetAsync(pair.Key, pair.Value, expiresIn).AnyContext();
+                if (await SetAsync(pair.Key, pair.Value, expiresIn).AnyContext())
+                    Interlocked.Increment(ref count);
             }
         }
 
         await work.BatchAsync(batchSize, ProcessSliceAsync).AnyContext();
-        return values.Count;
+        return count;
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -764,7 +792,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         bool wasExpectedValue = false;
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
@@ -794,7 +822,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
@@ -802,7 +830,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             double? currentValue = null;
@@ -836,7 +864,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
             return -1;
@@ -844,7 +872,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, _shouldClone), (_, existingEntry) =>
         {
             long? currentValue = null;
@@ -905,14 +933,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult<TimeSpan?>(null);
         }
 
-        if (existingEntry.IsExpired || existingEntry.ExpiresAt == DateTime.MaxValue)
+        if (existingEntry.IsExpired)
         {
             Interlocked.Increment(ref _misses);
             return Task.FromResult<TimeSpan?>(null);
         }
 
         Interlocked.Increment(ref _hits);
-        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt?.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
@@ -1009,6 +1037,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     continue;
 
                 var expiresAt = kvp.Value.ExpiresAt;
+                if (!expiresAt.HasValue)
+                    continue;
+
                 if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
                 {
                     _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
@@ -1041,7 +1072,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private long _usageCount;
 #endif
 
-        public CacheEntry(object value, DateTime expiresAt, TimeProvider timeProvider, bool shouldClone = true)
+        public CacheEntry(object value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true)
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
@@ -1052,8 +1083,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         internal long InstanceNumber { get; private set; }
-        internal DateTime ExpiresAt { get; set; }
-        internal bool IsExpired => ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+        internal DateTime? ExpiresAt { get; set; }
+        internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
 #if DEBUG
