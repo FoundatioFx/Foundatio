@@ -59,7 +59,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         var expectedValue = expected.ToRedisValue(_options.Serializer);
         var redisResult = await Database.ScriptEvaluateAsync(_removeIfEqual, new { key = (RedisKey)key, expected = expectedValue }).AnyContext();
-        var result = (int)redisResult;
+        int result = (int)redisResult;
 
         return result > 0;
     }
@@ -295,25 +295,18 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
     }
 
-    public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
-        {
-            _logger.LogTrace("Removing expired key: {Key}", key);
-            await RemoveAsync(key).AnyContext();
-            return false;
-        }
-
-        return await InternalSetAsync(key, value, expiresIn, When.NotExists).AnyContext();
+        return InternalSetAsync(key, value, expiresIn, When.NotExists);
     }
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         if (values == null)
             throw new ArgumentNullException(nameof(values));
@@ -334,7 +327,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
         else
         {
-            var valuesArray = values.ToArray();
+            var valuesArray = values.Where(v => v is not null).ToArray();
             foreach (var value in valuesArray)
                 redisValues.Add(new SortedSetEntry(value.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
         }
@@ -354,7 +347,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         if (values == null)
             throw new ArgumentNullException(nameof(values));
@@ -363,7 +356,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (values is string stringValue)
             redisValues.Add(stringValue.ToRedisValue(_options.Serializer));
         else
-            foreach (var value in values)
+            foreach (var value in values.Where(v => v is not null))
                 redisValues.Add(value.ToRedisValue(_options.Serializer));
 
         await ExpireListValuesAsync<T>(key, values is string).AnyContext();
@@ -377,7 +370,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         return removed;
     }
-
 
     private async Task ExpireListKeyExpirationAsync(string key)
     {
@@ -437,7 +429,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return InternalSetAsync(key, value, expiresIn);
     }
@@ -445,7 +437,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
@@ -464,7 +456,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
@@ -483,7 +475,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
@@ -502,7 +494,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
@@ -518,16 +510,30 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
     }
 
-    private Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
+    private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
     {
+        if (expiresIn?.Ticks <= 0)
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return false;
+        }
+
         var redisValue = value.ToRedisValue(_options.Serializer);
-        return Database.StringSetAsync(key, redisValue, expiresIn, when, flags);
+        return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
     }
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         if (values == null || values.Count == 0)
             return 0;
+
+        if (expiresIn?.Ticks <= 0)
+        {
+            _logger.LogTrace("Removing expired keys: {Keys}", values.Keys);
+            await RemoveAllAsync(values.Keys).AnyContext();
+            return 0;
+        }
 
         var tasks = new List<Task<bool>>();
         foreach (var pair in values)
@@ -540,7 +546,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return InternalSetAsync(key, value, expiresIn, When.Exists);
     }
@@ -548,15 +554,17 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         await LoadScriptsAsync().AnyContext();
 
         var redisValue = value.ToRedisValue(_options.Serializer);
         var expectedValue = expected.ToRedisValue(_options.Serializer);
         RedisResult redisResult;
+
+        // NOTE: If the expires is negative, we need to set it to 1ms to avoid an exception. We could look into replacing the operation to PEXPIRE
         if (expiresIn.HasValue)
-            redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
+            redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = Math.Max((int)expiresIn.Value.TotalMilliseconds, 1) }).AnyContext();
         else
             redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = "" }).AnyContext();
 
@@ -568,14 +576,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<double> IncrementAsync(string key, double amount = 1, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
-
-        if (expiresIn?.Ticks < 0)
-        {
-            _logger.LogTrace("Removing expired key: {Key}", key);
-            await RemoveAsync(key).AnyContext();
-            return -1;
-        }
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         if (expiresIn.HasValue)
         {
@@ -590,9 +591,9 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<long> IncrementAsync(string key, long amount = 1, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        if (expiresIn?.Ticks < 0)
+        if (expiresIn?.Ticks <= 0)
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
@@ -612,7 +613,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task<bool> ExistsAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return Database.KeyExistsAsync(key);
     }
@@ -620,7 +621,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return Database.KeyTimeToLiveAsync(key);
     }
@@ -628,10 +629,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty.");
-
-        if (expiresIn.Ticks < 0)
-            return RemoveAsync(key);
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return Database.KeyExpireAsync(key, expiresIn);
     }
