@@ -81,7 +81,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 return;
 
             _logger.LogTrace("Starting maintenance for {QueueName}", _options.Name);
-            _maintenanceTask = Task.Run(() => DoMaintenanceWorkLoopAsync());
+            _maintenanceTask = Task.Run(DoMaintenanceWorkLoopAsync);
         }
     }
 
@@ -460,17 +460,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
         }
 
-        await Run.WithRetriesAsync(() =>
-            Database.KeyDeleteAsync([
-                    GetPayloadKey(entry.Id),
-                GetAttemptsKey(entry.Id),
-                GetEnqueuedTimeKey(entry.Id),
-                GetDequeuedTimeKey(entry.Id),
-                GetRenewedTimeKey(entry.Id),
-                GetWaitTimeKey(entry.Id)
-                ]
-            ), logger: _logger).AnyContext();
-
+        await Run.WithRetriesAsync(() => DeleteIdKeysAsync(entry.Id), logger: _logger).AnyContext();
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
         await OnCompletedAsync(entry).AnyContext();
@@ -599,38 +589,41 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private async Task DeleteListAsync(string name)
     {
         var itemIds = await Database.ListRangeAsync(name).AnyContext();
+
         var tasks = new List<Task>(itemIds.Length + 1);
         foreach (var id in itemIds)
-        {
-            tasks.Add(Database.KeyDeleteAsync([
-                GetPayloadKey(id),
-                GetAttemptsKey(id),
-                GetEnqueuedTimeKey(id),
-                GetDequeuedTimeKey(id),
-                GetRenewedTimeKey(id),
-                GetWaitTimeKey(id)
-            ]));
-        }
+            tasks.Add(DeleteIdKeysAsync(id));
 
         tasks.Add(Database.KeyDeleteAsync(name));
         await Task.WhenAll(tasks).AnyContext();
     }
 
+    private Task DeleteIdKeysAsync(string id)
+    {
+        if (String.IsNullOrEmpty(id))
+            throw new ArgumentNullException(nameof(id));
+
+        return Database.KeyDeleteAsync([
+            GetPayloadKey(id),
+            GetAttemptsKey(id),
+            GetEnqueuedTimeKey(id),
+            GetDequeuedTimeKey(id),
+            GetRenewedTimeKey(id),
+            GetWaitTimeKey(id)
+        ]);
+    }
+
     private async Task TrimDeadletterItemsAsync(int maxItems)
     {
         var itemIds = (await Database.ListRangeAsync(_deadListName).AnyContext()).Skip(maxItems).ToArray();
+        if (itemIds.Length == 0)
+            return;
+
         var tasks = new List<Task>(itemIds.Length * 5);
         foreach (var id in itemIds)
         {
             tasks.AddRange([
-                Database.KeyDeleteAsync([
-                    GetPayloadKey(id),
-                    GetAttemptsKey(id),
-                    GetEnqueuedTimeKey(id),
-                    GetDequeuedTimeKey(id),
-                    GetRenewedTimeKey(id),
-                    GetWaitTimeKey(id)
-                ]),
+                DeleteIdKeysAsync(id),
                 Database.ListRemoveAsync(_queueListName, id),
                 Database.ListRemoveAsync(_workListName, id),
                 Database.ListRemoveAsync(_waitListName, id),
@@ -659,7 +652,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
             return;
 
-        _logger.LogTrace("Starting DoMaintenance: Name: {QueueName} Id: {QueueId}", _options.Name, QueueId);
+        _logger.LogTrace("Starting DoMaintenance: {QueueName} ({QueueId})", _options.Name, QueueId);
         var utcNow = _timeProvider.GetUtcNow();
 
         try
@@ -749,20 +742,20 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             _logger.LogError(ex, "Error trimming deadletter items: {0}", ex.Message);
         }
 
-        _logger.LogTrace("Finished DoMaintenance: Name: {QueueName} Id: {QueueId} Duration: {Duration:g}", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
+        _logger.LogTrace("Finished DoMaintenance: {QueueName} ({QueueId}) Duration: {Duration:g}", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
     }
 
     private async Task DoMaintenanceWorkLoopAsync()
     {
         while (!_queueDisposedCancellationTokenSource.IsCancellationRequested)
         {
-            _logger.LogTrace("Requesting Maintenance Lock. Name: {QueueName} Id: {QueueId}", _options.Name, QueueId);
+            _logger.LogTrace("Requesting Maintenance Lock. {QueueName} ({QueueId})", _options.Name, QueueId);
 
             var utcNow = _timeProvider.GetUtcNow();
             using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
             bool gotLock = await _maintenanceLockProvider.TryUsingAsync($"{_options.Name}-maintenance", DoMaintenanceWorkAsync, cancellationToken: linkedCancellationToken.Token).AnyContext();
 
-            _logger.LogTrace("{Status} Maintenance Lock. Name: {QueueName} Id: {QueueId} Time To Acquire: {AcquireDuration:g}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
+            _logger.LogTrace("{Status} Maintenance Lock. {QueueName} ({QueueId}) Time To Acquire: {AcquireDuration:g}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
         }
     }
 
