@@ -124,28 +124,6 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             }, TaskContinuationOptions.OnlyOnRanToCompletion);
     }
 
-    protected override QueueStats GetMetricsQueueStats()
-    {
-        long queued = Database.ListLength(_queueListName);
-        long wait = Database.ListLength(_waitListName);
-        long working = Database.ListLength(_workListName);
-        long deadLetter = Database.ListLength(_deadListName);
-        _logger.LogTrace("Queue {QueueName} stats: Queued={Queued} Wait={Wait} Working={Working} Deadletter={Deadletter}", _options.Name, queued, wait, working, deadLetter);
-
-        return new QueueStats
-        {
-            Queued = queued + wait,
-            Working = working,
-            Deadletter = deadLetter,
-            Enqueued = _enqueuedCount,
-            Dequeued = _dequeuedCount,
-            Completed = _completedCount,
-            Abandoned = _abandonedCount,
-            Errors = _workerErrorCount,
-            Timeouts = _workItemTimeoutCount
-        };
-    }
-
     private readonly string _queueListName;
     private readonly string _workListName;
     private readonly string _waitListName;
