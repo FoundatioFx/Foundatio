@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -69,18 +69,27 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         {
             if (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
             {
-                return _queueStats is not null ? (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter) : (0, 0, 0);
+                if (_queueStats is not null)
+                {
+                    _logger.LogTrace("Using cached queue stats for {QueueName} ({QueueId})", _options.Name, QueueId);
+                    return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
+                }
+
+                _logger.LogTrace("Returning default queue stats for {QueueName} ({QueueId})", _options.Name, QueueId);
+                return (0, 0, 0);
             }
 
             _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsPollingInterval);
+            _logger.LogTrace("Getting metrics queue stats for {QueueName} ({QueueId}): Next update scheduled for {NextQueueStatsUpdate:O}", _options.Name, QueueId, _nextQueueStatsUpdate);
             try
             {
                 using var _ = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
                 _queueStats = GetMetricsQueueStats();
                 return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
             }
-            catch
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "Error getting queue metrics for {QueueName} ({QueueId}): {Message}", _options.Name, QueueId, ex.Message);
                 return (0, 0, 0);
             }
         }, _logger);
@@ -157,13 +166,14 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public async Task<QueueStats> GetQueueStatsAsync()
     {
-        _queueStats = await GetQueueStatsImplAsync();
+        _logger.LogTrace("Getting queue stats for {QueueName} ({QueueId})", _options.Name, QueueId);
+        _queueStats = await GetQueueStatsImplAsync().AnyContext();
         return _queueStats;
     }
 
     protected virtual QueueStats GetMetricsQueueStats()
     {
-        return GetQueueStatsAsync().GetAwaiter().GetResult();
+        return GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult();
     }
 
     public abstract Task DeleteQueueAsync();
