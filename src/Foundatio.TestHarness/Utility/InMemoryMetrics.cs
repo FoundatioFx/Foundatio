@@ -27,7 +27,10 @@ public class InMemoryMetrics : IDisposable
     private readonly AsyncAutoResetEvent _measurementEvent = new(false);
     private readonly ILogger _logger;
 
-    public InMemoryMetrics(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType) { }
+    public InMemoryMetrics(string metricNameOrPrefix, ILogger logger, int maxMeasurementCountPerType = 100000) : this(
+        n => n.StartsWith(metricNameOrPrefix), logger, maxMeasurementCountPerType)
+    {
+    }
 
     public InMemoryMetrics(Func<string, bool> shouldCollect, ILogger logger, int maxMeasurementCountPerType = 100000)
     {
@@ -102,6 +105,7 @@ public class InMemoryMetrics : IDisposable
 
     public void RecordObservableInstruments()
     {
+        _logger.LogTrace("Recording observable instruments");
         _meterListener.RecordObservableInstruments();
     }
 

@@ -352,7 +352,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     public override Task DeleteQueueAsync()
     {
-        _logger.LogTrace("Deleting queue: {QueueName}", _options.Name);
+        _logger.LogTrace("Deleting queue: {QueueName} ({QueueId})", _options.Name, QueueId);
 
         _queue.Clear();
         _deadletterQueue.Clear();

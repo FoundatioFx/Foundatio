@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -49,13 +49,15 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             {
                 ShouldListenTo = s => s.Name == FoundatioDiagnostics.ActivitySource.Name,
                 Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-                ActivityStarted = activity => _logger.LogInformation("Start: " + activity.DisplayName),
-                ActivityStopped = activity => _logger.LogInformation("Stop: " + activity.DisplayName)
+                ActivityStarted = activity => _logger.LogInformation("Start: {ActivityDisplayName}", activity.DisplayName),
+                ActivityStopped = activity => _logger.LogInformation("Stop: {ActivityDisplayName}", activity.DisplayName),
             };
 
             ActivitySource.AddActivityListener(listener);
 
             using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent");
+            Assert.NotNull(activity);
+            Assert.NotNull(Activity.Current);
             Assert.Equal(Activity.Current, activity);
 
             var countdown = new AsyncCountdownEvent(1);

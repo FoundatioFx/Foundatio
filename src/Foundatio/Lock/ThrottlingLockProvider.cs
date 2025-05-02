@@ -50,7 +50,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
             try
             {
                 _logger.LogTrace("Current time: {CurrentTime} throttle: {ThrottlingPeriod} key: {Key}", _timeProvider.GetUtcNow().ToString("mm:ss.fff"), _timeProvider.GetUtcNow().UtcDateTime.Floor(_throttlingPeriod).ToString("mm:ss.fff"), cacheKey);
-                var hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
+                long? hitCount = await _cacheClient.GetAsync<long?>(cacheKey, 0).AnyContext();
 
                 _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
@@ -64,11 +64,11 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
                         break;
                     }
 
-                    _logger.LogTrace("Max hits exceeded after increment for {Resource}.", resource);
+                    _logger.LogTrace("Max hits exceeded after increment for {Resource}", resource);
                 }
                 else
                 {
-                    _logger.LogTrace("Max hits exceeded for {Resource}.", resource);
+                    _logger.LogTrace("Max hits exceeded for {Resource}", resource);
                 }
 
                 if (cancellationToken.IsCancellationRequested)
