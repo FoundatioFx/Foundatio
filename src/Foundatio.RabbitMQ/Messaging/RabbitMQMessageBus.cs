@@ -47,7 +47,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     protected override Task RemoveTopicSubscriptionAsync()
     {
         _logger.LogTrace("RemoveTopicSubscriptionAsync");
-
         return CloseSubscriberConnectionAsync();
     }
 
@@ -77,6 +76,14 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 await CreateRegularExchangeAsync(_subscriberChannel).AnyContext();
             }
 
+            _subscriberConnection.CallbackExceptionAsync += OnSubscriberConnectionOnCallbackExceptionAsync;
+            _subscriberConnection.ConnectionBlockedAsync += OnSubscriberConnectionOnConnectionBlockedAsync;
+            _subscriberConnection.ConnectionRecoveryErrorAsync += OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
+            _subscriberConnection.ConnectionShutdownAsync += OnSubscriberConnectionOnConnectionShutdownAsync;
+            _subscriberConnection.ConnectionUnblockedAsync += OnSubscriberConnectionOnConnectionUnblockedAsync;
+            _subscriberConnection.RecoveringConsumerAsync += OnSubscriberConnectionOnRecoveringConsumerAsync;
+            _subscriberConnection.RecoverySucceededAsync += OnSubscriberConnectionOnRecoverySucceededAsync;
+
             string queueName = await CreateQueueAsync(_subscriberChannel).AnyContext();
             var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
             consumer.ReceivedAsync += OnMessageAsync;
@@ -87,9 +94,51 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         }
     }
 
+    private Task OnSubscriberConnectionOnCallbackExceptionAsync(object sender, CallbackExceptionEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Subscriber callback exception: {Message}", e.Exception.Message);
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnConnectionBlockedAsync(object sender, ConnectionBlockedEventArgs e)
+    {
+        _logger.LogError("Subscriber connection blocked: {Reason}", e.Reason);
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnConnectionRecoveryErrorAsync(object sender, ConnectionRecoveryErrorEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Subscriber connection recovery error: {Message}", e.Exception.Message);
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnConnectionShutdownAsync(object sender, ShutdownEventArgs e)
+    {
+        _logger.LogInformation(e.Exception, "Subscriber shutdown. Reply Code: {ReplyCode} Reason: {ReplyText} Initiator: {Initiator}", e.ReplyCode, e.ReplyText, e.Initiator);
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnConnectionUnblockedAsync(object sender, AsyncEventArgs e)
+    {
+        _logger.LogInformation("Subscriber connection unblocked");
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnRecoveringConsumerAsync(object sender, RecoveringConsumerEventArgs e)
+    {
+        _logger.LogInformation("Subscriber connection recovering: {ConsumerTag}", e.ConsumerTag);
+        return Task.CompletedTask;
+    }
+
+    private Task OnSubscriberConnectionOnRecoverySucceededAsync(object sender, AsyncEventArgs e)
+    {
+        _logger.LogInformation("Subscriber connection recovery succeeded");
+        return Task.CompletedTask;
+    }
+
     private Task OnConsumerShutdownAsync(object sender, ShutdownEventArgs e)
     {
-        _logger.LogInformation("Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText}", e.ReplyCode, e.ReplyText);
+        _logger.LogInformation(e.Exception, "Consumer shutdown. Reply Code: {ReplyCode} Reason: {ReplyText} Initiator: {Initiator}", e.ReplyCode, e.ReplyText, e.Initiator);
         return Task.CompletedTask;
     }
 
@@ -100,7 +149,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         if (_subscribers.IsEmpty)
         {
             _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties?.MessageId);
-
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
 
@@ -118,7 +166,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error handling message ({MessageId}): {Message}", envelope.BasicProperties?.MessageId, ex.Message);
-
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
         }
@@ -184,8 +231,58 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 await CreateRegularExchangeAsync(_publisherChannel).AnyContext();
             }
 
+            _publisherConnection.CallbackExceptionAsync += OnPublisherConnectionOnCallbackExceptionAsync;
+            _publisherConnection.ConnectionBlockedAsync += OnPublisherConnectionOnConnectionBlockedAsync;
+            _publisherConnection.ConnectionRecoveryErrorAsync += OnPublisherConnectionOnConnectionRecoveryErrorAsync;
+            _publisherConnection.ConnectionShutdownAsync += OnPublisherConnectionOnConnectionShutdownAsync;
+            _publisherConnection.ConnectionUnblockedAsync += OnPublisherConnectionOnConnectionUnblockedAsync;
+            _publisherConnection.RecoveringConsumerAsync += OnPublisherConnectionOnRecoveringConsumerAsync;
+            _publisherConnection.RecoverySucceededAsync += OnPublisherConnectionOnRecoverySucceededAsync;
+
             _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
         }
+    }
+
+    private Task OnPublisherConnectionOnCallbackExceptionAsync(object sender, CallbackExceptionEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Publisher callback exception: {Message}", e.Exception.Message);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnConnectionBlockedAsync(object sender, ConnectionBlockedEventArgs e)
+    {
+        _logger.LogError("Publisher connection blocked: {Reason}", e.Reason);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnConnectionRecoveryErrorAsync(object sender, ConnectionRecoveryErrorEventArgs e)
+    {
+        _logger.LogError(e.Exception, "Publisher connection recovery error: {Message}", e.Exception.Message);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnConnectionShutdownAsync(object sender, ShutdownEventArgs e)
+    {
+        _logger.LogInformation(e.Exception, "Publisher shutdown. Reply Code: {ReplyCode} Reason: {ReplyText} Initiator: {Initiator}", e.ReplyCode, e.ReplyText, e.Initiator);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnConnectionUnblockedAsync(object sender, AsyncEventArgs e)
+    {
+        _logger.LogInformation("Publisher connection unblocked");
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnRecoveringConsumerAsync(object sender, RecoveringConsumerEventArgs e)
+    {
+        _logger.LogInformation("Publisher connection recovering: {ConsumerTag}", e.ConsumerTag);
+        return Task.CompletedTask;
+    }
+
+    private Task OnPublisherConnectionOnRecoverySucceededAsync(object sender, AsyncEventArgs e)
+    {
+        _logger.LogInformation("Publisher connection recovery succeeded");
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -391,6 +488,13 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             if (_publisherConnection != null)
             {
+                _publisherConnection.CallbackExceptionAsync -= OnPublisherConnectionOnCallbackExceptionAsync;
+                _publisherConnection.ConnectionBlockedAsync -= OnPublisherConnectionOnConnectionBlockedAsync;
+                _publisherConnection.ConnectionRecoveryErrorAsync -= OnPublisherConnectionOnConnectionRecoveryErrorAsync;
+                _publisherConnection.ConnectionShutdownAsync -= OnPublisherConnectionOnConnectionShutdownAsync;
+                _publisherConnection.ConnectionUnblockedAsync -= OnPublisherConnectionOnConnectionUnblockedAsync;
+                _publisherConnection.RecoveringConsumerAsync -= OnPublisherConnectionOnRecoveringConsumerAsync;
+                _publisherConnection.RecoverySucceededAsync -= OnPublisherConnectionOnRecoverySucceededAsync;
                 await _publisherConnection.DisposeAsync().AnyContext();
                 _publisherConnection = null;
             }
@@ -414,6 +518,13 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             if (_subscriberConnection != null)
             {
+                _subscriberConnection.CallbackExceptionAsync -= OnSubscriberConnectionOnCallbackExceptionAsync;
+                _subscriberConnection.ConnectionBlockedAsync -= OnSubscriberConnectionOnConnectionBlockedAsync;
+                _subscriberConnection.ConnectionRecoveryErrorAsync -= OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
+                _subscriberConnection.ConnectionShutdownAsync -= OnSubscriberConnectionOnConnectionShutdownAsync;
+                _subscriberConnection.ConnectionUnblockedAsync -= OnSubscriberConnectionOnConnectionUnblockedAsync;
+                _subscriberConnection.RecoveringConsumerAsync -= OnSubscriberConnectionOnRecoveringConsumerAsync;
+                _subscriberConnection.RecoverySucceededAsync -= OnSubscriberConnectionOnRecoverySucceededAsync;
                 _subscriberConnection.Dispose();
                 _subscriberConnection = null;
             }
