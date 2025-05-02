@@ -133,8 +133,6 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         var queues = new List<IQueue<SampleQueueWorkItem>>();
         try
         {
-            using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
-
             for (int i = 0; i < jobCount; i++)
             {
                 var q = GetSampleWorkItemQueue(retries: 1, retryDelay: TimeSpan.Zero);
