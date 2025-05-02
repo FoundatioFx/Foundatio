@@ -100,7 +100,7 @@ public class InMemoryMetrics : IDisposable
 
         _meterListener.Start();
 
-        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(50));
+        _timer = new Timer(_ => RecordObservableInstruments(), null, TimeSpan.Zero, TimeSpan.FromMilliseconds(250));
     }
 
     public void RecordObservableInstruments()
