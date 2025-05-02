@@ -1,22 +1,20 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching;
 
-public class RedisCacheClientTests : CacheClientTestsBase
+public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
 {
     public RedisCacheClientTests(ITestOutputHelper output) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
     }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
@@ -85,6 +83,18 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanRemoveAllAsync()
+    {
+        return base.CanRemoveAllAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveAllKeysAsync()
+    {
+        return base.CanRemoveAllKeysAsync();
+    }
+
+    [Fact]
     public override Task CanRemoveByPrefixAsync()
     {
         return base.CanRemoveByPrefixAsync();
@@ -113,6 +123,12 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task CanSetMinMaxExpirationAsync()
+    {
+        return base.CanSetMinMaxExpirationAsync();
+    }
+
+    [Fact]
     public override Task CanIncrementAsync()
     {
         return base.CanIncrementAsync();
@@ -125,9 +141,9 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task CanGetAndSetDateTimeAsync()
+    public override Task CanReplaceIfEqual()
     {
-        return base.CanGetAndSetDateTimeAsync();
+        return base.CanReplaceIfEqual();
     }
 
     [Fact]
@@ -137,9 +153,9 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task CanReplaceIfEqual()
+    public override Task CanGetAndSetDateTimeAsync()
     {
-        return base.CanReplaceIfEqual();
+        return base.CanGetAndSetDateTimeAsync();
     }
 
     [Fact]
@@ -161,88 +177,39 @@ public class RedisCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task CanUpgradeListType()
+    public override Task CanManageListsWithNullItemsAsync()
     {
-        var db = SharedConnection.GetMuxer(Log).GetDatabase();
-        var cache = GetCacheClient();
-        if (cache == null)
-            return;
-
-        using (cache)
-        {
-            var items = new List<RedisValue>();
-            for (int i = 1; i < 20001; i++)
-                items.Add(Guid.NewGuid().ToString());
-
-            await cache.RemoveAllAsync();
-
-            await db.SetAddAsync("mylist", items.ToArray());
-            await cache.ListAddAsync("mylist", new[] { "newitem1", "newitem2" });
-            await cache.ListAddAsync("mylist", "newitem3");
-
-            var listItems = await cache.GetListAsync<string>("mylist");
-            Assert.Equal(items.Count + 3, listItems.Value.Count);
-
-            await cache.RemoveAllAsync();
-
-            await db.SetAddAsync("mylist", items.ToArray());
-            await cache.ListRemoveAsync("mylist", (string)items[10]);
-
-            listItems = await cache.GetListAsync<string>("mylist");
-            Assert.Equal(items.Count - 1, listItems.Value.Count);
-        }
+        return base.CanManageListsWithNullItemsAsync();
     }
 
     [Fact]
-    public async Task CanManageLargeListsAsync()
+    public override Task CanManageStringListsAsync()
     {
-        var cache = GetCacheClient();
-        if (cache == null)
-            return;
+        return base.CanManageStringListsAsync();
+    }
 
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
+    [Fact]
+    public override Task CanManageListPagingAsync()
+    {
+        return base.CanManageListPagingAsync();
+    }
 
-            var items = new List<string>();
-            // test paging through items in list
-            for (int i = 1; i < 20001; i++)
-                items.Add(Guid.NewGuid().ToString());
+    [Fact]
+    public override Task CanManageGetListExpirationAsync()
+    {
+        return base.CanManageGetListExpirationAsync();
+    }
 
-            foreach (var batch in Batch(items, 1000))
-                await cache.ListAddAsync("largelist", batch);
+    [Fact]
+    public override Task CanManageListAddExpirationAsync()
+    {
+        return base.CanManageListAddExpirationAsync();
+    }
 
-            var pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[1], items[2], items[3], items[4] });
-
-            pagedResult = await cache.GetListAsync<string>("largelist", 2, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[5], items[6], items[7], items[8], items[9] });
-
-            string newGuid1 = Guid.NewGuid().ToString();
-            string newGuid2 = Guid.NewGuid().ToString();
-            await cache.ListAddAsync("largelist", new[] { newGuid1, newGuid2 });
-
-            int page = (20000 / 5) + 1;
-            pagedResult = await cache.GetListAsync<string>("largelist", page, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(2, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { newGuid1, newGuid2 });
-
-            long result = await cache.ListAddAsync("largelist", Guid.NewGuid().ToString());
-            Assert.Equal(1, result);
-
-            result = await cache.ListRemoveAsync("largelist", items[1]);
-            Assert.Equal(1, result);
-
-            pagedResult = await cache.GetListAsync<string>("largelist", 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(pagedResult.Value.ToArray(), new[] { items[0], items[2], items[3], items[4], items[5] });
-        }
+    [Fact]
+    public override Task CanManageListRemoveExpirationAsync()
+    {
+        return base.CanManageListRemoveExpirationAsync();
     }
 
     [Fact(Skip = "Performance Test")]
@@ -263,22 +230,59 @@ public class RedisCacheClientTests : CacheClientTestsBase
         return base.MeasureSerializerComplexThroughputAsync();
     }
 
-    private IEnumerable<IEnumerable<TSource>> Batch<TSource>(IList<TSource> source, int size)
+    [Fact]
+    public async Task CanUpgradeListType()
     {
-        if (size <= 0) throw new ArgumentOutOfRangeException(nameof(size));
-        var enumerator = source.GetEnumerator();
-        for (int i = 0; i < source.Count; i += size)
+        var db = SharedConnection.GetMuxer(Log).GetDatabase();
+        var cache = GetCacheClient();
+        if (cache == null)
+            return;
+
+        using (cache)
         {
-            enumerator.MoveNext();
-            yield return GetChunk(i, Math.Min(i + size, source.Count));
+            var items = new List<RedisValue>();
+            for (int i = 1; i < 20001; i++)
+                items.Add(Guid.NewGuid().ToString());
+
+            await cache.RemoveAllAsync();
+            const string key = "list:upgrade";
+
+            // Assert Upgrade during GetListAsync
+            await db.SetAddAsync(key, items.ToArray());
+            var listItems = await cache.GetListAsync<string>(key);
+            Assert.Equal(items.Count, listItems.Value.Count);
+
+            // Assert Upgrade during ListAddAsync
+            await cache.RemoveAllAsync();
+
+            await db.SetAddAsync(key, items.ToArray());
+            await cache.ListAddAsync(key, ["newitem1", "newitem2"]);
+            await cache.ListAddAsync(key, "newitem3");
+
+            listItems = await cache.GetListAsync<string>(key);
+            Assert.Equal(items.Count + 3, listItems.Value.Count);
+
+            // Assert Upgrade during ListRemoveAsync
+            await cache.RemoveAllAsync();
+
+            await db.SetAddAsync(key, items.ToArray());
+            await cache.ListRemoveAsync(key, (string)items[10]);
+
+            listItems = await cache.GetListAsync<string>(key);
+            Assert.Equal(items.Count - 1, listItems.Value.Count);
         }
-        IEnumerable<TSource> GetChunk(int from, int toExclusive)
-        {
-            for (int j = from; j < toExclusive; j++)
-            {
-                enumerator.MoveNext();
-                yield return source[j];
-            }
-        }
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        return Task.CompletedTask;
     }
 }

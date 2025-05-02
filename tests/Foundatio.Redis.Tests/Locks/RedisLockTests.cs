@@ -1,19 +1,18 @@
-﻿using System;
-using System.Diagnostics;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
+using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Locks;
 
-public class RedisLockTests : LockTestBase, IDisposable
+public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 {
     private readonly ICacheClient _cache;
     private readonly IMessageBus _messageBus;
@@ -21,7 +20,6 @@ public class RedisLockTests : LockTestBase, IDisposable
     public RedisLockTests(ITestOutputHelper output) : base(output)
     {
         var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
         _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(Log));
     }
@@ -97,46 +95,29 @@ public class RedisLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public async Task LockWontTimeoutEarly()
+    public override Task LockWontTimeoutEarly()
     {
-        Log.SetLogLevel<InMemoryCacheClient>(LogLevel.Trace);
-        Log.SetLogLevel<CacheLockProvider>(LogLevel.Trace);
-        Log.SetLogLevel<ScheduledTimer>(LogLevel.Trace);
-
-        var locker = GetLockProvider();
-        if (locker == null)
-            return;
-
-        _logger.LogInformation("Acquiring lock #1");
-        var testLock = await locker.AcquireAsync("test", timeUntilExpires: TimeSpan.FromSeconds(1));
-        _logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
-        Assert.NotNull(testLock);
-
-        _logger.LogInformation("Acquiring lock #2");
-        var testLock2 = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(500));
-        Assert.Null(testLock2);
-
-        _logger.LogInformation("Renew lock #1");
-        await testLock.RenewAsync(timeUntilExpires: TimeSpan.FromSeconds(1));
-
-        _logger.LogInformation("Acquiring lock #3");
-        testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromMilliseconds(500));
-        Assert.Null(testLock);
-
-        var sw = Stopwatch.StartNew();
-        _logger.LogInformation("Acquiring lock #4");
-        testLock = await locker.AcquireAsync("test", acquireTimeout: TimeSpan.FromSeconds(5));
-        sw.Stop();
-        _logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #4");
-        Assert.NotNull(testLock);
-        Assert.True(sw.ElapsedMilliseconds > 400);
+        return base.LockWontTimeoutEarly();
     }
 
     public void Dispose()
     {
         _cache.Dispose();
         _messageBus.Dispose();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        Dispose();
+
+        return Task.CompletedTask;
     }
 }

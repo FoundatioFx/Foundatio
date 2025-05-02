@@ -1,18 +1,17 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Storage;
 
-public class RedisFileStorageTests : FileStorageTestsBase
+public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
 {
     public RedisFileStorageTests(ITestOutputHelper output) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
-        muxer.FlushAllAsync().GetAwaiter().GetResult();
     }
 
     protected override IFileStorage GetStorage()
@@ -144,5 +143,18 @@ public class RedisFileStorageTests : FileStorageTestsBase
     public override Task CanSaveOverExistingStoredContent()
     {
         return base.CanSaveOverExistingStoredContent();
+    }
+
+    public Task InitializeAsync()
+    {
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        return muxer.FlushAllAsync();
+    }
+
+    public Task DisposeAsync()
+    {
+        _logger.LogDebug("Disposing");
+        return Task.CompletedTask;
     }
 }

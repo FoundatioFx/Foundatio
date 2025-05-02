@@ -36,8 +36,7 @@ public class PingQueueJob : QueueJobBase<PingRequest>
     {
         Interlocked.Increment(ref _runCount);
 
-        if (_logger.IsEnabled(LogLevel.Information))
-            _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
+        _logger.LogInformation("Got {RunCount} ping. Sending pong!", RunCount.ToOrdinal());
         await Task.Delay(TimeSpan.FromMilliseconds(1)).AnyContext();
 
         if (RandomData.GetBool(context.QueueEntry.Value.PercentChanceOfException))

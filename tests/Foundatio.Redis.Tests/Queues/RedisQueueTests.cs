@@ -1,8 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
@@ -243,40 +242,40 @@ public class RedisQueueTests : QueueTestBase
             string listPrefix = muxer.IsCluster() ? "{q:SimpleWorkItem}" : "q:SimpleWorkItem";
 
             string id = await queue.EnqueueAsync(new SimpleWorkItem { Data = "blah", Id = 1 });
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
             Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
             Assert.Equal(3, await muxer.CountAllKeysAsync());
 
             _logger.LogInformation("-----");
 
-            Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
+            Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
             var workItem = await queue.DequeueAsync();
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
             Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
             Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
             Assert.Equal(5, await muxer.CountAllKeysAsync());
 
             await Task.Delay(TimeSpan.FromSeconds(4));
 
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
             Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
             Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
             Assert.Equal(5, await muxer.CountAllKeysAsync());
 
             _logger.LogInformation("-----");
 
             await workItem.CompleteAsync();
-            Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-            Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-            Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-            Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
+            Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}"));
+            Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+            Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+            Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
             Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
             Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
             Assert.Equal(0, await muxer.CountAllKeysAsync());
@@ -301,53 +300,54 @@ public class RedisQueueTests : QueueTestBase
             Data = "blah",
             Id = 1
         });
-        _logger.LogTrace("SimpleWorkItem Id: {0}", id);
+        _logger.LogTrace("SimpleWorkItem Id: {Id}", id);
 
         var workItem = await queue.DequeueAsync();
         await workItem.AbandonAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(1, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
         Assert.Equal(4, await muxer.CountAllKeysAsync());
 
         workItem = await queue.DequeueAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.NotNull(workItem);
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(1, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
         Assert.Equal(6, await muxer.CountAllKeysAsync());
 
         // let the work item timeout and become auto abandoned.
         timeProvider.Advance(TimeSpan.FromMilliseconds(250));
         await queue.DoMaintenanceWorkAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(2, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(2, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
         Assert.Equal(1, (await queue.GetQueueStatsAsync()).Timeouts);
         Assert.InRange(await muxer.CountAllKeysAsync(), 3, 4);
 
         // should go to deadletter now
         workItem = await queue.DequeueAsync();
         await workItem.AbandonAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:dead"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(3, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(3, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
         Assert.InRange(await muxer.CountAllKeysAsync(), 4, 5);
     }
 
@@ -371,44 +371,44 @@ public class RedisQueueTests : QueueTestBase
         });
         var workItem = await queue.DequeueAsync();
         await workItem.AbandonAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:wait"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(1, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:wait"));
         Assert.Equal(5, await muxer.CountAllKeysAsync());
 
         timeProvider.Advance(TimeSpan.FromSeconds(1));
         await queue.DoMaintenanceWorkAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:wait"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":wait"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(1, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:wait"));
         Assert.InRange(await muxer.CountAllKeysAsync(), 4, 5);
 
         workItem = await queue.DequeueAsync();
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(1, await db.ListLengthAsync($"{listPrefix}:work"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":renewed"));
-        Assert.Equal(1, await db.StringGetAsync("q:SimpleWorkItem:" + id + ":attempts"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:renewed"));
+        Assert.Equal(1, await db.StringGetAsync($"{listPrefix}:{id}:attempts"));
         Assert.InRange(await muxer.CountAllKeysAsync(), 6, 7);
 
         await workItem.CompleteAsync();
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":enqueued"));
-        Assert.False(await db.KeyExistsAsync("q:SimpleWorkItem:" + id + ":dequeued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:enqueued"));
+        Assert.False(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:work"));
         Assert.InRange(await muxer.CountAllKeysAsync(), 0, 1);
@@ -438,7 +438,7 @@ public class RedisQueueTests : QueueTestBase
         {
             var workItem = await queue.DequeueAsync();
             await workItem.AbandonAsync();
-            _logger.LogTrace("Abandoning: " + workItem.Id);
+            _logger.LogTrace("Abandoning: {Id}", workItem.Id);
         }
 
         workItemIds.Reverse();
@@ -446,8 +446,8 @@ public class RedisQueueTests : QueueTestBase
 
         foreach (object id in workItemIds.Take(3))
         {
-            _logger.LogTrace("Checking: " + id);
-            Assert.True(await db.KeyExistsAsync("q:SimpleWorkItem:" + id));
+            _logger.LogTrace("Checking: {Id}", id);
+            Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
         }
 
         Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
@@ -460,10 +460,9 @@ public class RedisQueueTests : QueueTestBase
     [Fact]
     public async Task VerifyFirstDequeueTimeout()
     {
-
         var workItemTimeout = TimeSpan.FromMilliseconds(100);
-        var itemData = "blah";
-        var itemId = 1;
+        string itemData = "blah";
+        int itemId = 1;
 
         var queue = GetQueue(retries: 0, workItemTimeout: workItemTimeout, retryDelay: TimeSpan.Zero, runQueueMaintenance: false) as RedisQueue<SimpleWorkItem>;
         if (queue == null)
@@ -486,6 +485,8 @@ public class RedisQueueTests : QueueTestBase
             Id = itemId
         });
 
+        Assert.NotNull(id);
+
         // Run DoMaintenanceWorkAsync to verify that our item will not be auto-abandoned.
         await queue.DoMaintenanceWorkAsync();
 
@@ -501,15 +502,16 @@ public class RedisQueueTests : QueueTestBase
 
     // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
     //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
-    [Fact]
-    public async Task DatabaseTimeoutDuringDequeueHandledCorectly_Issue64()
+    [RetryFact]
+    public async Task DatabaseTimeoutDuringDequeueHandledCorrectly()
     {
         // not using GetQueue() here because I need to change the ops timeout in the redis connection string
         const int OPS_TIMEOUT_MS = 100;
-        string connectionString = Configuration.GetConnectionString("RedisConnectionString") + $",syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}";
+        string connectionString =
+            $"{Configuration.GetConnectionString("RedisConnectionString")},syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}";
         var muxer = await ConnectionMultiplexer.ConnectAsync(connectionString);
 
-        const string QUEUE_NAME = "Test";
+        const string QUEUE_NAME = "test-timeout";
         var queue = new RedisQueue<SimpleWorkItem>(o => o
             .ConnectionMultiplexer(muxer)
             .LoggerFactory(Log)
@@ -517,17 +519,16 @@ public class RedisQueueTests : QueueTestBase
             .RunMaintenanceTasks(false)
         );
 
-        using RedisQueue<SimpleWorkItem> redisQueue = queue;
         await queue.DeleteQueueAsync();
 
         // enqueue item to queue, no reader yet
         await queue.EnqueueAsync(new SimpleWorkItem());
 
-        // create database, we want to cause delay in redis to reproduce the issue
+        // to create a database, we want to cause delay in redis to reproduce the issue
         var database = muxer.GetDatabase();
 
         // sync / async ops timeout is not working as described: https://stackexchange.github.io/StackExchange.Redis/Configuration
-        // it should have timed out after 100 ms but it actually takes a lot more time to time out so we have to use longer delay until this issue is resolved
+        // it should have timed out after 100 ms, but it actually takes a lot more time to time out so we have to use longer delay until this issue is resolved
         // value can be up to 1,000,000 - 1
         //const int DELAY_TIME_USEC = 200000; // 200 msec
         //string databaseDelayScript = $"local usecnow = tonumber(redis.call(\"time\")[2]); while ((((tonumber(redis.call(\"time\")[2]) - usecnow) + 1000000) % 1000000) < {DELAY_TIME_USEC}) do end";
@@ -535,8 +536,7 @@ public class RedisQueueTests : QueueTestBase
         const int DELAY_TIME_SEC = 5;
         string databaseDelayScript = $@"
 local now = tonumber(redis.call(""time"")[1]);
-while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
-                                     "do end";
+while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end";
 
         // db will be busy for DELAY_TIME_USEC which will cause timeout on the dequeue to follow
         database.ScriptEvaluateAsync(databaseDelayScript);
@@ -551,17 +551,16 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         // wait for the databaseDelayScript to finish
         await Task.Delay(DELAY_TIME_SEC * 1000);
 
-        // item should've either time out at some iterations and after databaseDelayScript is done be received
+        // item should've either timed out at some iterations and after databaseDelayScript is done be received
         // or it might have moved to work, in this case we want to make sure the correct keys were created
         var stopwatch = Stopwatch.StartNew();
         bool success = false;
         while (stopwatch.Elapsed.TotalSeconds < 10)
         {
-
             string workListName = $"q:{QUEUE_NAME}:work";
             long workListLen = await database.ListLengthAsync(new RedisKey(workListName));
             var item = await database.ListLeftPopAsync(workListName);
-            string dequeuedItemKey = String.Concat("q:", QUEUE_NAME, ":", item, ":dequeued");
+            string dequeuedItemKey = $"q:{QUEUE_NAME}:{item}:dequeued";
             bool dequeuedItemKeyExists = await database.KeyExistsAsync(new RedisKey(dequeuedItemKey));
             if (workListLen == 1)
             {
@@ -570,8 +569,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
                 break;
             }
 
-            var timeoutCancellationTokenSource = new CancellationTokenSource();
-            var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100), timeoutCancellationTokenSource.Token));
+            var completedTask = await Task.WhenAny(completion.Task, Task.Delay(TimeSpan.FromMilliseconds(100)));
             if (completion.Task == completedTask)
             {
                 success = true;
@@ -583,7 +581,6 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     }
 
     // TODO: Need to write tests that verify the cache data is correct after each operation.
-
     [Fact(Skip = "Performance Test")]
     public async Task MeasureThroughputWithRandomFailures()
     {
@@ -619,7 +616,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             workItem = await queue.DequeueAsync(TimeSpan.FromMilliseconds(100));
         }
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.True(stats.Dequeued >= workItemCount);
@@ -627,7 +624,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact(Skip = "Performance Test")]
@@ -662,7 +659,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
             workItem = await queue.DequeueAsync(TimeSpan.Zero);
         }
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(workItemCount, stats.Dequeued);
@@ -670,7 +667,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact(Skip = "Performance Test")]
@@ -707,7 +704,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         await countdown.WaitAsync(TimeSpan.FromMinutes(1));
         Assert.Equal(0, countdown.CurrentCount);
         sw.Stop();
-        _logger.LogTrace("Work Items: {0} Time: {1}", work, sw.Elapsed);
+        _logger.LogTrace("Work Items: {Count} Time: {Elapsed:g}", work, sw.Elapsed);
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(workItemCount, stats.Dequeued);
@@ -715,7 +712,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
         Assert.Equal(0, stats.Queued);
 
         var muxer = SharedConnection.GetMuxer(Log);
-        _logger.LogTrace("# Keys: {0}", muxer.CountAllKeysAsync());
+        _logger.LogTrace("# Keys: {KeyCount}", await muxer.CountAllKeysAsync());
     }
 
     [Fact]
@@ -732,7 +729,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
 
     private IQueue<T> CreateQueue<T>(bool allQueuesTheSameName = true) where T : class
     {
-        var name = typeof(T).FullName.Trim().Replace(".", string.Empty).ToLower();
+        string name = typeof(T).FullName.Trim().Replace(".", String.Empty).ToLower();
 
         if (allQueuesTheSameName)
             name = "cmd";
@@ -751,9 +748,9 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command1>();
 
-        return q.StartWorkingAsync((entry, token) =>
+        return q.StartWorkingAsync((entry, _) =>
         {
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Handler1\t{entry.Value.GetType().Name} {entry.Value.Id}");
+            _logger.LogInformation("{UtcNow}: Handler1 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 100, 199);
             return Task.CompletedTask;
         });
@@ -763,9 +760,9 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command2>();
 
-        return q.StartWorkingAsync((entry, token) =>
+        return q.StartWorkingAsync((entry, _) =>
         {
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Handler2\t{entry.Value.GetType().Name} {entry.Value.Id}");
+            _logger.LogInformation("{UtcNow}: Handler2 {Name} {ValueId}", DateTime.UtcNow, entry.Value.GetType().Name, entry.Value.Id);
             Assert.InRange(entry.Value.Id, 200, 299);
             return Task.CompletedTask;
         }, true);
@@ -775,10 +772,10 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command1>();
 
-        for (var i = 0; i < 10; i++)
+        for (int i = 0; i < 10; i++)
         {
             var cmd = new Command1(100 + i);
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand1 {cmd.Id}");
+            _logger.LogInformation("{UtcNow}: Publish Command1 {CmdId}", DateTime.UtcNow, cmd.Id);
             await q.EnqueueAsync(cmd);
         }
     }
@@ -787,35 +784,14 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) " +
     {
         var q = CreateQueue<Command2>();
 
-        for (var i = 0; i < 10; i++)
+        for (int i = 0; i < 10; i++)
         {
             var cmd = new Command2(200 + i);
-            _logger.LogInformation($"{DateTime.UtcNow:O}: Publish\tCommand2 {cmd.Id}");
+            _logger.LogInformation("{UtcNow}: Publish Command2 {CmdId}", DateTime.UtcNow, cmd.Id);
             await q.EnqueueAsync(cmd);
         }
     }
 
-    public class Command1
-    {
-        public Command1() { }
-
-        public Command1(int id)
-        {
-            Id = id;
-        }
-
-        public int Id { get; set; }
-    }
-
-    public class Command2
-    {
-        public Command2() { }
-
-        public Command2(int id)
-        {
-            Id = id;
-        }
-
-        public int Id { get; set; }
-    }
+    private record Command1(int Id);
+    private record Command2(int Id);
 }

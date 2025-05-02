@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -130,6 +130,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         long wait = Database.ListLength(_waitListName);
         long working = Database.ListLength(_workListName);
         long deadLetter = Database.ListLength(_deadListName);
+        _logger.LogTrace("Queue {QueueName} stats: Queued={Queued} Wait={Wait} Working={Working} Deadletter={Deadletter}", _options.Name, queued, wait, working, deadLetter);
 
         return new QueueStats
         {
@@ -213,15 +214,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
         string id = Guid.NewGuid().ToString("N");
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
+        _logger.LogDebug("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
 
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
             throw new NotSupportedException("DeliveryDelay is not supported in the Redis queue implementation.");
 
-        bool isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
         if (!await OnEnqueuingAsync(data, options).AnyContext())
         {
-            if (isTraceLogLevelEnabled) _logger.LogTrace("Aborting enqueue item: {QueueEntryId}", id);
+            _logger.LogTrace("Aborting enqueue item: {QueueEntryId}", id);
             return null;
         }
 
@@ -248,14 +248,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
         catch (Exception ex)
         {
-            if (isTraceLogLevelEnabled) _logger.LogTrace(ex, "Error publishing topic message");
+            _logger.LogTrace(ex, "Error publishing topic message");
         }
 
         Interlocked.Increment(ref _enqueuedCount);
         var entry = new QueueEntry<T>(id, options.CorrelationId, data, this, now, 0);
         await OnEnqueuedAsync(entry).AnyContext();
 
-        if (isTraceLogLevelEnabled) _logger.LogTrace("Enqueue done");
+        _logger.LogTrace("Enqueue done");
         return id;
     }
 
@@ -339,7 +339,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             await EnsureTopicSubscriptionAsync().AnyContext();
 
         var value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Initial list value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
+        _logger.LogTrace("Initial list value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
 
         while (value.IsNullOrEmpty && !linkedCancellationToken.IsCancellationRequested)
         {
@@ -355,10 +355,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             catch (OperationCanceledException) { }
 
             sw.Stop();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Waited for dequeue: {Elapsed}", sw.Elapsed.ToString());
+            _logger.LogTrace("Waited for dequeue: {Elapsed}", sw.Elapsed.ToString());
 
             value = await DequeueIdAsync(linkedCancellationToken).AnyContext();
-            if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("List value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
+            _logger.LogTrace("List value: {Value}", value.IsNullOrEmpty ? "<null>" : value.ToString());
         }
 
         if (value.IsNullOrEmpty)
@@ -385,10 +385,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     public override async Task RenewLockAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, entry.Id);
+        _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, entry.Id);
         await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), _timeProvider.GetUtcNow().Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
+        _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
     }
 
     private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId)
@@ -396,7 +396,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<RedisPayloadEnvelope<T>>(GetPayloadKey(workId)), logger: _logger).AnyContext();
         if (payload.IsNull)
         {
-            if (_logger.IsEnabled(LogLevel.Error)) _logger.LogError("Error getting queue payload: {WorkId}", workId);
+            _logger.LogError("Error getting queue payload: {WorkId}", workId);
             await Database.ListRemoveAsync(_workListName, workId).AnyContext();
             return null;
         }
@@ -446,7 +446,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     public override async Task CompleteAsync(IQueueEntry<T> entry)
     {
-        if (_logger.IsEnabled(LogLevel.Debug)) _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, entry.Id);
+        _logger.LogDebug("Queue {QueueName} complete item: {QueueEntryId}", _options.Name, entry.Id);
         if (entry.IsAbandoned || entry.IsCompleted)
         {
             //_logger.LogDebug("Queue {QueueName} item already abandoned or completed: {QueueEntryId}", _options.Name, entry.Id);
@@ -463,18 +463,18 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         await Run.WithRetriesAsync(() =>
             Database.KeyDeleteAsync([
                     GetPayloadKey(entry.Id),
-                    GetAttemptsKey(entry.Id),
-                    GetEnqueuedTimeKey(entry.Id),
-                    GetDequeuedTimeKey(entry.Id),
-                    GetRenewedTimeKey(entry.Id),
-                    GetWaitTimeKey(entry.Id)
+                GetAttemptsKey(entry.Id),
+                GetEnqueuedTimeKey(entry.Id),
+                GetDequeuedTimeKey(entry.Id),
+                GetRenewedTimeKey(entry.Id),
+                GetWaitTimeKey(entry.Id)
                 ]
             ), logger: _logger).AnyContext();
 
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
         await OnCompletedAsync(entry).AnyContext();
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Complete done: {QueueEntryId}", entry.Id);
+        _logger.LogTrace("Complete done: {QueueEntryId}", entry.Id);
     }
 
     public override async Task AbandonAsync(IQueueEntry<T> entry)
@@ -581,7 +581,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     public override async Task DeleteQueueAsync()
     {
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Deleting queue: {QueueName}", _options.Name);
+        _logger.LogTrace("Deleting queue: {QueueName}", _options.Name);
         await Task.WhenAll(
             DeleteListAsync(_queueListName),
             DeleteListAsync(_workListName),
@@ -643,13 +643,13 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     private void OnTopicMessage(RedisChannel redisChannel, RedisValue redisValue)
     {
-        if (_logger.IsEnabled(LogLevel.Trace)) _logger.LogTrace("Queue OnMessage {QueueName}: {Value}", _options.Name, redisValue);
+        _logger.LogTrace("Queue OnMessage {QueueName}: {Value}", _options.Name, redisValue);
         _autoResetEvent.Set();
     }
 
     private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
-        if (_logger.IsEnabled(LogLevel.Information)) _logger.LogInformation("Redis connection restored");
+        _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
         _autoResetEvent.Set();
     }
