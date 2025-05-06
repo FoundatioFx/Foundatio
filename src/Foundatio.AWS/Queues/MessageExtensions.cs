@@ -1,27 +1,31 @@
 ﻿using System;
 using Amazon.SQS.Model;
 
-namespace Foundatio.Queues {
-    public static class MessageExtensions {
-        public static int ApproximateReceiveCount(this Message message) {
-            if (message?.Attributes == null)
-                return 0;
+namespace Foundatio.Queues;
 
-            return message.Attributes.ApproximateReceiveCount();
-        }
+public static class MessageExtensions
+{
+    public static int ApproximateReceiveCount(this Message message)
+    {
+        if (message?.Attributes == null)
+            return 0;
 
-        public static DateTime SentTimestamp(this Message message) {
-            if (message?.Attributes == null)
-                return DateTime.MinValue;
+        return message.Attributes.ApproximateReceiveCount();
+    }
 
-            return message.Attributes.SentTimestamp();
-        }
+    public static DateTime SentTimestamp(this Message message)
+    {
+        if (message?.Attributes == null)
+            return DateTime.MinValue;
 
-        public static string CorrelationId(this Message message) {
-            if (message?.Attributes == null)
-                return null;
+        return message.Attributes.SentTimestamp();
+    }
 
-            return message.MessageAttributes.CorrelationId();
-        }
+    public static string CorrelationId(this Message message)
+    {
+        if (message?.Attributes == null)
+            return null;
+
+        return message.MessageAttributes.CorrelationId();
     }
 }
