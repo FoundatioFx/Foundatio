@@ -143,7 +143,7 @@ public class S3FileStorage : IFileStorage
             if (!response.HttpStatusCode.IsSuccessful())
             {
                 _logger.LogDebug("[{HttpStatusCode}] Unable to get file info for {Path}", response.HttpStatusCode, req.Key);
-                throw new S3FileStorageException($"Invalid status code {res.HttpStatusCode} ({(int)res.HttpStatusCode}): Expected 200 OK or 404 NotFound");
+                throw new Exception($"Invalid status code {res.HttpStatusCode} ({(int)res.HttpStatusCode}): Expected 200 OK or 404 NotFound");
             }
 
             return new FileSpec
