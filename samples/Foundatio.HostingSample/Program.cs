@@ -54,6 +54,13 @@ try
     if (everyMinute)
         builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *");
 
+    builder.Services.AddCronJob(b => b.Name("Tokyo").CronSchedule("44 4 * * *").CronTimeZone("Asia/Tokyo").JobAction(async sp =>
+    {
+        var logger = sp.GetRequiredService<ILogger<Program>>();
+        logger.LogInformation("Tokyo 4:44am Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
+        await Task.Delay(TimeSpan.FromSeconds(5));
+    }));
+
     if (evenMinutes)
         builder.Services.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
         {

@@ -41,7 +41,7 @@ internal class ScheduledJobRunner
 
         var interval = TimeSpan.FromDays(1);
 
-        var nextOccurrence = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
+        var nextOccurrence = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
         if (nextOccurrence.HasValue)
         {
             var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
@@ -51,7 +51,7 @@ internal class ScheduledJobRunner
 
         _lockProvider = new ThrottlingLockProvider(_cacheClient, 1, interval.Add(interval));
 
-        NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
+        NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
     }
 
     public ScheduledJobOptions Options => _jobOptions;
@@ -63,7 +63,7 @@ internal class ScheduledJobRunner
         set
         {
             _cronSchedule = CronExpression.Parse(value);
-            NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime);
+            NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
             _schedule = value;
         }
     }
@@ -84,7 +84,7 @@ internal class ScheduledJobRunner
                 if (lastRun.HasValue)
                 {
                     LastRun = lastRun.Value;
-                    NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+                    NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
                 }
 
                 var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
@@ -222,7 +222,7 @@ internal class ScheduledJobRunner
             {
                 // ignored
             }
-            NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value);
+            NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
         }
     }
 

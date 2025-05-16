@@ -10,5 +10,6 @@ public class ScheduledJobOptions
     public Func<IServiceProvider, IJob> JobFactory { get; set; }
     public bool WaitForStartupActions { get; set; }
     public string CronSchedule { get; set; }
+    public TimeZoneInfo CronTimeZone { get; set; }
     public bool IsDistributed { get; set; }
 }

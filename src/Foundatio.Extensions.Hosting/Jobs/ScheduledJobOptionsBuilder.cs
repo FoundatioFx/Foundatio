@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Jobs;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
@@ -30,9 +32,59 @@ public class ScheduledJobOptionsBuilder
         return this;
     }
 
+    public ScheduledJobOptionsBuilder CronTimeZone(string id)
+    {
+        Target.CronTimeZone = TimeZoneInfo.FindSystemTimeZoneById(id);
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder CronTimeZone(TimeZoneInfo value)
+    {
+        Target.CronTimeZone = value;
+        return this;
+    }
+
     public ScheduledJobOptionsBuilder JobFactory(Func<IServiceProvider, IJob> value)
     {
         Target.JobFactory = value;
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder JobAction(Func<IServiceProvider, CancellationToken, Task> action)
+    {
+        Target.JobFactory = sp => new DynamicJob(sp, action);
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder JobAction(Func<IServiceProvider, Task> action)
+    {
+        Target.JobFactory = sp => new DynamicJob(sp, (xp, _) => action(xp));
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder JobAction(Func<Task> action)
+    {
+        Target.JobFactory = sp => new DynamicJob(sp, (_, _) => action());
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder JobAction(Action<CancellationToken> action)
+    {
+        Target.JobFactory = sp => new DynamicJob(sp, (_, ct) =>
+        {
+            action(ct);
+            return Task.CompletedTask;
+        });
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder JobAction(Action action)
+    {
+        Target.JobFactory = sp => new DynamicJob(sp, (_, _) =>
+        {
+            action();
+            return Task.CompletedTask;
+        });
         return this;
     }
 
