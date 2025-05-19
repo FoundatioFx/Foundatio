@@ -1,4 +1,5 @@
-﻿using StackExchange.Redis;
+﻿using System;
+using StackExchange.Redis;
 
 namespace Foundatio.Caching;
 
@@ -16,6 +17,10 @@ public class RedisCacheClientOptions : SharedOptions
     /// </summary>
     public CommandFlags ReadMode { get; set; } = CommandFlags.None;
 
+    /// <summary>
+    /// The database to use
+    /// </summary>
+    public int Database { get; set; } = -1;
 }
 
 public class RedisCacheClientOptionsBuilder : SharedOptionsBuilder<RedisCacheClientOptions, RedisCacheClientOptionsBuilder>
@@ -35,6 +40,17 @@ public class RedisCacheClientOptionsBuilder : SharedOptionsBuilder<RedisCacheCli
     public RedisCacheClientOptionsBuilder ReadMode(CommandFlags commandFlags)
     {
         Target.ReadMode = commandFlags;
+        return this;
+    }
+
+    public RedisCacheClientOptionsBuilder UseDatabase(int database)
+    {
+        if (database < -1)  // We consider -1 as a valid value in respect for the default behaviour of stack exchange redis
+        {
+            throw new ArgumentOutOfRangeException(nameof(database), "database number cannot be less than -1.");
+        }
+
+        Target.Database = database;
         return this;
     }
 }

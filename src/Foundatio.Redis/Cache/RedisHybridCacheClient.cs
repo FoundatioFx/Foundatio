@@ -9,7 +9,8 @@ public class RedisHybridCacheClient : HybridCacheClient
                 .Serializer(options.Serializer)
                 .LoggerFactory(options.LoggerFactory)
                 .ShouldThrowOnSerializationError(options.ShouldThrowOnSerializationError)
-                .ReadMode(options.ReadMode)),
+                .ReadMode(options.ReadMode)
+                .UseDatabase(options.Database)),
             new RedisMessageBus(o => o
                 .Subscriber(options.ConnectionMultiplexer.GetSubscriber())
                 .Topic(options.RedisChannelName)

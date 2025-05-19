@@ -44,6 +44,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             throw new ArgumentException("ConnectionMultiplexer is required.");
 
         options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+
         _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer });
 
         _payloadTimeToLive = GetPayloadTtl();
@@ -65,7 +66,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     public RedisQueue(Builder<RedisQueueOptionsBuilder<T>, RedisQueueOptions<T>> config)
         : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
 
-    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase(_options.Database);
 
     protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
