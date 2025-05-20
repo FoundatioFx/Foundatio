@@ -99,7 +99,7 @@ public class PagedFileListResult : IHasNextPageFunc
 }
 
 [DebuggerDisplay("Path = {Path}, Created = {Created}, Modified = {Modified}, Size = {Size} bytes")]
-public class FileSpec
+public class FileSpec : IHaveData
 {
     public string Path { get; set; }
     public DateTime Created { get; set; }
@@ -109,7 +109,11 @@ public class FileSpec
     /// In Bytes
     /// </summary>
     public long Size { get; set; }
-    // TODO: Add metadata object for custom properties
+
+    /// <summary>
+    /// A place to store any additional metadata or headers (e.g., eTag, versionId).
+    /// </summary>
+    public IDictionary<string, object> Data { get; } = new DataDictionary();
 }
 
 public static class FileStorageExtensions
