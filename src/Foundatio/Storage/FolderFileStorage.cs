@@ -84,7 +84,8 @@ public class FolderFileStorage : IFileStorage
             Path = normalizedPath.Replace(Folder, String.Empty),
             Created = info.CreationTimeUtc,
             Modified = info.LastWriteTimeUtc,
-            Size = info.Length
+            Size = info.Length,
+            Data = { { "IsReadOnly", info.IsReadOnly } }
         });
     }
 
@@ -283,7 +284,6 @@ public class FolderFileStorage : IFileStorage
 
         _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, searchPattern);
         return Task.FromResult(count);
-
     }
 
     public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
@@ -327,7 +327,8 @@ public class FolderFileStorage : IFileStorage
                 Path = info.FullName.Replace(Folder, String.Empty),
                 Created = info.CreationTimeUtc,
                 Modified = info.LastWriteTimeUtc,
-                Size = info.Length
+                Size = info.Length,
+                Data = { { "IsReadOnly", info.IsReadOnly } }
             });
         }
 
@@ -347,5 +348,7 @@ public class FolderFileStorage : IFileStorage
         };
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

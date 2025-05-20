@@ -36,7 +36,9 @@ public class InMemoryFileStorage : IFileStorage
     }
 
     public InMemoryFileStorage(Builder<InMemoryFileStorageOptionsBuilder, InMemoryFileStorageOptions> config)
-        : this(config(new InMemoryFileStorageOptionsBuilder()).Build()) { }
+        : this(config(new InMemoryFileStorageOptionsBuilder()).Build())
+    {
+    }
 
     public long MaxFileSize { get; set; }
     public long MaxFiles { get; set; }
@@ -123,7 +125,7 @@ public class InMemoryFileStorage : IFileStorage
         string normalizedPath = path.NormalizePath();
         _logger.LogTrace("Saving {Path}", normalizedPath);
 
-        var contents = ReadBytes(stream);
+        byte[] contents = ReadBytes(stream);
         if (contents.Length > MaxFileSize)
             throw new ArgumentException($"File size {contents.Length.ToFileSizeDisplay()} exceeds the maximum size of {MaxFileSize.ToFileSizeDisplay()}.");
 
