@@ -12,6 +12,7 @@ using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
 using Foundatio.AWS.Extensions;
+using Foundatio.AWS.Storage;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
@@ -137,10 +138,12 @@ public class S3FileStorage : IFileStorage
         try
         {
             var response = await _client.GetObjectMetadataAsync(req).AnyContext();
+            if (response.HttpStatusCode == System.Net.HttpStatusCode.NotFound)
+                return null;
             if (!response.HttpStatusCode.IsSuccessful())
             {
                 _logger.LogDebug("[{HttpStatusCode}] Unable to get file info for {Path}", response.HttpStatusCode, req.Key);
-                return null;
+                throw new Exception($"Invalid status code {response.HttpStatusCode} ({(int)response.HttpStatusCode}): Expected 200 OK or 404 NotFound");
             }
 
             return new FileSpec
