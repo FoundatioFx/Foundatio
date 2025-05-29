@@ -1,10 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <!-- Can be removed when lowest TFM is net 8 -->
     <PackageReference Include="Microsoft.Bcl.TimeProvider" Version="8.0" />
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- Can be removed when lowest TFM is net 6 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0" />
+    <!-- Needed for all TFMs -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0" />
+  </ItemGroup>
+  <ItemGroup Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net6.0'))">
     <PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
   </ItemGroup>
 </Project>
