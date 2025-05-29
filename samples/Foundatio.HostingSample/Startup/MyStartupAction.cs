@@ -32,11 +32,11 @@ public class MyStartupAction : IStartupAction
             await Task.Delay(500);
         }
 
-        _jobManager.AddOrUpdate("MyJob", "* * * * *", async () =>
+        _jobManager.AddOrUpdate("MyJob", j => j.CronSchedule("* * * * *").JobAction(async () =>
         {
             _logger.LogInformation("Running MyJob");
             await Task.Delay(1000);
             _logger.LogInformation("MyJob Complete");
-        });
+        }));
     }
 }

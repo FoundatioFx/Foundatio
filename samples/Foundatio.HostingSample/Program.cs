@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -31,6 +32,7 @@ try
     var builder = WebApplication.CreateBuilder(args);
 
     builder.AddServiceDefaults();
+    builder.Services.ConfigureHttpJsonOptions(o => { o.SerializerOptions.WriteIndented = true; });
 
     builder.Services.AddSerilog();
 
@@ -128,7 +130,7 @@ try
 
     app.MapGet("/runjob", async httpContext =>
     {
-        var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
+        var jobManager = httpContext.RequestServices.GetRequiredService<IJobManager>();
         await jobManager.RunJobAsync("EvenMinutes");
         await jobManager.RunJobAsync<EveryMinuteJob>();
     });

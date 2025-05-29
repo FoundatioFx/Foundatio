@@ -99,4 +99,16 @@ public class ScheduledJobOptionsBuilder
         Target.IsDistributed = value;
         return this;
     }
+
+    public ScheduledJobOptionsBuilder Enabled(bool value = true)
+    {
+        Target.IsEnabled = value;
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder Disabled()
+    {
+        Target.IsEnabled = false;
+        return this;
+    }
 }

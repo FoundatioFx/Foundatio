@@ -13,14 +13,8 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public interface IJobManager
 {
-    void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob;
-    void AddOrUpdate(string jobName, string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null);
-    void AddOrUpdate(string jobName, string cronSchedule, Action action, Action<ScheduledJobOptionsBuilder> configure = null);
+    void AddOrUpdate<TJob>(Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob;
+    void AddOrUpdate(string jobName, Action<ScheduledJobOptionsBuilder> configure = null);
     void Remove<TJob>() where TJob : class, IJob;
     void Remove(string jobName);
     JobStatus[] GetJobStatus();
@@ -50,7 +44,7 @@ public class JobManager : IJobManager
             throw new ArgumentException("A distributed cache client is required to run distributed jobs.");
     }
 
-    public void AddOrUpdate<TJob>(string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob
+    public void AddOrUpdate<TJob>(Action<ScheduledJobOptionsBuilder> configure = null) where TJob : class, IJob
     {
         string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
@@ -60,8 +54,7 @@ public class JobManager : IJobManager
             {
                 var options = new ScheduledJobOptions
                 {
-                    CronSchedule = cronSchedule,
-                    Name = jobName,
+                   Name = jobName,
                     JobFactory = sp => sp.GetRequiredService<TJob>()
                 };
                 var builder = new ScheduledJobOptionsBuilder(options);
@@ -72,14 +65,13 @@ public class JobManager : IJobManager
             else
             {
                 var builder = new ScheduledJobOptionsBuilder(job.Options);
-                builder.CronSchedule(cronSchedule);
                 configure?.Invoke(builder);
                 job.Schedule = job.Options.CronSchedule;
             }
         }
     }
 
-    public void AddOrUpdate(string jobName, string cronSchedule, Action<ScheduledJobOptionsBuilder> configure = null)
+    public void AddOrUpdate(string jobName, Action<ScheduledJobOptionsBuilder> configure = null)
     {
         lock (_lock)
         {
@@ -88,65 +80,20 @@ public class JobManager : IJobManager
             {
                 var options = new ScheduledJobOptions
                 {
-                    CronSchedule = cronSchedule,
-                    Name = jobName
+                    Name = jobName,
                 };
                 var builder = new ScheduledJobOptionsBuilder(options);
                 configure?.Invoke(builder);
-                options.JobFactory = options.JobFactory;
                 _jobs.Add(new ScheduledJobRunner(options, _serviceProvider, _cacheClient, _loggerFactory));
                 _jobsArray = _jobs.ToArray();
             }
             else
             {
                 var builder = new ScheduledJobOptionsBuilder(job.Options);
-                builder.CronSchedule(cronSchedule);
                 configure?.Invoke(builder);
                 job.Schedule = job.Options.CronSchedule;
             }
         }
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, b => b.JobFactory(sp => new DynamicJob(sp, action)));
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<CancellationToken, Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, (_, ct) => action(ct), configure);
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Func<Task> action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, (_, _) => action(), configure);
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Action<IServiceProvider, CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, (sp, ct) =>
-        {
-            action(sp, ct);
-            return Task.CompletedTask;
-        }, configure);
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Action<CancellationToken> action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, (_, ct) =>
-        {
-            action(ct);
-            return Task.CompletedTask;
-        }, configure);
-    }
-
-    public void AddOrUpdate(string jobName, string cronSchedule, Action action, Action<ScheduledJobOptionsBuilder> configure = null)
-    {
-        AddOrUpdate(jobName, cronSchedule, (_, _) =>
-        {
-            action();
-            return Task.CompletedTask;
-        }, configure);
     }
 
     public void Remove<TJob>() where TJob : class, IJob

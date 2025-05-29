@@ -12,4 +12,5 @@ public class ScheduledJobOptions
     public string CronSchedule { get; set; }
     public TimeZoneInfo CronTimeZone { get; set; }
     public bool IsDistributed { get; set; }
+    public bool IsEnabled { get; set; } = true;
 }

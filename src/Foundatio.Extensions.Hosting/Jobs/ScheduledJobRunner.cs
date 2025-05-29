@@ -5,6 +5,7 @@ using Foundatio.Caching;
 using Foundatio.Extensions.Hosting.Cronos;
 using Foundatio.Jobs;
 using Foundatio.Lock;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -22,14 +23,12 @@ internal class ScheduledJobRunner
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
     private readonly DateTime _baseDate = new(2010, 1, 1);
-    private DateTime _lastStatusUpdate = DateTime.MinValue;
-    private string _cacheKey;
 
     public ScheduledJobRunner(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
     {
         _jobOptions = jobOptions;
         _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
-        _cacheKey = _jobOptions.Name.ToLower().Replace(' ', '_');
+        CacheKey = _jobOptions.Name.ToLower().Replace(' ', '_');
         _serviceProvider = serviceProvider;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
@@ -39,17 +38,8 @@ internal class ScheduledJobRunner
         if (_cronSchedule == null)
             throw new ArgumentException("Could not parse schedule", nameof(ScheduledJobOptions.CronSchedule));
 
-        var interval = TimeSpan.FromDays(1);
-
-        var nextOccurrence = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
-        if (nextOccurrence.HasValue)
-        {
-            var nextNextOccurrence = _cronSchedule.GetNextOccurrence(nextOccurrence.Value);
-            if (nextNextOccurrence.HasValue)
-                interval = nextNextOccurrence.Value.Subtract(nextOccurrence.Value);
-        }
-
-        _lockProvider = new ThrottlingLockProvider(_cacheClient, 1, interval.Add(interval));
+        var messageBus = serviceProvider.GetService<IMessageBus>() ?? new InMemoryMessageBus();
+        _lockProvider = new CacheLockProvider(cacheClient, messageBus, loggerFactory);
 
         NextRun = _cronSchedule.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
     }
@@ -68,40 +58,29 @@ internal class ScheduledJobRunner
         }
     }
 
-    public DateTime? LastRun { get; private set; }
-    public DateTime? LastSuccess { get; private set; }
-    public string LastErrorMessage { get; private set; }
+    internal string CacheKey { get; private set; }
+
+    private DateTime? _lastRun;
+
+    public DateTime? LastRun
+    {
+        get => _lastRun;
+        internal set
+        {
+            _lastRun = value;
+            NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
+        }
+    }
+
+    public DateTime? LastSuccess { get; internal set; }
+    public string LastErrorMessage { get; internal set; }
     public DateTime? NextRun { get; private set; }
     public Task RunTask { get; private set; }
 
-    public async ValueTask<bool> ShouldRunAsync()
+    internal bool ShouldRun()
     {
-        if (_timeProvider.GetUtcNow().UtcDateTime.Subtract(_lastStatusUpdate).TotalSeconds > 15)
-        {
-            try
-            {
-                var lastRun = await _cacheClient.GetAsync<DateTime>("lastrun:" + Options.Name).AnyContext();
-                if (lastRun.HasValue)
-                {
-                    LastRun = lastRun.Value;
-                    NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
-                }
-
-                var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + Options.Name).AnyContext();
-                if (lastSuccess.HasValue)
-                    LastSuccess = lastSuccess.Value;
-
-                var lastError = await _cacheClient.GetAsync<string>("lasterror:" + Options.Name).AnyContext();
-                if (lastError.HasValue)
-                    LastErrorMessage = lastError.Value;
-
-                _lastStatusUpdate = _timeProvider.GetUtcNow().UtcDateTime;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting job ({JobName}) status", Options.Name);
-            }
-        }
+        if (!Options.IsEnabled)
+            return false;
 
         if (!NextRun.HasValue)
             return false;
@@ -134,6 +113,8 @@ internal class ScheduledJobRunner
 
             if (l == null)
             {
+                _logger.LogInformation("Job ({JobName}) is already running, skipping", Options.Name);
+
                 try
                 {
                     // if we didn't get the lock, update the last run time
@@ -158,10 +139,10 @@ internal class ScheduledJobRunner
             }
         }
 
-        await using (l)
+        // start running the job in a thread
+        RunTask = Task.Factory.StartNew(async () =>
         {
-            // start running the job in a thread
-            RunTask = Task.Factory.StartNew(async () =>
+            await using (l)
             {
                 try
                 {
@@ -211,25 +192,25 @@ internal class ScheduledJobRunner
                         // ignored
                     }
                 }
-            }, cancellationToken).Unwrap();
+            }
+        }, cancellationToken).Unwrap();
 
-            LastRun = _timeProvider.GetUtcNow().UtcDateTime;
-            try
-            {
-                await _cacheClient.SetAsync("lastrun:" + Options.Name, LastRun.Value).AnyContext();
-            }
-            catch
-            {
-                // ignored
-            }
-            NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
+        LastRun = _timeProvider.GetUtcNow().UtcDateTime;
+        try
+        {
+            await _cacheClient.SetAsync("lastrun:" + Options.Name, LastRun.Value).AnyContext();
         }
+        catch
+        {
+            // ignored
+        }
+        NextRun = _cronSchedule.GetNextOccurrence(LastRun.Value, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
     }
 
     private string GetLockKey(DateTime date)
     {
         long minute = (long)date.Subtract(_baseDate).TotalMinutes;
 
-        return _cacheKey + ":" + minute;
+        return CacheKey + ":" + minute;
     }
 }
