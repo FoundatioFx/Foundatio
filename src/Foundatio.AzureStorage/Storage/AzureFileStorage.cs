@@ -71,7 +71,7 @@ public class AzureFileStorage : IFileStorage
                 _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported.")
             };
         }
-        catch (StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404 })
+        catch (Microsoft.Azure.Storage.StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404 })
         {
             _logger.LogDebug(ex, "Unable to get file stream for {Path}: File Not Found", normalizedPath);
             return null;
