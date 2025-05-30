@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -90,6 +91,7 @@ internal class ScheduledJobInstance
     public DateTime? NextRun { get; internal set; }
     public DateTime? LastRun { get; internal set; }
     public DateTime? LastSuccess { get; internal set; }
+    public TimeSpan? LastDuration { get; internal set; }
     public string LastErrorMessage { get; internal set; }
 
     public Task RunTask { get; private set; }
@@ -210,7 +212,10 @@ internal class ScheduledJobInstance
 
                     await UpdateDistributedStateAsync(true).AnyContext();
 
+                    var sw = Stopwatch.StartNew();
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
+                    sw.Stop();
+                    LastDuration = sw.Elapsed;
 
                     _logger.LogJobResult(result, Options.Name);
                     if (result.IsSuccess)
@@ -280,6 +285,7 @@ internal class ScheduledJobInstance
                     IsRunning = IsRunning,
                     LastRun = LastRun,
                     LastSuccess = LastSuccess,
+                    LastDuration = LastDuration,
                     LastErrorMessage = LastErrorMessage
                 }).AnyContext();
 
@@ -293,6 +299,7 @@ internal class ScheduledJobInstance
                 IsRunning = IsRunning,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
+                LastDuration = LastDuration,
                 LastErrorMessage = LastErrorMessage,
                 Reason = reason
             }).AnyContext();
@@ -328,6 +335,7 @@ internal class ScheduledJobInstance
             IsRunning = state.IsRunning;
             LastRun = state.LastRun;
             LastSuccess = state.LastSuccess;
+            LastDuration = state.LastDuration;
             LastErrorMessage = state.LastErrorMessage;
             NextRun = GetNextScheduledRun();
         }
@@ -352,6 +360,7 @@ public class JobInstanceState
     public bool IsRunning { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
+    public TimeSpan? LastDuration { get; set; }
     public string LastErrorMessage { get; set; }
 }
 

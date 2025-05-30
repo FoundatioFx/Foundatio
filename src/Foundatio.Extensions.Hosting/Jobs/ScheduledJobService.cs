@@ -62,6 +62,7 @@ public class ScheduledJobService : BackgroundService
             job.IsRunning = s.IsRunning;
             job.LastRun = s.LastRun;
             job.LastSuccess = s.LastSuccess;
+            job.LastDuration = s.LastDuration;
             job.LastErrorMessage = s.LastErrorMessage;
             job.LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
             job.NextRun = job.GetNextScheduledRun();

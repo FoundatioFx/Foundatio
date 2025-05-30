@@ -109,31 +109,47 @@ var app = builder.Build();
 
 app.MapGet("/", () => "Foundatio!");
 
-app.MapGet("/jobstatus", httpContext =>
-{
-    var jobManager = httpContext.RequestServices.GetRequiredService<JobManager>();
-    var status = jobManager.GetJobStatus();
+app.MapGet("/jobs/status", (IJobManager jobManager, HttpRequest req) =>
+    {
+        var jobName = req.Query["name"];
+        if (!String.IsNullOrEmpty(jobName))
+            return Results.Ok(jobManager.GetJobStatus(jobName));
 
-    return httpContext.Response.WriteAsJsonAsync(status);
-});
+        return Results.Ok(jobManager.GetJobStatus());
+    });
 
-app.MapGet("/runjob", async httpContext =>
-{
-    var jobManager = httpContext.RequestServices.GetRequiredService<IJobManager>();
-    await jobManager.RunJobAsync("EvenMinutes");
-    await jobManager.RunJobAsync<EveryMinuteJob>();
+app.MapGet("/jobs/run", async (IJobManager jobManager, HttpRequest req) =>
+    {
+        var jobName = req.Query["name"];
+        if (string.IsNullOrWhiteSpace(jobName))
+            return Results.BadRequest("Job name is required.");
 
-    await httpContext.Response.WriteAsync("Job manually triggered");
-});
+        await jobManager.RunJobAsync(jobName);
 
-app.MapGet("/togglejob", httpContext =>
-{
-    var jobManager = httpContext.RequestServices.GetRequiredService<IJobManager>();
-    jobManager.AddOrUpdate("EvenMinutes", j => j.Enabled(!j.Target.IsEnabled));
-    jobManager.AddOrUpdate<EveryMinuteJob>(j => j.Enabled(!j.Target.IsEnabled));
+        return Results.Accepted();
+    });
 
-    return httpContext.Response.WriteAsync("Job toggled");
-});
+app.MapGet("/jobs/enable", (IJobManager jobManager, HttpRequest req) =>
+    {
+        var jobName = req.Query["name"];
+        if (string.IsNullOrWhiteSpace(jobName))
+            return Results.BadRequest("Job name is required.");
+
+        jobManager.Update(jobName, c => c.Enabled());
+
+        return Results.Accepted();
+    });
+
+app.MapGet("/jobs/disable", (IJobManager jobManager, HttpRequest req) =>
+    {
+        var jobName = req.Query["name"];
+        if (string.IsNullOrWhiteSpace(jobName))
+            return Results.BadRequest("Job name is required.");
+
+        jobManager.Update(jobName, c => c.Disabled());
+
+        return Results.Accepted();
+    });
 
 app.UseHealthChecks("/health");
 app.UseReadyHealthChecks("Critical");

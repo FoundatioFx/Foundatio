@@ -21,8 +21,8 @@ builder.AddProject<Foundatio_HostingSample>("Foundatio-HostingSample")
     .WithUrls(u =>
     {
         u.Urls.Clear();
-        u.Urls.Add(new ResourceUrlAnnotation { Url = "/jobstatus", DisplayText = "Job Status", Endpoint = u.GetEndpoint("http") });
-        u.Urls.Add(new ResourceUrlAnnotation { Url = "/runjob", DisplayText = "Run Job", Endpoint = u.GetEndpoint("http") });
+        u.Urls.Add(new ResourceUrlAnnotation { Url = "/jobs/status", DisplayText = "Job Status", Endpoint = u.GetEndpoint("http") });
+        u.Urls.Add(new ResourceUrlAnnotation { Url = "/jobs/run", DisplayText = "Run Job", Endpoint = u.GetEndpoint("http") });
     });
 
 builder.Build().Run();
