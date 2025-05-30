@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -23,8 +23,8 @@ public class MyStartupAction : IStartupAction
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
-        // simulate a long period of time since our last cron job run
-        await _cacheClient.SetAsync("jobs:lastrun:Foundatio.HostingSample.EveryMinuteJob", DateTime.UtcNow.AddDays(-1));
+        // set next run to be far in the past so it runs immediately
+        await _cacheClient.SetAsync("jobs:every_minute:nextrun", DateTime.UtcNow.AddDays(-1));
 
         for (int i = 0; i < 5; i++)
         {

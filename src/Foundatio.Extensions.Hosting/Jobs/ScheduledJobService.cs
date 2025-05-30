@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions.Hosting.Startup;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -20,6 +21,7 @@ public class ScheduledJobService : BackgroundService
     private readonly TimeProvider _timeProvider;
     private readonly ICacheClient _cacheClient;
     private readonly ILogger _logger;
+    private readonly IMessageBus _messageBus;
 
     public ScheduledJobService(IServiceProvider serviceProvider, JobManager jobManager)
     {
@@ -27,7 +29,8 @@ public class ScheduledJobService : BackgroundService
         _jobManager = jobManager;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var loggerFactory = serviceProvider.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
-        _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));;
+        _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
+        _messageBus = serviceProvider.GetService<IMessageBus>() ?? new NullMessageBus();
         _logger = serviceProvider.GetService<ILogger<ScheduledJobService>>() ?? NullLogger<ScheduledJobService>.Instance;
     }
 
@@ -43,55 +46,90 @@ public class ScheduledJobService : BackgroundService
             }
         }
 
-        // delay until right after next minute starts to sync with cron schedules
-        await Task.Delay(TimeSpan.FromSeconds(60 - _timeProvider.GetUtcNow().UtcDateTime.Second), stoppingToken);
+        await _messageBus.SubscribeAsync<JobStateChangedMessage>(s =>
+        {
+            var job = _jobManager.Jobs.FirstOrDefault(j => j.Options.Name == s.JobName);
+            if (job == null || s.Id == job.Id)
+                return Task.CompletedTask;
 
-        var jobsToRun = new List<ScheduledJobRunner>();
+            if (!String.IsNullOrEmpty(s.Reason))
+                _logger.LogInformation("Received job state change for {JobName} with Id {Id} {JobId} Reason: {Reason}", s.JobName, s.Id, job.Id, s.Reason);
+            else
+                _logger.LogDebug("Received job state change for {JobName} with Id {Id} {JobId}", s.JobName, s.Id, job.Id);
+
+            job.Options.CronSchedule = s.CronSchedule;
+            job.Options.IsEnabled = s.IsEnabled;
+            job.IsRunning = s.IsRunning;
+            job.LastRun = s.LastRun;
+            job.LastSuccess = s.LastSuccess;
+            job.LastErrorMessage = s.LastErrorMessage;
+            job.LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
+            job.NextRun = job.GetNextScheduledRun();
+
+            return Task.CompletedTask;
+        }, cancellationToken: stoppingToken);
+
+        // apply initial distributed job states
+        try
+        {
+            var distributedJobs = _jobManager.Jobs.Where(j => j.Options.IsDistributed).ToDictionary(j => j.CacheKey + ":state", j => j);
+            var distributedJobStates = await _cacheClient.GetAllAsync<JobInstanceState>(distributedJobs.Keys).AnyContext();
+
+            foreach (var distributedJob in distributedJobs)
+            {
+                var job = distributedJob.Value;
+
+                if (!distributedJobStates.TryGetValue(distributedJob.Key, out var jobState) || !jobState.HasValue)
+                    continue;
+
+                job.LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
+                await job.ApplyDistributedStateAsync(jobState.Value).AnyContext();
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error applying initial distributed job states: {Message}", ex.Message);
+        }
+
+        // delay until right after next minute starts to sync with cron schedules
+        await Task.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), stoppingToken).AnyContext();
 
         while (!stoppingToken.IsCancellationRequested)
         {
             using (FoundatioDiagnostics.ActivitySource.StartActivity("Job Scheduler"))
             {
-                var jobLastRuns = _jobManager.Jobs.ToDictionary(j => "lastrun:" + j.CacheKey, j => j);
-                var jobLastRunTimes = await _cacheClient.GetAllAsync<DateTime>(jobLastRuns.Keys).AnyContext();
-
-                foreach (var lastRun in jobLastRuns)
+                try
                 {
-                    var job = lastRun.Value;
+                    var jobNextRuns = _jobManager.Jobs.ToDictionary(j => j.CacheKey + ":nextrun", j => j);
+                    var jobNextRunTimes = await _cacheClient.GetAllAsync<DateTime>(jobNextRuns.Keys).AnyContext();
 
-                    if (jobLastRunTimes.TryGetValue(lastRun.Key, out var lastRunTime))
+                    foreach ((string nextRunKey, ScheduledJobInstance job) in jobNextRuns)
                     {
-                        bool firstStatusCheck = job.LastRun == null;
-                        job.LastRun = DateTime.SpecifyKind(lastRunTime.Value, DateTimeKind.Utc);
-
-                        if (firstStatusCheck)
+                        if (jobNextRunTimes.TryGetValue(nextRunKey, out var nextRunTime) && nextRunTime.HasValue)
                         {
-                            var lastSuccess = await _cacheClient.GetAsync<DateTime>("lastsuccess:" + job.CacheKey).AnyContext();
-                            if (lastSuccess.HasValue)
-                                job.LastSuccess = lastSuccess.Value;
-
-                            var lastError = await _cacheClient.GetAsync<string>("lasterror:" + job.CacheKey).AnyContext();
-                            if (lastError.HasValue)
-                                job.LastErrorMessage = lastError.Value;
+                            if (!nextRunTime.IsNull)
+                                job.NextRun = DateTime.SpecifyKind(nextRunTime.Value, DateTimeKind.Utc);
+                            else
+                                job.NextRun = null;
                         }
-                    }
 
-                    if (job.ShouldRun())
-                        jobsToRun.Add(job);
+                        job.NextRun ??= job.GetNextScheduledRun();
+                    }
+                } catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error retrieving job next run times: {Message}", ex.Message);
                 }
             }
 
-            foreach (var jobToRun in jobsToRun)
+            foreach (var jobToRun in _jobManager.Jobs.Where(j => j.ShouldRun()))
             {
                 using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + jobToRun.Options.Name);
 
                 await jobToRun.StartAsync(stoppingToken).AnyContext();
             }
 
-            jobsToRun.Clear();
-
             // shortest cron schedule is 1 minute so only check every minute
-            await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken).AnyContext();
+            await Task.Delay(TimeSpan.FromMinutes(1) - TimeSpan.FromSeconds(_timeProvider.GetUtcNow().Second) - TimeSpan.FromMilliseconds(_timeProvider.GetUtcNow().Millisecond), stoppingToken).AnyContext();
         }
     }
 }

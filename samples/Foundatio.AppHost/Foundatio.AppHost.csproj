@@ -13,10 +13,11 @@
 
     <ItemGroup>
         <PackageReference Include="Aspire.Hosting.AppHost" Version="9.3.0" />
+        <PackageReference Include="Aspire.Hosting.Redis" Version="9.3.0" />
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Foundatio.HostingSample\Foundatio.HostingSample.csproj" />
+        <ProjectReference Include="..\Foundatio.HostingSample\Foundatio.HostingSample.csproj" />
     </ItemGroup>
 
 </Project>

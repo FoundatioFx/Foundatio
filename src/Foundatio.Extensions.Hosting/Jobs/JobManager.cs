@@ -27,8 +27,8 @@ public class JobManager : IJobManager
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ICacheClient _cacheClient;
-    private readonly List<ScheduledJobRunner> _jobs = new();
-    private ScheduledJobRunner[] _jobsArray;
+    private readonly List<ScheduledJobInstance> _jobs = [];
+    private ScheduledJobInstance[] _jobsArray;
     private readonly object _lock = new();
 
     public JobManager(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
@@ -38,7 +38,7 @@ public class JobManager : IJobManager
         var cacheClient = serviceProvider.GetService<ICacheClient>();
         bool hasCacheClient = cacheClient != null;
         _cacheClient = cacheClient ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
-        _jobs.AddRange(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobRunner(j.Options, serviceProvider, _cacheClient, loggerFactory)));
+        _jobs.AddRange(serviceProvider.GetServices<ScheduledJobRegistration>().Select(j => new ScheduledJobInstance(j.Options, serviceProvider, _cacheClient, loggerFactory)));
         _jobsArray = _jobs.ToArray();
         if (_jobs.Any(j => j.Options.IsDistributed && !hasCacheClient))
             throw new ArgumentException("A distributed cache client is required to run distributed jobs.");
@@ -59,14 +59,13 @@ public class JobManager : IJobManager
                 };
                 var builder = new ScheduledJobOptionsBuilder(options);
                 configure?.Invoke(builder);
-                _jobs.Add(new ScheduledJobRunner(options, _serviceProvider, _cacheClient, _loggerFactory));
+                _jobs.Add(new ScheduledJobInstance(options, _serviceProvider, _cacheClient, _loggerFactory));
                 _jobsArray = _jobs.ToArray();
             }
             else
             {
                 var builder = new ScheduledJobOptionsBuilder(job.Options);
                 configure?.Invoke(builder);
-                job.Schedule = job.Options.CronSchedule;
             }
         }
     }
@@ -84,14 +83,13 @@ public class JobManager : IJobManager
                 };
                 var builder = new ScheduledJobOptionsBuilder(options);
                 configure?.Invoke(builder);
-                _jobs.Add(new ScheduledJobRunner(options, _serviceProvider, _cacheClient, _loggerFactory));
+                _jobs.Add(new ScheduledJobInstance(options, _serviceProvider, _cacheClient, _loggerFactory));
                 _jobsArray = _jobs.ToArray();
             }
             else
             {
                 var builder = new ScheduledJobOptionsBuilder(job.Options);
                 configure?.Invoke(builder);
-                job.Schedule = job.Options.CronSchedule;
             }
         }
     }
@@ -131,8 +129,10 @@ public class JobManager : IJobManager
             Schedule = j.Options.CronSchedule,
             LastRun = j.LastRun,
             LastSuccess = j.LastSuccess,
+            LastErrorMessage = j.LastErrorMessage,
             NextRun = j.NextRun,
-            IsRunning = j.RunTask is { IsCompleted: false }
+            IsRunning = j.IsRunning,
+            IsEnabled = j.Options.IsEnabled
         }).ToArray();
     }
 
@@ -149,10 +149,10 @@ public class JobManager : IJobManager
             throw new ArgumentException("Job not found.", nameof(jobName));
 
         using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + job.Options.Name);
-        await job.StartAsync(cancellationToken).AnyContext();
+        await job.StartAsync(true, cancellationToken).AnyContext();
     }
 
-    internal ScheduledJobRunner[] Jobs => _jobsArray;
+    internal ScheduledJobInstance[] Jobs => _jobsArray;
 }
 
 public class JobStatus
@@ -164,4 +164,5 @@ public class JobStatus
     public string LastErrorMessage { get; set; }
     public DateTime? NextRun { get; set; }
     public bool IsRunning { get; set; }
+    public bool IsEnabled { get; set; }
 }

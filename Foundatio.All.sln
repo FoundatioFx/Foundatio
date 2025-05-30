@@ -34,8 +34,6 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.JsonNet", "src\Fo
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Utf8Json", "src\Foundatio.Utf8Json\Foundatio.Utf8Json.csproj", "{44A5A11C-4D9E-4219-9E56-46F07E37A3B0}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.Extensions.Hosting", "src\Foundatio.Extensions.Hosting\Foundatio.Extensions.Hosting.csproj", "{FC503293-E2AD-4FE8-856E-F2605D0422D1}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.MessagePack", "src\Foundatio.MessagePack\Foundatio.MessagePack.csproj", "{1D0CF7B3-D0B3-4739-A280-5C0822169E08}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Foundatio.AWS", "..\Foundatio.AWS\src\Foundatio.AWS\Foundatio.AWS.csproj", "{2D2DBEA1-A199-4311-8F29-CF7AD5EE1C47}"
@@ -106,6 +104,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Parsers.SqlQuerie
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Parsers.SqlQueries", "..\Foundatio.Parsers\src\Foundatio.Parsers.SqlQueries\Foundatio.Parsers.SqlQueries.csproj", "{DC95F757-B081-48E5-95AE-E8AF2A9FEB63}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.AppHost", "samples\Foundatio.AppHost\Foundatio.AppHost.csproj", "{91529E2E-1E82-4D4C-9543-C0FB9DD783CE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Foundatio.Extensions.Hosting", "src\Foundatio.Extensions.Hosting\Foundatio.Extensions.Hosting.csproj", "{2574F5D9-878D-42C1-A60D-08CB55C1A6BB}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -140,10 +142,6 @@ Global
 		{44A5A11C-4D9E-4219-9E56-46F07E37A3B0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{44A5A11C-4D9E-4219-9E56-46F07E37A3B0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{44A5A11C-4D9E-4219-9E56-46F07E37A3B0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{FC503293-E2AD-4FE8-856E-F2605D0422D1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{FC503293-E2AD-4FE8-856E-F2605D0422D1}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{FC503293-E2AD-4FE8-856E-F2605D0422D1}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{FC503293-E2AD-4FE8-856E-F2605D0422D1}.Release|Any CPU.Build.0 = Release|Any CPU
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1D0CF7B3-D0B3-4739-A280-5C0822169E08}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -284,6 +282,14 @@ Global
 		{DC95F757-B081-48E5-95AE-E8AF2A9FEB63}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DC95F757-B081-48E5-95AE-E8AF2A9FEB63}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DC95F757-B081-48E5-95AE-E8AF2A9FEB63}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91529E2E-1E82-4D4C-9543-C0FB9DD783CE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91529E2E-1E82-4D4C-9543-C0FB9DD783CE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91529E2E-1E82-4D4C-9543-C0FB9DD783CE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91529E2E-1E82-4D4C-9543-C0FB9DD783CE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2574F5D9-878D-42C1-A60D-08CB55C1A6BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2574F5D9-878D-42C1-A60D-08CB55C1A6BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2574F5D9-878D-42C1-A60D-08CB55C1A6BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2574F5D9-878D-42C1-A60D-08CB55C1A6BB}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -312,6 +318,7 @@ Global
 		{0B2C6825-972B-4B52-84A6-81C668FFCD5C} = {A1DFF80C-113F-4FEC-84BB-1E3790FB410F}
 		{F25CB5A4-DE0E-4476-9736-DCD619BC8960} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
 		{FECAABE4-7B4B-4F70-A539-2B2ED4638AFA} = {70515E66-DAF8-4D18-8F8F-8A2934171AA9}
+		{91529E2E-1E82-4D4C-9543-C0FB9DD783CE} = {A1DFF80C-113F-4FEC-84BB-1E3790FB410F}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {BD75F5C6-658B-40DF-A8F6-91C3EB76DAAA}
