@@ -112,7 +112,14 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
                     return;
 
                 _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
-                _channelMessageQueue?.Unsubscribe(CommandFlags.FireAndForget);
+                try
+                {
+                    _channelMessageQueue?.Unsubscribe(CommandFlags.FireAndForget);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error unsubscribing from topic {Topic}: {Message}", _options.Topic, ex.Message);
+                }
                 _channelMessageQueue = null;
                 _isSubscribed = false;
                 _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
