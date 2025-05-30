@@ -37,7 +37,6 @@ jobs:
       with:
         dotnet-version: |
           8.0.x
-          9.0.x
     - name: Build Reason
       run: |
         branch=${GITHUB_REF##*/}.
