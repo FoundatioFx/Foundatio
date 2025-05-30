@@ -2,6 +2,7 @@
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 
 namespace Foundatio.Storage;
 
@@ -88,10 +89,14 @@ public class ActionableStream : Stream, IAsyncDisposable
 
     protected override void Dispose(bool disposing)
     {
+        if (_disposed)
+            return;
+
         DisposeAsync().GetAwaiter().GetResult();
     }
 
-    protected virtual async ValueTask DisposeAsyncCore()
+#if NETSTANDARD
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
             return;
@@ -99,9 +104,12 @@ public class ActionableStream : Stream, IAsyncDisposable
         try
         {
             _disposed = true;
-            await _disposeAction.Invoke();
+            await _disposeAction.Invoke().AnyContext();
         }
-        catch { /* ignore if these are already disposed;  this is to make sure they are */ }
+        catch (ObjectDisposedException)
+        {
+            /* ignore if these are already disposed; this is to make sure they are */
+        }
 
         if (_stream is IAsyncDisposable streamAsyncDisposable)
         {
@@ -111,11 +119,26 @@ public class ActionableStream : Stream, IAsyncDisposable
         {
             _stream?.Dispose();
         }
-    }
 
-    public async ValueTask DisposeAsync()
-    {
-        await DisposeAsyncCore();
         GC.SuppressFinalize(this);
     }
+#else
+    public override async ValueTask DisposeAsync()
+    {
+        if (_disposed)
+            return;
+
+        try
+        {
+            _disposed = true;
+            await _disposeAction.Invoke().AnyContext();
+        }
+        catch (ObjectDisposedException)
+        {
+            /* ignore if these are already disposed; this is to make sure they are */
+        }
+
+        await base.DisposeAsync().AnyContext();
+    }
+#endif
 }

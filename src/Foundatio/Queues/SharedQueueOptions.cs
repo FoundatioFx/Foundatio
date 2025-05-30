@@ -50,9 +50,6 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     public TBuilder WorkItemTimeout(TimeSpan timeout)
     {
-        if (timeout == null)
-            throw new ArgumentNullException(nameof(timeout));
-
         if (timeout < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(timeout));
 

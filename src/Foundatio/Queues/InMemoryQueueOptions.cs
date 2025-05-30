@@ -13,9 +13,6 @@ public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, InMem
 {
     public InMemoryQueueOptionsBuilder<T> RetryDelay(TimeSpan retryDelay)
     {
-        if (retryDelay == null)
-            throw new ArgumentNullException(nameof(retryDelay));
-
         if (retryDelay < TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(retryDelay));
 
