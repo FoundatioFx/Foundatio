@@ -10,6 +10,7 @@
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Foundatio\Extensions\DateTimeExtensions.cs" Link="Extensions\DateTimeExtensions.cs" />
     <Compile Include="..\Foundatio\Extensions\TaskExtensions.cs" Link="Extensions\TaskExtensions.cs" />
   </ItemGroup>
 </Project>

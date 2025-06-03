@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -91,10 +93,9 @@ internal class ScheduledJobInstance
     public DateTime? LastStateSync { get; internal set; }
     public bool IsRunning { get; internal set; }
     public DateTime? NextRun { get; internal set; }
-    public DateTime? LastRun { get; internal set; }
     public DateTime? LastSuccess { get; internal set; }
-    public TimeSpan? LastDuration { get; internal set; }
-    public string LastErrorMessage { get; internal set; }
+    public DateTime? LastRun { get; internal set; }
+    public List<JobRunResult> History { get; set; } = new();
 
     internal bool SkipUpdate { get; set; } = false;
 
@@ -107,21 +108,21 @@ internal class ScheduledJobInstance
         if (Options.IsEnabled == false || _cronExpression == null)
             return null;
 
-        var lastRun = LastRun ?? _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(-5);
+        var lastRun = LastRun ?? _timeProvider.GetUtcNowDateTime(false).AddSeconds(-5);
         var nextRun = _cronExpression.GetNextOccurrence(lastRun, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
         if (nextRun == null)
             return null;
 
-        if (nextRun < _timeProvider.GetUtcNow().UtcDateTime)
+        if (nextRun < _timeProvider.GetUtcNowDateTime(false))
         {
-            var futureRun = _cronExpression.GetNextOccurrence(_timeProvider.GetUtcNow().UtcDateTime, _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
+            var futureRun = _cronExpression.GetNextOccurrence(_timeProvider.GetUtcNowDateTime(false), _jobOptions.CronTimeZone ?? TimeZoneInfo.Local);
 
             // if next run is more than an hour in the past, use the future run
-            if (_timeProvider.GetUtcNow().UtcDateTime.Subtract(nextRun.Value) > TimeSpan.FromHours(1))
+            if (_timeProvider.GetUtcNowDateTime(false).Subtract(nextRun.Value) > TimeSpan.FromHours(1))
                 nextRun = futureRun;
 
             // if the next run is within 10 minutes, use it
-            if (futureRun.HasValue && futureRun.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime) < TimeSpan.FromMinutes(10))
+            if (futureRun.HasValue && futureRun.Value.Subtract(_timeProvider.GetUtcNowDateTime(false)) < TimeSpan.FromMinutes(10))
                 nextRun = futureRun;
         }
 
@@ -137,7 +138,7 @@ internal class ScheduledJobInstance
             return false;
 
         // not time yet
-        if (NextRun > _timeProvider.GetUtcNow().UtcDateTime)
+        if (NextRun > _timeProvider.GetUtcNowDateTime(false))
             return false;
 
         // check if already run
@@ -223,6 +224,15 @@ internal class ScheduledJobInstance
         {
             await using (jobRunningLock)
             {
+                var utcNow = _timeProvider.GetUtcNowDateTime(false);
+                var jobRunResult = new JobRunResult { Date = utcNow };
+                if (isManual)
+                    jobRunResult.Manual = true;
+                else
+                    jobRunResult.Scheduled = scheduledTime;
+
+                var sw = new Stopwatch();
+
                 try
                 {
                     _logger.LogInformation("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
@@ -233,24 +243,26 @@ internal class ScheduledJobInstance
                     var job = Options.JobFactory(scope.ServiceProvider);
 
                     IsRunning = true;
-                    LastRun = isManual ? _timeProvider.GetUtcNow().UtcDateTime : NextRun;
+                    LastRun = isManual ? utcNow : NextRun;
                     NextRun = GetNextScheduledRun();
 
                     await UpdateDistributedStateAsync(true).AnyContext();
 
-                    var sw = Stopwatch.StartNew();
+                    sw.Start();
                     var result = await job.TryRunAsync(cancellationToken).AnyContext();
                     sw.Stop();
-                    LastDuration = sw.Elapsed;
+                    jobRunResult.Duration = sw.Elapsed;
 
                     _logger.LogJobResult(result, Options.Name);
                     if (result.IsSuccess)
                     {
-                        LastSuccess = _timeProvider.GetUtcNow().UtcDateTime;
+                        jobRunResult.Success = true;
+                        LastSuccess = _timeProvider.GetUtcNowDateTime(false);
                     }
                     else
                     {
-                        LastErrorMessage = result.Message;
+                        jobRunResult.Success = false;
+
                         // TODO set next run time to retry, but need max retry count
                     }
                 }
@@ -259,7 +271,10 @@ internal class ScheduledJobInstance
                 }
                 catch (Exception ex)
                 {
-                    LastErrorMessage = ex.Message;
+                    sw.Stop();
+                    jobRunResult.Duration = sw.Elapsed;
+                    jobRunResult.Success = false;
+                    jobRunResult.ErrorMessage = ex.Message;
 
                     if (scheduledTimeLock != null)
                         await scheduledTimeLock.ReleaseAsync();
@@ -272,6 +287,8 @@ internal class ScheduledJobInstance
                 finally
                 {
                     IsRunning = false;
+                    AddJobRunResult(jobRunResult);
+
                     await UpdateDistributedStateAsync();
 
                     if (isManual)
@@ -279,6 +296,18 @@ internal class ScheduledJobInstance
                 }
             }
         }, cancellationToken).Unwrap();
+    }
+
+    private void AddJobRunResult(JobRunResult result)
+    {
+        if (result == null)
+            return;
+
+        const int maxCount = 10;
+
+        History.Insert(0, result);
+        if (History.Count > maxCount)
+            History.RemoveRange(maxCount, History.Count - maxCount);
     }
 
     internal async Task UpdateDistributedStateAsync(bool setNextRun = false, string reason = null)
@@ -295,8 +324,7 @@ internal class ScheduledJobInstance
                 IsRunning = IsRunning,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
-                LastDuration = LastDuration,
-                LastErrorMessage = LastErrorMessage
+                History = History ?? []
             };
 
             _logger.LogDebug("Updating distributed state for {JobName} ({JobId}): {JobState}", Options.Name, Id, Options.CronSchedule);
@@ -316,8 +344,7 @@ internal class ScheduledJobInstance
                 IsRunning = IsRunning,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
-                LastDuration = LastDuration,
-                LastErrorMessage = LastErrorMessage,
+                History = History,
                 Reason = reason
             }).AnyContext();
         }
@@ -336,7 +363,7 @@ internal class ScheduledJobInstance
         {
             _logger.LogDebug("Getting job state for {JobName} ({JobId})", Options.Name, Id);
 
-            LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
+            LastStateSync = _timeProvider.GetUtcNowDateTime(false);
 
             var cacheState = await _cacheClient.GetAsync<JobInstanceState>(CacheKey + ":state").AnyContext();
             if (!cacheState.HasValue || cacheState.Value == null)
@@ -362,11 +389,10 @@ internal class ScheduledJobInstance
         IsRunning = state.IsRunning;
         LastRun = state.LastRun;
         LastSuccess = state.LastSuccess;
-        LastDuration = state.LastDuration;
-        LastErrorMessage = state.LastErrorMessage;
+        History = state.History;
         NextRun = GetNextScheduledRun();
 
-        LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
+        LastStateSync = _timeProvider.GetUtcNowDateTime(false);
     }
 
     private string GetLockKey(DateTime date)
@@ -384,8 +410,20 @@ public class JobInstanceState
     public bool IsRunning { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
-    public TimeSpan? LastDuration { get; set; }
-    public string LastErrorMessage { get; set; }
+    public List<JobRunResult> History { get; set; }
+}
+
+public class JobRunResult
+{
+    public DateTime? Date { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTime? Scheduled { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Manual { get; set; }
+    public bool Success { get; set; }
+    public TimeSpan? Duration { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string ErrorMessage { get; set; }
 }
 
 public class JobStateChangedMessage : JobInstanceState

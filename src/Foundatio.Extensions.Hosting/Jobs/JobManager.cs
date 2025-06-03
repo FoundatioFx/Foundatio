@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -19,8 +20,8 @@ public interface IJobManager
     void Update(string jobName, Action<ScheduledJobOptionsBuilder> configure = null);
     void Remove<TJob>() where TJob : class, IJob;
     void Remove(string jobName);
-    JobStatus[] GetJobStatus(bool runningOnly = false);
-    JobStatus GetJobStatus(string jobName);
+    JobStatus[] GetJobStatus(bool runningOnly = false, bool includeHistory = true);
+    JobStatus GetJobStatus(string jobName, bool includeHistory = true);
     Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob;
     Task RunJobAsync(string jobName, CancellationToken cancellationToken = default);
     Task ReleaseLockAsync(string jobName);
@@ -152,37 +153,38 @@ public class JobManager : IJobManager
         }
     }
 
-    public JobStatus[] GetJobStatus(bool runningOnly = false)
+    public JobStatus[] GetJobStatus(bool runningOnly = false, bool includeHistory = true)
     {
         if (runningOnly)
             return Jobs.Where(j => j.IsRunning).Select(j => new JobStatus
             {
                 Name = j.Options.Name,
                 Schedule = j.Options.CronSchedule,
+                Running = j.IsRunning,
+                Enabled = j.Options.IsEnabled,
+                Distributed = j.Options.IsDistributed,
                 LastRun = j.LastRun,
-                LastSuccess = j.LastSuccess,
-                LastDuration = j.LastDuration,
-                LastErrorMessage = j.LastErrorMessage,
                 NextRun = j.NextRun,
-                IsRunning = j.IsRunning,
-                IsEnabled = j.Options.IsEnabled
+                LastSuccess = j.LastSuccess,
+                History = includeHistory ? j.History ?? [] : null
             }).ToArray();
 
         return Jobs.Select(j => new JobStatus
         {
             Name = j.Options.Name,
             Schedule = j.Options.CronSchedule,
+            Running = j.IsRunning,
+            Enabled = j.Options.IsEnabled,
+            Distributed = j.Options.IsDistributed,
             LastRun = j.LastRun,
-            LastSuccess = j.LastSuccess,
-            LastDuration = j.LastDuration,
-            LastErrorMessage = j.LastErrorMessage,
             NextRun = j.NextRun,
-            IsRunning = j.IsRunning,
-            IsEnabled = j.Options.IsEnabled
+            LastSuccess = j.LastSuccess,
+            History = includeHistory ? j.History ?? [] : null
         }).ToArray();
     }
 
-    public JobStatus GetJobStatus(string jobName) => GetJobStatus().FirstOrDefault(j => j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase))
+    public JobStatus GetJobStatus(string jobName, bool includeHistory = true) =>
+        GetJobStatus(includeHistory: includeHistory).FirstOrDefault(j => j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase))
         ?? throw new ArgumentException("Job not found.", nameof(jobName));
 
     public async Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob
@@ -221,12 +223,13 @@ public class JobManager : IJobManager
 public class JobStatus
 {
     public string Name { get; set; }
+    public bool Running { get; set; }
+    public bool Enabled { get; set; }
+    public bool Distributed { get; set; }
     public string Schedule { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
-    public TimeSpan? LastDuration { get; set; }
-    public string LastErrorMessage { get; set; }
     public DateTime? NextRun { get; set; }
-    public bool IsRunning { get; set; }
-    public bool IsEnabled { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<JobRunResult> History { get; set; }
 }

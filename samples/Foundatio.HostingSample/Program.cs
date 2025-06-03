@@ -15,7 +15,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 #if REDIS
+using System.Text.Json;
+using Microsoft.AspNetCore.Http.Json;
 using StackExchange.Redis;
 #endif
 
@@ -28,6 +31,9 @@ bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgn
 var builder = WebApplication.CreateBuilder(args);
 
 ConfigureServices();
+
+// shutdown the host if no jobs are running, cron jobs are not considered running jobs
+builder.Services.AddJobLifetimeService();
 
 // inserts a startup action that does not complete until the critical health checks are healthy
 // gets inserted as 1st startup action so that any other startup actions don't run until the critical resources are available
@@ -43,7 +49,7 @@ builder.Services.AddHealthChecks().AddCheckForStartupActions("Critical");
 builder.Services.AddJobScheduler();
 
 if (everyMinute)
-    builder.Services.AddDistributedCronJob<EveryMinuteJob>("*/2 * * * *");
+    builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *");
 
 builder.Services.AddCronJob(b => b.Name("Tokyo").CronSchedule("44 4 * * *").CronTimeZone("Asia/Tokyo").JobAction(async sp =>
 {
@@ -79,7 +85,7 @@ builder.Services.AddStartupAction("Test1", async sp =>
     logger.LogTrace("Running startup 1 action");
     for (int i = 0; i < 3; i++)
     {
-        await Task.Delay(1000);
+        await Task.Delay(100);
         logger.LogTrace("Running startup 1 action...");
     }
 
@@ -90,18 +96,18 @@ builder.Services.AddStartupAction("Test1", async sp =>
 builder.Services.AddStartupAction<MyStartupAction>(priority: 100);
 builder.Services.AddStartupAction<OtherStartupAction>(priority: 100);
 
-builder.Services.AddStartupAction("Test2", async sp =>
+/*builder.Services.AddStartupAction("Test2", async sp =>
 {
     var logger = sp.GetRequiredService<ILogger<Program>>();
     logger.LogTrace("Running startup 2 action");
     for (int i = 0; i < 2; i++)
     {
-        await Task.Delay(1500);
+        await Task.Delay(50);
         logger.LogTrace("Running startup 2 action...");
     }
     //throw new ApplicationException("Boom goes the startup");
     logger.LogTrace("Done running startup 2 action");
-});
+});*/
 
 //s.AddStartupAction("Boom", () => throw new ApplicationException("Boom goes the startup"));
 
@@ -109,15 +115,15 @@ var app = builder.Build();
 
 app.MapGet("/", () => "Foundatio!");
 
-app.MapGet("/jobs/status", (IJobManager jobManager, string name = null, bool? running = null) =>
+app.MapGet("/jobs/status", (IJobManager jobManager, string name = null, bool? running = null, bool history = true) =>
     {
         if (!String.IsNullOrEmpty(name))
-            return Results.Ok(jobManager.GetJobStatus(name));
+            return Results.Ok(jobManager.GetJobStatus(name, includeHistory: history));
 
         if (running.HasValue && running.Value)
-            return Results.Ok(jobManager.GetJobStatus(true));
+            return Results.Ok(jobManager.GetJobStatus(true, includeHistory: history));
 
-        return Results.Ok(jobManager.GetJobStatus());
+        return Results.Ok(jobManager.GetJobStatus(includeHistory: history));
     });
 
 app.MapGet("/jobs/run", async (IJobManager jobManager, string name) =>
@@ -190,9 +196,6 @@ void ConfigureServices()
     builder.AddServiceDefaults();
     builder.Services.ConfigureHttpJsonOptions(o => { o.SerializerOptions.WriteIndented = true; });
 
-    // shutdown the host if no jobs are running
-    builder.Services.AddJobLifetimeService();
-
 #if REDIS
     builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     {
@@ -202,8 +205,8 @@ void ConfigureServices()
     });
 
     // distributed cache
-    builder.Services.AddSingleton<ISerializer, SystemTextJsonSerializer>();
-    builder.Services.AddSingleton<ITextSerializer, SystemTextJsonSerializer>();
+    builder.Services.AddSingleton<ITextSerializer>(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions, sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions));
+    builder.Services.AddSingleton<ISerializer>(sp => sp.GetRequiredService<ITextSerializer>());
     builder.Services.AddSingleton<ICacheClient>(sp => new RedisCacheClient(c => c.ConnectionMultiplexer(sp.GetRequiredService<IConnectionMultiplexer>())));
 
     // distributed lock provider
