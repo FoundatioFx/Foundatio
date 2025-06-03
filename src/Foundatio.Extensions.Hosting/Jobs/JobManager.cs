@@ -19,10 +19,11 @@ public interface IJobManager
     void Update(string jobName, Action<ScheduledJobOptionsBuilder> configure = null);
     void Remove<TJob>() where TJob : class, IJob;
     void Remove(string jobName);
-    JobStatus[] GetJobStatus();
+    JobStatus[] GetJobStatus(bool runningOnly = false);
     JobStatus GetJobStatus(string jobName);
     Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob;
     Task RunJobAsync(string jobName, CancellationToken cancellationToken = default);
+    Task ReleaseLockAsync(string jobName);
 }
 
 public class JobManager : IJobManager
@@ -52,7 +53,7 @@ public class JobManager : IJobManager
         string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
         {
-            var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
             {
                 var options = new ScheduledJobOptions
@@ -77,7 +78,7 @@ public class JobManager : IJobManager
     {
         lock (_lock)
         {
-            var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
             {
                 var options = new ScheduledJobOptions
@@ -102,7 +103,7 @@ public class JobManager : IJobManager
         string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
         {
-            var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
                 throw new ArgumentException("Job not found.", nameof(jobName));
 
@@ -115,7 +116,7 @@ public class JobManager : IJobManager
     {
         lock (_lock)
         {
-            var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
                 throw new ArgumentException("Job not found.", nameof(jobName));
 
@@ -129,7 +130,7 @@ public class JobManager : IJobManager
         string jobName = JobOptions.GetDefaultJobName(typeof(TJob));
         lock (_lock)
         {
-            var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
                 return;
 
@@ -142,7 +143,7 @@ public class JobManager : IJobManager
     {
         lock (_lock)
         {
-            var job = _jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            var job = GetJob(jobName);
             if (job == null)
                 return;
 
@@ -151,8 +152,22 @@ public class JobManager : IJobManager
         }
     }
 
-    public JobStatus[] GetJobStatus()
+    public JobStatus[] GetJobStatus(bool runningOnly = false)
     {
+        if (runningOnly)
+            return Jobs.Where(j => j.IsRunning).Select(j => new JobStatus
+            {
+                Name = j.Options.Name,
+                Schedule = j.Options.CronSchedule,
+                LastRun = j.LastRun,
+                LastSuccess = j.LastSuccess,
+                LastDuration = j.LastDuration,
+                LastErrorMessage = j.LastErrorMessage,
+                NextRun = j.NextRun,
+                IsRunning = j.IsRunning,
+                IsEnabled = j.Options.IsEnabled
+            }).ToArray();
+
         return Jobs.Select(j => new JobStatus
         {
             Name = j.Options.Name,
@@ -178,12 +193,26 @@ public class JobManager : IJobManager
 
     public async Task RunJobAsync(string jobName, CancellationToken cancellationToken = default)
     {
-        var job = Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+        var job = GetJob(jobName);
         if (job == null)
             throw new ArgumentException("Job not found.", nameof(jobName));
 
         using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + job.Options.Name);
         await job.StartAsync(true, cancellationToken).AnyContext();
+    }
+
+    public async Task ReleaseLockAsync(string jobName)
+    {
+        var job = GetJob(jobName);
+        if (job == null)
+            throw new ArgumentException("Job not found.", nameof(jobName));
+
+        await job.ReleaseLockAsync().AnyContext();
+    }
+
+    internal ScheduledJobInstance GetJob(string jobName)
+    {
+        return Jobs.FirstOrDefault(j => j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
     }
 
     internal ScheduledJobInstance[] Jobs => _jobsArray;

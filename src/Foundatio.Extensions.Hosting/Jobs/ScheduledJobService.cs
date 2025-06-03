@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,7 +28,8 @@ public class ScheduledJobService : BackgroundService
         _jobManager = jobManager;
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         var loggerFactory = serviceProvider.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance;
-        _cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
+        var cacheClient = serviceProvider.GetService<ICacheClient>() ?? new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory));
+        _cacheClient = new ScopedCacheClient(cacheClient, "jobs");
         _messageBus = serviceProvider.GetService<IMessageBus>() ?? new NullMessageBus();
         _logger = serviceProvider.GetService<ILogger<ScheduledJobService>>() ?? NullLogger<ScheduledJobService>.Instance;
     }
@@ -48,31 +48,26 @@ public class ScheduledJobService : BackgroundService
 
         await _messageBus.SubscribeAsync<JobStateChangedMessage>(s =>
         {
-            var job = _jobManager.Jobs.FirstOrDefault(j => j.Options.Name == s.JobName);
+            var job = _jobManager.GetJob(s.JobName);
             if (job == null || s.Id == job.Id)
                 return Task.CompletedTask;
 
             if (!String.IsNullOrEmpty(s.Reason))
-                _logger.LogInformation("Received job state change for {JobName} with Id {Id} {JobId} Reason: {Reason}", s.JobName, s.Id, job.Id, s.Reason);
+                _logger.LogInformation("Received job state change for {JobName} from {Id} ({JobId}) Reason: {Reason}", s.JobName, s.Id, job.Id, s.Reason);
             else
-                _logger.LogDebug("Received job state change for {JobName} with Id {Id} {JobId}", s.JobName, s.Id, job.Id);
+                _logger.LogDebug("Received job state change for {JobName} from {Id} ({JobId})", s.JobName, s.Id, job.Id);
 
-            job.Options.CronSchedule = s.CronSchedule;
-            job.Options.IsEnabled = s.IsEnabled;
-            job.IsRunning = s.IsRunning;
-            job.LastRun = s.LastRun;
-            job.LastSuccess = s.LastSuccess;
-            job.LastDuration = s.LastDuration;
-            job.LastErrorMessage = s.LastErrorMessage;
-            job.LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
-            job.NextRun = job.GetNextScheduledRun();
+            // skip update to prevent infinite loop
+            job.SkipUpdate = true;
+            job.ApplyDistributedState(s);
+            job.SkipUpdate = false;
 
             return Task.CompletedTask;
         }, cancellationToken: stoppingToken);
 
-        // apply initial distributed job states
         try
         {
+            _logger.LogDebug("Applying initial distributed job states...");
             var distributedJobs = _jobManager.Jobs.Where(j => j.Options.IsDistributed).ToDictionary(j => j.CacheKey + ":state", j => j);
             var distributedJobStates = await _cacheClient.GetAllAsync<JobInstanceState>(distributedJobs.Keys).AnyContext();
 
@@ -83,8 +78,21 @@ public class ScheduledJobService : BackgroundService
                 if (!distributedJobStates.TryGetValue(distributedJob.Key, out var jobState) || !jobState.HasValue)
                     continue;
 
-                job.LastStateSync = _timeProvider.GetUtcNow().UtcDateTime;
-                await job.ApplyDistributedStateAsync(jobState.Value).AnyContext();
+                _logger.LogDebug("Applying distributed state for job {JobName} ({JobId})", distributedJob.Value.Options.Name, job.Id);
+
+                if (job.Options.CronSchedule != jobState.Value.CronSchedule)
+                {
+                    _logger.LogInformation("Cron schedule changed for job {JobName} from {OldCronSchedule} to {NewCronSchedule} ({JobId})",
+                        job.Options.Name, jobState.Value.CronSchedule, job.Options.CronSchedule, job.Id);
+
+                    // if cron schedule is different from distributed state, set it explicitly
+                    job.ApplyDistributedState(jobState.Value, job.Options.CronSchedule);
+                    await job.UpdateDistributedStateAsync(true, "Cron schedule changed").AnyContext();
+                }
+                else
+                {
+                    job.ApplyDistributedState(jobState.Value);
+                }
             }
         }
         catch (Exception ex)

@@ -14,6 +14,7 @@ public interface ILockProvider
     Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
     Task<bool> IsLockedAsync(string resource);
     Task ReleaseAsync(string resource, string lockId);
+    Task ReleaseAsync(string resource);
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
 

@@ -61,6 +61,11 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger
         return UnscopedLockProvider.ReleaseAsync(resource, lockId);
     }
 
+    public Task ReleaseAsync(string resource)
+    {
+        return UnscopedLockProvider.ReleaseAsync(resource);
+    }
+
     public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
         return UnscopedLockProvider.RenewAsync(resource, lockId, timeUntilExpires);

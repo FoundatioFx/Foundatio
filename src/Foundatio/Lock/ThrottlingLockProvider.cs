@@ -124,6 +124,11 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
         return Task.CompletedTask;
     }
 
+    public Task ReleaseAsync(string resource)
+    {
+        return Task.CompletedTask;
+    }
+
     public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
         return Task.CompletedTask;

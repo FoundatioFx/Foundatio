@@ -27,7 +27,7 @@ bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgn
 
 var builder = WebApplication.CreateBuilder(args);
 
-ConfigureServices(builder);
+ConfigureServices();
 
 // inserts a startup action that does not complete until the critical health checks are healthy
 // gets inserted as 1st startup action so that any other startup actions don't run until the critical resources are available
@@ -43,7 +43,7 @@ builder.Services.AddHealthChecks().AddCheckForStartupActions("Critical");
 builder.Services.AddJobScheduler();
 
 if (everyMinute)
-    builder.Services.AddDistributedCronJob<EveryMinuteJob>("* * * * *");
+    builder.Services.AddDistributedCronJob<EveryMinuteJob>("*/2 * * * *");
 
 builder.Services.AddCronJob(b => b.Name("Tokyo").CronSchedule("44 4 * * *").CronTimeZone("Asia/Tokyo").JobAction(async sp =>
 {
@@ -53,7 +53,7 @@ builder.Services.AddCronJob(b => b.Name("Tokyo").CronSchedule("44 4 * * *").Cron
 }));
 
 if (evenMinutes)
-    builder.Services.AddCronJob("EvenMinutes", "#1#2 * * * *", async sp =>
+    builder.Services.AddCronJob("EvenMinutes", "*/2 * * * *", async sp =>
     {
         var logger = sp.GetRequiredService<ILogger<Program>>();
         logger.LogInformation("EvenMinuteJob Run Thread={ManagedThreadId}", Thread.CurrentThread.ManagedThreadId);
@@ -109,47 +109,66 @@ var app = builder.Build();
 
 app.MapGet("/", () => "Foundatio!");
 
-app.MapGet("/jobs/status", (IJobManager jobManager, HttpRequest req) =>
+app.MapGet("/jobs/status", (IJobManager jobManager, string name = null, bool? running = null) =>
     {
-        var jobName = req.Query["name"];
-        if (!String.IsNullOrEmpty(jobName))
-            return Results.Ok(jobManager.GetJobStatus(jobName));
+        if (!String.IsNullOrEmpty(name))
+            return Results.Ok(jobManager.GetJobStatus(name));
+
+        if (running.HasValue && running.Value)
+            return Results.Ok(jobManager.GetJobStatus(true));
 
         return Results.Ok(jobManager.GetJobStatus());
     });
 
-app.MapGet("/jobs/run", async (IJobManager jobManager, HttpRequest req) =>
+app.MapGet("/jobs/run", async (IJobManager jobManager, string name) =>
     {
-        var jobName = req.Query["name"];
-        if (string.IsNullOrWhiteSpace(jobName))
+        if (String.IsNullOrWhiteSpace(name))
             return Results.BadRequest("Job name is required.");
 
-        await jobManager.RunJobAsync(jobName);
+        await jobManager.RunJobAsync(name);
 
-        return Results.Accepted();
+        return Results.Accepted($"Job {name} started successfully.");
     });
 
-app.MapGet("/jobs/enable", (IJobManager jobManager, HttpRequest req) =>
+app.MapGet("/jobs/enable", (IJobManager jobManager, string name) =>
     {
-        var jobName = req.Query["name"];
-        if (string.IsNullOrWhiteSpace(jobName))
+        if (String.IsNullOrWhiteSpace(name))
             return Results.BadRequest("Job name is required.");
 
-        jobManager.Update(jobName, c => c.Enabled());
+        jobManager.Update(name, c => c.Enabled());
 
-        return Results.Accepted();
+        return Results.Ok($"Job {name} enabled successfully.");
     });
 
-app.MapGet("/jobs/disable", (IJobManager jobManager, HttpRequest req) =>
+app.MapGet("/jobs/disable", (IJobManager jobManager, string name) =>
     {
-        var jobName = req.Query["name"];
-        if (string.IsNullOrWhiteSpace(jobName))
+        if (String.IsNullOrWhiteSpace(name))
             return Results.BadRequest("Job name is required.");
 
-        jobManager.Update(jobName, c => c.Disabled());
+        jobManager.Update(name, c => c.Disabled());
 
-        return Results.Accepted();
+        return Results.Ok($"Job {name} disabled successfully.");
     });
+
+app.MapGet("/jobs/schedule", (IJobManager jobManager, string name, string cron) =>
+{
+    if (String.IsNullOrWhiteSpace(name))
+        return Results.BadRequest("Job name is required.");
+
+    jobManager.Update(name, c => c.CronSchedule(cron));
+
+    return Results.Ok($"Job {name} updated successfully.");
+});
+
+app.MapGet("/jobs/release", async (IJobManager jobManager, string name) =>
+{
+    if (String.IsNullOrWhiteSpace(name))
+        return Results.BadRequest("Job name is required.");
+
+    await jobManager.ReleaseLockAsync(name);
+
+    return Results.Ok($"Job {name} lock released successfully.");
+});
 
 app.UseHealthChecks("/health");
 app.UseReadyHealthChecks("Critical");
@@ -161,7 +180,7 @@ app.UseWaitForStartupActionsBeforeServingRequests();
 
 app.Run();
 
-void ConfigureServices(WebApplicationBuilder builder)
+void ConfigureServices()
 {
     builder.Services.AddLogging(opt =>
     {

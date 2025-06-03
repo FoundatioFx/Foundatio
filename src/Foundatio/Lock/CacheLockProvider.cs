@@ -201,6 +201,16 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
         _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
     }
 
+    public async Task ReleaseAsync(string resource)
+    {
+        _logger.LogTrace("ReleaseAsync Start: {Resource}", resource);
+
+        await Run.WithRetriesAsync(() => _cacheClient.RemoveAsync(resource), 15, logger: _logger).AnyContext();
+        await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource }).AnyContext();
+
+        _logger.LogDebug("Released lock: {Resource}", resource);
+    }
+
     public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
         if (!timeUntilExpires.HasValue)
