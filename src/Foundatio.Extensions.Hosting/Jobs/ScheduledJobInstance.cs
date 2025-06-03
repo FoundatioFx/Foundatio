@@ -91,13 +91,13 @@ internal class ScheduledJobInstance
     public ScheduledJobOptions Options => _jobOptions;
 
     public DateTime? LastStateSync { get; internal set; }
-    public bool IsRunning { get; internal set; }
+    public bool Running { get; internal set; }
     public DateTime? NextRun { get; internal set; }
     public DateTime? LastSuccess { get; internal set; }
     public DateTime? LastRun { get; internal set; }
     public List<JobRunResult> History { get; set; } = new();
 
-    internal bool SkipUpdate { get; set; } = false;
+    internal bool SkipUpdate { get; set; }
 
     public Task RunTask { get; private set; }
 
@@ -159,6 +159,10 @@ internal class ScheduledJobInstance
         {
             await _lockProvider.ReleaseAsync(CacheKey).AnyContext();
             await _lockProvider.ReleaseAsync(GetLockKey(_baseDate)).AnyContext();
+
+            Running = false;
+
+            await UpdateDistributedStateAsync(true);
         }
         catch (Exception ex)
         {
@@ -213,7 +217,7 @@ internal class ScheduledJobInstance
             if (scheduledTimeLock == null || jobRunningLock == null)
             {
                 // sync distributed state
-                await ApplyDistributedStateAsync();
+                await GetDistributedStateAsync();
 
                 return;
             }
@@ -242,7 +246,7 @@ internal class ScheduledJobInstance
 
                     var job = Options.JobFactory(scope.ServiceProvider);
 
-                    IsRunning = true;
+                    Running = true;
                     LastRun = isManual ? utcNow : NextRun;
                     NextRun = GetNextScheduledRun();
 
@@ -274,7 +278,7 @@ internal class ScheduledJobInstance
                     sw.Stop();
                     jobRunResult.Duration = sw.Elapsed;
                     jobRunResult.Success = false;
-                    jobRunResult.ErrorMessage = ex.Message;
+                    jobRunResult.Error = ex.Message;
 
                     if (scheduledTimeLock != null)
                         await scheduledTimeLock.ReleaseAsync();
@@ -286,7 +290,7 @@ internal class ScheduledJobInstance
                 }
                 finally
                 {
-                    IsRunning = false;
+                    Running = false;
                     AddJobRunResult(jobRunResult);
 
                     await UpdateDistributedStateAsync();
@@ -319,9 +323,9 @@ internal class ScheduledJobInstance
         {
             var jobState = new JobInstanceState
             {
-                IsEnabled = Options.IsEnabled,
-                CronSchedule = Options.CronSchedule,
-                IsRunning = IsRunning,
+                Enabled = Options.IsEnabled,
+                Schedule = Options.CronSchedule,
+                Running = Running,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
                 History = History ?? []
@@ -334,14 +338,16 @@ internal class ScheduledJobInstance
 
             await _cacheClient.SetAsync(CacheKey + ":state", jobState).AnyContext();
 
+            LastStateSync = _timeProvider.GetUtcNowDateTime(false);
+
             // send out change notification
             await _messageBus.PublishAsync(new JobStateChangedMessage
             {
                 Id = Id,
                 JobName = Options.Name,
-                IsEnabled = Options.IsEnabled,
-                CronSchedule = Options.CronSchedule,
-                IsRunning = IsRunning,
+                Enabled = Options.IsEnabled,
+                Schedule = Options.CronSchedule,
+                Running = Running,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
                 History = History,
@@ -354,7 +360,7 @@ internal class ScheduledJobInstance
         }
     }
 
-    internal async Task ApplyDistributedStateAsync()
+    internal async Task GetDistributedStateAsync()
     {
         if (!Options.IsDistributed)
             return;
@@ -369,7 +375,7 @@ internal class ScheduledJobInstance
             if (!cacheState.HasValue || cacheState.Value == null)
                 return;
 
-            ApplyDistributedState(cacheState.Value);
+            ApplyState(cacheState.Value);
         }
         catch (Exception ex)
         {
@@ -377,16 +383,16 @@ internal class ScheduledJobInstance
         }
     }
 
-    internal void ApplyDistributedState(JobInstanceState state, string cronSchedule = null)
+    internal void ApplyState(JobInstanceState state, string cronSchedule = null)
     {
         if (!Options.IsDistributed || state == null)
             return;
 
         _logger.LogDebug("Applying job state for {JobName} ({JobId})", Options.Name, Id);
 
-        Options.IsEnabled = state.IsEnabled;
-        Options.CronSchedule = cronSchedule ?? state.CronSchedule;
-        IsRunning = state.IsRunning;
+        Options.IsEnabled = state.Enabled;
+        Options.CronSchedule = cronSchedule ?? state.Schedule;
+        Running = state.Running;
         LastRun = state.LastRun;
         LastSuccess = state.LastSuccess;
         History = state.History;
@@ -405,9 +411,9 @@ internal class ScheduledJobInstance
 
 public class JobInstanceState
 {
-    public string CronSchedule { get; set; }
-    public bool IsEnabled { get; set; }
-    public bool IsRunning { get; set; }
+    public string Schedule { get; set; }
+    public bool Enabled { get; set; }
+    public bool Running { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
     public List<JobRunResult> History { get; set; }
@@ -423,7 +429,7 @@ public class JobRunResult
     public bool Success { get; set; }
     public TimeSpan? Duration { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string ErrorMessage { get; set; }
+    public string Error { get; set; }
 }
 
 public class JobStateChangedMessage : JobInstanceState

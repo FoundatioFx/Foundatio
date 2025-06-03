@@ -156,11 +156,11 @@ public class JobManager : IJobManager
     public JobStatus[] GetJobStatus(bool runningOnly = false, bool includeHistory = true)
     {
         if (runningOnly)
-            return Jobs.Where(j => j.IsRunning).Select(j => new JobStatus
+            return Jobs.Where(j => j.Running).Select(j => new JobStatus
             {
                 Name = j.Options.Name,
                 Schedule = j.Options.CronSchedule,
-                Running = j.IsRunning,
+                Running = j.Running,
                 Enabled = j.Options.IsEnabled,
                 Distributed = j.Options.IsDistributed,
                 LastRun = j.LastRun,
@@ -173,7 +173,7 @@ public class JobManager : IJobManager
         {
             Name = j.Options.Name,
             Schedule = j.Options.CronSchedule,
-            Running = j.IsRunning,
+            Running = j.Running,
             Enabled = j.Options.IsEnabled,
             Distributed = j.Options.IsDistributed,
             LastRun = j.LastRun,

@@ -59,7 +59,7 @@ public class ScheduledJobService : BackgroundService
 
             // skip update to prevent infinite loop
             job.SkipUpdate = true;
-            job.ApplyDistributedState(s);
+            job.ApplyState(s);
             job.SkipUpdate = false;
 
             return Task.CompletedTask;
@@ -80,18 +80,18 @@ public class ScheduledJobService : BackgroundService
 
                 _logger.LogDebug("Applying distributed state for job {JobName} ({JobId})", distributedJob.Value.Options.Name, job.Id);
 
-                if (job.Options.CronSchedule != jobState.Value.CronSchedule)
+                if (job.Options.CronSchedule != jobState.Value.Schedule)
                 {
                     _logger.LogInformation("Cron schedule changed for job {JobName} from {OldCronSchedule} to {NewCronSchedule} ({JobId})",
-                        job.Options.Name, jobState.Value.CronSchedule, job.Options.CronSchedule, job.Id);
+                        job.Options.Name, jobState.Value.Schedule, job.Options.CronSchedule, job.Id);
 
                     // if cron schedule is different from distributed state, set it explicitly
-                    job.ApplyDistributedState(jobState.Value, job.Options.CronSchedule);
+                    job.ApplyState(jobState.Value, job.Options.CronSchedule);
                     await job.UpdateDistributedStateAsync(true, "Cron schedule changed").AnyContext();
                 }
                 else
                 {
-                    job.ApplyDistributedState(jobState.Value);
+                    job.ApplyState(jobState.Value);
                 }
             }
         }
