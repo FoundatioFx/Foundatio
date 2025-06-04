@@ -199,7 +199,6 @@ public class JobManager : IJobManager
         if (job == null)
             throw new ArgumentException("Job not found.", nameof(jobName));
 
-        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + job.Options.Name);
         await job.StartAsync(true, cancellationToken).AnyContext();
     }
 

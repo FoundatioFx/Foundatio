@@ -177,6 +177,8 @@ internal class ScheduledJobInstance
 
     public async Task StartAsync(bool isManual, CancellationToken cancellationToken = default)
     {
+        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + Options.Name);
+
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
         ILock jobRunningLock = new EmptyLock();
@@ -239,6 +241,9 @@ internal class ScheduledJobInstance
 
                 try
                 {
+                    string jobRunId = Guid.NewGuid().ToString("N").Substring(0, 10);
+                    using var _ = _logger.BeginScope(s => s.Property("JobName", Options.Name).Property("JobId", Id).Property("JobRunId", jobRunId));
+
                     _logger.LogInformation("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
                         Id, isManual ? "Manual" : NextRun!.Value.ToString("t"));
 

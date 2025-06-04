@@ -132,8 +132,6 @@ public class ScheduledJobService : BackgroundService
 
             foreach (var jobToRun in _jobManager.Jobs.Where(j => j.ShouldRun()))
             {
-                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + jobToRun.Options.Name);
-
                 await jobToRun.StartAsync(stoppingToken).AnyContext();
             }
 
