@@ -54,6 +54,7 @@ public class JobRunner
     {
     }
 
+    public string Id { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     public CancellationTokenSource CancellationTokenSource { get; private set; }
 
     public async Task<int> RunInConsoleAsync()
@@ -147,81 +148,80 @@ public class JobRunner
             return false;
         }
 
-        using (_logger.BeginScope(s => s.Property("job", _options.Name)))
+        using var _ = _logger.BeginScope(s => s.Property("job.name", _options.Name).Property("job.id", Id));
+
+        _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
+
+        if (job is IAsyncLifetime jobLifetime)
         {
-            _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
+            _logger.LogInformation("Initializing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
+            await jobLifetime.InitializeAsync().AnyContext();
+            _logger.LogInformation("Finished initializing job lifetime {JobName} on machine {MachineName}", _options.Name, Environment.MachineName);
+        }
 
-            if (job is IAsyncLifetime jobLifetime)
+        try
+        {
+            if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
+                await _timeProvider.SafeDelay(_options.InitialDelay.Value, cancellationToken).AnyContext();
+
+            if (_options.RunContinuous && _options.InstanceCount > 1)
             {
-                _logger.LogInformation("Initializing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
-                await jobLifetime.InitializeAsync().AnyContext();
-                _logger.LogInformation("Finished initializing job lifetime {JobName} on machine {MachineName}", _options.Name, Environment.MachineName);
-            }
-
-            try
-            {
-                if (_options.InitialDelay.HasValue && _options.InitialDelay.Value > TimeSpan.Zero)
-                    await _timeProvider.SafeDelay(_options.InitialDelay.Value, cancellationToken).AnyContext();
-
-                if (_options.RunContinuous && _options.InstanceCount > 1)
+                try
                 {
-                    try
+                    var tasks = new List<Task>(_options.InstanceCount);
+                    for (int i = 0; i < _options.InstanceCount; i++)
                     {
-                        var tasks = new List<Task>(_options.InstanceCount);
-                        for (int i = 0; i < _options.InstanceCount; i++)
+                        tasks.Add(Task.Run(async () =>
                         {
-                            tasks.Add(Task.Run(async () =>
+                            try
                             {
-                                try
-                                {
-                                    await using var scope = _serviceProvider.CreateAsyncScope();
-                                    var jobInstance = _options.JobFactory(scope.ServiceProvider);
-                                    if (jobInstance is IJobWithOptions jobWithOptions)
-                                        jobWithOptions.Options = _options;
+                                await using var scope = _serviceProvider.CreateAsyncScope();
+                                var jobInstance = _options.JobFactory(scope.ServiceProvider);
+                                if (jobInstance is IJobWithOptions jobWithOptions)
+                                    jobWithOptions.Options = _options;
 
-                                    await jobInstance.RunContinuousAsync(_options, cancellationToken).AnyContext();
-                                }
-                                catch (TaskCanceledException)
-                                {
-                                    // Ignore cancellation
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
-                                    throw;
-                                }
-                            }, cancellationToken));
-                        }
-
-                        await Task.WhenAll(tasks).AnyContext();
+                                await jobInstance.RunContinuousAsync(_options, cancellationToken).AnyContext();
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                // Ignore cancellation
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error running job instance: {Message}", ex.Message);
+                                throw;
+                            }
+                        }, cancellationToken));
                     }
-                    catch (OperationCanceledException)
-                    {
-                        // Ignore cancellation
-                    }
-                }
-                else if (_options.RunContinuous && _options.InstanceCount == 1)
-                {
-                    await job.RunContinuousAsync(_options, cancellationToken).AnyContext();
-                }
-                else
-                {
-                    using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + _options.Name);
 
-                    var result = await job.TryRunAsync(cancellationToken).AnyContext();
-                    _logger.LogJobResult(result, _options.Name);
-
-                    return result.IsSuccess;
+                    await Task.WhenAll(tasks).AnyContext();
+                }
+                catch (OperationCanceledException)
+                {
+                    // Ignore cancellation
                 }
             }
-            finally
+            else if (_options.RunContinuous && _options.InstanceCount == 1)
             {
-                if (job is IAsyncDisposable jobDisposable)
-                {
-                    _logger.LogInformation("Disposing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
-                    await jobDisposable.DisposeAsync().AnyContext();
-                    _logger.LogInformation("Finished disposing job lifetime {JobName} on machine {MachineName}", _options.Name, Environment.MachineName);
-                }
+                await job.RunContinuousAsync(_options, cancellationToken).AnyContext();
+            }
+            else
+            {
+                using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Job: " + _options.Name);
+
+                var result = await job.TryRunAsync(cancellationToken).AnyContext();
+                _logger.LogJobResult(result, _options.Name);
+
+                return result.IsSuccess;
+            }
+        }
+        finally
+        {
+            if (job is IAsyncDisposable jobDisposable)
+            {
+                _logger.LogInformation("Disposing job lifetime {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
+                await jobDisposable.DisposeAsync().AnyContext();
+                _logger.LogInformation("Finished disposing job lifetime {JobName} on machine {MachineName}", _options.Name, Environment.MachineName);
             }
         }
 

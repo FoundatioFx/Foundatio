@@ -242,9 +242,9 @@ internal class ScheduledJobInstance
                 try
                 {
                     string jobRunId = Guid.NewGuid().ToString("N").Substring(0, 10);
-                    using var _ = _logger.BeginScope(s => s.Property("JobName", Options.Name).Property("JobId", Id).Property("JobRunId", jobRunId));
+                    using var _ = _logger.BeginScope(s => s.Property("job.name", Options.Name).Property("job.id", Id).Property("job.run_id", jobRunId));
 
-                    _logger.LogInformation("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
+                    _logger.LogDebug("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
                         Id, isManual ? "Manual" : NextRun!.Value.ToString("t"));
 
                     await using var scope = _serviceProvider.CreateAsyncScope();

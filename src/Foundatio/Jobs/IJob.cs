@@ -61,13 +61,16 @@ public static class JobExtensions
         int queueItemsProcessed = 0;
         bool isQueueJob = job.GetType().GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IQueueJob<>));
 
-        using var _ = logger.BeginScope(new Dictionary<string, object> { { "job", options.Name } });
+        string jobId = Guid.NewGuid().ToString("N").Substring(0, 10);
+        using var jobScope = logger.BeginScope(s => s.Property("job.name", options.Name).Property("job.id", jobId));
         logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", options.Name, Environment.MachineName);
 
         while (!cancellationToken.IsCancellationRequested)
         {
             using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"Job: {options.Name}");
 
+            string jobRunId = Guid.NewGuid().ToString("N").Substring(0, 10);
+            using var _ = logger.BeginScope(s => s.Property("job.run_id", jobRunId));
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, options.Name);
 
