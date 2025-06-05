@@ -380,8 +380,13 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             return;
 
         long highestExpirationInMs = (long)items.Single().Score;
-        var furthestExpirationUtc = highestExpirationInMs.FromUnixTimeMilliseconds();
+        if (highestExpirationInMs is < -62135596800000 or > 253402300799999)
+        {
+            _logger.LogWarning("List key {Key} has an invalid expiration value: {Expiration}. Setting Expiration to DateTime.MaxValue", key, highestExpirationInMs);
+            highestExpirationInMs = 253402300799999;
+        }
 
+        var furthestExpirationUtc = highestExpirationInMs.FromUnixTimeMilliseconds();
         var expiresIn = furthestExpirationUtc - _timeProvider.GetUtcNow();
         await SetExpirationAsync(key, expiresIn).AnyContext();
     }
