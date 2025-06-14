@@ -281,7 +281,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 
-        await ExpireListValuesAsync<T>(key, typeof(T) == typeof(string)).AnyContext();
+        await RemoveExpiredListValuesAsync<T>(key, typeof(T) == typeof(string)).AnyContext();
 
         if (!page.HasValue)
         {
@@ -324,24 +324,18 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         long expiresAtMilliseconds = expiresAt.ToUnixTimeMilliseconds();
 
         if (values is string stringValue)
-        {
             redisValues.Add(new SortedSetEntry(stringValue.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
-        }
         else
-        {
-            var valuesArray = values.Where(v => v is not null).ToArray();
-            foreach (var value in valuesArray)
-                redisValues.Add(new SortedSetEntry(value.ToRedisValue(_options.Serializer), expiresAtMilliseconds));
-        }
+            redisValues.AddRange(values.Where(v => v is not null).Select(value => new SortedSetEntry(value.ToRedisValue(_options.Serializer), expiresAtMilliseconds)));
 
-        await ExpireListValuesAsync<T>(key, values is string).AnyContext();
+        await RemoveExpiredListValuesAsync<T>(key, values is string).AnyContext();
 
         if (redisValues.Count == 0)
             return 0;
 
         long added = await Database.SortedSetAddAsync(key, redisValues.ToArray()).AnyContext();
         if (added > 0)
-            await ExpireListKeyExpirationAsync(key).AnyContext();
+            await SetListExpirationAsync(key).AnyContext();
 
         return added;
     }
@@ -358,32 +352,33 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (values is string stringValue)
             redisValues.Add(stringValue.ToRedisValue(_options.Serializer));
         else
-            foreach (var value in values.Where(v => v is not null))
-                redisValues.Add(value.ToRedisValue(_options.Serializer));
+            redisValues.AddRange(values.Where(v => v is not null).Select(value => value.ToRedisValue(_options.Serializer)));
 
-        await ExpireListValuesAsync<T>(key, values is string).AnyContext();
+        await RemoveExpiredListValuesAsync<T>(key, values is string).AnyContext();
 
         if (redisValues.Count == 0)
             return 0;
 
         long removed = await Database.SortedSetRemoveAsync(key, redisValues.ToArray()).AnyContext();
         if (removed > 0)
-            await ExpireListKeyExpirationAsync(key).AnyContext();
+            await SetListExpirationAsync(key).AnyContext();
 
         return removed;
     }
 
-    private async Task ExpireListKeyExpirationAsync(string key)
+    private const long MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
+
+    private async Task SetListExpirationAsync(string key)
     {
         var items = await Database.SortedSetRangeByRankWithScoresAsync(key, 0, 0, order: Order.Descending).AnyContext();
         if (items.Length == 0)
             return;
 
         long highestExpirationInMs = (long)items.Single().Score;
-        if (highestExpirationInMs is < -62135596800000 or > 253402300799999)
+        if (highestExpirationInMs > MaxUnixEpochMilliseconds)
         {
-            _logger.LogWarning("List key {Key} has an invalid expiration value: {Expiration}. Setting Expiration to DateTime.MaxValue", key, highestExpirationInMs);
-            highestExpirationInMs = 253402300799999;
+            await SetExpirationAsync(key, TimeSpan.MaxValue).AnyContext();
+            return;
         }
 
         var furthestExpirationUtc = highestExpirationInMs.FromUnixTimeMilliseconds();
@@ -391,7 +386,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         await SetExpirationAsync(key, expiresIn).AnyContext();
     }
 
-    private async Task ExpireListValuesAsync<T>(string key, bool isStringValues)
+    private async Task RemoveExpiredListValuesAsync<T>(string key, bool isStringValues)
     {
         try
         {
