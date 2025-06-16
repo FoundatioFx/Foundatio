@@ -1,6 +1,6 @@
 services:
   redis-node-0:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7000:7000"        # client
       - "17000:17000"      # cluster bus
@@ -12,7 +12,7 @@ services:
       - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
 
   redis-node-1:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7001:7001"
       - "17001:17001"
@@ -24,7 +24,7 @@ services:
       - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
 
   redis-node-2:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7002:7002"
       - "17002:17002"
@@ -36,7 +36,7 @@ services:
       - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
 
   redis-node-3:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7003:7003"
       - "17003:17003"
@@ -48,7 +48,7 @@ services:
       - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
 
   redis-node-4:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7004:7004"
       - "17004:17004"
@@ -60,7 +60,7 @@ services:
       - REDIS_NODES=${HOST_IP-172.17.0.1}:7000 ${HOST_IP-172.17.0.1}:7001 ${HOST_IP-172.17.0.1}:7002 ${HOST_IP-172.17.0.1}:7003 ${HOST_IP-172.17.0.1}:7004 ${HOST_IP-172.17.0.1}:7005
 
   redis-node-5:
-    image: bitnami/redis-cluster:7.4.3
+    image: bitnami/redis-cluster:8.0.2
     ports:
       - "7005:7005"
       - "17005:17005"

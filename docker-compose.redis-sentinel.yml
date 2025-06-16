@@ -1,6 +1,6 @@
 services:
   redis:
-    image: bitnami/redis:7.4.3
+    image: bitnami/redis:8.0.2
     environment:
       - REDIS_REPLICATION_MODE=master
       - ALLOW_EMPTY_PASSWORD=yes
@@ -8,7 +8,7 @@ services:
       - '6379:6379'
 
   redis-slave:
-    image: bitnami/redis:7.4.3
+    image: bitnami/redis:8.0.2
     depends_on:
       - redis
     environment:
@@ -19,7 +19,7 @@ services:
       - '6380:6379'
 
   redis-sentinel-1:
-    image: bitnami/redis-sentinel:7.4.3
+    image: bitnami/redis-sentinel:8.0.2
     depends_on:
       - redis
       - redis-slave
@@ -31,7 +31,7 @@ services:
       - '26379:26379'
 
   redis-sentinel-2:
-    image: bitnami/redis-sentinel:7.4.3
+    image: bitnami/redis-sentinel:8.0.2
     depends_on:
       - redis
       - redis-slave
@@ -44,7 +44,7 @@ services:
       - '26380:26380'
 
   redis-sentinel-3:
-    image: bitnami/redis-sentinel:7.4.3
+    image: bitnami/redis-sentinel:8.0.2
     depends_on:
       - redis
       - redis-slave

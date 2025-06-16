@@ -1,6 +1,6 @@
 services:
   redis:
-    image: bitnami/redis:7.4.3
+    image: bitnami/redis:8.0.2
     environment:
       ALLOW_EMPTY_PASSWORD: yes
     ports:
