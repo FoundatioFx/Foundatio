@@ -11,9 +11,11 @@ public class SQSQueueEntry<T>
     public SQSQueueEntry(Message message, T value, IQueue<T> queue)
         : base(message.MessageId, message.CorrelationId(), value, queue, message.SentTimestamp(), message.ApproximateReceiveCount())
     {
-
-        foreach (var property in message.MessageAttributes.Where(a => a.Key != "CorrelationId"))
-            Properties.Add(property.Key, property.Value.StringValue);
+        if (message.MessageAttributes is not null)
+        {
+            foreach (var property in message.MessageAttributes.Where(a => a.Key != "CorrelationId"))
+                Properties.Add(property.Key, property.Value.StringValue);
+        }
 
         UnderlyingMessage = message;
     }

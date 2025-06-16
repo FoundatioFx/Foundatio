@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.Runtime.Credentials;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Util;
@@ -42,7 +43,7 @@ public class S3FileStorage : IFileStorage
         _cannedAcl = options.CannedACL;
         _allowInMemoryStream = options.AllowInMemoryStream;
 
-        var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+        var credentials = options.Credentials ?? DefaultAWSCredentialsIdentityResolver.GetCredentials();
 
         if (String.IsNullOrEmpty(options.ServiceUrl))
         {
@@ -150,8 +151,8 @@ public class S3FileStorage : IFileStorage
             {
                 Path = req.Key,
                 Size = response.ContentLength,
-                Created = response.LastModified.ToUniversalTime(), // TODO: Need to fix this
-                Modified = response.LastModified.ToUniversalTime()
+                Created = response.LastModified?.ToUniversalTime() ?? DateTime.MinValue, // TODO: Need to fix this
+                Modified = response.LastModified?.ToUniversalTime() ?? DateTime.MinValue
             };
         }
         catch (AmazonS3Exception ex)
@@ -309,7 +310,7 @@ public class S3FileStorage : IFileStorage
         const int PAGE_SIZE = 100;
 
         var listRequest = new ListObjectsV2Request { BucketName = _bucket, Prefix = criteria.Prefix, MaxKeys = PAGE_SIZE };
-        var deleteRequest = new DeleteObjectsRequest { BucketName = _bucket };
+        var deleteRequest = new DeleteObjectsRequest { BucketName = _bucket, Objects = [] };
         var errors = new List<DeleteError>();
 
         ListObjectsV2Response listResponse;
@@ -318,15 +319,15 @@ public class S3FileStorage : IFileStorage
             listResponse = await _client.ListObjectsV2Async(listRequest, cancellationToken).AnyContext();
             listRequest.ContinuationToken = listResponse.NextContinuationToken;
 
-            var keys = listResponse.S3Objects.MatchesPattern(criteria.Pattern).Select(o => new KeyVersion { Key = o.Key }).ToArray();
-            if (keys.Length == 0)
+            var keys = listResponse.S3Objects?.MatchesPattern(criteria.Pattern).Select(o => new KeyVersion { Key = o.Key }).ToArray();
+            if (keys is not { Length: > 0 })
                 continue;
 
             deleteRequest.Objects.AddRange(keys);
 
             _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", keys.Length, searchPattern);
             var deleteResponse = await _client.DeleteObjectsAsync(deleteRequest, cancellationToken).AnyContext();
-            if (deleteResponse.DeleteErrors.Count > 0)
+            if (deleteResponse.DeleteErrors is { Count: > 0 })
             {
                 // retry 1 time, continue on.
                 var deleteRetryRequest = new DeleteObjectsRequest { BucketName = _bucket };
@@ -339,7 +340,7 @@ public class S3FileStorage : IFileStorage
             _logger.LogTrace("Deleted {FileCount} files matching {SearchPattern}", deleteResponse.DeletedObjects.Count, searchPattern);
             count += deleteResponse.DeletedObjects.Count;
             deleteRequest.Objects.Clear();
-        } while (listResponse.IsTruncated && !cancellationToken.IsCancellationRequested);
+        } while (listResponse.IsTruncated.GetValueOrDefault() && !cancellationToken.IsCancellationRequested);
 
         if (errors.Count > 0)
         {
@@ -382,9 +383,9 @@ public class S3FileStorage : IFileStorage
         return new NextPageResult
         {
             Success = response.HttpStatusCode.IsSuccessful(),
-            HasMore = response.IsTruncated,
-            Files = response.S3Objects.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).Where(spec => spec is not null && !spec.IsDirectory()).ToList(),
-            NextPageFunc = response.IsTruncated ? _ => GetFiles(criteria, pageSize, cancellationToken, response.NextContinuationToken) : null
+            HasMore = response.IsTruncated.GetValueOrDefault(),
+            Files = response.S3Objects?.MatchesPattern(criteria.Pattern).Select(blob => blob.ToFileInfo()).Where(spec => spec is not null && !spec.IsDirectory()).ToList() ?? [],
+            NextPageFunc = response.IsTruncated.GetValueOrDefault() ? _ => GetFiles(criteria, pageSize, cancellationToken, response.NextContinuationToken) : null
         };
     }
 

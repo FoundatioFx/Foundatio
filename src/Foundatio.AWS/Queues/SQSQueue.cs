@@ -1,17 +1,18 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Amazon;
 using Amazon.Runtime;
+using Amazon.Runtime.Credentials;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
-using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues;
 
@@ -33,7 +34,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         // TODO: Flow through the options like retries and the like.
         _client = new Lazy<AmazonSQSClient>(() =>
         {
-            var credentials = options.Credentials ?? FallbackCredentialsFactory.GetCredentials();
+            var credentials = options.Credentials ?? DefaultAWSCredentialsIdentityResolver.GetCredentials();
 
             if (String.IsNullOrEmpty(options.ServiceUrl))
             {
@@ -104,14 +105,15 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
             message.MessageDeduplicationId = options.UniqueId;
 
         if (!String.IsNullOrEmpty(options.CorrelationId))
-            message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue
-            {
-                DataType = "String",
-                StringValue = options.CorrelationId
-            });
+        {
+            message.MessageAttributes ??= new Dictionary<string, MessageAttributeValue>();
+            message.MessageAttributes.Add("CorrelationId", new MessageAttributeValue { DataType = "String", StringValue = options.CorrelationId });
+        }
 
         if (options.Properties is not null)
         {
+            message.MessageAttributes ??= new Dictionary<string, MessageAttributeValue>();
+
             foreach (var property in options.Properties)
                 message.MessageAttributes.Add(property.Key, new MessageAttributeValue
                 {
@@ -163,7 +165,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         var response = await ReceiveMessageAsync().AnyContext();
 
         // retry loop
-        while ((response == null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested)
+        while ((response?.Messages is null || response.Messages.Count == 0) && !linkedCancellationToken.IsCancellationRequested)
         {
             if (_options.DequeueInterval > TimeSpan.Zero)
             {
@@ -180,7 +182,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
             response = await ReceiveMessageAsync().AnyContext();
         }
 
-        if (response == null || response.Messages.Count == 0)
+        if (response?.Messages is null || response.Messages.Count == 0)
         {
             _logger.LogTrace("Response null or 0 message count");
             return null;
@@ -190,7 +192,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         _logger.LogTrace("Received message {MessageId} IsCancellationRequested={IsCancellationRequested}", response.Messages[0].MessageId, linkedCancellationToken.IsCancellationRequested);
 
-        var message = response.Messages.First();
+        var message = response.Messages[0];
         string body = message.Body;
         var data = _serializer.Deserialize<T>(body);
         var entry = new SQSQueueEntry<T>(message, data, this);
@@ -455,7 +457,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         int maxReceiveCount = Math.Max(_options.Retries + 1, 1);
         // step 4, set retry policy
-        var redrivePolicy = new JsonData
+        var redrivePolicy = new JsonObject
         {
             ["maxReceiveCount"] = maxReceiveCount.ToString(),
             ["deadLetterTargetArn"] = deadAttributeResponse.QueueARN
@@ -463,7 +465,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         var attributes = new Dictionary<string, string>
         {
-            [QueueAttributeName.RedrivePolicy] = JsonMapper.ToJson(redrivePolicy)
+            [QueueAttributeName.RedrivePolicy] = redrivePolicy.ToJsonString()
         };
 
         var setAttributeRequest = new SetQueueAttributesRequest(_queueUrl, attributes);

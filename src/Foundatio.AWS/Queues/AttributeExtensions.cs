@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Amazon.SQS.Model;
-using ThirdParty.Json.LitJson;
 
 namespace Foundatio.Queues;
 
@@ -16,7 +16,7 @@ public static class AttributeExtensions
         if (!attributes.TryGetValue("ApproximateReceiveCount", out string v))
             return 0;
 
-        int.TryParse(v, out int value);
+        Int32.TryParse(v, out int value);
         return value;
     }
 
@@ -29,7 +29,7 @@ public static class AttributeExtensions
         if (!attributes.TryGetValue("SentTimestamp", out string v))
             return DateTime.MinValue;
 
-        if (!long.TryParse(v, out long value))
+        if (!Int64.TryParse(v, out long value))
             return DateTime.MinValue;
 
         return DateTimeOffset.FromUnixTimeMilliseconds(value).DateTime;
@@ -65,16 +65,18 @@ public static class AttributeExtensions
         if (!attributes.TryGetValue("RedrivePolicy", out string v))
             return null;
 
-        if (string.IsNullOrEmpty(v))
+        if (String.IsNullOrEmpty(v))
             return null;
 
-        var redrivePolicy = JsonMapper.ToObject(v);
-
-        string arn = redrivePolicy["deadLetterTargetArn"]?.ToString();
-        if (string.IsNullOrEmpty(arn))
+        using var redrivePolicy = JsonDocument.Parse(v);
+        if (!redrivePolicy.RootElement.TryGetProperty("deadLetterTargetArn", out var arnElement))
             return null;
 
-        var parts = arn.Split(':');
+        string arn = arnElement.GetString();
+        if (String.IsNullOrEmpty(arn))
+            return null;
+
+        string[] parts = arn.Split(':');
         return parts.LastOrDefault();
     }
 }

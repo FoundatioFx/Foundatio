@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -22,9 +23,9 @@ internal static class Extensions
         return new FileSpec
         {
             Path = blob.Key,
-            Size = blob.Size,
-            Modified = blob.LastModified.ToUniversalTime(),
-            Created = blob.LastModified.ToUniversalTime() // TODO: Need to fix this
+            Size = blob.Size.GetValueOrDefault(),
+            Created = blob.LastModified?.ToUniversalTime() ?? DateTime.MinValue, // TODO: Need to fix this
+            Modified = blob.LastModified?.ToUniversalTime() ?? DateTime.MinValue,
         };
     }
 
