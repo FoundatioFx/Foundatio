@@ -232,7 +232,6 @@ public class S3FileStorage : IFileStorage
                 }
             }
 
-
             if (response.ResponseMetadata != null)
             {
                 fileSpec.Data[nameof(response.ResponseMetadata.ChecksumAlgorithm)] = response.ResponseMetadata.ChecksumAlgorithm;
