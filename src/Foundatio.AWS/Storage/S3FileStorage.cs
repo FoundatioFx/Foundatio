@@ -147,13 +147,111 @@ public class S3FileStorage : IFileStorage
                 throw new StorageException($"Invalid status code {response.HttpStatusCode} ({(int)response.HttpStatusCode}): Expected 200 OK or 404 NotFound");
             }
 
-            return new FileSpec
+            var fileSpec = new FileSpec
             {
                 Path = req.Key,
                 Size = response.ContentLength,
                 Created = response.LastModified?.ToUniversalTime() ?? DateTime.MinValue, // TODO: Need to fix this
                 Modified = response.LastModified?.ToUniversalTime() ?? DateTime.MinValue
             };
+
+            if (response.AcceptRanges is not null)
+                fileSpec.Data[nameof(response.AcceptRanges)] = response.AcceptRanges;
+            if (response.ArchiveStatus is not null)
+                fileSpec.Data[nameof(response.ArchiveStatus)] = response.ArchiveStatus?.ToString();
+            if (response.BucketKeyEnabled.HasValue)
+                fileSpec.Data[nameof(response.BucketKeyEnabled)] = response.BucketKeyEnabled.Value;
+            if (response.ChecksumCRC32 is not null)
+                fileSpec.Data[nameof(response.ChecksumCRC32)] = response.ChecksumCRC32;
+            if (response.ChecksumCRC32C is not null)
+                fileSpec.Data[nameof(response.ChecksumCRC32C)] = response.ChecksumCRC32C;
+            if (response.ChecksumCRC64NVME is not null)
+                fileSpec.Data[nameof(response.ChecksumCRC64NVME)] = response.ChecksumCRC64NVME;
+            if (response.ChecksumSHA1 is not null)
+                fileSpec.Data[nameof(response.ChecksumSHA1)] = response.ChecksumSHA1;
+            if (response.ChecksumSHA256 is not null)
+                fileSpec.Data[nameof(response.ChecksumSHA256)] = response.ChecksumSHA256;
+            if (response.ChecksumType is not null)
+                fileSpec.Data[nameof(response.ChecksumType)] = response.ChecksumType.ToString();
+            if (response.ContentRange is not null)
+                fileSpec.Data[nameof(response.ContentRange)] = response.ContentRange;
+            if (response.DeleteMarker is not null)
+                fileSpec.Data[nameof(response.DeleteMarker)] = response.DeleteMarker;
+            if (response.ETag is not null)
+                fileSpec.Data[nameof(response.ETag)] = response.ETag;
+            if (response.Expiration is not null)
+                fileSpec.Data[nameof(response.Expiration)] = response.Expiration;
+            if (response.ExpiresString is not null)
+                fileSpec.Data[nameof(response.ExpiresString)] = response.ExpiresString;
+            if (response.MissingMeta.HasValue)
+                fileSpec.Data[nameof(response.MissingMeta)] = response.MissingMeta.Value;
+            if (response.ObjectLockLegalHoldStatus is not null)
+                fileSpec.Data[nameof(response.ObjectLockLegalHoldStatus)] = response.ObjectLockLegalHoldStatus.ToString();
+            if (response.ObjectLockMode is not null)
+                fileSpec.Data[nameof(response.ObjectLockMode)] = response.ObjectLockMode.ToString();
+            if (response.ObjectLockRetainUntilDate.HasValue)
+                fileSpec.Data[nameof(response.ObjectLockRetainUntilDate)] = response.ObjectLockRetainUntilDate.Value;
+            if (response.PartsCount.HasValue)
+                fileSpec.Data[nameof(response.PartsCount)] = response.PartsCount.Value;
+            if (response.ReplicationStatus is not null)
+                fileSpec.Data[nameof(response.ReplicationStatus)] = response.ReplicationStatus.ToString();
+            if (response.RequestCharged is not null)
+                fileSpec.Data[nameof(response.RequestCharged)] = response.RequestCharged.ToString();
+            if (response.RestoreExpiration.HasValue)
+                fileSpec.Data[nameof(response.RestoreExpiration)] = response.RestoreExpiration.Value;
+            if (response.RestoreInProgress.HasValue)
+                fileSpec.Data[nameof(response.RestoreInProgress)] = response.RestoreInProgress.Value;
+            if (response.ServerSideEncryptionKeyManagementServiceKeyId is not null)
+                fileSpec.Data[nameof(response.ServerSideEncryptionKeyManagementServiceKeyId)] = response.ServerSideEncryptionKeyManagementServiceKeyId;
+            if (response.ServerSideEncryptionMethod != ServerSideEncryptionMethod.None)
+                fileSpec.Data[nameof(response.ServerSideEncryptionMethod)] = response.ServerSideEncryptionMethod.ToString();
+            if (response.ServerSideEncryptionCustomerMethod != ServerSideEncryptionCustomerMethod.None)
+                fileSpec.Data[nameof(response.ServerSideEncryptionCustomerMethod)] = response.ServerSideEncryptionCustomerMethod.ToString();
+            if (response.StorageClass is not null)
+                fileSpec.Data[nameof(response.StorageClass)] = response.StorageClass.ToString();
+            if (response.VersionId is not null)
+                fileSpec.Data[nameof(response.VersionId)] = response.VersionId;
+            if (response.WebsiteRedirectLocation is not null)
+                fileSpec.Data[nameof(response.WebsiteRedirectLocation)] = response.WebsiteRedirectLocation;
+
+            if (response.Headers != null)
+            {
+                foreach (string header in response.Headers.Keys.Where(h => !String.Equals("Content-Length", h)))
+                {
+                    if (response.Headers[header] is not null)
+                        fileSpec.Data[header] = response.Headers[header];
+                }
+            }
+
+            if (response.Metadata != null)
+            {
+                foreach (string metadata in response.Metadata.Keys)
+                {
+                    if (response.Metadata[metadata] is not null)
+                        fileSpec.Data[metadata] = response.Metadata[metadata];
+                }
+            }
+
+
+            if (response.ResponseMetadata != null)
+            {
+                fileSpec.Data[nameof(response.ResponseMetadata.ChecksumAlgorithm)] = response.ResponseMetadata.ChecksumAlgorithm;
+                fileSpec.Data[nameof(response.ResponseMetadata.ChecksumValidationStatus)] = response.ResponseMetadata.ChecksumValidationStatus;
+
+                if (response.ResponseMetadata.RequestId is not null)
+                    fileSpec.Data[nameof(response.ResponseMetadata.RequestId)] = response.ResponseMetadata.RequestId;
+
+                if (response.ResponseMetadata.Metadata is not null)
+                {
+                    foreach (string metadata in response.ResponseMetadata.Metadata.Keys)
+                    {
+                        if (response.ResponseMetadata.Metadata[metadata] is not null)
+                            fileSpec.Data[metadata] = response.ResponseMetadata.Metadata[metadata];
+                    }
+                }
+            }
+
+            return fileSpec;
         }
         catch (AmazonS3Exception ex)
         {
