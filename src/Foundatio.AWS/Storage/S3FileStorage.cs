@@ -150,7 +150,7 @@ public class S3FileStorage : IFileStorage
             {
                 Path = req.Key,
                 Size = response.ContentLength,
-                Created = response.LastModified.ToUniversalTime(),  // TODO: Need to fix this
+                Created = response.LastModified.ToUniversalTime(), // TODO: Need to fix this
                 Modified = response.LastModified.ToUniversalTime()
             };
         }
