@@ -84,6 +84,40 @@ public class TestLoggerTests : TestLoggerBase
         someClass.DoSomething(2);
         Assert.Empty(TestLogger.LogEntries);
     }
+
+    [Fact]
+    public void LogLevelsSupportPrefix()
+    {
+        var services = new ServiceCollection()
+            .AddLogging(b => b.AddDebug().AddTestLogger(_output, o =>
+            {
+                o.SetLogLevel("Microsoft", LogLevel.Warning);
+            }))
+            .AddSingleton<SomeClass>();
+
+        IServiceProvider provider = services.BuildServiceProvider();
+        var testLogger = provider.GetTestLogger();
+
+        var microsoftLogger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Microsoft.Test");
+
+        microsoftLogger.LogInformation("This is a test info log message");
+        Assert.Empty(testLogger.LogEntries);
+
+        microsoftLogger.LogWarning("This is a test warn log message");
+        Assert.Single(testLogger.LogEntries);
+
+        testLogger.Reset();
+        testLogger.SetLogLevel("Blah", LogLevel.Information);
+        var blahLogger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Blah");
+        var blahBlahLogger = provider.GetRequiredService<ILoggerFactory>().CreateLogger("Blah.Blah");
+
+        blahLogger.LogInformation("This is a test info log message");
+        Assert.Single(testLogger.LogEntries);
+        Assert.Contains("This is a test info log message", testLogger.LogEntries[0].Message);
+        blahBlahLogger.LogInformation("This is a test info log message");
+        Assert.Equal(2, testLogger.LogEntries.Count);
+        Assert.Contains("This is a test info log message", testLogger.LogEntries[0].Message);
+    }
 }
 
 public class SomeClass
