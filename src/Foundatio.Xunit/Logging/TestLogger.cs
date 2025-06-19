@@ -9,7 +9,6 @@ namespace Foundatio.Xunit;
 
 public class TestLogger : ILoggerFactory
 {
-    private readonly Dictionary<string, LogLevel> _logLevels = new();
     private readonly Queue<LogEntry> _logEntries = new();
     private int _logEntriesWritten;
 
@@ -19,7 +18,7 @@ public class TestLogger : ILoggerFactory
         configure?.Invoke(Options);
 
         foreach (var logLevel in Options.LogLevels)
-            _logLevels[logLevel.Key] = logLevel.Value;
+            SetLogLevel(logLevel.Key, logLevel.Value);
     }
 
     public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions> configure = null)
@@ -35,7 +34,7 @@ public class TestLogger : ILoggerFactory
         configure?.Invoke(Options);
 
         foreach (var logLevel in Options.LogLevels)
-            _logLevels[logLevel.Key] = logLevel.Value;
+            SetLogLevel(logLevel.Key, logLevel.Value);
     }
 
     public TestLogger(TestLoggerOptions options)
@@ -43,13 +42,13 @@ public class TestLogger : ILoggerFactory
         Options = options ?? new TestLoggerOptions();
 
         foreach (var logLevel in Options.LogLevels)
-            _logLevels[logLevel.Key] = logLevel.Value;
+            SetLogLevel(logLevel.Key, logLevel.Value);
 
     }
 
     public TestLoggerOptions Options { get; }
 
-    public LogLevel DefaultMinimumLevel
+    public LogLevel DefaultLogLevel
     {
         get => Options.DefaultLogLevel;
         set => Options.DefaultLogLevel = value;
@@ -74,10 +73,20 @@ public class TestLogger : ILoggerFactory
         lock (_logEntries)
         {
             _logEntries.Clear();
-            _logLevels.Clear();
+
+            _lock.EnterWriteLock();
+            try
+            {
+                _root.Children.Clear();
+                _root.Level = null;
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
 
             foreach (var logLevel in Options.LogLevels)
-                _logLevels[logLevel.Key] = logLevel.Value;
+                SetLogLevel(logLevel.Key, logLevel.Value);
 
             Interlocked.Exchange(ref _logEntriesWritten, 0);
         }
@@ -116,15 +125,74 @@ public class TestLogger : ILoggerFactory
 
     public bool IsEnabled(string category, LogLevel logLevel)
     {
-        if (_logLevels.TryGetValue(category, out var categoryLevel))
-            return logLevel >= categoryLevel;
+        ReadOnlySpan<char> span = category.AsSpan();
+        Span<(int Start, int Length)> segments = stackalloc (int, int)[20];
 
-        return logLevel >= Options.DefaultLogLevel;
+        int count = 0;
+        int start = 0;
+
+        for (int i = 0; i <= span.Length; i++)
+        {
+            if (i != span.Length && span[i] != '.')
+                continue;
+
+            segments[count++] = (start, i - start);
+            start = i + 1;
+
+            if (count == segments.Length)
+                break;
+        }
+
+        _lock.EnterReadLock();
+        try {
+            var current = _root;
+            LogLevel effectiveLevel = DefaultLogLevel;
+
+            for (int i = 0; i < count; i++) {
+                var segment = span.Slice(segments[i].Start, segments[i].Length);
+                bool found = false;
+
+                foreach (var kvp in current.Children)
+                {
+                    if (!segment.Equals(kvp.Key.AsSpan(), StringComparison.Ordinal))
+                        continue;
+
+                    current = kvp.Value;
+                    found = true;
+
+                    if (current.Level.HasValue)
+                        effectiveLevel = current.Level.Value;
+
+                    break;
+                }
+
+                if (!found)
+                    break;
+            }
+
+            return logLevel >= effectiveLevel;
+        } finally {
+            _lock.ExitReadLock();
+        }
     }
 
     public void SetLogLevel(string category, LogLevel minLogLevel)
     {
-        _logLevels[category] = minLogLevel;
+        string[] parts = category.Split('.');
+        _lock.EnterWriteLock();
+        try {
+            var current = _root;
+            foreach (string part in parts) {
+                if (!current.Children.TryGetValue(part, out var child)) {
+                    child = new Node();
+                    current.Children[part] = child;
+                }
+                current = child;
+            }
+            current.Level = minLogLevel;
+        } finally {
+            _lock.ExitWriteLock();
+        }
     }
 
     public void SetLogLevel<T>(LogLevel minLogLevel)
@@ -133,4 +201,12 @@ public class TestLogger : ILoggerFactory
     }
 
     public void Dispose() { }
+
+    private class Node {
+        public readonly Dictionary<string, Node> Children = new(StringComparer.OrdinalIgnoreCase);
+        public LogLevel? Level;
+    }
+
+    private readonly Node _root = new();
+    private readonly ReaderWriterLockSlim _lock = new();
 }

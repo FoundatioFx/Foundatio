@@ -9,7 +9,7 @@ namespace Foundatio.Xunit;
 public class TestLoggerOptions
 {
     public LogLevel DefaultLogLevel { get; set; } = LogLevel.Information;
-    public Dictionary<string, LogLevel> LogLevels { get; } = new();
+    public Dictionary<string, LogLevel> LogLevels { get; } = new(StringComparer.OrdinalIgnoreCase);
     public int MaxLogEntriesToStore { get; set; } = 100;
     public int MaxLogEntriesToWrite { get; set; } = 1000;
     public bool IncludeScopes { get; set; } = true;
