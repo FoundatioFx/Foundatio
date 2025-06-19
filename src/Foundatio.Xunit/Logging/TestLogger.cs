@@ -17,6 +17,9 @@ public class TestLogger : ILoggerFactory
     {
         Options = new TestLoggerOptions();
         configure?.Invoke(Options);
+
+        foreach (var logLevel in Options.LogLevels)
+            _logLevels[logLevel.Key] = logLevel.Value;
     }
 
     public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions> configure = null)
@@ -30,26 +33,26 @@ public class TestLogger : ILoggerFactory
         };
 
         configure?.Invoke(Options);
+
+        foreach (var logLevel in Options.LogLevels)
+            _logLevels[logLevel.Key] = logLevel.Value;
     }
 
     public TestLogger(TestLoggerOptions options)
     {
         Options = options ?? new TestLoggerOptions();
+
+        foreach (var logLevel in Options.LogLevels)
+            _logLevels[logLevel.Key] = logLevel.Value;
+
     }
 
     public TestLoggerOptions Options { get; }
 
-    [Obsolete("Use DefaultMinimumLevel instead.")]
-    public LogLevel MinimumLevel
-    {
-        get => Options.DefaultMinimumLevel;
-        set => Options.DefaultMinimumLevel = value;
-    }
-
     public LogLevel DefaultMinimumLevel
     {
-        get => Options.DefaultMinimumLevel;
-        set => Options.DefaultMinimumLevel = value;
+        get => Options.DefaultLogLevel;
+        set => Options.DefaultLogLevel = value;
     }
 
     public int MaxLogEntriesToStore
@@ -66,13 +69,16 @@ public class TestLogger : ILoggerFactory
 
     public IReadOnlyList<LogEntry> LogEntries => _logEntries.ToArray();
 
-
     public void Reset()
     {
         lock (_logEntries)
         {
             _logEntries.Clear();
             _logLevels.Clear();
+
+            foreach (var logLevel in Options.LogLevels)
+                _logLevels[logLevel.Key] = logLevel.Value;
+
             Interlocked.Exchange(ref _logEntriesWritten, 0);
         }
     }
@@ -113,7 +119,7 @@ public class TestLogger : ILoggerFactory
         if (_logLevels.TryGetValue(category, out var categoryLevel))
             return logLevel >= categoryLevel;
 
-        return logLevel >= Options.DefaultMinimumLevel;
+        return logLevel >= Options.DefaultLogLevel;
     }
 
     public void SetLogLevel(string category, LogLevel minLogLevel)

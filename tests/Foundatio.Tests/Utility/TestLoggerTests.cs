@@ -22,7 +22,10 @@ public class TestLoggerTests : TestLoggerBase
     public void CanUseTestLogger()
     {
         var services = new ServiceCollection()
-            .AddLogging(b => b.AddDebug().AddTestLogger(_output))
+            .AddLogging(b => b.AddDebug().AddTestLogger(_output, o =>
+            {
+                o.SetLogLevel("Microsoft", LogLevel.Warning);
+            }))
             .AddSingleton<SomeClass>();
 
         IServiceProvider provider = services.BuildServiceProvider();

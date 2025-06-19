@@ -24,7 +24,7 @@ internal class TestLoggerLogger : ILogger
         if (!_logger.IsEnabled(_categoryName, logLevel))
             return;
 
-        object[] scopes = _logger.Options.IncludeScopes ? CurrentScopeStack.Reverse().ToArray() : Array.Empty<object>();
+        object[] scopes = _logger.Options.IncludeScopes ? CurrentScopeStack.Reverse().ToArray() : [];
         var logEntry = new LogEntry
         {
             Date = _logger.Options.GetNow(),
