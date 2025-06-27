@@ -55,7 +55,9 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
                 _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
-                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod)).AnyContext();
+                    // keep the cache key around for a bit longer than the throttling period
+                    var expirationDate = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMinutes(5);
+                    hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, expirationDate).AnyContext();
 
                     // make sure someone didn't beat us to it.
                     if (hitCount <= _maxHitsPerPeriod)

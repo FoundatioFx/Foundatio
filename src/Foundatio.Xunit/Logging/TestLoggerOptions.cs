@@ -8,6 +8,10 @@ namespace Foundatio.Xunit;
 
 public class TestLoggerOptions
 {
+    /// <summary>
+    /// The minimum log level for the logging system. Anything below this level will not be processed and will not be written to the output even if a specific category has a lower log level set.
+    /// </summary>
+    public LogLevel MinimumLogLevel { get; set; } = LogLevel.Trace;
     public LogLevel DefaultLogLevel { get; set; } = LogLevel.Information;
     public Dictionary<string, LogLevel> LogLevels { get; } = new(StringComparer.OrdinalIgnoreCase);
     public int MaxLogEntriesToStore { get; set; } = 100;

@@ -60,6 +60,7 @@ public static class LoggingExtensions
             throw new ArgumentNullException(nameof(builder));
 
         var loggerProvider = new TestLoggerProvider(options);
+        builder.SetMinimumLevel(loggerProvider.Log.Options.MinimumLogLevel);
         builder.AddProvider(loggerProvider);
         builder.Services.TryAddSingleton(loggerProvider.Log);
 
