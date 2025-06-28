@@ -28,7 +28,7 @@ public static class Run
         }, cancellationToken);
     }
 
-    [Obsolete("Use ResiliencePipeline instead.")]
+    [Obsolete("Use FoundatioResiliencePipeline instead.")]
     public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
         return WithRetriesAsync<object>(async () =>
@@ -38,10 +38,10 @@ public static class Run
         }, maxAttempts, retryInterval, timeProvider, cancellationToken, logger);
     }
 
-    [Obsolete("Use ResiliencePipeline instead.")]
+    [Obsolete("Use FoundatioResiliencePipeline instead.")]
     public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
-        var resiliencePipeline = new FoundatioResiliencePipeline(maxAttempts, retryInterval, timeProvider ?? TimeProvider.System, logger ?? NullLogger.Instance);
+        var resiliencePipeline = new FoundatioResiliencePipeline(timeProvider ?? TimeProvider.System, logger ?? NullLogger.Instance) { MaxAttempts = maxAttempts, RetryInterval = retryInterval };
         return await resiliencePipeline.ExecuteAsync(async _ => await action(), cancellationToken).AnyContext();
     }
 }

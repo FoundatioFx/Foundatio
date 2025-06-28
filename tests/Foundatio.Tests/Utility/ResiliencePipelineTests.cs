@@ -22,7 +22,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
 
     public ResiliencePipelineTests(ITestOutputHelper output) : base(output)
     {
-        _pipeline = new FoundatioResiliencePipeline(maxAttempts: 5, retryInterval: TimeSpan.FromMilliseconds(10), logger: _logger);
+        _pipeline = new FoundatioResiliencePipeline { Logger = _logger, MaxAttempts = 5, RetryInterval = TimeSpan.FromMilliseconds(10) };
     }
 
     [Fact]

@@ -42,7 +42,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _messageBus = messageBus;
 
         _resiliencePipelineProvider = resiliencePipelineProvider ?? cacheClient.GetResiliencePipelineProvider();
-        _releasePipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.ReleaseAsync)) ?? new FoundatioResiliencePipeline(15, null, _timeProvider, _logger);
+        _releasePipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.ReleaseAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger) { MaxAttempts = 15 };
         _isLockedPipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.IsLockedAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger);
         _renewPipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.RenewAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger);
 
