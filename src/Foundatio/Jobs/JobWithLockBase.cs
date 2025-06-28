@@ -3,33 +3,39 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveTimeProvider
+public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
 {
     protected readonly ILogger _logger;
+    protected readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
+    protected readonly IResiliencePipelineProvider _resiliencePipelineProvider;
     private readonly string _jobName;
 
-    public JobWithLockBase(ILoggerFactory loggerFactory = null)
+    public JobWithLockBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
     {
-        _jobName = GetType().Name;
-        _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
 
-    public JobWithLockBase(TimeProvider timeProvider, ILoggerFactory loggerFactory = null)
+    public JobWithLockBase(TimeProvider timeProvider, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
     {
         _jobName = GetType().Name;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        _resiliencePipelineProvider = resiliencePipelineProvider;
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
     }
 
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+
     public JobOptions Options { get; set; }
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)

@@ -8,7 +8,7 @@ namespace Foundatio.Utility;
 public class MaintenanceBase : IDisposable
 {
     private ScheduledTimer _maintenanceTimer;
-    private readonly ILoggerFactory _loggerFactory;
+    protected readonly ILoggerFactory _loggerFactory;
     protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
 

@@ -1,8 +1,9 @@
 ﻿using System;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Foundatio.Utility.Resilience;
 
 namespace Foundatio.Utility;
 
@@ -27,12 +28,7 @@ public static class Run
         }, cancellationToken);
     }
 
-    [Obsolete("Use Parallel.ForEachAsync")]
-    public static Task InParallelAsync(int iterations, Func<int, Task> work)
-    {
-        return Task.WhenAll(Enumerable.Range(1, iterations).Select(i => Task.Run(() => work(i))));
-    }
-
+    [Obsolete("Use ResiliencePipeline instead.")]
     public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
         return WithRetriesAsync<object>(async () =>
@@ -42,45 +38,10 @@ public static class Run
         }, maxAttempts, retryInterval, timeProvider, cancellationToken, logger);
     }
 
+    [Obsolete("Use ResiliencePipeline instead.")]
     public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
-        if (action == null)
-            throw new ArgumentNullException(nameof(action));
-
-        timeProvider ??= TimeProvider.System;
-        int attempts = 1;
-        var startTime = timeProvider.GetUtcNow();
-        int currentBackoffTime = _defaultBackoffIntervals[0];
-        if (retryInterval != null)
-            currentBackoffTime = (int)retryInterval.Value.TotalMilliseconds;
-
-        do
-        {
-            if (attempts > 1 && logger != null)
-                logger.LogInformation("Retrying {Attempts} attempt after {Delay:g}...", attempts.ToOrdinal(), timeProvider.GetUtcNow().Subtract(startTime));
-
-            try
-            {
-                return await action().AnyContext();
-            }
-            catch (Exception ex)
-            {
-                if (attempts >= maxAttempts)
-                    throw;
-
-                if (logger != null)
-                    logger.LogError(ex, "Retry error: {Message}", ex.Message);
-
-                await timeProvider.SafeDelay(TimeSpan.FromMilliseconds(currentBackoffTime), cancellationToken).AnyContext();
-            }
-
-            if (retryInterval == null)
-                currentBackoffTime = _defaultBackoffIntervals[Math.Min(attempts, _defaultBackoffIntervals.Length - 1)];
-            attempts++;
-        } while (attempts <= maxAttempts && !cancellationToken.IsCancellationRequested);
-
-        throw new TaskCanceledException("Should not get here");
+        var resiliencePipeline = new FoundatioResiliencePipeline(maxAttempts, retryInterval, timeProvider ?? TimeProvider.System, logger ?? NullLogger.Instance);
+        return await resiliencePipeline.ExecuteAsync(async _ => await action(), cancellationToken).AnyContext();
     }
-
-    private static readonly int[] _defaultBackoffIntervals = [100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000];
 }

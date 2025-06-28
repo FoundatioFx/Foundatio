@@ -2,11 +2,12 @@
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock;
 
-public class ScopedLockProvider : ILockProvider, IHaveLogger
+public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
 {
     private string _keyPrefix;
     private bool _isLocked;
@@ -23,7 +24,11 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger
 
     public ILockProvider UnscopedLockProvider { get; }
     public string Scope { get; private set; }
+
     ILogger IHaveLogger.Logger => UnscopedLockProvider.GetLogger();
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedLockProvider.GetLoggerFactory();
+    TimeProvider IHaveTimeProvider.TimeProvider => UnscopedLockProvider.GetTimeProvider();
+    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => UnscopedLockProvider.GetResiliencePipelineProvider();
 
     public void SetScope(string scope)
     {

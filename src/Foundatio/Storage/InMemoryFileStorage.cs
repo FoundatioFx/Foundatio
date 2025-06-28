@@ -9,17 +9,20 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage;
 
-public class InMemoryFileStorage : IFileStorage
+public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
 {
     private readonly ConcurrentDictionary<string, (FileSpec Spec, byte[] Data)> _storage = new(StringComparer.OrdinalIgnoreCase);
     private readonly ISerializer _serializer;
     protected readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
+    private readonly IResiliencePipelineProvider _resiliencePipelineProvider;
 
     public InMemoryFileStorage() : this(o => o) { }
 
@@ -31,8 +34,10 @@ public class InMemoryFileStorage : IFileStorage
         MaxFileSize = options.MaxFileSize;
         MaxFiles = options.MaxFiles;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
-        _timeProvider = options.TimeProvider;
-        _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
+        _resiliencePipelineProvider = options.ResiliencePipelineProvider;
     }
 
     public InMemoryFileStorage(Builder<InMemoryFileStorageOptionsBuilder, InMemoryFileStorageOptions> config)
@@ -42,7 +47,12 @@ public class InMemoryFileStorage : IFileStorage
 
     public long MaxFileSize { get; set; }
     public long MaxFiles { get; set; }
+
     ISerializer IHaveSerializer.Serializer => _serializer;
+    ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
+    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>

@@ -4,23 +4,28 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock;
 
-public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvider
+public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
 {
     private readonly ICacheClient _cacheClient;
     private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
     private readonly int _maxHitsPerPeriod;
     private readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly IResiliencePipelineProvider _resiliencePipelineProvider;
     private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePipelineProvider resiliencePipelineProvider = null, ILoggerFactory loggerFactory = null)
     {
-        _timeProvider = timeProvider ?? cacheClient.GetTimeProvider();
-        _logger = loggerFactory?.CreateLogger<ThrottlingLockProvider>() ?? cacheClient.GetLogger() ?? NullLogger<ThrottlingLockProvider>.Instance;
+        _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
+        _resiliencePipelineProvider = resiliencePipelineProvider ?? cacheClient.GetResiliencePipelineProvider();
+        _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
+        _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
         _maxHitsPerPeriod = maxHitsPerPeriod;
 
@@ -32,7 +37,9 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveTimeProvi
     }
 
     ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {

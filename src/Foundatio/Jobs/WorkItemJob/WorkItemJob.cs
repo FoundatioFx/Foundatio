@@ -13,24 +13,27 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Jobs;
 
 [Job(Description = "Processes adhoc work item queues entries")]
-public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger
+public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFactory
 {
     protected readonly IMessagePublisher _publisher;
     protected readonly WorkItemHandlers _handlers;
     protected readonly IQueue<WorkItemData> _queue;
     protected readonly ILogger _logger;
+    protected readonly ILoggerFactory _loggerFactory;
 
     public WorkItemJob(IQueue<WorkItemData> queue, IMessagePublisher publisher, WorkItemHandlers handlers, ILoggerFactory loggerFactory = null)
     {
         _publisher = publisher;
         _handlers = handlers;
         _queue = queue;
-        _logger = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
     }
 
     public string JobId { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
     IQueue<WorkItemData> IQueueJob<WorkItemData>.Queue => _queue;
     ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {

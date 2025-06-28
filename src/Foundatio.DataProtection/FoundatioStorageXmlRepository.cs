@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Foundatio.Storage;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -22,17 +23,26 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
 {
     private readonly IFileStorage _storage;
     private readonly ILogger _logger;
+    private readonly IResiliencePipeline _resiliencePipeline;
 
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory loggerFactory = null)
+    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory loggerFactory = null) : this(storage, null, loggerFactory)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
+    /// </summary>
+    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
     {
         if (storage == null)
             throw new ArgumentNullException(nameof(storage));
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
+        _resiliencePipeline = resiliencePipelineProvider?.GetPipeline(nameof(FoundatioStorageXmlRepository)) ?? new FoundatioResiliencePipeline(TimeProvider.System, _logger);
     }
 
     /// <inheritdoc />
@@ -81,14 +91,14 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         string path = String.Concat(!String.IsNullOrEmpty(friendlyName) ? friendlyName : Guid.NewGuid().ToString("N"), ".xml");
         _logger.LogTrace("Saving element: {File}.", path);
 
-        return Run.WithRetriesAsync(async () =>
+        return _resiliencePipeline.ExecuteAsync(async ct =>
         {
             using var memoryStream = new MemoryStream();
             element.Save(memoryStream, SaveOptions.DisableFormatting);
             memoryStream.Seek(0, SeekOrigin.Begin);
 
-            await _storage.SaveFileAsync(path, memoryStream).AnyContext();
+            await _storage.SaveFileAsync(path, memoryStream, ct).AnyContext();
             _logger.LogTrace("Saved element: {File}.", path);
-        });
+        }).AsTask();
     }
 }
