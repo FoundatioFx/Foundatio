@@ -142,6 +142,11 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
     /// </summary>
     public TimeSpan Timeout { get; set; }
 
+    /// <summary>
+    /// Gets or sets the circuit breaker for this pipeline.
+    /// </summary>
+    public ICircuitBreaker CircuitBreaker { get; set; }
+
     public async ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
         if (action == null)
@@ -168,7 +173,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
             catch (Exception ex)
             {
-                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts)
+                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts || (CircuitBreaker != null && CircuitBreaker.IsBroken()))
                     throw;
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
@@ -209,7 +214,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
             catch (Exception ex)
             {
-                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts)
+                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts || (CircuitBreaker != null && CircuitBreaker.IsBroken()))
                     throw;
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
@@ -255,6 +260,42 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
     private static readonly int[] _defaultBackoffIntervals = [100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000];
     private static readonly Random _random = new();
+}
+
+public interface ICircuitBreaker
+{
+    bool IsBroken();
+    void IncrementSuccess();
+    void IncrementFailure();
+}
+
+public class FoundatioCircuitBreaker : ICircuitBreaker
+{
+    public FoundatioCircuitBreaker(TimeSpan? samplingDuration = null, double failureRatio = 0.5, int minimumThroughput = 10, TimeSpan? breakDuration = null)
+    {
+        SamplingDuration = samplingDuration ?? TimeSpan.FromSeconds(30);
+        FailureRatio = failureRatio;
+        MinimumThroughput = minimumThroughput;
+        BreakDuration = breakDuration ?? TimeSpan.FromSeconds(30);
+    }
+
+    public TimeSpan SamplingDuration { get; }
+    public double FailureRatio { get; }
+    public int MinimumThroughput { get; }
+    public TimeSpan BreakDuration { get; }
+
+    public CircuitState State { get; private set; } = CircuitState.Closed;
+
+    public bool IsBroken() => throw new NotImplementedException();
+    public void IncrementSuccess() => throw new NotImplementedException();
+    public void IncrementFailure() => throw new NotImplementedException();
+}
+
+public enum CircuitState
+{
+    Closed,
+    Open,
+    HalfOpen
 }
 
 public class FoundatioResiliencePipelineBuilder(FoundatioResiliencePipeline pipeline)
