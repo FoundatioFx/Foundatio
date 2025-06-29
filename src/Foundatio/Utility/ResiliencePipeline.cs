@@ -102,9 +102,6 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
-
-        MaxAttempts = 5;
-        RetryInterval = null;
     }
 
     /// <summary>
@@ -123,7 +120,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
     /// <summary>
     /// The maximum number of attempts to execute the action.
     /// </summary>
-    public int MaxAttempts { get; set; }
+    public int? MaxAttempts { get; set; }
 
     /// <summary>
     /// A function that determines whether to retry based on the attempt number and exception.
@@ -152,6 +149,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        int maxAttempts = MaxAttempts ?? (ShouldRetry != null ? Int32.MaxValue : 5);
         int attempts = 1;
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
@@ -170,7 +168,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
             catch (Exception ex)
             {
-                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= MaxAttempts)
+                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts)
                     throw;
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
@@ -181,7 +179,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
 
             attempts++;
-        } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+        } while (attempts <= maxAttempts && !linkedCancellationToken.IsCancellationRequested);
 
         throw new TaskCanceledException("Should not get here");
     }
@@ -193,6 +191,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        int maxAttempts = MaxAttempts ?? (ShouldRetry != null ? Int32.MaxValue : 5);
         int attempts = 1;
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
@@ -210,7 +209,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
             catch (Exception ex)
             {
-                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= MaxAttempts)
+                if ((ShouldRetry != null && !ShouldRetry(attempts, ex)) || attempts >= maxAttempts)
                     throw;
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
@@ -221,7 +220,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
             }
 
             attempts++;
-        } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+        } while (attempts <= maxAttempts && !linkedCancellationToken.IsCancellationRequested);
 
         throw new TaskCanceledException("Should not get here");
     }

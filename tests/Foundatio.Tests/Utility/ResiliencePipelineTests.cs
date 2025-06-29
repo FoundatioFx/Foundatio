@@ -130,6 +130,43 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task CanHandleSpecificExceptions()
+    {
+        var pipeline = new FoundatioResiliencePipeline
+        {
+            Logger = _logger,
+            RetryInterval = TimeSpan.Zero,
+            ShouldRetry = (attempts, ex) => attempts < 3 && ex is ApplicationException,
+        };
+
+        int attempt = 0;
+        var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+        {
+            await pipeline.ExecuteAsync(() =>
+            {
+                attempt++;
+                throw new ApplicationException("Simulated failure");
+            }, cancellationToken: CancellationToken.None);
+        });
+
+        Assert.Equal("Simulated failure", exception.Message);
+        Assert.Equal(3, attempt);
+
+        attempt = 0;
+        var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await pipeline.ExecuteAsync(() =>
+            {
+                attempt++;
+                throw new ArgumentException("Unhandled exception type");
+            }, cancellationToken: CancellationToken.None);
+        });
+
+        Assert.Equal("Unhandled exception type", argumentException.Message);
+        Assert.Equal(1, attempt);
+    }
+
+    [Fact]
     public async Task CanRunWithRetriesAndCancellation()
     {
         var cts = new CancellationTokenSource();
