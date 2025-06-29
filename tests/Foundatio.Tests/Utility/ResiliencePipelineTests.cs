@@ -130,6 +130,74 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task CanRunWithRetriesAndCancellation()
+    {
+        var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await _pipeline.ExecuteAsync(DoStuff, cts.Token);
+        });
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await _pipeline.ExecuteAsync(async () => await DoStuff(), cts.Token);
+        });
+    }
+
+    [Fact]
+    public Task CanRunWithTimeout()
+    {
+        var pipeline = new FoundatioResiliencePipeline
+        {
+            Logger = _logger,
+            MaxAttempts = 5,
+            Timeout = TimeSpan.FromMilliseconds(100)
+        };
+
+        return Assert.ThrowsAsync<TimeoutException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                await Task.Delay(500, ct);
+            });
+        });
+    }
+
+    [Fact]
+    public void CanUseProvider()
+    {
+        var provider = new FoundatioResiliencePipelineProvider()
+            .WithPipeline("TestPipeline", b => b.WithLogger(_logger).WithMaxAttempts(10).WithRetryInterval(TimeSpan.FromMilliseconds(20)))
+            .WithDefaultPipeline(b => b.WithLogger(_logger).WithMaxAttempts(7).WithRetryInterval(TimeSpan.FromMilliseconds(100)).WithJitter());
+
+        // named pipeline
+        var pipeline = provider.GetPipeline("TestPipeline");
+        Assert.NotNull(pipeline);
+        var foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        Assert.Equal(_logger, foundationPipeline.Logger);
+        Assert.Equal(10, foundationPipeline.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(20), foundationPipeline.RetryInterval);
+
+        // default pipeline
+        pipeline = provider.GetPipeline();
+        Assert.NotNull(pipeline);
+        foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        Assert.Equal(_logger, foundationPipeline.Logger);
+        Assert.Equal(7, foundationPipeline.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
+
+        // unknown pipeline uses default
+        pipeline = provider.GetPipeline("UnknownPipeline");
+        Assert.NotNull(pipeline);
+        foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        Assert.Equal(_logger, foundationPipeline.Logger);
+        Assert.Equal(7, foundationPipeline.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
+    }
+
+    [Fact]
     public async Task CanUsePolly()
     {
         var pollyResiliencePipelineProvider = new PollyResiliencePipelineProvider()

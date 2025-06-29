@@ -25,8 +25,6 @@ public interface IHaveResiliencePipelineProvider
 
 public class FoundatioResiliencePipelineProvider : IResiliencePipelineProvider
 {
-    public static string DefaultPipelineName => "_default_";
-
     private readonly ConcurrentDictionary<string, IResiliencePipeline> _pipelines = new(StringComparer.OrdinalIgnoreCase);
     private IResiliencePipeline _defaultPipeline;
     private readonly TimeProvider _timeProvider;
@@ -42,13 +40,26 @@ public class FoundatioResiliencePipelineProvider : IResiliencePipelineProvider
         };
     }
 
-    public IResiliencePipelineProvider WithDefaultPipeline(IResiliencePipeline pipeline)
+    public FoundatioResiliencePipelineProvider WithDefaultPipeline(IResiliencePipeline pipeline)
     {
         _defaultPipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
         return this;
     }
 
-    public IResiliencePipelineProvider WithPipeline(string name, IResiliencePipeline pipeline)
+    public FoundatioResiliencePipelineProvider WithDefaultPipeline(Action<FoundatioResiliencePipelineBuilder> builder)
+    {
+        if (builder == null)
+            throw new ArgumentNullException(nameof(builder));
+
+        var pipeline = new FoundatioResiliencePipeline(_timeProvider, _loggerFactory.CreateLogger<FoundatioResiliencePipeline>());
+        var pipelineBuilder = new FoundatioResiliencePipelineBuilder(pipeline);
+        builder(pipelineBuilder);
+
+        _defaultPipeline = pipeline;
+        return this;
+    }
+
+    public FoundatioResiliencePipelineProvider WithPipeline(string name, IResiliencePipeline pipeline)
     {
         if (name == null)
             throw new ArgumentNullException(nameof(name));
@@ -57,7 +68,7 @@ public class FoundatioResiliencePipelineProvider : IResiliencePipelineProvider
         return this;
     }
 
-    public IResiliencePipelineProvider WithPipeline(string name, Action<FoundatioResiliencePipelineBuilder> builder)
+    public FoundatioResiliencePipelineProvider WithPipeline(string name, Action<FoundatioResiliencePipelineBuilder> builder)
     {
         if (name == null)
             throw new ArgumentNullException(nameof(name));
@@ -75,7 +86,10 @@ public class FoundatioResiliencePipelineProvider : IResiliencePipelineProvider
 
     public IResiliencePipeline GetPipeline(string name = null)
     {
-        return name == null ? _defaultPipeline : _pipelines.GetOrAdd(name, _ => _defaultPipeline);
+        if (name == null)
+            return _defaultPipeline;
+
+        return _pipelines.TryGetValue(name, out var pipeline) ? pipeline : _defaultPipeline;
     }
 }
 
@@ -97,6 +111,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
     /// Gets or sets the logger for this pipeline.
     /// </summary>
     public ILogger Logger {
+        get => _logger;
         set => _logger = value ?? NullLogger.Instance;
     }
 
@@ -125,13 +140,23 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
     /// </summary>
     public bool UseJitter { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the timeout for the entire operation.
+    /// </summary>
+    public TimeSpan Timeout { get; set; }
+
     public async ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         int attempts = 1;
         var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        if (Timeout > TimeSpan.Zero)
+            linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, new CancellationTokenSource(Timeout).Token).Token;
 
         do
         {
@@ -140,7 +165,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
             try
             {
-                await action(cancellationToken).AnyContext();
+                await action(linkedCancellationToken).AnyContext();
                 return;
             }
             catch (Exception ex)
@@ -150,11 +175,13 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
 
-                await _timeProvider.SafeDelay(GetInterval(attempts), cancellationToken).AnyContext();
+                await _timeProvider.SafeDelay(GetInterval(attempts), linkedCancellationToken).AnyContext();
+
+                ThrowIfTimedOut(startTime);
             }
 
             attempts++;
-        } while (attempts <= MaxAttempts && !cancellationToken.IsCancellationRequested);
+        } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
 
         throw new TaskCanceledException("Should not get here");
     }
@@ -164,8 +191,13 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         int attempts = 1;
         var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        if (Timeout > TimeSpan.Zero)
+            linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, new CancellationTokenSource(Timeout).Token).Token;
 
         do
         {
@@ -174,7 +206,7 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
             try
             {
-                return await action(cancellationToken).AnyContext();
+                return await action(linkedCancellationToken).AnyContext();
             }
             catch (Exception ex)
             {
@@ -183,13 +215,25 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
                 _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
 
-                await _timeProvider.SafeDelay(GetInterval(attempts), cancellationToken).AnyContext();
+                await _timeProvider.SafeDelay(GetInterval(attempts), linkedCancellationToken).AnyContext();
+
+                ThrowIfTimedOut(startTime);
             }
 
             attempts++;
-        } while (attempts <= MaxAttempts && !cancellationToken.IsCancellationRequested);
+        } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
 
         throw new TaskCanceledException("Should not get here");
+    }
+
+    private void ThrowIfTimedOut(DateTimeOffset startTime)
+    {
+        if (Timeout <= TimeSpan.Zero)
+            return;
+
+        var elapsed = _timeProvider.GetUtcNow().Subtract(startTime);
+        if (elapsed >= Timeout)
+            throw new TimeoutException($"Operation timed out after {Timeout:g}.");
     }
 
     private TimeSpan GetInterval(int attempts)
@@ -216,39 +260,81 @@ public class FoundatioResiliencePipeline : IResiliencePipeline
 
 public class FoundatioResiliencePipelineBuilder(FoundatioResiliencePipeline pipeline)
 {
+    /// <summary>
+    /// Sets the logger for the pipeline.
+    /// </summary>
+    /// <param name="logger"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public FoundatioResiliencePipelineBuilder WithLogger(ILogger logger)
     {
         pipeline.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         return this;
     }
 
+    /// <summary>
+    /// Sets the maximum number of attempts for the pipeline.
+    /// </summary>
+    /// <param name="maxAttempts"></param>
+    /// <returns></returns>
     public FoundatioResiliencePipelineBuilder WithMaxAttempts(int maxAttempts)
     {
         pipeline.MaxAttempts = maxAttempts;
         return this;
     }
 
+    /// <summary>
+    /// Sets a fixed retry interval for all retries.
+    /// </summary>
+    /// <param name="retryInterval"></param>
+    /// <returns></returns>
     public FoundatioResiliencePipelineBuilder WithRetryInterval(TimeSpan? retryInterval)
     {
         pipeline.RetryInterval = retryInterval;
         return this;
     }
 
+    /// <summary>
+    /// Sets a function that determines whether to retry based on the attempt number and exception.
+    /// </summary>
+    /// <param name="shouldRetry"></param>
+    /// <returns></returns>
     public FoundatioResiliencePipelineBuilder WithShouldRetry(Func<int, Exception, bool> shouldRetry)
     {
         pipeline.ShouldRetry = shouldRetry;
         return this;
     }
 
-    public FoundatioResiliencePipelineBuilder WithGetBackoffInterval(Func<int, TimeSpan> getBackoffInterval)
+    /// <summary>
+    /// Sets a function that returns the backoff interval based on the number of attempts. This overrides the retry interval.
+    /// </summary>
+    /// <param name="getBackoffInterval"></param>
+    /// <returns></returns>
+    public FoundatioResiliencePipelineBuilder WithBackoffInterval(Func<int, TimeSpan> getBackoffInterval)
     {
         pipeline.GetBackoffInterval = getBackoffInterval;
         return this;
     }
 
-    public FoundatioResiliencePipelineBuilder WithUseJitter(bool useJitter)
+    /// <summary>
+    /// Sets whether to use jitter in the backoff interval.
+    /// </summary>
+    /// <param name="useJitter"></param>
+    /// <returns></returns>
+    public FoundatioResiliencePipelineBuilder WithJitter(bool useJitter = true)
     {
         pipeline.UseJitter = useJitter;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the timeout for the entire operation. If set to zero, no timeout is applied.
+    /// </summary>
+    /// <param name="timeout"></param>
+    /// <returns></returns>
+    public FoundatioResiliencePipelineBuilder WithTimeout(TimeSpan timeout)
+    {
+        pipeline.Timeout = timeout;
         return this;
     }
 }
