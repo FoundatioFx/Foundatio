@@ -11,22 +11,22 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider where T : class
+public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider where T : class
 {
     protected readonly ILogger _logger;
     protected readonly ILoggerFactory _loggerFactory;
     protected readonly Lazy<IQueue<T>> _queue;
     protected readonly TimeProvider _timeProvider;
-    protected readonly IResiliencePipelineProvider _resiliencePipelineProvider;
+    protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     protected readonly string _queueName = typeof(T).Name;
 
     public QueueJobBase(IQueue<T> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null) : this(new Lazy<IQueue<T>>(() => queue), timeProvider, null, loggerFactory) { }
 
-    public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, IResiliencePipelineProvider resiliencePipelineProvider = null, ILoggerFactory loggerFactory = null)
+    public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
     {
         _queue = queue;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePipelineProvider = resiliencePipelineProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
         AutoComplete = true;
@@ -38,7 +38,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {

@@ -8,21 +8,21 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
     protected readonly ILoggerFactory _loggerFactory;
-    protected readonly IResiliencePipelineProvider _resiliencePipelineProvider;
+    protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
     public JobBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
     {
     }
 
-    public JobBase(TimeProvider timeProvider, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
+    public JobBase(TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePipelineProvider = resiliencePipelineProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
 
@@ -32,7 +32,7 @@ public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTime
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public virtual Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {

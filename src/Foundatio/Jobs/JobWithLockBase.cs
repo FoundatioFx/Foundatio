@@ -9,23 +9,23 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
-public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     protected readonly ILogger _logger;
     protected readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    protected readonly IResiliencePipelineProvider _resiliencePipelineProvider;
+    protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly string _jobName;
 
     public JobWithLockBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
     {
     }
 
-    public JobWithLockBase(TimeProvider timeProvider, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
+    public JobWithLockBase(TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
         _jobName = GetType().Name;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePipelineProvider = resiliencePipelineProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
     }
@@ -34,7 +34,7 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public JobOptions Options { get; set; }
 

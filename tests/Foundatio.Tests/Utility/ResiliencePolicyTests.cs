@@ -9,20 +9,19 @@ using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
-using System.Collections.Concurrent;
+using Moq;
 using Polly;
 using Polly.Retry;
-using Moq;
 
 namespace Foundatio.Tests.Utility;
 
-public class ResiliencePipelineTests : TestWithLoggingBase
+public class ResiliencePolicyTests : TestWithLoggingBase
 {
-    private readonly IResiliencePipeline _pipeline;
+    private readonly IResiliencePolicy _policy;
 
-    public ResiliencePipelineTests(ITestOutputHelper output) : base(output)
+    public ResiliencePolicyTests(ITestOutputHelper output) : base(output)
     {
-        _pipeline = new FoundatioResiliencePipeline { Logger = _logger, MaxAttempts = 5, RetryInterval = TimeSpan.FromMilliseconds(10) };
+        _policy = new ResiliencePolicy { Logger = _logger, MaxAttempts = 5, RetryInterval = TimeSpan.FromMilliseconds(10) };
     }
 
     [Fact]
@@ -36,9 +35,9 @@ public class ResiliencePipelineTests : TestWithLoggingBase
         await task;
         await task;
 
-        await _pipeline.ExecuteAsync(DoStuff, cancellationToken: CancellationToken.None);
+        await _policy.ExecuteAsync(DoStuff, cancellationToken: CancellationToken.None);
 
-        await _pipeline.ExecuteAsync(async () =>
+        await _policy.ExecuteAsync(async () =>
         {
             await DoStuff();
         }, cancellationToken: CancellationToken.None);
@@ -47,11 +46,11 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunWithRetriesAndResult()
     {
-        var result = await _pipeline.ExecuteAsync(ReturnStuff, cancellationToken: CancellationToken.None);
+        var result = await _policy.ExecuteAsync(ReturnStuff, cancellationToken: CancellationToken.None);
 
         Assert.Equal(1, result);
 
-        result = await _pipeline.ExecuteAsync(async () => await ReturnStuff(), cancellationToken: CancellationToken.None);
+        result = await _policy.ExecuteAsync(async () => await ReturnStuff(), cancellationToken: CancellationToken.None);
 
         Assert.Equal(1, result);
     }
@@ -61,13 +60,13 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     {
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await _pipeline.ExecuteAsync(() => DoBoom(), cancellationToken: CancellationToken.None);
+            await _policy.ExecuteAsync(() => DoBoom(), cancellationToken: CancellationToken.None);
         });
         Assert.Equal("Hi", exception.Message);
 
         exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await _pipeline.ExecuteAsync(async () =>
+            await _policy.ExecuteAsync(async () =>
             {
                 await DoBoom();
             }, cancellationToken: CancellationToken.None);
@@ -75,7 +74,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
         Assert.Equal("Hi", exception.Message);
 
         int attempt = 0;
-        await _pipeline.ExecuteAsync(() =>
+        await _policy.ExecuteAsync(() =>
         {
             attempt++;
             return DoBoom(attempt < 5);
@@ -83,7 +82,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
         Assert.Equal(5, attempt);
 
         attempt = 0;
-        await _pipeline.ExecuteAsync(async () =>
+        await _policy.ExecuteAsync(async () =>
         {
             attempt++;
             await DoBoom(attempt < 5);
@@ -96,7 +95,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     {
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            var result = await _pipeline.ExecuteAsync(() => ReturnBoom(), cancellationToken: CancellationToken.None);
+            var result = await _policy.ExecuteAsync(() => ReturnBoom(), cancellationToken: CancellationToken.None);
 
             Assert.Equal(1, result);
         });
@@ -104,14 +103,14 @@ public class ResiliencePipelineTests : TestWithLoggingBase
 
         exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            var result = await _pipeline.ExecuteAsync(async () => await ReturnBoom(), cancellationToken: CancellationToken.None);
+            var result = await _policy.ExecuteAsync(async () => await ReturnBoom(), cancellationToken: CancellationToken.None);
 
             Assert.Equal(1, result);
         });
         Assert.Equal("Hi", exception.Message);
 
         int attempt = 0;
-        var result = await _pipeline.ExecuteAsync(() =>
+        var result = await _policy.ExecuteAsync(() =>
         {
             attempt++;
             return ReturnBoom(attempt < 5);
@@ -120,7 +119,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
         Assert.Equal(1, result);
 
         attempt = 0;
-        result = await _pipeline.ExecuteAsync(async () =>
+        result = await _policy.ExecuteAsync(async () =>
         {
             attempt++;
             return await ReturnBoom(attempt < 5);
@@ -132,7 +131,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     [Fact]
     public async Task CanHandleSpecificExceptions()
     {
-        var pipeline = new FoundatioResiliencePipeline
+        var pipeline = new ResiliencePolicy
         {
             Logger = _logger,
             RetryInterval = TimeSpan.Zero,
@@ -174,19 +173,19 @@ public class ResiliencePipelineTests : TestWithLoggingBase
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await _pipeline.ExecuteAsync(DoStuff, cts.Token);
+            await _policy.ExecuteAsync(DoStuff, cts.Token);
         });
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await _pipeline.ExecuteAsync(async () => await DoStuff(), cts.Token);
+            await _policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
         });
     }
 
     [Fact]
     public Task CanRunWithTimeout()
     {
-        var pipeline = new FoundatioResiliencePipeline
+        var pipeline = new ResiliencePolicy
         {
             Logger = _logger,
             MaxAttempts = 5,
@@ -205,30 +204,30 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     [Fact]
     public void CanUseProvider()
     {
-        var provider = new FoundatioResiliencePipelineProvider()
-            .WithPipeline("TestPipeline", b => b.WithLogger(_logger).WithMaxAttempts(10).WithRetryInterval(TimeSpan.FromMilliseconds(20)))
-            .WithDefaultPipeline(b => b.WithLogger(_logger).WithMaxAttempts(7).WithRetryInterval(TimeSpan.FromMilliseconds(100)).WithJitter());
+        var provider = new ResiliencePolicyProvider()
+            .WithPolicy("TestPipeline", b => b.WithLogger(_logger).WithMaxAttempts(10).WithRetryInterval(TimeSpan.FromMilliseconds(20)))
+            .WithDefaultPolicy(b => b.WithLogger(_logger).WithMaxAttempts(7).WithRetryInterval(TimeSpan.FromMilliseconds(100)).WithJitter());
 
         // named pipeline
-        var pipeline = provider.GetPipeline("TestPipeline");
+        var pipeline = provider.GetPolicy("TestPipeline");
         Assert.NotNull(pipeline);
-        var foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        var foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(10, foundationPipeline.MaxAttempts);
         Assert.Equal(TimeSpan.FromMilliseconds(20), foundationPipeline.RetryInterval);
 
         // default pipeline
-        pipeline = provider.GetPipeline();
+        pipeline = provider.GetPolicy();
         Assert.NotNull(pipeline);
-        foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(7, foundationPipeline.MaxAttempts);
         Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
 
         // unknown pipeline uses default
-        pipeline = provider.GetPipeline("UnknownPipeline");
+        pipeline = provider.GetPolicy("UnknownPipeline");
         Assert.NotNull(pipeline);
-        foundationPipeline = Assert.IsType<FoundatioResiliencePipeline>(pipeline);
+        foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(7, foundationPipeline.MaxAttempts);
         Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
@@ -237,8 +236,8 @@ public class ResiliencePipelineTests : TestWithLoggingBase
     [Fact]
     public async Task CanUsePolly()
     {
-        var pollyResiliencePipelineProvider = new PollyResiliencePipelineProvider()
-            .WithPipeline(nameof(ILockProvider.IsLockedAsync), p => p.AddRetry(new RetryStrategyOptions
+        var pollyResiliencePipelineProvider = new PollyResiliencePolicyProvider()
+            .WithPolicy(nameof(ILockProvider.IsLockedAsync), p => p.AddRetry(new RetryStrategyOptions
                 {
                     ShouldHandle = new PredicateBuilder().Handle<Exception>(ex => ex is ApplicationException),
                     Delay = TimeSpan.Zero,
@@ -246,7 +245,7 @@ public class ResiliencePipelineTests : TestWithLoggingBase
                 }));
 
         var mockCacheClient = new Mock<ICacheClient>();
-        mockCacheClient.As<IHaveResiliencePipelineProvider>().Setup(c => c.ResiliencePipelineProvider).Returns(pollyResiliencePipelineProvider);
+        mockCacheClient.As<IHaveResiliencePolicyProvider>().Setup(c => c.ResiliencePolicyProvider).Returns(pollyResiliencePipelineProvider);
         mockCacheClient.Setup(c => c.AddAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>())).ReturnsAsync(true);;
 
         int hitCount = 0;
@@ -297,60 +296,5 @@ public class ResiliencePipelineTests : TestWithLoggingBase
 
         if (shouldThrow)
             throw new ApplicationException("Hi");
-    }
-}
-
-public class PollyResiliencePipelineProvider : IResiliencePipelineProvider
-{
-    private readonly ConcurrentDictionary<string, IResiliencePipeline> _pipelines = new(StringComparer.OrdinalIgnoreCase);
-    private IResiliencePipeline _defaultPipeline = new PollyResiliencePipeline(new ResiliencePipelineBuilder().AddRetry(new RetryStrategyOptions()).Build());
-
-    public IResiliencePipelineProvider WithDefaultPipeline(IResiliencePipeline pipeline)
-    {
-        _defaultPipeline = pipeline ?? throw new ArgumentNullException(nameof(pipeline));
-        return this;
-    }
-
-    public IResiliencePipelineProvider WithPipeline(string name, ResiliencePipeline pipeline)
-    {
-        ArgumentNullException.ThrowIfNull(name);
-
-        ArgumentNullException.ThrowIfNull(pipeline);
-
-        _pipelines[name] = new PollyResiliencePipeline(pipeline);
-        return this;
-    }
-
-    public IResiliencePipelineProvider WithPipeline(string name, Action<ResiliencePipelineBuilder> pipelineBuilder)
-    {
-        if (name == null)
-            throw new ArgumentNullException(nameof(name));
-
-        if (pipelineBuilder == null)
-            throw new ArgumentNullException(nameof(pipelineBuilder));
-
-        var builder = new ResiliencePipelineBuilder();
-        pipelineBuilder(builder);
-
-        _pipelines[name] = new PollyResiliencePipeline(builder.Build());
-        return this;
-    }
-
-    public IResiliencePipeline GetPipeline(string name = null)
-    {
-        return name == null ? _defaultPipeline : _pipelines.GetOrAdd(name, _ => _defaultPipeline);
-    }
-
-    private class PollyResiliencePipeline(ResiliencePipeline pipeline) : IResiliencePipeline
-    {
-        public ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
-        {
-            return pipeline.ExecuteAsync(action, cancellationToken);
-        }
-
-        public ValueTask<T> ExecuteAsync<T>(Func<CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
-        {
-            return pipeline.ExecuteAsync(action, cancellationToken);
-        }
     }
 }

@@ -13,7 +13,7 @@ public class ScopedHybridCacheClient : ScopedCacheClient, IHybridCacheClient
     public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null) : base(client, scope) { }
 }
 
-public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private string _keyPrefix;
     private bool _isLocked;
@@ -35,7 +35,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     ILogger IHaveLogger.Logger => UnscopedCache.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedCache.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedCache.GetTimeProvider();
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => UnscopedCache.GetResiliencePipelineProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider();
 
     public void SetScope(string scope)
     {

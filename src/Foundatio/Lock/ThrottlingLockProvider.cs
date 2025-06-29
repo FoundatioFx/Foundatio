@@ -10,20 +10,20 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock;
 
-public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly ICacheClient _cacheClient;
     private readonly TimeSpan _throttlingPeriod = TimeSpan.FromMinutes(15);
     private readonly int _maxHitsPerPeriod;
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly IResiliencePipelineProvider _resiliencePipelineProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePipelineProvider resiliencePipelineProvider = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
-        _resiliencePipelineProvider = resiliencePipelineProvider ?? cacheClient.GetResiliencePipelineProvider();
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
@@ -39,7 +39,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {

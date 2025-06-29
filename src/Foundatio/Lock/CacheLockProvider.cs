@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Lock;
 
-public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly ICacheClient _cacheClient;
     private readonly IMessageBus _messageBus;
@@ -26,14 +26,14 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private readonly ILoggerFactory _loggerFactory;
     private readonly Histogram<double> _lockWaitTimeHistogram;
     private readonly Counter<int> _lockTimeoutCounter;
-    private readonly IResiliencePipelineProvider _resiliencePipelineProvider;
-    private readonly IResiliencePipeline _releasePipeline;
-    private readonly IResiliencePipeline _isLockedPipeline;
-    private readonly IResiliencePipeline _renewPipeline;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    private readonly IResiliencePolicy _releasePolicy;
+    private readonly IResiliencePolicy _isLockedPolicy;
+    private readonly IResiliencePolicy _renewPolicy;
 
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
@@ -41,10 +41,10 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _cacheClient = new ScopedCacheClient(cacheClient, "lock");
         _messageBus = messageBus;
 
-        _resiliencePipelineProvider = resiliencePipelineProvider ?? cacheClient.GetResiliencePipelineProvider();
-        _releasePipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.ReleaseAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger) { MaxAttempts = 15 };
-        _isLockedPipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.IsLockedAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger);
-        _renewPipeline = _resiliencePipelineProvider?.GetPipeline(nameof(ILockProvider.RenewAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger);
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
+        _releasePolicy = _resiliencePolicyProvider?.GetPolicy(nameof(ILockProvider.ReleaseAsync)) ?? new ResiliencePolicy(_timeProvider, _logger) { MaxAttempts = 15 };
+        _isLockedPolicy = _resiliencePolicyProvider?.GetPolicy(nameof(ILockProvider.IsLockedAsync)) ?? new ResiliencePolicy(_timeProvider, _logger);
+        _renewPolicy = _resiliencePolicyProvider?.GetPolicy(nameof(ILockProvider.RenewAsync)) ?? new ResiliencePolicy(_timeProvider, _logger);
 
         _lockWaitTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.lock.wait.time", description: "Time waiting for locks", unit: "ms");
         _lockTimeoutCounter = FoundatioDiagnostics.Meter.CreateCounter<int>("foundatio.lock.failed", description: "Number of failed attempts to acquire a lock");
@@ -53,7 +53,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     private async Task EnsureTopicSubscriptionAsync()
     {
@@ -201,7 +201,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        bool result = await _isLockedPipeline.ExecuteAsync(async _ => await _cacheClient.ExistsAsync(resource)).AnyContext();
+        bool result = await _isLockedPolicy.ExecuteAsync(async _ => await _cacheClient.ExistsAsync(resource)).AnyContext();
         return result;
     }
 
@@ -209,7 +209,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     {
         _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
-        await _releasePipeline.ExecuteAsync(async _ => await _cacheClient.RemoveIfEqualAsync(resource, lockId)).AnyContext();
+        await _releasePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveIfEqualAsync(resource, lockId)).AnyContext();
         await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
@@ -219,7 +219,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     {
         _logger.LogTrace("ReleaseAsync Start: {Resource}", resource);
 
-        await _releasePipeline.ExecuteAsync(async _ => await _cacheClient.RemoveAsync(resource)).AnyContext();
+        await _releasePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveAsync(resource)).AnyContext();
         await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource}", resource);
@@ -231,7 +231,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
             timeUntilExpires = TimeSpan.FromMinutes(20);
 
         _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
-        return _renewPipeline.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
+        return _renewPolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
     }
 
     private class ResetEventWithRefCount

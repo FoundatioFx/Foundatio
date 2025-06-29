@@ -13,7 +13,7 @@ namespace Foundatio.Caching;
 
 public interface IHybridCacheClient : ICacheClient { }
 
-public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePipelineProvider
+public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     protected readonly ICacheClient _distributedCache;
     protected readonly IMessageBus _messageBus;
@@ -22,7 +22,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePipelineProvider _resiliencePipelineProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private long _localCacheHits;
     private long _invalidateCacheCalls;
 
@@ -31,7 +31,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
-        _resiliencePipelineProvider = distributedCacheClient.GetResiliencePipelineProvider() ?? localCacheOptions?.ResiliencePipelineProvider;
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
         _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
@@ -48,7 +48,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => _resiliencePipelineProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args)
     {

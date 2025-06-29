@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock;
 
-public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePipelineProvider
+public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private string _keyPrefix;
     private bool _isLocked;
@@ -28,7 +28,7 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
     ILogger IHaveLogger.Logger => UnscopedLockProvider.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedLockProvider.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedLockProvider.GetTimeProvider();
-    IResiliencePipelineProvider IHaveResiliencePipelineProvider.ResiliencePipelineProvider => UnscopedLockProvider.GetResiliencePipelineProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedLockProvider.GetResiliencePolicyProvider();
 
     public void SetScope(string scope)
     {

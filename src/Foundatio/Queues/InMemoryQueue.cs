@@ -166,7 +166,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     {
                         try
                         {
-                            await _abandonPipeline.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationToken.Token).AnyContext();
+                            await _abandonPolicy.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationToken.Token).AnyContext();
                         }
                         catch (Exception abandonEx)
                         {
@@ -181,7 +181,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 {
                     try
                     {
-                        await _completePipeline.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationToken.Token).AnyContext();
+                        await _completePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationToken.Token).AnyContext();
                     }
                     catch (Exception ex)
                     {

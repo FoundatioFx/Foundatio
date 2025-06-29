@@ -19,8 +19,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected readonly TOptions _options;
     private readonly string _metricsPrefix;
     protected readonly ISerializer _serializer;
-    protected readonly IResiliencePipeline _abandonPipeline;
-    protected readonly IResiliencePipeline _completePipeline;
+    protected readonly IResiliencePolicy _abandonPolicy;
+    protected readonly IResiliencePolicy _completePolicy;
 
     private readonly Counter<long> _enqueuedCounter;
     private readonly Counter<long> _dequeuedCounter;
@@ -56,9 +56,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
-        var resiliencePipelineProvider = _options.GetResiliencePipelineProvider();
-        _abandonPipeline = resiliencePipelineProvider?.GetPipeline(nameof(IQueue<T>.AbandonAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger) { MaxAttempts = 3, RetryInterval = TimeSpan.Zero };
-        _completePipeline = resiliencePipelineProvider?.GetPipeline(nameof(IQueue<T>.CompleteAsync)) ?? new FoundatioResiliencePipeline(_timeProvider, _logger);
+        var resiliencePipelineProvider = _options.GetResiliencePolicyProvider();
+        _abandonPolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.AbandonAsync)) ?? new ResiliencePolicy(_timeProvider, _logger) { MaxAttempts = 3, RetryInterval = TimeSpan.Zero };
+        _completePolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.CompleteAsync)) ?? new ResiliencePolicy(_timeProvider, _logger);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");

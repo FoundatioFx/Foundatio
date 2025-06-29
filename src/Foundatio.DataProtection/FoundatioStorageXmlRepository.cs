@@ -23,7 +23,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
 {
     private readonly IFileStorage _storage;
     private readonly ILogger _logger;
-    private readonly IResiliencePipeline _resiliencePipeline;
+    private readonly IResiliencePolicy _resiliencePolicy;
 
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
@@ -35,14 +35,14 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePipelineProvider resiliencePipelineProvider, ILoggerFactory loggerFactory = null)
+    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
         if (storage == null)
             throw new ArgumentNullException(nameof(storage));
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
-        _resiliencePipeline = resiliencePipelineProvider?.GetPipeline(nameof(FoundatioStorageXmlRepository)) ?? new FoundatioResiliencePipeline(TimeProvider.System, _logger);
+        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy(nameof(FoundatioStorageXmlRepository)) ?? new ResiliencePolicy(TimeProvider.System, _logger);
     }
 
     /// <inheritdoc />
@@ -91,7 +91,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         string path = String.Concat(!String.IsNullOrEmpty(friendlyName) ? friendlyName : Guid.NewGuid().ToString("N"), ".xml");
         _logger.LogTrace("Saving element: {File}.", path);
 
-        return _resiliencePipeline.ExecuteAsync(async ct =>
+        return _resiliencePolicy.ExecuteAsync(async ct =>
         {
             using var memoryStream = new MemoryStream();
             element.Save(memoryStream, SaveOptions.DisableFormatting);
