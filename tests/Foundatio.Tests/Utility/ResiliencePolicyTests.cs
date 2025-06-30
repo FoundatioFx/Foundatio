@@ -172,7 +172,8 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var policy = new ResiliencePolicyBuilder()
             .WithLogger(_logger)
             .WithDelay(TimeSpan.Zero)
-            .WithShouldRetry((attempts, ex) => attempts < 3 && ex is ApplicationException)
+            .WithMaxAttempts(3)
+            .WithUnhandledException<ApplicationException>()
             .Build();;
 
         int attempt = 0;
@@ -186,7 +187,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         });
 
         Assert.Equal("Simulated failure", exception.Message);
-        Assert.Equal(3, attempt);
+        Assert.Equal(1, attempt);
 
         attempt = 0;
         var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
@@ -199,7 +200,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         });
 
         Assert.Equal("Unhandled exception type", argumentException.Message);
-        Assert.Equal(1, attempt);
+        Assert.Equal(3, attempt);
     }
 
     [Fact]
