@@ -41,7 +41,7 @@ public static class Run
     [Obsolete("Use ResiliencePolicy instead.")]
     public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
     {
-        var resiliencePolicy = new ResiliencePolicy(timeProvider ?? TimeProvider.System, logger ?? NullLogger.Instance) { MaxAttempts = maxAttempts, Delay = retryInterval };
+        var resiliencePolicy = new ResiliencePolicy(logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System) { MaxAttempts = maxAttempts, Delay = retryInterval };
         return await resiliencePolicy.ExecuteAsync(async _ => await action(), cancellationToken).AnyContext();
     }
 }

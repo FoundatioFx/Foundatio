@@ -36,7 +36,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
-        _defaultPolicy = new ResiliencePolicy(_timeProvider, _loggerFactory.CreateLogger<ResiliencePolicy>())
+        _defaultPolicy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider)
         {
             MaxAttempts = 5
         };
@@ -53,7 +53,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
 
-        var policy = new ResiliencePolicy(_timeProvider, _loggerFactory.CreateLogger<ResiliencePolicy>());
+        var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);
         builder(policyBuilder);
 
@@ -78,7 +78,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
 
-        var policy = new ResiliencePolicy(_timeProvider, _loggerFactory.CreateLogger<ResiliencePolicy>());
+        var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);
         builder(policyBuilder);
 
@@ -100,7 +100,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     private readonly TimeProvider _timeProvider;
     private ILogger _logger;
 
-    public ResiliencePolicy(TimeProvider timeProvider = null, ILogger logger = null)
+    public ResiliencePolicy(ILogger logger = null, TimeProvider timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
@@ -274,8 +274,8 @@ public interface ICircuitBreaker
 
 public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
 {
-    private readonly TimeProvider _timeProvider;
     private ILogger _logger;
+    private readonly TimeProvider _timeProvider;
 
     private CircuitState _state = CircuitState.Closed;
     private DateTime? _periodStartTime;
@@ -284,10 +284,10 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     private DateTime? _breakStartTime;
     private TimeSpan _currentBreakDuration;
 
-    public CircuitBreaker(TimeProvider timeProvider = null, ILogger logger = null)
+    public CircuitBreaker(ILogger logger = null, TimeProvider timeProvider = null)
     {
-        _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     ILogger IHaveLogger.Logger => _logger;
@@ -508,8 +508,20 @@ public enum CircuitState
 
 public class BrokenCircuitException(string message = "The circuit is now open and is not allowing calls.") : Exception(message);
 
-public class ResiliencePolicyBuilder(ResiliencePolicy policy)
+public class ResiliencePolicyBuilder
 {
+    private readonly ResiliencePolicy _policy;
+
+    public ResiliencePolicyBuilder(ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        _policy = new ResiliencePolicy(logger, timeProvider);
+    }
+
+    public ResiliencePolicyBuilder(ResiliencePolicy policy)
+    {
+        _policy = policy;
+    }
+
     /// <summary>
     /// Sets the logger for the policy.
     /// </summary>
@@ -518,7 +530,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <exception cref="ArgumentNullException"></exception>
     public ResiliencePolicyBuilder WithLogger(ILogger logger)
     {
-        policy.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _policy.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         return this;
     }
 
@@ -528,7 +540,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="maxAttempts"></param>
     public ResiliencePolicyBuilder WithMaxAttempts(int maxAttempts)
     {
-        policy.MaxAttempts = maxAttempts;
+        _policy.MaxAttempts = maxAttempts;
         return this;
     }
 
@@ -539,7 +551,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <exception cref="ArgumentNullException"></exception>
     public ResiliencePolicyBuilder WithUnhandledException<T>() where T : Exception
     {
-        policy.UnhandledExceptions.Add(typeof(T));
+        _policy.UnhandledExceptions.Add(typeof(T));
         return this;
     }
 
@@ -554,7 +566,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
         if (unhandledExceptionTypes == null)
             throw new ArgumentNullException(nameof(unhandledExceptionTypes));
 
-        policy.UnhandledExceptions.AddRange(unhandledExceptionTypes);
+        _policy.UnhandledExceptions.AddRange(unhandledExceptionTypes);
         return this;
     }
 
@@ -564,7 +576,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="shouldRetry"></param>
     public ResiliencePolicyBuilder WithShouldRetry(Func<int, Exception, bool> shouldRetry)
     {
-        policy.ShouldRetry = shouldRetry;
+        _policy.ShouldRetry = shouldRetry;
         return this;
     }
 
@@ -574,7 +586,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="retryDelay"></param>
     public ResiliencePolicyBuilder WithDelay(TimeSpan? retryDelay)
     {
-        policy.Delay = retryDelay;
+        _policy.Delay = retryDelay;
         return this;
     }
 
@@ -584,7 +596,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="getDelay"></param>
     public ResiliencePolicyBuilder WithGetDelay(Func<int, TimeSpan> getDelay)
     {
-        policy.GetDelay = getDelay;
+        _policy.GetDelay = getDelay;
         return this;
     }
 
@@ -595,7 +607,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="exponentialFactor"></param>
     public ResiliencePolicyBuilder WithExponentialDelay(TimeSpan? baseDelay = null, double exponentialFactor = 2.0)
     {
-        policy.GetDelay = ResiliencePolicy.ExponentialDelay(baseDelay ?? TimeSpan.FromSeconds(1), exponentialFactor);
+        _policy.GetDelay = ResiliencePolicy.ExponentialDelay(baseDelay ?? TimeSpan.FromSeconds(1), exponentialFactor);
         return this;
     }
 
@@ -605,7 +617,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="baseDelay"></param>
     public ResiliencePolicyBuilder WithLinearDelay(TimeSpan? baseDelay = null)
     {
-        policy.GetDelay = ResiliencePolicy.LinearDelay(baseDelay ?? TimeSpan.FromSeconds(1));
+        _policy.GetDelay = ResiliencePolicy.LinearDelay(baseDelay ?? TimeSpan.FromSeconds(1));
         return this;
     }
 
@@ -615,7 +627,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="maxDelay"></param>
     public ResiliencePolicyBuilder WithMaxDelay(TimeSpan? maxDelay)
     {
-        policy.MaxDelay = maxDelay;
+        _policy.MaxDelay = maxDelay;
         return this;
     }
 
@@ -625,7 +637,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="useJitter"></param>
     public ResiliencePolicyBuilder WithJitter(bool useJitter = true)
     {
-        policy.UseJitter = useJitter;
+        _policy.UseJitter = useJitter;
         return this;
     }
 
@@ -635,7 +647,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="timeout"></param>
     public ResiliencePolicyBuilder WithTimeout(TimeSpan timeout)
     {
-        policy.Timeout = timeout;
+        _policy.Timeout = timeout;
         return this;
     }
 
@@ -644,10 +656,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// </summary>
     public ResiliencePolicyBuilder WithCircuitBreaker()
     {
-        policy.CircuitBreaker = new CircuitBreaker(policy.GetTimeProvider())
-        {
-            Logger = policy.Logger
-        };
+        _policy.CircuitBreaker = new CircuitBreaker(_policy.Logger, _policy.GetTimeProvider());
         return this;;
     }
 
@@ -657,7 +666,7 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
     /// <param name="circuitBreaker"></param>
     public ResiliencePolicyBuilder WithCircuitBreaker(ICircuitBreaker circuitBreaker)
     {
-        policy.CircuitBreaker = circuitBreaker;
+        _policy.CircuitBreaker = circuitBreaker;
         return this;;
     }
 
@@ -670,16 +679,34 @@ public class ResiliencePolicyBuilder(ResiliencePolicy policy)
         if (circuitBreaker == null)
             throw new ArgumentNullException(nameof(circuitBreaker));
 
-        var cb = new CircuitBreaker(policy.GetTimeProvider(), policy.Logger);
+        var cb = new CircuitBreaker(_policy.Logger, _policy.GetTimeProvider());
         var builder = new CircuitBreakerBuilder(cb);
         circuitBreaker(builder);
 
         return WithCircuitBreaker(cb);
     }
+
+    /// <summary>
+    /// Builds the resilience policy with the configured settings.
+    /// </summary>
+    /// <returns></returns>
+    public ResiliencePolicy Build() => _policy;
 }
 
-public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
+public class CircuitBreakerBuilder
 {
+    private readonly CircuitBreaker _circuitBreaker;
+
+    public CircuitBreakerBuilder(ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        _circuitBreaker = new CircuitBreaker(logger, timeProvider);
+    }
+
+    public CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
+    {
+        _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
+    }
+
     /// <summary>
     /// Sets the logger for the policy.
     /// </summary>
@@ -688,7 +715,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <exception cref="ArgumentNullException"></exception>
     public CircuitBreakerBuilder WithLogger(ILogger logger)
     {
-        circuitBreaker.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _circuitBreaker.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
         return this;
     }
 
@@ -699,7 +726,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithSamplingDuration(TimeSpan samplingDuration)
     {
-        circuitBreaker.SamplingDuration = samplingDuration;
+        _circuitBreaker.SamplingDuration = samplingDuration;
         return this;
     }
 
@@ -710,7 +737,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithFailureRatio(double failureRatio)
     {
-        circuitBreaker.FailureRatio = failureRatio;
+        _circuitBreaker.FailureRatio = failureRatio;
         return this;
     }
 
@@ -721,7 +748,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithMinimumCalls(int minimumCalls)
     {
-        circuitBreaker.MinimumCalls = minimumCalls;
+        _circuitBreaker.MinimumCalls = minimumCalls;
         return this;
     }
 
@@ -732,7 +759,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithBreakDuration(TimeSpan breakDuration)
     {
-        circuitBreaker.BreakDuration = breakDuration;
+        _circuitBreaker.BreakDuration = breakDuration;
         return this;
     }
 
@@ -743,7 +770,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithUnrecordedException<T>() where T : Exception
     {
-        circuitBreaker.UnrecordedExceptions.Add(typeof(T));
+        _circuitBreaker.UnrecordedExceptions.Add(typeof(T));
         return this;
     }
 
@@ -758,7 +785,7 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
         if (unrecordedExceptionTypes == null)
             throw new ArgumentNullException(nameof(unrecordedExceptionTypes));
 
-        circuitBreaker.UnrecordedExceptions.AddRange(unrecordedExceptionTypes);
+        _circuitBreaker.UnrecordedExceptions.AddRange(unrecordedExceptionTypes);
         return this;
     }
 
@@ -769,9 +796,15 @@ public class CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     /// <returns></returns>
     public CircuitBreakerBuilder WithShouldRecord(Func<Exception, bool> shouldRecord)
     {
-        circuitBreaker.ShouldRecord = shouldRecord;
+        _circuitBreaker.ShouldRecord = shouldRecord;
         return this;
     }
+
+    /// <summary>
+    /// Builds the circuit breaker with the configured settings.
+    /// </summary>
+    /// <returns></returns>
+    public CircuitBreaker Build() => _circuitBreaker;
 }
 
 public static class ResiliencePolicyExtensions

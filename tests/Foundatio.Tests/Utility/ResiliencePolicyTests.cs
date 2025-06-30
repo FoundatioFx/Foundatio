@@ -131,19 +131,18 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task CanHandleSpecificExceptions()
+    public async Task CanHandleSpecificExceptionsWithShouldRetry()
     {
-        var pipeline = new ResiliencePolicy
-        {
-            Logger = _logger,
-            Delay = TimeSpan.Zero,
-            ShouldRetry = (attempts, ex) => attempts < 3 && ex is ApplicationException,
-        };
+        var policy = new ResiliencePolicyBuilder()
+            .WithLogger(_logger)
+            .WithDelay(TimeSpan.Zero)
+            .WithShouldRetry((attempts, ex) => attempts < 3 && ex is ApplicationException)
+            .Build();
 
         int attempt = 0;
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await pipeline.ExecuteAsync(() =>
+            await policy.ExecuteAsync(() =>
             {
                 attempt++;
                 throw new ApplicationException("Simulated failure");
@@ -156,7 +155,43 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         attempt = 0;
         var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
         {
-            await pipeline.ExecuteAsync(() =>
+            await policy.ExecuteAsync(() =>
+            {
+                attempt++;
+                throw new ArgumentException("Unhandled exception type");
+            }, cancellationToken: CancellationToken.None);
+        });
+
+        Assert.Equal("Unhandled exception type", argumentException.Message);
+        Assert.Equal(1, attempt);
+    }
+
+    [Fact]
+    public async Task CanHandleSpecificExceptionsWithException()
+    {
+        var policy = new ResiliencePolicyBuilder()
+            .WithLogger(_logger)
+            .WithDelay(TimeSpan.Zero)
+            .WithShouldRetry((attempts, ex) => attempts < 3 && ex is ApplicationException)
+            .Build();;
+
+        int attempt = 0;
+        var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
+        {
+            await policy.ExecuteAsync(() =>
+            {
+                attempt++;
+                throw new ApplicationException("Simulated failure");
+            }, cancellationToken: CancellationToken.None);
+        });
+
+        Assert.Equal("Simulated failure", exception.Message);
+        Assert.Equal(3, attempt);
+
+        attempt = 0;
+        var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
+        {
+            await policy.ExecuteAsync(() =>
             {
                 attempt++;
                 throw new ArgumentException("Unhandled exception type");
@@ -187,7 +222,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     [Fact]
     public Task CanRunWithTimeout()
     {
-        var pipeline = new ResiliencePolicy
+        var policy = new ResiliencePolicy
         {
             Logger = _logger,
             MaxAttempts = 5,
@@ -196,7 +231,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         return Assert.ThrowsAsync<TimeoutException>(async () =>
         {
-            await pipeline.ExecuteAsync(async ct =>
+            await policy.ExecuteAsync(async ct =>
             {
                 await Task.Delay(500, ct);
             });
@@ -207,33 +242,33 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     public void CanUseProvider()
     {
         var provider = new ResiliencePolicyProvider()
-            .WithPolicy("TestPipeline", p => p.WithLogger(_logger).WithMaxAttempts(10).WithDelay(TimeSpan.FromMilliseconds(20)))
-            .WithPolicy("AnotherPipeline", p => p.WithLogger(_logger).WithMaxAttempts(5).WithDelay(TimeSpan.FromMilliseconds(50)).WithCircuitBreaker(c => c.WithMinimumCalls(1000)))
+            .WithPolicy("TestPolicy", p => p.WithLogger(_logger).WithMaxAttempts(10).WithDelay(TimeSpan.FromMilliseconds(20)))
+            .WithPolicy("AnotherPolicy", p => p.WithLogger(_logger).WithMaxAttempts(5).WithDelay(TimeSpan.FromMilliseconds(50)).WithCircuitBreaker(c => c.WithMinimumCalls(1000)))
             .WithDefaultPolicy(p => p.WithLogger(_logger).WithMaxAttempts(7).WithDelay(TimeSpan.FromMilliseconds(100)).WithJitter());
 
-        // named pipeline
-        var pipeline = provider.GetPolicy("TestPipeline");
-        Assert.NotNull(pipeline);
-        var foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
-        Assert.Equal(_logger, foundationPipeline.Logger);
-        Assert.Equal(10, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(20), foundationPipeline.Delay);
+        // named policy
+        var policy = provider.GetPolicy("TestPolicy");
+        Assert.NotNull(policy);
+        var resiliencePolicy = Assert.IsType<ResiliencePolicy>(policy);
+        Assert.Equal(_logger, resiliencePolicy.Logger);
+        Assert.Equal(10, resiliencePolicy.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(20), resiliencePolicy.Delay);
 
-        // default pipeline
-        pipeline = provider.GetPolicy();
-        Assert.NotNull(pipeline);
-        foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
-        Assert.Equal(_logger, foundationPipeline.Logger);
-        Assert.Equal(7, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.Delay);
+        // default policy
+        policy = provider.GetPolicy();
+        Assert.NotNull(policy);
+        resiliencePolicy = Assert.IsType<ResiliencePolicy>(policy);
+        Assert.Equal(_logger, resiliencePolicy.Logger);
+        Assert.Equal(7, resiliencePolicy.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), resiliencePolicy.Delay);
 
-        // unknown pipeline uses default
-        pipeline = provider.GetPolicy("UnknownPipeline");
-        Assert.NotNull(pipeline);
-        foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
-        Assert.Equal(_logger, foundationPipeline.Logger);
-        Assert.Equal(7, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.Delay);
+        // unknown policy uses default
+        policy = provider.GetPolicy("UnknownPolicy");
+        Assert.NotNull(policy);
+        resiliencePolicy = Assert.IsType<ResiliencePolicy>(policy);
+        Assert.Equal(_logger, resiliencePolicy.Logger);
+        Assert.Equal(7, resiliencePolicy.MaxAttempts);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), resiliencePolicy.Delay);
     }
 
     [Fact]
@@ -280,10 +315,11 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     public async Task CanShareCircuitBreaker()
     {
         var timeProvider = TimeProvider.System;
-        var circuitBreaker = new CircuitBreaker(timeProvider, _logger)
-        {
-            MinimumCalls = 100, BreakDuration = TimeSpan.FromSeconds(1)
-        };
+        var circuitBreaker = new CircuitBreakerBuilder(_logger, timeProvider)
+            .WithMinimumCalls(100)
+            .WithBreakDuration(TimeSpan.FromSeconds(1))
+            .Build();
+
         var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
             .WithPolicy("MyPolicy1", p => p.WithMaxAttempts(2).WithCircuitBreaker(circuitBreaker))
             .WithPolicy("MyPolicy2", p => p.WithMaxAttempts(2).WithDelay(TimeSpan.FromMilliseconds(1)).WithCircuitBreaker(circuitBreaker));
@@ -335,10 +371,11 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     public async Task CanShareCircuitBreakerInParallel()
     {
         var timeProvider = TimeProvider.System;
-        var circuitBreaker = new CircuitBreaker(timeProvider, _logger)
-        {
-            MinimumCalls = 100, BreakDuration = TimeSpan.FromSeconds(5)
-        };
+        var circuitBreaker = new CircuitBreakerBuilder(_logger, timeProvider)
+            .WithMinimumCalls(100)
+            .WithBreakDuration(TimeSpan.FromSeconds(5))
+            .Build();
+
         var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
             .WithPolicy("MyPolicy1", p => p.WithMaxAttempts(1).WithCircuitBreaker(circuitBreaker))
             .WithPolicy("MyPolicy2", p => p.WithMaxAttempts(1).WithCircuitBreaker(circuitBreaker));
@@ -385,7 +422,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     [Fact]
     public async Task CanUsePolly()
     {
-        var pollyResiliencePipelineProvider = new PollyResiliencePolicyProvider()
+        var pollyResiliencePolicyProvider = new PollyResiliencePolicyProvider()
             .WithPolicy(nameof(ILockProvider.IsLockedAsync), p => p.AddRetry(new RetryStrategyOptions
                 {
                     ShouldHandle = new PredicateBuilder().Handle<Exception>(ex => ex is ApplicationException),
@@ -394,7 +431,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
                 }));
 
         var mockCacheClient = new Mock<ICacheClient>();
-        mockCacheClient.As<IHaveResiliencePolicyProvider>().Setup(c => c.ResiliencePolicyProvider).Returns(pollyResiliencePipelineProvider);
+        mockCacheClient.As<IHaveResiliencePolicyProvider>().Setup(c => c.ResiliencePolicyProvider).Returns(pollyResiliencePolicyProvider);
         mockCacheClient.Setup(c => c.AddAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>())).ReturnsAsync(true);;
 
         int hitCount = 0;
