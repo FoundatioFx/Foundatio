@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -110,6 +111,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     }
 }
 
+[DebuggerDisplay("MaxAttempts = {MaxAttempts} Delay={GetDelayType()}, Timeout = {GetTimeout()}, CircuitBreaker = {CircuitBreaker?.State}")]
 public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogger
 {
     private readonly TimeProvider _timeProvider;
@@ -264,6 +266,31 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
             delay = MaxDelay.Value;
 
         return delay;
+    }
+
+    private string GetDelayType()
+    {
+        if (Delay.HasValue)
+            return "Fixed " + Delay.Value.TotalSeconds + "s";
+
+        if (GetDelay != null && GetDelay.Method.Name.Contains("ExponentialDelay"))
+            return "Exponential";
+
+        if (GetDelay != null && GetDelay.Method.Name.Contains("LinearDelay"))
+            return "Linear";
+
+        if (GetDelay != null)
+            return "Custom";
+
+        return "No Delay";
+    }
+
+    private string GetTimeout()
+    {
+        if (Timeout > TimeSpan.Zero)
+            return Timeout.TotalSeconds + "s";
+
+        return "None";
     }
 
     private static readonly Random _random = new();
@@ -946,7 +973,11 @@ public static class ResiliencePolicyExtensions
     private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder = null, ILogger logger = null, TimeProvider timeProvider = null)
     {
         if (provider != null && provider.GetType() != typeof(ResiliencePolicyProvider))
-            return provider.GetDefaultPolicy();
+        {
+            var defaultPolicy = provider.GetDefaultPolicy();
+            if (defaultPolicy != null)
+                return defaultPolicy;
+        }
 
         var policy = new ResiliencePolicy(logger, timeProvider);
         fallbackBuilder?.Invoke(new ResiliencePolicyBuilder(policy));
