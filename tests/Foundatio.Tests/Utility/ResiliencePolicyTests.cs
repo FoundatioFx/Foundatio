@@ -23,7 +23,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
     public ResiliencePolicyTests(ITestOutputHelper output) : base(output)
     {
-        _policy = new ResiliencePolicy { Logger = _logger, MaxAttempts = 5, Delay = TimeSpan.FromMilliseconds(10) };
+        _policy = new ResiliencePolicyBuilder().WithLogger(_logger).WithMaxAttempts(5).WithDelay(TimeSpan.FromMilliseconds(10)).Build();
     }
 
     [Fact]
