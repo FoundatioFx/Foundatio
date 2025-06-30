@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Utility;
 using Foundatio.Utility.Resilience;
 using Polly;
 using Polly.Retry;
@@ -47,13 +48,13 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     public PollyResiliencePolicyProvider WithPolicy<T>(ResiliencePipeline policy)
     {
-        string name = typeof(T).FullName;
+        string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, policy);
     }
 
     public PollyResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePipelineBuilder> builder)
     {
-        string name = typeof(T).FullName;
+        string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, builder);
     }
 

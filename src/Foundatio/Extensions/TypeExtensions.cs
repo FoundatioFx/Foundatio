@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Reflection;
 using Foundatio.Serializer;
 
@@ -126,5 +127,18 @@ internal static class TypeExtensions
         }
 
         throw new ArgumentException($"An incompatible value specified.  Target Type: {targetType.FullName} Value Type: {value.GetType().FullName}", nameof(value));
+    }
+
+    public static string GetFriendlyTypeName(this Type type)
+    {
+        if (!type.IsGenericType)
+            return type.FullName!;
+
+        string genericTypeName = type.GetGenericTypeDefinition().FullName;
+        genericTypeName = genericTypeName?.Substring(0, genericTypeName.IndexOf('`'));
+
+        string genericArgs = String.Join(",", type.GetGenericArguments().Select(GetFriendlyTypeName));
+
+        return $"{genericTypeName}<{genericArgs}>";
     }
 }

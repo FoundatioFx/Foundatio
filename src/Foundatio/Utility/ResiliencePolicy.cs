@@ -90,13 +90,13 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
 
     public ResiliencePolicyProvider WithPolicy<T>(IResiliencePolicy policy)
     {
-        string name = typeof(T).FullName;
+        string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, policy);
     }
 
     public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder)
     {
-        string name = typeof(T).FullName;
+        string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, builder);
     }
 
@@ -861,7 +861,7 @@ public static class ResiliencePolicyExtensions
     /// <returns></returns>
     public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
     {
-        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).FullName, false);
+        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).GetFriendlyTypeName(), false);
         return policy ?? GetDefaultPolicy(provider, null, logger, timeProvider);
     }
 
@@ -876,7 +876,7 @@ public static class ResiliencePolicyExtensions
     /// <returns></returns>
     public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
     {
-        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).FullName, false);
+        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).GetFriendlyTypeName(), false);
         return policy ?? GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
     }
 
@@ -893,7 +893,7 @@ public static class ResiliencePolicyExtensions
     {
         if (provider != null)
         {
-            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false);
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T2).GetFriendlyTypeName(), false);
             if (policy != null)
                 return policy;
         }
@@ -915,7 +915,7 @@ public static class ResiliencePolicyExtensions
     {
         if (provider != null)
         {
-            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false);
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T2).GetFriendlyTypeName(), false);
             if (policy != null)
                 return policy;
         }
@@ -937,7 +937,7 @@ public static class ResiliencePolicyExtensions
     {
         if (provider != null)
         {
-            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false) ?? provider.GetPolicy(typeof(T3).FullName, false);
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T2).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T3).GetFriendlyTypeName(), false);
             if (policy != null)
                 return policy;
         }
@@ -962,7 +962,7 @@ public static class ResiliencePolicyExtensions
 
         if (provider != null)
         {
-            policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false) ?? provider.GetPolicy(typeof(T3).FullName, false);
+            policy = provider.GetPolicy(typeof(T1).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T2).GetFriendlyTypeName(), false) ?? provider.GetPolicy(typeof(T3).GetFriendlyTypeName(), false);
             if (policy != null)
                 return policy;
         }
