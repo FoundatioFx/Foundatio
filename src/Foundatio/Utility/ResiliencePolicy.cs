@@ -150,10 +150,10 @@ public class ResiliencePolicy : IResiliencePolicy
 
     public async ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
-        _ = await ExecuteAsync(ct =>
+        _ = await ExecuteAsync(async ct =>
         {
-            action(ct);
-            return new ValueTask<object>();
+            await action(ct);
+            return (object)null;
         }, cancellationToken);
     }
 
@@ -350,6 +350,9 @@ public class ResiliencePolicyCircuitBreaker : IResiliencePolicyCircuitBreaker
         CheckPeriodStart();
         int count = Interlocked.Increment(ref _periodThroughput);
 
+        if (_state == ResiliencePolicyCircuitState.HalfOpen && TryChangeState(ResiliencePolicyCircuitState.HalfOpen, ResiliencePolicyCircuitState.Open))
+            _breakStartTime = _timeProvider.GetUtcNow().UtcDateTime;
+
         if (_shouldRecord != null && _shouldRecord.Invoke(ex) == false)
             return;
 
@@ -380,8 +383,8 @@ public class ResiliencePolicyCircuitBreaker : IResiliencePolicyCircuitBreaker
     private void ResetPeriod()
     {
         _periodStartTime = null;
-        _periodThroughput = 0;
-        _periodFailures = 0;
+        Interlocked.Exchange(ref _periodThroughput, 0);
+        Interlocked.Exchange(ref _periodFailures, 0);
     }
 }
 
