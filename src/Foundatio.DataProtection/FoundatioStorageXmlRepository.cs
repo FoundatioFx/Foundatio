@@ -42,7 +42,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
-        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy<FoundatioStorageXmlRepository>() ?? new ResiliencePolicyBuilder(_logger).Build();
+        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
     }
 
     /// <inheritdoc />

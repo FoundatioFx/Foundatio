@@ -11,7 +11,8 @@ namespace Foundatio.Utility.Resilience;
 
 public interface IResiliencePolicyProvider
 {
-    IResiliencePolicy GetPolicy(string name = null);
+    IResiliencePolicy GetDefaultPolicy();
+    IResiliencePolicy GetPolicy(string name, bool useDefault = true);
 }
 
 public interface IResiliencePolicy
@@ -98,12 +99,14 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         return WithPolicy(name, builder);
     }
 
-    public IResiliencePolicy GetPolicy(string name = null)
-    {
-        if (name == null)
-            return _defaultPolicy;
+    public IResiliencePolicy GetDefaultPolicy() => _defaultPolicy;
 
-        return _policies.TryGetValue(name, out var policy) ? policy : _defaultPolicy;
+    public IResiliencePolicy GetPolicy(string name, bool useDefault = true)
+    {
+        if (String.IsNullOrEmpty(name))
+            throw new ArgumentNullException(nameof(name));
+
+        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? _defaultPolicy : null;
     }
 }
 
@@ -821,12 +824,133 @@ public class CircuitBreakerBuilder
 
 public static class ResiliencePolicyExtensions
 {
-    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider)
+    /// <summary>
+    /// Gets a resilience policy for the specified type from the provider, or creates a new default configuration one if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
     {
-        if (provider == null)
-            throw new ArgumentNullException(nameof(provider));
+        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).FullName, false);
+        return policy ?? GetDefaultPolicy(provider, null, logger, timeProvider);
+    }
 
-        return provider.GetPolicy(typeof(T).FullName);
+    /// <summary>
+    /// Gets a resilience policy for the specified type from the provider, or creates a new one using the fallback builder if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="fallbackBuilder"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        IResiliencePolicy policy = provider?.GetPolicy(typeof(T).FullName, false);
+        return policy ?? GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
+    }
+
+    /// <summary>
+    /// Gets a resilience policy by checking the specified types in order from the provider, or creates a new default configuration one if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T1"></typeparam>
+    /// <typeparam name="T2"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        if (provider != null)
+        {
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false);
+            if (policy != null)
+                return policy;
+        }
+
+        return GetDefaultPolicy(provider, null, logger, timeProvider);
+    }
+
+    /// <summary>
+    /// Gets a resilience policy by checking the specified types in order from the provider, or creates a new one using the fallback builder if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="fallbackBuilder"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T1"></typeparam>
+    /// <typeparam name="T2"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        if (provider != null)
+        {
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false);
+            if (policy != null)
+                return policy;
+        }
+
+        return GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
+    }
+
+    /// <summary>
+    /// Gets a resilience policy by checking the specified types in order from the provider, or creates a new default configuration one if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T1"></typeparam>
+    /// <typeparam name="T2"></typeparam>
+    /// <typeparam name="T3"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        if (provider != null)
+        {
+            IResiliencePolicy policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false) ?? provider.GetPolicy(typeof(T3).FullName, false);
+            if (policy != null)
+                return policy;
+        }
+
+        return GetDefaultPolicy(provider, null, logger, timeProvider);
+    }
+
+    /// <summary>
+    /// Gets a resilience policy by checking the specified types in order from the provider, or creates a new one using the fallback builder if not found.
+    /// </summary>
+    /// <param name="provider"></param>
+    /// <param name="fallbackBuilder"></param>
+    /// <param name="logger"></param>
+    /// <param name="timeProvider"></param>
+    /// <typeparam name="T1"></typeparam>
+    /// <typeparam name="T2"></typeparam>
+    /// <typeparam name="T3"></typeparam>
+    /// <returns></returns>
+    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        IResiliencePolicy policy;
+
+        if (provider != null)
+        {
+            policy = provider.GetPolicy(typeof(T1).FullName, false) ?? provider.GetPolicy(typeof(T2).FullName, false) ?? provider.GetPolicy(typeof(T3).FullName, false);
+            if (policy != null)
+                return policy;
+        }
+
+        return GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
+    }
+
+    private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder = null, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        if (provider != null && provider.GetType() != typeof(ResiliencePolicyProvider))
+            return provider.GetDefaultPolicy();
+
+        var policy = new ResiliencePolicy(logger, timeProvider);
+        fallbackBuilder?.Invoke(new ResiliencePolicyBuilder(policy));
+        return policy;
     }
 
     public static IResiliencePolicyProvider GetResiliencePolicyProvider(this object target)

@@ -256,7 +256,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         Assert.Equal(TimeSpan.FromMilliseconds(20), resiliencePolicy.Delay);
 
         // default policy
-        policy = provider.GetPolicy();
+        policy = provider.GetDefaultPolicy();
         Assert.NotNull(policy);
         resiliencePolicy = Assert.IsType<ResiliencePolicy>(policy);
         Assert.Equal(_logger, resiliencePolicy.Logger);
@@ -423,6 +423,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     [Fact]
     public async Task CanUsePolly()
     {
+        // replacing the policy for ILockProvider with a Polly pipeline
         var pollyResiliencePolicyProvider = new PollyResiliencePolicyProvider()
             .WithPolicy<ILockProvider>(p => p.AddRetry(new RetryStrategyOptions
                 {

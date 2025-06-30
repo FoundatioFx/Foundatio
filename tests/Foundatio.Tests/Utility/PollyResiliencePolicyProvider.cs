@@ -57,9 +57,14 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return WithPolicy(name, builder);
     }
 
-    public IResiliencePolicy GetPolicy(string name = null)
+    public IResiliencePolicy GetDefaultPolicy() => _defaultPolicy;
+
+    public IResiliencePolicy GetPolicy(string name, bool useDefault = true)
     {
-        return name == null ? _defaultPolicy : _policies.GetOrAdd(name, _ => _defaultPolicy);
+        if (String.IsNullOrEmpty(name))
+            throw new ArgumentNullException(nameof(name));
+
+        return _policies.TryGetValue(name, out var policy) ? policy : useDefault ? _defaultPolicy : null;
     }
 
     private class PollyResiliencePolicy(ResiliencePipeline pipeline) : IResiliencePolicy
