@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
 using Foundatio.Utility.Resilience;
-using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
 using Polly.Retry;
 
@@ -19,25 +18,16 @@ public class Benchmarks
     private ResiliencePipeline _pollyStandardPipeline;
     private ResiliencePipeline<int> _pollyMinimalPipelineWithResult;
     private ResiliencePipeline<int> _pollyStandardPipelineWithResult;
-    private readonly Random _random = new Random(42);
-    private int _counter = 0;
+    private int _counter;
 
     [GlobalSetup]
     public void Setup()
     {
         // Standard policy with typical settings
-        _policy = new ResiliencePolicy(NullLogger.Instance)
-        {
-            MaxAttempts = 3,
-            Delay = TimeSpan.FromMilliseconds(100)
-        };
+        _policy = new ResiliencePolicyBuilder().WithMaxAttempts(3).WithDelay(TimeSpan.FromMilliseconds(100)).Build();
 
         // Minimal policy with just 1 attempt (no retries) to measure base overhead
-        _minimalPolicy = new ResiliencePolicy(NullLogger.Instance)
-        {
-            MaxAttempts = 1,
-            Delay = TimeSpan.Zero
-        };
+        _minimalPolicy = new ResiliencePolicyBuilder().WithMaxAttempts(1).WithDelay(TimeSpan.Zero).Build();
 
         // Polly minimal pipeline - no retries (equivalent to _minimalPolicy)
         _pollyMinimalPipeline = new ResiliencePipelineBuilder()
@@ -74,13 +64,13 @@ public class Benchmarks
     [Benchmark]
     public async Task ResiliencePolicy_NoRetries_Async()
     {
-        await _minimalPolicy.ExecuteAsync(ct => SimulateSuccessfulOperation(), CancellationToken.None);
+        await _minimalPolicy.ExecuteAsync(_ => SimulateSuccessfulOperation(), CancellationToken.None);
     }
 
     [Benchmark]
     public async Task ResiliencePolicy_StandardConfig_Async()
     {
-        await _policy.ExecuteAsync(ct => SimulateSuccessfulOperation(), CancellationToken.None);
+        await _policy.ExecuteAsync(_ => SimulateSuccessfulOperation(), CancellationToken.None);
     }
 
     [Benchmark]
@@ -92,13 +82,13 @@ public class Benchmarks
     [Benchmark]
     public async Task<int> ResiliencePolicy_NoRetries_WithResult_Async()
     {
-        return await _minimalPolicy.ExecuteAsync(ct => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
+        return await _minimalPolicy.ExecuteAsync(_ => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
     }
 
     [Benchmark]
     public async Task<int> ResiliencePolicy_StandardConfig_WithResult_Async()
     {
-        return await _policy.ExecuteAsync(ct => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
+        return await _policy.ExecuteAsync(_ => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
     }
 
     [Benchmark]
@@ -116,7 +106,7 @@ public class Benchmarks
     [Benchmark]
     public async Task ResiliencePolicy_ComputeIntensive_Async()
     {
-        await _minimalPolicy.ExecuteAsync(async ct =>
+        await _minimalPolicy.ExecuteAsync(async _ =>
         {
             await Task.Yield();
             // Simulate some CPU work
@@ -132,25 +122,25 @@ public class Benchmarks
     [Benchmark]
     public async Task Polly_NoRetries_Async()
     {
-        await _pollyMinimalPipeline.ExecuteAsync(async ct => await SimulateSuccessfulOperation(), CancellationToken.None);
+        await _pollyMinimalPipeline.ExecuteAsync(async _ => await SimulateSuccessfulOperation(), CancellationToken.None);
     }
 
     [Benchmark]
     public async Task Polly_StandardConfig_Async()
     {
-        await _pollyStandardPipeline.ExecuteAsync(async ct => await SimulateSuccessfulOperation(), CancellationToken.None);
+        await _pollyStandardPipeline.ExecuteAsync(async _ => await SimulateSuccessfulOperation(), CancellationToken.None);
     }
 
     [Benchmark]
     public async Task<int> Polly_NoRetries_WithResult_Async()
     {
-        return await _pollyMinimalPipelineWithResult.ExecuteAsync(ct => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
+        return await _pollyMinimalPipelineWithResult.ExecuteAsync(_ => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
     }
 
     [Benchmark]
     public async Task<int> Polly_StandardConfig_WithResult_Async()
     {
-        return await _pollyStandardPipelineWithResult.ExecuteAsync(ct => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
+        return await _pollyStandardPipelineWithResult.ExecuteAsync(_ => ValueTask.FromResult(SimulateSuccessfulOperation_Sync()), CancellationToken.None);
     }
 
     [Benchmark]
