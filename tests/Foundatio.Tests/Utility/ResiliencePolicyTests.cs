@@ -241,7 +241,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
-            .WithPolicy("MyPolicy", p => p.WithLogger(_logger).WithDelay(TimeSpan.FromSeconds(1)).WithMaxAttempts(1).WithCircuitBreaker(b => b.WithMinimumCalls(10).WithBreakDuration(TimeSpan.FromSeconds(5))));
+            .WithPolicy("MyPolicy", p => p.WithMaxAttempts(1).WithCircuitBreaker(b => b.WithMinimumCalls(10).WithBreakDuration(TimeSpan.FromSeconds(5))));
 
         var policy = resiliencePolicyProvider.GetPolicy("MyPolicy") as ResiliencePolicy;
         Assert.NotNull(policy);
@@ -274,6 +274,112 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             await policy.ExecuteAsync(DoStuff);
 
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+    }
+
+    [Fact(Skip = "Using this to test circuit breaker sharing in parallel, not a real test")]
+    public async Task CanShareCircuitBreaker()
+    {
+        var timeProvider = TimeProvider.System;
+        var circuitBreaker = new CircuitBreaker(timeProvider, _logger)
+        {
+            MinimumCalls = 100, BreakDuration = TimeSpan.FromSeconds(1)
+        };
+        var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
+            .WithPolicy("MyPolicy1", p => p.WithMaxAttempts(2).WithCircuitBreaker(circuitBreaker))
+            .WithPolicy("MyPolicy2", p => p.WithMaxAttempts(2).WithDelay(TimeSpan.FromMilliseconds(1)).WithCircuitBreaker(circuitBreaker));
+
+        var policy1 = resiliencePolicyProvider.GetPolicy("MyPolicy1") as ResiliencePolicy;
+        Assert.NotNull(policy1);
+
+        var policy2 = resiliencePolicyProvider.GetPolicy("MyPolicy2") as ResiliencePolicy;
+        Assert.NotNull(policy2);
+
+        Assert.Same(policy1.CircuitBreaker, policy2.CircuitBreaker);
+
+        var task1 = Task.Run(async () =>
+        {
+            for (int i = 0; i < 1000; i++)
+            {
+                try {
+                    await policy1.ExecuteAsync(DoStuff);
+                } catch (BrokenCircuitException) {
+                    // ignore
+                }
+
+                await Task.Delay(1);
+            }
+
+            _logger.LogInformation("Done with task1");
+        });
+
+        var task2 = Task.Run(async () =>
+        {
+            for (int i = 0; i < 1000; i++)
+            {
+                try {
+                    await policy2.ExecuteAsync(async () => await DoBoom());
+                } catch (Exception) {
+                    // ignore
+                }
+            }
+
+            _logger.LogInformation("Done with task2");
+        });
+
+        await Task.WhenAll(task1, task2);
+
+        await Task.Yield();
+    }
+
+    [Fact]
+    public async Task CanShareCircuitBreakerInParallel()
+    {
+        var timeProvider = TimeProvider.System;
+        var circuitBreaker = new CircuitBreaker(timeProvider, _logger)
+        {
+            MinimumCalls = 100, BreakDuration = TimeSpan.FromSeconds(5)
+        };
+        var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
+            .WithPolicy("MyPolicy1", p => p.WithMaxAttempts(1).WithCircuitBreaker(circuitBreaker))
+            .WithPolicy("MyPolicy2", p => p.WithMaxAttempts(1).WithCircuitBreaker(circuitBreaker));
+
+        var policy1 = resiliencePolicyProvider.GetPolicy("MyPolicy1") as ResiliencePolicy;
+        Assert.NotNull(policy1);
+
+        var policy2 = resiliencePolicyProvider.GetPolicy("MyPolicy2") as ResiliencePolicy;
+        Assert.NotNull(policy2);
+
+        Assert.Same(policy1.CircuitBreaker, policy2.CircuitBreaker);
+
+        var task1 = Parallel.ForEachAsync(Enumerable.Range(0, 1000), async (i, ct) =>
+        {
+            try
+            {
+                await policy1.ExecuteAsync(DoStuff, ct);
+            }
+            catch (BrokenCircuitException)
+            {
+                // ignore exceptions for this test
+            }
+        });
+
+        var task2 = Parallel.ForEachAsync(Enumerable.Range(0, 1000), async (i, ct) =>
+        {
+            try
+            {
+                await policy1.ExecuteAsync(async () => await DoBoom(), ct);
+            }
+            catch (BrokenCircuitException)
+            {
+            }
+            catch (ApplicationException)
+            {
+            }
+        });
+
+        await Task.WhenAll(task1, task2);
+
+        await Task.Yield();
     }
 
     [Fact]
