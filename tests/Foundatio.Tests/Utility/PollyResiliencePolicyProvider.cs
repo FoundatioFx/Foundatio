@@ -14,13 +14,13 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private readonly ConcurrentDictionary<string, IResiliencePolicy> _policies = new(StringComparer.OrdinalIgnoreCase);
     private IResiliencePolicy _defaultPolicy = new PollyResiliencePolicy(new ResiliencePipelineBuilder().AddRetry(new RetryStrategyOptions()).Build());
 
-    public IResiliencePolicyProvider WithDefaultPolicy(IResiliencePolicy policy)
+    public PollyResiliencePolicyProvider WithDefaultPolicy(IResiliencePolicy policy)
     {
         _defaultPolicy = policy ?? throw new ArgumentNullException(nameof(policy));
         return this;
     }
 
-    public IResiliencePolicyProvider WithPolicy(string name, ResiliencePipeline pipeline)
+    public PollyResiliencePolicyProvider WithPolicy(string name, ResiliencePipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(name);
 
@@ -30,7 +30,7 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return this;
     }
 
-    public IResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePipelineBuilder> pipelineBuilder)
+    public PollyResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePipelineBuilder> pipelineBuilder)
     {
         if (name == null)
             throw new ArgumentNullException(nameof(name));
@@ -43,6 +43,18 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         _policies[name] = new PollyResiliencePolicy(builder.Build());
         return this;
+    }
+
+    public PollyResiliencePolicyProvider WithPolicy<T>(ResiliencePipeline policy)
+    {
+        string name = typeof(T).FullName;
+        return WithPolicy(name, policy);
+    }
+
+    public PollyResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePipelineBuilder> builder)
+    {
+        string name = typeof(T).FullName;
+        return WithPolicy(name, builder);
     }
 
     public IResiliencePolicy GetPolicy(string name = null)

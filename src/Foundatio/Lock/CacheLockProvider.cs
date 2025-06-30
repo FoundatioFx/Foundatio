@@ -40,7 +40,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _messageBus = messageBus;
 
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
-        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy<ILockProvider>() ?? new ResiliencePolicyBuilder(_logger, _timeProvider).Build();
+        _resiliencePolicy = _resiliencePolicyProvider?.GetPolicy<ILockProvider>() ?? new ResiliencePolicyBuilder(_logger, _timeProvider).Build();
 
         _lockWaitTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.lock.wait.time", description: "Time waiting for locks", unit: "ms");
         _lockTimeoutCounter = FoundatioDiagnostics.Meter.CreateCounter<int>("foundatio.lock.failed", description: "Number of failed attempts to acquire a lock");
