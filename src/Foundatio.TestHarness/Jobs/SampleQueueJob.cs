@@ -76,7 +76,7 @@ public class SampleQueueWorkItem
 
 public class SampleJob : JobBase
 {
-    public SampleJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, loggerFactory)
+    public SampleJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
     {
     }
 

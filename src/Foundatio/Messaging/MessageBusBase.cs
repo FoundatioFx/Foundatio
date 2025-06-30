@@ -8,31 +8,40 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
-public abstract class MessageBusBase<TOptions> : IMessageBus, IDisposable where TOptions : SharedMessageBusOptions
+public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable where TOptions : SharedMessageBusOptions
 {
     private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
     protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     protected readonly TOptions _options;
     protected readonly ILogger _logger;
+    protected readonly ILoggerFactory _loggerFactory;
     protected readonly TimeProvider _timeProvider;
+    protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     protected readonly ISerializer _serializer;
     private bool _isDisposed;
 
     public MessageBusBase(TOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        var loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
-        _logger = loggerFactory.CreateLogger(GetType());
-        _timeProvider = options.TimeProvider;
+        _loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        _resiliencePolicyProvider = options.ResiliencePolicyProvider;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
         _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
     }
+
+    ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);

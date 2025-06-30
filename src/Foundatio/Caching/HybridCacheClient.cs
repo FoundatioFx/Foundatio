@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,19 +13,25 @@ namespace Foundatio.Caching;
 
 public interface IHybridCacheClient : ICacheClient { }
 
-public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger
+public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     protected readonly ICacheClient _distributedCache;
     protected readonly IMessageBus _messageBus;
     private readonly string _cacheId = Guid.NewGuid().ToString("N");
     private readonly InMemoryCacheClient _localCache;
     private readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly TimeProvider _timeProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private long _localCacheHits;
     private long _invalidateCacheCalls;
 
     public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
     {
-        _logger = loggerFactory?.CreateLogger<HybridCacheClient>() ?? NullLogger<HybridCacheClient>.Instance;
+        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
+        _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
         _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
@@ -39,7 +46,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public long InvalidateCacheCalls => _invalidateCacheCalls;
 
     ILogger IHaveLogger.Logger => _logger;
-    TimeProvider IHaveTimeProvider.TimeProvider => _distributedCache.GetTimeProvider();
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     private Task OnLocalCacheItemExpiredAsync(object sender, ItemExpiredEventArgs args)
     {

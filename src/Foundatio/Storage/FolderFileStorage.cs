@@ -8,16 +8,20 @@ using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage;
 
-public class FolderFileStorage : IFileStorage
+public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly AsyncLock _lock = new();
     private readonly ISerializer _serializer;
     protected readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly TimeProvider _timeProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
     public FolderFileStorage(FolderFileStorageOptions options)
     {
@@ -25,7 +29,10 @@ public class FolderFileStorage : IFileStorage
             throw new ArgumentNullException(nameof(options));
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
-        _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        _resiliencePolicyProvider = options.ResiliencePolicyProvider;
 
         string folder = PathHelper.ExpandPath(options.Folder);
         if (!Path.IsPathRooted(folder))
@@ -46,6 +53,10 @@ public class FolderFileStorage : IFileStorage
 
     public string Folder { get; set; }
     ISerializer IHaveSerializer.Serializer => _serializer;
+    ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
