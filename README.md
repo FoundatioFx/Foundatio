@@ -14,6 +14,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
 - [Metrics](#metrics)
+- [Resilience](#resilience)
 
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
@@ -320,6 +321,86 @@ IMetricsClient metrics = new InMemoryMetricsClient();
 metrics.Counter("c1");
 metrics.Gauge("g1", 2.534);
 metrics.Timer("t1", 50788);
+```
+
+### [Resilience](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Utility)
+
+Resilience policies provide a powerful way to handle transient failures and make your applications more robust by implementing retry logic, circuit breakers, and timeouts. The resilience system allows you to configure policies globally or per-operation, giving you fine-grained control over how Foundatio components handle failures.
+
+The resilience system is built around the [`IResiliencePolicy` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and provides:
+
+1. **Retry Logic**: Automatically retry failed operations with configurable delays and maximum attempts
+2. **Circuit Breaker**: Temporarily stop calling failing services to prevent cascading failures
+3. **Timeout**: Set maximum execution time for operations
+4. **Exponential Backoff**: Gradually increase delays between retries with optional jitter
+5. **Exception Filtering**: Configure which exceptions should trigger retries
+
+You can customize resilience behavior throughout Foundatio by implementing [`IResiliencePolicyProvider`](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and registering it with dependency injection. This allows you to replace the default retry behavior in caching, queues, storage, and other Foundatio components.
+
+#### Resilience Policy Sample
+
+```csharp
+using Foundatio.Utility.Resilience;
+
+// Create a basic resilience policy
+var policy = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(5)
+    .WithExponentialDelay(TimeSpan.FromSeconds(1))
+    .WithTimeout(TimeSpan.FromMinutes(5))
+    .WithJitter()
+    .Build();
+
+// Execute an operation with resilience
+await policy.ExecuteAsync(async ct => {
+    // Your operation that might fail
+    await SomeUnreliableOperationAsync(ct);
+});
+```
+
+#### Circuit Breaker Sample
+
+```csharp
+using Foundatio.Utility.Resilience;
+
+// Create a policy with circuit breaker
+var policy = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(3)
+    .WithCircuitBreaker(cb => cb
+        .WithFailureRatio(0.5) // Open circuit at 50% failure rate
+        .WithMinimumCalls(10)  // Need at least 10 calls before opening
+        .WithBreakDuration(TimeSpan.FromMinutes(1)))
+    .Build();
+
+await policy.ExecuteAsync(async ct => {
+    // This will be protected by the circuit breaker
+    await CallExternalServiceAsync(ct);
+});
+```
+
+#### Custom Resilience Provider Sample
+
+```csharp
+using Foundatio.Utility.Resilience;
+
+// Create a custom resilience provider for your application
+var resilienceProvider = new ResiliencePolicyProvider()
+    .WithDefaultPolicy(builder => builder
+        .WithMaxAttempts(3)
+        .WithExponentialDelay(TimeSpan.FromSeconds(1))
+        .WithTimeout(TimeSpan.FromMinutes(2)))
+    .WithPolicy("external-api", builder => builder
+        .WithMaxAttempts(5)
+        .WithCircuitBreaker()
+        .WithTimeout(TimeSpan.FromSeconds(30)));
+
+// Register with dependency injection
+services.AddSingleton<IResiliencePolicyProvider>(resilienceProvider);
+
+// Use named policies
+var apiPolicy = resilienceProvider.GetPolicy("external-api");
+await apiPolicy.ExecuteAsync(async ct => {
+    await CallExternalApiAsync(ct);
+});
 ```
 
 ## Sample Application
