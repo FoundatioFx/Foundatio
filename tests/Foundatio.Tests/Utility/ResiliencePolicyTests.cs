@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -7,6 +8,7 @@ using Foundatio.Messaging;
 using Foundatio.Xunit;
 using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
 using Moq;
@@ -21,7 +23,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
     public ResiliencePolicyTests(ITestOutputHelper output) : base(output)
     {
-        _policy = new ResiliencePolicy { Logger = _logger, MaxAttempts = 5, RetryInterval = TimeSpan.FromMilliseconds(10) };
+        _policy = new ResiliencePolicy { Logger = _logger, MaxAttempts = 5, Delay = TimeSpan.FromMilliseconds(10) };
     }
 
     [Fact]
@@ -134,7 +136,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var pipeline = new ResiliencePolicy
         {
             Logger = _logger,
-            RetryInterval = TimeSpan.Zero,
+            Delay = TimeSpan.Zero,
             ShouldRetry = (attempts, ex) => attempts < 3 && ex is ApplicationException,
         };
 
@@ -205,8 +207,9 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     public void CanUseProvider()
     {
         var provider = new ResiliencePolicyProvider()
-            .WithPolicy("TestPipeline", b => b.WithLogger(_logger).WithMaxAttempts(10).WithRetryInterval(TimeSpan.FromMilliseconds(20)))
-            .WithDefaultPolicy(b => b.WithLogger(_logger).WithMaxAttempts(7).WithRetryInterval(TimeSpan.FromMilliseconds(100)).WithJitter());
+            .WithPolicy("TestPipeline", p => p.WithLogger(_logger).WithMaxAttempts(10).WithDelay(TimeSpan.FromMilliseconds(20)))
+            .WithPolicy("AnotherPipeline", p => p.WithLogger(_logger).WithMaxAttempts(5).WithDelay(TimeSpan.FromMilliseconds(50)).WithCircuitBreaker(c => c.WithMinimumCalls(1000)))
+            .WithDefaultPolicy(p => p.WithLogger(_logger).WithMaxAttempts(7).WithDelay(TimeSpan.FromMilliseconds(100)).WithJitter());
 
         // named pipeline
         var pipeline = provider.GetPolicy("TestPipeline");
@@ -214,7 +217,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(10, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(20), foundationPipeline.RetryInterval);
+        Assert.Equal(TimeSpan.FromMilliseconds(20), foundationPipeline.Delay);
 
         // default pipeline
         pipeline = provider.GetPolicy();
@@ -222,7 +225,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(7, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.Delay);
 
         // unknown pipeline uses default
         pipeline = provider.GetPolicy("UnknownPipeline");
@@ -230,7 +233,47 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         foundationPipeline = Assert.IsType<ResiliencePolicy>(pipeline);
         Assert.Equal(_logger, foundationPipeline.Logger);
         Assert.Equal(7, foundationPipeline.MaxAttempts);
-        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.RetryInterval);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), foundationPipeline.Delay);
+    }
+
+    [Fact]
+    public async Task CanUseCircuitBreaker()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var resiliencePolicyProvider = new ResiliencePolicyProvider(timeProvider, Log)
+            .WithPolicy("MyPolicy", p => p.WithLogger(_logger).WithDelay(TimeSpan.FromSeconds(1)).WithMaxAttempts(1).WithCircuitBreaker(b => b.WithMinimumCalls(10).WithBreakDuration(TimeSpan.FromSeconds(5))));
+
+        var policy = resiliencePolicyProvider.GetPolicy("MyPolicy") as ResiliencePolicy;
+        Assert.NotNull(policy);
+
+        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+
+        // send 10 successful calls
+        for (int i = 0; i < 10; i++)
+            await policy.ExecuteAsync(DoStuff);
+
+        // send 1 error call before the circuit breaker is triggered
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+
+        // send 1 more error call to trigger the circuit breaker
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+        Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
+
+        // send 10 error calls and ensure they throw BrokenCircuitException
+        for (int i = 0; i < 10; i++)
+            await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+
+        Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
+
+        // advance past the circuit break duration
+        timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        // send 10 successful calls to close the circuit breaker
+        for (int i = 0; i < 10; i++)
+            await policy.ExecuteAsync(DoStuff);
+
+        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
     }
 
     [Fact]

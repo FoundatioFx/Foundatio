@@ -57,7 +57,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
         var resiliencePipelineProvider = _options.GetResiliencePolicyProvider();
-        _abandonPolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.AbandonAsync)) ?? new ResiliencePolicy(_timeProvider, _logger) { MaxAttempts = 3, RetryInterval = TimeSpan.Zero };
+        _abandonPolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.AbandonAsync)) ?? new ResiliencePolicy(_timeProvider, _logger) { MaxAttempts = 3, Delay = TimeSpan.Zero };
         _completePolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.CompleteAsync)) ?? new ResiliencePolicy(_timeProvider, _logger);
 
         // setup meters
