@@ -267,12 +267,12 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
 
     public static Func<int, TimeSpan> ExponentialDelay(TimeSpan baseDelay, double exponentialFactor = 2.0)
     {
-        return attempt => TimeSpan.FromMilliseconds(Math.Pow(exponentialFactor, attempt) * baseDelay.TotalMilliseconds);
+        return attempt => TimeSpan.FromMilliseconds(Math.Pow(exponentialFactor, attempt - 1) * baseDelay.TotalMilliseconds);
     }
 
     public static Func<int, TimeSpan> LinearDelay(TimeSpan baseDelay)
     {
-        return attempt => TimeSpan.FromMilliseconds((attempt + 1) * baseDelay.TotalMilliseconds);
+        return attempt => TimeSpan.FromMilliseconds(attempt * baseDelay.TotalMilliseconds);
     }
 }
 
