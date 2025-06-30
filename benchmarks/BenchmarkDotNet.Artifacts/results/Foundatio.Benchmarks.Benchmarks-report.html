@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+<meta charset='utf-8' />
+<title>Foundatio.Benchmarks.Benchmarks-20250630-101540</title>
+
+<style type="text/css">
+	table { border-collapse: collapse; display: block; width: 100%; overflow: auto; }
+	td, th { padding: 6px 13px; border: 1px solid #ddd; text-align: right; }
+	tr { background-color: #fff; border-top: 1px solid #ccc; }
+	tr:nth-child(even) { background: #f8f8f8; }
+</style>
+</head>
+<body>
+<pre><code>
+BenchmarkDotNet v0.15.2, Windows 11 (10.0.26100.4484/24H2/2024Update/HudsonValley)
+Unknown processor
+.NET SDK 9.0.301
+  [Host]     : .NET 8.0.17 (8.0.1725.26602), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+  DefaultJob : .NET 8.0.17 (8.0.1725.26602), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+  ShortRun   : .NET 8.0.17 (8.0.1725.26602), X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
+</code></pre>
+<pre><code></code></pre>
+
+<table>
+<thead><tr><th>Method                                    </th><th>Job </th><th>IterationCount</th><th>LaunchCount</th><th>WarmupCount</th><th>Mean </th><th>Error</th><th>StdDev</th><th>Ratio</th><th>RatioSD</th><th>Gen0</th><th>Allocated</th><th>Alloc Ratio</th>
+</tr>
+</thead><tbody><tr><td>DirectCall_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>465.54 ns</td><td>2.769 ns</td><td>2.590 ns</td><td>1.00</td><td>0.01</td><td>0.0038</td><td>213 B</td><td>1.00</td>
+</tr><tr><td>ResiliencePolicy_NoRetries_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>598.39 ns</td><td>6.873 ns</td><td>6.429 ns</td><td>1.29</td><td>0.02</td><td>0.0153</td><td>810 B</td><td>3.80</td>
+</tr><tr><td>ResiliencePolicy_StandardConfig_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>598.80 ns</td><td>8.342 ns</td><td>7.803 ns</td><td>1.29</td><td>0.02</td><td>0.0153</td><td>811 B</td><td>3.81</td>
+</tr><tr><td>ResiliencePolicy_NoRetries_WithResult_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>39.33 ns</td><td>0.459 ns</td><td>0.430 ns</td><td>0.08</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>ResiliencePolicy_StandardConfig_WithResult_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>39.39 ns</td><td>0.308 ns</td><td>0.288 ns</td><td>0.08</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>DirectCall_ComputeIntensive_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>690.91 ns</td><td>3.900 ns</td><td>3.457 ns</td><td>1.48</td><td>0.01</td><td>0.0019</td><td>96 B</td><td>0.45</td>
+</tr><tr><td>ResiliencePolicy_ComputeIntensive_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>817.21 ns</td><td>5.533 ns</td><td>5.176 ns</td><td>1.76</td><td>0.01</td><td>0.0143</td><td>744 B</td><td>3.49</td>
+</tr><tr><td>Polly_NoRetries_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>607.56 ns</td><td>3.486 ns</td><td>2.911 ns</td><td>1.31</td><td>0.01</td><td>0.0134</td><td>686 B</td><td>3.22</td>
+</tr><tr><td>Polly_StandardConfig_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>1,089.80 ns</td><td>21.529 ns</td><td>20.138 ns</td><td>2.34</td><td>0.04</td><td>0.0267</td><td>1403 B</td><td>6.59</td>
+</tr><tr><td>Polly_NoRetries_WithResult_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>38.99 ns</td><td>0.358 ns</td><td>0.335 ns</td><td>0.08</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>Polly_StandardConfig_WithResult_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>133.31 ns</td><td>0.832 ns</td><td>0.778 ns</td><td>0.29</td><td>0.00</td><td>0.0026</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>Polly_ComputeIntensive_Async</td><td>DefaultJob</td><td>Default</td><td>Default</td><td>Default</td><td>794.89 ns</td><td>15.182 ns</td><td>16.874 ns</td><td>1.71</td><td>0.04</td><td>0.0095</td><td>504 B</td><td>2.37</td>
+</tr><tr><td>DirectCall_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>465.76 ns</td><td>49.974 ns</td><td>2.739 ns</td><td>1.00</td><td>0.01</td><td>0.0038</td><td>214 B</td><td>1.00</td>
+</tr><tr><td>ResiliencePolicy_NoRetries_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>585.32 ns</td><td>295.073 ns</td><td>16.174 ns</td><td>1.26</td><td>0.03</td><td>0.0153</td><td>812 B</td><td>3.79</td>
+</tr><tr><td>ResiliencePolicy_StandardConfig_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>595.69 ns</td><td>114.281 ns</td><td>6.264 ns</td><td>1.28</td><td>0.01</td><td>0.0153</td><td>810 B</td><td>3.79</td>
+</tr><tr><td>ResiliencePolicy_NoRetries_WithResult_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>39.96 ns</td><td>4.972 ns</td><td>0.273 ns</td><td>0.09</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>ResiliencePolicy_StandardConfig_WithResult_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>39.95 ns</td><td>7.586 ns</td><td>0.416 ns</td><td>0.09</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>DirectCall_ComputeIntensive_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>689.48 ns</td><td>28.672 ns</td><td>1.572 ns</td><td>1.48</td><td>0.01</td><td>0.0019</td><td>96 B</td><td>0.45</td>
+</tr><tr><td>ResiliencePolicy_ComputeIntensive_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>815.53 ns</td><td>164.814 ns</td><td>9.034 ns</td><td>1.75</td><td>0.02</td><td>0.0143</td><td>744 B</td><td>3.48</td>
+</tr><tr><td>Polly_NoRetries_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>598.62 ns</td><td>55.207 ns</td><td>3.026 ns</td><td>1.29</td><td>0.01</td><td>0.0134</td><td>685 B</td><td>3.20</td>
+</tr><tr><td>Polly_StandardConfig_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>1,097.78 ns</td><td>222.014 ns</td><td>12.169 ns</td><td>2.36</td><td>0.03</td><td>0.0267</td><td>1414 B</td><td>6.61</td>
+</tr><tr><td>Polly_NoRetries_WithResult_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>40.97 ns</td><td>5.402 ns</td><td>0.296 ns</td><td>0.09</td><td>0.00</td><td>0.0027</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>Polly_StandardConfig_WithResult_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>131.86 ns</td><td>6.455 ns</td><td>0.354 ns</td><td>0.28</td><td>0.00</td><td>0.0026</td><td>136 B</td><td>0.64</td>
+</tr><tr><td>Polly_ComputeIntensive_Async</td><td>ShortRun</td><td>3</td><td>1</td><td>3</td><td>794.31 ns</td><td>105.834 ns</td><td>5.801 ns</td><td>1.71</td><td>0.01</td><td>0.0095</td><td>504 B</td><td>2.36</td>
+</tr></tbody></table>
+</body>
+</html>
