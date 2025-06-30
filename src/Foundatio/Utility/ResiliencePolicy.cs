@@ -86,6 +86,18 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
         return this;
     }
 
+    public ResiliencePolicyProvider WithPolicy<T>(IResiliencePolicy policy)
+    {
+        string name = typeof(T).FullName;
+        return WithPolicy(name, policy);
+    }
+
+    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder)
+    {
+        string name = typeof(T).FullName;
+        return WithPolicy(name, builder);
+    }
+
     public IResiliencePolicy GetPolicy(string name = null)
     {
         if (name == null)
@@ -809,6 +821,14 @@ public class CircuitBreakerBuilder
 
 public static class ResiliencePolicyExtensions
 {
+    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider)
+    {
+        if (provider == null)
+            throw new ArgumentNullException(nameof(provider));
+
+        return provider.GetPolicy(typeof(T).FullName);
+    }
+
     public static IResiliencePolicyProvider GetResiliencePolicyProvider(this object target)
     {
         return target is IHaveResiliencePolicyProvider accessor ? accessor.ResiliencePolicyProvider : null;

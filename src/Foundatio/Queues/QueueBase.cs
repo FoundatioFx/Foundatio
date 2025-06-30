@@ -19,8 +19,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected readonly TOptions _options;
     private readonly string _metricsPrefix;
     protected readonly ISerializer _serializer;
-    protected readonly IResiliencePolicy _abandonPolicy;
-    protected readonly IResiliencePolicy _completePolicy;
+    protected readonly IResiliencePolicy _resiliencePolicy;
 
     private readonly Counter<long> _enqueuedCounter;
     private readonly Counter<long> _dequeuedCounter;
@@ -56,9 +55,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
-        var resiliencePipelineProvider = _options.GetResiliencePolicyProvider();
-        _abandonPolicy = resiliencePipelineProvider?.GetPolicy("IQueue.AbandonAsync") ?? new ResiliencePolicy(_logger, _timeProvider) { MaxAttempts = 3, Delay = TimeSpan.Zero };
-        _completePolicy = resiliencePipelineProvider?.GetPolicy("IQueue.CompleteAsync") ?? new ResiliencePolicy(_logger, _timeProvider);
+        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider();
+        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy<IQueue>() ?? new ResiliencePolicyBuilder(_logger, _timeProvider).Build();
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");

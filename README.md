@@ -13,7 +13,6 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Messaging](#messaging)
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
-- [Metrics](#metrics)
 - [Resilience](#resilience)
 
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
@@ -32,10 +31,10 @@ To summarize, if you want pain free development and testing while allowing your 
 
 ## Implementations
 
-- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks, Metrics
+- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks
 - [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
-- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
+- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues
 - [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) - Messaging
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Messaging
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
@@ -299,28 +298,6 @@ using Foundatio.Storage;
 IFileStorage storage = new InMemoryFileStorage();
 await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
-```
-
-### [Metrics](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Metrics)
-
-We provide five implementations that derive from the [`IMetricsClient` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
-
-1. [InMemoryMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
-3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
-4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
-5. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
-6. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
-
-We recommend using all of the `IMetricsClient` implementations as singletons.
-
-#### Sample
-
-```csharp
-IMetricsClient metrics = new InMemoryMetricsClient();
-metrics.Counter("c1");
-metrics.Gauge("g1", 2.534);
-metrics.Timer("t1", 50788);
 ```
 
 ### [Resilience](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Utility)

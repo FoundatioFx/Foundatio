@@ -27,9 +27,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private readonly Histogram<double> _lockWaitTimeHistogram;
     private readonly Counter<int> _lockTimeoutCounter;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
-    private readonly IResiliencePolicy _releasePolicy;
-    private readonly IResiliencePolicy _isLockedPolicy;
-    private readonly IResiliencePolicy _renewPolicy;
+    private readonly IResiliencePolicy _resiliencePolicy;
 
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
 
@@ -42,9 +40,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _messageBus = messageBus;
 
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
-        _releasePolicy = _resiliencePolicyProvider?.GetPolicy("ILockProvider.ReleaseAsync") ?? new ResiliencePolicy(_logger, _timeProvider) { MaxAttempts = 15 };
-        _isLockedPolicy = _resiliencePolicyProvider?.GetPolicy("ILockProvider.IsLockedAsync") ?? new ResiliencePolicy(_logger, _timeProvider);
-        _renewPolicy = _resiliencePolicyProvider?.GetPolicy("ILockProvider.RenewAsync") ?? new ResiliencePolicy(_logger, _timeProvider);
+        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy<ILockProvider>() ?? new ResiliencePolicyBuilder(_logger, _timeProvider).Build();
 
         _lockWaitTimeHistogram = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.lock.wait.time", description: "Time waiting for locks", unit: "ms");
         _lockTimeoutCounter = FoundatioDiagnostics.Meter.CreateCounter<int>("foundatio.lock.failed", description: "Number of failed attempts to acquire a lock");
@@ -201,7 +197,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     public async Task<bool> IsLockedAsync(string resource)
     {
-        bool result = await _isLockedPolicy.ExecuteAsync(async _ => await _cacheClient.ExistsAsync(resource)).AnyContext();
+        bool result = await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.ExistsAsync(resource)).AnyContext();
         return result;
     }
 
@@ -209,7 +205,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     {
         _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
-        await _releasePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveIfEqualAsync(resource, lockId)).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveIfEqualAsync(resource, lockId)).AnyContext();
         await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
@@ -219,7 +215,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     {
         _logger.LogTrace("ReleaseAsync Start: {Resource}", resource);
 
-        await _releasePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveAsync(resource)).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveAsync(resource)).AnyContext();
         await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource}", resource);
@@ -231,7 +227,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
             timeUntilExpires = TimeSpan.FromMinutes(20);
 
         _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
-        return _renewPolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
+        return _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
     }
 
     private class ResetEventWithRefCount
