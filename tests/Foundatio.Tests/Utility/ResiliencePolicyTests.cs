@@ -424,7 +424,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     public async Task CanUsePolly()
     {
         var pollyResiliencePolicyProvider = new PollyResiliencePolicyProvider()
-            .WithPolicy(nameof(ILockProvider.IsLockedAsync), p => p.AddRetry(new RetryStrategyOptions
+            .WithPolicy("ILockProvider.IsLockedAsync", p => p.AddRetry(new RetryStrategyOptions
                 {
                     ShouldHandle = new PredicateBuilder().Handle<Exception>(ex => ex is ApplicationException),
                     Delay = TimeSpan.Zero,

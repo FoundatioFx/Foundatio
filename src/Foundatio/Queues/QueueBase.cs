@@ -57,8 +57,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
         var resiliencePipelineProvider = _options.GetResiliencePolicyProvider();
-        _abandonPolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.AbandonAsync)) ?? new ResiliencePolicy(_logger, _timeProvider) { MaxAttempts = 3, Delay = TimeSpan.Zero };
-        _completePolicy = resiliencePipelineProvider?.GetPolicy(nameof(IQueue<T>.CompleteAsync)) ?? new ResiliencePolicy(_logger, _timeProvider);
+        _abandonPolicy = resiliencePipelineProvider?.GetPolicy("IQueue.AbandonAsync") ?? new ResiliencePolicy(_logger, _timeProvider) { MaxAttempts = 3, Delay = TimeSpan.Zero };
+        _completePolicy = resiliencePipelineProvider?.GetPolicy("IQueue.CompleteAsync") ?? new ResiliencePolicy(_logger, _timeProvider);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");
