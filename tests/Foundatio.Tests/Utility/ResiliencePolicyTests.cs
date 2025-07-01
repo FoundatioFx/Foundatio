@@ -5,15 +5,15 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Foundatio.Xunit;
 using Foundatio.Utility.Resilience;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Xunit;
-using Xunit.Abstractions;
 using Moq;
 using Polly;
 using Polly.Retry;
+using Xunit;
+using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
@@ -174,7 +174,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             .WithDelay(TimeSpan.Zero)
             .WithMaxAttempts(3)
             .WithUnhandledException<ApplicationException>()
-            .Build();;
+            .Build();
 
         int attempt = 0;
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
@@ -337,9 +337,12 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         {
             for (int i = 0; i < 1000; i++)
             {
-                try {
+                try
+                {
                     await policy1.ExecuteAsync(DoStuff);
-                } catch (BrokenCircuitException) {
+                }
+                catch (BrokenCircuitException)
+                {
                     // ignore
                 }
 
@@ -353,9 +356,12 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         {
             for (int i = 0; i < 1000; i++)
             {
-                try {
+                try
+                {
                     await policy2.ExecuteAsync(async () => await DoBoom());
-                } catch (Exception) {
+                }
+                catch (Exception)
+                {
                     // ignore
                 }
             }
@@ -426,15 +432,15 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         // replacing the policy for ILockProvider with a Polly pipeline
         var pollyResiliencePolicyProvider = new PollyResiliencePolicyProvider()
             .WithPolicy<ILockProvider>(p => p.AddRetry(new RetryStrategyOptions
-                {
-                    ShouldHandle = new PredicateBuilder().Handle<Exception>(ex => ex is ApplicationException),
-                    Delay = TimeSpan.Zero,
-                    MaxRetryAttempts = 5,
-                }));
+            {
+                ShouldHandle = new PredicateBuilder().Handle<Exception>(ex => ex is ApplicationException),
+                Delay = TimeSpan.Zero,
+                MaxRetryAttempts = 5,
+            }));
 
         var mockCacheClient = new Mock<ICacheClient>();
         mockCacheClient.As<IHaveResiliencePolicyProvider>().Setup(c => c.ResiliencePolicyProvider).Returns(pollyResiliencePolicyProvider);
-        mockCacheClient.Setup(c => c.AddAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>())).ReturnsAsync(true);;
+        mockCacheClient.Setup(c => c.AddAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TimeSpan>())).ReturnsAsync(true);
 
         int hitCount = 0;
         mockCacheClient.Setup(c => c.ExistsAsync(It.IsAny<string>()))

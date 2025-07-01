@@ -59,7 +59,7 @@ public class JobManager : IJobManager
             {
                 var options = new ScheduledJobOptions
                 {
-                   Name = jobName,
+                    Name = jobName,
                     JobFactory = sp => sp.GetRequiredService<TJob>()
                 };
                 var builder = new ScheduledJobOptionsBuilder(options);

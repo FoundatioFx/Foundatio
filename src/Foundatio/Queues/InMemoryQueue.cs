@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
-using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;

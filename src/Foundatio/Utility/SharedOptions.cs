@@ -1,6 +1,6 @@
 using System;
-using Foundatio.Utility.Resilience;
 using Foundatio.Serializer;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio;

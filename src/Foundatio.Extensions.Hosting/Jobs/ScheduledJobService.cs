@@ -124,7 +124,8 @@ public class ScheduledJobService : BackgroundService
 
                         job.NextRun ??= job.GetNextScheduledRun();
                     }
-                } catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error retrieving job next run times: {Message}", ex.Message);
                 }

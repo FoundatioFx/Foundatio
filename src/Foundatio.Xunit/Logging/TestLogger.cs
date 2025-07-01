@@ -144,11 +144,13 @@ public class TestLogger : ILoggerFactory
         }
 
         _lock.EnterReadLock();
-        try {
+        try
+        {
             var current = _root;
             LogLevel effectiveLevel = DefaultLogLevel;
 
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < count; i++)
+            {
                 var segment = span.Slice(segments[i].Start, segments[i].Length);
                 bool found = false;
 
@@ -171,7 +173,9 @@ public class TestLogger : ILoggerFactory
             }
 
             return logLevel >= effectiveLevel;
-        } finally {
+        }
+        finally
+        {
             _lock.ExitReadLock();
         }
     }
@@ -180,17 +184,22 @@ public class TestLogger : ILoggerFactory
     {
         string[] parts = category.Split('.');
         _lock.EnterWriteLock();
-        try {
+        try
+        {
             var current = _root;
-            foreach (string part in parts) {
-                if (!current.Children.TryGetValue(part, out var child)) {
+            foreach (string part in parts)
+            {
+                if (!current.Children.TryGetValue(part, out var child))
+                {
                     child = new Node();
                     current.Children[part] = child;
                 }
                 current = child;
             }
             current.Level = minLogLevel;
-        } finally {
+        }
+        finally
+        {
             _lock.ExitWriteLock();
         }
     }
@@ -202,7 +211,8 @@ public class TestLogger : ILoggerFactory
 
     public void Dispose() { }
 
-    private class Node {
+    private class Node
+    {
         public readonly Dictionary<string, Node> Children = new(StringComparer.OrdinalIgnoreCase);
         public LogLevel? Level;
     }

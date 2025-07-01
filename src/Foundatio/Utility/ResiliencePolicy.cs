@@ -129,7 +129,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// Gets or sets the logger for this policy.
     /// </summary>
-    public ILogger Logger {
+    public ILogger Logger
+    {
         get => _logger;
         set => _logger = value ?? NullLogger.Instance;
     }
@@ -142,7 +143,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// A collection of exception types that will not be handled by the policy. These exceptions will be thrown immediately without retrying. Default includes OperationCanceledException.
     /// </summary>
-    public HashSet<Type> UnhandledExceptions { get; set; } = [ typeof(OperationCanceledException) ];
+    public HashSet<Type> UnhandledExceptions { get; set; } = [typeof(OperationCanceledException)];
 
     /// <summary>
     /// A function that determines whether to retry based on the attempt number and exception.
@@ -344,7 +345,8 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     /// <summary>
     /// Gets or sets the logger for this circuit breaker.
     /// </summary>
-    public ILogger Logger {
+    public ILogger Logger
+    {
         get => _logger;
         set => _logger = value ?? NullLogger.Instance;
     }
@@ -372,7 +374,7 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     /// <summary>
     /// A collection of exception types that will not be recorded by the circuit breaker. These exceptions will not trigger the circuit breaker to open. Default includes OperationCanceledException.
     /// </summary>
-    public HashSet<Type> UnrecordedExceptions { get; set; } = [ typeof(OperationCanceledException) ];
+    public HashSet<Type> UnrecordedExceptions { get; set; } = [typeof(OperationCanceledException)];
 
     /// <summary>
     /// Gets or sets a function that determines whether to record an exception.
@@ -705,7 +707,7 @@ public class ResiliencePolicyBuilder
     public ResiliencePolicyBuilder WithCircuitBreaker()
     {
         _policy.CircuitBreaker = new CircuitBreaker(_policy.Logger, _policy.GetTimeProvider());
-        return this;;
+        return this;
     }
 
     /// <summary>
@@ -715,7 +717,7 @@ public class ResiliencePolicyBuilder
     public ResiliencePolicyBuilder WithCircuitBreaker(ICircuitBreaker circuitBreaker)
     {
         _policy.CircuitBreaker = circuitBreaker;
-        return this;;
+        return this;
     }
 
     /// <summary>
