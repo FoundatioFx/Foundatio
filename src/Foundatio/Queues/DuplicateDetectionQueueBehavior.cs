@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;
 
+/// <summary>
+/// Automatically detects and discards duplicate entries in a queue based on a unique identifier.
+/// </summary>
 public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T : class
 {
     private readonly ICacheClient _cacheClient;
