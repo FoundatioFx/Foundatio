@@ -8,6 +8,9 @@
 artifacts
 .vs/
 
+# Benchmark Results
+BenchmarkDotNet.Artifacts/
+
 # MSTest test Results
 [Tt]est[Rr]esult*/
 
