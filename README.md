@@ -312,7 +312,7 @@ The resilience system is built around the [`IResiliencePolicy` interface](https:
 4. **Exponential Backoff**: Gradually increase delays between retries with optional jitter
 5. **Exception Filtering**: Configure which exceptions should trigger retries
 
-You can customize resilience behavior throughout Foundatio by implementing [`IResiliencePolicyProvider`](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and registering it with dependency injection. This allows you to replace the default retry behavior in caching, queues, storage, and other Foundatio components.
+You can customize resilience behavior throughout Foundatio by implementing [`IResiliencePolicyProvider`](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and passing it via options. This allows you to replace the default retry behavior in caching, queues, storage, and other Foundatio components.
 
 #### Resilience Policy Sample
 
@@ -368,15 +368,22 @@ var resilienceProvider = new ResiliencePolicyProvider()
     .WithPolicy("external-api", builder => builder
         .WithMaxAttempts(5)
         .WithCircuitBreaker()
+        .WithTimeout(TimeSpan.FromSeconds(30)))
+    .WithPolicy<MyService>(builder => builder
+        .WithMaxAttempts(3)
+        .WithLinearDelay()
         .WithTimeout(TimeSpan.FromSeconds(30)));
-
-// Register with dependency injection
-services.AddSingleton<IResiliencePolicyProvider>(resilienceProvider);
 
 // Use named policies
 var apiPolicy = resilienceProvider.GetPolicy("external-api");
 await apiPolicy.ExecuteAsync(async ct => {
     await CallExternalApiAsync(ct);
+});
+
+// Use class based policies
+var apiPolicy = resilienceProvider.GetPolicy<MyService>();
+await apiPolicy.ExecuteAsync(async ct => {
+    await CallMyServiceAsync(ct);
 });
 ```
 
