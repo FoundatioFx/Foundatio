@@ -9,12 +9,13 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
-public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveLogger
+public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory;
     private readonly bool _shouldClone;
@@ -24,7 +25,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private long _hits;
     private long _misses;
     private readonly TimeProvider _timeProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly ILogger _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
 
     public InMemoryCacheClient() : this(o => o) { }
@@ -37,8 +40,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _shouldThrowOnSerializationErrors = options.ShouldThrowOnSerializationError;
         _maxItems = options.MaxItems;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
-        var loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
-        _logger = loggerFactory.CreateLogger<InMemoryCacheClient>();
+        _resiliencePolicyProvider = options.ResiliencePolicyProvider;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger<InMemoryCacheClient>();
         _memory = new ConcurrentDictionary<string, CacheEntry>();
     }
 
@@ -54,7 +58,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public long Misses => _misses;
 
     ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public override string ToString()
     {

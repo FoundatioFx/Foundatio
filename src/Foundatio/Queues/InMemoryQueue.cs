@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;
@@ -165,7 +166,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     {
                         try
                         {
-                            await Run.WithRetriesAsync(() => queueEntry.AbandonAsync(), 3, TimeSpan.Zero, _timeProvider, cancellationToken).AnyContext();
+                            await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationToken.Token).AnyContext();
                         }
                         catch (Exception abandonEx)
                         {
@@ -180,7 +181,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 {
                     try
                     {
-                        await Run.WithRetriesAsync(() => queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token, logger: _logger).AnyContext();
+                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationToken.Token).AnyContext();
                     }
                     catch (Exception ex)
                     {

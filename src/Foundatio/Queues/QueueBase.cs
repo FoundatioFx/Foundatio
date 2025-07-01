@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Foundatio.Metrics;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;
@@ -18,6 +19,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected readonly TOptions _options;
     private readonly string _metricsPrefix;
     protected readonly ISerializer _serializer;
+    protected readonly IResiliencePolicy _resiliencePolicy;
 
     private readonly Counter<long> _enqueuedCounter;
     private readonly Counter<long> _dequeuedCounter;
@@ -52,6 +54,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         options.Behaviors.ForEach(AttachBehavior);
 
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
+
+        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider();
+        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
         _enqueuedCounter = FoundatioDiagnostics.Meter.CreateCounter<long>(GetFullMetricName("enqueued"), description: "Number of enqueued items");

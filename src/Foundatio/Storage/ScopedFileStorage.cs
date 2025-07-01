@@ -5,10 +5,12 @@ using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Foundatio.Utility.Resilience;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Storage;
 
-public class ScopedFileStorage : IFileStorage
+public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly string _pathPrefix;
 
@@ -26,7 +28,12 @@ public class ScopedFileStorage : IFileStorage
     public IFileStorage UnscopedStorage { get; private set; }
 
     public string Scope { get; private set; }
+
     ISerializer IHaveSerializer.Serializer => UnscopedStorage.Serializer;
+    ILogger IHaveLogger.Logger => UnscopedStorage.GetLogger();
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedStorage.GetLoggerFactory();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedStorage.GetResiliencePolicyProvider();
+    TimeProvider IHaveTimeProvider.TimeProvider => UnscopedStorage.GetTimeProvider();
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)

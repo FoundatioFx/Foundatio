@@ -1281,7 +1281,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
-        var distributedLock = new CacheLockProvider(cache, messageBus, null, Log);
+        var distributedLock = new CacheLockProvider(cache, messageBus, null, null, Log);
         await CanDequeueWithLockingImpAsync(distributedLock);
     }
 
@@ -1335,7 +1335,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
         using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
 
-        var distributedLock = new CacheLockProvider(cache, messageBus, null, Log);
+        var distributedLock = new CacheLockProvider(cache, messageBus, null, null, Log);
         await CanHaveMultipleQueueInstancesWithLockingImplAsync(distributedLock);
     }
 
