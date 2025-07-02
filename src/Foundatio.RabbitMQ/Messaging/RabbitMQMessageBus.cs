@@ -85,6 +85,19 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             _subscriberConnection.RecoverySucceededAsync += OnSubscriberConnectionOnRecoverySucceededAsync;
 
             string queueName = await CreateQueueAsync(_subscriberChannel).AnyContext();
+
+            // Set QoS (Quality of Service) settings for the consumer
+            if (_options.PrefetchCount > 0 || _options.PrefetchSize > 0)
+            {
+                await _subscriberChannel.BasicQosAsync(_options.PrefetchSize, _options.PrefetchCount, _options.GlobalQos, cancellationToken).AnyContext();
+                _logger.LogDebug("Set channel QoS - PrefetchCount: {PrefetchCount}, PrefetchSize: {PrefetchSize}, Global: {GlobalQos} for acknowledgment strategy {AcknowledgementStrategy}",
+                    _options.PrefetchCount, _options.PrefetchSize, _options.GlobalQos, _options.AcknowledgementStrategy);
+            }
+            else
+            {
+                _logger.LogDebug("Using unlimited prefetch for acknowledgment strategy {AcknowledgementStrategy}", _options.AcknowledgementStrategy);
+            }
+
             var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
             consumer.ReceivedAsync += OnMessageAsync;
             consumer.ShutdownAsync += OnConsumerShutdownAsync;
