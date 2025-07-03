@@ -44,6 +44,26 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
     /// How messages should be acknowledged.
     /// </summary>
     public AcknowledgementStrategy AcknowledgementStrategy { get; set; } = AcknowledgementStrategy.FireAndForget;
+
+    /// <summary>
+    /// Consumer prefetch count. Limits the number of unacknowledged messages a consumer can have.
+    /// Set to 0 (default) which will prefetch all available messages (unbounded).
+    /// Recommended values: 5-50 for most scenarios, higher for fast processing, lower for slow/heavy processing or large message sizes.
+    /// </summary>
+    public ushort PrefetchCount { get; set; }
+
+    /// <summary>
+    /// Consumer prefetch size in bytes. Limits the total size of unacknowledged messages a consumer can have.
+    /// Set to 0 (default) for no size limit. This provides additional flow control beyond message count.
+    /// </summary>
+    public uint PrefetchSize { get; set; }
+
+    /// <summary>
+    /// Whether QoS settings apply globally to the connection or just to the channel.
+    /// When true, the QoS settings apply to all consumers on the connection.
+    /// When false (default), the QoS settings apply only to consumers on this channel.
+    /// </summary>
+    public bool GlobalQos { get; set; }
 }
 
 public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder>
@@ -93,6 +113,24 @@ public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<R
     public RabbitMQMessageBusOptionsBuilder AcknowledgementStrategy(AcknowledgementStrategy acknowledgementStrategy)
     {
         Target.AcknowledgementStrategy = acknowledgementStrategy;
+        return this;
+    }
+
+    public RabbitMQMessageBusOptionsBuilder PrefetchCount(ushort prefetchCount)
+    {
+        Target.PrefetchCount = prefetchCount;
+        return this;
+    }
+
+    public RabbitMQMessageBusOptionsBuilder PrefetchSize(uint prefetchSize)
+    {
+        Target.PrefetchSize = prefetchSize;
+        return this;
+    }
+
+    public RabbitMQMessageBusOptionsBuilder GlobalQos(bool globalQos)
+    {
+        Target.GlobalQos = globalQos;
         return this;
     }
 }
