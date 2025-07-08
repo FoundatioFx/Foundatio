@@ -89,16 +89,18 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         if (!await OnEnqueuingAsync(data, options).AnyContext())
             return null;
 
-        int delaySeconds = (int)options.DeliveryDelay.GetValueOrDefault().TotalSeconds;
-        if (delaySeconds < 0)
-            delaySeconds = 0;
-
         var message = new SendMessageRequest
         {
             QueueUrl = _queueUrl,
-            DelaySeconds = delaySeconds,
             MessageBody = _serializer.SerializeToString(data)
         };
+
+        // NOTE: Any delay defined here will override any delay configured in the SQS.
+        if (options.DeliveryDelay.HasValue)
+        {
+            int delaySeconds = (int)options.DeliveryDelay.Value.TotalSeconds;
+            message.DelaySeconds = Math.Max(0, Math.Min(900, delaySeconds));
+        }
 
         if (!String.IsNullOrEmpty(options.UniqueId))
             message.MessageDeduplicationId = options.UniqueId;
