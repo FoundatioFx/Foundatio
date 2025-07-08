@@ -26,12 +26,12 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
     public bool IsDurable { get; set; } = true;
 
     /// <summary>
-    /// Whether or not the subscription queue is exclusive to this message bus instance.
+    /// Whether the subscription queue is exclusive to this message bus instance.
     /// </summary>
     public bool IsSubscriptionQueueExclusive { get; set; } = true;
 
     /// <summary>
-    /// Whether or not the subscription queue should be automatically deleted.
+    /// Whether the subscription queue should be automatically deleted.
     /// </summary>
     public bool SubscriptionQueueAutoDelete { get; set; } = true;
 
