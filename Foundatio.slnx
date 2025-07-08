@@ -1,0 +1,27 @@
+<Solution>
+  <Folder Name="/Samples/">
+    <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
+    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".github/workflows/build-workflow.yml" />
+    <File Path=".github/workflows/build.yml" />
+    <File Path="build/common.props" />
+    <File Path="NuGet.config" />
+    <File Path="README.md" />
+    <File Path="src/Directory.Build.props" />
+    <File Path="tests/Directory.Build.props" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
+    <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
+  </Folder>
+  <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
+  <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
+  <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
+  <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
+  <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
+  <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />
+  <Project Path="src/Foundatio/Foundatio.csproj" />
+</Solution>

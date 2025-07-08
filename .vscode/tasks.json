@@ -11,7 +11,7 @@
       },
       "args": [
         "build",
-        "${workspaceFolder}/Foundatio.sln",
+        "${workspaceFolder}/Foundatio.slnx",
         "/p:GenerateFullPaths=true"
       ],
       "problemMatcher": "$msCompile"
@@ -26,13 +26,13 @@
       },
       "args": [
         "test",
-        "${workspaceFolder}/Foundatio.sln",
+        "${workspaceFolder}/Foundatio.slnx",
         "/p:GenerateFullPaths=true"
       ],
       "problemMatcher": "$msCompile"
     },
     {
-      "label": "pack", 
+      "label": "pack",
       "command": "dotnet pack -c Release -o ${workspaceFolder}/artifacts",
       "type": "shell",
       "problemMatcher": []

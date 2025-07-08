@@ -6,4 +6,4 @@ jobs:
     uses: ./.github/workflows/build-workflow.yml
     secrets: inherit
     with:
-      solution: Foundatio.sln
+      solution: Foundatio.slnx
