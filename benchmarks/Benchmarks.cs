@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
-using Foundatio.Utility.Resilience;
+using Foundatio.Resilience;
 using Polly;
 using Polly.Retry;
 

@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Messaging;
+using Foundatio.Resilience;
 using Foundatio.Utility;
-using Foundatio.Utility.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -30,6 +30,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private readonly IResiliencePolicy _resiliencePolicy;
 
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, timeProvider, null, loggerFactory) { }
 
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
