@@ -48,7 +48,7 @@ To summarize, if you want pain free development and testing while allowing your 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
 1. You will need to have [Visual Studio Code](https://code.visualstudio.com) installed.
-2. Open the `Foundatio.sln` Visual Studio solution file.
+2. Open the `Foundatio.slnx` Visual Studio solution file.
 
 ## Using Foundatio
 
