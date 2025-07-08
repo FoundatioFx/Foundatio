@@ -5,7 +5,7 @@
     <!-- Can be removed when lowest TFM is net 6 -->
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0" />
     <!-- Needed for all TFMs -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.3" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0" />
   </ItemGroup>
   <ItemGroup Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net6.0'))">
