@@ -7,29 +7,16 @@ namespace Foundatio.Serializer;
 
 public class SystemTextJsonSerializer : ITextSerializer
 {
+    private readonly JsonSerializerOptions _defaultSerializeOptions = new();
+    private readonly JsonSerializerOptions _defaultDeserializeOptions = new() { Converters = { new ObjectToInferredTypesConverter() }};
+
     private readonly JsonSerializerOptions _serializeOptions;
     private readonly JsonSerializerOptions _deserializeOptions;
 
     public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null)
     {
-        if (serializeOptions != null)
-        {
-            _serializeOptions = serializeOptions;
-        }
-        else
-        {
-            _serializeOptions = new JsonSerializerOptions();
-        }
-
-        if (deserializeOptions != null)
-        {
-            _deserializeOptions = deserializeOptions;
-        }
-        else
-        {
-            _deserializeOptions = new JsonSerializerOptions();
-            _deserializeOptions.Converters.Add(new ObjectToInferredTypesConverter());
-        }
+        _serializeOptions = serializeOptions ?? _defaultSerializeOptions;
+        _deserializeOptions = deserializeOptions ?? serializeOptions ?? _defaultDeserializeOptions;
     }
 
     public void Serialize(object data, Stream outputStream)

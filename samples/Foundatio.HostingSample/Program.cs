@@ -35,8 +35,7 @@ builder.Services.AddFoundatio()
     .AddCaching().UseInMemory()
     .AddLocking().UseCache()
     .AddMessaging().UseInMemory()
-    .AddQueueing().UseInMemory<SampleWork>()
-    .AddSerializer(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions, sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions))
+    .AddSerializer(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions))
     .AddResilience(b => b.WithPolicy<Sample1Job>(p => p.WithMaxAttempts(5).WithLinearDelay().WithJitter()));
 
 ConfigureServices();
@@ -219,5 +218,3 @@ void ConfigureServices()
         .AddMessaging().UseRedis();
 #endif
 }
-
-public class SampleWork {}
