@@ -109,6 +109,19 @@ public static class ResiliencePolicyExtensions
     }
 
     /// <summary>
+    /// Gets a resilience policy for the specified type from the provider, or creates a new default configuration one if not found.
+    /// </summary>
+    /// <param name="provider">The resilience policy provider.</param>
+    /// <param name="targetTypes">The types for which to get the policy.</param>
+    /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
+    /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
+    /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
+    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type[] targetTypes, ILogger logger = null, TimeProvider timeProvider = null)
+    {
+        return GetPolicy(provider, targetTypes, null, logger, timeProvider);
+    }
+
+    /// <summary>
     /// Gets a resilience policy by checking the specified types in order from the provider, or creates a new one using the fallback builder if not found.
     /// </summary>
     /// <param name="provider">The resilience policy provider.</param>

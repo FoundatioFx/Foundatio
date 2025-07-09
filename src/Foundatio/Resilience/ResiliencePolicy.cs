@@ -82,7 +82,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     {
         _ = await ExecuteAsync(async ct =>
         {
-            await action(ct);
+            await action(ct).AnyContext();
             return (object)null;
         }, cancellationToken);
     }
