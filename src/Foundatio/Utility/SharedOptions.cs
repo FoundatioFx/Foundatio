@@ -14,24 +14,28 @@ public class SharedOptions
     private ISerializer _serializer;
     private ILoggerFactory _loggerFactory;
 
+    internal bool HasResiliencePolicyProvider => _policyProvider != null;
     public IResiliencePolicyProvider ResiliencePolicyProvider
     {
         get => _policyProvider ?? DefaultResiliencePolicyProvider.Instance;
         set => _policyProvider = value;
     }
 
+    internal bool HasTimeProvider => _timeProvider != null;
     public TimeProvider TimeProvider
     {
         get => _timeProvider ?? TimeProvider.System;
         set => _timeProvider = value;
     }
 
+    internal bool HasSerializer => _serializer != null;
     public ISerializer Serializer
     {
         get => _serializer ?? DefaultSerializer.Instance;
         set => _serializer = value;
     }
 
+    internal bool HasLoggerFactory => _loggerFactory != null;
     public ILoggerFactory LoggerFactory
     {
         get => _loggerFactory ?? NullLoggerFactory.Instance;
@@ -96,10 +100,14 @@ public static class SharedOptionsExtensions
         }
         else
         {
-            options.ResiliencePolicyProvider ??= serviceProvider.GetService<IResiliencePolicyProvider>();
-            options.TimeProvider ??= serviceProvider.GetService<TimeProvider>();
-            options.Serializer ??= serviceProvider.GetService<ISerializer>();
-            options.LoggerFactory ??= serviceProvider.GetService<ILoggerFactory>();
+            if (!options.HasResiliencePolicyProvider)
+                options.ResiliencePolicyProvider = serviceProvider.GetService<IResiliencePolicyProvider>();
+            if (!options.HasTimeProvider)
+                options.TimeProvider = serviceProvider.GetService<TimeProvider>();
+            if (!options.HasSerializer)
+                options.Serializer = serviceProvider.GetService<ISerializer>();
+            if (!options.HasLoggerFactory)
+                options.LoggerFactory = serviceProvider.GetService<ILoggerFactory>();
         }
 
         return options;

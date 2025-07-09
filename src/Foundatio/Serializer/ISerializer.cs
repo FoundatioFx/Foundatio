@@ -38,7 +38,7 @@ public static class SerializerExtensions
     {
         byte[] bytes;
         if (data == null)
-            bytes = Array.Empty<byte>();
+            bytes = [];
         else if (serializer is ITextSerializer)
             bytes = Encoding.UTF8.GetBytes(data);
         else
@@ -51,7 +51,7 @@ public static class SerializerExtensions
     {
         byte[] bytes;
         if (data == null)
-            bytes = Array.Empty<byte>();
+            bytes = [];
         else if (serializer is ITextSerializer)
             bytes = Encoding.UTF8.GetBytes(data);
         else
