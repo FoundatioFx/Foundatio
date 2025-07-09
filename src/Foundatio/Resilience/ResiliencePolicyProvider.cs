@@ -21,10 +21,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
-        _defaultPolicy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider)
-        {
-            MaxAttempts = 5
-        };
+        _defaultPolicy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
     }
 
     /// <summary>
@@ -43,14 +40,11 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// </summary>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder> builder)
+    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder> builder = null)
     {
-        if (builder == null)
-            throw new ArgumentNullException(nameof(builder));
-
         var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);
-        builder(policyBuilder);
+        builder?.Invoke(policyBuilder);
 
         _defaultPolicy = policy;
         return this;
@@ -77,17 +71,14 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="name">The name of the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder> builder)
+    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder> builder = null)
     {
         if (name == null)
             throw new ArgumentNullException(nameof(name));
 
-        if (builder == null)
-            throw new ArgumentNullException(nameof(builder));
-
         var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);
-        builder(policyBuilder);
+        builder?.Invoke(policyBuilder);
 
         _policies[name] = policy;
         return this;
@@ -111,7 +102,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <typeparam name="T">The target type for the policy.</typeparam>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder)
+    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder = null)
     {
         string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, builder);
@@ -135,7 +126,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="targetType">The target type for the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder> builder)
+    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder> builder = null)
     {
         string name = targetType.GetFriendlyTypeName();
         return WithPolicy(name, builder);
@@ -160,4 +151,9 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// </summary>
     /// <returns>The default <see cref="IResiliencePolicy"/> instance.</returns>
     public IResiliencePolicy GetDefaultPolicy() => _defaultPolicy;
+}
+
+public static class DefaultResiliencePolicyProvider
+{
+    public static ResiliencePolicyProvider Instance { get; set; } = new();
 }

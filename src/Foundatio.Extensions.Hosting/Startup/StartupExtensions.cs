@@ -94,35 +94,39 @@ public static partial class StartupExtensions
         return new RunStartupActionsResult { Success = true };
     }
 
-    public static void AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction
+    public static IServiceCollection AddStartupAction<T>(this IServiceCollection services, int? priority = null) where T : IStartupAction
     {
         services.TryAddSingleton<StartupActionsContext>();
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.TryAddTransient(typeof(T));
         services.AddTransient(s => new StartupActionRegistration(typeof(T).Name, typeof(T), priority));
+
+        return services;
     }
 
-    public static void AddStartupAction<T>(this IServiceCollection services, string name, int? priority = null) where T : IStartupAction
+    public static IServiceCollection AddStartupAction<T>(this IServiceCollection services, string name, int? priority = null) where T : IStartupAction
     {
         services.TryAddSingleton<StartupActionsContext>();
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.TryAddTransient(typeof(T));
         services.AddTransient(s => new StartupActionRegistration(name, typeof(T), priority));
+
+        return services;
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Action action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Action action, int? priority = null)
     {
-        services.AddStartupAction(name, ct => action(), priority);
+        return services.AddStartupAction(name, ct => action(), priority);
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider> action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider> action, int? priority = null)
     {
-        services.AddStartupAction(name, (sp, ct) => action(sp), priority);
+        return services.AddStartupAction(name, (sp, ct) => action(sp), priority);
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider, CancellationToken> action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Action<IServiceProvider, CancellationToken> action, int? priority = null)
     {
         services.TryAddSingleton<StartupActionsContext>();
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
@@ -132,27 +136,31 @@ public static partial class StartupExtensions
             action(sp, ct);
             return Task.CompletedTask;
         }, priority));
+
+        return services;
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Func<Task> action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Func<Task> action, int? priority = null)
     {
-        services.AddStartupAction(name, (sp, ct) => action(), priority);
+        return services.AddStartupAction(name, (sp, ct) => action(), priority);
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, Task> action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, Task> action, int? priority = null)
     {
-        services.AddStartupAction(name, (sp, ct) => action(sp), priority);
+        return services.AddStartupAction(name, (sp, ct) => action(sp), priority);
     }
 
-    public static void AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
+    public static IServiceCollection AddStartupAction(this IServiceCollection services, string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
     {
         services.TryAddSingleton<StartupActionsContext>();
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(RunStartupActionsService)))
             services.AddSingleton<IHostedService, RunStartupActionsService>();
         services.AddTransient(s => new StartupActionRegistration(name, action, priority));
+
+        return services;
     }
 
-    public const string CheckForStartupActionsName = "CheckForStartupActions";
+    private const string CheckForStartupActionsName = "CheckForStartupActions";
     public static IHealthChecksBuilder AddCheckForStartupActions(this IHealthChecksBuilder builder, params string[] tags)
     {
         return builder.AddCheck<StartupActionsHealthCheck>(CheckForStartupActionsName, null, tags);
@@ -165,36 +173,35 @@ public static partial class StartupExtensions
 
     public static IApplicationBuilder UseHealthChecks(this IApplicationBuilder builder, string path, params string[] tags)
     {
-        if (tags == null)
-            tags = Array.Empty<string>();
+        tags ??= [];
 
         return builder.UseHealthChecks(path, new HealthCheckOptions { Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)) });
     }
 
     public static IApplicationBuilder UseReadyHealthChecks(this IApplicationBuilder builder, params string[] tags)
     {
-        if (tags == null)
-            tags = Array.Empty<string>();
+        tags ??= [];
 
         var options = new HealthCheckOptions
         {
             Predicate = c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase))
         };
+
         return builder.UseHealthChecks("/ready", options);
     }
 
-    public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, params string[] tags)
+    public static IServiceCollection AddStartupActionToWaitForHealthChecks(this IServiceCollection services, params string[] tags)
     {
-        if (tags == null)
-            tags = Array.Empty<string>();
+        tags ??= [];
 
         services.AddStartupActionToWaitForHealthChecks(c => c.Tags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase)));
+
+        return services;
     }
 
-    public static void AddStartupActionToWaitForHealthChecks(this IServiceCollection services, Func<HealthCheckRegistration, bool> shouldWaitForHealthCheck = null)
+    public static IServiceCollection AddStartupActionToWaitForHealthChecks(this IServiceCollection services, Func<HealthCheckRegistration, bool> shouldWaitForHealthCheck = null)
     {
-        if (shouldWaitForHealthCheck == null)
-            shouldWaitForHealthCheck = c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase);
+        shouldWaitForHealthCheck ??= c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase);
 
         services.AddStartupAction("WaitForHealthChecks", async (sp, t) =>
         {
@@ -211,5 +218,7 @@ public static partial class StartupExtensions
                 result = await healthCheckService.CheckHealthAsync(c => c.Name != CheckForStartupActionsName && shouldWaitForHealthCheck(c), t).AnyContext();
             }
         }, -100);
+
+        return services;
     }
 }

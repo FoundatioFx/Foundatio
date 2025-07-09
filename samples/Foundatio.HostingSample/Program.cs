@@ -2,18 +2,22 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Caching;
+using Foundatio;
 using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Startup;
 using Foundatio.HostingSample;
+using Foundatio.Resilience;
+using Foundatio.Serializer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 #if REDIS
-using System.Text.Json;
-using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Configuration;
+using Foundatio.Redis;
 using StackExchange.Redis;
 #endif
 
@@ -24,6 +28,16 @@ bool everyMinute = all || args.Contains("everyMinute", StringComparer.OrdinalIgn
 bool evenMinutes = all || args.Contains("evenMinutes", StringComparer.OrdinalIgnoreCase);
 
 var builder = WebApplication.CreateBuilder(args);
+
+// configure Foundatio services
+builder.Services.AddFoundatio()
+    .AddStorage().UseFolder()
+    .AddCaching().UseInMemory()
+    .AddLocking().UseCache()
+    .AddMessaging().UseInMemory()
+    .AddQueueing().UseInMemory<SampleWork>()
+    .AddSerializer(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions, sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions))
+    .AddResilience(b => b.WithPolicy<Sample1Job>(p => p.WithMaxAttempts(5).WithLinearDelay().WithJitter()));
 
 ConfigureServices();
 
@@ -63,7 +77,7 @@ if (evenMinutes)
     });
 
 if (sample1)
-    builder.Services.AddJob("Sample1", sp => new Sample1Job(sp.GetRequiredService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
+    builder.Services.AddJob("Sample1", sp => new Sample1Job(sp.GetService<IResiliencePolicyProvider>(), sp.GetService<ILoggerFactory>()), o => o.ApplyDefaults<Sample1Job>().WaitForStartupActions().InitialDelay(TimeSpan.FromSeconds(4)));
 
 builder.Services.AddJob<SampleLockJob>(o => o.WaitForStartupActions());
 
@@ -199,25 +213,11 @@ void ConfigureServices()
         return ConnectionMultiplexer.Connect(connectionString, o => o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>());
     });
 
-    // distributed cache
-    builder.Services.AddSingleton<ITextSerializer>(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions, sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions));
-    builder.Services.AddSingleton<ISerializer>(sp => sp.GetRequiredService<ITextSerializer>());
-    builder.Services.AddSingleton<ICacheClient>(sp => new RedisCacheClient(c => c.ConnectionMultiplexer(sp.GetRequiredService<IConnectionMultiplexer>())));
-
-    // distributed lock provider
-    builder.Services.AddSingleton(s => new CacheLockProvider(s.GetRequiredService<ICacheClient>(), s.GetRequiredService<IMessageBus>(), s.GetRequiredService<ILoggerFactory>()));
-    builder.Services.AddSingleton<ILockProvider>(s => s.GetRequiredService<CacheLockProvider>());
-
-    // distributed message bus
-    builder.Services.AddSingleton<IMessageBus>(s => new RedisMessageBus(new RedisMessageBusOptions
-    {
-        Subscriber = s.GetRequiredService<IConnectionMultiplexer>().GetSubscriber(),
-        Serializer = s.GetRequiredService<ISerializer>(),
-        LoggerFactory = s.GetRequiredService<ILoggerFactory>()
-    }));
-    builder.Services.AddSingleton<IMessagePublisher>(s => s.GetRequiredService<IMessageBus>());
-    builder.Services.AddSingleton<IMessageSubscriber>(s => s.GetRequiredService<IMessageBus>());
-#else
-    builder.Services.AddSingleton<ICacheClient>(sp => new InMemoryCacheClient(o => o.LoggerFactory(sp.GetService<ILoggerFactory>())));
+    // distributed cache and messaging using redis (replaces in memory cache)
+    builder.Services.AddFoundatio()
+        .AddCaching().UseRedis()
+        .AddMessaging().UseRedis();
 #endif
 }
+
+public class SampleWork {}

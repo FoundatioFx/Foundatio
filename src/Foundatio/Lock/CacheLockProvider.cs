@@ -54,7 +54,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     private async Task EnsureTopicSubscriptionAsync()
     {
-        if (_isSubscribed)
+        if (_isSubscribed || _messageBus is null)
             return;
 
         using (await _lock.LockAsync().AnyContext())
@@ -207,7 +207,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _logger.LogTrace("ReleaseAsync Start: {Resource} ({LockId})", resource, lockId);
 
         await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveIfEqualAsync(resource, lockId)).AnyContext();
-        await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
+        if (_messageBus != null)
+            await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource, LockId = lockId }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource} ({LockId})", resource, lockId);
     }
@@ -217,7 +218,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _logger.LogTrace("ReleaseAsync Start: {Resource}", resource);
 
         await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.RemoveAsync(resource)).AnyContext();
-        await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource }).AnyContext();
+        if (_messageBus != null)
+            await _messageBus.PublishAsync(new CacheLockReleased { Resource = resource }).AnyContext();
 
         _logger.LogDebug("Released lock: {Resource}", resource);
     }
