@@ -209,7 +209,9 @@ void ConfigureServices()
     {
         var connectionString = builder.Configuration.GetConnectionString("Redis")!;
         connectionString += ",abortConnect=false";
-        return ConnectionMultiplexer.Connect(connectionString, o => o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>());
+        return ConnectionMultiplexer.Connect(connectionString);
+        // enable redis logging
+        //return ConnectionMultiplexer.Connect(connectionString, o => o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>());
     });
 
     // distributed cache and messaging using redis (replaces in memory cache)
