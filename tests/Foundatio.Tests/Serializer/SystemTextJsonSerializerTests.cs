@@ -33,13 +33,6 @@ public class SystemTextJsonSerializerWithOptionsTests : SerializerTestsBase
     {
         base.CanHandlePrimitiveTypes();
     }
-
-    [Fact(Skip = "Skip benchmarks for now")]
-    public virtual void Benchmark()
-    {
-        var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<JsonNetSerializerBenchmark>();
-        _logger.LogInformation(summary.ToJson());
-    }
 }
 
 public class SystemTextJsonSerializerTests : SerializerTestsBase
@@ -72,7 +65,7 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     [Fact(Skip = "Skip benchmarks for now")]
     public virtual void Benchmark()
     {
-        var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<JsonNetSerializerBenchmark>();
+        var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<SystemTextJsonSerializerBenchmark>();
         _logger.LogInformation(summary.ToJson());
     }
 }
