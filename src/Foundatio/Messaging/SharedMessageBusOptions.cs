@@ -18,7 +18,7 @@ public class SharedMessageBusOptions : SharedOptions
 
 public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
     where TOptions : SharedMessageBusOptions, new()
-    where TBuilder : SharedMessageBusOptionsBuilder<TOptions, TBuilder>
+    where TBuilder : SharedMessageBusOptionsBuilder<TOptions, TBuilder>, new()
 {
     public TBuilder Topic(string topic)
     {

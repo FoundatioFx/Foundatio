@@ -29,7 +29,7 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
 public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
     where T : class
     where TOptions : SharedQueueOptions<T>, new()
-    where TBuilder : SharedQueueOptionsBuilder<T, TOptions, TBuilder>
+    where TBuilder : SharedQueueOptionsBuilder<T, TOptions, TBuilder>, new()
 {
     public TBuilder Name(string name)
     {

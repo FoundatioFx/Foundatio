@@ -1,35 +1,21 @@
 ﻿using System;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Foundatio.Serializer;
 
 public class SystemTextJsonSerializer : ITextSerializer
 {
+    private readonly JsonSerializerOptions _defaultSerializeOptions = new();
+    private readonly JsonSerializerOptions _defaultDeserializeOptions = new();
+
     private readonly JsonSerializerOptions _serializeOptions;
     private readonly JsonSerializerOptions _deserializeOptions;
 
     public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null)
     {
-        if (serializeOptions != null)
-        {
-            _serializeOptions = serializeOptions;
-        }
-        else
-        {
-            _serializeOptions = new JsonSerializerOptions();
-        }
-
-        if (deserializeOptions != null)
-        {
-            _deserializeOptions = deserializeOptions;
-        }
-        else
-        {
-            _deserializeOptions = new JsonSerializerOptions();
-            _deserializeOptions.Converters.Add(new ObjectToInferredTypesConverter());
-        }
+        _serializeOptions = serializeOptions ?? _defaultSerializeOptions;
+        _deserializeOptions = deserializeOptions ?? serializeOptions ?? _defaultDeserializeOptions;
     }
 
     public void Serialize(object data, Stream outputStream)
@@ -42,33 +28,24 @@ public class SystemTextJsonSerializer : ITextSerializer
     public object Deserialize(Stream inputStream, Type objectType)
     {
         using var reader = new StreamReader(inputStream);
-        return JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
-    }
-}
+        object result = JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
 
-public class ObjectToInferredTypesConverter : JsonConverter<object>
-{
-    public override object Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
-    {
-        if (reader.TokenType == JsonTokenType.True)
-            return true;
+        if (result is not JsonElement jsonElement)
+            return result;
 
-        if (reader.TokenType == JsonTokenType.False)
-            return false;
+        // return primitive types
+        switch (jsonElement.ValueKind)
+        {
+            case JsonValueKind.True:
+                return true;
+            case JsonValueKind.False:
+                return false;
+            case JsonValueKind.Number:
+                return jsonElement.TryGetInt64(out long number) ? number : (object)jsonElement.GetDouble();
+            case JsonValueKind.String:
+                return jsonElement.TryGetDateTime(out var datetime) ? datetime : (object)jsonElement.GetString();
+        }
 
-        if (reader.TokenType == JsonTokenType.Number)
-            return reader.TryGetInt64(out long number) ? number : (object)reader.GetDouble();
-
-        if (reader.TokenType == JsonTokenType.String)
-            return reader.TryGetDateTime(out var datetime) ? datetime : (object)reader.GetString();
-
-        using var document = JsonDocument.ParseValue(ref reader);
-
-        return document.RootElement.Clone();
-    }
-
-    public override void Write(Utf8JsonWriter writer, object objectToWrite, JsonSerializerOptions options)
-    {
-        throw new InvalidOperationException();
+        return result;
     }
 }

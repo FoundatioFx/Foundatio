@@ -20,12 +20,12 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null, IResiliencePolicyProvider resiliencePolicyProvider = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
-        _logger = loggerFactory.CreateLogger<ThrottlingLockProvider>();
+        _logger = _loggerFactory.CreateLogger<ThrottlingLockProvider>();
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
         _maxHitsPerPeriod = maxHitsPerPeriod;
 
@@ -146,5 +146,33 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     private string GetCacheKey(string resource, DateTime now)
     {
         return String.Concat(resource, ":", now.Floor(_throttlingPeriod).Ticks);
+    }
+}
+
+public interface IThrottlingLockProviderFactory
+{
+    ILockProvider Create(int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null);
+}
+
+public class ThrottlingLockProviderFactory : IThrottlingLockProviderFactory
+{
+    private readonly ICacheClient _cacheClient;
+    private readonly TimeProvider _timeProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    private readonly ILoggerFactory _loggerFactory;
+
+    public ThrottlingLockProviderFactory(ICacheClient cacheClient, TimeProvider timeProvider = null,
+        IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
+    {
+        _cacheClient = cacheClient ?? throw new ArgumentNullException(nameof(cacheClient));
+        _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
+        _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
+    }
+
+    public ILockProvider Create(int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null)
+    {
+        return new ThrottlingLockProvider(_cacheClient, maxHitsPerPeriod, throttlingPeriod, _timeProvider,
+            _loggerFactory, _resiliencePolicyProvider);
     }
 }
