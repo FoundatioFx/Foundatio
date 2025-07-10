@@ -147,16 +147,6 @@ public static class ResiliencePolicyExtensions
     }
 
     /// <summary>
-    /// Gets the <see cref="IResiliencePolicyProvider"/> from the specified object if it implements <see cref="IHaveResiliencePolicyProvider"/>.
-    /// </summary>
-    /// <param name="target">The object to retrieve the policy provider from.</param>
-    /// <returns>The <see cref="IResiliencePolicyProvider"/> if available; otherwise, <c>null</c>.</returns>
-    public static IResiliencePolicyProvider GetResiliencePolicyProvider(this object target)
-    {
-        return target is IHaveResiliencePolicyProvider accessor ? accessor.ResiliencePolicyProvider : null;
-    }
-
-    /// <summary>
     /// Executes the specified asynchronous action using the given resilience policy.
     /// </summary>
     /// <param name="policy">The resilience policy to use for execution.</param>

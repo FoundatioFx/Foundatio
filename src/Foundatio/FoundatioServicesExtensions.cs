@@ -32,6 +32,11 @@ public class FoundatioBuilder : IFoundatioBuilder
     internal FoundatioBuilder(IServiceCollection services)
     {
         _services = services;
+        Caching = new CachingBuilder(this);
+        Storage = new StorageBuilder(this);
+        Messaging = new MessagingBuilder(this);
+        Queueing = new QueueingBuilder(this);
+        Locking = new LockingBuilder(this);
     }
 
     IServiceCollection IFoundatioBuilder.Services => _services;
@@ -40,47 +45,27 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// <summary>
     /// Configure caching services for Foundatio.
     /// </summary>
-    /// <returns></returns>
-    public Caching AddCaching()
-    {
-        return new Caching(this);
-    }
+    public CachingBuilder Caching { get; }
 
     /// <summary>
     /// Configure storage services for Foundatio.
     /// </summary>
-    /// <returns></returns>
-    public Storage AddStorage()
-    {
-        return new Storage(this);
-    }
+    public StorageBuilder Storage { get; }
 
     /// <summary>
     /// Configure messaging services for Foundatio.
     /// </summary>
-    /// <returns></returns>
-    public Messaging AddMessaging()
-    {
-        return new Messaging(this);
-    }
+    public MessagingBuilder Messaging { get; }
 
     /// <summary>
     /// Configure queueing services for Foundatio.
     /// </summary>
-    /// <returns></returns>
-    public Queueing AddQueueing()
-    {
-        return new Queueing(this);
-    }
+    public QueueingBuilder Queueing { get; }
 
     /// <summary>
     /// Configure locking services for Foundatio.
     /// </summary>
-    /// <returns></returns>
-    public Locking AddLocking()
-    {
-        return new Locking(this);
-    }
+    public LockingBuilder Locking { get; }
 
     /// <summary>
     /// Configure resilience services for Foundatio.
@@ -147,12 +132,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         return this;
     }
 
-    public class Caching : IFoundatioBuilder
+    public class CachingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
 
-        internal Caching(IFoundatioBuilder builder)
+        internal CachingBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;
@@ -186,12 +171,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
     }
 
-    public class Storage : IFoundatioBuilder
+    public class StorageBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
 
-        internal Storage(IFoundatioBuilder builder)
+        internal StorageBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;
@@ -243,12 +228,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
     }
 
-    public class Messaging : IFoundatioBuilder
+    public class MessagingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
 
-        internal Messaging(IFoundatioBuilder builder)
+        internal MessagingBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;
@@ -290,12 +275,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
     }
 
-    public class Queueing : IFoundatioBuilder
+    public class QueueingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
 
-        internal Queueing(IFoundatioBuilder builder)
+        internal QueueingBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;
@@ -329,12 +314,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
     }
 
-    public class Locking : IFoundatioBuilder
+    public class LockingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
 
-        internal Locking(IFoundatioBuilder builder)
+        internal LockingBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;

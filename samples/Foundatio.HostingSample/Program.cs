@@ -31,10 +31,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // configure Foundatio services
 builder.Services.AddFoundatio()
-    .AddStorage().UseFolder()
-    .AddCaching().UseInMemory()
-    .AddLocking().UseCache()
-    .AddMessaging().UseInMemory()
+    .Storage.UseFolder()
+    .Caching.UseInMemory()
+    .Locking.UseCache()
+    .Messaging.UseInMemory()
     .AddSerializer(sp => new SystemTextJsonSerializer(sp.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions))
     .AddResilience(b => b.WithPolicy<Sample1Job>(p => p.WithMaxAttempts(5).WithLinearDelay().WithJitter()));
 
@@ -216,7 +216,7 @@ void ConfigureServices()
 
     // distributed cache and messaging using redis (replaces in memory cache)
     builder.Services.AddFoundatio()
-        .AddCaching().UseRedis()
-        .AddMessaging().UseRedis();
+        .Caching.UseRedis()
+        .Messaging.UseRedis();
 #endif
 }
