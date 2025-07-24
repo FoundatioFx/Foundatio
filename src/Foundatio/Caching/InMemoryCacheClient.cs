@@ -183,9 +183,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<int> RemoveByPrefixAsync(string prefix)
     {
-        var keysToRemove = new List<string>();
         string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
-        var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
+        if (String.Equals(normalizedPrefix, "*"))
+            return RemoveAllAsync();
+
+        var keysToRemove = new List<string>();
+        var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.EndsWith("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
+
         try
         {
             foreach (string key in _memory.Keys.ToList())
@@ -195,6 +199,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
+            throw;
         }
 
         return RemoveAllAsync(keysToRemove);
