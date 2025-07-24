@@ -188,18 +188,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return RemoveAllAsync();
 
         var keysToRemove = new List<string>();
-        var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.EndsWith("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
 
         try
         {
+            var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.EndsWith("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
             foreach (string key in _memory.Keys.ToList())
                 if (regex.IsMatch(key))
                     keysToRemove.Add(key);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
-            throw;
+            _logger.LogError(ex, "Error removing items from cache prefix: {Prefix}", prefix);
+            throw new CacheException($"Error removing items from cache prefix: {prefix}", ex);
         }
 
         return RemoveAllAsync(keysToRemove);
