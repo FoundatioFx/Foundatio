@@ -1,24 +1,17 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Messaging;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
-public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
+public class ScopedInMemoryCacheClientTests : CacheClientTestsBase
 {
-    public InMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public ScopedInMemoryCacheClientTests(ITestOutputHelper output) : base(output) { }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError);
-    }
-
-    protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
-    {
-        return new InMemoryHybridCacheClient(_distributedCache, _messageBus, Log, shouldThrowOnSerializationError);
+        return new ScopedCacheClient(new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError)), "scoped");
     }
 
     [Fact]
@@ -284,63 +277,5 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task MeasureSerializerComplexThroughputAsync()
     {
         return base.MeasureSerializerComplexThroughputAsync();
-    }
-
-    [Fact]
-    public override Task CanInvalidateLocalCacheViaRemoveAllAsync()
-    {
-        return base.CanInvalidateLocalCacheViaRemoveAllAsync();
-    }
-
-    [Fact]
-    public override Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
-    {
-        return base.CanInvalidateLocalCacheViaRemoveByPrefixAsync();
-    }
-
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
-    public override Task WillUseLocalCache()
-    {
-        return base.WillUseLocalCache();
-    }
-
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
-    public override Task WillExpireRemoteItems()
-    {
-        return base.WillExpireRemoteItems();
-    }
-
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
-    public override Task WillWorkWithSets()
-    {
-        return base.WillWorkWithSets();
-    }
-}
-
-public class InMemoryHybridCacheClient : HybridCacheClient
-{
-    public InMemoryHybridCacheClient(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory, bool shouldThrowOnSerializationError)
-        : base(cacheClient, messageBus, new InMemoryCacheClientOptions
-        {
-            CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
-        }, loggerFactory)
-    {
-    }
-
-    public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory, bool shouldThrowOnSerializationError)
-        : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).ShouldThrowOnSerializationError(shouldThrowOnSerializationError)), messageBus, new InMemoryCacheClientOptions
-        {
-            CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
-        }, loggerFactory)
-    {
-    }
-
-    public override void Dispose()
-    {
-        base.Dispose();
-        _distributedCache.Dispose();
-        _messageBus.Dispose();
     }
 }

@@ -29,7 +29,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanGetAllAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -73,7 +73,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanGetAllWithOverlapAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -103,7 +103,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanSetAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -125,7 +125,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanSetAndGetValueAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -176,7 +176,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanAddAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -203,7 +203,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanAddConcurrentlyAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -226,7 +226,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanGetAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -259,7 +259,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanTryGetAsync()
     {
         var cache = GetCacheClient(false);
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -296,7 +296,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanUseScopedCachesAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -362,7 +362,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         const int COUNT = 10000;
 
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -392,7 +392,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         const int COUNT = 10000;
 
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -416,10 +416,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task CanRemoveByPrefixAsync()
+        public virtual async Task CanRemoveByPrefixAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -429,24 +429,319 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             string prefix = "blah:";
             await cache.SetAsync("test", 1);
             await cache.SetAsync(prefix + "test", 1);
-            await cache.SetAsync(prefix + "test2", 4);
-            Assert.Equal(1, (await cache.GetAsync<int>(prefix + "test")).Value);
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            await cache.SetAsync(prefix + "test2", 2);
 
             Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
             Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
-            Assert.False((await cache.GetAsync<int>(prefix + "test")).HasValue);
-            Assert.False((await cache.GetAsync<int>(prefix + "test2")).HasValue);
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            Assert.False(await cache.ExistsAsync(prefix + "test"));
+            Assert.False(await cache.ExistsAsync(prefix + "test2"));
+            Assert.True(await cache.ExistsAsync("test"));
 
             Assert.Equal(1, await cache.RemoveByPrefixAsync(String.Empty));
+        }
+    }
+
+    public static IEnumerable<object[]> GetRegexSpecialCharacters()
+    {
+        return
+        [
+            ["*"],
+            ["+"],
+            ["?"],
+            ["^"],
+            ["$"],
+            ["|"],
+            ["\\"],
+            ["["],
+            ["]"],
+            ["{"],
+            ["}"],
+            ["("],
+            [")"],
+            ["))"],  // Invalid regex - extra closing parentheses
+            ["(("],  // Invalid regex - extra opening parentheses
+            ["]]"],  // Invalid regex - extra closing brackets
+            ["[["],  // Invalid regex - extra opening brackets
+            ["(()"], // Invalid regex - unbalanced parentheses
+            ["([)]"], // Invalid regex - incorrectly nested
+            ["[{}]"], // Invalid regex - brackets with braces inside
+            ["{{}"],  // Invalid regex - unbalanced braces
+            ["+++"],  // Invalid regex - multiple plus operators
+            ["***"],  // Invalid regex - multiple asterisks
+            ["???"]   // Invalid regex - multiple question marks
+        ];
+    }
+
+    public virtual async Task CanRemoveByPrefixWithRegexCharactersAsync(string specialChar)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            string regexPrefix = $"regex{specialChar}:";
+            await cache.SetAsync($"{regexPrefix}test1", 1);
+            await cache.SetAsync($"{regexPrefix}test2", 2);
+            await cache.SetAsync($"other{specialChar}test", 3);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(regexPrefix));
+            Assert.False(await cache.ExistsAsync($"{regexPrefix}test1"));
+            Assert.False(await cache.ExistsAsync($"{regexPrefix}test2"));
+            Assert.True(await cache.ExistsAsync($"other{specialChar}test"));
+        }
+    }
+
+    public static IEnumerable<object[]> GetWildcardPatterns()
+    {
+        return
+        [
+            ["**:"],
+            ["*.*"],
+            ["*.*:"],
+            ["*.txt:"],
+            ["**/**:"],
+            ["glob*.*:"],
+            ["pattern**suffix:"]
+        ];
+    }
+
+    public virtual async Task CanRemoveByPrefixWithWildcardPatternsAsync(string pattern)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync($"{pattern}test1", 1);
+            await cache.SetAsync($"{pattern}test2", 2);
+            await cache.SetAsync($"similar{pattern}test", 3);
+            await cache.SetAsync($"not{pattern.Replace("*", "X")}test", 4);
+
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(pattern));
+            Assert.False(await cache.ExistsAsync($"{pattern}test1"));
+            Assert.False(await cache.ExistsAsync($"{pattern}test2"));
+            Assert.True(await cache.ExistsAsync($"similar{pattern}test"));
+            Assert.True(await cache.ExistsAsync($"not{pattern.Replace("*", "X")}test"));
+        }
+    }
+
+    public virtual async Task CanRemoveByPrefixWithDoubleAsteriskAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("**:test1", 1);
+            await cache.SetAsync("**:test2", 2);
+            await cache.SetAsync("*:test3", 3);
+            await cache.SetAsync("***:test4", 4);
+
+            // * is treated as a wildcard so everything before it would be removed.
+            Assert.Equal(4, await cache.RemoveByPrefixAsync("**:"));
+            Assert.False(await cache.ExistsAsync("**:test1"));
+            Assert.False(await cache.ExistsAsync("**:test2"));
+            Assert.False(await cache.ExistsAsync("*:test3"));
+            Assert.False(await cache.ExistsAsync("***:test4"));
+        }
+    }
+
+
+
+    public static IEnumerable<object[]> GetSpecialPrefixes()
+    {
+        return
+        [
+            ["space test:"],
+            ["tab\t:"],
+            ["newline\n:"],
+            ["unicode_测试:"],
+            ["emoji_🔥:"],
+            ["double::colon:"],
+            ["dots...:"],
+            ["dashes---:"],
+            ["underscores___:"],
+            ["mixed_sp3c!@l#:"],
+            ["percent%encoded:"],
+            ["json{\"key\":\"value\"}:"],
+            ["xml<tag>:</tag>"],
+            ["url://protocol:"],
+            ["query?param=value:"],
+            ["fragment#anchor:"],
+            ["ampersand&and:"],
+            ["equals=sign:"],
+            ["semicolon;sep:"],
+            ["comma,sep:"],
+            ["quotes\"single':"],
+            ["backtick`:"],
+            ["tilde~:"],
+            ["exclamation!:"],
+            ["at@symbol:"],
+            ["hash#tag:"],
+            ["dollar$sign:"],
+            ["caret^symbol:"],
+            ["ampersand&symbol:"],
+            ["asterisk*symbol:"],
+            ["parentheses():"],
+            ["minus-dash:"],
+            ["plus+sign:"],
+            ["equals=symbol:"],
+            ["brackets[]:"],
+            ["braces{}:"],
+            ["backslash\\:"],
+            ["pipe|symbol:"],
+            ["less<than:"],
+            ["greater>than:"],
+            ["question?mark:"],
+            ["forwardslash/:"],
+            ["period.dot:"]
+        ];
+    }
+
+    public virtual async Task CanRemoveByPrefixWithSpecialCharactersAsync(string specialPrefix)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync($"{specialPrefix}test1", 1);
+            await cache.SetAsync($"{specialPrefix}test2", 2);
+            await cache.SetAsync($"other{specialPrefix}test", 3);
+
+            int removed = await cache.RemoveByPrefixAsync(specialPrefix);
+            Assert.Equal(2, removed);
+            Assert.False(await cache.ExistsAsync($"{specialPrefix}test1"));
+            Assert.False(await cache.ExistsAsync($"{specialPrefix}test2"));
+            Assert.True(await cache.ExistsAsync($"other{specialPrefix}test"));
+        }
+    }
+
+    public virtual async Task CanRemoveByPrefixWithNullAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("test", 1);
+
+            // Null prefix should remove all keys (equivalent to empty prefix)
+            int removed = await cache.RemoveByPrefixAsync(null);
+            Assert.Equal(1, removed);
+            Assert.False(await cache.ExistsAsync("test"));
+        }
+    }
+
+            public virtual async Task CanRemoveByPrefixWithEmptyStringAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("test", 1);
+
+            // Empty prefix should remove all keys
+            int removed = await cache.RemoveByPrefixAsync("");
+            Assert.Equal(1, removed);
+            Assert.False(await cache.ExistsAsync("test"));
+        }
+    }
+
+        public static IEnumerable<object[]> GetWhitespaceOnlyPrefixes()
+    {
+        return
+        [
+            ["   "],
+            ["\t"]
+        ];
+    }
+
+    public virtual async Task CanRemoveByPrefixWithWhitespaceAsync(string whitespacePrefix)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Set up test data - one other key to verify it remains
+            await cache.SetAsync("other:test", 1);
+
+            // Create keys that actually match the whitespace prefix
+            await cache.SetAsync($"{whitespacePrefix}match1", 10);
+            await cache.SetAsync($"{whitespacePrefix}match2", 20);
+
+            // Whitespace prefixes are treated as a valid wildcard prefix and everything is removed.
+            int removed = await cache.RemoveByPrefixAsync(whitespacePrefix);
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match1"));
+            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match2"));
+            Assert.False(await cache.ExistsAsync("other:test"));
+        }
+    }
+
+    public static IEnumerable<object[]> GetLineEndingPrefixes()
+    {
+        return
+        [
+            ["\n"],
+            ["\r"],
+            ["\r\n"]
+        ];
+    }
+
+    public virtual async Task CanRemoveByPrefixWithLineEndingsAsync(string lineEndingPrefix)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Set up test data - one other key to verify it remains
+            await cache.SetAsync("other:test", 1);
+
+            // Create keys that actually match the line ending prefix
+            await cache.SetAsync($"{lineEndingPrefix}match1", 10);
+            await cache.SetAsync($"{lineEndingPrefix}match2", 20);
+
+            // Line ending prefixes are treated as a valid wildcard prefix.
+            int removed = await cache.RemoveByPrefixAsync(lineEndingPrefix);
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match1"));
+            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match2"));
+            Assert.False(await cache.ExistsAsync("other:test"));
         }
     }
 
     public virtual async Task CanRemoveByPrefixWithScopedCachesAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -518,7 +813,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count)
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -540,7 +835,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanSetAndGetObjectAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -568,7 +863,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanSetExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -594,7 +889,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanSetMinMaxExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -666,7 +961,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanIncrementAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -690,7 +985,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanIncrementAndExpireAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -710,10 +1005,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SetAllShouldExpireAsync()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var expiry = TimeSpan.FromMilliseconds(50);
+            await cache.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
+
+            // Add 10ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
+            await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(10)));
+
+            Assert.False(await cache.ExistsAsync("test"));
+        }
+    }
+
     public virtual async Task CanReplaceIfEqual()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -739,7 +1052,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanRemoveIfEqual()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -762,7 +1075,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanRoundTripLargeNumbersAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -791,7 +1104,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanGetAndSetDateTimeAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -857,7 +1170,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -892,7 +1205,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageListsAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -954,7 +1267,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageListsWithNullItemsAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -984,7 +1297,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageStringListsAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1006,7 +1319,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageListPagingAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1059,7 +1372,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageGetListExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1085,7 +1398,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageListAddExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1123,7 +1436,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task CanManageListRemoveExpirationAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1150,7 +1463,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task MeasureThroughputAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1175,7 +1488,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task MeasureSerializerSimpleThroughputAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -1204,7 +1517,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     public virtual async Task MeasureSerializerComplexThroughputAsync()
     {
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)

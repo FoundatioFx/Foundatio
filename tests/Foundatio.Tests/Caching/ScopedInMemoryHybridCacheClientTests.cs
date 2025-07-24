@@ -1,19 +1,17 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Messaging;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
-public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
+public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
 {
-    public InMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public ScopedInMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError);
+        return new ScopedCacheClient(new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError), "scoped");
     }
 
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
@@ -285,7 +283,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     {
         return base.MeasureSerializerComplexThroughputAsync();
     }
-
+    
     [Fact]
     public override Task CanInvalidateLocalCacheViaRemoveAllAsync()
     {
@@ -314,33 +312,5 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task WillWorkWithSets()
     {
         return base.WillWorkWithSets();
-    }
-}
-
-public class InMemoryHybridCacheClient : HybridCacheClient
-{
-    public InMemoryHybridCacheClient(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory, bool shouldThrowOnSerializationError)
-        : base(cacheClient, messageBus, new InMemoryCacheClientOptions
-        {
-            CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
-        }, loggerFactory)
-    {
-    }
-
-    public InMemoryHybridCacheClient(IMessageBus messageBus, ILoggerFactory loggerFactory, bool shouldThrowOnSerializationError)
-        : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).ShouldThrowOnSerializationError(shouldThrowOnSerializationError)), messageBus, new InMemoryCacheClientOptions
-        {
-            CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
-        }, loggerFactory)
-    {
-    }
-
-    public override void Dispose()
-    {
-        base.Dispose();
-        _distributedCache.Dispose();
-        _messageBus.Dispose();
     }
 }
