@@ -72,7 +72,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// </summary>
     /// <param name="policyProvider"></param>
     /// <returns></returns>
-    public FoundatioBuilder AddResilience(IResiliencePolicyProvider policyProvider) {
+    public FoundatioBuilder AddResilience(IResiliencePolicyProvider policyProvider)
+    {
         _services.AddSingleton(policyProvider);
         return this;
     }
@@ -82,7 +83,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// </summary>
     /// <param name="factory"></param>
     /// <returns></returns>
-    public FoundatioBuilder AddResilience(Func<IServiceProvider, IResiliencePolicyProvider> factory) {
+    public FoundatioBuilder AddResilience(Func<IServiceProvider, IResiliencePolicyProvider> factory)
+    {
         _services.AddSingleton(factory);
         return this;
     }
@@ -92,7 +94,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// </summary>
     /// <param name="builder"></param>
     /// <returns></returns>
-    public FoundatioBuilder AddResilience(Action<ResiliencePolicyProviderBuilder> builder = null) {
+    public FoundatioBuilder AddResilience(Action<ResiliencePolicyProviderBuilder> builder = null)
+    {
         _services.AddSingleton<IResiliencePolicyProvider>(sp =>
         {
             var provider = new ResiliencePolicyProviderBuilder(sp.GetService<TimeProvider>(), sp.GetService<ILoggerFactory>());
@@ -109,7 +112,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// <param name="textSerializerFactory">The serializer to use.</param>
     /// <param name="serializerFactory">The serializer to use. Defaults to the ITextSerializer instance</param>
     /// <returns></returns>
-    public FoundatioBuilder AddSerializer(Func<IServiceProvider, ITextSerializer> textSerializerFactory, Func<IServiceProvider, ISerializer> serializerFactory = null) {
+    public FoundatioBuilder AddSerializer(Func<IServiceProvider, ITextSerializer> textSerializerFactory, Func<IServiceProvider, ISerializer> serializerFactory = null)
+    {
         _services.ReplaceSingleton(textSerializerFactory);
         _services.ReplaceSingleton(serializerFactory ?? (sp => sp.GetRequiredService<ITextSerializer>()));
         return this;
@@ -121,7 +125,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// <param name="textSerializer">The serializer to use.</param>
     /// <param name="serializer">The serializer to use. Defaults to the ITextSerializer instance</param>
     /// <returns></returns>
-    public FoundatioBuilder AddSerializer(ITextSerializer textSerializer, ISerializer serializer = null) {
+    public FoundatioBuilder AddSerializer(ITextSerializer textSerializer, ISerializer serializer = null)
+    {
         _services.ReplaceSingleton(_ => textSerializer);
 
         if (serializer != null)

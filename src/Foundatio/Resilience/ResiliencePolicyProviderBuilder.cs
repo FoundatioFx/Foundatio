@@ -6,7 +6,8 @@ namespace Foundatio.Resilience;
 /// <summary>
 /// A builder class for configuring and constructing a <see cref="ResiliencePolicyProvider"/> with custom and default resilience policies.
 /// </summary>
-public class ResiliencePolicyProviderBuilder {
+public class ResiliencePolicyProviderBuilder
+{
     private readonly ResiliencePolicyProvider _provider;
 
     /// <summary>

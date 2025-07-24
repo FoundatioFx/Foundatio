@@ -72,7 +72,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             return _localCache.RemoveAllAsync();
         }
 
-        if (message.Keys != null && message.Keys.Length > 0)
+        if (message.Keys is { Length: > 0 })
         {
             var tasks = new List<Task>(message.Keys.Length);
             var keysToRemove = new List<string>(message.Keys.Length);

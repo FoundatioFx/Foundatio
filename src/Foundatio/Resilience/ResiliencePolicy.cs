@@ -100,7 +100,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var timeoutToken = CancellationToken.None;
         if (Timeout > TimeSpan.Zero)
         {
-            timeoutToken =  new CancellationTokenSource(Timeout).Token;
+            timeoutToken = new CancellationTokenSource(Timeout).Token;
             linkedCancellationToken = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken).Token;
         }
 
