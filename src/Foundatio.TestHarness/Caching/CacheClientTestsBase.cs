@@ -546,16 +546,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("*:test3", 3);
             await cache.SetAsync("***:test4", 4);
 
-            // * is treated as a wildcard so everything before it would be removed.
-            Assert.Equal(4, await cache.RemoveByPrefixAsync("**:"));
+            Assert.Equal(2, await cache.RemoveByPrefixAsync("**:"));
             Assert.False(await cache.ExistsAsync("**:test1"));
             Assert.False(await cache.ExistsAsync("**:test2"));
-            Assert.False(await cache.ExistsAsync("*:test3"));
-            Assert.False(await cache.ExistsAsync("***:test4"));
+            Assert.True(await cache.ExistsAsync("*:test3"));
+            Assert.True(await cache.ExistsAsync("***:test4"));
         }
     }
-
-
 
     public static IEnumerable<object[]> GetSpecialPrefixes()
     {

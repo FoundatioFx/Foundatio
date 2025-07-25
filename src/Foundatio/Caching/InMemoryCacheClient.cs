@@ -191,7 +191,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         try
         {
-            var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.EndsWith("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
+            string prefixWithoutTrailingWildcard = normalizedPrefix.EndsWith("*") ? normalizedPrefix.Substring(0, normalizedPrefix.Length - 1) : normalizedPrefix;
+            var regex = new Regex(String.Concat("^", Regex.Escape(prefixWithoutTrailingWildcard), ".*?$"), RegexOptions.Singleline);
             foreach (string key in _memory.Keys.ToList())
                 if (regex.IsMatch(key))
                     keysToRemove.Add(key);
