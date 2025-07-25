@@ -897,10 +897,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             var timeProvider = new FakeTimeProvider();
-            var now = DateTime.UtcNow;
-            timeProvider.SetUtcNow(now);
+            var utcNow = DateTime.UtcNow;
+            timeProvider.SetUtcNow(utcNow);
 
-            var expires = DateTime.MaxValue - now.AddDays(1);
+            var expires = DateTime.MaxValue - utcNow.AddDays(1);
             Assert.True(await cache.SetAsync("test1", 1, expires));
             Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
             var actualExpiration = await cache.GetExpirationAsync("test1");
@@ -918,7 +918,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.NotNull(actualExpiration);
 
             // Really high expiration value.
-            Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - now.AddDays(-1)));
+            Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - utcNow.AddDays(-1)));
             Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
             actualExpiration = await cache.GetExpirationAsync("test4");
             Assert.NotNull(actualExpiration);
@@ -928,11 +928,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Null(await cache.GetExpirationAsync("test5"));
 
             // Expire in an hour.
-            var expiration = now.AddHours(1);
+            var expiration = utcNow.AddHours(1);
             await cache.SetExpirationAsync("test5", expiration);
             actualExpiration = await cache.GetExpirationAsync("test5");
             Assert.NotNull(actualExpiration);
-            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - now);
+            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - utcNow);
 
             // Change expiration to MaxValue.
             await cache.SetExpirationAsync("test5", DateTime.MaxValue);
@@ -952,7 +952,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             }, DateTime.MinValue));
 
             // Expire time right now
-            Assert.False(await cache.SetAsync("test9", 1, now));
+            Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
             Assert.Null(await cache.GetExpirationAsync("test9"));
         }
