@@ -416,7 +416,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-        public virtual async Task CanRemoveByPrefixAsync()
+    public virtual async Task CanRemoveByPrefixAsync()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -648,7 +648,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-            public virtual async Task CanRemoveByPrefixWithEmptyStringAsync()
+    public virtual async Task CanRemoveByPrefixWithEmptyStringAsync()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -667,7 +667,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-        public static IEnumerable<object[]> GetWhitespaceOnlyPrefixes()
+    public static IEnumerable<object[]> GetWhitespaceOnlyPrefixes()
     {
         return
         [

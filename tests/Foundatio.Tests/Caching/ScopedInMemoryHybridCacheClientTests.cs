@@ -283,7 +283,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
     {
         return base.MeasureSerializerComplexThroughputAsync();
     }
-    
+
     [Fact]
     public override Task CanInvalidateLocalCacheViaRemoveAllAsync()
     {
