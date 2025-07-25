@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Microsoft.Extensions.Logging;
@@ -95,6 +94,59 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.CanRemoveByPrefixAsync();
     }
 
+    [Theory]
+    [MemberData(nameof(GetRegexSpecialCharacters))]
+    public override Task CanRemoveByPrefixWithRegexCharactersAsync(string specialChar)
+    {
+        return base.CanRemoveByPrefixWithRegexCharactersAsync(specialChar);
+    }
+
+    [Theory]
+    [MemberData(nameof(GetWildcardPatterns))]
+    public override Task CanRemoveByPrefixWithWildcardPatternsAsync(string pattern)
+    {
+        return base.CanRemoveByPrefixWithWildcardPatternsAsync(pattern);
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithDoubleAsteriskAsync()
+    {
+        return base.CanRemoveByPrefixWithDoubleAsteriskAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(GetSpecialPrefixes))]
+    public override Task CanRemoveByPrefixWithSpecialCharactersAsync(string specialPrefix)
+    {
+        return base.CanRemoveByPrefixWithSpecialCharactersAsync(specialPrefix);
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithNullAsync()
+    {
+        return base.CanRemoveByPrefixWithNullAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithEmptyStringAsync()
+    {
+        return base.CanRemoveByPrefixWithEmptyStringAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(GetWhitespaceOnlyPrefixes))]
+    public override Task CanRemoveByPrefixWithWhitespaceAsync(string whitespacePrefix)
+    {
+        return base.CanRemoveByPrefixWithWhitespaceAsync(whitespacePrefix);
+    }
+
+    [Theory]
+    [MemberData(nameof(GetLineEndingPrefixes))]
+    public override Task CanRemoveByPrefixWithLineEndingsAsync(string lineEndingPrefix)
+    {
+        return base.CanRemoveByPrefixWithLineEndingsAsync(lineEndingPrefix);
+    }
+
     [Fact]
     public override Task CanRemoveByPrefixWithScopedCachesAsync()
     {
@@ -131,6 +183,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task CanIncrementAndExpireAsync()
     {
         return base.CanIncrementAndExpireAsync();
+    }
+
+    [Fact]
+    public override Task SetAllShouldExpireAsync()
+    {
+        return base.SetAllShouldExpireAsync();
     }
 
     [Fact]
@@ -238,10 +296,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 for (int i = 0; i < cache.MaxItems; i++)
                     await cache.SetAsync("test" + i, i);
 
-                _logger.LogTrace(String.Join(",", cache.Keys));
+                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
                 await cache.SetAsync("next", 1);
-                _logger.LogTrace(String.Join(",", cache.Keys));
+                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
                 Assert.Equal(10, cache.Count);
                 Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                 Assert.Equal(1, cache.Misses);
@@ -249,26 +307,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 Assert.NotNull(await cache.GetAsync<int?>("test1"));
                 Assert.Equal(1, cache.Hits);
                 await cache.SetAsync("next2", 2);
-                _logger.LogTrace(String.Join(",", cache.Keys));
+                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
                 Assert.False((await cache.GetAsync<int>("test2")).HasValue);
                 Assert.Equal(2, cache.Misses);
                 Assert.True((await cache.GetAsync<int>("test1")).HasValue);
                 Assert.Equal(2, cache.Misses);
             }
         }
-    }
-
-    [Fact]
-    public async Task SetAllShouldExpire()
-    {
-        var client = GetCacheClient();
-
-        var expiry = TimeSpan.FromMilliseconds(50);
-        await client.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
-
-        // Add 1ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
-        await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(10)));
-
-        Assert.False(await client.ExistsAsync("test"));
     }
 }

@@ -283,8 +283,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected virtual async Task OnCompletedAsync(IQueueEntry<T> entry)
     {
-        var now = _timeProvider.GetUtcNow();
-        LastDequeueActivity = now;
+        var utcNow = _timeProvider.GetUtcNow();
+        LastDequeueActivity = utcNow;
 
         var tags = GetQueueEntryTags(entry);
         _completedCounter.Add(1, tags);
@@ -294,14 +294,14 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         {
             if (metadata.EnqueuedTimeUtc > DateTime.MinValue)
             {
-                metadata.TotalTime = now.Subtract(metadata.EnqueuedTimeUtc);
+                metadata.TotalTime = utcNow.Subtract(metadata.EnqueuedTimeUtc);
                 _totalTimeHistogram.Record((int)metadata.TotalTime.TotalMilliseconds, tags);
                 RecordSubHistogram(entry.Value, "totaltime", (int)metadata.TotalTime.TotalMilliseconds, tags);
             }
 
             if (metadata.DequeuedTimeUtc > DateTime.MinValue)
             {
-                metadata.ProcessingTime = now.Subtract(metadata.DequeuedTimeUtc);
+                metadata.ProcessingTime = utcNow.Subtract(metadata.DequeuedTimeUtc);
                 _processTimeHistogram.Record((int)metadata.ProcessingTime.TotalMilliseconds, tags);
                 RecordSubHistogram(entry.Value, "processtime", (int)metadata.ProcessingTime.TotalMilliseconds, tags);
             }
