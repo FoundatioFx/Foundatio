@@ -724,4 +724,33 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             // Empty using statement to ensure Dispose is called
         }
     }
+
+    public virtual async Task CanHandlePoisonedMessageAsync()
+    {
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        long handlerInvocations = 0;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
+                throw new Exception("Poisoned message");
+            });
+
+            await messageBus.PublishAsync(new SimpleMessageA());
+            _logger.LogTrace("Published one...");
+
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            Assert.InRange(handlerInvocations, 1, 5);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
 }

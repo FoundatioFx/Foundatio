@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Xunit;
@@ -134,6 +134,12 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     public override void CanDisposeWithNoSubscribersOrPublishers()
     {
         base.CanDisposeWithNoSubscribersOrPublishers();
+    }
+
+    [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        return base.CanHandlePoisonedMessageAsync();
     }
 
     [Fact]
