@@ -123,13 +123,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             Type = typeof(T),
             Action = (message, token) =>
             {
-                if (message is not T)
-                {
-                    _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
-                    return Task.CompletedTask;
-                }
+                if (message is T typedMessage)
+                    return handler(typedMessage, cancellationToken);
 
-                return handler((T)message, cancellationToken);
+                _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
+                return Task.CompletedTask;
             }
         };
 
@@ -192,7 +190,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected virtual byte[] SerializeMessageBody(string messageType, object body)
     {
         if (body == null)
-            return Array.Empty<byte>();
+            return [];
 
         return _serializer.SerializeToBytes(body);
     }
@@ -258,7 +256,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                            .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
                            .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId))))
                 {
-
                     if (subscriber.Type == typeof(IMessage))
                     {
                         await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
@@ -285,7 +282,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
-
             throw;
         }
 
@@ -298,8 +294,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         if (activity is null)
             return null;
 
-        if (message.Properties != null && message.Properties.TryGetValue("TraceState", out var traceState))
-            activity.TraceStateString = traceState.ToString();
+        if (message.Properties != null && message.Properties.TryGetValue("TraceState", out string traceState))
+            activity.TraceStateString = traceState;
 
         activity.DisplayName = $"Message: {message.ClrType?.Name ?? message.Type}";
 
