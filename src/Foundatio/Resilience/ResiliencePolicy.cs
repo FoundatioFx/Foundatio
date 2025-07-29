@@ -92,8 +92,6 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
-        cancellationToken.ThrowIfCancellationRequested();
-
         int attempts = 1;
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
