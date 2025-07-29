@@ -35,7 +35,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         };
     }
 
-    public virtual async Task WillUseLocalCache()
+    protected virtual async Task WillUseLocalCache()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -65,7 +65,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(1, secondCache.LocalCacheHits);
     }
 
-    public virtual async Task WillExpireRemoteItems()
+    protected virtual async Task WillExpireRemoteItems()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -112,7 +112,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         }
     }
 
-    public virtual async Task WillWorkWithSets()
+    protected virtual async Task WillWorkWithSets()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -154,7 +154,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, secondCache.LocalCache.Count);
     }
 
-    public virtual async Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
+    protected virtual async Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
