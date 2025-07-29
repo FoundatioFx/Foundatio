@@ -212,12 +212,12 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await _policy.ExecuteAsync(DoStuff, cts.Token);
+            await _policy.ExecuteAsync(() => DoBoom(), cts.Token);
         });
 
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await _policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
+            await _policy.ExecuteAsync(async () => await DoBoom(), cts.Token);
         });
     }
 
