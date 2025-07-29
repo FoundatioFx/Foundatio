@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -158,8 +158,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         const int batchSize = 250;
         bool isCluster = _options.ConnectionMultiplexer.IsCluster();
-        string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
-        string pattern = normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*";
 
         long deleted = 0;
         foreach (var endpoint in endpoints)
@@ -170,7 +168,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
             await foreach (var keys in server.KeysAsync(
                                database: Database.Database,
-                               pattern: pattern,
+                               pattern: $"{RedisPattern.Escape(prefix)}*",
                                pageSize: batchSize
                            ).BatchAsync(batchSize).ConfigureAwait(false))
             {
@@ -248,6 +246,9 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
         var redisKeys = keys.Distinct().Select(k => (RedisKey)k).ToArray();
         var result = new Dictionary<string, CacheValue<T>>(redisKeys.Length);
         if (redisKeys.Length == 0)
