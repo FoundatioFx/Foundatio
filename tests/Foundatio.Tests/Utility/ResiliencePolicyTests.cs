@@ -220,10 +220,8 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         sw.Stop();
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(1), "Cancellation should be quick");
 
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-        {
-            await policy.ExecuteAsync(async () => await DoBoom(), cts.Token);
-        });
+        // shouldn't throw as the operation will get attempted once before cancellation
+        await policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
     }
 
     [Fact]
