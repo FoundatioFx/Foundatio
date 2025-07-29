@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -30,6 +30,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> RemoveAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(false);
@@ -37,6 +40,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(false);
@@ -58,6 +64,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _reads);
 
         return Task.FromResult(CacheValue<T>.NoValue);
@@ -65,6 +74,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
         Interlocked.Increment(ref _reads);
 
         return Task.FromResult<IDictionary<string, CacheValue<T>>>(keys.ToDictionary(k => k, k => CacheValue<T>.NoValue));
@@ -72,6 +84,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(true);
@@ -79,6 +94,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(true);
@@ -93,6 +111,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(true);
@@ -100,6 +121,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(true);
@@ -107,6 +131,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(amount);
@@ -114,6 +141,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(amount);
@@ -121,6 +151,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<bool> ExistsAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _reads);
 
         return Task.FromResult(false);
@@ -128,6 +161,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _reads);
 
         return Task.FromResult<TimeSpan?>(null);
@@ -135,6 +171,9 @@ public class NullCacheClient : ICacheClient
 
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(0);
@@ -142,6 +181,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(value);
@@ -149,6 +191,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(value);
@@ -156,6 +201,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(value);
@@ -163,6 +211,9 @@ public class NullCacheClient : ICacheClient
 
     public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(value);
@@ -170,24 +221,44 @@ public class NullCacheClient : ICacheClient
 
     public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (values == null)
+            throw new ArgumentNullException(nameof(values));
+
         Interlocked.Increment(ref _writes);
 
-        return Task.FromResult(default(long));
+        return Task.FromResult(0L);
     }
 
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (values == null)
+            throw new ArgumentNullException(nameof(values));
+
         Interlocked.Increment(ref _writes);
 
-        return Task.FromResult(default(long));
+        return Task.FromResult(0L);
     }
 
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
         Interlocked.Increment(ref _reads);
 
         return Task.FromResult(CacheValue<ICollection<T>>.NoValue);
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

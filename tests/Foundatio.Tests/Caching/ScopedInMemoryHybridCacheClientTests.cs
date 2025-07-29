@@ -1,19 +1,22 @@
-using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
-public class InMemoryCacheClientTests : CacheClientTestsBase
+public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
 {
-    public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public ScopedInMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
+        return new ScopedCacheClient(new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError), "scoped");
+    }
+
+    protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
+    {
+        return new InMemoryHybridCacheClient(_distributedCache, _messageBus, Log, shouldThrowOnSerializationError);
     }
 
     [Fact]
@@ -282,37 +285,32 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task CanSetMaxItems()
+    public override Task CanInvalidateLocalCacheViaRemoveAllAsync()
     {
-        // run in a tight loop so that the code is warmed up and we can catch timing issues
-        for (int x = 0; x < 5; x++)
-        {
-            var cache = new InMemoryCacheClient(o => o.MaxItems(10).CloneValues(true));
+        return base.CanInvalidateLocalCacheViaRemoveAllAsync();
+    }
 
-            using (cache)
-            {
-                await cache.RemoveAllAsync();
+    [Fact]
+    protected override Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
+    {
+        return base.CanInvalidateLocalCacheViaRemoveByPrefixAsync();
+    }
 
-                for (int i = 0; i < cache.MaxItems; i++)
-                    await cache.SetAsync("test" + i, i);
+    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    protected override Task WillUseLocalCache()
+    {
+        return base.WillUseLocalCache();
+    }
 
-                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
-                Assert.Equal(10, cache.Count);
-                await cache.SetAsync("next", 1);
-                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
-                Assert.Equal(10, cache.Count);
-                Assert.False((await cache.GetAsync<int>("test0")).HasValue);
-                Assert.Equal(1, cache.Misses);
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50)); // keep the last access ticks from being the same for all items
-                Assert.NotNull(await cache.GetAsync<int?>("test1"));
-                Assert.Equal(1, cache.Hits);
-                await cache.SetAsync("next2", 2);
-                _logger.LogTrace("Keys: {Keys}", String.Join(",", cache.Keys));
-                Assert.False((await cache.GetAsync<int>("test2")).HasValue);
-                Assert.Equal(2, cache.Misses);
-                Assert.True((await cache.GetAsync<int>("test1")).HasValue);
-                Assert.Equal(2, cache.Misses);
-            }
-        }
+    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    protected override Task WillExpireRemoteItems()
+    {
+        return base.WillExpireRemoteItems();
+    }
+
+    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    protected override Task WillWorkWithSets()
+    {
+        return base.WillWorkWithSets();
     }
 }

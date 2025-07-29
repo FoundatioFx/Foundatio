@@ -6,8 +6,8 @@ internal static class DateTimeExtensions
 {
     public static DateTime GetUtcNowDateTime(this TimeProvider timeProvider, bool includeMilliseconds = true)
     {
-        var now = timeProvider.GetUtcNow();
-        return includeMilliseconds ? now.UtcDateTime : now.UtcDateTime.AddTicks(-(now.UtcDateTime.Ticks % TimeSpan.TicksPerSecond));
+        var utcNow = timeProvider.GetUtcNow();
+        return includeMilliseconds ? utcNow.UtcDateTime : utcNow.UtcDateTime.AddTicks(-(utcNow.UtcDateTime.Ticks % TimeSpan.TicksPerSecond));
     }
 
     public static DateTime Floor(this DateTime date, TimeSpan interval)

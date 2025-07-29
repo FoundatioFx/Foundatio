@@ -200,16 +200,16 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
         if (!_breakStartTime.HasValue)
             return false;
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        return now.Subtract(_breakStartTime.Value) >= _currentBreakDuration;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        return utcNow.Subtract(_breakStartTime.Value) >= _currentBreakDuration;
     }
 
     private void CheckPeriodStart()
     {
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-        _periodStartTime ??= now;
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        _periodStartTime ??= utcNow;
 
-        if (now.Subtract(_periodStartTime.Value) < SamplingDuration)
+        if (utcNow.Subtract(_periodStartTime.Value) < SamplingDuration)
             return;
 
         ResetPeriod();

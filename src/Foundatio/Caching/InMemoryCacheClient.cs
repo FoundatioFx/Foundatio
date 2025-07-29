@@ -183,18 +183,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<int> RemoveByPrefixAsync(string prefix)
     {
-        var keysToRemove = new List<string>();
-        string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
-        var regex = new Regex(String.Concat("^", Regex.Escape(normalizedPrefix.Contains("*") ? normalizedPrefix : $"{normalizedPrefix}*"), "$").Replace("\\*", ".*?"));
+        if (String.IsNullOrEmpty(prefix))
+            return RemoveAllAsync();
+
+        var keys = _memory.Keys.ToList();
+        var keysToRemove = new List<string>(keys.Count);
+
         try
         {
-            foreach (string key in _memory.Keys.ToList())
+            var regex = new Regex(String.Concat("^", Regex.Escape(prefix), ".*?$"), RegexOptions.Singleline);
+            foreach (string key in keys)
                 if (regex.IsMatch(key))
                     keysToRemove.Add(key);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error trying to remove items from cache with this {Prefix} prefix", prefix);
+            _logger.LogError(ex, "Error removing items from cache prefix: {Prefix}", prefix);
+            throw new CacheException($"Error removing items from cache prefix: {prefix}", ex);
         }
 
         return RemoveAllAsync(keysToRemove);
@@ -280,8 +285,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        var map = new Dictionary<string, CacheValue<T>>();
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
 
+        var map = new Dictionary<string, CacheValue<T>>();
         foreach (string key in keys)
             map[key] = await GetAsync<T>(key);
 
