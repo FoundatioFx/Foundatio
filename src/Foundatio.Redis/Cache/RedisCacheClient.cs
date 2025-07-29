@@ -152,6 +152,9 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
+        if (String.IsNullOrEmpty(prefix))
+            return await RemoveAllAsync().AnyContext();
+
         var endpoints = _options.ConnectionMultiplexer.GetEndPoints();
         if (endpoints.Length == 0)
             return 0;
