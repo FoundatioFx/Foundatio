@@ -146,7 +146,6 @@ public class AzureStorageQueueTests : QueueTestBase
     [Fact(Skip = "TODO: Retry delays are currently not applied to abandoned items")]
     public override Task CanDelayRetryAsync()
     {
-        Log.DefaultMinimumLevel = LogLevel.Trace;
         return base.CanDelayRetryAsync();
     }
 
