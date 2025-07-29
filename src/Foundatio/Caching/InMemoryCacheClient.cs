@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -285,8 +285,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        var map = new Dictionary<string, CacheValue<T>>();
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
 
+        var map = new Dictionary<string, CacheValue<T>>();
         foreach (string key in keys)
             map[key] = await GetAsync<T>(key);
 

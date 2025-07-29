@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -107,6 +107,9 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
         var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetUnscopedCacheKeys(keys)).AnyContext();
         return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
     }
