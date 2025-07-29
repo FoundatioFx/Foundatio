@@ -1,4 +1,3 @@
-using System;
 using Foundatio.Redis.Utility;
 using Xunit;
 
@@ -94,7 +93,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("prefix\\suffix", result);
+        Assert.Equal("prefix\\\\suffix", result);
     }
 
     [Fact]
@@ -107,7 +106,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("prefix\\*suffix", result);
+        Assert.Equal("prefix\\\\\\*suffix", result);
     }
 
     [Fact]
@@ -120,7 +119,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("prefix\\?suffix", result);
+        Assert.Equal("prefix\\\\\\?suffix", result);
     }
 
     [Fact]
@@ -133,7 +132,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("prefix\\[abc\\]suffix", result);
+        Assert.Equal("prefix\\\\\\[abc\\\\\\]suffix", result);
     }
 
     [Fact]
@@ -159,7 +158,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("test\\*\\*\\?\\[abc\\]", result);
+        Assert.Equal("test\\\\\\*\\*\\?\\[abc\\]", result);
     }
 
     [Fact]
@@ -172,7 +171,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("test\\\\\\*", result);
+        Assert.Equal("test\\\\\\\\\\*", result);
     }
 
     [Fact]
@@ -185,7 +184,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("test\\", result);
+        Assert.Equal("test\\\\", result);
     }
 
     [Fact]
@@ -198,7 +197,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("test\\a", result);
+        Assert.Equal("test\\\\a", result);
     }
 
     [Fact]
@@ -237,7 +236,7 @@ public class RedisPatternTests
         string result = RedisPattern.Escape(input);
 
         // Assert
-        Assert.Equal("user:\\*:session\\[\\?\\]\\already\\*escaped", result);
+        Assert.Equal("user:\\*:session\\[\\?\\]\\\\already\\\\\\*escaped", result);
     }
 
     [Fact]
@@ -258,7 +257,7 @@ public class RedisPatternTests
     [InlineData("?", "\\?")]
     [InlineData("[", "\\[")]
     [InlineData("]", "\\]")]
-    [InlineData("\\", "\\")]
+    [InlineData("\\", "\\\\")]
     [InlineData("test", "test")]
     public void Escape_WithSingleCharacterInputs_HandlesCorrectly(string input, string expected)
     {
@@ -267,5 +266,18 @@ public class RedisPatternTests
 
         // Assert
         Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void Escape_WithBackslashFollowedByMetaChar_HandlesCorrectly()
+    {
+        // Arrange
+        string input = "\\*";
+
+        // Act
+        string result = RedisPattern.Escape(input);
+
+        // Assert
+        Assert.Equal("\\\\\\*", result);
     }
 }

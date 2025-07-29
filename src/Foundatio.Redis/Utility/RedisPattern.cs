@@ -16,25 +16,12 @@ public static class RedisPattern
         if (String.IsNullOrEmpty(value))
             return value;
 
-        // First pass: count how many characters need escaping
+        // Fast scan to count how many characters need escaping
         int escapeCount = 0;
-        bool prevBackslash = false;
 
-        for (int i = 0; i < value.Length; i++)
+        foreach (char c in value)
         {
-            char c = value[i];
-
-            if (prevBackslash)
-            {
-                prevBackslash = false;
-                continue;
-            }
-
-            if (c == '\\')
-            {
-                prevBackslash = true;
-            }
-            else if (NeedsEscaping(c))
+            if (NeedsEscaping(c))
             {
                 escapeCount++;
             }
@@ -44,28 +31,14 @@ public static class RedisPattern
         if (escapeCount == 0)
             return value;
 
-        // Second pass: build escaped string with exact capacity
+        // Build escaped string with exact capacity to avoid reallocations
         var result = new StringBuilder(value.Length + escapeCount);
-        prevBackslash = false;
 
-        for (int i = 0; i < value.Length; i++)
+        foreach (char c in value)
         {
-            char c = value[i];
-
-            if (prevBackslash)
+            if (NeedsEscaping(c))
             {
-                result.Append(c);
-                prevBackslash = false;
-                continue;
-            }
-
-            if (c == '\\')
-            {
-                result.Append('\\');
-                prevBackslash = true;
-            }
-            else if (NeedsEscaping(c))
-            {
+                // Always escape meta-characters
                 result.Append('\\').Append(c);
             }
             else
@@ -79,6 +52,6 @@ public static class RedisPattern
 
     private static bool NeedsEscaping(char c)
     {
-        return c is '*' or '?' or '[' or ']';
+        return c is '*' or '?' or '[' or ']' or '\\';
     }
 }

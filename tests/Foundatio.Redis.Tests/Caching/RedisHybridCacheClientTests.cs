@@ -103,6 +103,59 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
         return base.CanRemoveByPrefixAsync();
     }
 
+    [Theory]
+    [MemberData(nameof(GetRegexSpecialCharacters))]
+    public override Task CanRemoveByPrefixWithRegexCharactersAsync(string specialChar)
+    {
+        return base.CanRemoveByPrefixWithRegexCharactersAsync(specialChar);
+    }
+
+    [Theory]
+    [MemberData(nameof(GetWildcardPatterns))]
+    public override Task CanRemoveByPrefixWithWildcardPatternsAsync(string pattern)
+    {
+        return base.CanRemoveByPrefixWithWildcardPatternsAsync(pattern);
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithDoubleAsteriskAsync()
+    {
+        return base.CanRemoveByPrefixWithDoubleAsteriskAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(GetSpecialPrefixes))]
+    public override Task CanRemoveByPrefixWithSpecialCharactersAsync(string specialPrefix)
+    {
+        return base.CanRemoveByPrefixWithSpecialCharactersAsync(specialPrefix);
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithNullAsync()
+    {
+        return base.CanRemoveByPrefixWithNullAsync();
+    }
+
+    [Fact]
+    public override Task CanRemoveByPrefixWithEmptyStringAsync()
+    {
+        return base.CanRemoveByPrefixWithEmptyStringAsync();
+    }
+
+    [Theory]
+    [MemberData(nameof(GetWhitespaceOnlyPrefixes))]
+    public override Task CanRemoveByPrefixWithWhitespaceAsync(string whitespacePrefix)
+    {
+        return base.CanRemoveByPrefixWithWhitespaceAsync(whitespacePrefix);
+    }
+
+    [Theory]
+    [MemberData(nameof(GetLineEndingPrefixes))]
+    public override Task CanRemoveByPrefixWithLineEndingsAsync(string lineEndingPrefix)
+    {
+        return base.CanRemoveByPrefixWithLineEndingsAsync(lineEndingPrefix);
+    }
+
     [Fact]
     public override Task CanRemoveByPrefixWithScopedCachesAsync()
     {
@@ -141,6 +194,12 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     public override Task CanIncrementAndExpireAsync()
     {
         return base.CanIncrementAndExpireAsync();
+    }
+
+    [Fact]
+    public override Task SetAllShouldExpireAsync()
+    {
+        return base.SetAllShouldExpireAsync();
     }
 
     [Fact]
@@ -231,6 +290,18 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     public override Task MeasureSerializerComplexThroughputAsync()
     {
         return base.MeasureSerializerComplexThroughputAsync();
+    }
+
+    [Fact]
+    public override Task CanInvalidateLocalCacheViaRemoveAllAsync()
+    {
+        return base.CanInvalidateLocalCacheViaRemoveAllAsync();
+    }
+
+    [Fact]
+    protected override Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
+    {
+        return base.CanInvalidateLocalCacheViaRemoveByPrefixAsync();
     }
 
     [Fact]
