@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -183,17 +183,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<int> RemoveByPrefixAsync(string prefix)
     {
-        string normalizedPrefix = String.IsNullOrWhiteSpace(prefix) ? "*" : prefix.Trim();
-        if (String.Equals(normalizedPrefix, "*"))
+        if (String.IsNullOrEmpty(prefix))
             return RemoveAllAsync();
 
-        var keysToRemove = new List<string>();
+        var keys = _memory.Keys.ToList();
+        var keysToRemove = new List<string>(keys.Count);
 
         try
         {
-            string prefixWithoutTrailingWildcard = normalizedPrefix.EndsWith("*") ? normalizedPrefix.Substring(0, normalizedPrefix.Length - 1) : normalizedPrefix;
-            var regex = new Regex(String.Concat("^", Regex.Escape(prefixWithoutTrailingWildcard), ".*?$"), RegexOptions.Singleline);
-            foreach (string key in _memory.Keys.ToList())
+            var regex = new Regex(String.Concat("^", Regex.Escape(prefix), ".*?$"), RegexOptions.Singleline);
+            foreach (string key in keys)
                 if (regex.IsMatch(key))
                     keysToRemove.Add(key);
         }

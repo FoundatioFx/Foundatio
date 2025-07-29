@@ -692,10 +692,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Whitespace prefixes are treated as a valid wildcard prefix and everything is removed.
             int removed = await cache.RemoveByPrefixAsync(whitespacePrefix);
-            Assert.Equal(3, removed);
+            Assert.Equal(2, removed);
             Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match1"));
             Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match2"));
-            Assert.False(await cache.ExistsAsync("other:test"));
+            Assert.True(await cache.ExistsAsync("other:test"));
         }
     }
 
@@ -728,10 +728,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Line ending prefixes are treated as a valid wildcard prefix.
             int removed = await cache.RemoveByPrefixAsync(lineEndingPrefix);
-            Assert.Equal(3, removed);
+            Assert.Equal(2, removed);
             Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match1"));
             Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match2"));
-            Assert.False(await cache.ExistsAsync("other:test"));
+            Assert.True(await cache.ExistsAsync("other:test"));
         }
     }
 
@@ -746,7 +746,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
             var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
 
-            const string cacheKey = "key";
+            const string cacheKey = "snowboard";
             await cache.SetAsync(cacheKey, 1);
             await scopedCache1.SetAsync(cacheKey, 1);
             Assert.Equal(1, (await cache.GetAsync<int>(cacheKey)).Value);
@@ -794,14 +794,23 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache1.SetAsync(cacheKey, 1);
 
             // Remove by *.
-            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync("*"));
+            Assert.Equal(0, await scopedCache1.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
+
+            Assert.Equal(0, await cache.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
+
+            // Remove by s.
+            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync("s"));
             Assert.True(await cache.ExistsAsync(cacheKey));
             Assert.False(await scopedCache1.ExistsAsync(cacheKey));
 
-            // Reset client values
+            // Add the scoped cache value back.
             await scopedCache1.SetAsync(cacheKey, 1);
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync("*"));
+            Assert.Equal(2, await cache.RemoveByPrefixAsync("s"));
             Assert.False(await cache.ExistsAsync(cacheKey));
             Assert.False(await scopedCache1.ExistsAsync(cacheKey));
         }
