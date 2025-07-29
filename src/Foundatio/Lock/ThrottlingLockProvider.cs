@@ -20,7 +20,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null, IResiliencePolicyProvider resiliencePolicyProvider = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
@@ -173,6 +173,6 @@ public class ThrottlingLockProviderFactory : IThrottlingLockProviderFactory
     public ILockProvider Create(int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null)
     {
         return new ThrottlingLockProvider(_cacheClient, maxHitsPerPeriod, throttlingPeriod, _timeProvider,
-            _loggerFactory, _resiliencePolicyProvider);
+            _resiliencePolicyProvider, _loggerFactory);
     }
 }

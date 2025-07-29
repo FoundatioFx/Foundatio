@@ -107,7 +107,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             });
         });
 
-        var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), null, Log);
+        var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), null, null, Log);
         var job = new SampleQueueJobWithLocking(queue, lockProvider, null, Log);
         await Task.Delay(10);
         _logger.LogInformation("Starting RunUntilEmptyAsync");
