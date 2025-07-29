@@ -458,17 +458,17 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             ["}"],
             ["("],
             [")"],
-            ["))"],  // Invalid regex - extra closing parentheses
-            ["(("],  // Invalid regex - extra opening parentheses
-            ["]]"],  // Invalid regex - extra closing brackets
-            ["[["],  // Invalid regex - extra opening brackets
+            ["))"], // Invalid regex - extra closing parentheses
+            ["(("], // Invalid regex - extra opening parentheses
+            ["]]"], // Invalid regex - extra closing brackets
+            ["[["], // Invalid regex - extra opening brackets
             ["(()"], // Invalid regex - unbalanced parentheses
             ["([)]"], // Invalid regex - incorrectly nested
             ["[{}]"], // Invalid regex - brackets with braces inside
-            ["{{}"],  // Invalid regex - unbalanced braces
-            ["+++"],  // Invalid regex - multiple plus operators
-            ["***"],  // Invalid regex - multiple asterisks
-            ["???"]   // Invalid regex - multiple question marks
+            ["{{}"], // Invalid regex - unbalanced braces
+            ["+++"], // Invalid regex - multiple plus operators
+            ["***"], // Invalid regex - multiple asterisks
+            ["???"] // Invalid regex - multiple question marks
         ];
     }
 

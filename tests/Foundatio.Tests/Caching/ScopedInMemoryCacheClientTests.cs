@@ -7,7 +7,9 @@ namespace Foundatio.Tests.Caching;
 
 public class ScopedInMemoryCacheClientTests : CacheClientTestsBase
 {
-    public ScopedInMemoryCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public ScopedInMemoryCacheClientTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {

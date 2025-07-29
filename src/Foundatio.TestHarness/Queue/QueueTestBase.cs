@@ -857,6 +857,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Data = "Hello"
             });
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
