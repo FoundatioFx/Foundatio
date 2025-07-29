@@ -145,6 +145,12 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
     public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
     {
         var muxer = SharedConnection.GetMuxer(Log);

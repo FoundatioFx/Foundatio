@@ -9,7 +9,7 @@ using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Caching;
 
-public class RedisHybridCacheClientTests : HybridCacheClientTests, IAsyncLifetime
+public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLifetime
 {
     public RedisHybridCacheClientTests(ITestOutputHelper output) : base(output)
     {
@@ -234,19 +234,19 @@ public class RedisHybridCacheClientTests : HybridCacheClientTests, IAsyncLifetim
     }
 
     [Fact]
-    public override Task WillUseLocalCache()
+    protected override Task WillUseLocalCache()
     {
         return base.WillUseLocalCache();
     }
 
     [Fact(Skip = "TODO: Look into this as the local cache client maintenance never schedules for expiration")]
-    public override Task WillExpireRemoteItems()
+    protected override Task WillExpireRemoteItems()
     {
         return base.WillExpireRemoteItems();
     }
 
     [Fact]
-    public override Task WillWorkWithSets()
+    protected override Task WillWorkWithSets()
     {
         return base.WillWorkWithSets();
     }

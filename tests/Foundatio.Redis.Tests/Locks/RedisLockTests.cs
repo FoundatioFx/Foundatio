@@ -26,7 +26,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 
     protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)
     {
-        return new ThrottlingLockProvider(_cache, maxHits, period, null, Log);
+        return new ThrottlingLockProvider(_cache, maxHits, period, null, null, Log);
     }
 
     protected override ILockProvider GetLockProvider()
