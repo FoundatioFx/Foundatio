@@ -106,6 +106,12 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     }
 
     [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
     public override Task CanSendMappedMessageAsync()
     {
         return base.CanSendMappedMessageAsync();
