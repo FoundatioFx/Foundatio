@@ -146,4 +146,10 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     {
         base.CanDisposeWithNoSubscribersOrPublishers();
     }
+
+    [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        return base.CanHandlePoisonedMessageAsync();
+    }
 }
