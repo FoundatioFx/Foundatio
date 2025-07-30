@@ -137,10 +137,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
 
             attempts++;
         } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
-
-        linkedCancellationToken.ThrowIfCancellationRequested();
-
-        throw new TaskCanceledException("Should not reach here");
+        
+        throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
     }
 
     public ResiliencePolicy Clone(int? maxAttempts = null, TimeSpan? timeout = null, TimeSpan? delay = null, Func<int, TimeSpan> getDelay = null)
