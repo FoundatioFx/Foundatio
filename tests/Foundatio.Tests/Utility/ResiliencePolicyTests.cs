@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -207,18 +208,20 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunWithRetriesAndCancellation()
     {
+        var policy = new ResiliencePolicyBuilder().WithLogger(_logger).WithMaxAttempts(5).WithDelay(TimeSpan.FromSeconds(60)).Build();
         var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
+        var sw = Stopwatch.StartNew();
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await _policy.ExecuteAsync(DoStuff, cts.Token);
+            await policy.ExecuteAsync(() => DoBoom(), cts.Token);
         });
+        sw.Stop();
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(1), "Cancellation should be quick");
 
-        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
-        {
-            await _policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
-        });
+        // shouldn't throw as the operation will get attempted once before cancellation
+        await policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
     }
 
     [Fact]
