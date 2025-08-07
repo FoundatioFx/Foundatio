@@ -17,6 +17,7 @@ namespace Foundatio.Caching;
 
 public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
+    private static readonly ConcurrentDictionary<Type, long> _typeSizeCache = new();
     private readonly ConcurrentDictionary<string, CacheEntry> _memory;
     private readonly bool _shouldClone;
     private readonly bool _shouldThrowOnSerializationErrors;
@@ -1248,7 +1249,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
             {
                 var underlyingType = Nullable.GetUnderlyingType(type);
-                return CalculateEstimatedSize(Activator.CreateInstance(underlyingType)) + 1; // Add 1 for hasValue flag
+                return GetTypeSize(underlyingType) + 1; // Add 1 for hasValue flag
             }
 
             // Handle collections
@@ -1272,12 +1273,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return size + itemSizeSum + (count * 8); // Collection overhead + items + reference overhead
             }
 
-            // For complex objects, use a rough estimate based on field count
-            var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-            var properties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
-            
-            // Basic object overhead + estimated field/property sizes
-            return 24 + ((fields.Length + properties.Length) * 8);
+            // For complex objects, use cached type size calculation
+            return GetTypeSize(type);
+        }
+
+        private static long GetTypeSize(Type type)
+        {
+            return _typeSizeCache.GetOrAdd(type, t =>
+            {
+                // For complex objects, use a rough estimate based on field count
+                var fields = t.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                var properties = t.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+                
+                // Basic object overhead + estimated field/property sizes
+                return 24 + ((fields.Length + properties.Length) * 8);
+            });
         }
     }
 }
