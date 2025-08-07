@@ -57,6 +57,59 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public int? MaxItems => _maxItems;
     public long? MaxMemorySize => _maxMemorySize;
     public long CurrentMemorySize => _currentMemorySize;
+
+    /// <summary>
+    /// Safely updates the current memory size, ensuring it never goes negative.
+    /// </summary>
+    private void UpdateMemorySize(long delta)
+    {
+        if (!_maxMemorySize.HasValue) return;
+        
+        if (delta < 0)
+        {
+            // For negative deltas (removals), ensure we don't go below zero
+            long currentValue, newValue;
+            do
+            {
+                currentValue = _currentMemorySize;
+                newValue = Math.Max(0, currentValue + delta);
+            } while (Interlocked.CompareExchange(ref _currentMemorySize, newValue, currentValue) != currentValue);
+        }
+        else
+        {
+            // For positive deltas (additions), simple add
+            Interlocked.Add(ref _currentMemorySize, delta);
+        }
+    }
+
+    /// <summary>
+    /// Recalculates the current memory size by summing all cache entries.
+    /// This provides an accurate count and can be used to correct any drift in incremental tracking.
+    /// </summary>
+    private long RecalculateMemorySize()
+    {
+        if (!_maxMemorySize.HasValue) return 0;
+        
+        long totalSize = 0;
+        foreach (var entry in _memory.Values)
+        {
+            totalSize += entry.EstimatedSize;
+        }
+        
+        Interlocked.Exchange(ref _currentMemorySize, totalSize);
+        return totalSize;
+    }
+
+    /// <summary>
+    /// Alternative approach: Updates memory size by recalculating from all entries.
+    /// This is more accurate but less performant (O(n) instead of O(1)).
+    /// Use this if you prefer accuracy over performance for smaller caches.
+    /// </summary>
+    private void UpdateMemorySizeBySummation()
+    {
+        if (!_maxMemorySize.HasValue) return;
+        RecalculateMemorySize();
+    }
     public long Calls => _writes + _hits + _misses;
     public long Writes => _writes;
     public long Reads => _hits + _misses;
@@ -137,8 +190,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
         
         bool removed = _memory.TryRemove(key, out var removedEntry);
-        if (removed && _maxMemorySize.HasValue && removedEntry != null)
-            Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+        if (removed && removedEntry != null)
+            UpdateMemorySize(-removedEntry.EstimatedSize);
         
         return Task.FromResult(removed);
     }
@@ -193,8 +246,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (_memory.TryRemove(key, out var removedEntry))
             {
                 removed++;
-                if (_maxMemorySize.HasValue && removedEntry != null)
-                    Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+                if (removedEntry != null)
+                    UpdateMemorySize(-removedEntry.EstimatedSize);
             }
         }
 
@@ -238,8 +291,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (_memory.TryRemove(key, out var removedEntry))
         {
             // Update memory size tracking
-            if (_maxMemorySize.HasValue)
-                Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+            UpdateMemorySize(-removedEntry.EstimatedSize);
 
             OnItemExpired(key, sendNotification);
             return 1;
@@ -264,8 +316,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     throw new Exception("Removed item was not expired");
 
                 // Update memory size tracking
-                if (_maxMemorySize.HasValue)
-                    Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+                UpdateMemorySize(-removedEntry.EstimatedSize);
 
                 _logger.LogDebug("Removing expired cache entry {Key}", key);
                 OnItemExpired(key, sendNotification);
@@ -777,7 +828,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 sizeDelta -= oldEntry.EstimatedSize;
             
             if (wasUpdated && sizeDelta != 0)
-                Interlocked.Add(ref _currentMemorySize, sizeDelta);
+                UpdateMemorySize(sizeDelta);
         }
 
         await StartMaintenanceAsync(ShouldCompact).AnyContext();
@@ -1079,8 +1130,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (_memory.TryRemove(oldest.Key, out var cacheEntry))
             {
                 // Update memory size tracking
-                if (_maxMemorySize.HasValue && cacheEntry != null)
-                    Interlocked.Add(ref _currentMemorySize, -cacheEntry.EstimatedSize);
+                if (cacheEntry != null)
+                    UpdateMemorySize(-cacheEntry.EstimatedSize);
                     
                 if (cacheEntry is { IsExpired: true })
                     expiredKey = oldest.Key;
