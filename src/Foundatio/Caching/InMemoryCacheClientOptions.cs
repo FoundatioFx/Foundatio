@@ -8,6 +8,11 @@ public class InMemoryCacheClientOptions : SharedOptions
     public int? MaxItems { get; set; } = 10000;
 
     /// <summary>
+    /// The maximum memory size in bytes that the cache can consume. If null, no memory limit is applied.
+    /// </summary>
+    public long? MaxMemorySize { get; set; }
+
+    /// <summary>
     /// Whether or not values should be cloned during get and set to make sure that any cache entry changes are isolated
     /// </summary>
     public bool CloneValues { get; set; } = false;
@@ -23,6 +28,12 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder MaxItems(int? maxItems)
     {
         Target.MaxItems = maxItems;
+        return this;
+    }
+
+    public InMemoryCacheClientOptionsBuilder MaxMemorySize(long? maxMemorySize)
+    {
+        Target.MaxMemorySize = maxMemorySize;
         return this;
     }
 

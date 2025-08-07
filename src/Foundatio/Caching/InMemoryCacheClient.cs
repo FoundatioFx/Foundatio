@@ -21,9 +21,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly bool _shouldClone;
     private readonly bool _shouldThrowOnSerializationErrors;
     private readonly int? _maxItems;
+    private readonly long? _maxMemorySize;
     private long _writes;
     private long _hits;
     private long _misses;
+    private long _currentMemorySize;
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly ILogger _logger;
@@ -39,6 +41,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _shouldClone = options.CloneValues;
         _shouldThrowOnSerializationErrors = options.ShouldThrowOnSerializationError;
         _maxItems = options.MaxItems;
+        _maxMemorySize = options.MaxMemorySize;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         _resiliencePolicyProvider = options.ResiliencePolicyProvider;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
@@ -51,6 +54,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public int Count => _memory.Count(i => !i.Value.IsExpired);
     public int? MaxItems => _maxItems;
+    public long? MaxMemorySize => _maxMemorySize;
+    public long CurrentMemorySize => _currentMemorySize;
     public long Calls => _writes + _hits + _misses;
     public long Writes => _writes;
     public long Reads => _hits + _misses;
@@ -64,7 +69,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public override string ToString()
     {
-        return $"Count: {Count} Calls: {Calls} Reads: {Reads} Writes: {Writes} Hits: {Hits} Misses: {Misses}";
+        var result = $"Count: {Count} Calls: {Calls} Reads: {Reads} Writes: {Writes} Hits: {Hits} Misses: {Misses}";
+        if (_maxMemorySize.HasValue)
+            result += $" Memory: {CurrentMemorySize:N0}/{MaxMemorySize:N0} bytes";
+        return result;
     }
 
     public void ResetStats()
@@ -126,7 +134,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
 
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        return Task.FromResult(_memory.TryRemove(key, out _));
+        
+        bool removed = _memory.TryRemove(key, out var removedEntry);
+        if (removed && _maxMemorySize.HasValue && removedEntry != null)
+            Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+        
+        return Task.FromResult(removed);
     }
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
@@ -164,6 +177,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             int count = _memory.Count;
             _memory.Clear();
+            if (_maxMemorySize.HasValue)
+                Interlocked.Exchange(ref _currentMemorySize, 0);
             return Task.FromResult(count);
         }
 
@@ -174,8 +189,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 continue;
 
             _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
-            if (_memory.TryRemove(key, out _))
+            if (_memory.TryRemove(key, out var removedEntry))
+            {
                 removed++;
+                if (_maxMemorySize.HasValue && removedEntry != null)
+                    Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+            }
         }
 
         return Task.FromResult(removed);
@@ -215,8 +234,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         _logger.LogTrace("Removing expired key: {Key}", key);
-        if (_memory.TryRemove(key, out _))
+        if (_memory.TryRemove(key, out var removedEntry))
         {
+            // Update memory size tracking
+            if (_maxMemorySize.HasValue)
+                Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
+
             OnItemExpired(key, sendNotification);
             return 1;
         }
@@ -238,6 +261,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 if (!removedEntry.IsExpired)
                     throw new Exception("Removed item was not expired");
+
+                // Update memory size tracking
+                if (_maxMemorySize.HasValue)
+                    Interlocked.Add(ref _currentMemorySize, -removedEntry.EstimatedSize);
 
                 _logger.LogDebug("Removing expired cache entry {Key}", key);
                 OnItemExpired(key, sendNotification);
@@ -706,6 +733,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         bool wasUpdated = true;
+        CacheEntry oldEntry = null;
+        
         if (addOnly)
         {
             _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
@@ -718,6 +747,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 {
                     _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
 
+                    oldEntry = existingEntry;
                     wasUpdated = true;
                     return entry;
                 }
@@ -730,8 +760,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else
         {
-            _memory.AddOrUpdate(key, entry, (_, _) => entry);
+            _memory.AddOrUpdate(key, entry, (_, existingEntry) => 
+            {
+                oldEntry = existingEntry;
+                return entry;
+            });
             _logger.LogTrace("Set cache key: {Key}", key);
+        }
+
+        // Update memory size tracking
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = entry.EstimatedSize;
+            if (oldEntry != null)
+                sizeDelta -= oldEntry.EstimatedSize;
+            
+            if (wasUpdated && sizeDelta != 0)
+                Interlocked.Add(ref _currentMemorySize, sizeDelta);
         }
 
         await StartMaintenanceAsync(ShouldCompact).AnyContext();
@@ -992,7 +1037,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    private bool ShouldCompact => _maxItems.HasValue && _memory.Count > _maxItems;
+    private bool ShouldCompact => (_maxItems.HasValue && _memory.Count > _maxItems) || (_maxMemorySize.HasValue && _currentMemorySize > _maxMemorySize);
 
     private async Task CompactAsync()
     {
@@ -1004,7 +1049,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         string expiredKey = null;
         using (await _lock.LockAsync().AnyContext())
         {
-            if (_memory.Count <= _maxItems)
+            // Check if we still need compaction after acquiring the lock
+            bool needsItemCompaction = _maxItems.HasValue && _memory.Count > _maxItems;
+            bool needsMemoryCompaction = _maxMemorySize.HasValue && _currentMemorySize > _maxMemorySize;
+            
+            if (!needsItemCompaction && !needsMemoryCompaction)
                 return;
 
             (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
@@ -1023,10 +1072,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (oldest.Key is null)
                 return;
 
-            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding max item count limit", oldest);
-            _memory.TryRemove(oldest.Key, out var cacheEntry);
-            if (cacheEntry is { IsExpired: true })
-                expiredKey = oldest.Key;
+            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})", 
+                oldest.Key, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
+            
+            if (_memory.TryRemove(oldest.Key, out var cacheEntry))
+            {
+                // Update memory size tracking
+                if (_maxMemorySize.HasValue && cacheEntry != null)
+                    Interlocked.Add(ref _currentMemorySize, -cacheEntry.EstimatedSize);
+                    
+                if (cacheEntry is { IsExpired: true })
+                    expiredKey = oldest.Key;
+            }
         }
 
         if (expiredKey != null)
@@ -1081,6 +1138,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly TimeProvider _timeProvider;
+        private long? _estimatedSize;
 #if DEBUG
         private long _usageCount;
 #endif
@@ -1100,6 +1158,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
+        internal long EstimatedSize => _estimatedSize ??= CalculateEstimatedSize(_cacheValue);
 #if DEBUG
         internal long UsageCount => _usageCount;
 #endif
@@ -1117,6 +1176,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             set
             {
                 _cacheValue = _shouldClone ? value.DeepClone() : value;
+                _estimatedSize = null; // Reset cached size calculation
 
                 var utcNow = _timeProvider.GetUtcNow();
                 LastAccessTicks = utcNow.Ticks;
@@ -1153,6 +1213,71 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return false;
 
             return !t.GetTypeInfo().IsValueType;
+        }
+
+        private static long CalculateEstimatedSize(object value)
+        {
+            if (value == null)
+                return 8; // Reference size
+
+            var type = value.GetType();
+
+            // Handle strings specifically
+            if (value is string str)
+                return 24 + (str.Length * 2); // Object overhead + UTF-16 chars
+
+            // Handle primitives
+            if (type == TypeHelper.BoolType) return 1;
+            if (type == TypeHelper.CharType) return 2;
+            if (type == typeof(byte)) return 1;
+            if (type == typeof(sbyte)) return 1;
+            if (type == typeof(short)) return 2;
+            if (type == typeof(ushort)) return 2;
+            if (type == typeof(int)) return 4;
+            if (type == typeof(uint)) return 4;
+            if (type == typeof(long)) return 8;
+            if (type == typeof(ulong)) return 8;
+            if (type == typeof(float)) return 4;
+            if (type == typeof(double)) return 8;
+            if (type == typeof(decimal)) return 16;
+            if (type == TypeHelper.DateTimeType) return 8;
+            if (type == typeof(TimeSpan)) return 8;
+            if (type == typeof(Guid)) return 16;
+
+            // Handle nullable types
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                var underlyingType = Nullable.GetUnderlyingType(type);
+                return CalculateEstimatedSize(Activator.CreateInstance(underlyingType)) + 1; // Add 1 for hasValue flag
+            }
+
+            // Handle collections
+            if (value is System.Collections.IEnumerable enumerable && !(value is string))
+            {
+                long size = 32; // Collection overhead
+                int count = 0;
+                long itemSizeSum = 0;
+
+                foreach (var item in enumerable)
+                {
+                    count++;
+                    itemSizeSum += CalculateEstimatedSize(item);
+                    if (count > 100) // Limit sampling for performance
+                    {
+                        itemSizeSum = (itemSizeSum / count) * 100; // Estimate based on sample
+                        break;
+                    }
+                }
+
+                return size + itemSizeSum + (count * 8); // Collection overhead + items + reference overhead
+            }
+
+            // For complex objects, use a rough estimate based on field count
+            var fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            var properties = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+            
+            // Basic object overhead + estimated field/property sizes
+            return 24 + ((fields.Length + properties.Length) * 8);
         }
     }
 }
