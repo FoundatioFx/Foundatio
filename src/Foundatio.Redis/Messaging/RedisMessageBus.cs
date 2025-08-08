@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -100,8 +99,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         });
 
         // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
-
-        await Run.WithRetriesAsync(() => _options.Subscriber.PublishAsync(RedisChannel.Literal(_options.Topic), data, CommandFlags.FireAndForget), logger: _logger, cancellationToken: cancellationToken).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await _options.Subscriber.PublishAsync(RedisChannel.Literal(_options.Topic), data, CommandFlags.FireAndForget), cancellationToken).AnyContext();
     }
 
     public override void Dispose()

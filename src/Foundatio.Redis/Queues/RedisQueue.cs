@@ -10,7 +10,6 @@ using Foundatio.Extensions;
 using Foundatio.Lock;
 using Foundatio.Redis;
 using Foundatio.Redis.Utility;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 #pragma warning disable 4014
@@ -211,19 +210,19 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             CorrelationId = options.CorrelationId,
             Value = data
         };
-        bool success = await Run.WithRetriesAsync(() => _cache.AddAsync(GetPayloadKey(id), envelope, _payloadTimeToLive), logger: _logger).AnyContext();
+        bool success = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.AddAsync(GetPayloadKey(id), envelope, _payloadTimeToLive)).AnyContext();
         if (!success)
             throw new InvalidOperationException("Attempt to set payload failed.");
 
-        await Run.WithRetriesAsync(() => Task.WhenAll(
+        await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
             _cache.SetAsync(GetEnqueuedTimeKey(id), now.Ticks, _payloadTimeToLive),
             Database.ListLeftPushAsync(_queueListName, id)
-        ), logger: _logger).AnyContext();
+        )).AnyContext();
 
         try
         {
             _autoResetEvent.Set();
-            await Run.WithRetriesAsync(() => _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), id), logger: _logger).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), id)).AnyContext();
         }
         catch (Exception ex)
         {
@@ -295,7 +294,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 {
                     try
                     {
-                        await Run.WithRetriesAsync(() => queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token, logger: _logger).AnyContext();
+                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token).AnyContext();
                     }
                     catch (Exception ex)
                     {
@@ -367,14 +366,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     public override async Task RenewLockAsync(IQueueEntry<T> entry)
     {
         _logger.LogDebug("Queue {QueueName} renew lock item: {QueueEntryId}", _options.Name, entry.Id);
-        await Run.WithRetriesAsync(() => _cache.SetAsync(GetRenewedTimeKey(entry.Id), _timeProvider.GetUtcNow().Ticks, GetWorkItemTimeoutTimeTtl()), logger: _logger).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await _cache.SetAsync(GetRenewedTimeKey(entry.Id), _timeProvider.GetUtcNow().Ticks, GetWorkItemTimeoutTimeTtl())).AnyContext();
         await OnLockRenewedAsync(entry).AnyContext();
         _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
     }
 
     private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId)
     {
-        var payload = await Run.WithRetriesAsync(() => _cache.GetAsync<RedisPayloadEnvelope<T>>(GetPayloadKey(workId)), logger: _logger).AnyContext();
+        var payload = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync<RedisPayloadEnvelope<T>>(GetPayloadKey(workId))).AnyContext();
         if (payload.IsNull)
         {
             _logger.LogError("Error getting queue payload: {WorkId}", workId);
@@ -382,8 +381,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             return null;
         }
 
-        var enqueuedTimeTicks = Run.WithRetriesAsync(() => _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0), logger: _logger);
-        var attemptsValue = Run.WithRetriesAsync(() => _cache.GetAsync(GetAttemptsKey(workId), 0), logger: _logger);
+        var enqueuedTimeTicks = _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync<long>(GetEnqueuedTimeKey(workId), 0)).AsTask();
+        var attemptsValue = _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync(GetAttemptsKey(workId), 0)).AsTask();
         await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
 
         var queueEntry = new QueueEntry<T>(workId, payload.Value.CorrelationId, payload.Value.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
@@ -401,7 +400,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     {
         try
         {
-            return await Run.WithRetriesAsync(async () =>
+            return await _resiliencePolicy.ExecuteAsync(async _ =>
             {
                 var timeout = GetWorkItemTimeoutTimeTtl();
                 long now = _timeProvider.GetUtcNow().Ticks;
@@ -416,7 +415,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     timeout = timeout.TotalMilliseconds
                 }).AnyContext();
                 return result.ToString();
-            }, 3, TimeSpan.FromMilliseconds(100), _timeProvider, linkedCancellationToken, _logger).AnyContext();
+            }, linkedCancellationToken).AnyContext();
         }
         catch (Exception ex)
         {
@@ -434,14 +433,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
         }
 
-        long result = await Run.WithRetriesAsync(() => Database.ListRemoveAsync(_workListName, entry.Id), logger: _logger).AnyContext();
+        long result = await _resiliencePolicy.ExecuteAsync(async _ => await Database.ListRemoveAsync(_workListName, entry.Id)).AnyContext();
         if (result == 0)
         {
             _logger.LogDebug("Queue {QueueName} item not in work list: {QueueEntryId}", _options.Name, entry.Id);
             throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
         }
 
-        await Run.WithRetriesAsync(() => DeleteIdKeysAsync(entry.Id), logger: _logger).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await DeleteIdKeysAsync(entry.Id)).AnyContext();
         Interlocked.Increment(ref _completedCount);
         entry.MarkCompleted();
         await OnCompletedAsync(entry).AnyContext();
@@ -458,7 +457,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
 
         string attemptsCacheKey = GetAttemptsKey(entry.Id);
-        var attemptsCachedValue = await Run.WithRetriesAsync(() => _cache.GetAsync<int>(attemptsCacheKey), logger: _logger).AnyContext();
+        var attemptsCachedValue = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync<int>(attemptsCacheKey)).AnyContext();
         int attempts = 1;
         if (attemptsCachedValue.HasValue)
             attempts = attemptsCachedValue.Value + 1;
@@ -476,55 +475,55 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             tx.ListLeftPushAsync(_deadListName, entry.Id);
             tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
             tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
-            bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
+            bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-            await Run.WithRetriesAsync(() => Task.WhenAll(
+            await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl()),
                 Database.KeyDeleteAsync([GetDequeuedTimeKey(entry.Id), GetWaitTimeKey(entry.Id)])
-            ), logger: _logger).AnyContext();
+            )).AnyContext();
         }
         else if (retryDelay > TimeSpan.Zero)
         {
             _logger.LogInformation("Adding item to wait list for future retry: {QueueEntryId}", entry.Id);
 
-            await Run.WithRetriesAsync(() => Task.WhenAll(
+            await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 _cache.SetAsync(GetWaitTimeKey(entry.Id), _timeProvider.GetUtcNow().Add(retryDelay).Ticks, GetWaitTimeTtl()),
                 _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl())
-            ), logger: _logger).AnyContext();
+            )).AnyContext();
 
             var tx = Database.CreateTransaction();
             tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
             tx.ListRemoveAsync(_workListName, entry.Id);
             tx.ListLeftPushAsync(_waitListName, entry.Id);
             tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
-            bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync()).AnyContext();
+            bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-            await Run.WithRetriesAsync(() => Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)), logger: _logger).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(async _ => await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id))).AnyContext();
         }
         else
         {
             _logger.LogInformation("Adding item back to queue for retry: {QueueEntryId}", entry.Id);
 
-            await Run.WithRetriesAsync(() => _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl()), logger: _logger).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(async _ => await _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl())).AnyContext();
 
             var tx = Database.CreateTransaction();
             tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
             tx.ListRemoveAsync(_workListName, entry.Id);
             tx.ListLeftPushAsync(_queueListName, entry.Id);
             tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
-            bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
+            bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
                 throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
 
-            await Run.WithRetriesAsync(() => Task.WhenAll(
+            await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
                 // This should pulse the monitor.
                 _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), entry.Id)
-            ), logger: _logger).AnyContext();
+            )).AnyContext();
         }
 
         Interlocked.Increment(ref _abandonedCount);
@@ -699,11 +698,11 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 tx.ListRemoveAsync(_waitListName, waitId);
                 tx.ListLeftPushAsync(_queueListName, waitId);
                 tx.KeyDeleteAsync(GetWaitTimeKey(waitId));
-                bool success = await Run.WithRetriesAsync(() => tx.ExecuteAsync(), logger: _logger).AnyContext();
+                bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                await Run.WithRetriesAsync(() => _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: _queueDisposedCancellationTokenSource.Token, logger: _logger).AnyContext();
+                await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: _queueDisposedCancellationTokenSource.Token).AnyContext();
             }
         }
         catch (Exception ex)

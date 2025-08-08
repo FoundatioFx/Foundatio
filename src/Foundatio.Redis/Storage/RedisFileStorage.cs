@@ -6,8 +6,8 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
+using Foundatio.Resilience;
 using Foundatio.Serializer;
-using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
@@ -18,6 +18,7 @@ public class RedisFileStorage : IFileStorage
 {
     private readonly RedisFileStorageOptions _options;
     private readonly ISerializer _serializer;
+    private readonly IResiliencePolicy _resiliencePolicy;
     private readonly ILogger _logger;
     private readonly string _fileSpecContainer;
 
@@ -28,6 +29,8 @@ public class RedisFileStorage : IFileStorage
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+
+        _resiliencePolicy = options.ResiliencePolicyProvider.GetPolicy<RedisFileStorage, IFileStorage>(_logger, options.TimeProvider);
 
         options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         _fileSpecContainer = $"{options.ContainerName}-filespecs";
@@ -62,9 +65,7 @@ public class RedisFileStorage : IFileStorage
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
 
-        var fileContent = await Run.WithRetriesAsync(() => Database.HashGetAsync(_options.ContainerName, normalizedPath),
-            cancellationToken: cancellationToken, logger: _logger).AnyContext();
-
+        var fileContent = await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashGetAsync(_options.ContainerName, normalizedPath), cancellationToken).AnyContext();
         if (fileContent.IsNull)
         {
             _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
@@ -82,7 +83,7 @@ public class RedisFileStorage : IFileStorage
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Getting file info for {Path}", normalizedPath);
 
-        var fileSpec = await Run.WithRetriesAsync(() => Database.HashGetAsync(_fileSpecContainer, normalizedPath), logger: _logger).AnyContext();
+        var fileSpec = await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashGetAsync(_fileSpecContainer, normalizedPath)).AnyContext();
         if (!fileSpec.HasValue)
         {
             _logger.LogError("Unable to get file info for {Path}: File Not Found", normalizedPath);
@@ -92,7 +93,7 @@ public class RedisFileStorage : IFileStorage
         return _serializer.Deserialize<FileSpec>((byte[])fileSpec);
     }
 
-    public Task<bool> ExistsAsync(string path)
+    public async Task<bool> ExistsAsync(string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -100,7 +101,7 @@ public class RedisFileStorage : IFileStorage
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Checking if {Path} exists", normalizedPath);
 
-        return Run.WithRetriesAsync(() => Database.HashExistsAsync(_fileSpecContainer, normalizedPath), logger: _logger);
+        return await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashExistsAsync(_fileSpecContainer, normalizedPath)).AnyContext();
     }
 
     public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default)
@@ -131,9 +132,10 @@ public class RedisFileStorage : IFileStorage
                 Modified = DateTime.UtcNow,
                 Size = fileSize
             }, memory);
+
             var saveSpecTask = database.HashSetAsync(_fileSpecContainer, normalizedPath, memory.ToArray());
-            await Run.WithRetriesAsync(() => Task.WhenAll(saveFileTask, saveSpecTask),
-                cancellationToken: cancellationToken, logger: _logger).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(saveFileTask, saveSpecTask), cancellationToken).AnyContext();
+
             return true;
         }
         catch (Exception ex)
@@ -204,7 +206,7 @@ public class RedisFileStorage : IFileStorage
         var database = Database;
         var deleteSpecTask = database.HashDeleteAsync(_fileSpecContainer, normalizedPath);
         var deleteFileTask = database.HashDeleteAsync(_options.ContainerName, normalizedPath);
-        await Run.WithRetriesAsync(() => Task.WhenAll(deleteSpecTask, deleteFileTask), cancellationToken: cancellationToken, logger: _logger).AnyContext();
+        await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(deleteSpecTask, deleteFileTask), cancellationToken).AnyContext();
         return true;
     }
 
