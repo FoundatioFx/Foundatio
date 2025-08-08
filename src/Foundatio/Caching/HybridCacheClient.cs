@@ -11,7 +11,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
-public interface IHybridCacheClient : ICacheClient { }
+public interface IHybridCacheClient : ICacheClient
+{
+}
 
 public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
@@ -28,7 +30,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
     {
-        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions.LoggerFactory ?? NullLoggerFactory.Instance;
+        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
@@ -98,6 +100,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _localCache.RemoveAsync(key).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -106,6 +111,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _localCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -132,6 +140,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
         {
@@ -156,11 +167,17 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
+        if (keys is null)
+            return Task.FromException<IDictionary<string, CacheValue<T>>>(new ArgumentNullException(nameof(keys)));
+
         return _distributedCache.GetAllAsync<T>(keys);
     }
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         if (added)
@@ -171,6 +188,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         await _localCache.SetAsync(key, value, expiresIn).AnyContext();
         bool set = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -193,6 +213,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -201,6 +224,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -209,6 +235,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         double incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -217,6 +246,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         long incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -225,16 +257,25 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public Task<bool> ExistsAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+
         return _distributedCache.ExistsAsync(key);
     }
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
+        if (String.IsNullOrEmpty(key))
+            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+
         return _distributedCache.GetExpirationAsync(key);
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -242,6 +283,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -250,6 +294,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -258,6 +305,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -266,6 +316,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -274,6 +327,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (values is null)
+            throw new ArgumentNullException(nameof(values));
+
         if (values is string stringValue)
         {
             await _localCache.ListAddAsync(key, stringValue, expiresIn).AnyContext();
@@ -283,7 +342,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         else
         {
-            var items = values?.ToArray();
+            var items = values.ToArray();
             await _localCache.ListAddAsync(key, items, expiresIn).AnyContext();
             long set = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -293,6 +352,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (values is null)
+            throw new ArgumentNullException(nameof(values));
+
         if (values is string stringValue)
         {
             await _localCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
@@ -302,7 +367,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         else
         {
-            var items = values?.ToArray();
+            var items = values.ToArray();
             await _localCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
             long removed = await _distributedCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -312,6 +377,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
+        if (String.IsNullOrEmpty(key))
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
         var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
         {
