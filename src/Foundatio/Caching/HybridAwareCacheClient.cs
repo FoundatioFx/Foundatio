@@ -118,7 +118,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values == null || values.Count == 0)
+        if (values is null || values.Count == 0)
             return 0;
 
         int set = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
