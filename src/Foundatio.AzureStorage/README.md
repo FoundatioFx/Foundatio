@@ -13,7 +13,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Messaging](#messaging)
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
-- [Metrics](#metrics)
+- [Resilience](#resilience)
 
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
@@ -31,10 +31,10 @@ To summarize, if you want pain free development and testing while allowing your 
 
 ## Implementations
 
-- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks, Metrics
+- [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks
 - [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
-- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Metrics
+- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues
 - [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) - Messaging
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Messaging
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
@@ -300,26 +300,91 @@ await storage.SaveFileAsync("test.txt", "test");
 string content = await storage.GetFileContentsAsync("test.txt")
 ```
 
-### [Metrics](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Metrics)
+### [Resilience](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Utility)
 
-We provide five implementations that derive from the [`IMetricsClient` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/IMetricsClient.cs):
+Resilience policies provide a powerful way to handle transient failures and make your applications more robust by implementing retry logic, circuit breakers, and timeouts. The resilience system allows you to configure policies globally or per-operation, giving you fine-grained control over how Foundatio components handle failures.
 
-1. [InMemoryMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/InMemoryMetricsClient.cs): An in memory metrics implementation.
-2. [RedisMetricsClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Metrics/RedisMetricsClient.cs): An Redis metrics implementation.
-3. [StatsDMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Metrics/StatsDMetricsClient.cs): An statsd metrics implementation.
-4. [MetricsNETClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.MetricsNET/MetricsNETClient.cs): An [Metrics.NET](https://github.com/Recognos/Metrics.NET) implementation.
-5. [AppMetricsClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio.AppMetrics/AppMetricsClient.cs): An [AppMetrics](https://github.com/AppMetrics/AppMetrics) implementation.
-6. [CloudWatchMetricsClient](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Metrics/CloudWatchMetricsClient.cs): An [AWS CloudWatch](https://aws.amazon.com/cloudwatch/) implementation.
+The resilience system is built around the [`IResiliencePolicy` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and provides:
 
-We recommend using all of the `IMetricsClient` implementations as singletons.
+1. **Retry Logic**: Automatically retry failed operations with configurable delays and maximum attempts
+2. **Circuit Breaker**: Temporarily stop calling failing services to prevent cascading failures
+3. **Timeout**: Set maximum execution time for operations
+4. **Exponential Backoff**: Gradually increase delays between retries with optional jitter
+5. **Exception Filtering**: Configure which exceptions should trigger retries
 
-#### Sample
+You can customize resilience behavior throughout Foundatio by implementing [`IResiliencePolicyProvider`](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Utility/ResiliencePolicy.cs) and passing it via options. This allows you to replace the default retry behavior in caching, queues, storage, and other Foundatio components.
+
+#### Resilience Policy Sample
 
 ```csharp
-IMetricsClient metrics = new InMemoryMetricsClient();
-metrics.Counter("c1");
-metrics.Gauge("g1", 2.534);
-metrics.Timer("t1", 50788);
+using Foundatio.Utility.Resilience;
+
+// Create a basic resilience policy
+var policy = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(5)
+    .WithExponentialDelay(TimeSpan.FromSeconds(1))
+    .WithTimeout(TimeSpan.FromMinutes(5))
+    .WithJitter()
+    .Build();
+
+// Execute an operation with resilience
+await policy.ExecuteAsync(async ct => {
+    // Your operation that might fail
+    await SomeUnreliableOperationAsync(ct);
+});
+```
+
+#### Circuit Breaker Sample
+
+```csharp
+using Foundatio.Utility.Resilience;
+
+// Create a policy with circuit breaker
+var policy = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(3)
+    .WithCircuitBreaker(cb => cb
+        .WithFailureRatio(0.5) // Open circuit at 50% failure rate
+        .WithMinimumCalls(10)  // Need at least 10 calls before opening
+        .WithBreakDuration(TimeSpan.FromMinutes(1)))
+    .Build();
+
+await policy.ExecuteAsync(async ct => {
+    // This will be protected by the circuit breaker
+    await CallExternalServiceAsync(ct);
+});
+```
+
+#### Custom Resilience Provider Sample
+
+```csharp
+using Foundatio.Utility.Resilience;
+
+// Create a custom resilience provider for your application
+var resilienceProvider = new ResiliencePolicyProvider()
+    .WithDefaultPolicy(builder => builder
+        .WithMaxAttempts(3)
+        .WithExponentialDelay(TimeSpan.FromSeconds(1))
+        .WithTimeout(TimeSpan.FromMinutes(2)))
+    .WithPolicy("external-api", builder => builder
+        .WithMaxAttempts(5)
+        .WithCircuitBreaker()
+        .WithTimeout(TimeSpan.FromSeconds(30)))
+    .WithPolicy<MyService>(builder => builder
+        .WithMaxAttempts(3)
+        .WithLinearDelay()
+        .WithTimeout(TimeSpan.FromSeconds(30)));
+
+// Use named policies
+var apiPolicy = resilienceProvider.GetPolicy("external-api");
+await apiPolicy.ExecuteAsync(async ct => {
+    await CallExternalApiAsync(ct);
+});
+
+// Use class based policies
+var apiPolicy = resilienceProvider.GetPolicy<MyService>();
+await apiPolicy.ExecuteAsync(async ct => {
+    await CallMyServiceAsync(ct);
+});
 ```
 
 ## Sample Application
