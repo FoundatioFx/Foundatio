@@ -20,14 +20,14 @@ applyTo: "tests/**/*.cs"
 
 - Write complete, runnable tests—no placeholders or TODOs.
 - Use clear, descriptive naming conventions for test methods:
-  - `MethodName_StateUnderTest_ExpectedBehavior`
-  - `Should_ExpectedBehavior_When_StateUnderTest`
+    - `MethodName_StateUnderTest_ExpectedBehavior`
 - Follow AAA pattern (Arrange, Act, Assert).
 
 ## Test Organization
 
 - Use `[Theory]` and `[InlineData]` for parameterized tests.
 - Implement proper setup and teardown using constructors and `IDisposable`.
+- Tests are organized to mirror the main code structure (e.g., `Storage/` in both `src` and `tests`).
 
 ## Integration Testing
 

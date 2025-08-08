@@ -48,9 +48,9 @@ Use context7 for documentation
 2. Consider three possible approaches.
 3. Choose the simplest approach that satisfies all requirements.
 4. Clarify:
-   - Can the solution be modularized into smaller functions?
-   - Are there unnecessary abstractions?
-   - Will the implementation be clear to a junior developer?
+    - Can the solution be modularized into smaller functions?
+    - Are there unnecessary abstractions?
+    - Will the implementation be clear to a junior developer?
 
 ### Post-Coding Reflection
 
