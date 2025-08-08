@@ -137,7 +137,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
 
             attempts++;
         } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
-        
+
         throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
     }
 
