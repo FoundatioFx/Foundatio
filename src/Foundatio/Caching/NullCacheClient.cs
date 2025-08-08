@@ -162,7 +162,7 @@ public class NullCacheClient : ICacheClient
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));;
+            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _reads);
 
