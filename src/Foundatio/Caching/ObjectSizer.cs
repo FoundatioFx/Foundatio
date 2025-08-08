@@ -1,11 +1,9 @@
 using System;
-using System.Buffers;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Foundatio.Caching;
 
@@ -15,7 +13,9 @@ public static class ObjectSizer
     private static readonly JsonSerializerOptions _jsonOptions = new() 
     { 
         WriteIndented = false,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        ReferenceHandler = ReferenceHandler.IgnoreCycles, // Prevent circular reference issues
+        MaxDepth = 64 // Prevent stack overflow on deep objects
     };
 
     /// <summary>

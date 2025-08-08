@@ -1252,7 +1252,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _timeProvider = timeProvider;
             _cacheClient = cacheClient;
-            _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
+            _shouldClone = shouldClone && InMemoryCacheClient.TypeRequiresCloning(value?.GetType());
             Value = value;
             ExpiresAt = expiresAt;
             LastModifiedTicks = _timeProvider.GetUtcNow().Ticks;
@@ -1320,36 +1320,53 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             return !t.GetTypeInfo().IsValueType;
         }
+    }
 
-        private long CalculateObjectSize(object value)
+    private long CalculateObjectSize(object value)
+    {
+        try
         {
-            try
+            var size = _objectSizeCalculator(value);
+            
+            // Log warning if object exceeds maximum size
+            if (_maxObjectSize.HasValue && size > _maxObjectSize.Value)
             {
-                var size = _objectSizeCalculator(value);
-                
-                // Log warning if object exceeds maximum size
-                if (_maxObjectSize.HasValue && size > _maxObjectSize.Value)
-                {
-                    _logger.LogWarning("Cache object size {ObjectSize:N0} bytes exceeds maximum recommended size {MaxObjectSize:N0} bytes for type {ObjectType}",
-                        size, _maxObjectSize.Value, value?.GetType().Name ?? "null");
-                }
-                
-                return size;
+                _logger.LogWarning("Cache object size {ObjectSize:N0} bytes exceeds maximum recommended size {MaxObjectSize:N0} bytes for type {ObjectType}",
+                    size, _maxObjectSize.Value, value?.GetType().Name ?? "null");
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error calculating object size for type {ObjectType}, using fallback estimation", 
-                    value?.GetType().Name ?? "null");
-                
-                // Fallback to simple estimation
-                return value switch
-                {
-                    null => 8,
-                    string str => 24 + (str.Length * 2),
-                    _ => 64 // Default object overhead
-                };
-            }
+            
+            return size;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error calculating object size for type {ObjectType}, using fallback estimation", 
+                value?.GetType().Name ?? "null");
+            
+            // Fallback to simple estimation
+            return value switch
+            {
+                null => 8,
+                string str => 24 + (str.Length * 2),
+                _ => 64 // Default object overhead
+            };
+        }
+    }
+
+    private static bool TypeRequiresCloning(Type t)
+    {
+        if (t == null)
+            return true;
+
+        if (t == TypeHelper.BoolType ||
+            t == TypeHelper.NullableBoolType ||
+            t == TypeHelper.StringType ||
+            t == TypeHelper.CharType ||
+            t == TypeHelper.NullableCharType ||
+            t.IsNumeric() ||
+            t.IsNullableNumeric())
+            return false;
+
+        return !t.GetTypeInfo().IsValueType;
     }
 }
 
