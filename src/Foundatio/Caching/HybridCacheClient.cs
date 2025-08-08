@@ -165,12 +165,49 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return cacheValue.HasValue ? cacheValue : CacheValue<T>.NoValue;
     }
 
-    public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
+    public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
         if (keys is null)
-            return Task.FromException<IDictionary<string, CacheValue<T>>>(new ArgumentNullException(nameof(keys)));
+            throw new ArgumentNullException(nameof(keys));
 
-        return _distributedCache.GetAllAsync<T>(keys);
+        string[] keyArray = keys.ToArray();
+        var result = new Dictionary<string, CacheValue<T>>(keyArray.Length);
+        if (keyArray.Length is 0)
+            return result;
+
+        var missedKeys = new List<string>(keyArray.Length);
+        foreach (string key in keyArray.Where(k => !String.IsNullOrEmpty(k)))
+        {
+            var localValue = await _localCache.GetAsync<T>(key).AnyContext();
+            if (localValue.HasValue)
+            {
+                _logger.LogTrace("Local cache hit: {Key}", key);
+                Interlocked.Increment(ref _localCacheHits);
+                result[key] = localValue;
+            }
+            else
+            {
+                _logger.LogTrace("Local cache miss: {Key}", key);
+                missedKeys.Add(key);
+            }
+        }
+
+        if (missedKeys.Count > 0)
+        {
+            var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
+            foreach (var kvp in distributedResults)
+            {
+                result[kvp.Key] = kvp.Value;
+                if (kvp.Value.HasValue)
+                {
+                    var expiration = await _distributedCache.GetExpirationAsync(kvp.Key).AnyContext();
+                    _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
+                    await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
+                }
+            }
+        }
+
+        return result;
     }
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -255,20 +292,40 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return incremented;
     }
 
-    public Task<bool> ExistsAsync(string key)
+    public async Task<bool> ExistsAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        return _distributedCache.ExistsAsync(key);
+        // Check local cache first
+        bool localExists = await _localCache.ExistsAsync(key).AnyContext();
+        if (localExists)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+            return true;
+        }
+
+        _logger.LogTrace("Local cache miss: {Key}", key);
+        return await _distributedCache.ExistsAsync(key).AnyContext();
     }
 
-    public Task<TimeSpan?> GetExpirationAsync(string key)
+    public async Task<TimeSpan?> GetExpirationAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
-        return _distributedCache.GetExpirationAsync(key);
+        // Check if key exists in local cache first
+        bool localExists = await _localCache.ExistsAsync(key).AnyContext();
+        if (localExists)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+            return await _localCache.GetExpirationAsync(key).AnyContext();
+        }
+
+        _logger.LogTrace("Local cache miss: {Key}", key);
+        return await _distributedCache.GetExpirationAsync(key).AnyContext();
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
