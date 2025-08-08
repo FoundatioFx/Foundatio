@@ -35,7 +35,9 @@ public class RedisFileStorage : IFileStorage
     }
 
     public RedisFileStorage(Builder<RedisFileStorageOptionsBuilder, RedisFileStorageOptions> config)
-        : this(config(new RedisFileStorageOptionsBuilder()).Build()) { }
+        : this(config(new RedisFileStorageOptionsBuilder()).Build())
+    {
+    }
 
     ISerializer IHaveSerializer.Serializer => _serializer;
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
@@ -211,7 +213,7 @@ public class RedisFileStorage : IFileStorage
         var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
         int count = 0;
 
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files, searchPattern);
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, searchPattern);
         foreach (var file in files)
         {
             await DeleteFileAsync(file.Path, cancellationToken).AnyContext();

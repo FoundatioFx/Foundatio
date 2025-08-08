@@ -331,7 +331,9 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken, timeoutCancellationTokenSource.Token);
                 await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
             }
-            catch (OperationCanceledException) { }
+            catch (OperationCanceledException)
+            {
+            }
 
             sw.Stop();
             _logger.LogTrace("Waited for dequeue: {Elapsed}", sw.Elapsed.ToString());
@@ -718,7 +720,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error trimming deadletter items: {0}", ex.Message);
+            _logger.LogError(ex, "Error trimming deadletter items: {Message}", ex.Message);
         }
 
         _logger.LogTrace("Finished DoMaintenance: {QueueName} ({QueueId}) Duration: {Duration:g}", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));

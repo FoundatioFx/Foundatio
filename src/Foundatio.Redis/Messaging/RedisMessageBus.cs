@@ -16,12 +16,16 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 {
     private readonly AsyncLock _lock = new();
     private bool _isSubscribed;
-    private ChannelMessageQueue _channelMessageQueue = null;
+    private ChannelMessageQueue _channelMessageQueue;
 
-    public RedisMessageBus(RedisMessageBusOptions options) : base(options) { }
+    public RedisMessageBus(RedisMessageBusOptions options) : base(options)
+    {
+    }
 
     public RedisMessageBus(Builder<RedisMessageBusOptionsBuilder, RedisMessageBusOptions> config)
-        : this(config(new RedisMessageBusOptionsBuilder()).Build()) { }
+        : this(config(new RedisMessageBusOptionsBuilder()).Build())
+    {
+    }
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
     {
