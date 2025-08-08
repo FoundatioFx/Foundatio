@@ -5,13 +5,15 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
-public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
+public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
 {
-    public ScopedInMemoryHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public InMemoryHybridAwareCacheClientTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new ScopedCacheClient(new InMemoryHybridCacheClient(_messageBus, Log, shouldThrowOnSerializationError), "scoped");
+        return new HybridAwareCacheClient(_distributedCache, _messageBus, Log);
     }
 
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
@@ -61,7 +63,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.CanGetAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Distributed cache is in memory and shouldThrowOnSerializationError is true.")]
     public override Task CanTryGetAsync()
     {
         return base.CanTryGetAsync();

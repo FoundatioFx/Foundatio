@@ -315,6 +315,36 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     {
         return base.WillWorkWithSets();
     }
+
+    [Fact]
+    protected override Task ExistsAsyncShouldCheckLocalCacheFirst()
+    {
+        return base.ExistsAsyncShouldCheckLocalCacheFirst();
+    }
+
+    [Fact]
+    protected override Task GetExpirationAsyncShouldCheckLocalCacheFirst()
+    {
+        return base.GetExpirationAsyncShouldCheckLocalCacheFirst();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldUseHybridCache()
+    {
+        return base.GetAllAsyncShouldUseHybridCache();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldHandleEmptyKeys()
+    {
+        return base.GetAllAsyncShouldHandleEmptyKeys();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldSkipNullKeys()
+    {
+        return base.GetAllAsyncShouldSkipNullKeys();
+    }
 }
 
 public class InMemoryHybridCacheClient : HybridCacheClient
