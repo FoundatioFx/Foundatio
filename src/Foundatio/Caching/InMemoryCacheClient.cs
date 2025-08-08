@@ -831,10 +831,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 sizeDelta -= oldEntry.EstimatedSize;
             
             if (wasUpdated && sizeDelta != 0)
+            {
+                _logger.LogError("SetInternalAsync: About to update memory size by {SizeDelta}. Current={Current}, Max={Max}", 
+                    sizeDelta, _currentMemorySize, _maxMemorySize);
                 UpdateMemorySize(sizeDelta);
+                _logger.LogError("SetInternalAsync: After update memory size. Current={Current}, Max={Max}", 
+                    _currentMemorySize, _maxMemorySize);
+            }
         }
 
-        await StartMaintenanceAsync(ShouldCompact).AnyContext();
+        // Check if compaction is needed AFTER memory size update
+        bool needsCompaction = ShouldCompact;
+        _logger.LogError("SetInternalAsync: needsCompaction={NeedsCompaction}, Current={Current}, Max={Max}", 
+            needsCompaction, _currentMemorySize, _maxMemorySize);
+        await StartMaintenanceAsync(needsCompaction).AnyContext();
         return wasUpdated;
     }
 
@@ -1081,6 +1091,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task StartMaintenanceAsync(bool compactImmediately = false)
     {
+        _logger.LogInformation("StartMaintenanceAsync called with compactImmediately={CompactImmediately}", compactImmediately);
+        
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         if (compactImmediately)
             await CompactAsync().AnyContext();
@@ -1096,43 +1108,60 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task CompactAsync()
     {
+        _logger.LogInformation("CompactAsync called. ShouldCompact={ShouldCompact}, CurrentMemory={CurrentMemory}, MaxMemory={MaxMemory}", 
+            ShouldCompact, _currentMemorySize, _maxMemorySize);
+            
         if (!ShouldCompact)
             return;
 
         _logger.LogTrace("CompactAsync: Compacting cache");
 
-        string expiredKey = null;
+        var expiredKeys = new List<string>();
         using (await _lock.LockAsync().AnyContext())
         {
-            // Check if we still need compaction after acquiring the lock
-            bool needsItemCompaction = _maxItems.HasValue && _memory.Count > _maxItems;
-            bool needsMemoryCompaction = _maxMemorySize.HasValue && _currentMemorySize > _maxMemorySize;
-            
-            if (!needsItemCompaction && !needsMemoryCompaction)
-                return;
+            int removalCount = 0;
+            const int maxRemovals = 10; // Safety limit to prevent infinite loops
 
-            // For memory compaction, prefer size-aware eviction
-            // For item compaction, prefer traditional LRU
-            string keyToRemove = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
-
-            if (keyToRemove == null)
-                return;
-
-            _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})", 
-                keyToRemove, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
-            
-            if (_memory.TryRemove(keyToRemove, out var cacheEntry))
+            while (ShouldCompact && removalCount < maxRemovals)
             {
-                // Update memory size tracking
-                if (cacheEntry != null)
-                    UpdateMemorySize(-cacheEntry.EstimatedSize);
+                // Check if we still need compaction
+                bool needsItemCompaction = _maxItems.HasValue && _memory.Count > _maxItems;
+                bool needsMemoryCompaction = _maxMemorySize.HasValue && _currentMemorySize > _maxMemorySize;
+                
+                if (!needsItemCompaction && !needsMemoryCompaction)
+                    break;
+
+                // For memory compaction, prefer size-aware eviction
+                // For item compaction, prefer traditional LRU
+                string keyToRemove = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
+
+                if (keyToRemove == null)
+                    break;
+
+                _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})", 
+                    keyToRemove, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
+                
+                if (_memory.TryRemove(keyToRemove, out var cacheEntry))
+                {
+                    // Update memory size tracking
+                    if (cacheEntry != null)
+                        UpdateMemorySize(-cacheEntry.EstimatedSize);
+                        
+                    if (cacheEntry is { IsExpired: true })
+                        expiredKeys.Add(keyToRemove);
                     
-                if (cacheEntry is { IsExpired: true })
-                    expiredKey = keyToRemove;
+                    removalCount++;
+                }
+                else
+                {
+                    // Couldn't remove the item, break to prevent infinite loop
+                    break;
+                }
             }
         }
 
-        if (expiredKey != null)
+        // Notify about expired items
+        foreach (var expiredKey in expiredKeys)
             OnItemExpired(expiredKey);
     }
 
