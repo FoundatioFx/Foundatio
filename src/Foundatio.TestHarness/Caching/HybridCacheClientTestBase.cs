@@ -18,7 +18,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
 
     public HybridCacheClientTestBase(ITestOutputHelper output) : base(output)
     {
-        _distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        _distributedCache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
         _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
     }
 

@@ -30,12 +30,12 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
+    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory loggerFactory = null)
     {
-        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
+        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridAwareCacheClient>();
-        _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
+        _timeProvider = distributedCacheClient.GetTimeProvider() ?? TimeProvider.System;
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider();
         _distributedCache = distributedCacheClient;
         _messagePublisher = messagePublisher;
     }
