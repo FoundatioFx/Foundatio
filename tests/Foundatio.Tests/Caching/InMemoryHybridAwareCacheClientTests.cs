@@ -7,18 +7,23 @@ namespace Foundatio.Tests.Caching;
 
 public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
 {
+    private readonly ICacheClient _distributedCacheShouldNotThrowOnSerializationError;
+
     public InMemoryHybridAwareCacheClientTests(ITestOutputHelper output) : base(output)
     {
+        _distributedCacheShouldNotThrowOnSerializationError = new InMemoryCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(false).LoggerFactory(Log));
     }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new HybridAwareCacheClient(_distributedCache, _messageBus, Log);
+        var cache = shouldThrowOnSerializationError ? _distributedCache : _distributedCacheShouldNotThrowOnSerializationError;
+        return new HybridAwareCacheClient(cache, _messageBus, Log);
     }
 
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new InMemoryHybridCacheClient(_distributedCache, _messageBus, Log, shouldThrowOnSerializationError);
+        var cache = shouldThrowOnSerializationError ? _distributedCache : _distributedCacheShouldNotThrowOnSerializationError;
+        return new InMemoryHybridCacheClient(cache, _messageBus, Log, shouldThrowOnSerializationError);
     }
 
     [Fact]
@@ -63,7 +68,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         return base.CanGetAsync();
     }
 
-    [Fact(Skip = "Distributed cache is in memory and shouldThrowOnSerializationError is true.")]
+    [Fact]
     public override Task CanTryGetAsync()
     {
         return base.CanTryGetAsync();
@@ -298,7 +303,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         return base.CanInvalidateLocalCacheViaRemoveByPrefixAsync();
     }
 
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    [Fact]
     protected override Task WillUseLocalCache()
     {
         return base.WillUseLocalCache();
@@ -310,7 +315,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         return base.WillExpireRemoteItems();
     }
 
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    [Fact()]
     protected override Task WillWorkWithSets()
     {
         return base.WillWorkWithSets();
@@ -344,5 +349,30 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     protected override Task GetAllAsyncShouldSkipNullKeys()
     {
         return base.GetAllAsyncShouldSkipNullKeys();
+    }
+
+    [Fact]
+    public async Task CanInvalidateLocalCacheViaHybridAwareRemoveAllAsync()
+    {
+        using var firstCache = GetCacheClient();
+        Assert.NotNull(firstCache);
+        Assert.True(firstCache is HybridAwareCacheClient);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "key";
+
+        Assert.True(await firstCache.AddAsync(cacheKey, "value"));
+
+        Assert.Equal(0, secondCache.LocalCache.Count);
+        Assert.Equal("value", (await secondCache.GetAsync<string>(cacheKey)).Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        Assert.Equal(1, await firstCache.RemoveAllAsync());
+
+        await Task.Delay(250); // Allow time for local cache to clear
+        Assert.Equal(1, secondCache.InvalidateCacheCalls);
+        Assert.Equal(0, secondCache.LocalCache.Count);
     }
 }

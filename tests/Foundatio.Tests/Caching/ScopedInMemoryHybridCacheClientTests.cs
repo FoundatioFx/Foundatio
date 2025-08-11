@@ -296,7 +296,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.CanInvalidateLocalCacheViaRemoveByPrefixAsync();
     }
 
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    [Fact]
     protected override Task WillUseLocalCache()
     {
         return base.WillUseLocalCache();
@@ -308,7 +308,7 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
         return base.WillExpireRemoteItems();
     }
 
-    [Fact(Skip = "Skip because cache invalidation loops on this with 2 in memory cache client instances")]
+    [Fact]
     protected override Task WillWorkWithSets()
     {
         return base.WillWorkWithSets();
