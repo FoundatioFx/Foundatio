@@ -31,7 +31,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> RemoveAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -41,7 +41,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -65,7 +65,7 @@ public class NullCacheClient : ICacheClient
     public Task<CacheValue<T>> GetAsync<T>(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<CacheValue<T>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _reads);
 
@@ -75,7 +75,7 @@ public class NullCacheClient : ICacheClient
     public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
         if (keys is null)
-            throw new ArgumentNullException(nameof(keys));
+            return Task.FromException<IDictionary<string, CacheValue<T>>>(new ArgumentNullException(nameof(keys)));
 
         Interlocked.Increment(ref _reads);
 
@@ -85,7 +85,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -95,7 +95,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -112,7 +112,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -122,7 +122,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -132,7 +132,7 @@ public class NullCacheClient : ICacheClient
     public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<double>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -142,7 +142,7 @@ public class NullCacheClient : ICacheClient
     public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<long>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -152,7 +152,7 @@ public class NullCacheClient : ICacheClient
     public Task<bool> ExistsAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _reads);
 
@@ -162,7 +162,7 @@ public class NullCacheClient : ICacheClient
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _reads);
 
@@ -172,7 +172,7 @@ public class NullCacheClient : ICacheClient
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -182,7 +182,7 @@ public class NullCacheClient : ICacheClient
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<double>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -192,7 +192,7 @@ public class NullCacheClient : ICacheClient
     public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<long>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -202,7 +202,7 @@ public class NullCacheClient : ICacheClient
     public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<double>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -212,7 +212,7 @@ public class NullCacheClient : ICacheClient
     public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<long>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         Interlocked.Increment(ref _writes);
 
@@ -222,10 +222,10 @@ public class NullCacheClient : ICacheClient
     public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<long>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        if (values is null)
+            return Task.FromException<long>(new ArgumentNullException(nameof(values)));
 
         Interlocked.Increment(ref _writes);
 
@@ -235,10 +235,10 @@ public class NullCacheClient : ICacheClient
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<long>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        if (values is null)
+            return Task.FromException<long>(new ArgumentNullException(nameof(values)));
 
         Interlocked.Increment(ref _writes);
 
@@ -248,10 +248,10 @@ public class NullCacheClient : ICacheClient
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
         if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+            return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
 
         if (page is < 1)
-            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+            return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1"));
 
         Interlocked.Increment(ref _reads);
 
