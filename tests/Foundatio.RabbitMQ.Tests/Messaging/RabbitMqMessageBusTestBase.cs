@@ -14,12 +14,15 @@ namespace Foundatio.RabbitMQ.Tests.Messaging;
 public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestOutputHelper output) : MessageBusTestBase(output)
 {
     private readonly string _topic = $"test_topic_{DateTime.UtcNow.Ticks}";
+    protected readonly string ConnectionString = connectionString;
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
     {
         return new RabbitMQMessageBus(o =>
         {
-            o.ConnectionString(connectionString);
+            o.SubscriptionQueueName($"{_topic}_{Guid.NewGuid():N}");
+            o.ConnectionString(ConnectionString);
+            o.UseQuorumQueues();
             o.LoggerFactory(Log);
 
             config?.Invoke(o.Target);
@@ -137,10 +140,51 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
     }
 
     [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        // Fire and Forget is the default
+        return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
+    public virtual async Task CanHandlePoisonedMessageWithAutomaticAcknowledgementsAsync()
+    {
+        string topic = $"test_topic_poisoned_{DateTime.UtcNow.Ticks}";
+        await using var messageBus = new RabbitMQMessageBus(o => o
+            .ConnectionString(ConnectionString)
+            .SubscriptionQueueName($"{topic}_{Guid.NewGuid():N}")
+            .AcknowledgementStrategy(AcknowledgementStrategy.Automatic)
+            .UseQuorumQueues()
+            .LoggerFactory(Log));
+
+        long handlerInvocations = 0;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
+                throw new Exception("Poisoned message");
+            });
+
+            await messageBus.PublishAsync(new SimpleMessageA());
+            _logger.LogTrace("Published one...");
+
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            Assert.Equal(3, handlerInvocations);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    [Fact]
     public async Task CanPersistAndNotLoseMessages()
     {
         var messageBus1 = new RabbitMQMessageBus(o => o
-            .ConnectionString(connectionString)
+            .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
             .SubscriptionQueueName($"{_topic}-offline")
             .IsSubscriptionQueueExclusive(false)
@@ -180,7 +224,7 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
         await messageBus1.DisposeAsync();
 
         var messageBus2 = new RabbitMQMessageBus(o => o
-            .ConnectionString(connectionString)
+            .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
             .SubscriptionQueueName($"{_topic}-offline")
             .IsSubscriptionQueueExclusive(false)

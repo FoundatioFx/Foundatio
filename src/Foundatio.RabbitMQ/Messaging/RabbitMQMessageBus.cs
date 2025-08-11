@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Threading;
@@ -15,6 +16,9 @@ namespace Foundatio.Messaging;
 
 public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAsyncDisposable
 {
+    private const string XDeliveryCountHeader = "x-delivery-count";
+    private const string XOriginalMessageIdHeader = "x-original-message-id";
+
     private readonly AsyncLock _lock = new();
     private readonly ConnectionFactory _factory;
     private IConnection _publisherConnection;
@@ -22,6 +26,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     private IChannel _publisherChannel;
     private IChannel _subscriberChannel;
     private bool? _delayedExchangePluginEnabled;
+    private readonly bool _isQuorumQueue;
     private bool _isDisposed;
 
     public RabbitMQMessageBus(RabbitMQMessageBusOptions options) : base(options)
@@ -29,10 +34,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         if (String.IsNullOrEmpty(options.ConnectionString))
             throw new ArgumentException("ConnectionString is required.");
 
-        // Initialize the connection factory. automatic recovery will allow the connections to be restored
+        _isQuorumQueue = options.Arguments is not null && options.Arguments.TryGetValue("x-queue-type", out object queueType) && queueType is string type && String.Equals(type, "quorum", StringComparison.OrdinalIgnoreCase);
+
+        // Initialize the connection factory. Automatic recovery will allow the connections to be restored
         // in case the server is restarted or there has been any network failures
-        // Topology ( queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
-        // by default so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
+        // Topology (queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
+        // by default, so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
         // it can always be fine-tuned if needed.
         _factory = new ConnectionFactory
         {
@@ -157,11 +164,11 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private async Task OnMessageAsync(object sender, BasicDeliverEventArgs envelope)
     {
-        _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties?.MessageId);
+        _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties.MessageId);
 
         if (_subscribers.IsEmpty)
         {
-            _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties?.MessageId);
+            _logger.LogTrace("No subscribers ({MessageId})", envelope.BasicProperties.MessageId);
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
 
@@ -178,17 +185,149 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error handling message ({MessageId}): {Message}", envelope.BasicProperties?.MessageId, ex.Message);
+            _logger.LogError(ex, "Error handling message ({MessageId}): {Message}", envelope.BasicProperties.MessageId, ex.Message);
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
-                await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
+                await HandleDeliveryLimitsAsync(envelope).AnyContext();
+        }
+    }
+
+    private async Task HandleDeliveryLimitsAsync(BasicDeliverEventArgs envelope)
+    {
+        // Rule 1: If the limit is negative, reject regardless of queue type
+        if (_options.DeliveryLimit < 0)
+        {
+            _logger.LogDebug("Message ({MessageId}) rejected due to negative delivery limit ({DeliveryLimit})",
+                envelope.BasicProperties.MessageId, _options.DeliveryLimit);
+            await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
+            return;
+        }
+
+        // Rule 2: Determine retry count from headers
+        long retryCount = GetRetryCountFromHeader(envelope);
+
+        _logger.LogDebug("Processing message ({MessageId}) with delivery count {DeliveryCount} of {DeliveryLimit} (Queue type: {QueueType})",
+            envelope.BasicProperties.MessageId, retryCount, _options.DeliveryLimit, _isQuorumQueue ? "quorum" : "classic");
+
+        // Rule 3: Handle messages that have exceeded the delivery limit
+        if (retryCount >= _options.DeliveryLimit)
+        {
+            if (_isQuorumQueue)
+            {
+                // Check if we're significantly over the limit (suggests broker config mismatch)
+                if (retryCount >= _options.DeliveryLimit + 1)
+                {
+                    _logger.LogWarning(
+                        "Quorum queue message ({MessageId}) delivery count ({DeliveryCount}) is over configured limit ({DeliveryLimit})",
+                        envelope.BasicProperties.MessageId, retryCount, _options.DeliveryLimit);
+                    await _subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "Quorum queue message ({MessageId}) has exceeded delivery limit ({DeliveryLimit}): Rejecting to let broker handle",
+                        envelope.BasicProperties.MessageId, _options.DeliveryLimit);
+                    await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
+                }
+            }
+            else
+            {
+                _logger.LogDebug(
+                    "Classic queue message ({MessageId}) has reached the delivery limit of {DeliveryLimit}: Acknowledging message",
+                    envelope.BasicProperties.MessageId, _options.DeliveryLimit);
+                await _subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
+            }
+
+            return;
+        }
+
+        // Rule 4: Handle messages under the delivery limit
+        if (_isQuorumQueue)
+        {
+            _logger.LogDebug(
+                "Quorum queue message ({MessageId}) under delivery limit: Rejecting for broker-managed redelivery",
+                envelope.BasicProperties.MessageId);
+            await _subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
+        }
+        else
+        {
+            await RepublishMessageWithIncrementedDeliveryCountAsync(envelope, retryCount).AnyContext();
+        }
+    }
+
+    private async Task RepublishMessageWithIncrementedDeliveryCountAsync(BasicDeliverEventArgs envelope, long currentRetryCount)
+    {
+        string originalMessageId = GetOriginalMessageIdFromHeader(envelope);
+        var properties = new BasicProperties(envelope.BasicProperties)
+        {
+            MessageId = Guid.NewGuid().ToString("N")
+        };
+
+        var headers = new Dictionary<string, object>(envelope.BasicProperties.Headers ?? new Dictionary<string, object>())
+        {
+            [XDeliveryCountHeader] = currentRetryCount + 1,
+            [XOriginalMessageIdHeader] = originalMessageId
+        };
+
+        if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
+            headers["TraceState"] = Activity.Current.TraceStateString;
+
+        properties.Headers = headers;
+
+        try
+        {
+            await EnsureTopicCreatedAsync(envelope.CancellationToken).AnyContext();
+            await PublishMessageAsync(envelope.Exchange, envelope.RoutingKey, envelope.Body.ToArray(), properties, envelope.CancellationToken).AnyContext();
+            await _subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
+
+            _logger.LogDebug("Republished classic queue message ({MessageId}) (OriginalMessageId={OriginalMessageId}) with delivery count {DeliveryCount}",
+                envelope.BasicProperties.MessageId, originalMessageId, currentRetryCount + 1);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to republish message ({MessageId}), acknowledging to prevent infinite retry", envelope.BasicProperties.MessageId);
+            await _subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
         }
     }
 
     /// <summary>
-    /// Get MessageBusData from a RabbitMQ delivery
+    /// For quorum queues: x-delivery-count is set by broker (1 on first redelivery, absent on the first attempt)
+    /// For classic queues: x-delivery-count is only present if we added it during previous requeue
     /// </summary>
-    /// <param name="envelope">The RabbitMQ delivery arguments</param>
-    /// <returns>The MessageBusData for the message</returns>
+    private static long GetRetryCountFromHeader(BasicDeliverEventArgs envelope)
+    {
+        long retryCount = 0;
+        if (envelope.BasicProperties.Headers?.TryGetValue(XDeliveryCountHeader, out object xDeliveryCount) is true)
+        {
+            if (!Int64.TryParse(xDeliveryCount.ToString(), out retryCount))
+                retryCount = 0;
+        }
+
+        return retryCount;
+    }
+
+    private static string GetOriginalMessageIdFromHeader(BasicDeliverEventArgs envelope)
+    {
+        if (envelope.BasicProperties.Headers?.TryGetValue(XOriginalMessageIdHeader, out object xOriginalMessageId) is true)
+        {
+            return xOriginalMessageId switch
+            {
+                string str => str,
+                byte[] bytes => Encoding.UTF8.GetString(bytes),
+                _ => xOriginalMessageId?.ToString()
+            };
+        }
+
+        return envelope.BasicProperties.MessageId;
+    }
+
+    private async Task PublishMessageAsync(string exchange, string routingKey, byte[] body, BasicProperties properties, CancellationToken cancellationToken)
+    {
+        using (await _lock.LockAsync().AnyContext())
+        {
+            await _publisherChannel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken).AnyContext();
+        }
+    }
+
     protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope)
     {
         var message = new Message(envelope.Body.ToArray(), DeserializeMessageBody)
@@ -313,8 +452,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     {
         byte[] data = SerializeMessageBody(messageType, message);
 
-        // if the RabbitMQ plugin is not available then use the base class delay mechanism
-        if (!_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+        // if the RabbitMQ plugin is not available, then use the base class delay mechanism
+        if (_delayedExchangePluginEnabled is false && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             var mappedType = GetMappedMessageType(messageType);
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
@@ -327,7 +466,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         {
             MessageId = options.UniqueId ?? Guid.NewGuid().ToString("N"),
             CorrelationId = options.CorrelationId,
-            Type = messageType,
+            Type = messageType
         };
 
         if (_options.IsDurable)
@@ -343,13 +482,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         }
 
         // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
-        if (_delayedExchangePluginEnabled.Value && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+        if (_delayedExchangePluginEnabled is true && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             // It's necessary to typecast long to int because RabbitMQ on the consumer side is reading the
             // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
             // and the data will be delivered immediately.
             basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds) } };
-
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
         }
         else
@@ -357,10 +495,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             _logger.LogTrace("Message publish type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
         }
 
-        using (await _lock.LockAsync().AnyContext())
-            await _publisherChannel.BasicPublishAsync<BasicProperties>(_options.Topic, String.Empty, mandatory: false, basicProperties, data, cancellationToken: cancellationToken).AnyContext();
-
-        _logger.LogTrace("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
+        await PublishMessageAsync(_options.Topic, String.Empty, data, basicProperties, cancellationToken).AnyContext();
+        _logger.LogDebug("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
     }
 
     /// <summary>
@@ -386,7 +522,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         try
         {
             // This exchange is a delayed exchange (fanout). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
-            // Disclaimer : https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/
+            // Disclaimer: https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/
             // Please read the *Performance Impact* of the delayed exchange type.
             var args = new Dictionary<string, object> { { "x-delayed-type", ExchangeType.Fanout } };
             await channel.ExchangeDeclareAsync(_options.Topic, "x-delayed-message", _options.IsDurable, false, args).AnyContext();
