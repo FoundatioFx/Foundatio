@@ -322,6 +322,37 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
         return base.WillWorkWithSets();
     }
 
+
+    [Fact]
+    protected override Task ExistsAsyncShouldCheckLocalCacheFirst()
+    {
+        return base.ExistsAsyncShouldCheckLocalCacheFirst();
+    }
+
+    [Fact]
+    protected override Task GetExpirationAsyncShouldCheckLocalCacheFirst()
+    {
+        return base.GetExpirationAsyncShouldCheckLocalCacheFirst();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldUseHybridCache()
+    {
+        return base.GetAllAsyncShouldUseHybridCache();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldHandleEmptyKeys()
+    {
+        return base.GetAllAsyncShouldHandleEmptyKeys();
+    }
+
+    [Fact]
+    protected override Task GetAllAsyncShouldSkipNullKeys()
+    {
+        return base.GetAllAsyncShouldSkipNullKeys();
+    }
+
     public Task InitializeAsync()
     {
         _logger.LogDebug("Initializing");
