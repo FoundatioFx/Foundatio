@@ -173,7 +173,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return null;
 
         if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out string traceState))
-            activity.TraceStateString = traceState.ToString();
+            activity.TraceStateString = traceState;
 
         activity.DisplayName = $"Queue: {entry.EntryType.Name}";
 
