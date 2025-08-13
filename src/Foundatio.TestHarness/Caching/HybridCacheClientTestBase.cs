@@ -182,7 +182,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, secondCache.LocalCache.Count);
     }
 
-        protected virtual async Task ExistsAsyncShouldCheckLocalCacheFirst()
+    protected virtual async Task ExistsAsyncShouldCheckLocalCacheFirst()
     {
         using var cache = GetDistributedHybridCacheClient();
         Assert.NotNull(cache);
