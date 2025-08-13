@@ -141,7 +141,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
     protected virtual Activity StartDequeueActivity()
     {
-        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("DequeueQueueEntry", ActivityKind.Internal);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("DequeueQueueEntry");
         if (activity is null)
             return null;
 
@@ -163,7 +163,6 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         activity.AddTag("EntryType", entry.EntryType.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
-        activity.AddTag("Attempts", entry.Attempts.ToString());
     }
 
     protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry)
@@ -190,7 +189,6 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         activity.AddTag("EntryType", entry.EntryType.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
-        activity.AddTag("Attempts", entry.Attempts.ToString());
 
         if (entry.Properties is not { Count: > 0 })
             return;
