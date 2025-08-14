@@ -49,7 +49,9 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
         try
         {
+            using var dequeueActivity = StartDequeueActivity();
             queueEntry = await _queue.Value.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
+            EnrichDequeueActivity(dequeueActivity, queueEntry);
         }
         catch (OperationCanceledException)
         {
@@ -137,14 +139,40 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         }
     }
 
+    protected virtual Activity StartDequeueActivity()
+    {
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("DequeueQueueEntry");
+        if (activity is null)
+            return null;
+
+        activity.DisplayName = $"Dequeue: {_queueName}";
+        activity.AddTag("QueueName", _queueName);
+        activity.AddTag("JobId", JobId);
+
+        return activity;
+    }
+
+    protected virtual void EnrichDequeueActivity(Activity activity, IQueueEntry<T> entry)
+    {
+        if (activity is null || !activity.IsAllDataRequested)
+            return;
+
+        if (entry is null)
+            return;
+
+        activity.AddTag("EntryType", entry.EntryType.FullName);
+        activity.AddTag("Id", entry.Id);
+        activity.AddTag("CorrelationId", entry.CorrelationId);
+    }
+
     protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, entry.CorrelationId);
         if (activity is null)
             return null;
 
-        if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
-            activity.TraceStateString = traceState.ToString();
+        if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out string traceState))
+            activity.TraceStateString = traceState;
 
         activity.DisplayName = $"Queue: {entry.EntryType.Name}";
 
@@ -162,7 +190,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
 
-        if (entry.Properties == null || entry.Properties.Count <= 0)
+        if (entry.Properties is not { Count: > 0 })
             return;
 
         foreach (var p in entry.Properties)
