@@ -20,13 +20,21 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
     protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     protected readonly string _queueName = typeof(T).Name;
 
-    public QueueJobBase(IQueue<T> queue, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null) : this(new Lazy<IQueue<T>>(() => queue), timeProvider, null, loggerFactory) { }
+    public QueueJobBase(
+        IQueue<T> queue,
+        TimeProvider timeProvider = null,
+        IResiliencePolicyProvider resiliencePolicyProvider = null,
+        ILoggerFactory loggerFactory = null
+    ) : this(
+        new Lazy<IQueue<T>>(() => queue), timeProvider, resiliencePolicyProvider, loggerFactory)
+    {
+    }
 
     public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
     {
         _queue = queue;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = resiliencePolicyProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
         AutoComplete = true;

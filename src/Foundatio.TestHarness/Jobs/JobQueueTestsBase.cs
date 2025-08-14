@@ -20,7 +20,9 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
 {
     private readonly ActivitySource _activitySource = new(nameof(JobQueueTestsBase));
 
-    public JobQueueTestsBase(ITestOutputHelper output) : base(output) { }
+    public JobQueueTestsBase(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected abstract IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay);
 
@@ -55,9 +57,8 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             Path = "somepath"
         });
 
-        // clear activity and then verify that      Activity.Current = null;
-
-        var job = new SampleQueueJob(queue, null, Log);
+        // clear activity and then verify that Activity.Current = null;
+        var job = new SampleQueueJob(queue, null, null, Log);
         await job.RunAsync();
 
         var stats = await queue.GetQueueStatsAsync();
@@ -78,7 +79,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             Path = "somepath" + index
         }));
 
-        var job = new SampleQueueJob(queue, null, Log);
+        var job = new SampleQueueJob(queue, null, null, Log);
         await Task.Delay(10);
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -95,11 +96,13 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
 
         using var queue = GetSampleWorkItemQueue(retries: 3, retryDelay: TimeSpan.Zero);
+        Assert.NotNull(queue);
+
         await queue.DeleteQueueAsync();
 
         var enqueueTask = Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), async (index, _) =>
         {
-            _logger.LogInformation($"Enqueue #{index}");
+            _logger.LogInformation("Enqueue #{Index}", index);
             await queue.EnqueueAsync(new SampleQueueWorkItem
             {
                 Created = DateTime.UtcNow,
@@ -108,7 +111,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         });
 
         var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), null, null, Log);
-        var job = new SampleQueueJobWithLocking(queue, lockProvider, null, Log);
+        var job = new SampleQueueJobWithLocking(queue, lockProvider, null, null, Log);
         await Task.Delay(10);
         _logger.LogInformation("Starting RunUntilEmptyAsync");
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
@@ -155,7 +158,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), async (index, _) =>
             {
                 var queue = queues[index - 1];
-                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null, Log);
+                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null, null, Log);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             });
