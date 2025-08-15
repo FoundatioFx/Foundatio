@@ -315,4 +315,148 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             }
         }
     }
+
+    [Fact]
+    public async Task CanSetMaxMemorySize()
+    {
+        // Use a memory limit that allows for testing eviction
+        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(200).CloneValues(false));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Add some entries with known sizes
+            await cache.SetAsync("small1", "test"); // ~32 bytes
+            _logger.LogInformation($"After adding 'test': CurrentMemorySize={cache.CurrentMemorySize}");
+            Assert.True(cache.CurrentMemorySize > 0, $"Expected memory size > 0, but was {cache.CurrentMemorySize}");
+            var sizeAfterFirst = cache.CurrentMemorySize;
+
+            await cache.SetAsync("small2", "test2"); // ~34 bytes
+            _logger.LogInformation($"After adding 'test2': CurrentMemorySize={cache.CurrentMemorySize}");
+            Assert.True(cache.CurrentMemorySize > sizeAfterFirst, $"Expected memory size > {sizeAfterFirst}, but was {cache.CurrentMemorySize}");
+
+            // Add medium strings to approach the limit
+            await cache.SetAsync("medium1", new string('a', 50)); // ~124 bytes
+            await cache.SetAsync("medium2", new string('b', 50)); // ~124 bytes  
+            _logger.LogInformation($"After adding medium strings: CurrentMemorySize={cache.CurrentMemorySize}");
+
+            // Add one more item that should trigger eviction
+            await cache.SetAsync("final", "trigger"); // Should trigger cleanup
+            _logger.LogInformation($"After adding final item: CurrentMemorySize={cache.CurrentMemorySize}");
+
+            // The cache should respect the memory limit (allowing some tolerance for async cleanup)
+            // Give it a moment for async maintenance to run
+            await Task.Delay(500);
+            _logger.LogInformation($"After delay: CurrentMemorySize={cache.CurrentMemorySize}");
+            
+            Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5, 
+                $"Memory size {cache.CurrentMemorySize} should be close to or below limit {cache.MaxMemorySize} (allowing 50% tolerance for async cleanup)");
+            
+            // At least some items should still be accessible
+            var hasAnyItems = (await cache.GetAsync<string>("small1")).HasValue ||
+                             (await cache.GetAsync<string>("small2")).HasValue ||
+                             (await cache.GetAsync<string>("medium1")).HasValue ||
+                             (await cache.GetAsync<string>("medium2")).HasValue ||
+                             (await cache.GetAsync<string>("final")).HasValue;
+            
+            Assert.True(hasAnyItems, "At least some items should remain in cache");
+        }
+    }
+
+    [Fact]
+    public async Task DebugMemoryTracking()
+    {
+        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(1024).CloneValues(false));
+        using (cache)
+        {
+            _logger.LogInformation($"Initial state: MaxMemorySize={cache.MaxMemorySize}, CurrentMemorySize={cache.CurrentMemorySize}");
+            
+            await cache.SetAsync("key1", "value1");
+            _logger.LogInformation($"After set key1: CurrentMemorySize={cache.CurrentMemorySize}");
+            
+            // Verify the entry was actually added
+            var result = await cache.GetAsync<string>("key1");
+            _logger.LogInformation($"Retrieved key1: HasValue={result.HasValue}, Value='{result.Value}'");
+            
+            Assert.True(result.HasValue, "Key should exist in cache");
+            
+            // Only assert memory tracking if the cache is configured for it
+            if (cache.MaxMemorySize.HasValue)
+            {
+                Assert.True(cache.CurrentMemorySize > 0, $"Memory should be tracked when MaxMemorySize is set. CurrentMemorySize={cache.CurrentMemorySize}");
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MaxMemorySizeWorksWithMaxItems()
+    {
+        // Test that both limits work together
+        var cache = new InMemoryCacheClient(o => o.MaxItems(5).MaxMemorySize(512).CloneValues(false));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Add items that should trigger memory limit before item limit
+            var mediumString = new string('a', 100); // ~224 bytes each
+            
+            await cache.SetAsync("item1", mediumString);
+            await cache.SetAsync("item2", mediumString);
+            await cache.SetAsync("item3", mediumString); // Should be close to or over 512 bytes total
+
+            // Verify limits are respected
+            Assert.True(cache.Count <= cache.MaxItems);
+            Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize || cache.Count == 0);
+        }
+    }
+
+    [Fact]
+    public async Task MemorySizeIsTrackedCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(null).CloneValues(false));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            // Memory tracking should only occur when MaxMemorySize is set
+            Assert.Null(cache.MaxMemorySize);
+            
+            await cache.SetAsync("key1", "value1");
+            // When MaxMemorySize is null, CurrentMemorySize should be 0
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+        
+        // Test with MaxMemorySize set
+        cache = new InMemoryCacheClient(o => o.MaxMemorySize(1024).CloneValues(false));
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Test adding items
+            await cache.SetAsync("key1", "value1");
+            var sizeAfterAdd = cache.CurrentMemorySize;
+            Assert.True(sizeAfterAdd > 0, $"Expected memory size > 0 after add, but was {sizeAfterAdd}");
+
+            // Test updating items
+            await cache.SetAsync("key1", "longer_value1");
+            var sizeAfterUpdate = cache.CurrentMemorySize;
+            Assert.True(sizeAfterUpdate != sizeAfterAdd, $"Expected memory size to change after update, was {sizeAfterAdd}, now {sizeAfterUpdate}");
+
+            // Test removing items
+            await cache.RemoveAsync("key1");
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Test removing all
+            await cache.SetAsync("key1", "value1");
+            await cache.SetAsync("key2", "value2");
+            Assert.True(cache.CurrentMemorySize > 0);
+            
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
 }
