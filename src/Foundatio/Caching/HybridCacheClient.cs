@@ -38,7 +38,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _messageBus = messageBus;
         _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
         if (localCacheOptions == null)
-            localCacheOptions = new InMemoryCacheClientOptions { LoggerFactory = loggerFactory };
+            localCacheOptions = new InMemoryCacheClientOptions
+            {
+                TimeProvider = _timeProvider,
+                ResiliencePolicyProvider = _resiliencePolicyProvider,
+                LoggerFactory = loggerFactory
+            };
         _localCache = new InMemoryCacheClient(localCacheOptions);
         _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
     }

@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
@@ -353,7 +354,9 @@ public class InMemoryHybridCacheClient : HybridCacheClient
         : base(cacheClient, messageBus, new InMemoryCacheClientOptions
         {
             CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
+            ShouldThrowOnSerializationError = shouldThrowOnSerializationError,
+            TimeProvider = messageBus.GetTimeProvider(),
+            LoggerFactory = loggerFactory
         }, loggerFactory)
     {
     }
@@ -362,7 +365,9 @@ public class InMemoryHybridCacheClient : HybridCacheClient
         : base(new InMemoryCacheClient(o => o.LoggerFactory(loggerFactory).ShouldThrowOnSerializationError(shouldThrowOnSerializationError)), messageBus, new InMemoryCacheClientOptions
         {
             CloneValues = true,
-            ShouldThrowOnSerializationError = shouldThrowOnSerializationError
+            ShouldThrowOnSerializationError = shouldThrowOnSerializationError,
+            TimeProvider = messageBus.GetTimeProvider(),
+            LoggerFactory = loggerFactory
         }, loggerFactory)
     {
     }
