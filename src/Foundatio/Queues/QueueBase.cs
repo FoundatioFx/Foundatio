@@ -55,7 +55,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
-        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider();
+        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
