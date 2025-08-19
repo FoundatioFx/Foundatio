@@ -333,7 +333,9 @@ public class MyWorkItem
 
 public class MyWorkItemHandler : WorkItemHandlerBase
 {
-    public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory) { }
+    public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    {
+    }
 
     public override async Task HandleItemAsync(WorkItemContext context)
     {
