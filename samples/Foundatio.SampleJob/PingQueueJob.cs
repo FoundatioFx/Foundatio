@@ -8,6 +8,7 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
+using Foundatio.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.SampleJob;
@@ -17,10 +18,10 @@ public class PingQueueJob : QueueJobBase<PingRequest>
     private readonly ILockProvider _locker;
     private int _runCount;
 
-    public PingQueueJob(IQueue<PingRequest> queue, ILoggerFactory loggerFactory, ICacheClient cacheClient, IMessageBus messageBus) : base(queue, null, loggerFactory)
+    public PingQueueJob(IQueue<PingRequest> queue, ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         AutoComplete = true;
-        _locker = new CacheLockProvider(cacheClient, messageBus, null, loggerFactory);
+        _locker = new CacheLockProvider(cacheClient, messageBus, timeProvider, resiliencePolicyProvider, loggerFactory);
     }
 
     public int RunCount => _runCount;
