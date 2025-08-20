@@ -72,7 +72,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
-            if (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
+            if (_isDisposed || (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow()))
             {
                 if (_queueStats is not null)
                 {
