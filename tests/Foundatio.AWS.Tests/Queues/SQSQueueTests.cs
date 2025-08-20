@@ -18,46 +18,50 @@ public class SQSQueueTests : QueueTestBase
         _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
+        TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100,
+        bool runQueueMaintenance = true, TimeProvider timeProvider = null)
     {
-        var queue = new SQSQueue<SimpleWorkItem>(
-            o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
-                .Name(_queueName)
-                .Retries(retries)
-                .RetryDelay(attempt =>
-                {
-                    int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
-                    int index = Math.Min(attempt, multipliers.Length - 1);
-                    return TimeSpan.FromSeconds(multipliers[index]);
-                })
-                .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-                .DequeueInterval(TimeSpan.FromSeconds(1))
-                .ReadQueueTimeout(TimeSpan.FromSeconds(1))
-                .MetricsPollingInterval(TimeSpan.Zero)
-                .TimeProvider(timeProvider)
-                .LoggerFactory(Log));
+        var queue = new SQSQueue<SimpleWorkItem>(o => o
+            .ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
+            .Name(_queueName)
+            .Retries(retries)
+            .RetryDelay(attempt =>
+            {
+                int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
+                int index = Math.Min(attempt, multipliers.Length - 1);
+                return TimeSpan.FromSeconds(multipliers[index]);
+            })
+            .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+            .DequeueInterval(TimeSpan.FromSeconds(1))
+            .ReadQueueTimeout(TimeSpan.FromSeconds(1))
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .TimeProvider(timeProvider)
+            .LoggerFactory(Log));
 
         _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
     }
 
-    protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null)
+    protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
+        TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100,
+        bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null)
     {
-        var queue = new SQSQueue<SimpleWorkItem>(
-            o => o.ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
-                .Name(_queueName)
-                .Retries(retries)
-                .RetryDelay(attempt =>
-                {
-                    int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
-                    int index = Math.Min(attempt, multipliers.Length - 1);
-                    return TimeSpan.FromSeconds(multipliers[index]);
-                })
-                .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-                .DequeueInterval(dequeueInterval ?? TimeSpan.FromSeconds(1))
-                .ReadQueueTimeout(readQueueTimeout ?? TimeSpan.FromSeconds(1))
-                .MetricsPollingInterval(TimeSpan.Zero)
-                .LoggerFactory(Log));
+        var queue = new SQSQueue<SimpleWorkItem>(o => o
+            .ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
+            .Name(_queueName)
+            .Retries(retries)
+            .RetryDelay(attempt =>
+            {
+                int[] multipliers = retryMultipliers ?? [1, 3, 5, 10];
+                int index = Math.Min(attempt, multipliers.Length - 1);
+                return TimeSpan.FromSeconds(multipliers[index]);
+            })
+            .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+            .DequeueInterval(dequeueInterval ?? TimeSpan.FromSeconds(1))
+            .ReadQueueTimeout(readQueueTimeout ?? TimeSpan.FromSeconds(1))
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
 
         _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
