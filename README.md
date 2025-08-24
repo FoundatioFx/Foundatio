@@ -14,6 +14,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
 - [Resilience](#resilience)
+- [Mediator](https://github.com/FoundatioFx/Foundatio.Mediator)
 
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
