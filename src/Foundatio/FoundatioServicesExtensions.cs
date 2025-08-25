@@ -350,10 +350,19 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<IMessageBus>() // optional for more efficient lock release notifications
+                sp.GetService<IMessageBus>(), // optional for more efficient lock release notifications
+                sp.GetService<TimeProvider>(),
+                sp.GetService<IResiliencePolicyProvider>(),
+                sp.GetService<ILoggerFactory>()
             ));
-            _services.ReplaceSingleton<IThrottlingLockProviderFactory>(sp => new ThrottlingLockProviderFactory(sp.GetRequiredService<ICacheClient>()));
-            _services.AddTransient(sp => new ThrottlingLockProvider(sp.GetRequiredService<ICacheClient>()));
+            _services.ReplaceSingleton<IThrottlingLockProviderFactory>(sp => new ThrottlingLockProviderFactory(
+                sp.GetRequiredService<ICacheClient>(), sp.GetService<TimeProvider>(),
+                sp.GetService<IResiliencePolicyProvider>(),
+                sp.GetService<ILoggerFactory>()));
+            _services.AddTransient(sp => new ThrottlingLockProvider(sp.GetRequiredService<ICacheClient>(),
+                timeProvider: sp.GetService<TimeProvider>(),
+                resiliencePolicyProvider: sp.GetService<IResiliencePolicyProvider>(),
+                loggerFactory: sp.GetService<ILoggerFactory>()));
             return _builder;
         }
     }
