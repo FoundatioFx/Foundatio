@@ -31,7 +31,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 
     protected override ILockProvider GetLockProvider()
     {
-        return new CacheLockProvider(_cache, _messageBus, null, Log);
+        return new CacheLockProvider(_cache, _messageBus, null, null, Log);
     }
 
     [Fact]

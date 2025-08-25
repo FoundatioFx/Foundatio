@@ -57,13 +57,15 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         // min is 1 second, max is 1 minute
         var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
-        _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval);
+        _maintenanceLockProvider = new ThrottlingLockProvider(_cache, 1, interval, _timeProvider, options.ResiliencePolicyProvider, _loggerFactory);
 
         _logger.LogInformation("Queue {QueueName}:{QueueId} created. Retries: {Retries} Retry Delay: {RetryDelay:g}, Maintenance Interval: {MaintenanceInterval:g}", _options.Name, QueueId, _options.Retries, _options.RetryDelay, interval);
     }
 
     public RedisQueue(Builder<RedisQueueOptionsBuilder<T>, RedisQueueOptions<T>> config)
-        : this(config(new RedisQueueOptionsBuilder<T>()).Build()) { }
+        : this(config(new RedisQueueOptionsBuilder<T>()).Build())
+    {
+    }
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase(_options.Database);
 

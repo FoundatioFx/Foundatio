@@ -42,7 +42,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
         : this(config(new RedisCacheClientOptionsBuilder()).Build())
     {
-
     }
 
     public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase(_options.Database);
