@@ -5,7 +5,7 @@
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.3" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0" />
