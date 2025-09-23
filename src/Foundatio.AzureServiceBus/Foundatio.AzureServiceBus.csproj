@@ -10,7 +10,7 @@
     <PackageReference Include="Microsoft.Rest.ClientRuntime" Condition="" Version="2.3.24" />
 
     <!-- NOTE: Forcing minimum for security patch. Remove once SDK versions are updated -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>
