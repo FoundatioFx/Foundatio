@@ -10,7 +10,7 @@ namespace Foundatio.Caching;
 
 public class ScopedHybridCacheClient : ScopedCacheClient, IHybridCacheClient
 {
-    public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null) : base(client, scope) { }
+    public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null, bool shouldDispose = false) : base(client, scope, shouldDispose) { }
 }
 
 public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
@@ -18,12 +18,14 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     private string _keyPrefix;
     private bool _isLocked;
     private readonly object _lock = new();
+    private readonly bool _shouldDispose;
 
-    public ScopedCacheClient(ICacheClient client, string scope = null)
+    public ScopedCacheClient(ICacheClient client, string scope, bool shouldDispose = false)
     {
         UnscopedCache = client ?? new NullCacheClient();
         _isLocked = scope != null;
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
+        _shouldDispose = shouldDispose;
 
         _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
     }
@@ -253,5 +255,9 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.GetListAsync<T>(GetUnscopedCacheKey(key), page, pageSize);
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (_shouldDispose)
+            UnscopedCache.Dispose();
+    }
 }

@@ -13,12 +13,14 @@ namespace Foundatio.Storage;
 public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly string _pathPrefix;
+    private readonly bool _shouldDispose;
 
-    public ScopedFileStorage(IFileStorage storage, string scope)
+    public ScopedFileStorage(IFileStorage storage, string scope, bool shouldDispose = false)
     {
         UnscopedStorage = storage ?? throw new ArgumentNullException(nameof(storage));
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim().NormalizePath() : null;
         _pathPrefix = Scope != null ? String.Concat(Scope, "/") : String.Empty;
+        _shouldDispose = shouldDispose;
 
         // NOTE: we can't really check reliably using Path.GetInvalidPathChars() because each storage implementation and platform could be different.
         if (Scope is not null && Scope.Contains("*"))
@@ -142,5 +144,9 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         };
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (_shouldDispose)
+            UnscopedStorage.Dispose();
+    }
 }
