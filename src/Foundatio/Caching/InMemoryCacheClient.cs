@@ -30,7 +30,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
 
-    public InMemoryCacheClient() : this(o => o) { }
+    public InMemoryCacheClient() : this(o => o)
+    {
+    }
 
     public InMemoryCacheClient(InMemoryCacheClientOptions options = null)
     {
@@ -1069,7 +1071,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             await CompactAsync().AnyContext();
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         _memory.Clear();
         ItemExpired?.Dispose();

@@ -8,22 +8,47 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Caching;
 
+/// <summary>
+/// Provides a scoped hybrid cache client that prefixes all cache keys with the specified scope.
+/// </summary>
 public class ScopedHybridCacheClient : ScopedCacheClient, IHybridCacheClient
 {
-    public ScopedHybridCacheClient(IHybridCacheClient client, string scope = null) : base(client, scope) { }
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedHybridCacheClient"/> class with the specified hybrid cache client and scope.
+    /// </summary>
+    /// <param name="client">The underlying hybrid cache client to use.</param>
+    /// <param name="scope">The scope for cache keys. When specified, all operations will be prefixed with this scope.</param>
+    /// <param name="shouldDispose">Whether to dispose the underlying cache client when this instance is disposed.
+    /// Defaults to false, meaning the underlying cache client will not be disposed when this instance is disposed.
+    /// Set to true to have the underlying cache client automatically disposed when this instance is disposed, enabling use with 'using' statements.</param>
+    public ScopedHybridCacheClient(IHybridCacheClient client, string scope, bool shouldDispose = false) : base(client, scope, shouldDispose) { }
 }
 
+/// <summary>
+/// Provides a scoped cache client that prefixes all cache keys with the specified scope.
+/// Can optionally dispose the underlying cache client when this instance is disposed.
+/// </summary>
 public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private string _keyPrefix;
     private bool _isLocked;
     private readonly object _lock = new();
+    private readonly bool _shouldDispose;
 
-    public ScopedCacheClient(ICacheClient client, string scope = null)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedCacheClient"/> class with the specified cache client and scope.
+    /// </summary>
+    /// <param name="client">The underlying cache client to use.</param>
+    /// <param name="scope">The scope for cache keys. When specified, all operations will be prefixed with this scope.</param>
+    /// <param name="shouldDispose">Whether to dispose the underlying cache client when this instance is disposed.
+    /// Defaults to false, meaning the underlying cache client will not be disposed when this instance is disposed.
+    /// Set to true to have the underlying cache client automatically disposed when this instance is disposed, enabling use with 'using' statements.</param>
+    public ScopedCacheClient(ICacheClient client, string scope, bool shouldDispose = false)
     {
         UnscopedCache = client ?? new NullCacheClient();
         _isLocked = scope != null;
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;
+        _shouldDispose = shouldDispose;
 
         _keyPrefix = Scope != null ? String.Concat(Scope, ":") : String.Empty;
     }
@@ -253,5 +278,9 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.GetListAsync<T>(GetUnscopedCacheKey(key), page, pageSize);
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (_shouldDispose)
+            UnscopedCache.Dispose();
+    }
 }

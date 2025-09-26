@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,15 +10,31 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Storage;
 
+/// <summary>
+/// Provides a scoped file storage implementation that prefixes all file paths with the specified scope.
+/// Can optionally dispose the underlying storage when this instance is disposed.
+/// </summary>
 public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly string _pathPrefix;
+    private readonly bool _shouldDispose;
 
-    public ScopedFileStorage(IFileStorage storage, string scope)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedFileStorage"/> class with the specified file storage and scope.
+    /// </summary>
+    /// <param name="storage">The underlying file storage to use.</param>
+    /// <param name="scope">The scope for file paths. When specified, all operations will be prefixed with this scope.</param>
+    /// <param name="shouldDispose">Whether to dispose the underlying file storage when this instance is disposed.
+    /// Defaults to false, meaning the underlying file storage will not be disposed when this instance is disposed.
+    /// Set to true to have the underlying file storage automatically disposed when this instance is disposed, enabling use with 'using' statements.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="storage"/> is null.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="scope"/> contains a wildcard character.</exception>
+    public ScopedFileStorage(IFileStorage storage, string scope, bool shouldDispose = false)
     {
         UnscopedStorage = storage ?? throw new ArgumentNullException(nameof(storage));
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim().NormalizePath() : null;
         _pathPrefix = Scope != null ? String.Concat(Scope, "/") : String.Empty;
+        _shouldDispose = shouldDispose;
 
         // NOTE: we can't really check reliably using Path.GetInvalidPathChars() because each storage implementation and platform could be different.
         if (Scope is not null && Scope.Contains("*"))
@@ -142,5 +158,9 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         };
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+        if (_shouldDispose)
+            UnscopedStorage.Dispose();
+    }
 }
