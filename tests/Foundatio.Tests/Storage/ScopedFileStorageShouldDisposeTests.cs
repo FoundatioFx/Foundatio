@@ -1,16 +1,13 @@
-using System;
 using Foundatio.Storage;
+using Foundatio.Xunit;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage;
-    public class ScopedFileStorageShouldDisposeTests : IDisposable
+    public class ScopedFileStorageShouldDisposeTests : TestWithLoggingBase
     {
-        private readonly ITestOutputHelper _output;
-
-        public ScopedFileStorageShouldDisposeTests(ITestOutputHelper output)
+        public ScopedFileStorageShouldDisposeTests(ITestOutputHelper output) : base(output)
         {
-            _output = output;
         }
 
         [Fact]
@@ -48,7 +45,7 @@ namespace Foundatio.Tests.Storage;
             var innerStorage = new TrackableDisposableFileStorage();
 
             // Act
-            using (var scopedStorage = new ScopedFileStorage(innerStorage, "test", shouldDispose: true))
+            using (new ScopedFileStorage(innerStorage, "test", shouldDispose: true))
             {
                 // No operations needed
             }
@@ -64,7 +61,7 @@ namespace Foundatio.Tests.Storage;
             var innerStorage = new TrackableDisposableFileStorage();
 
             // Act
-            using (var scopedStorage = new ScopedFileStorage(innerStorage, "test", shouldDispose: false))
+            using (new ScopedFileStorage(innerStorage, "test", shouldDispose: false))
             {
                 // No operations needed
             }
@@ -73,16 +70,11 @@ namespace Foundatio.Tests.Storage;
             Assert.False(innerStorage.WasDisposed);
         }
 
-        public void Dispose()
-        {
-            // Cleanup if needed
-        }
-
         private class TrackableDisposableFileStorage : InMemoryFileStorage
         {
             public bool WasDisposed { get; private set; }
 
-            public new void Dispose()
+            public override void Dispose()
             {
                 WasDisposed = true;
                 base.Dispose();

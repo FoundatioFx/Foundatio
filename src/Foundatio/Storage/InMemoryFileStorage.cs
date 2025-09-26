@@ -24,7 +24,9 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public InMemoryFileStorage() : this(o => o) { }
+    public InMemoryFileStorage() : this(o => o)
+    {
+    }
 
     public InMemoryFileStorage(InMemoryFileStorageOptions options)
     {
@@ -303,7 +305,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         });
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         _storage?.Clear();
     }

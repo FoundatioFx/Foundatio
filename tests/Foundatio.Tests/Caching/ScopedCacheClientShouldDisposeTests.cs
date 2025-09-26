@@ -1,16 +1,13 @@
-using System;
 using Foundatio.Caching;
+using Foundatio.Xunit;
 using Xunit;
 using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
-    public class ScopedCacheClientShouldDisposeTests : IDisposable
+    public class ScopedCacheClientShouldDisposeTests : TestWithLoggingBase
     {
-        private readonly ITestOutputHelper _output;
-
-        public ScopedCacheClientShouldDisposeTests(ITestOutputHelper output)
+        public ScopedCacheClientShouldDisposeTests(ITestOutputHelper output) : base(output)
         {
-            _output = output;
         }
 
         [Fact]
@@ -48,7 +45,7 @@ namespace Foundatio.Tests.Caching;
             var innerCache = new TrackableDisposableCacheClient();
 
             // Act
-            using (var scopedCache = new ScopedCacheClient(innerCache, "test", shouldDispose: true))
+            using (new ScopedCacheClient(innerCache, "test", shouldDispose: true))
             {
                 // No operations needed
             }
@@ -64,7 +61,7 @@ namespace Foundatio.Tests.Caching;
             var innerCache = new TrackableDisposableCacheClient();
 
             // Act
-            using (var scopedCache = new ScopedCacheClient(innerCache, "test", shouldDispose: false))
+            using (new ScopedCacheClient(innerCache, "test", shouldDispose: false))
             {
                 // No operations needed
             }
@@ -73,16 +70,11 @@ namespace Foundatio.Tests.Caching;
             Assert.False(innerCache.WasDisposed);
         }
 
-        public void Dispose()
-        {
-            // Cleanup if needed
-        }
-
         private class TrackableDisposableCacheClient : InMemoryCacheClient
         {
             public bool WasDisposed { get; private set; }
 
-            public new void Dispose()
+            public override void Dispose()
             {
                 WasDisposed = true;
                 base.Dispose();
