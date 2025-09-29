@@ -902,10 +902,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            var timeProvider = new FakeTimeProvider();
             var utcNow = DateTime.UtcNow;
-            timeProvider.SetUtcNow(utcNow);
-
             var expires = DateTime.MaxValue - utcNow.AddDays(1);
             Assert.True(await cache.SetAsync("test1", 1, expires));
             Assert.Equal(1, (await cache.GetAsync<int>("test1")).Value);
@@ -1572,6 +1569,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
         }
     }
+
 }
 
 public class SimpleModel
