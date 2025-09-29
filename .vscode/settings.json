@@ -8,5 +8,6 @@
     "unscoped",
     "Xunit"
   ],
-  "msbuildProjectTools.nuget.includePreRelease": true
+  "msbuildProjectTools.nuget.includePreRelease": true,
+  "dotnet.defaultSolution": "Foundatio.slnx"
 }
