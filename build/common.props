@@ -12,7 +12,7 @@
 
     <Copyright>Copyright (c) 2025 Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
-    <NoWarn>$(NoWarn);CS1591;NU1701</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
