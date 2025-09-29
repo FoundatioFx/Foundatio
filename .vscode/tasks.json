@@ -36,6 +36,17 @@
       "command": "dotnet pack -c Release -o ${workspaceFolder}/artifacts",
       "type": "shell",
       "problemMatcher": []
+    },
+    {
+      "label": "setup cursor rules",
+      "command": "pwsh",
+      "args": [".github/setup-cursor-rules.ps1"],
+      "type": "shell",
+      "group": "build",
+      "presentation": {
+        "panel": "dedicated"
+      },
+      "problemMatcher": []
     }
   ]
 }
