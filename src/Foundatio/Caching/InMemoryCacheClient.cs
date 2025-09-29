@@ -49,7 +49,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
-        : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
+        : this(config(new InMemoryCacheClientOptionsBuilder()).Build())
+    {
+    }
 
     public int Count => _memory.Count(i => !i.Value.IsExpired);
     public int? MaxItems => _maxItems;
@@ -1037,11 +1039,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task DoMaintenanceAsync()
     {
-        _logger.LogTrace("DoMaintenance");
-        var utcNow = _timeProvider.GetUtcNow().AddMilliseconds(50);
+        _logger.LogTrace("DoMaintenance: Starting");
+        var utcNow = _timeProvider.GetUtcNow().SafeAddMilliseconds(50);
 
         // Remove expired items and items that are infrequently accessed as they may be updated by add.
-        long lastAccessMaximumTicks = utcNow.AddMilliseconds(-300).Ticks;
+        long lastAccessMaximumTicks = utcNow.SafeAddMilliseconds(-300).Ticks;
 
         try
         {
@@ -1069,6 +1071,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (ShouldCompact)
             await CompactAsync().AnyContext();
+
+        _logger.LogTrace("DoMaintenance: Finished");
     }
 
     public virtual void Dispose()

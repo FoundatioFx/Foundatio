@@ -50,4 +50,20 @@ internal static class DateTimeExtensions
 
         return date.Add(value);
     }
+
+    public static DateTimeOffset SafeAdd(this DateTimeOffset date, TimeSpan value)
+    {
+        if (date.Ticks + value.Ticks < DateTimeOffset.MinValue.Ticks)
+            return DateTimeOffset.MinValue;
+
+        if (date.Ticks + value.Ticks > DateTimeOffset.MaxValue.Ticks)
+            return DateTimeOffset.MaxValue;
+
+        return date.Add(value);
+    }
+
+    public static DateTimeOffset SafeAddMilliseconds(this DateTimeOffset date, double milliseconds)
+    {
+        return date.SafeAdd(TimeSpan.FromMilliseconds(milliseconds));
+    }
 }

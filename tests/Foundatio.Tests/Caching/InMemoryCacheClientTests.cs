@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -9,7 +10,9 @@ namespace Foundatio.Tests.Caching;
 
 public class InMemoryCacheClientTests : CacheClientTestsBase
 {
-    public InMemoryCacheClientTests(ITestOutputHelper output) : base(output) { }
+    public InMemoryCacheClientTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
@@ -313,6 +316,31 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 Assert.True((await cache.GetAsync<int>("test1")).HasValue);
                 Assert.Equal(2, cache.Misses);
             }
+        }
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WithMaxDateTimeExpiration_ShouldNotThrowException()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        timeProvider.SetUtcNow(DateTimeOffset.MaxValue);
+
+        var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string key = "cached-with-max-expiration";
+
+            // Act
+            await cache.SetAsync(key, "value", DateTime.MaxValue);
+
+            // Assert
+            var result = await cache.GetAsync<string>(key);
+            Assert.True(result.HasValue);
+            Assert.Equal("value", result.Value);
         }
     }
 }
