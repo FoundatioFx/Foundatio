@@ -9,7 +9,6 @@ using Foundatio.Caching;
 using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 using Xunit;
 using Xunit.Abstractions;
 
