@@ -27,9 +27,7 @@ namespace Foundatio.Extensions.Hosting.Cronos;
 /// <summary>
 /// Represents an exception that's thrown, when invalid Cron expression is given.
 /// </summary>
-#if !NETSTANDARD1_0
 [Serializable]
-#endif
 public class CronFormatException : FormatException
 {
     /// <summary>
