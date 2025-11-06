@@ -182,6 +182,14 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return _distributedCache.GetExpirationAsync(key);
     }
 
+    public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        return _distributedCache.GetAllExpirationAsync(keys);
+    }
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
@@ -189,6 +197,15 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+    }
+
+    public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        if (expirations is null)
+            throw new ArgumentNullException(nameof(expirations));
+
+        return _distributedCache.SetAllExpirationAsync(expirations);
+        // TODO: await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)

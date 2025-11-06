@@ -208,12 +208,31 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.GetExpirationAsync(GetUnscopedCacheKey(key));
     }
 
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys == null)
+            throw new ArgumentNullException(nameof(keys));
+
+        var unscopedKeys = GetUnscopedCacheKeys(keys);
+        var unscopedExpirations = await UnscopedCache.GetAllExpirationAsync(unscopedKeys).AnyContext();
+        return unscopedExpirations.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
+    }
+
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
         return UnscopedCache.SetExpirationAsync(GetUnscopedCacheKey(key), expiresIn);
+    }
+
+    public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        if (expirations == null)
+            throw new ArgumentNullException(nameof(expirations));
+
+        var unscopedExpirations = expirations.ToDictionary(kvp => GetUnscopedCacheKey(kvp.Key), kvp => kvp.Value);
+        return UnscopedCache.SetAllExpirationAsync(unscopedExpirations);
     }
 
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)

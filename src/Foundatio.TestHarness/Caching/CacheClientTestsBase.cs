@@ -865,7 +865,152 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task CanSetExpirationAsync()
+    public virtual async Task GetExpirationAsync_WithVariousStates_ReturnsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Test getting expiration for a key with no expiration
+            await cache.SetAsync("no-expiration", "value");
+            var expiration = await cache.GetExpirationAsync("no-expiration");
+            Assert.Null(expiration);
+
+            // Test getting expiration for a key with expiration
+            var expiresAt = DateTime.UtcNow.AddHours(1);
+            await cache.SetAsync("with-expiration", "value", expiresAt);
+            expiration = await cache.GetExpirationAsync("with-expiration");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1).Add(TimeSpan.FromSeconds(10)));
+
+            // Test getting expiration for a non-existent key
+            var expirationForNonExistent = await cache.GetExpirationAsync("non-existent-key");
+            Assert.Null(expirationForNonExistent);
+
+            // Test getting expiration for an expired key
+            var quickExpiry = DateTime.UtcNow.AddMilliseconds(100);
+            await cache.SetAsync("quick-expiry", "value", quickExpiry);
+            await Task.Delay(200);
+            expirationForNonExistent = await cache.GetExpirationAsync("quick-expiry");
+            Assert.Null(expirationForNonExistent);
+        }
+    }
+
+    public virtual async Task GetAllExpiration_WithMultipleKeys_ReturnsAllExpirations()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("key1", 1, TimeSpan.FromMinutes(5));
+            await cache.SetAsync("key2", 2, TimeSpan.FromMinutes(10));
+            await cache.SetAsync("key3", 3); // No expiration
+            await cache.SetAsync("key4", 4, TimeSpan.FromMinutes(15));
+
+            // Act
+            var expirations = await cache.GetAllExpirationAsync(["key1", "key2", "key3", "key4", "key5"]);
+
+            // Assert
+            Assert.NotNull(expirations);
+            Assert.Equal(3, expirations.Count); // key3 has no expiration, key5 doesn't exist
+
+            Assert.True(expirations.ContainsKey("key1"));
+            Assert.NotNull(expirations["key1"]);
+            Assert.True(expirations["key1"].Value > TimeSpan.FromMinutes(4));
+            Assert.True(expirations["key1"].Value <= TimeSpan.FromMinutes(5));
+
+            Assert.True(expirations.ContainsKey("key2"));
+            Assert.NotNull(expirations["key2"]);
+            Assert.True(expirations["key2"].Value > TimeSpan.FromMinutes(9));
+            Assert.True(expirations["key2"].Value <= TimeSpan.FromMinutes(10));
+
+            Assert.False(expirations.ContainsKey("key3")); // No expiration
+            Assert.False(expirations.ContainsKey("key5")); // Doesn't exist
+
+            Assert.True(expirations.ContainsKey("key4"));
+            Assert.NotNull(expirations["key4"]);
+            Assert.True(expirations["key4"].Value > TimeSpan.FromMinutes(14));
+            Assert.True(expirations["key4"].Value <= TimeSpan.FromMinutes(15));
+        }
+    }
+
+    public virtual async Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var keys = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                string key = $"perf-test-key-{i}";
+                keys.Add(key);
+                await cache.SetAsync(key, i, TimeSpan.FromMinutes(i % 60 + 1));
+            }
+
+            // Act
+            var sw = Stopwatch.StartNew();
+            var expirations = await cache.GetAllExpirationAsync(keys);
+            sw.Stop();
+
+            _logger.LogInformation("Get All Expiration Time ({Count} keys): {Elapsed:g}", count, sw.Elapsed);
+
+            // Assert
+            Assert.Equal(count, expirations.Count);
+            Assert.All(expirations, kvp => Assert.NotNull(kvp.Value));
+        }
+    }
+
+    public virtual async Task GetAllExpiration_WithExpiredKeys_ReturnsNullForExpiredKeys()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("key1", 1, TimeSpan.FromMilliseconds(100));
+            await cache.SetAsync("key2", 2, TimeSpan.FromMinutes(10));
+            await cache.SetAsync("key3", 3, TimeSpan.FromMilliseconds(100));
+
+            // Wait for key1 and key3 to expire
+            await Task.Delay(200);
+
+            // Act
+            var expirations = await cache.GetAllExpirationAsync(["key1", "key2", "key3"]);
+
+            // Assert
+            Assert.NotNull(expirations);
+            Assert.Single(expirations); // Only key2 should be returned
+            Assert.False(expirations.ContainsKey("key1")); // Expired
+            Assert.True(expirations.ContainsKey("key2")); // Still valid
+            Assert.False(expirations.ContainsKey("key3")); // Expired
+
+            var key2Expiration = expirations["key2"];
+            Assert.NotNull(key2Expiration);
+            Assert.True(key2Expiration.Value > TimeSpan.FromMinutes(9));
+            Assert.True(key2Expiration.Value <= TimeSpan.FromMinutes(10));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithValidDateTime_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -891,7 +1036,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task CanSetMinMaxExpirationAsync()
+    public virtual async Task SetExpirationAsync_WithMinMaxValues_HandlesEdgeCases()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -957,6 +1102,178 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
             Assert.Null(await cache.GetExpirationAsync("test9"));
+        }
+    }
+
+    public virtual async Task SetAllExpiration_WithMultipleKeys_SetsExpirationForAll()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("key1", 1);
+            await cache.SetAsync("key2", 2);
+            await cache.SetAsync("key3", 3);
+
+            var expirations = new Dictionary<string, TimeSpan?>
+            {
+                { "key1", TimeSpan.FromMinutes(5) },
+                { "key2", TimeSpan.FromMinutes(10) },
+                { "key3", TimeSpan.FromMinutes(15) }
+            };
+
+            // Act
+            await cache.SetAllExpirationAsync(expirations);
+
+            // Assert
+            var key1Expiration = await cache.GetExpirationAsync("key1");
+            Assert.NotNull(key1Expiration);
+            Assert.True(key1Expiration.Value > TimeSpan.FromMinutes(4));
+            Assert.True(key1Expiration.Value <= TimeSpan.FromMinutes(5));
+
+            var key2Expiration = await cache.GetExpirationAsync("key2");
+            Assert.NotNull(key2Expiration);
+            Assert.True(key2Expiration.Value > TimeSpan.FromMinutes(9));
+            Assert.True(key2Expiration.Value <= TimeSpan.FromMinutes(10));
+
+            var key3Expiration = await cache.GetExpirationAsync("key3");
+            Assert.NotNull(key3Expiration);
+            Assert.True(key3Expiration.Value > TimeSpan.FromMinutes(14));
+            Assert.True(key3Expiration.Value <= TimeSpan.FromMinutes(15));
+        }
+    }
+
+    public virtual async Task SetAllExpiration_WithNullValues_RemovesExpiration()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("key1", 1, TimeSpan.FromMinutes(5));
+            await cache.SetAsync("key2", 2, TimeSpan.FromMinutes(10));
+            await cache.SetAsync("key3", 3, TimeSpan.FromMinutes(15));
+
+            // Verify initial expirations are set
+            Assert.NotNull(await cache.GetExpirationAsync("key1"));
+            Assert.NotNull(await cache.GetExpirationAsync("key2"));
+            Assert.NotNull(await cache.GetExpirationAsync("key3"));
+
+            var expirations = new Dictionary<string, TimeSpan?>
+            {
+                { "key1", null }, // Remove expiration
+                { "key2", TimeSpan.FromMinutes(20) }, // Change expiration
+                { "key3", null } // Remove expiration
+            };
+
+            // Act
+            await cache.SetAllExpirationAsync(expirations);
+
+            // Assert
+            Assert.Null(await cache.GetExpirationAsync("key1")); // Expiration removed
+            Assert.True(await cache.ExistsAsync("key1")); // Key still exists
+
+            var key2Expiration = await cache.GetExpirationAsync("key2");
+            Assert.NotNull(key2Expiration);
+            Assert.True(key2Expiration.Value > TimeSpan.FromMinutes(19));
+            Assert.True(key2Expiration.Value <= TimeSpan.FromMinutes(20));
+
+            Assert.Null(await cache.GetExpirationAsync("key3")); // Expiration removed
+            Assert.True(await cache.ExistsAsync("key3")); // Key still exists
+        }
+    }
+
+    public virtual async Task SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(int count)
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var keys = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                string key = $"perf-test-key-{i}";
+                keys.Add(key);
+                await cache.SetAsync(key, i);
+            }
+
+            var expirations = new Dictionary<string, TimeSpan?>();
+            for (int i = 0; i < count; i++)
+            {
+                expirations[keys[i]] = TimeSpan.FromMinutes(i % 60 + 1);
+            }
+
+            // Act
+            var sw = Stopwatch.StartNew();
+            await cache.SetAllExpirationAsync(expirations);
+            sw.Stop();
+
+            _logger.LogInformation("Set All Expiration Time ({Count} keys): {Elapsed:g}", count, sw.Elapsed);
+
+            // Assert - verify a sample of keys
+            var key0Expiration = await cache.GetExpirationAsync(keys[0]);
+            Assert.NotNull(key0Expiration);
+            Assert.True(key0Expiration.Value <= TimeSpan.FromMinutes(1));
+
+            var keySampleIndex = count / 2;
+            var keySampleExpiration = await cache.GetExpirationAsync(keys[keySampleIndex]);
+            Assert.NotNull(keySampleExpiration);
+            Assert.True(keySampleExpiration.Value <= TimeSpan.FromMinutes(41));
+        }
+    }
+
+    public virtual async Task SetAllExpiration_WithNonExistentKeys_HandlesGracefully()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("key1", 1);
+            await cache.SetAsync("key2", 2);
+
+            var expirations = new Dictionary<string, TimeSpan?>
+            {
+                { "key1", TimeSpan.FromMinutes(5) },
+                { "key2", TimeSpan.FromMinutes(10) },
+                { "nonexistent", TimeSpan.FromMinutes(15) } // This key doesn't exist
+            };
+
+            // Act
+            await cache.SetAllExpirationAsync(expirations);
+
+            // Assert
+            var key1Expiration = await cache.GetExpirationAsync("key1");
+            Assert.NotNull(key1Expiration);
+            Assert.True(key1Expiration.Value > TimeSpan.FromMinutes(4));
+            Assert.True(key1Expiration.Value <= TimeSpan.FromMinutes(5));
+
+            var key2Expiration = await cache.GetExpirationAsync("key2");
+            Assert.NotNull(key2Expiration);
+            Assert.True(key2Expiration.Value > TimeSpan.FromMinutes(9));
+            Assert.True(key2Expiration.Value <= TimeSpan.FromMinutes(10));
+
+            // Non-existent key should not be created
+            Assert.False(await cache.ExistsAsync("nonexistent"));
+            Assert.Null(await cache.GetExpirationAsync("nonexistent"));
         }
     }
 

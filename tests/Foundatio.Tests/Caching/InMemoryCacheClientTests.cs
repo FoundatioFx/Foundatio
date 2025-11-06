@@ -74,12 +74,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task CanSetAndGetObjectAsync()
-    {
-        return base.CanSetAndGetObjectAsync();
-    }
-
-    [Fact]
     public override Task CanRemoveAllAsync()
     {
         return base.CanRemoveAllAsync();
@@ -165,15 +159,73 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task CanSetExpirationAsync()
+    public override Task CanSetAndGetObjectAsync()
     {
-        return base.CanSetExpirationAsync();
+        return base.CanSetAndGetObjectAsync();
     }
 
     [Fact]
-    public override Task CanSetMinMaxExpirationAsync()
+    public override Task GetExpirationAsync_WithVariousStates_ReturnsCorrectly()
     {
-        return base.CanSetMinMaxExpirationAsync();
+        return base.GetExpirationAsync_WithVariousStates_ReturnsCorrectly();
+    }
+
+    [Fact]
+    public override Task GetAllExpiration_WithMultipleKeys_ReturnsAllExpirations()
+    {
+        return base.GetAllExpiration_WithMultipleKeys_ReturnsAllExpirations();
+    }
+
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    public override Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
+    {
+        return base.GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(count);
+    }
+
+    [Fact]
+    public override Task GetAllExpiration_WithExpiredKeys_ReturnsNullForExpiredKeys()
+    {
+        return base.GetAllExpiration_WithExpiredKeys_ReturnsNullForExpiredKeys();
+    }
+
+    [Fact]
+    public override Task SetExpirationAsync_WithValidDateTime_SetsExpirationCorrectly()
+    {
+        return base.SetExpirationAsync_WithValidDateTime_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public override Task SetExpirationAsync_WithMinMaxValues_HandlesEdgeCases()
+    {
+        return base.SetExpirationAsync_WithMinMaxValues_HandlesEdgeCases();
+    }
+
+    [Fact]
+    public override Task SetAllExpiration_WithMultipleKeys_SetsExpirationForAll()
+    {
+        return base.SetAllExpiration_WithMultipleKeys_SetsExpirationForAll();
+    }
+
+    [Fact]
+    public override Task SetAllExpiration_WithNullValues_RemovesExpiration()
+    {
+        return base.SetAllExpiration_WithNullValues_RemovesExpiration();
+    }
+
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    public override Task SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(int count)
+    {
+        return base.SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(count);
+    }
+
+    [Fact]
+    public override Task SetAllExpiration_WithNonExistentKeys_HandlesGracefully()
+    {
+        return base.SetAllExpiration_WithNonExistentKeys_HandlesGracefully();
     }
 
     [Fact]

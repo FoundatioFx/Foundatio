@@ -169,6 +169,16 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult<TimeSpan?>(null);
     }
 
+    public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            return Task.FromException<IDictionary<string, TimeSpan?>>(new ArgumentNullException(nameof(keys)));
+
+        Interlocked.Increment(ref _reads);
+
+        return Task.FromResult<IDictionary<string, TimeSpan?>>(new Dictionary<string, TimeSpan?>().AsReadOnly());
+    }
+
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
@@ -177,6 +187,16 @@ public class NullCacheClient : ICacheClient
         Interlocked.Increment(ref _writes);
 
         return Task.FromResult(0);
+    }
+
+    public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        if (expirations is null)
+            return Task.FromException(new ArgumentNullException(nameof(expirations)));
+
+        Interlocked.Increment(ref _writes);
+
+        return Task.CompletedTask;
     }
 
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)

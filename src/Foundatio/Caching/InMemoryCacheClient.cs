@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -948,6 +949,44 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt?.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
+    public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        var result = new Dictionary<string, TimeSpan?>();
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+
+        foreach (string key in keys)
+        {
+            if (String.IsNullOrEmpty(key))
+                continue;
+
+            if (!_memory.TryGetValue(key, out var existingEntry))
+            {
+                Interlocked.Increment(ref _misses);
+                // Don't include non-existent keys in result (consistent with GetExpirationAsync returning null)
+                continue;
+            }
+
+            if (existingEntry.IsExpired)
+            {
+                Interlocked.Increment(ref _misses);
+                // Don't include expired keys in result (consistent with GetExpirationAsync returning null)
+                continue;
+            }
+
+            Interlocked.Increment(ref _hits);
+
+            // Skip keys without expiration (consistent with GetExpirationAsync behavior)
+            if (existingEntry.ExpiresAt.HasValue)
+                result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
+        }
+
+        return Task.FromResult<IDictionary<string, TimeSpan?>>(new ReadOnlyDictionary<string, TimeSpan?>(result));
+    }
+
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
@@ -967,6 +1006,52 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             existingEntry.ExpiresAt = expiresAt;
             await StartMaintenanceAsync().AnyContext();
         }
+    }
+
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        if (expirations is null)
+            throw new ArgumentNullException(nameof(expirations));
+
+        if (expirations.Count == 0)
+            return;
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        int updated = 0;
+
+        foreach (var kvp in expirations)
+        {
+            if (String.IsNullOrEmpty(kvp.Key))
+                continue;
+
+            if (!_memory.TryGetValue(kvp.Key, out var existingEntry))
+                continue;
+
+            Interlocked.Increment(ref _writes);
+
+            if (kvp.Value is null)
+            {
+                // Null TimeSpan clears the expiration, making the key persistent
+                existingEntry.ExpiresAt = null;
+                updated++;
+            }
+            else
+            {
+                var expiresAt = utcNow.SafeAdd(kvp.Value.Value);
+                if (expiresAt < utcNow)
+                {
+                    RemoveExpiredKey(kvp.Key);
+                }
+                else
+                {
+                    existingEntry.ExpiresAt = expiresAt;
+                    updated++;
+                }
+            }
+        }
+
+        if (updated > 0)
+            await StartMaintenanceAsync().AnyContext();
     }
 
     private DateTime _lastMaintenance;

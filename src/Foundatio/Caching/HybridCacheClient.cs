@@ -333,6 +333,38 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return await _distributedCache.GetExpirationAsync(key).AnyContext();
     }
 
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys == null)
+            throw new ArgumentNullException(nameof(keys));
+
+        var keyList = keys.ToList();
+        var result = new Dictionary<string, TimeSpan?>(keyList.Count);
+        var misses = new List<string>();
+
+        foreach (var key in keyList)
+        {
+            if (await _localCache.ExistsAsync(key).AnyContext())
+            {
+                var expiration = await _localCache.GetExpirationAsync(key).AnyContext();
+                result[key] = expiration;
+            }
+            else
+            {
+                misses.Add(key);
+            }
+        }
+
+        if (misses.Count > 0)
+        {
+            var distributedExpirations = await _distributedCache.GetAllExpirationAsync(misses).AnyContext();
+            foreach (var kvp in distributedExpirations)
+                result[kvp.Key] = kvp.Value;
+        }
+
+        return result.AsReadOnly();
+    }
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         if (String.IsNullOrEmpty(key))
@@ -341,6 +373,20 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+    }
+
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        if (expirations == null)
+            throw new ArgumentNullException(nameof(expirations));
+
+        await _localCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+
+        if (expirations.Count > 0)
+        {
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
+        }
     }
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)

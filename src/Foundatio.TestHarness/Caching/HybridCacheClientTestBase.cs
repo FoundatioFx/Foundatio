@@ -316,6 +316,22 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.DoesNotContain(result.Keys, k => String.IsNullOrEmpty(k));
     }
 
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    public override Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
+    {
+        return base.GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(count);
+    }
+
+    [Theory]
+    [InlineData(1000)]
+    [InlineData(10000)]
+    public override Task SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(int count)
+    {
+        return base.SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(count);
+    }
+
     public void Dispose()
     {
         _distributedCache.Dispose();
