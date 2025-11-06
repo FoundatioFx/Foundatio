@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -176,43 +177,79 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             throw new ArgumentNullException(nameof(keys));
 
         string[] keyArray = keys.ToArray();
-        var result = new Dictionary<string, CacheValue<T>>(keyArray.Length);
+        // Use ConcurrentDictionary for thread-safe access without locks
+        var result = new ConcurrentDictionary<string, CacheValue<T>>(StringComparer.OrdinalIgnoreCase);
         if (keyArray.Length is 0)
-            return result;
+            return result.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
 
-        var missedKeys = new List<string>(keyArray.Length);
-        foreach (string key in keyArray.Where(k => !String.IsNullOrEmpty(k)))
+        // Use ConcurrentBag for thread-safe collection without locks
+        var missedKeys = new ConcurrentBag<string>();
+
+        // Parallelize local cache lookups (in-memory only, no external IO)
+        // See: https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/how-to-write-a-parallel-foreach-loop
+        await Parallel.ForEachAsync(keyArray.Where(k => !String.IsNullOrEmpty(k)), async (key, ct) =>
         {
             var localValue = await _localCache.GetAsync<T>(key).AnyContext();
             if (localValue.HasValue)
             {
                 _logger.LogTrace("Local cache hit: {Key}", key);
                 Interlocked.Increment(ref _localCacheHits);
-                result[key] = localValue;
+                // Try to add the key/value pair, and log if it already exists
+                if (!result.TryAdd(key, localValue)) {
+                    // Duplicate key detected - could happen with case-insensitive comparer or race condition
+                    _logger.LogWarning("Duplicate cache key detected during parallel processing: {Key}", key);
+
+                    // Overwrite with new value (last one wins) to match original behavior
+                    result[key] = localValue;
+                }
             }
             else
             {
                 _logger.LogTrace("Local cache miss: {Key}", key);
+                // ConcurrentBag doesn't need locks
                 missedKeys.Add(key);
             }
-        }
+        }).AnyContext();
 
         if (missedKeys.Count > 0)
         {
             var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
-            foreach (var kvp in distributedResults)
+
+            // Get all expirations in a single bulk operation to avoid n+1 problem
+            // where we were calling GetExpirationAsync for each key individually
+            var keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToList();
+            var expirations = keysWithValues.Count > 0
+                ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
+                : new Dictionary<string, TimeSpan?>();
+
+            // Parallelize populating local cache from distributed results
+            // Limit concurrency to avoid overwhelming local cache with SetAsync requests
+            // We now only need 1 network call per key (SetAsync) since we got all expirations in bulk
+            // See: https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.parallel.foreachasync
+            int maxParallelism = Math.Min(10, Environment.ProcessorCount);
+            await Parallel.ForEachAsync(distributedResults, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, async (kvp, ct) =>
             {
-                result[kvp.Key] = kvp.Value;
+                // Try to add the key/value pair, log error if it already exists (shouldn't happen)
+                if (!result.TryAdd(kvp.Key, kvp.Value)) {
+                    // Duplicate key detected - this really shouldn't happen as it means the distributed cache
+                    // returned the same key twice or a key was somehow both in the local and distributed cache
+                    _logger.LogError("Unexpected duplicate key from distributed results: {Key} - possible cache inconsistency", kvp.Key);
+
+                    // Overwrite with new value (last one wins) to match original behavior
+                    result[kvp.Key] = kvp.Value;
+                }
+
                 if (kvp.Value.HasValue)
                 {
-                    var expiration = await _distributedCache.GetExpirationAsync(kvp.Key).AnyContext();
+                    // Use pre-fetched expiration from bulk call
+                    var expiration = expirations.TryGetValue(kvp.Key, out var exp) ? exp : null;
                     _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
                     await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
                 }
-            }
+            }).AnyContext();
         }
 
-        return result;
+        return result.AsReadOnly();
     }
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
