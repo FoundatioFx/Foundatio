@@ -178,76 +178,44 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             throw new ArgumentNullException(nameof(keys));
 
         string[] keyArray = keys.ToArray();
-        // Use ConcurrentDictionary for thread-safe access without locks
-        var result = new ConcurrentDictionary<string, CacheValue<T>>(StringComparer.OrdinalIgnoreCase);
         if (keyArray.Length is 0)
-            return result.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
 
-        // Use ConcurrentBag for thread-safe collection without locks
-        var missedKeys = new ConcurrentBag<string>();
-
-        // Parallelize local cache lookups (in-memory only, no external IO)
-        // See: https://learn.microsoft.com/en-us/dotnet/standard/parallel-programming/how-to-write-a-parallel-foreach-loop
-        await Parallel.ForEachAsync(keyArray.Where(k => !String.IsNullOrEmpty(k)), async (key, ct) =>
+        var localValues = await _localCache.GetAllAsync<T>(keyArray).AnyContext();
+        foreach (string key in localValues.Keys)
         {
-            var localValue = await _localCache.GetAsync<T>(key).AnyContext();
-            if (localValue.HasValue)
-            {
-                _logger.LogTrace("Local cache hit: {Key}", key);
-                Interlocked.Increment(ref _localCacheHits);
-                // Try to add the key/value pair, and log if it already exists
-                if (!result.TryAdd(key, localValue)) {
-                    // Duplicate key detected - could happen with case-insensitive comparer or race condition
-                    _logger.LogWarning("Duplicate cache key detected during parallel processing: {Key}", key);
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+        }
 
-                    // Overwrite with new value (last one wins) to match original behavior
-                    result[key] = localValue;
-                }
-            }
-            else
-            {
-                _logger.LogTrace("Local cache miss: {Key}", key);
-                // ConcurrentBag doesn't need locks
-                missedKeys.Add(key);
-            }
-        }).AnyContext();
+        if (keyArray.Length == localValues.Count)
+            return localValues;
 
-        if (missedKeys.Count > 0)
+        // Get the missed keys from the distributed cache.
+        string[] missedKeys = keyArray.Except(localValues.Keys).ToArray();
+        foreach (string key in missedKeys)
         {
-            var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
+            _logger.LogTrace("Local cache miss: {Key}", key);
+        }
 
-            // Get all expirations in a single bulk operation to avoid n+1 problem
-            // where we were calling GetExpirationAsync for each key individually
-            var keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToList();
-            var expirations = keysWithValues.Count > 0
-                ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
-                : new Dictionary<string, TimeSpan?>();
+        var result = new Dictionary<string, CacheValue<T>>(localValues);
+        var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
 
-            // Parallelize populating local cache from distributed results
-            // Limit concurrency to avoid overwhelming local cache with SetAsync requests
-            // We now only need 1 network call per key (SetAsync) since we got all expirations in bulk
-            // See: https://learn.microsoft.com/en-us/dotnet/api/system.threading.tasks.parallel.foreachasync
-            int maxParallelism = Math.Min(10, Environment.ProcessorCount);
-            await Parallel.ForEachAsync(distributedResults, new ParallelOptions { MaxDegreeOfParallelism = maxParallelism }, async (kvp, ct) =>
-            {
-                // Try to add the key/value pair, log error if it already exists (shouldn't happen)
-                if (!result.TryAdd(kvp.Key, kvp.Value)) {
-                    // Duplicate key detected - this really shouldn't happen as it means the distributed cache
-                    // returned the same key twice or a key was somehow both in the local and distributed cache
-                    _logger.LogError("Unexpected duplicate key from distributed results: {Key} - possible cache inconsistency", kvp.Key);
+        // Get all expirations in a single bulk operation to avoid n+1 problem
+        string[] keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToArray();
+        var expirations = keysWithValues.Length > 0
+            ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
+            : ReadOnlyDictionary<string, TimeSpan?>.Empty;
 
-                    // Overwrite with new value (last one wins) to match original behavior
-                    result[kvp.Key] = kvp.Value;
-                }
+        foreach (var kvp in distributedResults)
+        {
+            result[kvp.Key] = kvp.Value;
+            if (!kvp.Value.HasValue)
+                continue;
 
-                if (kvp.Value.HasValue)
-                {
-                    // Use pre-fetched expiration from bulk call
-                    var expiration = expirations.TryGetValue(kvp.Key, out var exp) ? exp : null;
-                    _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
-                    await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
-                }
-            }).AnyContext();
+            var expiration = expirations.TryGetValue(kvp.Key, out var exp) ? exp : null;
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
+            await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
         }
 
         return result.AsReadOnly();
