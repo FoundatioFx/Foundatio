@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -955,12 +954,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             throw new ArgumentNullException(nameof(keys));
 
         var result = new Dictionary<string, TimeSpan?>();
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-
         foreach (string key in keys)
         {
             if (String.IsNullOrEmpty(key))
-                continue;
+                throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
 
             if (!_memory.TryGetValue(key, out var existingEntry))
             {
@@ -983,9 +980,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
         }
 
-        return Task.FromResult<IDictionary<string, TimeSpan?>>(new ReadOnlyDictionary<string, TimeSpan?>(result));
+        return Task.FromResult<IDictionary<string, TimeSpan?>>(result.AsReadOnly());
     }
-
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
@@ -1000,9 +996,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return;
         }
 
-        Interlocked.Increment(ref _writes);
-        if (_memory.TryGetValue(key, out var existingEntry))
+        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt != expiresAt)
         {
+            Interlocked.Increment(ref _writes);
             existingEntry.ExpiresAt = expiresAt;
             await StartMaintenanceAsync().AnyContext();
         }
@@ -1013,7 +1009,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expirations is null)
             throw new ArgumentNullException(nameof(expirations));
 
-        if (expirations.Count == 0)
+        if (expirations.Count is 0)
             return;
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
@@ -1022,16 +1018,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         foreach (var kvp in expirations)
         {
             if (String.IsNullOrEmpty(kvp.Key))
-                continue;
+                throw new ArgumentNullException(nameof(kvp.Key), "Key cannot be null or empty");
 
             if (!_memory.TryGetValue(kvp.Key, out var existingEntry))
                 continue;
 
-            Interlocked.Increment(ref _writes);
-
             if (kvp.Value is null)
             {
-                // Null TimeSpan clears the expiration, making the key persistent
+                if (existingEntry.ExpiresAt is null)
+                    continue;
+
+                Interlocked.Increment(ref _writes);
                 existingEntry.ExpiresAt = null;
                 updated++;
             }
@@ -1042,8 +1039,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 {
                     RemoveExpiredKey(kvp.Key);
                 }
-                else
+                else if (existingEntry.ExpiresAt != expiresAt)
                 {
+                    Interlocked.Increment(ref _writes);
                     existingEntry.ExpiresAt = expiresAt;
                     updated++;
                 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -372,32 +373,34 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
-        if (keys == null)
+        if (keys is null)
             throw new ArgumentNullException(nameof(keys));
 
-        var keyList = keys.ToList();
-        var result = new Dictionary<string, TimeSpan?>(keyList.Count);
-        var misses = new List<string>();
+        string[] keysArray = keys.ToArray();
+        if (keysArray.Length is 0)
+            return ReadOnlyDictionary<string, TimeSpan?>.Empty;
 
-        foreach (var key in keyList)
+        var localExpirations = await _localCache.GetAllExpirationAsync(keysArray).AnyContext();
+        foreach (string key in localExpirations.Keys)
         {
-            if (await _localCache.ExistsAsync(key).AnyContext())
-            {
-                var expiration = await _localCache.GetExpirationAsync(key).AnyContext();
-                result[key] = expiration;
-            }
-            else
-            {
-                misses.Add(key);
-            }
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
         }
 
-        if (misses.Count > 0)
+        if (keysArray.Length == localExpirations.Count)
+            return localExpirations;
+
+        // Get the missed keys from the distributed cache.
+        string[] missedKeys = keysArray.Except(localExpirations.Keys).ToArray();
+        foreach (string key in missedKeys)
         {
-            var distributedExpirations = await _distributedCache.GetAllExpirationAsync(misses).AnyContext();
-            foreach (var kvp in distributedExpirations)
-                result[kvp.Key] = kvp.Value;
+            _logger.LogTrace("Local cache miss: {Key}", key);
         }
+
+        var result = new Dictionary<string, TimeSpan?>(localExpirations);
+        var distributedExpirations = await _distributedCache.GetAllExpirationAsync(missedKeys).AnyContext();
+        foreach (var kvp in distributedExpirations)
+            result[kvp.Key] = kvp.Value;
 
         return result.AsReadOnly();
     }
@@ -414,7 +417,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
     {
-        if (expirations == null)
+        if (expirations is null)
             throw new ArgumentNullException(nameof(expirations));
 
         await _localCache.SetAllExpirationAsync(expirations).AnyContext();
