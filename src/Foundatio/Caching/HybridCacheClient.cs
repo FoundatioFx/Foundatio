@@ -420,13 +420,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (expirations is null)
             throw new ArgumentNullException(nameof(expirations));
 
+        if (expirations.Count is 0)
+            return;
+
         await _localCache.SetAllExpirationAsync(expirations).AnyContext();
         await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
-
-        if (expirations.Count > 0)
-        {
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
-        }
+        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
     }
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)

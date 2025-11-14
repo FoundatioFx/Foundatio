@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -953,8 +954,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (keys is null)
             throw new ArgumentNullException(nameof(keys));
 
-        var result = new Dictionary<string, TimeSpan?>();
-        foreach (string key in keys)
+        string[] keysArray = keys.ToArray();
+        if (keysArray.Length is 0)
+            return Task.FromResult<IDictionary<string, TimeSpan?>>(ReadOnlyDictionary<string, TimeSpan?>.Empty);
+
+        var result = new Dictionary<string, TimeSpan?>(keysArray.Length);
+        foreach (string key in keysArray)
         {
             if (String.IsNullOrEmpty(key))
                 throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");

@@ -199,13 +199,16 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
-    public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
     {
         if (expirations is null)
             throw new ArgumentNullException(nameof(expirations));
 
-        return _distributedCache.SetAllExpirationAsync(expirations);
-        // TODO: await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+        if (expirations.Count is 0)
+            return;
+
+        await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
     }
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
