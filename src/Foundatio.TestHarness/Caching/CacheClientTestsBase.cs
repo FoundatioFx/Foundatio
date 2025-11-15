@@ -25,6 +25,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         return null;
     }
 
+    // TODO: Consider splitting into:
+    //   - GetAllAsync_WithExistingKeys_ReturnsAllValues
+    //   - GetAllAsync_WithMixedObjectTypes_ReturnsCorrectValues
+    //   - GetAllAsync_WithNullValues_HandlesNullsCorrectly
+    //   - GetAllAsync_WithNonExistentKeys_ReturnsEmptyResults
     public virtual async Task CanGetAllAsync()
     {
         var cache = GetCacheClient();
@@ -69,6 +74,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to GetAllAsync_WithOverlappingKeys_UsesLatestValues (or split into multiple scenarios)
     public virtual async Task CanGetAllWithOverlapAsync()
     {
         var cache = GetCacheClient();
@@ -99,6 +105,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems (or split into separate tests for add and remove operations)
     public virtual async Task CanSetAsync()
     {
         var cache = GetCacheClient();
@@ -121,6 +128,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - GetAsync_WithNonExistentKey_ReturnsNoValue
+    //   - SetAsync_WithNullReferenceType_StoresAsNullValue
+    //   - SetAsync_WithNullValueType_StoresAsNullValue
+    //   - ExistsAsync_WithNullStoredValue_ReturnsTrue
     public virtual async Task CanSetAndGetValueAsync()
     {
         var cache = GetCacheClient();
@@ -172,6 +184,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - AddAsync_WithNewKey_ReturnsTrue
+    // - AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue
+    // - AddAsync_WithNestedKeyUsingSeparator_StoresCorrectly
     public virtual async Task CanAddAsync()
     {
         var cache = GetCacheClient();
@@ -199,6 +215,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to AddAsync_WithConcurrentRequests_OnlyOneSucceeds
     public virtual async Task CanAddConcurrentlyAsync()
     {
         var cache = GetCacheClient();
@@ -222,6 +239,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - GetAsync_WithIntStoredAsLong_ConvertsAutomatically
+    // - GetAsync_WithLongStoredAsInt_ConvertsAutomatically
+    // - GetAsync_WithMaxLongAsInt_ThrowsException
     public virtual async Task CanGetAsync()
     {
         var cache = GetCacheClient();
@@ -255,6 +276,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - GetAsync_WithTryGetSemanticsAndIntAsLong_ConvertsSuccessfully
+    // - GetAsync_WithTryGetSemanticsAndMaxLongAsInt_ReturnsNoValue
+    // - GetAsync_WithTryGetSemanticsAndComplexTypeAsLong_ReturnsNoValue
     public virtual async Task CanTryGetAsync()
     {
         var cache = GetCacheClient(false);
@@ -292,6 +317,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: This test bundles too many scenarios. Consider splitting into:
+    //   - ScopedCache_WithDifferentScopes_IsolatesKeys
+    //   - ScopedCache_WithNestedScopes_PreservesHierarchy
+    //   - ScopedCache_GetAllAsync_ReturnsUnscopedKeys
+    //   - ScopedCache_RemoveByPrefixAsync_AffectsOnlyScopedKeys
+    //   - ScopedCache_RemoveAllAsync_AffectsOnlyScopedKeys
+    //   - ScopedCache_IncrementAsync_WorksWithinScope
     public virtual async Task CanUseScopedCachesAsync()
     {
         var cache = GetCacheClient();
@@ -356,6 +388,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveAllAsync_WithLargeNumberOfKeys_RemovesAllKeysEfficiently
     public virtual async Task CanRemoveAllAsync()
     {
         const int COUNT = 10000;
@@ -386,6 +419,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys
     public virtual async Task CanRemoveAllKeysAsync()
     {
         const int COUNT = 10000;
@@ -415,6 +449,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys
+    // - RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys
+    // - RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys
     public virtual async Task CanRemoveByPrefixAsync()
     {
         var cache = GetCacheClient();
@@ -471,6 +509,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithRegexMetacharacter_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithRegexCharactersAsync(string specialChar)
     {
         var cache = GetCacheClient();
@@ -507,6 +546,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithWildcardPatternsAsync(string pattern)
     {
         var cache = GetCacheClient();
@@ -530,6 +570,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithDoubleAsteriskAsync()
     {
         var cache = GetCacheClient();
@@ -603,6 +644,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithSpecialCharactersAsync(string specialPrefix)
     {
         var cache = GetCacheClient();
@@ -625,6 +667,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys
     public virtual async Task CanRemoveByPrefixWithNullAsync()
     {
         var cache = GetCacheClient();
@@ -644,6 +687,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys
     public virtual async Task CanRemoveByPrefixWithEmptyStringAsync()
     {
         var cache = GetCacheClient();
@@ -672,6 +716,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithWhitespacePrefix_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithWhitespaceAsync(string whitespacePrefix)
     {
         var cache = GetCacheClient();
@@ -708,6 +753,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral
     public virtual async Task CanRemoveByPrefixWithLineEndingsAsync(string lineEndingPrefix)
     {
         var cache = GetCacheClient();
@@ -734,6 +780,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithScopedCache_RemovesOnlyScopedKeys
     public virtual async Task CanRemoveByPrefixWithScopedCachesAsync()
     {
         var cache = GetCacheClient();
@@ -815,6 +862,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys
     public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count)
     {
         var cache = GetCacheClient();
@@ -837,6 +885,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - SetAsync_WithComplexObject_StoresCorrectly
+    // - GetAsync_WithComplexObject_ReturnsNewInstance
+    // - GetAsync_WithComplexObject_PreservesAllProperties
     public virtual async Task CanSetAndGetObjectAsync()
     {
         var cache = GetCacheClient();
@@ -865,6 +917,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - GetExpirationAsync_WithNoExpiration_ReturnsNull
+    // - GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan
+    // - GetExpirationAsync_WithNonExistentKey_ReturnsNull
+    // - GetExpirationAsync_WithExpiredKey_ReturnsNull
     public virtual async Task GetExpirationAsync_WithVariousStates_ReturnsCorrectly()
     {
         var cache = GetCacheClient();
@@ -943,6 +1000,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Name is good but consider verifying expiration values match expectations
     public virtual async Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
     {
         // Arrange
@@ -1036,6 +1094,18 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to SetExpirationAsync_WithVeryHighExpiration_SetsCorrectly
+    /*
+    SetExpirationAsync_WithDateTimeMaxValue_PersistsIndefinitely
+SetExpirationAsync_WithDateTimeMinValue_DoesNotCreateKey
+SetExpirationAsync_WithVeryHighExpirationValue_SetsExpirationCorrectly
+SetExpirationAsync_WithNoExpiration_ReturnsNull
+SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesExpiration
+SetExpirationAsync_ChangingToDateTimeMaxValue_RemovesExpiration
+SetExpirationAsync_ChangingToDateTimeMinValue_DeletesKey
+SetAllAsync_WithDateTimeMinValue_DoesNotCreateKeys
+SetAsync_WithCurrentUtcTime_DoesNotCreateKey
+    */
     public virtual async Task SetExpirationAsync_WithMinMaxValues_HandlesEdgeCases()
     {
         var cache = GetCacheClient();
@@ -1102,6 +1172,129 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
             Assert.Null(await cache.GetExpirationAsync("test9"));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithDateTimeMinValue_ExpiresImmediately()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // MinValue should expire items immediately
+            Assert.False(await cache.SetAsync("test", 1, DateTime.MinValue));
+            Assert.False(await cache.ExistsAsync("test"));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // MaxValue should never expire
+            Assert.True(await cache.SetAsync("test", 1, DateTime.MaxValue));
+            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            var actualExpiration = await cache.GetExpirationAsync("test");
+            Assert.NotNull(actualExpiration);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithCurrentTime_ExpiresImmediately()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var utcNow = DateTime.UtcNow;
+
+            // Expiration time set to now should expire immediately
+            Assert.False(await cache.SetAsync("test", 1, utcNow));
+            Assert.False(await cache.ExistsAsync("test"));
+            Assert.Null(await cache.GetExpirationAsync("test"));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var utcNow = DateTime.UtcNow;
+
+            // Set with no expiration
+            Assert.True(await cache.SetAsync("test", 1));
+            Assert.Null(await cache.GetExpirationAsync("test"));
+
+            // Update to expire in an hour
+            var expiration = utcNow.AddHours(1);
+            await cache.SetExpirationAsync("test", expiration);
+            var actualExpiration = await cache.GetExpirationAsync("test");
+            Assert.NotNull(actualExpiration);
+            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - utcNow);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Set with future expiration
+            Assert.True(await cache.SetAsync("test", 1, DateTime.UtcNow.AddHours(1)));
+            Assert.True(await cache.ExistsAsync("test"));
+
+            // Change expiration to MinValue should remove the key
+            await cache.SetExpirationAsync("test", DateTime.MinValue);
+            Assert.Null(await cache.GetExpirationAsync("test"));
+            Assert.False(await cache.ExistsAsync("test"));
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithDateTimeMinValue_DoesNotAddKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Ensure keys are not added when they are already expired
+            Assert.Equal(0, await cache.SetAllAsync(new Dictionary<string, object>
+            {
+                { "test1", 1 },
+                { "test2", 2 },
+                { "test3", 3 }
+            }, DateTime.MinValue));
+
+            Assert.False(await cache.ExistsAsync("test1"));
+            Assert.False(await cache.ExistsAsync("test2"));
+            Assert.False(await cache.ExistsAsync("test3"));
         }
     }
 
@@ -1277,6 +1470,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - IncrementAsync_WithExistingKey_IncrementsValue
+    //   - IncrementAsync_WithNonExistentKey_InitializesToOne
+    //   - IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly
+    //   - IncrementAsync_WithStringValue_ConvertsAndIncrements (InMemory only)
     public virtual async Task CanIncrementAsync()
     {
         var cache = GetCacheClient();
@@ -1301,6 +1499,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to IncrementAsync_WithExpiration_ExpiresCorrectly
     public virtual async Task CanIncrementAndExpireAsync()
     {
         var cache = GetCacheClient();
@@ -1324,6 +1523,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to SetAllAsync_WithExpiration_KeysExpireCorrectly
     public virtual async Task SetAllShouldExpireAsync()
     {
         var cache = GetCacheClient();
@@ -1342,6 +1542,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace
+    // - ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue
+    // - ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly
     public virtual async Task CanReplaceIfEqual()
     {
         var cache = GetCacheClient();
@@ -1368,6 +1572,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    // - RemoveIfEqualAsync_WithMismatchedValue_ReturnsFalseAndDoesNotRemove
+    // - RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves
     public virtual async Task CanRemoveIfEqual()
     {
         var cache = GetCacheClient();
@@ -1391,6 +1598,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - SetAsync_WithLargeNumber_StoresCorrectly
+    //   - GetAsync_WithLargeNumber_ReturnsCorrectValue
+    //   - SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower
+    //   - SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher
     public virtual async Task CanRoundTripLargeNumbersAsync()
     {
         var cache = GetCacheClient();
@@ -1420,6 +1632,15 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: This test has too many scenarios bundled together. Consider splitting into:
+    // - SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly
+    // - GetUnixTimeSecondsAsync_WithUtcDateTime_ReturnsCorrectly
+    // - SetUnixTimeMillisecondsAsync_WithLocalDateTime_StoresCorrectly
+    // - GetUnixTimeMillisecondsAsync_WithLocalDateTime_ReturnsCorrectly
+    // - SetIfLowerAsync_WithDateTime_UpdatesWhenLower
+    // - SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher
+    // - SetIfHigherAsync_WithDateTime_UpdatesWhenHigher
+    // - SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower
     public virtual async Task CanGetAndSetDateTimeAsync()
     {
         var cache = GetCacheClient();
@@ -1486,6 +1707,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to SetAsync_WithLargeNumbersAndExpiration_PreservesValues
     public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync()
     {
         var cache = GetCacheClient();
@@ -1521,6 +1743,14 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: This test bundles too many scenarios. Consider splitting into:
+    // - ListAddAsync_WithNullKey_ThrowsArgumentNullException
+    // - ListAddAsync_WithNullValues_ThrowsArgumentNullException
+    // - ListAddAsync_WithDuplicates_StoresUniqueValuesOnly
+    // - ListRemoveAsync_WithMultipleValues_RemovesAll
+    // - ListRemoveAsync_RemovingAllValues_LeavesEmptyList
+    // - ListAddAsync_WithEmptyCollection_NoOp
+    // - ListRemoveAsync_WithSingleValue_RemovesCorrectly
     public virtual async Task CanManageListsAsync()
     {
         var cache = GetCacheClient();
@@ -1583,6 +1813,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - ListAddAsync_WithNullCollection_ThrowsArgumentNullException
+    //   - ListAddAsync_WithNullItem_IgnoresNull
+    //   - ListRemoveAsync_WithNullCollection_ThrowsArgumentNullException
+    //   - ListRemoveAsync_WithNullItem_IgnoresNull
     public virtual async Task CanManageListsWithNullItemsAsync()
     {
         var cache = GetCacheClient();
@@ -1613,6 +1848,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     /// <summary>
     /// single strings don't get handled as char arrays
     /// </summary>
+    // TODO: Refactor to ListAddAsync_WithSingleString_StoresAsStringNotCharArray
     public virtual async Task CanManageStringListsAsync()
     {
         var cache = GetCacheClient();
@@ -1635,6 +1871,12 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - GetListAsync_WithPaging_ReturnsCorrectPageSize
+    //   - GetListAsync_WithMultiplePages_ReturnsAllItems
+    //   - GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast
+    //   - GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException
+    //   - GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection
     public virtual async Task CanManageListPagingAsync()
     {
         var cache = GetCacheClient();
@@ -1688,6 +1930,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to GetListAsync_WithExpiredItems_RemovesExpiredAndReturnsActive
     public virtual async Task CanManageGetListExpirationAsync()
     {
         var cache = GetCacheClient();
@@ -1714,6 +1957,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.ExistsAsync(key));
         }
     }
+    // TODO: Consider splitting into:
+    //   - ListAddAsync_WithPastExpiration_RemovesItem
+    //   - ListAddAsync_WithFutureExpiration_AddsAndExpiresCorrectly
+    //   - ListAddAsync_WithMultipleExpirations_ExpiresIndividualItems
     public virtual async Task CanManageListAddExpirationAsync()
     {
         var cache = GetCacheClient();
@@ -1752,6 +1999,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Consider splitting into:
+    //   - ListRemoveAsync_WithPastExpiration_RemovesItemImmediately
+    //   - ListRemoveAsync_WithFutureExpiration_RemovesItemAfterDelay
     public virtual async Task CanManageListRemoveExpirationAsync()
     {
         var cache = GetCacheClient();
@@ -1779,6 +2029,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput (or make it a benchmark test)
     public virtual async Task MeasureThroughputAsync()
     {
         var cache = GetCacheClient();
@@ -1804,6 +2055,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to Serialization_WithSimpleObjects_MeasuresThroughput (or make it a benchmark test)
     public virtual async Task MeasureSerializerSimpleThroughputAsync()
     {
         var cache = GetCacheClient();
@@ -1833,6 +2085,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    // TODO: Refactor to Serialization_WithComplexObjects_MeasuresThroughput (or make it a benchmark test)
     public virtual async Task MeasureSerializerComplexThroughputAsync()
     {
         var cache = GetCacheClient();
