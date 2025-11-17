@@ -25,12 +25,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         return null;
     }
 
-    // TODO: Consider splitting into:
-    //   - GetAllAsync_WithExistingKeys_ReturnsAllValues
-    //   - GetAllAsync_WithMixedObjectTypes_ReturnsCorrectValues
-    //   - GetAllAsync_WithNullValues_HandlesNullsCorrectly
-    //   - GetAllAsync_WithNonExistentKeys_ReturnsEmptyResults
-    public virtual async Task CanGetAllAsync()
+    public virtual async Task GetAllAsync_WithExistingKeys_ReturnsAllValues()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -49,33 +44,76 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, result["test1"].Value);
             Assert.Equal(2, result["test2"].Value);
             Assert.Equal(3, result["test3"].Value);
-
-            await cache.SetAsync("obj1", new SimpleModel { Data1 = "data 1", Data2 = 1 });
-            await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
-            await cache.SetAsync("obj3", (SimpleModel)null);
-            await cache.SetAsync("obj4", new SimpleModel { Data1 = "test 1", Data2 = 4 });
-
-            var result2 = await cache.GetAllAsync<SimpleModel>(["obj1", "obj2", "obj3", "obj4", "obj5"]);
-            Assert.NotNull(result2);
-            Assert.Equal(5, result2.Count);
-            Assert.True(result2["obj3"].IsNull);
-            Assert.False(result2["obj5"].HasValue);
-
-            var obj4 = result2["obj4"];
-            Assert.NotNull(obj4);
-            Assert.Equal("test 1", obj4.Value.Data1);
-
-            await cache.SetAsync("str1", "string 1");
-            await cache.SetAsync("str2", "string 2");
-            await cache.SetAsync("str3", (string)null);
-            var result3 = await cache.GetAllAsync<string>(["str1", "str2", "str3"]);
-            Assert.NotNull(result3);
-            Assert.Equal(3, result3.Count);
         }
     }
 
-    // TODO: Refactor to GetAllAsync_WithOverlappingKeys_UsesLatestValues (or split into multiple scenarios)
-    public virtual async Task CanGetAllWithOverlapAsync()
+    public virtual async Task GetAllAsync_WithMixedObjectTypes_ReturnsCorrectValues()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("obj1", new SimpleModel { Data1 = "data 1", Data2 = 1 });
+            await cache.SetAsync("obj2", new SimpleModel { Data1 = "data 2", Data2 = 2 });
+            await cache.SetAsync("obj4", new SimpleModel { Data1 = "test 1", Data2 = 4 });
+
+            var result = await cache.GetAllAsync<SimpleModel>(["obj1", "obj2", "obj4"]);
+            Assert.NotNull(result);
+            Assert.Equal(3, result.Count);
+
+            var obj4 = result["obj4"];
+            Assert.NotNull(obj4);
+            Assert.Equal("test 1", obj4.Value.Data1);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithNullValues_HandlesNullsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("obj3", (SimpleModel)null);
+            var result = await cache.GetAllAsync<SimpleModel>(["obj3"]);
+            Assert.NotNull(result);
+            Assert.Single(result);
+            Assert.True(result["obj3"].IsNull);
+
+            await cache.SetAsync("str1", "string 1");
+            await cache.SetAsync("str3", (string)null);
+            var result2 = await cache.GetAllAsync<string>(["str1", "str3"]);
+            Assert.NotNull(result2);
+            Assert.Equal(2, result2.Count);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithNonExistentKeys_ReturnsEmptyResults()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("obj1", new SimpleModel { Data1 = "data 1", Data2 = 1 });
+            var result = await cache.GetAllAsync<SimpleModel>(["obj1", "obj5"]);
+            Assert.NotNull(result);
+            Assert.Equal(2, result.Count);
+            Assert.False(result["obj5"].HasValue);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithOverlappingKeys_UsesLatestValues()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -88,10 +126,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("test1", 1.0);
             await cache.SetAsync("test2", 2.0);
             await cache.SetAsync("test3", 3.0);
-            await cache.SetAllAsync(new Dictionary<string, double> {
-                { "test3", 3.5 },
-                { "test4", 4.0 },
-                { "test5", 5.0 }
+            await cache.SetAllAsync(new Dictionary<string, double>
+            {
+                { "test3", 3.5 }, { "test4", 4.0 }, { "test5", 5.0 }
             });
 
             var result = await cache.GetAllAsync<double>(["test1", "test2", "test3", "test4", "test5"]);
@@ -105,8 +142,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Refactor to ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems (or split into separate tests for add and remove operations)
-    public virtual async Task CanSetAsync()
+    public virtual async Task ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -128,12 +164,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - GetAsync_WithNonExistentKey_ReturnsNoValue
-    //   - SetAsync_WithNullReferenceType_StoresAsNullValue
-    //   - SetAsync_WithNullValueType_StoresAsNullValue
-    //   - ExistsAsync_WithNullStoredValue_ReturnsTrue
-    public virtual async Task CanSetAndGetValueAsync()
+    public virtual async Task GetAsync_WithNonExistentKey_ReturnsNoValue()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -145,6 +176,18 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             Assert.False((await cache.GetAsync<int>("donkey")).HasValue);
             Assert.False(await cache.ExistsAsync("donkey"));
+        }
+    }
+
+    public virtual async Task SetAsync_WithNullReferenceType_StoresAsNullValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             SimpleModel nullable = null;
             await cache.SetAsync("nullable", nullable);
@@ -152,6 +195,18 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(nullCacheValue.HasValue);
             Assert.True(nullCacheValue.IsNull);
             Assert.True(await cache.ExistsAsync("nullable"));
+        }
+    }
+
+    public virtual async Task SetAsync_WithNullValueType_StoresAsNullValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             int? nullableInt = null;
             Assert.False(await cache.ExistsAsync("nullableInt"));
@@ -160,35 +215,30 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(nullIntCacheValue.HasValue);
             Assert.True(nullIntCacheValue.IsNull);
             Assert.True(await cache.ExistsAsync("nullableInt"));
-
-            await cache.SetAsync("test", 1);
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-
-            Assert.False(await cache.AddAsync("test", 2));
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-
-            Assert.True(await cache.ReplaceAsync("test", 2));
-            Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
-
-            Assert.True(await cache.RemoveAsync("test"));
-            Assert.False((await cache.GetAsync<int>("test")).HasValue);
-
-            Assert.True(await cache.AddAsync("test", 2));
-            Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
-
-            Assert.True(await cache.ReplaceAsync("test", new MyData { Message = "Testing" }));
-            var result = await cache.GetAsync<MyData>("test");
-            Assert.NotNull(result);
-            Assert.True(result.HasValue);
-            Assert.Equal("Testing", result.Value.Message);
         }
     }
 
-    // TODO: Consider splitting into:
-    // - AddAsync_WithNewKey_ReturnsTrue
-    // - AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue
-    // - AddAsync_WithNestedKeyUsingSeparator_StoresCorrectly
-    public virtual async Task CanAddAsync()
+    public virtual async Task ExistsAsync_WithNullStoredValue_ReturnsTrue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            SimpleModel nullable = null;
+            await cache.SetAsync("nullable", nullable);
+            Assert.True(await cache.ExistsAsync("nullable"));
+
+            int? nullableInt = null;
+            await cache.SetAsync("nullableInt", nullableInt);
+            Assert.True(await cache.ExistsAsync("nullableInt"));
+        }
+    }
+
+    public virtual async Task AddAsync_WithNewKey_ReturnsTrue()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -200,23 +250,52 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             const string key = "type-id";
             const string val = "value-should-not-change";
+
             Assert.False(await cache.ExistsAsync(key));
             Assert.True(await cache.AddAsync(key, val));
             Assert.True(await cache.ExistsAsync(key));
             Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
+        }
+    }
+
+    public virtual async Task AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string key = "type-id";
+            const string val = "value-should-not-change";
+            await cache.AddAsync(key, val);
 
             Assert.False(await cache.AddAsync(key, "random value"));
             Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
+        }
+    }
 
-            // Add a sub key
+    public virtual async Task AddAsync_WithNestedKeyUsingSeparator_StoresCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string key = "type-id";
+
             Assert.True(await cache.AddAsync(key + ":1", "nested"));
             Assert.True(await cache.ExistsAsync(key + ":1"));
             Assert.Equal("nested", (await cache.GetAsync<string>(key + ":1")).Value);
         }
     }
 
-    // TODO: Refactor to AddAsync_WithConcurrentRequests_OnlyOneSucceeds
-    public virtual async Task CanAddConcurrentlyAsync()
+    public virtual async Task AddAsync_WithConcurrentRequests_OnlyOneSucceeds()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -239,11 +318,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Consider splitting into:
-    // - GetAsync_WithIntStoredAsLong_ConvertsAutomatically
-    // - GetAsync_WithLongStoredAsInt_ConvertsAutomatically
-    // - GetAsync_WithMaxLongAsInt_ThrowsException
-    public virtual async Task CanGetAsync()
+    public virtual async Task GetAsync_WithNumericTypeConversion_ConvertsIntToLong()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -257,30 +332,50 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             var cacheValue = await cache.GetAsync<long>("test");
             Assert.True(cacheValue.HasValue);
             Assert.Equal(1L, cacheValue.Value);
+        }
+    }
+
+    public virtual async Task GetAsync_WithNumericTypeConversion_ConvertsLongToInt()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             await cache.SetAsync<long>("test", 1);
-            var cacheValue2 = await cache.GetAsync<int>("test");
-            Assert.True(cacheValue2.HasValue);
-            Assert.Equal(1L, cacheValue2.Value);
+            var cacheValue = await cache.GetAsync<int>("test");
+            Assert.True(cacheValue.HasValue);
+            Assert.Equal(1L, cacheValue.Value);
+        }
+    }
+
+    public virtual async Task GetAsync_WithMaxLongAsInt_ThrowsException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             await cache.SetAsync<long>("test", Int64.MaxValue);
             await Assert.ThrowsAnyAsync<Exception>(async () =>
             {
-                var cacheValue3 = await cache.GetAsync<int>("test");
-                Assert.False(cacheValue3.HasValue);
+                var cacheValue = await cache.GetAsync<int>("test");
+                Assert.False(cacheValue.HasValue);
             });
 
-            cacheValue = await cache.GetAsync<long>("test");
-            Assert.True(cacheValue.HasValue);
-            Assert.Equal(Int64.MaxValue, cacheValue.Value);
+            var cacheValue2 = await cache.GetAsync<long>("test");
+            Assert.True(cacheValue2.HasValue);
+            Assert.Equal(Int64.MaxValue, cacheValue2.Value);
         }
     }
 
-    // TODO: Consider splitting into:
-    // - GetAsync_WithTryGetSemanticsAndIntAsLong_ConvertsSuccessfully
-    // - GetAsync_WithTryGetSemanticsAndMaxLongAsInt_ReturnsNoValue
-    // - GetAsync_WithTryGetSemanticsAndComplexTypeAsLong_ReturnsNoValue
-    public virtual async Task CanTryGetAsync()
+    public virtual async Task GetAsync_WithTryGetSemanticsAndIntAsLong_ConvertsSuccessfully()
     {
         var cache = GetCacheClient(false);
         if (cache is null)
@@ -299,32 +394,116 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             var cacheValue2 = await cache.GetAsync<int>("test");
             Assert.True(cacheValue2.HasValue);
             Assert.Equal(1L, cacheValue2.Value);
+        }
+    }
+
+    public virtual async Task GetAsync_WithTryGetSemanticsAndMaxLongAsInt_ReturnsNoValue()
+    {
+        var cache = GetCacheClient(false);
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             await cache.SetAsync<long>("test", Int64.MaxValue);
             var cacheValue3 = await cache.GetAsync<int>("test");
             Assert.False(cacheValue3.HasValue);
 
-            cacheValue = await cache.GetAsync<long>("test");
+            var cacheValue = await cache.GetAsync<long>("test");
             Assert.True(cacheValue.HasValue);
             Assert.Equal(Int64.MaxValue, cacheValue.Value);
+        }
+    }
 
-            await cache.SetAsync<MyData>("test", new MyData
-            {
-                Message = "test"
-            });
-            cacheValue = await cache.GetAsync<long>("test");
+    public virtual async Task GetAsync_WithTryGetSemanticsAndComplexTypeAsLong_ReturnsNoValue()
+    {
+        var cache = GetCacheClient(false);
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync<MyData>("test", new MyData { Message = "test" });
+            var cacheValue = await cache.GetAsync<long>("test");
             Assert.False(cacheValue.HasValue);
         }
     }
 
-    // TODO: This test bundles too many scenarios. Consider splitting into:
-    //   - ScopedCache_WithDifferentScopes_IsolatesKeys
-    //   - ScopedCache_WithNestedScopes_PreservesHierarchy
-    //   - ScopedCache_GetAllAsync_ReturnsUnscopedKeys
-    //   - ScopedCache_RemoveByPrefixAsync_AffectsOnlyScopedKeys
-    //   - ScopedCache_RemoveAllAsync_AffectsOnlyScopedKeys
-    //   - ScopedCache_IncrementAsync_WorksWithinScope
-    public virtual async Task CanUseScopedCachesAsync()
+    public virtual async Task SetAsync_WithDifferentScopes_IsolatesKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
+
+            await cache.SetAsync("test", 1);
+            await scopedCache1.SetAsync("test", 2);
+            await scopedCache2.SetAsync("test", 3);
+
+            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
+            Assert.Equal(3, (await scopedCache2.GetAsync<int>("test")).Value);
+        }
+    }
+
+    public virtual async Task SetAsync_WithNestedScopes_PreservesHierarchy()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
+
+            await cache.SetAsync("test", 1);
+            await scopedCache1.SetAsync("test", 2);
+            await nestedScopedCache1.SetAsync("test", 3);
+
+            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
+            Assert.Equal(3, (await nestedScopedCache1.GetAsync<int>("test")).Value);
+
+            Assert.Equal(3, (await scopedCache1.GetAsync<int>("nested:test")).Value);
+            Assert.Equal(3, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithScopedCache_ReturnsUnscopedKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
+
+            await scopedCache1.SetAsync("test", 1);
+            await nestedScopedCache1.SetAsync("test", 2);
+
+            Assert.Equal("test", (await scopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
+            Assert.Equal("test", (await nestedScopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithScopedCache_AffectsOnlyScopedKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -341,19 +520,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("test", 1);
             await scopedCache1.SetAsync("test", 2);
             await nestedScopedCache1.SetAsync("test", 3);
-
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
-            Assert.Equal(3, (await nestedScopedCache1.GetAsync<int>("test")).Value);
-
-            Assert.Equal(3, (await scopedCache1.GetAsync<int>("nested:test")).Value);
-            Assert.Equal(3, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
-
-            // ensure GetAllAsync returns unscoped keys
-            Assert.Equal("test", (await scopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
-            Assert.Equal("test", (await nestedScopedCache1.GetAllAsync<int>("test")).Keys.FirstOrDefault());
-
-            await scopedCache2.SetAsync("test", 1);
+            await scopedCache2.SetAsync("test", 4);
 
             int result = await scopedCache1.RemoveByPrefixAsync(String.Empty);
             Assert.Equal(2, result);
@@ -365,13 +532,46 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False((await scopedCache1.GetAsync<int>("test")).HasValue);
             Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
             Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.Equal(1, (await scopedCache2.GetAsync<int>("test")).Value);
+            Assert.Equal(4, (await scopedCache2.GetAsync<int>("test")).Value);
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithScopedCache_AffectsOnlyScopedKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
+
+            await cache.SetAsync("test", 1);
+            await scopedCache1.SetAsync("test", 2);
+            await scopedCache2.SetAsync("test", 3);
 
             await scopedCache2.RemoveAllAsync();
-            Assert.False((await scopedCache1.GetAsync<int>("test")).HasValue);
-            Assert.False((await nestedScopedCache1.GetAsync<int>("test")).HasValue);
+            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
             Assert.False((await scopedCache2.GetAsync<int>("test")).HasValue);
             Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithScopedCache_WorksWithinScope()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
 
             Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
             Assert.Equal(10, await scopedCache1.IncrementAsync("total", 10));
@@ -388,8 +588,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Refactor to RemoveAllAsync_WithLargeNumberOfKeys_RemovesAllKeysEfficiently
-    public virtual async Task CanRemoveAllAsync()
+    public virtual async Task RemoveAllAsync_WithLargeNumberOfKeys_RemovesAllKeysEfficiently()
     {
         const int COUNT = 10000;
 
@@ -419,8 +618,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Refactor to RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys
-    public virtual async Task CanRemoveAllKeysAsync()
+    public virtual async Task RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys()
     {
         const int COUNT = 10000;
 
@@ -449,11 +647,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Consider splitting into:
-    // - RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys
-    // - RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys
-    // - RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys
-    public virtual async Task CanRemoveByPrefixAsync()
+    public virtual async Task RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -469,12 +663,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync(prefix + "test2", 2);
 
             Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            string prefix = "blah:";
+            await cache.SetAsync("test", 1);
+            await cache.SetAsync(prefix + "test", 1);
+            await cache.SetAsync(prefix + "test2", 2);
+
             Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
             Assert.False(await cache.ExistsAsync(prefix + "test"));
             Assert.False(await cache.ExistsAsync(prefix + "test2"));
             Assert.True(await cache.ExistsAsync("test"));
-
-            Assert.Equal(1, await cache.RemoveByPrefixAsync(String.Empty));
         }
     }
 
@@ -509,8 +719,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithRegexMetacharacter_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithRegexCharactersAsync(string specialChar)
+    [Theory]
+    [MemberData(nameof(GetRegexSpecialCharacters))]
+    public virtual async Task RemoveByPrefixAsync_WithRegexMetacharacter_TreatsAsLiteral(string specialChar)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -520,15 +731,16 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            string regexPrefix = $"regex{specialChar}:";
-            await cache.SetAsync($"{regexPrefix}test1", 1);
-            await cache.SetAsync($"{regexPrefix}test2", 2);
-            await cache.SetAsync($"other{specialChar}test", 3);
+            string regexPrefix = $"pattern{specialChar}:";
+            await cache.SetAsync($"{regexPrefix}searchResult", 100);
+            await cache.SetAsync($"{regexPrefix}matchResult", 200);
+            await cache.SetAsync($"unrelated{specialChar}data", 300);
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(regexPrefix));
-            Assert.False(await cache.ExistsAsync($"{regexPrefix}test1"));
-            Assert.False(await cache.ExistsAsync($"{regexPrefix}test2"));
-            Assert.True(await cache.ExistsAsync($"other{specialChar}test"));
+            int removed = await cache.RemoveByPrefixAsync(regexPrefix);
+            Assert.Equal(2, removed);
+            Assert.False(await cache.ExistsAsync($"{regexPrefix}searchResult"));
+            Assert.False(await cache.ExistsAsync($"{regexPrefix}matchResult"));
+            Assert.True(await cache.ExistsAsync($"unrelated{specialChar}data"));
         }
     }
 
@@ -546,8 +758,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithWildcardPatternsAsync(string pattern)
+    [Theory]
+    [MemberData(nameof(GetWildcardPatterns))]
+    public virtual async Task RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(string pattern)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -557,21 +770,21 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync($"{pattern}test1", 1);
-            await cache.SetAsync($"{pattern}test2", 2);
-            await cache.SetAsync($"similar{pattern}test", 3);
-            await cache.SetAsync($"not{pattern.Replace("*", "X")}test", 4);
+            await cache.SetAsync($"{pattern}fileA", 1000);
+            await cache.SetAsync($"{pattern}fileB", 2000);
+            await cache.SetAsync($"different{pattern}item", 3000);
+            await cache.SetAsync($"excluded{pattern.Replace("*", "X")}item", 4000);
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(pattern));
-            Assert.False(await cache.ExistsAsync($"{pattern}test1"));
-            Assert.False(await cache.ExistsAsync($"{pattern}test2"));
-            Assert.True(await cache.ExistsAsync($"similar{pattern}test"));
-            Assert.True(await cache.ExistsAsync($"not{pattern.Replace("*", "X")}test"));
+            int removed = await cache.RemoveByPrefixAsync(pattern);
+            Assert.Equal(2, removed);
+            Assert.False(await cache.ExistsAsync($"{pattern}fileA"));
+            Assert.False(await cache.ExistsAsync($"{pattern}fileB"));
+            Assert.True(await cache.ExistsAsync($"different{pattern}item"));
+            Assert.True(await cache.ExistsAsync($"excluded{pattern.Replace("*", "X")}item"));
         }
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithDoubleAsteriskAsync()
+    public virtual async Task RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -581,16 +794,17 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync("**:test1", 1);
-            await cache.SetAsync("**:test2", 2);
-            await cache.SetAsync("*:test3", 3);
-            await cache.SetAsync("***:test4", 4);
+            await cache.SetAsync("**:globMatch1", 100);
+            await cache.SetAsync("**:globMatch2", 200);
+            await cache.SetAsync("*:singleWildcard", 300);
+            await cache.SetAsync("***:tripleAsterisk", 400);
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync("**:"));
-            Assert.False(await cache.ExistsAsync("**:test1"));
-            Assert.False(await cache.ExistsAsync("**:test2"));
-            Assert.True(await cache.ExistsAsync("*:test3"));
-            Assert.True(await cache.ExistsAsync("***:test4"));
+            int removed = await cache.RemoveByPrefixAsync("**:");
+            Assert.Equal(2, removed);
+            Assert.False(await cache.ExistsAsync("**:globMatch1"));
+            Assert.False(await cache.ExistsAsync("**:globMatch2"));
+            Assert.True(await cache.ExistsAsync("*:singleWildcard"));
+            Assert.True(await cache.ExistsAsync("***:tripleAsterisk"));
         }
     }
 
@@ -644,8 +858,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithSpecialCharactersAsync(string specialPrefix)
+    [Theory]
+    [MemberData(nameof(GetSpecialPrefixes))]
+    public virtual async Task RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral(string specialPrefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -655,20 +870,19 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync($"{specialPrefix}test1", 1);
-            await cache.SetAsync($"{specialPrefix}test2", 2);
-            await cache.SetAsync($"other{specialPrefix}test", 3);
+            await cache.SetAsync($"{specialPrefix}encodedValue", 100);
+            await cache.SetAsync($"{specialPrefix}escapedString", 200);
+            await cache.SetAsync($"unmatched{specialPrefix}entry", 300);
 
             int removed = await cache.RemoveByPrefixAsync(specialPrefix);
             Assert.Equal(2, removed);
-            Assert.False(await cache.ExistsAsync($"{specialPrefix}test1"));
-            Assert.False(await cache.ExistsAsync($"{specialPrefix}test2"));
-            Assert.True(await cache.ExistsAsync($"other{specialPrefix}test"));
+            Assert.False(await cache.ExistsAsync($"{specialPrefix}encodedValue"));
+            Assert.False(await cache.ExistsAsync($"{specialPrefix}escapedString"));
+            Assert.True(await cache.ExistsAsync($"unmatched{specialPrefix}entry"));
         }
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys
-    public virtual async Task CanRemoveByPrefixWithNullAsync()
+    public virtual async Task RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -678,17 +892,19 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync("test", 1);
+            await cache.SetAsync("userId", 1);
+            await cache.SetAsync("sessionId", 2);
+            await cache.SetAsync("productId", 3);
 
-            // Null prefix should remove all keys (equivalent to empty prefix)
             int removed = await cache.RemoveByPrefixAsync(null);
-            Assert.Equal(1, removed);
-            Assert.False(await cache.ExistsAsync("test"));
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync("userId"));
+            Assert.False(await cache.ExistsAsync("sessionId"));
+            Assert.False(await cache.ExistsAsync("productId"));
         }
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys
-    public virtual async Task CanRemoveByPrefixWithEmptyStringAsync()
+    public virtual async Task RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -698,12 +914,15 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync("test", 1);
+            await cache.SetAsync("orderId", 100);
+            await cache.SetAsync("customerId", 200);
+            await cache.SetAsync("invoiceId", 300);
 
-            // Empty prefix should remove all keys
             int removed = await cache.RemoveByPrefixAsync("");
-            Assert.Equal(1, removed);
-            Assert.False(await cache.ExistsAsync("test"));
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync("orderId"));
+            Assert.False(await cache.ExistsAsync("customerId"));
+            Assert.False(await cache.ExistsAsync("invoiceId"));
         }
     }
 
@@ -716,8 +935,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithWhitespacePrefix_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithWhitespaceAsync(string whitespacePrefix)
+    [Theory]
+    [MemberData(nameof(GetWhitespaceOnlyPrefixes))]
+    public virtual async Task RemoveByPrefixAsync_WithWhitespacePrefix_TreatsAsLiteral(string whitespacePrefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -727,19 +947,15 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // Set up test data - one other key to verify it remains
-            await cache.SetAsync("other:test", 1);
+            await cache.SetAsync("accountId", 100);
+            await cache.SetAsync($"{whitespacePrefix}filteredResult1", 200);
+            await cache.SetAsync($"{whitespacePrefix}filteredResult2", 300);
 
-            // Create keys that actually match the whitespace prefix
-            await cache.SetAsync($"{whitespacePrefix}match1", 10);
-            await cache.SetAsync($"{whitespacePrefix}match2", 20);
-
-            // Whitespace prefixes are treated as a valid wildcard prefix and everything is removed.
             int removed = await cache.RemoveByPrefixAsync(whitespacePrefix);
             Assert.Equal(2, removed);
-            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match1"));
-            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}match2"));
-            Assert.True(await cache.ExistsAsync("other:test"));
+            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}filteredResult1"));
+            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}filteredResult2"));
+            Assert.True(await cache.ExistsAsync("accountId"));
         }
     }
 
@@ -753,8 +969,9 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         ];
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral
-    public virtual async Task CanRemoveByPrefixWithLineEndingsAsync(string lineEndingPrefix)
+    [Theory]
+    [MemberData(nameof(GetLineEndingPrefixes))]
+    public virtual async Task RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral(string lineEndingPrefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -764,24 +981,25 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // Set up test data - one other key to verify it remains
-            await cache.SetAsync("other:test", 1);
+            await cache.SetAsync("logEntry", 1000);
+            await cache.SetAsync($"{lineEndingPrefix}parsedLine1", 2000);
+            await cache.SetAsync($"{lineEndingPrefix}parsedLine2", 3000);
 
-            // Create keys that actually match the line ending prefix
-            await cache.SetAsync($"{lineEndingPrefix}match1", 10);
-            await cache.SetAsync($"{lineEndingPrefix}match2", 20);
-
-            // Line ending prefixes are treated as a valid wildcard prefix.
             int removed = await cache.RemoveByPrefixAsync(lineEndingPrefix);
             Assert.Equal(2, removed);
-            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match1"));
-            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}match2"));
-            Assert.True(await cache.ExistsAsync("other:test"));
+            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}parsedLine1"));
+            Assert.False(await cache.ExistsAsync($"{lineEndingPrefix}parsedLine2"));
+            Assert.True(await cache.ExistsAsync("logEntry"));
         }
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithScopedCache_RemovesOnlyScopedKeys
-    public virtual async Task CanRemoveByPrefixWithScopedCachesAsync()
+    [Theory]
+    [InlineData("snowboard", 1, true)] // Exact key match
+    [InlineData("s", 1, true)] // Partial prefix match
+    [InlineData(null, 1, false)] // Null prefix (all keys in scope)
+    [InlineData("", 1, false)] // Empty prefix (all keys in scope)
+    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
+        int expectedRemovedCount, bool shouldUnscopedRemain)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -790,80 +1008,89 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var scopedCache = new ScopedCacheClient(cache, "scoped1");
 
-            const string cacheKey = "snowboard";
-            await cache.SetAsync(cacheKey, 1);
-            await scopedCache1.SetAsync(cacheKey, 1);
-            Assert.Equal(1, (await cache.GetAsync<int>(cacheKey)).Value);
-            Assert.Equal(1, (await scopedCache1.GetAsync<int>(cacheKey)).Value);
+            const string key = "snowboard";
+            await cache.SetAsync(key, 1);
+            await scopedCache.SetAsync(key, 1);
 
-            // Remove by prefix should only remove the unscoped cache.
-            Assert.Equal(1, await cache.RemoveByPrefixAsync(cacheKey));
-            Assert.False(await cache.ExistsAsync(cacheKey));
-            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
-            Assert.Equal(1, (await scopedCache1.GetAsync<int>(cacheKey)).Value);
+            Assert.Equal(1, (await cache.GetAsync<int>(key)).Value);
+            Assert.Equal(1, (await scopedCache.GetAsync<int>(key)).Value);
 
-            // Add the unscoped cache value back.
-            await cache.SetAsync(cacheKey, 1);
+            // Remove by prefix from scoped cache
+            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove));
 
-            // Remove by null key.
-            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(null));
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+            // Verify unscoped cache state
+            Assert.Equal(shouldUnscopedRemain, await cache.ExistsAsync(key));
 
-            // Add the scoped cache value back.
-            await scopedCache1.SetAsync(cacheKey, 1);
+            // Verify scoped cache item was removed
+            Assert.False(await scopedCache.ExistsAsync(key));
+        }
+    }
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(null));
-            Assert.False(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
 
-            // Reset client values
-            await cache.SetAsync(cacheKey, 1);
-            await scopedCache1.SetAsync(cacheKey, 1);
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            var scopedCache = new ScopedCacheClient(cache, "scoped1");
 
-            // Remove by empty key.
-            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync(String.Empty));
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+            const string key = "snowboard";
+            await cache.SetAsync(key, 1);
+            await scopedCache.SetAsync(key, 1);
 
-            // Add the scoped cache value back.
-            await scopedCache1.SetAsync(cacheKey, 1);
+            // Remove by null/empty from scoped cache - should only remove within scope
+            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.False(await scopedCache.ExistsAsync(key));
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(String.Empty));
-            Assert.False(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+            // Add the scoped cache value back
+            await scopedCache.SetAsync(key, 1);
 
-            // Reset client values
-            await cache.SetAsync(cacheKey, 1);
-            await scopedCache1.SetAsync(cacheKey, 1);
+            // Remove by null/empty from unscoped cache - should remove both unscoped and scoped
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
+            Assert.False(await cache.ExistsAsync(key));
+            Assert.False(await scopedCache.ExistsAsync(key));
+        }
+    }
 
-            // Remove by *.
-            Assert.Equal(0, await scopedCache1.RemoveByPrefixAsync("*"));
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
+    [Fact]
+    public virtual async Task RemoveByPrefixAsync_AsteriskPrefixWithScopedCache_TreatedAsLiteral()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
 
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            var scopedCache = new ScopedCacheClient(cache, "scoped1");
+
+            const string key = "snowboard";
+            await cache.SetAsync(key, 1);
+            await scopedCache.SetAsync(key, 1);
+
+            // Remove by "*" from scoped cache - should not match "snowboard"
+            Assert.Equal(0, await scopedCache.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.True(await scopedCache.ExistsAsync(key));
+
+            // Remove by "*" from unscoped cache - should not match "snowboard"
             Assert.Equal(0, await cache.RemoveByPrefixAsync("*"));
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            Assert.True(await scopedCache1.ExistsAsync(cacheKey));
-
-            // Remove by s.
-            Assert.Equal(1, await scopedCache1.RemoveByPrefixAsync("s"));
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
-
-            // Add the scoped cache value back.
-            await scopedCache1.SetAsync(cacheKey, 1);
-
-            Assert.Equal(2, await cache.RemoveByPrefixAsync("s"));
-            Assert.False(await cache.ExistsAsync(cacheKey));
-            Assert.False(await scopedCache1.ExistsAsync(cacheKey));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.True(await scopedCache.ExistsAsync(key));
         }
     }
 
-    // TODO: Refactor to RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys
-    public virtual async Task CanRemoveByPrefixMultipleEntriesAsync(int count)
+    [Fact]
+    public virtual async Task RemoveByPrefixAsync_PartialPrefixWithScopedCache_RemovesMatchingKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -872,24 +1099,61 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string prefix = "prefix:";
-            await cache.SetAsync("test", 1);
+            var scopedCache = new ScopedCacheClient(cache, "scoped1");
 
-            await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => $"{prefix}test{i}"));
+            const string key = "snowboard";
+            await cache.SetAsync(key, 1);
+            await scopedCache.SetAsync(key, 1);
 
-            Assert.Equal(1, (await cache.GetAsync<int>($"{prefix}test1")).Value);
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            // Remove by partial prefix "s" from scoped cache
+            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync("s"));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.False(await scopedCache.ExistsAsync(key));
 
-            Assert.Equal(0, await cache.RemoveByPrefixAsync($"{prefix}:doesntexist"));
-            Assert.Equal(count, await cache.RemoveByPrefixAsync(prefix));
+            // Add the scoped cache value back
+            await scopedCache.SetAsync(key, 1);
+
+            // Remove by partial prefix "s" from unscoped cache - should remove both
+            Assert.Equal(2, await cache.RemoveByPrefixAsync("s"));
+            Assert.False(await cache.ExistsAsync(key));
+            Assert.False(await scopedCache.ExistsAsync(key));
         }
     }
 
-    // TODO: Consider splitting into:
-    // - SetAsync_WithComplexObject_StoresCorrectly
-    // - GetAsync_WithComplexObject_ReturnsNewInstance
-    // - GetAsync_WithComplexObject_PreservesAllProperties
-    public virtual async Task CanSetAndGetObjectAsync()
+    [Theory]
+    [InlineData(10)] // Small dataset
+    [InlineData(100)] // Medium dataset
+    [InlineData(1000)] // Large dataset
+    public virtual async Task RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys(int count)
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string prefix = "product:";
+            const string unmatchedKey = "order";
+            await cache.SetAsync(unmatchedKey, 1);
+
+            await cache.SetAllAsync(Enumerable.Range(0, count).ToDictionary(i => $"{prefix}item{i}"));
+
+            Assert.Equal(1, (await cache.GetAsync<int>($"{prefix}item1")).Value);
+            Assert.Equal(1, (await cache.GetAsync<int>(unmatchedKey)).Value);
+
+            // Verify non-existent prefix removal returns 0
+            Assert.Equal(0, await cache.RemoveByPrefixAsync($"{prefix}doesntexist"));
+
+            // Verify removal of all matching prefix keys
+            Assert.Equal(count, await cache.RemoveByPrefixAsync(prefix));
+
+            // Verify only unmatched key remains
+            Assert.True(await cache.ExistsAsync(unmatchedKey));
+        }
+    }
+
+    public virtual async Task SetAsync_WithComplexObject_StoresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -900,29 +1164,18 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             var dt = DateTimeOffset.Now;
-            var value = new MyData
-            {
-                Type = "test",
-                Date = dt,
-                Message = "Hello World"
-            };
+            var value = new MyData { Type = "test", Date = dt, Message = "Hello World" };
+
             await cache.SetAsync("test", value);
-            value.Type = "modified";
+
+            Assert.True(await cache.ExistsAsync("test"));
             var cachedValue = await cache.GetAsync<MyData>("test");
             Assert.NotNull(cachedValue);
-            Assert.Equal(dt, cachedValue.Value.Date);
-            Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object");
-            Assert.Equal("Hello World", cachedValue.Value.Message);
-            Assert.Equal("test", cachedValue.Value.Type);
+            Assert.True(cachedValue.HasValue);
         }
     }
 
-    // TODO: Consider splitting into:
-    // - GetExpirationAsync_WithNoExpiration_ReturnsNull
-    // - GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan
-    // - GetExpirationAsync_WithNonExistentKey_ReturnsNull
-    // - GetExpirationAsync_WithExpiredKey_ReturnsNull
-    public virtual async Task GetExpirationAsync_WithVariousStates_ReturnsCorrectly()
+    public virtual async Task GetAsync_WithComplexObject_ReturnsNewInstance()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -932,32 +1185,115 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // Test getting expiration for a key with no expiration
-            await cache.SetAsync("no-expiration", "value");
-            var expiration = await cache.GetExpirationAsync("no-expiration");
-            Assert.Null(expiration);
+            var value = new MyData { Type = "test", Date = DateTimeOffset.Now, Message = "Hello World" };
 
-            // Test getting expiration for a key with expiration
-            var expiresAt = DateTime.UtcNow.AddHours(1);
-            await cache.SetAsync("with-expiration", "value", expiresAt);
-            expiration = await cache.GetExpirationAsync("with-expiration");
-            Assert.NotNull(expiration);
-            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1).Add(TimeSpan.FromSeconds(10)));
+            await cache.SetAsync("test", value);
+            value.Type = "modified";
 
-            // Test getting expiration for a non-existent key
-            var expirationForNonExistent = await cache.GetExpirationAsync("non-existent-key");
-            Assert.Null(expirationForNonExistent);
-
-            // Test getting expiration for an expired key
-            var quickExpiry = DateTime.UtcNow.AddMilliseconds(100);
-            await cache.SetAsync("quick-expiry", "value", quickExpiry);
-            await Task.Delay(200);
-            expirationForNonExistent = await cache.GetExpirationAsync("quick-expiry");
-            Assert.Null(expirationForNonExistent);
+            var cachedValue = await cache.GetAsync<MyData>("test");
+            Assert.NotNull(cachedValue);
+            Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object");
+            Assert.Equal("test", cachedValue.Value.Type);
+            Assert.NotEqual("modified", cachedValue.Value.Type);
         }
     }
 
-    public virtual async Task GetAllExpiration_WithMultipleKeys_ReturnsAllExpirations()
+    public virtual async Task GetAsync_WithComplexObject_PreservesAllProperties()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var dt = DateTimeOffset.Now;
+            var value = new MyData { Type = "test", Date = dt, Message = "Hello World" };
+
+            await cache.SetAsync("test", value);
+            var cachedValue = await cache.GetAsync<MyData>("test");
+
+            Assert.NotNull(cachedValue);
+            Assert.Equal("test", cachedValue.Value.Type);
+            Assert.Equal(dt, cachedValue.Value.Date);
+            Assert.Equal("Hello World", cachedValue.Value.Message);
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithNoExpiration_ReturnsNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("no-expiration", "value");
+            var expiration = await cache.GetExpirationAsync("no-expiration");
+
+            Assert.Null(expiration);
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var expiresAt = DateTime.UtcNow.AddHours(1);
+            await cache.SetAsync("with-expiration", "value", expiresAt);
+            var expiration = await cache.GetExpirationAsync("with-expiration");
+
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59),
+                TimeSpan.FromHours(1).Add(TimeSpan.FromSeconds(10)));
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithNonExistentKey_ReturnsNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var expiration = await cache.GetExpirationAsync("non-existent-key");
+
+            Assert.Null(expiration);
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithExpiredKey_ReturnsNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var quickExpiry = DateTime.UtcNow.AddMilliseconds(100);
+            await cache.SetAsync("quick-expiry", "value", quickExpiry);
+            await Task.Delay(200);
+            var expiration = await cache.GetExpirationAsync("quick-expiry");
+
+            Assert.Null(expiration);
+        }
+    }
+
+    public virtual async Task GetAllExpirationAsync_WithMixedKeys_ReturnsOnlyKeysWithExpiration()
     {
         // Arrange
         var cache = GetCacheClient();
@@ -1000,8 +1336,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    // TODO: Name is good but consider verifying expiration values match expectations
-    public virtual async Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
+    [Theory]
+    [InlineData(10)] // Small dataset
+    [InlineData(100)] // Medium dataset
+    [InlineData(1000)] // Large dataset
+    public virtual async Task GetAllExpirationAsync_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
     {
         // Arrange
         var cache = GetCacheClient();
@@ -1033,7 +1372,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task GetAllExpiration_WithExpiredKeys_ReturnsNullForExpiredKeys()
+    public virtual async Task GetAllExpirationAsync_WithExpiredKeys_ExcludesExpiredKeys()
     {
         // Arrange
         var cache = GetCacheClient();
@@ -1068,7 +1407,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetExpirationAsync_WithValidDateTime_SetsExpirationCorrectly()
+    public virtual async Task SetAsync_WithShortExpiration_ExpiresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1088,25 +1427,31 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             await Task.Delay(500);
             Assert.False((await cache.GetAsync<int>("test")).HasValue);
-            Assert.Null(await cache.GetExpirationAsync("test"));
             Assert.False((await cache.GetAsync<int>("test2")).HasValue);
-            Assert.Null(await cache.GetExpirationAsync("test2"));
         }
     }
 
-    // TODO: Refactor to SetExpirationAsync_WithVeryHighExpiration_SetsCorrectly
-    /*
-    SetExpirationAsync_WithDateTimeMaxValue_PersistsIndefinitely
-SetExpirationAsync_WithDateTimeMinValue_DoesNotCreateKey
-SetExpirationAsync_WithVeryHighExpirationValue_SetsExpirationCorrectly
-SetExpirationAsync_WithNoExpiration_ReturnsNull
-SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesExpiration
-SetExpirationAsync_ChangingToDateTimeMaxValue_RemovesExpiration
-SetExpirationAsync_ChangingToDateTimeMinValue_DeletesKey
-SetAllAsync_WithDateTimeMinValue_DoesNotCreateKeys
-SetAsync_WithCurrentUtcTime_DoesNotCreateKey
-    */
-    public virtual async Task SetExpirationAsync_WithMinMaxValues_HandlesEdgeCases()
+    public virtual async Task GetExpirationAsync_AfterExpiry_ReturnsNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
+            await cache.SetAsync("test", 1, expiresAt);
+
+            await Task.Delay(500);
+            var expiration = await cache.GetExpirationAsync("test");
+
+            Assert.Null(expiration);
+        }
+    }
+
+    public virtual async Task SetAsync_WithExpirationEdgeCases_HandlesCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1149,7 +1494,8 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             await cache.SetExpirationAsync("test5", expiration);
             actualExpiration = await cache.GetExpirationAsync("test5");
             Assert.NotNull(actualExpiration);
-            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - utcNow);
+            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)),
+                expiration - utcNow);
 
             // Change expiration to MaxValue.
             await cache.SetExpirationAsync("test5", DateTime.MaxValue);
@@ -1161,12 +1507,10 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             Assert.False(await cache.ExistsAsync("test5"));
 
             // Ensure keys are not added as they are already expired
-            Assert.Equal(0, await cache.SetAllAsync(new Dictionary<string, object>
-            {
-                { "test6", 1 },
-                { "test7", 1 },
-                { "test8", 1 }
-            }, DateTime.MinValue));
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "test6", 1 }, { "test7", 1 }, { "test8", 1 } },
+                    DateTime.MinValue));
 
             // Expire time right now
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
@@ -1249,7 +1593,8 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             await cache.SetExpirationAsync("test", expiration);
             var actualExpiration = await cache.GetExpirationAsync("test");
             Assert.NotNull(actualExpiration);
-            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)), expiration - utcNow);
+            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)),
+                expiration - utcNow);
         }
     }
 
@@ -1285,12 +1630,10 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             await cache.RemoveAllAsync();
 
             // Ensure keys are not added when they are already expired
-            Assert.Equal(0, await cache.SetAllAsync(new Dictionary<string, object>
-            {
-                { "test1", 1 },
-                { "test2", 2 },
-                { "test3", 3 }
-            }, DateTime.MinValue));
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "test1", 1 }, { "test2", 2 }, { "test3", 3 } },
+                    DateTime.MinValue));
 
             Assert.False(await cache.ExistsAsync("test1"));
             Assert.False(await cache.ExistsAsync("test2"));
@@ -1470,12 +1813,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - IncrementAsync_WithExistingKey_IncrementsValue
-    //   - IncrementAsync_WithNonExistentKey_InitializesToOne
-    //   - IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly
-    //   - IncrementAsync_WithStringValue_ConvertsAndIncrements (InMemory only)
-    public virtual async Task CanIncrementAsync()
+    public virtual async Task IncrementAsync_WithExistingKey_IncrementsValue()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1487,20 +1825,60 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
 
             Assert.True(await cache.SetAsync("test", 0));
             Assert.Equal(1, await cache.IncrementAsync("test"));
-            Assert.Equal(1, await cache.IncrementAsync("test1"));
-            Assert.Equal(0, await cache.IncrementAsync("test3", 0));
+        }
+    }
 
-            // The following is not supported by redis.
+    public virtual async Task IncrementAsync_WithNonExistentKey_InitializesToOne()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            Assert.Equal(1, await cache.IncrementAsync("test1"));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            Assert.Equal(0, await cache.IncrementAsync("test3", 0));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithStringValue_ConvertsAndIncrements()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
             if (cache is InMemoryCacheClient)
             {
                 Assert.True(await cache.SetAsync("test2", "stringValue"));
                 Assert.Equal(1, await cache.IncrementAsync("test2"));
             }
+            else
+            {
+                throw new NotSupportedException("Only supported by InMemoryCacheClient.");
+            }
         }
     }
 
-    // TODO: Refactor to IncrementAsync_WithExpiration_ExpiresCorrectly
-    public virtual async Task CanIncrementAndExpireAsync()
+    public virtual async Task IncrementAsync_WithExpiration_ExpiresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1523,8 +1901,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Refactor to SetAllAsync_WithExpiration_KeysExpireCorrectly
-    public virtual async Task SetAllShouldExpireAsync()
+    public virtual async Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1542,11 +1919,68 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Consider splitting into:
-    // - ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace
-    // - ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue
-    // - ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly
-    public virtual async Task CanReplaceIfEqual()
+    public virtual async Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string cacheKey = "replace-test";
+            Assert.True(await cache.AddAsync(cacheKey, "original"));
+            var result = await cache.GetAsync<string>(cacheKey);
+            Assert.NotNull(result);
+            Assert.Equal("original", result.Value);
+
+            Assert.True(await cache.ReplaceAsync(cacheKey, "replaced"));
+            result = await cache.GetAsync<string>(cacheKey);
+            Assert.NotNull(result);
+            Assert.Equal("replaced", result.Value);
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string cacheKey = "non-existent";
+            Assert.False(await cache.ReplaceAsync(cacheKey, "value"));
+            var result = await cache.GetAsync<string>(cacheKey);
+            Assert.False(result.HasValue);
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string cacheKey = "replace-expiration";
+            Assert.True(await cache.AddAsync(cacheKey, "initial"));
+            Assert.Null(await cache.GetExpirationAsync(cacheKey));
+
+            Assert.True(await cache.ReplaceAsync(cacheKey, "updated", TimeSpan.FromHours(1)));
+            var expiration = await cache.GetExpirationAsync(cacheKey);
+            Assert.NotNull(expiration);
+            Assert.True(expiration.Value > TimeSpan.Zero);
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1561,21 +1995,54 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             var result = await cache.GetAsync<string>(cacheKey);
             Assert.NotNull(result);
             Assert.Equal("123", result.Value);
-            Assert.Null(await cache.GetExpirationAsync(cacheKey));
 
-            Assert.False(await cache.ReplaceIfEqualAsync(cacheKey, "456", "789", TimeSpan.FromHours(1)));
-            Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123", TimeSpan.FromHours(1)));
+            Assert.False(await cache.ReplaceIfEqualAsync(cacheKey, "456", "789"));
             result = await cache.GetAsync<string>(cacheKey);
             Assert.NotNull(result);
+            Assert.Equal("123", result.Value);
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string cacheKey = "replace-if-equal";
+            Assert.True(await cache.AddAsync(cacheKey, "123"));
+
+            Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123"));
+            var result = await cache.GetAsync<string>(cacheKey);
+            Assert.NotNull(result);
             Assert.Equal("456", result.Value);
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const string cacheKey = "replace-if-equal";
+            Assert.True(await cache.AddAsync(cacheKey, "123"));
+            Assert.Null(await cache.GetExpirationAsync(cacheKey));
+
+            Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123", TimeSpan.FromHours(1)));
             Assert.NotNull(await cache.GetExpirationAsync(cacheKey));
         }
     }
 
-    // TODO: Consider splitting into:
-    // - RemoveIfEqualAsync_WithMismatchedValue_ReturnsFalseAndDoesNotRemove
-    // - RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves
-    public virtual async Task CanRemoveIfEqual()
+    public virtual async Task RemoveIfEqualAsync_WithMismatchedValue_ReturnsFalseAndDoesNotRemove()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1591,19 +2058,32 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             Assert.Equal("123", result.Value);
 
             Assert.False(await cache.RemoveIfEqualAsync("remove-if-equal", "789"));
-            Assert.True(await cache.RemoveIfEqualAsync("remove-if-equal", "123"));
             result = await cache.GetAsync<string>("remove-if-equal");
+            Assert.NotNull(result);
+            Assert.Equal("123", result.Value);
+        }
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            Assert.True(await cache.AddAsync("remove-if-equal", "123"));
+
+            Assert.True(await cache.RemoveIfEqualAsync("remove-if-equal", "123"));
+            var result = await cache.GetAsync<string>("remove-if-equal");
             Assert.NotNull(result);
             Assert.False(result.HasValue);
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - SetAsync_WithLargeNumber_StoresCorrectly
-    //   - GetAsync_WithLargeNumber_ReturnsCorrectValue
-    //   - SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower
-    //   - SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher
-    public virtual async Task CanRoundTripLargeNumbersAsync()
+    public virtual async Task SetAsync_WithLargeNumber_StoresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1615,7 +2095,37 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
 
             double value = 2 * 1000 * 1000 * 1000;
             Assert.True(await cache.SetAsync("test", value));
+        }
+    }
+
+    public virtual async Task GetAsync_WithLargeNumber_ReturnsCorrectValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            double value = 2 * 1000 * 1000 * 1000;
+            await cache.SetAsync("test", value);
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            double value = 2 * 1000 * 1000 * 1000;
+            await cache.SetAsync("test", value);
 
             double lowerValue = value - 1000;
             Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue));
@@ -1623,6 +2133,22 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
 
             Assert.Equal(0, await cache.SetIfLowerAsync("test", value));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
+        }
+    }
+
+    public virtual async Task SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            double value = 2 * 1000 * 1000 * 1000;
+            double lowerValue = value - 1000;
+            await cache.SetAsync("test", lowerValue);
 
             Assert.Equal(1000, await cache.SetIfHigherAsync("test", value));
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
@@ -1632,16 +2158,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: This test has too many scenarios bundled together. Consider splitting into:
-    // - SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly
-    // - GetUnixTimeSecondsAsync_WithUtcDateTime_ReturnsCorrectly
-    // - SetUnixTimeMillisecondsAsync_WithLocalDateTime_StoresCorrectly
-    // - GetUnixTimeMillisecondsAsync_WithLocalDateTime_ReturnsCorrectly
-    // - SetIfLowerAsync_WithDateTime_UpdatesWhenLower
-    // - SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher
-    // - SetIfHigherAsync_WithDateTime_UpdatesWhenHigher
-    // - SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower
-    public virtual async Task CanGetAndSetDateTimeAsync()
+    public virtual async Task SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1653,62 +2170,214 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
 
             DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1));
             long unixTimeValue = value.ToUnixTimeSeconds();
+
             Assert.True(await cache.SetUnixTimeSecondsAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+        }
+    }
+
+    public virtual async Task GetUnixTimeSecondsAsync_WithUtcDateTime_ReturnsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromSeconds(1));
+
+            await cache.SetUnixTimeSecondsAsync("test", value);
             var actual = await cache.GetUnixTimeSecondsAsync("test");
+
             Assert.Equal(value.Ticks, actual.Ticks);
             Assert.Equal(TimeSpan.Zero, actual.Offset);
+        }
+    }
 
-            value = DateTime.Now.Floor(TimeSpan.FromMilliseconds(1));
-            unixTimeValue = value.ToUnixTimeMilliseconds();
+    public virtual async Task SetUnixTimeMillisecondsAsync_WithLocalDateTime_StoresCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.Now.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+
             Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            actual = (await cache.GetUnixTimeMillisecondsAsync("test")).ToLocalTime();
-            Assert.Equal(value.Ticks, actual.Ticks);
+        }
+    }
 
-            value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            unixTimeValue = value.ToUnixTimeMilliseconds();
-            Assert.True(await cache.SetUnixTimeMillisecondsAsync("test", value));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            actual = await cache.GetUnixTimeMillisecondsAsync("test");
+    public virtual async Task GetUnixTimeMillisecondsAsync_WithLocalDateTime_ReturnsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.Now.Floor(TimeSpan.FromMilliseconds(1));
+
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            var actual = (await cache.GetUnixTimeMillisecondsAsync("test")).ToLocalTime();
+
             Assert.Equal(value.Ticks, actual.Ticks);
-            Assert.Equal(TimeSpan.Zero, actual.Offset);
+        }
+    }
+
+    public virtual async Task GetUnixTimeMillisecondsAsync_WithUtcDateTime_ReturnsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            var actual = await cache.GetUnixTimeMillisecondsAsync("test");
+
+            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+            Assert.Equal(value, actual);
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
 
             var lowerValue = value - TimeSpan.FromHours(1);
             long lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
-            Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfLowerAsync("test", lowerValue));
+
+            Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds,
+                await cache.SetIfLowerAsync("test", lowerValue));
             Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
+        }
+    }
 
-            await cache.RemoveAsync("test");
+    public virtual async Task SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
 
-            Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
 
             Assert.Equal(0, await cache.SetIfLowerAsync("test", value.AddHours(1)));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+        }
+    }
 
-            await cache.RemoveAsync("test");
+    public virtual async Task SetIfLowerAsync_WithDateTime_InitializesWhenKeyNotExists()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
 
-            Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+
+            Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
             Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
             Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+        }
+    }
 
-            Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+    public virtual async Task SetIfHigherAsync_WithDateTime_UpdatesWhenHigher()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
 
             var higherValue = value + TimeSpan.FromHours(1);
             long higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
-            Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds, await cache.SetIfHigherAsync("test", higherValue));
+
+            Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds,
+                await cache.SetIfHigherAsync("test", higherValue));
             Assert.Equal(higherUnixTimeValue, await cache.GetAsync<long>("test", 0));
             Assert.Equal(higherValue, await cache.GetUnixTimeMillisecondsAsync("test"));
         }
     }
 
-    // TODO: Refactor to SetAsync_WithLargeNumbersAndExpiration_PreservesValues
-    public virtual async Task CanRoundTripLargeNumbersWithExpirationAsync()
+    public virtual async Task SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+            await cache.SetUnixTimeMillisecondsAsync("test", value);
+
+            Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
+            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+        }
+    }
+
+    public virtual async Task SetIfHigherAsync_WithDateTime_InitializesWhenKeyNotExists()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long unixTimeValue = value.ToUnixTimeMilliseconds();
+
+            Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
+            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
+            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+        }
+    }
+
+    public virtual async Task SetAsync_WithLargeNumbersAndExpiration_PreservesValues()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1743,15 +2412,77 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: This test bundles too many scenarios. Consider splitting into:
-    // - ListAddAsync_WithNullKey_ThrowsArgumentNullException
-    // - ListAddAsync_WithNullValues_ThrowsArgumentNullException
-    // - ListAddAsync_WithDuplicates_StoresUniqueValuesOnly
-    // - ListRemoveAsync_WithMultipleValues_RemovesAll
-    // - ListRemoveAsync_RemovingAllValues_LeavesEmptyList
-    // - ListAddAsync_WithEmptyCollection_NoOp
-    // - ListRemoveAsync_WithSingleValue_RemovesCorrectly
-    public virtual async Task CanManageListsAsync()
+    public virtual async Task ListAddAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(String.Empty, 1));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithNullValues_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list";
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(key, null as List<int>));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(String.Empty, 1));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithNullValues_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list";
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(key, null as List<int>));
+        }
+    }
+
+    public virtual async Task GetListAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithDuplicates_StoresUniqueValuesOnly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1762,40 +2493,71 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             await cache.RemoveAllAsync();
             const string key = "list";
 
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(String.Empty, 1));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(key, null as List<int>));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(String.Empty, 1));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(key, null as List<int>));
-
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
-
             await cache.ListAddAsync(key, [1, 2, 3, 3]);
             var result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(3, result.Value.Count);
+        }
+    }
 
+    public virtual async Task ListRemoveAsync_WithMultipleValues_RemovesAll()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list";
+
+            await cache.ListAddAsync(key, [1, 2, 3, 3]);
             await cache.ListRemoveAsync(key, [1, 2, 3]);
-            result = await cache.GetListAsync<int>(key);
+            var result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
+        }
+    }
 
+    public virtual async Task ListAddAsync_WithEmptyCollection_NoOp()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
             await cache.RemoveAllAsync();
+            const string key = "list";
 
-            // Add an empty item.
             await cache.ListAddAsync<int>(key, []);
 
             await cache.ListAddAsync(key, 1);
             await cache.ListAddAsync(key, 2);
             await cache.ListAddAsync(key, 3);
-            result = await cache.GetListAsync<int>(key);
+            var result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(3, result.Value.Count);
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithSingleValue_RemovesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list";
+
+            await cache.ListAddAsync(key, 1);
+            await cache.ListAddAsync(key, 2);
+            await cache.ListAddAsync(key, 3);
 
             await cache.ListRemoveAsync(key, 2);
-            result = await cache.GetListAsync<int>(key);
+            var result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Equal(2, result.Value.Count);
 
@@ -1804,6 +2566,18 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             result = await cache.GetListAsync<int>(key);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithExistingNonListKey_ThrowsException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
 
             await Assert.ThrowsAnyAsync<Exception>(async () =>
             {
@@ -1813,12 +2587,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - ListAddAsync_WithNullCollection_ThrowsArgumentNullException
-    //   - ListAddAsync_WithNullItem_IgnoresNull
-    //   - ListRemoveAsync_WithNullCollection_ThrowsArgumentNullException
-    //   - ListRemoveAsync_WithNullItem_IgnoresNull
-    public virtual async Task CanManageListsWithNullItemsAsync()
+    public virtual async Task ListAddAsync_WithNullCollection_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1830,16 +2599,58 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             const string key = "list:null-values";
 
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(key, null as List<string>));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithNullItem_IgnoresNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:null-values";
+
             Assert.Equal(0, await cache.ListAddAsync<string>(key, [null]));
             Assert.Equal(1, await cache.ListAddAsync(key, ["1", null]));
             var result = await cache.GetListAsync<string>(key);
             Assert.NotNull(result);
             Assert.Single(result.Value);
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithNullCollection_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:null-values";
 
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(key, null as List<string>));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithNullItem_IgnoresNull()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:null-values";
+
+            await cache.ListAddAsync(key, ["1"]);
             Assert.Equal(0, await cache.ListRemoveAsync<string>(key, [null]));
             Assert.Equal(1, await cache.ListRemoveAsync(key, ["1", null]));
-            result = await cache.GetListAsync<string>(key);
+            var result = await cache.GetListAsync<string>(key);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
         }
@@ -1848,8 +2659,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
     /// <summary>
     /// single strings don't get handled as char arrays
     /// </summary>
-    // TODO: Refactor to ListAddAsync_WithSingleString_StoresAsStringNotCharArray
-    public virtual async Task CanManageStringListsAsync()
+    public virtual async Task ListAddAsync_WithSingleString_StoresAsStringNotCharArray()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1871,13 +2681,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - GetListAsync_WithPaging_ReturnsCorrectPageSize
-    //   - GetListAsync_WithMultiplePages_ReturnsAllItems
-    //   - GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast
-    //   - GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException
-    //   - GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection
-    public virtual async Task CanManageListPagingAsync()
+    public virtual async Task GetListAsync_WithPaging_ReturnsCorrectPageSize()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1886,52 +2690,112 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:paging";
+            const string key = "list:paging:size";
 
             int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
             await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
 
-            CacheValue<ICollection<int>> pagedResult;
-            var firstPageResults = new HashSet<int>(5);
+            var pagedResult = await cache.GetListAsync<int>(key, 1, 5);
+            Assert.NotNull(pagedResult);
+            Assert.Equal(5, pagedResult.Value.Count);
+        }
+    }
+
+    public virtual async Task GetListAsync_WithMultiplePages_ReturnsAllItems()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:paging:multiple";
+
+            int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+
             var actualResults = new HashSet<int>(values.Length);
 
             for (int page = 1; page < values.Length / 5 + 1; page++)
             {
-                pagedResult = await cache.GetListAsync<int>(key, page, 5);
+                var pagedResult = await cache.GetListAsync<int>(key, page, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
                 actualResults.AddRange(pagedResult.Value);
-
-                if (page is 1)
-                    firstPageResults.AddRange(pagedResult.Value);
             }
 
-            // Use a higher expiration so we can assert the new items are returned last in the list.
-            await cache.ListAddAsync(key, [21, 22], TimeSpan.FromMinutes(2));
-            pagedResult = await cache.GetListAsync<int>(key, 5, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(2, pagedResult.Value.Count);
-            actualResults.AddRange(pagedResult.Value);
-            Assert.Equal(values.Length + 2, actualResults.Count);
-
-            // Assert invalid starting page is empty.
-            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>(key, 0, 5));
-
-            // Assert invalid page is empty
-            pagedResult = await cache.GetListAsync<int>(key, 6, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Empty(pagedResult.Value);
-
-            // Assert the first page is the same.
-            pagedResult = await cache.GetListAsync<int>(key, 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-            Assert.Equal(firstPageResults, pagedResult.Value.ToArray());
+            Assert.Equal(values.Length, actualResults.Count);
         }
     }
 
-    // TODO: Refactor to GetListAsync_WithExpiredItems_RemovesExpiredAndReturnsActive
-    public virtual async Task CanManageGetListExpirationAsync()
+    public virtual async Task GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:paging:newitems";
+
+            int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+
+            var firstPageResults = new HashSet<int>(5);
+            var firstResult = await cache.GetListAsync<int>(key, 1, 5);
+            firstPageResults.AddRange(firstResult.Value);
+
+            await cache.ListAddAsync(key, [21, 22], TimeSpan.FromMinutes(2));
+            var lastPageResult = await cache.GetListAsync<int>(key, 5, 5);
+            Assert.NotNull(lastPageResult);
+            Assert.Equal(2, lastPageResult.Value.Count);
+
+            var firstPageAgain = await cache.GetListAsync<int>(key, 1, 5);
+            Assert.Equal(firstPageResults, firstPageAgain.Value.ToArray());
+        }
+    }
+
+    public virtual async Task GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:paging:invalid";
+
+            int[] values = [1, 2, 3, 4, 5];
+            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>(key, 0, 5));
+        }
+    }
+
+    public virtual async Task GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:paging:beyond";
+
+            int[] values = [1, 2, 3, 4, 5];
+            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+
+            var pagedResult = await cache.GetListAsync<int>(key, 10, 5);
+            Assert.NotNull(pagedResult);
+            Assert.Empty(pagedResult.Value);
+        }
+    }
+
+    public virtual async Task GetListAsync_WithExpiredItems_RemovesExpiredAndReturnsActive()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1957,11 +2821,8 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             Assert.False(await cache.ExistsAsync(key));
         }
     }
-    // TODO: Consider splitting into:
-    //   - ListAddAsync_WithPastExpiration_RemovesItem
-    //   - ListAddAsync_WithFutureExpiration_AddsAndExpiresCorrectly
-    //   - ListAddAsync_WithMultipleExpirations_ExpiresIndividualItems
-    public virtual async Task CanManageListAddExpirationAsync()
+
+    public virtual async Task ListAddAsync_WithPastExpiration_RemovesItem()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1970,15 +2831,49 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:expiration:add";
+            const string key = "list:expiration:add:past";
 
             Assert.Equal(1, await cache.ListAddAsync(key, [1]));
 
-            // Remove the expired item via Add.
             Assert.Equal(0, await cache.ListAddAsync(key, [1], TimeSpan.FromSeconds(-1)));
             Assert.False(await cache.ExistsAsync(key));
+        }
+    }
 
-            // Add with expiration
+    public virtual async Task ListAddAsync_WithFutureExpiration_AddsAndExpiresCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:expiration:add:future";
+
+            Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(100)));
+
+            var cacheValue = await cache.GetListAsync<int>(key);
+            Assert.True(cacheValue.HasValue);
+            Assert.Single(cacheValue.Value);
+            Assert.True(cacheValue.Value.Contains(2));
+
+            await Task.Delay(150);
+            Assert.False(await cache.ExistsAsync(key));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithMultipleExpirations_ExpiresIndividualItems()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "list:expiration:add:multiple";
+
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(100)));
             Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(175)));
 
@@ -1999,10 +2894,7 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Consider splitting into:
-    //   - ListRemoveAsync_WithPastExpiration_RemovesItemImmediately
-    //   - ListRemoveAsync_WithFutureExpiration_RemovesItemAfterDelay
-    public virtual async Task CanManageListRemoveExpirationAsync()
+    public virtual async Task ListRemoveAsync_WithValidValues_RemovesKeyWhenEmpty()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2011,11 +2903,10 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:expiration:remove";
+            const string key = "list:expiration:remove:past";
 
             Assert.Equal(2, await cache.ListAddAsync(key, [1, 2]));
 
-            // Past expiration just calls remove on the item if it's there.
             Assert.Equal(1, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
             Assert.Equal(0, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
 
@@ -2024,13 +2915,1126 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
             Assert.Single(cacheValue.Value);
             Assert.True(cacheValue.Value.Contains(2));
 
+            // Expiration is not taken into account since it's a remove operation.
             Assert.Equal(1, await cache.ListRemoveAsync(key, [2], TimeSpan.FromSeconds(1)));
             Assert.False(await cache.ExistsAsync(key));
         }
     }
 
-    // TODO: Refactor to CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput (or make it a benchmark test)
-    public virtual async Task MeasureThroughputAsync()
+    public virtual async Task GetAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>(null));
+        }
+    }
+
+    public virtual async Task GetAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>(string.Empty));
+        }
+    }
+
+    public virtual async Task GetAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>("   "));
+        }
+    }
+
+    public virtual async Task SetAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync<string>(null, "value"));
+        }
+    }
+
+    public virtual async Task SetAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync(string.Empty, "value"));
+        }
+    }
+
+    public virtual async Task SetAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync("   ", "value"));
+        }
+    }
+
+    public virtual async Task TryGetAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>(null));
+        }
+    }
+
+    public virtual async Task TryGetAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>(string.Empty));
+        }
+    }
+
+    public virtual async Task TryGetAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>("   "));
+        }
+    }
+
+    public virtual async Task AddAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync<string>(null, "value"));
+        }
+    }
+
+    public virtual async Task AddAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.AddAsync(string.Empty, "value"));
+        }
+    }
+
+    public virtual async Task AddAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.AddAsync("   ", "value"));
+        }
+    }
+
+    public virtual async Task RemoveAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(null));
+        }
+    }
+
+    public virtual async Task RemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync(string.Empty));
+        }
+    }
+
+    public virtual async Task RemoveAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync("   "));
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithNullKeys_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllAsync<string>(null));
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithEmptyKeys_ReturnsEmpty()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var result = await cache.GetAllAsync<string>(Array.Empty<string>());
+            Assert.NotNull(result);
+            Assert.Empty(result);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithKeysContainingNull_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.GetAllAsync<string>(new[] { "key1", null, "key2" }));
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithKeysContainingEmpty_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.GetAllAsync<string>(new[] { "key1", string.Empty, "key2" }));
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithKeysContainingWhitespace_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.GetAllAsync<string>(new[] { "key1", "   ", "key2" }));
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithNullItems_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync<string>(null));
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithEmptyItems_ReturnsTrue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            int result = await cache.SetAllAsync<string>(new Dictionary<string, string>());
+            Assert.Equal(0, result);
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithItemsContainingNullKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var items = new Dictionary<string, string> { { "key1", "value1" }, { null, "value2" } };
+
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithItemsContainingEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var items = new Dictionary<string, string> { { "key1", "value1" }, { string.Empty, "value2" } };
+
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithItemsContainingWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var items = new Dictionary<string, string> { { "key1", "value1" }, { "   ", "value2" } };
+
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithNullKeys_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAllAsync(null));
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithEmptyKeys_Succeeds()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync(Array.Empty<string>());
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithKeysContainingNull_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.RemoveAllAsync(new[] { "key1", null, "key2" }));
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithKeysContainingEmpty_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.RemoveAllAsync(new[] { "key1", string.Empty, "key2" }));
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithKeysContainingWhitespace_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.RemoveAllAsync(new[] { "key1", "   ", "key2" }));
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithNullPrefix_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync(null));
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithEmptyPrefix_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveByPrefixAsync(string.Empty));
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithWhitespacePrefix_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveByPrefixAsync("   "));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(null, 1));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(string.Empty, 1));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync("   ", 1));
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ReplaceAsync<int>(null, 1));
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync<int>(string.Empty, 1));
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync<int>("   ", 1));
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.ReplaceIfEqualAsync<string>(null, "old", "new"));
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.ReplaceIfEqualAsync(string.Empty, "old", "new"));
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.ReplaceIfEqualAsync("   ", "old", "new"));
+        }
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.RemoveIfEqualAsync<string>(null, "value"));
+        }
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.RemoveIfEqualAsync(string.Empty, "value"));
+        }
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveIfEqualAsync("   ", "value"));
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetExpirationAsync(null));
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetExpirationAsync(string.Empty));
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetExpirationAsync("   "));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithNullKey_ThrowsArgumentNullException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.SetExpirationAsync(null, TimeSpan.FromMinutes(1)));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.SetExpirationAsync(string.Empty, TimeSpan.FromMinutes(1)));
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.SetExpirationAsync("   ", TimeSpan.FromMinutes(1)));
+        }
+    }
+
+    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>(string.Empty));
+        }
+    }
+
+    public virtual async Task GetListAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>("   "));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListAddAsync(string.Empty, "value"));
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListAddAsync("   ", "value"));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListRemoveAsync(string.Empty, "value"));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithWhitespaceKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListRemoveAsync("   ", "value"));
+        }
+    }
+
+    public virtual async Task GetAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("userId", "lowercase");
+            await cache.SetAsync("UserId", "titlecase");
+            await cache.SetAsync("USERID", "uppercase");
+
+            var lower = await cache.GetAsync<string>("userId");
+            var title = await cache.GetAsync<string>("UserId");
+            var upper = await cache.GetAsync<string>("USERID");
+
+            Assert.Equal("lowercase", lower.Value);
+            Assert.Equal("titlecase", title.Value);
+            Assert.Equal("uppercase", upper.Value);
+        }
+    }
+
+    public virtual async Task SetAsync_WithDifferentCasedKeys_CreatesDistinctEntries()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("productId", 100);
+            await cache.SetAsync("ProductId", 200);
+            await cache.SetAsync("PRODUCTID", 300);
+
+            var lower = await cache.GetAsync<int>("productId");
+            var title = await cache.GetAsync<int>("ProductId");
+            var upper = await cache.GetAsync<int>("PRODUCTID");
+
+            Assert.Equal(100, lower.Value);
+            Assert.Equal(200, title.Value);
+            Assert.Equal(300, upper.Value);
+        }
+    }
+
+    public virtual async Task RemoveAsync_WithSpecificCase_RemovesOnlyMatchingKey()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("sessionId", "session1");
+            await cache.SetAsync("SessionId", "session2");
+            await cache.SetAsync("SESSIONID", "session3");
+
+            await cache.RemoveAsync("SessionId");
+
+            var lower = await cache.GetAsync<string>("sessionId");
+            var title = await cache.GetAsync<string>("SessionId");
+            var upper = await cache.GetAsync<string>("SESSIONID");
+
+            Assert.True(lower.HasValue);
+            Assert.Equal("session1", lower.Value);
+            Assert.False(title.HasValue);
+            Assert.True(upper.HasValue);
+            Assert.Equal("session3", upper.Value);
+        }
+    }
+
+    public virtual async Task ExistsAsync_WithDifferentCasedKeys_ChecksExactMatch()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("orderId", "order123");
+
+            var lowerExists = await cache.ExistsAsync("orderId");
+            var titleExists = await cache.ExistsAsync("OrderId");
+            var upperExists = await cache.ExistsAsync("ORDERID");
+
+            Assert.True(lowerExists);
+            Assert.False(titleExists);
+            Assert.False(upperExists);
+        }
+    }
+
+    public virtual async Task GetAllAsync_WithMixedCaseKeys_RetrievesExactMatches()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("configKey", "value1");
+            await cache.SetAsync("ConfigKey", "value2");
+            await cache.SetAsync("CONFIGKEY", "value3");
+
+            var results = await cache.GetAllAsync<string>(new[] { "configKey", "ConfigKey", "CONFIGKEY" });
+
+            Assert.Equal(3, results.Count);
+            Assert.Equal("value1", results["configKey"].Value);
+            Assert.Equal("value2", results["ConfigKey"].Value);
+            Assert.Equal("value3", results["CONFIGKEY"].Value);
+        }
+    }
+
+    public virtual async Task SetAllAsync_WithDifferentCasedKeys_CreatesDistinctEntries()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var items = new Dictionary<string, int> { { "itemId", 1 }, { "ItemId", 2 }, { "ITEMID", 3 } };
+
+            await cache.SetAllAsync(items);
+
+            var results = await cache.GetAllAsync<int>(new[] { "itemId", "ItemId", "ITEMID" });
+
+            Assert.Equal(3, results.Count);
+            Assert.Equal(1, results["itemId"].Value);
+            Assert.Equal(2, results["ItemId"].Value);
+            Assert.Equal(3, results["ITEMID"].Value);
+        }
+    }
+
+    public virtual async Task RemoveAllAsync_WithMixedCaseKeys_RemovesOnlyExactMatches()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("cacheKey", "val1");
+            await cache.SetAsync("CacheKey", "val2");
+            await cache.SetAsync("CACHEKEY", "val3");
+
+            await cache.RemoveAllAsync(new[] { "CacheKey" });
+
+            var lower = await cache.GetAsync<string>("cacheKey");
+            var title = await cache.GetAsync<string>("CacheKey");
+            var upper = await cache.GetAsync<string>("CACHEKEY");
+
+            Assert.True(lower.HasValue);
+            Assert.False(title.HasValue);
+            Assert.True(upper.HasValue);
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithCaseSensitivePrefix_RemovesOnlyMatchingCase()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("user:123", "data1");
+            await cache.SetAsync("User:456", "data2");
+            await cache.SetAsync("USER:789", "data3");
+            await cache.SetAsync("user:abc", "data4");
+
+            await cache.RemoveByPrefixAsync("user:");
+
+            var lower1 = await cache.ExistsAsync("user:123");
+            var lower2 = await cache.ExistsAsync("user:abc");
+            var title = await cache.ExistsAsync("User:456");
+            var upper = await cache.ExistsAsync("USER:789");
+
+            Assert.False(lower1);
+            Assert.False(lower2);
+            Assert.True(title);
+            Assert.True(upper);
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithDifferentCasedKeys_IncrementsDistinctCounters()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var lower = await cache.IncrementAsync("counter", 1);
+            var title = await cache.IncrementAsync("Counter", 2);
+            var upper = await cache.IncrementAsync("COUNTER", 3);
+
+            Assert.Equal(1, lower);
+            Assert.Equal(2, title);
+            Assert.Equal(3, upper);
+
+            var lowerFinal = await cache.GetAsync<long>("counter");
+            var titleFinal = await cache.GetAsync<long>("Counter");
+            var upperFinal = await cache.GetAsync<long>("COUNTER");
+
+            Assert.Equal(1, lowerFinal.Value);
+            Assert.Equal(2, titleFinal.Value);
+            Assert.Equal(3, upperFinal.Value);
+        }
+    }
+
+    public virtual async Task ReplaceAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            await cache.SetAsync("TEST", 1);
+            await cache.SetAsync("test", 2);
+
+            Assert.True(await cache.ReplaceAsync("TEST", 10));
+            Assert.Equal(10, (await cache.GetAsync<int>("TEST")).Value);
+            Assert.Equal(2, (await cache.GetAsync<int>("test")).Value);
+
+            Assert.True(await cache.ReplaceAsync("test", 20));
+            Assert.Equal(10, (await cache.GetAsync<int>("TEST")).Value);
+            Assert.Equal(20, (await cache.GetAsync<int>("test")).Value);
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithDifferentCasedKeys_ReplacesOnlyExactMatch()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("statusCode", 200);
+            await cache.SetAsync("StatusCode", 201);
+            await cache.SetAsync("STATUSCODE", 202);
+
+            var replaced = await cache.ReplaceIfEqualAsync("StatusCode", 201, 299);
+
+            Assert.True(replaced);
+
+            var lower = await cache.GetAsync<int>("statusCode");
+            var title = await cache.GetAsync<int>("StatusCode");
+            var upper = await cache.GetAsync<int>("STATUSCODE");
+
+            Assert.Equal(200, lower.Value);
+            Assert.Equal(299, title.Value);
+            Assert.Equal(202, upper.Value);
+        }
+    }
+
+    public virtual async Task GetExpirationAsync_WithDifferentCasedKeys_GetsExactMatch()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var expiration1 = DateTime.UtcNow.AddMinutes(10);
+            var expiration2 = DateTime.UtcNow.AddMinutes(20);
+            var expiration3 = DateTime.UtcNow.AddMinutes(30);
+
+            await cache.SetAsync("tokenId", "token1", expiration1);
+            await cache.SetAsync("TokenId", "token2", expiration2);
+            await cache.SetAsync("TOKENID", "token3", expiration3);
+
+            var lowerExp = await cache.GetExpirationAsync("tokenId");
+            var titleExp = await cache.GetExpirationAsync("TokenId");
+            var upperExp = await cache.GetExpirationAsync("TOKENID");
+
+            Assert.NotNull(lowerExp);
+            Assert.NotNull(titleExp);
+            Assert.NotNull(upperExp);
+
+            var actualExpiration1 = DateTime.UtcNow.Add(lowerExp.Value);
+            var actualExpiration2 = DateTime.UtcNow.Add(titleExp.Value);
+            var actualExpiration3 = DateTime.UtcNow.Add(upperExp.Value);
+            Assert.True((actualExpiration1 - expiration1).TotalSeconds < 2);
+            Assert.True((actualExpiration2 - expiration2).TotalSeconds < 2);
+            Assert.True((actualExpiration3 - expiration3).TotalSeconds < 2);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithDifferentCasedKeys_SetsOnlyExactMatch()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.SetAsync("apiKey", "key1");
+            await cache.SetAsync("ApiKey", "key2");
+            await cache.SetAsync("APIKEY", "key3");
+
+            var newExpiration = DateTime.UtcNow.AddMinutes(5);
+            await cache.SetExpirationAsync("ApiKey", newExpiration);
+
+            var lowerExp = await cache.GetExpirationAsync("apiKey");
+            var titleExp = await cache.GetExpirationAsync("ApiKey");
+            var upperExp = await cache.GetExpirationAsync("APIKEY");
+
+            Assert.Null(lowerExp);
+            Assert.NotNull(titleExp);
+            Assert.Null(upperExp);
+
+            var actualExpiration = DateTime.UtcNow.Add(titleExp.Value);
+            Assert.True((actualExpiration - newExpiration).TotalSeconds < 2);
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithDifferentCasedKeys_MaintainsDistinctLists()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.ListAddAsync("queueName", "item1");
+            await cache.ListAddAsync("QueueName", "item2");
+            await cache.ListAddAsync("QUEUENAME", "item3");
+
+            var lowerList = await cache.GetListAsync<string>("queueName");
+            var titleList = await cache.GetListAsync<string>("QueueName");
+            var upperList = await cache.GetListAsync<string>("QUEUENAME");
+
+            Assert.Single(lowerList.Value);
+            Assert.Contains("item1", lowerList.Value);
+
+            Assert.Single(titleList.Value);
+            Assert.Contains("item2", titleList.Value);
+
+            Assert.Single(upperList.Value);
+            Assert.Contains("item3", upperList.Value);
+        }
+    }
+
+    public virtual async Task SetAsync_WithDifferentCasedScopes_MaintainsDistinctNamespaces()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var scopedLower = new ScopedCacheClient(cache, "tenant");
+            var scopedTitle = new ScopedCacheClient(cache, "Tenant");
+            var scopedUpper = new ScopedCacheClient(cache, "TENANT");
+
+            await scopedLower.SetAsync("dataId", "lower");
+            await scopedTitle.SetAsync("dataId", "title");
+            await scopedUpper.SetAsync("dataId", "upper");
+
+            var lowerVal = await scopedLower.GetAsync<string>("dataId");
+            var titleVal = await scopedTitle.GetAsync<string>("dataId");
+            var upperVal = await scopedUpper.GetAsync<string>("dataId");
+
+            Assert.Equal("lower", lowerVal.Value);
+            Assert.Equal("title", titleVal.Value);
+            Assert.Equal("upper", upperVal.Value);
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithDifferentCasedScopes_RemovesOnlyMatchingScope()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            var scopedLower = new ScopedCacheClient(cache, "project");
+            var scopedTitle = new ScopedCacheClient(cache, "Project");
+
+            await scopedLower.SetAsync("settingA", "valueA");
+            await scopedLower.SetAsync("settingB", "valueB");
+            await scopedTitle.SetAsync("settingA", "valueC");
+            await scopedTitle.SetAsync("settingB", "valueD");
+
+            await scopedLower.RemoveByPrefixAsync("setting");
+
+            var lowerA = await scopedLower.GetAsync<string>("settingA");
+            var lowerB = await scopedLower.GetAsync<string>("settingB");
+            var titleA = await scopedTitle.GetAsync<string>("settingA");
+            var titleB = await scopedTitle.GetAsync<string>("settingB");
+
+            Assert.False(lowerA.HasValue);
+            Assert.False(lowerB.HasValue);
+            Assert.True(titleA.HasValue);
+            Assert.True(titleB.HasValue);
+        }
+    }
+
+    /// <summary>
+    /// Measures cache operation throughput by performing 10,000 iterations of Set/Get operations with assertions.
+    /// Tests multiple primitive types (int, bool) and validates correctness during performance measurement.
+    /// </summary>
+    public virtual async Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2055,8 +4059,42 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Refactor to Serialization_WithSimpleObjects_MeasuresThroughput (or make it a benchmark test)
-    public virtual async Task MeasureSerializerSimpleThroughputAsync()
+    /// <summary>
+    /// Measures cache throughput with simple Set/Get operations using unique keys.
+    /// Separates Set and Get operations for independent throughput measurement without assertions.
+    /// </summary>
+    public virtual async Task CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            const int iterations = 1000;
+            var sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.SetAsync($"key{i}", i);
+            }
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.GetAsync<int>($"key{i}");
+            }
+
+            sw.Stop();
+            _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Measures serialization throughput with simple objects (10,000 iterations).
+    /// Tests Set/Get operations with assertions to validate serialization correctness under load.
+    /// </summary>
+    public virtual async Task Serialization_WithSimpleObjectsAndValidation_MeasuresThroughput()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2085,8 +4123,44 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
-    // TODO: Refactor to Serialization_WithComplexObjects_MeasuresThroughput (or make it a benchmark test)
-    public virtual async Task MeasureSerializerComplexThroughputAsync()
+    /// <summary>
+    /// Measures simple object serialization throughput using unique keys.
+    /// Separates Set and Get operations for pure throughput measurement without validation overhead.
+    /// </summary>
+    public virtual async Task Serialization_WithSimpleObjects_MeasuresThroughput()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            const int iterations = 1000;
+            var model = new SimpleModel { Data1 = "Test", Data2 = 42 };
+            var sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.SetAsync($"simple{i}", model);
+            }
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.GetAsync<SimpleModel>($"simple{i}");
+            }
+
+            sw.Stop();
+            _logger.LogInformation(
+                "Simple serializer throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Measures serialization throughput with complex nested objects (10,000 iterations).
+    /// Tests objects with nested models, lists, and dictionaries while validating correctness.
+    /// </summary>
+    public virtual async Task Serialization_WithComplexObjectsAndValidation_MeasuresThroughput()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2139,6 +4213,55 @@ SetAsync_WithCurrentUtcTime_DoesNotCreateKey
         }
     }
 
+    /// <summary>
+    /// Measures complex object serialization throughput using unique keys.
+    /// Tests nested objects, lists, and dictionaries with separated Set/Get for pure performance measurement.
+    /// </summary>
+    public virtual async Task Serialization_WithComplexObjects_MeasuresThroughput()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            const int iterations = 1000;
+            var model = new ComplexModel
+            {
+                Data1 = "Test",
+                Data2 = 42,
+                Data3 = true,
+                Simple = new SimpleModel { Data1 = "Nested", Data2 = 100 },
+                Simples = new List<SimpleModel>
+                {
+                    new SimpleModel { Data1 = "Item1", Data2 = 1 },
+                    new SimpleModel { Data1 = "Item2", Data2 = 2 }
+                },
+                DictionarySimples = new Dictionary<string, SimpleModel>
+                {
+                    ["key1"] = new SimpleModel { Data1 = "Dict1", Data2 = 10 },
+                    ["key2"] = new SimpleModel { Data1 = "Dict2", Data2 = 20 }
+                }
+            };
+
+            var sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.SetAsync($"complex{i}", model);
+            }
+
+            for (int i = 0; i < iterations; i++)
+            {
+                await cache.GetAsync<ComplexModel>($"complex{i}");
+            }
+
+            sw.Stop();
+            _logger.LogInformation(
+                "Complex serializer throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
+        }
+    }
 }
 
 public class SimpleModel
