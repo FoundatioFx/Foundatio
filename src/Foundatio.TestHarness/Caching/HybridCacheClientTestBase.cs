@@ -319,9 +319,9 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
     [Theory]
     [InlineData(1000)]
     [InlineData(10000)]
-    public override Task GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
+    public override Task GetAllExpirationAsync_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
     {
-        return base.GetAllExpiration_WithLargeNumberOfKeys_ReturnsAllExpirations(count);
+        return base.GetAllExpirationAsync_WithLargeNumberOfKeys_ReturnsAllExpirations(count);
     }
 
     [Theory]
