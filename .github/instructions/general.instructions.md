@@ -11,7 +11,7 @@ Microsoft's [coding conventions](https://learn.microsoft.com/en-us/dotnet/csharp
 
 Code can be formatted with `dotnet format` and checked for errors with `dotnet build`.
 
-Use context7 for documentation
+Use context7 when I need code generation, setup or configuration steps, or library/api documentation.
 
 ## Code Style & Minimal Diffs
 
