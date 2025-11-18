@@ -75,7 +75,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ReplaceAsync<int>(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ReplaceAsync(null, 1));
         }
     }
 
@@ -87,7 +87,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync<int>(String.Empty, 1));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync(String.Empty, 1));
         }
     }
 
@@ -99,7 +99,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync<int>("   ", 1));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync("   ", 1));
         }
     }
 

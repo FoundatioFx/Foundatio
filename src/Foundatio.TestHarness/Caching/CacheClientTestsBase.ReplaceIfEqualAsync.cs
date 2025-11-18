@@ -77,7 +77,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.ReplaceIfEqualAsync<string>(null, "old", "new"));
+                await cache.ReplaceIfEqualAsync(null, "old", "new"));
         }
     }
 
@@ -119,7 +119,7 @@ public abstract partial class CacheClientTestsBase
             await cache.SetAsync("StatusCode", 201);
             await cache.SetAsync("STATUSCODE", 202);
 
-            var replaced = await cache.ReplaceIfEqualAsync("StatusCode", 201, 299);
+            bool replaced = await cache.ReplaceIfEqualAsync("StatusCode", 201, 299);
 
             Assert.True(replaced);
 

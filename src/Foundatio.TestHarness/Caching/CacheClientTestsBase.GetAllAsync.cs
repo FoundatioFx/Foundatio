@@ -167,7 +167,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            var result = await cache.GetAllAsync<string>(Array.Empty<string>());
+            var result = await cache.GetAllAsync<string>([]);
             Assert.NotNull(result);
             Assert.Empty(result);
         }
@@ -182,7 +182,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.GetAllAsync<string>(new[] { "key1", null, "key2" }));
+                await cache.GetAllAsync<string>(["key1", null, "key2"]));
         }
     }
 
@@ -195,7 +195,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.GetAllAsync<string>(new[] { "key1", String.Empty, "key2" }));
+                await cache.GetAllAsync<string>(["key1", String.Empty, "key2"]));
         }
     }
 
@@ -208,7 +208,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.GetAllAsync<string>(new[] { "key1", "   ", "key2" }));
+                await cache.GetAllAsync<string>(["key1", "   ", "key2"]));
         }
     }
 
@@ -224,7 +224,7 @@ public abstract partial class CacheClientTestsBase
             await cache.SetAsync("ConfigKey", "value2");
             await cache.SetAsync("CONFIGKEY", "value3");
 
-            var results = await cache.GetAllAsync<string>(new[] { "configKey", "ConfigKey", "CONFIGKEY" });
+            var results = await cache.GetAllAsync<string>(["configKey", "ConfigKey", "CONFIGKEY"]);
 
             Assert.Equal(3, results.Count);
             Assert.Equal("value1", results["configKey"].Value);

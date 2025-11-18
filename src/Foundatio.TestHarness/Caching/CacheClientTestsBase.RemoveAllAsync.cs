@@ -105,7 +105,7 @@ public abstract partial class CacheClientTestsBase
             await cache.SetAsync("CacheKey", "val2");
             await cache.SetAsync("CACHEKEY", "val3");
 
-            await cache.RemoveAllAsync(new[] { "CacheKey" });
+            await cache.RemoveAllAsync(["CacheKey"]);
 
             var lower = await cache.GetAsync<string>("cacheKey");
             var title = await cache.GetAsync<string>("CacheKey");
@@ -137,7 +137,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.RemoveAllAsync(Array.Empty<string>());
+            await cache.RemoveAllAsync([]);
         }
     }
 
@@ -150,7 +150,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.RemoveAllAsync(new[] { "key1", null, "key2" }));
+                await cache.RemoveAllAsync(["key1", null, "key2"]));
         }
     }
 
@@ -163,7 +163,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.RemoveAllAsync(new[] { "key1", String.Empty, "key2" }));
+                await cache.RemoveAllAsync(["key1", String.Empty, "key2"]));
         }
     }
 
@@ -176,7 +176,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.RemoveAllAsync(new[] { "key1", "   ", "key2" }));
+                await cache.RemoveAllAsync(["key1", "   ", "key2"]));
         }
     }
 }

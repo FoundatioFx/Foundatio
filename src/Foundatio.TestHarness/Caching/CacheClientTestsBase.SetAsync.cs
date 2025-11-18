@@ -18,8 +18,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            SimpleModel nullable = null;
-            await cache.SetAsync("nullable", nullable);
+            await cache.SetAsync<SimpleModel>("nullable", null);
             var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
             Assert.True(nullCacheValue.HasValue);
             Assert.True(nullCacheValue.IsNull);
@@ -37,9 +36,8 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            int? nullableInt = null;
             Assert.False(await cache.ExistsAsync("nullableInt"));
-            await cache.SetAsync("nullableInt", nullableInt);
+            await cache.SetAsync<int?>("nullableInt", null);
             var nullIntCacheValue = await cache.GetAsync<int?>("nullableInt");
             Assert.True(nullIntCacheValue.HasValue);
             Assert.True(nullIntCacheValue.IsNull);
@@ -268,7 +266,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync<string>(null, "value"));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(null, "value"));
         }
     }
 

@@ -68,7 +68,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            int result = await cache.SetAllAsync<string>(new Dictionary<string, string>());
+            int result = await cache.SetAllAsync(new Dictionary<string, string>());
             Assert.Equal(0, result);
         }
     }
@@ -127,7 +127,7 @@ public abstract partial class CacheClientTestsBase
 
             await cache.SetAllAsync(items);
 
-            var results = await cache.GetAllAsync<int>(new[] { "itemId", "ItemId", "ITEMID" });
+            var results = await cache.GetAllAsync<int>(["itemId", "ItemId", "ITEMID"]);
 
             Assert.Equal(3, results.Count);
             Assert.Equal(1, results["itemId"].Value);

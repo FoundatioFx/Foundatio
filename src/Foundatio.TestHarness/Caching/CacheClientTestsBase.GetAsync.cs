@@ -32,7 +32,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync<int>("test", 1);
+            await cache.SetAsync("test", 1);
             var cacheValue = await cache.GetAsync<long>("test");
             Assert.True(cacheValue.HasValue);
             Assert.Equal(1L, cacheValue.Value);
@@ -66,7 +66,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync<long>("test", Int64.MaxValue);
+            await cache.SetAsync("test", Int64.MaxValue);
             await Assert.ThrowsAnyAsync<Exception>(async () =>
             {
                 var cacheValue = await cache.GetAsync<int>("test");
@@ -89,7 +89,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync<int>("test", 1);
+            await cache.SetAsync("test", 1);
             var cacheValue = await cache.GetAsync<long>("test");
             Assert.True(cacheValue.HasValue);
             Assert.Equal(1L, cacheValue.Value);
@@ -111,7 +111,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync<long>("test", Int64.MaxValue);
+            await cache.SetAsync("test", Int64.MaxValue);
             var cacheValue3 = await cache.GetAsync<int>("test");
             Assert.False(cacheValue3.HasValue);
 
@@ -131,7 +131,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync<MyData>("test", new MyData { Message = "test" });
+            await cache.SetAsync("test", new MyData { Message = "test" });
             var cacheValue = await cache.GetAsync<long>("test");
             Assert.False(cacheValue.HasValue);
         }

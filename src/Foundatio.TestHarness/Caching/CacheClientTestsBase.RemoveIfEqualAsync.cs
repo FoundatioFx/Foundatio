@@ -56,7 +56,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.RemoveIfEqualAsync<string>(null, "value"));
+                await cache.RemoveIfEqualAsync(null, "value"));
         }
     }
 

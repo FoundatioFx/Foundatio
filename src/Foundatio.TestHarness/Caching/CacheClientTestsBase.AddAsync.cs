@@ -96,7 +96,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync<string>(null, "value"));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync(null, "value"));
         }
     }
 

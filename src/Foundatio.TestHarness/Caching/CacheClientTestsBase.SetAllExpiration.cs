@@ -133,7 +133,7 @@ public abstract partial class CacheClientTestsBase
             Assert.NotNull(key0Expiration);
             Assert.True(key0Expiration.Value <= TimeSpan.FromMinutes(1));
 
-            var keySampleIndex = count / 2;
+            int keySampleIndex = count / 2;
             var keySampleExpiration = await cache.GetExpirationAsync(keys[keySampleIndex]);
             Assert.NotNull(keySampleExpiration);
             Assert.True(keySampleExpiration.Value <= TimeSpan.FromMinutes(41));

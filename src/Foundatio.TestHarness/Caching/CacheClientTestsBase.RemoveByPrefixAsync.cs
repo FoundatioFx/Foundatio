@@ -114,8 +114,6 @@ public abstract partial class CacheClientTestsBase
         ];
     }
 
-    [Theory]
-    [MemberData(nameof(GetRegexSpecialCharacters))]
     public virtual async Task RemoveByPrefixAsync_WithRegexMetacharacter_TreatsAsLiteral(string specialChar)
     {
         var cache = GetCacheClient();
@@ -153,8 +151,6 @@ public abstract partial class CacheClientTestsBase
         ];
     }
 
-    [Theory]
-    [MemberData(nameof(GetWildcardPatterns))]
     public virtual async Task RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(string pattern)
     {
         var cache = GetCacheClient();
@@ -253,8 +249,6 @@ public abstract partial class CacheClientTestsBase
         ];
     }
 
-    [Theory]
-    [MemberData(nameof(GetSpecialPrefixes))]
     public virtual async Task RemoveByPrefixAsync_WithSpecialCharacterPrefix_TreatsAsLiteral(string specialPrefix)
     {
         var cache = GetCacheClient();
@@ -330,8 +324,6 @@ public abstract partial class CacheClientTestsBase
         ];
     }
 
-    [Theory]
-    [MemberData(nameof(GetWhitespaceOnlyPrefixes))]
     public virtual async Task RemoveByPrefixAsync_WithWhitespacePrefix_TreatsAsLiteral(string whitespacePrefix)
     {
         var cache = GetCacheClient();
@@ -364,8 +356,6 @@ public abstract partial class CacheClientTestsBase
         ];
     }
 
-    [Theory]
-    [MemberData(nameof(GetLineEndingPrefixes))]
     public virtual async Task RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral(string lineEndingPrefix)
     {
         var cache = GetCacheClient();
@@ -388,11 +378,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Theory]
-    [InlineData("snowboard", 1, true)] // Exact key match
-    [InlineData("s", 1, true)] // Partial prefix match
-    [InlineData(null, 1, false)] // Null prefix (all keys in scope)
-    [InlineData("", 1, false)] // Empty prefix (all keys in scope)
     public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
         int expectedRemovedCount, bool shouldUnscopedRemain)
     {
@@ -423,9 +408,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
     public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
     {
         var cache = GetCacheClient();
@@ -456,7 +438,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Fact]
     public virtual async Task RemoveByPrefixAsync_AsteriskPrefixWithScopedCache_TreatedAsLiteral()
     {
         var cache = GetCacheClient();
@@ -484,7 +465,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Fact]
     public virtual async Task RemoveByPrefixAsync_PartialPrefixWithScopedCache_RemovesMatchingKeys()
     {
         var cache = GetCacheClient();
@@ -515,10 +495,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Theory]
-    [InlineData(10)] // Small dataset
-    [InlineData(100)] // Medium dataset
-    [InlineData(1000)] // Large dataset
     public virtual async Task RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys(int count)
     {
         var cache = GetCacheClient();
@@ -599,10 +575,10 @@ public abstract partial class CacheClientTestsBase
 
             await cache.RemoveByPrefixAsync("user:");
 
-            var lower1 = await cache.ExistsAsync("user:123");
-            var lower2 = await cache.ExistsAsync("user:abc");
-            var title = await cache.ExistsAsync("User:456");
-            var upper = await cache.ExistsAsync("USER:789");
+            bool lower1 = await cache.ExistsAsync("user:123");
+            bool lower2 = await cache.ExistsAsync("user:abc");
+            bool title = await cache.ExistsAsync("User:456");
+            bool upper = await cache.ExistsAsync("USER:789");
 
             Assert.False(lower1);
             Assert.False(lower2);

@@ -83,5 +83,8 @@
     <Compile Update="Caching\CacheClientTestsBase.SetIfLowerAsync.cs">
       <DependentUpon>CacheClientTestsBase.cs</DependentUpon>
     </Compile>
+    <Compile Update="Caching\CacheClientTestsBase.ExistsAsync.cs">
+      <DependentUpon>CacheClientTestsBase.cs</DependentUpon>
+    </Compile>
   </ItemGroup>
 </Project>

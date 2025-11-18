@@ -52,10 +52,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    [Theory]
-    [InlineData(10)] // Small dataset
-    [InlineData(100)] // Medium dataset
-    [InlineData(1000)] // Large dataset
     public virtual async Task GetAllExpirationAsync_WithLargeNumberOfKeys_ReturnsAllExpirations(int count)
     {
         // Arrange

@@ -78,28 +78,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task IncrementAsync_WithStringValue_ConvertsAndIncrements()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            if (cache is InMemoryCacheClient)
-            {
-                Assert.True(await cache.SetAsync("test2", "stringValue"));
-                Assert.Equal(1, await cache.IncrementAsync("test2"));
-            }
-            else
-            {
-                throw new NotSupportedException("Only supported by InMemoryCacheClient.");
-            }
-        }
-    }
-
     public virtual async Task IncrementAsync_WithExpiration_ExpiresCorrectly()
     {
         var cache = GetCacheClient();
@@ -167,9 +145,9 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            var lower = await cache.IncrementAsync("counter", 1);
-            var title = await cache.IncrementAsync("Counter", 2);
-            var upper = await cache.IncrementAsync("COUNTER", 3);
+            long lower = await cache.IncrementAsync("counter", 1);
+            long title = await cache.IncrementAsync("Counter", 2);
+            long upper = await cache.IncrementAsync("COUNTER", 3);
 
             Assert.Equal(1, lower);
             Assert.Equal(2, title);
