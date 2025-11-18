@@ -26,9 +26,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task AddAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task AddAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.AddAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.AddAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -86,9 +86,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ExistsAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ExistsAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.ExistsAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.ExistsAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -244,9 +244,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task GetAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task GetAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.GetAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.GetAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -322,9 +322,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.GetExpirationAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.GetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -364,9 +364,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task GetListAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.GetListAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.GetListAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -442,9 +442,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task IncrementAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.IncrementAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.IncrementAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -514,9 +514,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ListAddAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ListAddAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.ListAddAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.ListAddAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -580,9 +580,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.ListRemoveAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.ListRemoveAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -700,9 +700,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task RemoveAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.RemoveAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.RemoveAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -893,9 +893,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -929,9 +929,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ReplaceAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ReplaceAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.ReplaceAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.ReplaceAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -971,9 +971,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -1013,21 +1013,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task Serialization_WithComplexObjects_MeasuresThroughput()
-    {
-        return base.Serialization_WithComplexObjects_MeasuresThroughput();
-    }
-
-    [Fact]
     public override Task Serialization_WithSimpleObjectsAndValidation_MeasuresThroughput()
     {
         return base.Serialization_WithSimpleObjectsAndValidation_MeasuresThroughput();
-    }
-
-    [Fact]
-    public override Task Serialization_WithSimpleObjects_MeasuresThroughput()
-    {
-        return base.Serialization_WithSimpleObjects_MeasuresThroughput();
     }
 
     [Fact]
@@ -1129,9 +1117,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task SetAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.SetAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.SetAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -1225,9 +1213,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
-        return base.SetExpirationAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.SetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException();
     }
 
     [Fact]

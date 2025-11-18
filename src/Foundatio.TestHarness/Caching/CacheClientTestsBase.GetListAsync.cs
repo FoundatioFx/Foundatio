@@ -164,7 +164,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
+    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -172,7 +172,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>(String.Empty));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetListAsync<string>(String.Empty));
         }
     }
 
@@ -184,7 +184,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>("   "));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetListAsync<string>("   "));
         }
     }
 }

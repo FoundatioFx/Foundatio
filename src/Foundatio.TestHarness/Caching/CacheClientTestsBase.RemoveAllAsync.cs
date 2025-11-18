@@ -149,7 +149,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.RemoveAllAsync(["key1", null, "key2"]));
         }
     }
@@ -162,7 +162,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.RemoveAllAsync(["key1", String.Empty, "key2"]));
         }
     }
@@ -175,7 +175,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.RemoveAllAsync(["key1", "   ", "key2"]));
         }
     }

@@ -544,7 +544,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveByPrefixAsync(String.Empty));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync(String.Empty));
         }
     }
 
@@ -556,7 +556,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveByPrefixAsync("   "));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync("   "));
         }
     }
 

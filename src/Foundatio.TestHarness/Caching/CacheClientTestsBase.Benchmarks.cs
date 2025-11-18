@@ -65,7 +65,7 @@ public abstract partial class CacheClientTestsBase
 
             sw.Stop();
             _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
-                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
+                iterations * 2, sw.ElapsedMilliseconds, iterations * 2 / sw.Elapsed.TotalSeconds);
         }
     }
 
@@ -84,8 +84,8 @@ public abstract partial class CacheClientTestsBase
             await cache.RemoveAllAsync();
 
             var sw = Stopwatch.StartNew();
-            const int itemCount = 10000;
-            for (int i = 0; i < itemCount; i++)
+            const int iterations = 10000;
+            for (int i = 0; i < iterations; i++)
             {
                 await cache.SetAsync("test", new SimpleModel { Data1 = "Hello", Data2 = 12 });
                 var model = await cache.GetAsync<SimpleModel>("test");
@@ -95,40 +95,8 @@ public abstract partial class CacheClientTestsBase
             }
 
             sw.Stop();
-            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
-        }
-    }
-
-    /// <summary>
-    /// Measures simple object serialization throughput using unique keys.
-    /// Separates Set and Get operations for pure throughput measurement without validation overhead.
-    /// </summary>
-    public virtual async Task Serialization_WithSimpleObjects_MeasuresThroughput()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            const int iterations = 1000;
-            var model = new SimpleModel { Data1 = "Test", Data2 = 42 };
-            var sw = Stopwatch.StartNew();
-
-            for (int i = 0; i < iterations; i++)
-            {
-                await cache.SetAsync($"simple{i}", model);
-            }
-
-            for (int i = 0; i < iterations; i++)
-            {
-                await cache.GetAsync<SimpleModel>($"simple{i}");
-            }
-
-            sw.Stop();
-            _logger.LogInformation(
-                "Simple serializer throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
-                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
+            _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                iterations * 2, sw.ElapsedMilliseconds, iterations * 2 / sw.Elapsed.TotalSeconds);
         }
     }
 
@@ -180,56 +148,6 @@ public abstract partial class CacheClientTestsBase
 
             sw.Stop();
             _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
-        }
-    }
-
-    /// <summary>
-    /// Measures complex object serialization throughput using unique keys.
-    /// Tests nested objects, lists, and dictionaries with separated Set/Get for pure performance measurement.
-    /// </summary>
-    public virtual async Task Serialization_WithComplexObjects_MeasuresThroughput()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            const int iterations = 1000;
-            var model = new ComplexModel
-            {
-                Data1 = "Test",
-                Data2 = 42,
-                Data3 = true,
-                Simple = new SimpleModel { Data1 = "Nested", Data2 = 100 },
-                Simples = new List<SimpleModel>
-                {
-                    new SimpleModel { Data1 = "Item1", Data2 = 1 },
-                    new SimpleModel { Data1 = "Item2", Data2 = 2 }
-                },
-                DictionarySimples = new Dictionary<string, SimpleModel>
-                {
-                    ["key1"] = new SimpleModel { Data1 = "Dict1", Data2 = 10 },
-                    ["key2"] = new SimpleModel { Data1 = "Dict2", Data2 = 20 }
-                }
-            };
-
-            var sw = Stopwatch.StartNew();
-
-            for (int i = 0; i < iterations; i++)
-            {
-                await cache.SetAsync($"complex{i}", model);
-            }
-
-            for (int i = 0; i < iterations; i++)
-            {
-                await cache.GetAsync<ComplexModel>($"complex{i}");
-            }
-
-            sw.Stop();
-            _logger.LogInformation(
-                "Complex serializer throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
-                iterations * 2, sw.ElapsedMilliseconds, (iterations * 2) / sw.Elapsed.TotalSeconds);
         }
     }
 }

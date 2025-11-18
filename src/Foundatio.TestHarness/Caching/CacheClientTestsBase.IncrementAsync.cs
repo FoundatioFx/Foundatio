@@ -113,7 +113,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
+    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -121,7 +121,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(String.Empty, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(String.Empty, 1));
         }
     }
 
@@ -133,7 +133,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync("   ", 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync("   ", 1));
         }
     }
 

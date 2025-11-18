@@ -83,7 +83,7 @@ public abstract partial class CacheClientTestsBase
         {
             var items = new Dictionary<string, string> { { "key1", "value1" }, { null, "value2" } };
 
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
         }
     }
 
@@ -97,7 +97,7 @@ public abstract partial class CacheClientTestsBase
         {
             var items = new Dictionary<string, string> { { "key1", "value1" }, { String.Empty, "value2" } };
 
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
         }
     }
 
@@ -111,7 +111,7 @@ public abstract partial class CacheClientTestsBase
         {
             var items = new Dictionary<string, string> { { "key1", "value1" }, { "   ", "value2" } };
 
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
         }
     }
 

@@ -60,7 +60,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    public virtual async Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -68,7 +68,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.RemoveIfEqualAsync(String.Empty, "value"));
         }
     }
@@ -81,7 +81,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveIfEqualAsync("   ", "value"));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveIfEqualAsync("   ", "value"));
         }
     }
 }
