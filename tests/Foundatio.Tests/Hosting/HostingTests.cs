@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Net;
 using System.Threading;
@@ -107,7 +107,6 @@ public class HostingTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
-
 
     [Fact]
     public async Task WillStopWaitingWhenStartupActionFails()

@@ -202,7 +202,6 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         string normalizedNewPath = targetPath.NormalizePath();
         _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedNewPath);
 
-
         if (!_storage.TryGetValue(normalizedPath, out var file))
         {
             _logger.LogDebug("Error copying {Path} to {NewPath}: File not found", normalizedPath, normalizedNewPath);
