@@ -18,7 +18,6 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(String.Empty, 1));
         }
     }
 
@@ -36,7 +35,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ListRemoveAsync_WithMultipleValues_RemovesAll()
+    public virtual async Task ListRemoveAsync_WithMultipleValues_RemovesAll(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -45,11 +44,9 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list";
-
-            await cache.ListAddAsync(key, [1, 2, 3, 3]);
-            await cache.ListRemoveAsync(key, [1, 2, 3]);
-            var result = await cache.GetListAsync<int>(key);
+            await cache.ListAddAsync(cacheKey, [1, 2, 3, 3]);
+            await cache.ListRemoveAsync(cacheKey, [1, 2, 3]);
+            var result = await cache.GetListAsync<int>(cacheKey);
             Assert.NotNull(result);
             Assert.Empty(result.Value);
         }
@@ -145,7 +142,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -153,19 +150,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ListRemoveAsync(String.Empty, "value"));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListRemoveAsync(String.Empty, "value"));
         }
     }
 
-    public virtual async Task ListRemoveAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ListRemoveAsync("   ", "value"));
-        }
-    }
 }

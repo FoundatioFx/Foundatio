@@ -8,7 +8,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task AddAsync_WithNewKey_ReturnsTrue()
+    public virtual async Task AddAsync_WithValidKey_ReturnsTrue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -18,17 +18,15 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            const string key = "type-id";
             const string val = "value-should-not-change";
 
-            Assert.False(await cache.ExistsAsync(key));
-            Assert.True(await cache.AddAsync(key, val));
-            Assert.True(await cache.ExistsAsync(key));
-            Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
+            Assert.True(await cache.AddAsync(cacheKey, val));
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            Assert.Equal(val, (await cache.GetAsync<string>(cacheKey)).Value);
         }
     }
 
-    public virtual async Task AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue()
+    public virtual async Task AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -38,12 +36,12 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            const string key = "type-id";
             const string val = "value-should-not-change";
-            await cache.AddAsync(key, val);
 
-            Assert.False(await cache.AddAsync(key, "random value"));
-            Assert.Equal(val, (await cache.GetAsync<string>(key)).Value);
+            Assert.True(await cache.AddAsync(cacheKey, val));
+
+            Assert.False(await cache.AddAsync(cacheKey, "random value"));
+            Assert.Equal(val, (await cache.GetAsync<string>(cacheKey)).Value);
         }
     }
 
@@ -57,7 +55,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            const string key = "type-id";
+            const string key = "user:profile";
 
             Assert.True(await cache.AddAsync(key + ":1", "nested"));
             Assert.True(await cache.ExistsAsync(key + ":1"));
@@ -100,7 +98,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task AddAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task AddAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -108,19 +106,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync(String.Empty, "value"));
-        }
-    }
-
-    public virtual async Task AddAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync("   ", "value"));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.AddAsync(String.Empty, "value"));
         }
     }
 }

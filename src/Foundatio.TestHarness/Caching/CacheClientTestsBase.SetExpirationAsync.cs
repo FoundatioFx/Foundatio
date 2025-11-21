@@ -60,7 +60,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
+    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -73,13 +73,13 @@ public abstract partial class CacheClientTestsBase
             var utcNow = DateTime.UtcNow;
 
             // Set with no expiration
-            Assert.True(await cache.SetAsync("test", 1));
-            Assert.Null(await cache.GetExpirationAsync("test"));
+            Assert.True(await cache.SetAsync(cacheKey, 1));
+            Assert.Null(await cache.GetExpirationAsync(cacheKey));
 
             // Update to expire in an hour
             var expiration = utcNow.AddHours(1);
-            await cache.SetExpirationAsync("test", expiration);
-            var actualExpiration = await cache.GetExpirationAsync("test");
+            await cache.SetExpirationAsync(cacheKey, expiration);
+            var actualExpiration = await cache.GetExpirationAsync(cacheKey);
             Assert.NotNull(actualExpiration);
             Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)),
                 expiration - utcNow);
@@ -120,7 +120,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -128,21 +128,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.SetExpirationAsync(String.Empty, TimeSpan.FromMinutes(1)));
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.SetExpirationAsync("   ", TimeSpan.FromMinutes(1)));
         }
     }
 

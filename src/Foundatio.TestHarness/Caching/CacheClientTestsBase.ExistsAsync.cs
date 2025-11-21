@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task ExistsAsync_WithExistingKey_ReturnsTrue()
+    public virtual async Task ExistsAsync_WithExistingKey_ReturnsTrue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -15,8 +15,9 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("test", 123);
-            Assert.True(await cache.ExistsAsync("test"));
+            await cache.RemoveAllAsync();
+            await cache.SetAsync(cacheKey, 123);
+            Assert.True(await cache.ExistsAsync(cacheKey));
         }
     }
 
@@ -139,7 +140,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ExistsAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task ExistsAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -147,21 +148,9 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.ExistsAsync(String.Empty));
         }
     }
 
-    public virtual async Task ExistsAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.ExistsAsync("   "));
-        }
-    }
 }

@@ -29,7 +29,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue()
+    public virtual async Task ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -39,7 +39,6 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            const string cacheKey = "replace-if-equal";
             Assert.True(await cache.AddAsync(cacheKey, "123"));
 
             Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123"));
@@ -81,7 +80,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -89,21 +88,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.ReplaceIfEqualAsync(String.Empty, "old", "new"));
-        }
-    }
-
-    public virtual async Task ReplaceIfEqualAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.ReplaceIfEqualAsync("   ", "old", "new"));
         }
     }
 
@@ -115,12 +101,13 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("statusCode", 200);
-            await cache.SetAsync("StatusCode", 201);
-            await cache.SetAsync("STATUSCODE", 202);
+            await cache.RemoveAllAsync();
 
-            bool replaced = await cache.ReplaceIfEqualAsync("StatusCode", 201, 299);
+            Assert.True(await cache.AddAsync("statusCode", 200));
+            Assert.True(await cache.AddAsync("StatusCode", 201));
+            Assert.True(await cache.AddAsync("STATUSCODE", 202));
 
+            bool replaced = await cache.ReplaceIfEqualAsync("StatusCode", 299, 201);
             Assert.True(replaced);
 
             var lower = await cache.GetAsync<int>("statusCode");

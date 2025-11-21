@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems()
+    public virtual async Task ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -19,13 +19,13 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            Assert.Equal(3, await cache.ListAddAsync("set", new List<int> { 1, 1, 2, 3 }));
-            var result = await cache.GetListAsync<int>("set");
+            Assert.Equal(3, await cache.ListAddAsync(cacheKey, new List<int> { 1, 1, 2, 3 }));
+            var result = await cache.GetListAsync<int>(cacheKey);
             Assert.NotNull(result);
             Assert.Equal(3, result.Value.Count);
 
-            Assert.True(await cache.ListRemoveAsync("set", 1));
-            result = await cache.GetListAsync<int>("set");
+            Assert.True(await cache.ListRemoveAsync(cacheKey, 1));
+            result = await cache.GetListAsync<int>(cacheKey);
             Assert.NotNull(result);
             Assert.Equal(2, result.Value.Count);
         }
@@ -248,7 +248,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ListAddAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task ListAddAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -256,19 +256,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ListAddAsync(String.Empty, "value"));
-        }
-    }
-
-    public virtual async Task ListAddAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ListAddAsync("   ", "value"));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ListAddAsync(String.Empty, "value"));
         }
     }
 

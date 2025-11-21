@@ -6,7 +6,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
+    public virtual async Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -16,7 +16,6 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            const string cacheKey = "replace-test";
             Assert.True(await cache.AddAsync(cacheKey, "original"));
             var result = await cache.GetAsync<string>(cacheKey);
             Assert.NotNull(result);
@@ -79,7 +78,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ReplaceAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task ReplaceAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -87,19 +86,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ReplaceAsync(String.Empty, 1));
-        }
-    }
-
-    public virtual async Task ReplaceAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.ReplaceAsync("   ", 1));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.ReplaceAsync(String.Empty, 1));
         }
     }
 

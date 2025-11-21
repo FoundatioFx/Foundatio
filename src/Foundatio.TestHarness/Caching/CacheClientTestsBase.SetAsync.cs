@@ -94,7 +94,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAsync_WithComplexObject_StoresCorrectly()
+    public virtual async Task SetAsync_WithComplexObject_StoresCorrectly(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -107,10 +107,10 @@ public abstract partial class CacheClientTestsBase
             var dt = DateTimeOffset.Now;
             var value = new MyData { Type = "test", Date = dt, Message = "Hello World" };
 
-            await cache.SetAsync("test", value);
+            await cache.SetAsync(cacheKey, value);
 
-            Assert.True(await cache.ExistsAsync("test"));
-            var cachedValue = await cache.GetAsync<MyData>("test");
+            Assert.True(await cache.ExistsAsync(cacheKey));
+            var cachedValue = await cache.GetAsync<MyData>(cacheKey);
             Assert.NotNull(cachedValue);
             Assert.True(cachedValue.HasValue);
         }
@@ -270,7 +270,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task SetAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -278,19 +278,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(String.Empty, "value"));
-        }
-    }
-
-    public virtual async Task SetAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync("   ", "value"));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync(String.Empty, "value"));
         }
     }
 

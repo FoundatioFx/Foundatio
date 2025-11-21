@@ -35,7 +35,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task IncrementAsync_WithExistingKey_IncrementsValue()
+    public virtual async Task IncrementAsync_WithExistingKey_IncrementsValue(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -45,8 +45,8 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            Assert.True(await cache.SetAsync("test", 0));
-            Assert.Equal(1, await cache.IncrementAsync("test"));
+            Assert.True(await cache.SetAsync(cacheKey, 0));
+            Assert.Equal(1, await cache.IncrementAsync(cacheKey));
         }
     }
 
@@ -113,7 +113,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -121,19 +121,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(String.Empty, 1));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync("   ", 1));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(String.Empty, 1));
         }
     }
 

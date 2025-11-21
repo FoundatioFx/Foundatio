@@ -61,7 +61,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys()
+    public virtual async Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys(string prefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -71,7 +71,6 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            string prefix = "blah:";
             await cache.SetAsync("test", 1);
             await cache.SetAsync(prefix + "test", 1);
             await cache.SetAsync(prefix + "test2", 2);
@@ -281,9 +280,9 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync("userId", 1);
-            await cache.SetAsync("sessionId", 2);
-            await cache.SetAsync("productId", 3);
+            Assert.True(await cache.SetAsync("userId", 1));
+            Assert.True(await cache.SetAsync("sessionId", 2));
+            Assert.True(await cache.SetAsync("productId", 3));
 
             int removed = await cache.RemoveByPrefixAsync(null);
             Assert.Equal(3, removed);
@@ -303,46 +302,15 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            await cache.SetAsync("orderId", 100);
-            await cache.SetAsync("customerId", 200);
-            await cache.SetAsync("invoiceId", 300);
+            Assert.True(await cache.SetAsync("orderId", 100));
+            Assert.True(await cache.SetAsync("customerId", 200));
+            Assert.True(await cache.SetAsync("invoiceId", 300));
 
             int removed = await cache.RemoveByPrefixAsync("");
             Assert.Equal(3, removed);
             Assert.False(await cache.ExistsAsync("orderId"));
             Assert.False(await cache.ExistsAsync("customerId"));
             Assert.False(await cache.ExistsAsync("invoiceId"));
-        }
-    }
-
-    public static IEnumerable<object[]> GetWhitespaceOnlyPrefixes()
-    {
-        return
-        [
-            ["   "],
-            ["\t"]
-        ];
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithWhitespacePrefix_TreatsAsLiteral(string whitespacePrefix)
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            await cache.SetAsync("accountId", 100);
-            await cache.SetAsync($"{whitespacePrefix}filteredResult1", 200);
-            await cache.SetAsync($"{whitespacePrefix}filteredResult2", 300);
-
-            int removed = await cache.RemoveByPrefixAsync(whitespacePrefix);
-            Assert.Equal(2, removed);
-            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}filteredResult1"));
-            Assert.False(await cache.ExistsAsync($"{whitespacePrefix}filteredResult2"));
-            Assert.True(await cache.ExistsAsync("accountId"));
         }
     }
 
@@ -379,7 +347,7 @@ public abstract partial class CacheClientTestsBase
     }
 
     public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
-        int expectedRemovedCount, bool shouldUnscopedRemain)
+        int expectedRemovedCount)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -391,8 +359,8 @@ public abstract partial class CacheClientTestsBase
             var scopedCache = new ScopedCacheClient(cache, "scoped1");
 
             const string key = "snowboard";
-            await cache.SetAsync(key, 1);
-            await scopedCache.SetAsync(key, 1);
+            Assert.True(await cache.SetAsync(key, 1));
+            Assert.True(await scopedCache.SetAsync(key, 1));
 
             Assert.Equal(1, (await cache.GetAsync<int>(key)).Value);
             Assert.Equal(1, (await scopedCache.GetAsync<int>(key)).Value);
@@ -401,7 +369,7 @@ public abstract partial class CacheClientTestsBase
             Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove));
 
             // Verify unscoped cache state
-            Assert.Equal(shouldUnscopedRemain, await cache.ExistsAsync(key));
+            Assert.True(await cache.ExistsAsync(key));
 
             // Verify scoped cache item was removed
             Assert.False(await scopedCache.ExistsAsync(key));
@@ -521,42 +489,6 @@ public abstract partial class CacheClientTestsBase
 
             // Verify only unmatched key remains
             Assert.True(await cache.ExistsAsync(unmatchedKey));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithNullPrefix_ThrowsArgumentNullException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync(null));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithEmptyPrefix_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync(String.Empty));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithWhitespacePrefix_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveByPrefixAsync("   "));
         }
     }
 

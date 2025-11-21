@@ -64,7 +64,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys()
+    public virtual async Task RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys(string keyPrefix)
     {
         const int COUNT = 10000;
 
@@ -76,7 +76,7 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            var dictionary = Enumerable.Range(0, COUNT).ToDictionary(i => $"remove-all-keys:{i}");
+            var dictionary = Enumerable.Range(0, COUNT).ToDictionary(i => $"{keyPrefix}{i}");
 
             var sw = Stopwatch.StartNew();
             await cache.SetAllAsync(dictionary);
@@ -88,8 +88,8 @@ public abstract partial class CacheClientTestsBase
             sw.Stop();
             _logger.LogInformation("Remove All Time: {Elapsed:g}", sw.Elapsed);
 
-            Assert.False(await cache.ExistsAsync("remove-all-keys:0"));
-            Assert.False(await cache.ExistsAsync($"remove-all-keys:{COUNT - 1}"));
+            Assert.False(await cache.ExistsAsync($"{keyPrefix}0"));
+            Assert.False(await cache.ExistsAsync($"{keyPrefix}{COUNT - 1}"));
         }
     }
 
@@ -117,7 +117,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveAllAsync_WithNullKeys_ThrowsArgumentNullException()
+    public virtual async Task RemoveAllAsync_WithNullKeys_RemovesAllValues()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -125,7 +125,15 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAllAsync(null));
+            await cache.SetAsync("key1", 1);
+            await cache.SetAsync("key2", 2);
+
+            Assert.True(await cache.ExistsAsync("key1"));
+            Assert.True(await cache.ExistsAsync("key2"));
+
+            Assert.Equal(2, await cache.RemoveAllAsync(null));
+            Assert.False(await cache.ExistsAsync("key1"));
+            Assert.False(await cache.ExistsAsync("key2"));
         }
     }
 
@@ -141,7 +149,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveAllAsync_WithKeysContainingNull_ThrowsArgumentException()
+    public virtual async Task RemoveAllAsync_WithKeysContainingNull_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -162,21 +170,9 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.RemoveAllAsync(["key1", String.Empty, "key2"]));
         }
     }
 
-    public virtual async Task RemoveAllAsync_WithKeysContainingWhitespace_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.RemoveAllAsync(["key1", "   ", "key2"]));
-        }
-    }
 }

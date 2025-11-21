@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task GetAllAsync_WithExistingKeys_ReturnsAllValues()
+    public virtual async Task GetAllAsync_WithExistingKeys_ReturnsAllValues(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -20,13 +20,13 @@ public abstract partial class CacheClientTestsBase
             await cache.RemoveAllAsync();
 
             await cache.SetAsync("test1", 1);
-            await cache.SetAsync("test2", 2);
+            await cache.SetAsync(cacheKey, 2);
             await cache.SetAsync("test3", 3);
-            var result = await cache.GetAllAsync<int>(["test1", "test2", "test3"]);
+            var result = await cache.GetAllAsync<int>(["test1", cacheKey, "test3"]);
             Assert.NotNull(result);
             Assert.Equal(3, result.Count);
             Assert.Equal(1, result["test1"].Value);
-            Assert.Equal(2, result["test2"].Value);
+            Assert.Equal(2, result[cacheKey].Value);
             Assert.Equal(3, result["test3"].Value);
         }
     }
@@ -173,7 +173,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetAllAsync_WithKeysContainingNull_ThrowsArgumentException()
+    public virtual async Task GetAllAsync_WithKeysContainingNull_ThrowsArgumentNullException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -194,21 +194,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.GetAllAsync<string>(["key1", String.Empty, "key2"]));
-        }
-    }
-
-    public virtual async Task GetAllAsync_WithKeysContainingWhitespace_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.GetAllAsync<string>(["key1", "   ", "key2"]));
         }
     }
 

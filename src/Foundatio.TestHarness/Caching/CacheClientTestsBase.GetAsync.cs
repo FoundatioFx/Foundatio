@@ -137,7 +137,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetAsync_WithComplexObject_ReturnsNewInstance()
+    public virtual async Task GetAsync_WithComplexObject_ReturnsNewInstance(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -149,10 +149,10 @@ public abstract partial class CacheClientTestsBase
 
             var value = new MyData { Type = "test", Date = DateTimeOffset.Now, Message = "Hello World" };
 
-            await cache.SetAsync("test", value);
+            await cache.SetAsync(cacheKey, value);
             value.Type = "modified";
 
-            var cachedValue = await cache.GetAsync<MyData>("test");
+            var cachedValue = await cache.GetAsync<MyData>(cacheKey);
             Assert.NotNull(cachedValue);
             Assert.False(value.Equals(cachedValue.Value), "Should not be same reference object");
             Assert.Equal("test", cachedValue.Value.Type);
@@ -211,7 +211,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task GetAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -219,19 +219,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>(String.Empty));
-        }
-    }
-
-    public virtual async Task GetAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>("   "));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>(String.Empty));
         }
     }
 

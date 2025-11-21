@@ -30,7 +30,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
+    public virtual async Task SetAllAsync_WithExpiration_KeysExpireCorrectly(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -39,12 +39,12 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             var expiry = TimeSpan.FromMilliseconds(50);
-            await cache.SetAllAsync(new Dictionary<string, object> { { "test", "value" } }, expiry);
+            await cache.SetAllAsync(new Dictionary<string, object> { { cacheKey, "value" } }, expiry);
 
             // Add 10ms to the expiry to ensure the cache has expired as the delay window is not guaranteed to be exact.
             await Task.Delay(expiry.Add(TimeSpan.FromMilliseconds(10)));
 
-            Assert.False(await cache.ExistsAsync("test"));
+            Assert.False(await cache.ExistsAsync(cacheKey));
         }
     }
 
@@ -73,20 +73,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAllAsync_WithItemsContainingNullKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            var items = new Dictionary<string, string> { { "key1", "value1" }, { null, "value2" } };
-
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
-        }
-    }
-
     public virtual async Task SetAllAsync_WithItemsContainingEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
@@ -97,21 +83,7 @@ public abstract partial class CacheClientTestsBase
         {
             var items = new Dictionary<string, string> { { "key1", "value1" }, { String.Empty, "value2" } };
 
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
-        }
-    }
-
-    public virtual async Task SetAllAsync_WithItemsContainingWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            var items = new Dictionary<string, string> { { "key1", "value1" }, { "   ", "value2" } };
-
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync(items));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllAsync(items));
         }
     }
 

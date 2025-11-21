@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task RemoveAsync_WithExistingKey_RemovesSuccessfully()
+    public virtual async Task RemoveAsync_WithExistingKey_RemovesSuccessfully(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -15,12 +15,13 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("test", "value");
+            await cache.RemoveAllAsync();
+            await cache.SetAsync(cacheKey, "value");
 
-            Assert.True(await cache.RemoveAsync("test"));
-            Assert.False(await cache.RemoveAsync("test"));
+            Assert.True(await cache.RemoveAsync(cacheKey));
+            Assert.False(await cache.RemoveAsync(cacheKey));
 
-            var result = await cache.GetAsync<string>("test");
+            var result = await cache.GetAsync<string>(cacheKey);
             Assert.False(result.HasValue);
         }
     }
@@ -143,7 +144,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task RemoveAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -151,19 +152,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(String.Empty));
-        }
-    }
-
-    public virtual async Task RemoveAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync("   "));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync(String.Empty));
         }
     }
 

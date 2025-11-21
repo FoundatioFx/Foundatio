@@ -24,7 +24,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan()
+    public virtual async Task GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -35,8 +35,8 @@ public abstract partial class CacheClientTestsBase
             await cache.RemoveAllAsync();
 
             var expiresAt = DateTime.UtcNow.AddHours(1);
-            await cache.SetAsync("with-expiration", "value", expiresAt);
-            var expiration = await cache.GetExpirationAsync("with-expiration");
+            await cache.SetAsync(cacheKey, "value", expiresAt);
+            var expiration = await cache.GetExpirationAsync(cacheKey);
 
             Assert.NotNull(expiration);
             Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59),
@@ -111,7 +111,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -119,19 +119,7 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetExpirationAsync(String.Empty));
-        }
-    }
-
-    public virtual async Task GetExpirationAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetExpirationAsync("   "));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetExpirationAsync(String.Empty));
         }
     }
 

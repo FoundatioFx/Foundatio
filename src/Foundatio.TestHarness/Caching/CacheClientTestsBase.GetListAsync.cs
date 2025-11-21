@@ -23,7 +23,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetListAsync_WithPaging_ReturnsCorrectPageSize()
+    public virtual async Task GetListAsync_WithPaging_ReturnsCorrectPageSize(string cacheKey)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -32,12 +32,10 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:paging:size";
-
             int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
+            await cache.ListAddAsync(cacheKey, values, TimeSpan.FromMinutes(1));
 
-            var pagedResult = await cache.GetListAsync<int>(key, 1, 5);
+            var pagedResult = await cache.GetListAsync<int>(cacheKey, 1, 5);
             Assert.NotNull(pagedResult);
             Assert.Equal(5, pagedResult.Value.Count);
         }
@@ -164,7 +162,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentNullException()
+    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -172,19 +170,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetListAsync<string>(String.Empty));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>(String.Empty));
         }
     }
 
-    public virtual async Task GetListAsync_WithWhitespaceKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetListAsync<string>("   "));
-        }
-    }
 }
