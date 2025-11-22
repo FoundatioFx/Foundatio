@@ -109,7 +109,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
     {
-        if (keys == null)
+        if (keys is null)
             return RemoveByPrefixAsync(String.Empty);
 
         return UnscopedCache.RemoveAllAsync(GetUnscopedCacheKeys(keys));
@@ -261,9 +261,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentNullException.ThrowIfNull(values);
 
         return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values, expiresIn);
     }
@@ -271,7 +269,6 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 

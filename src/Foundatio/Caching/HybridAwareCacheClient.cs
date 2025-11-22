@@ -88,8 +88,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        if (keys is null)
-            return Task.FromException<IDictionary<string, CacheValue<T>>>(new ArgumentNullException(nameof(keys)));
+        ArgumentNullException.ThrowIfNull(keys);
 
         return _distributedCache.GetAllAsync<T>(keys);
     }
@@ -113,7 +112,8 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values is null || values.Count == 0)
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count is 0)
             return 0;
 
         int set = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
@@ -189,8 +189,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
     {
-        if (expirations is null)
-            throw new ArgumentNullException(nameof(expirations));
+        ArgumentNullException.ThrowIfNull(expirations);
 
         if (expirations.Count is 0)
             return;
@@ -238,9 +237,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -259,9 +256,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -280,9 +275,8 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (page is < 1)
-            return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1"));
+        if (page.HasValue)
+            ArgumentOutOfRangeException.ThrowIfLessThan(page.Value, 1);
 
         return _distributedCache.GetListAsync<T>(key, page, pageSize);
     }
