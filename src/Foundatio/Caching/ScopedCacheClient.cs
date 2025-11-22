@@ -85,7 +85,16 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     protected IEnumerable<string> GetUnscopedCacheKeys(IEnumerable<string> keys)
     {
-        return keys?.Select(GetUnscopedCacheKey);
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var unscopedKeys = keys is ICollection<string> collection ? new List<string>(collection.Count) : [];
+        foreach (string key in keys.Distinct())
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+            unscopedKeys.Add(GetUnscopedCacheKey(key));
+        }
+
+        return unscopedKeys;
     }
 
     protected string GetScopedCacheKey(string unscopedKey)
@@ -129,8 +138,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        if (keys is null)
-            throw new ArgumentNullException(nameof(keys));
+        ArgumentNullException.ThrowIfNull(keys);
 
         var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetUnscopedCacheKeys(keys)).AnyContext();
         return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
@@ -152,7 +160,19 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        return UnscopedCache.SetAllAsync(values?.ToDictionary(kvp => GetUnscopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (values.Count is 0)
+            return Task.FromResult(0);
+
+        var unscopedValues = new Dictionary<string, T>(values.Count);
+        foreach (var kvp in values)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key, nameof(values));
+            unscopedValues[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+        }
+
+        return UnscopedCache.SetAllAsync(unscopedValues, expiresIn);
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -199,8 +219,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
-        if (keys == null)
-            throw new ArgumentNullException(nameof(keys));
+        ArgumentNullException.ThrowIfNull(keys);
 
         var unscopedKeys = GetUnscopedCacheKeys(keys);
         var unscopedExpirations = await UnscopedCache.GetAllExpirationAsync(unscopedKeys).AnyContext();
@@ -216,10 +235,15 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
     {
-        if (expirations == null)
-            throw new ArgumentNullException(nameof(expirations));
+        ArgumentNullException.ThrowIfNull(expirations);
 
-        var unscopedExpirations = expirations.ToDictionary(kvp => GetUnscopedCacheKey(kvp.Key), kvp => kvp.Value);
+        var unscopedExpirations = new Dictionary<string, TimeSpan?>(expirations.Count);
+        foreach (var kvp in expirations)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key, nameof(expirations));
+            unscopedExpirations[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+        }
+
         return UnscopedCache.SetAllExpirationAsync(unscopedExpirations);
     }
 
