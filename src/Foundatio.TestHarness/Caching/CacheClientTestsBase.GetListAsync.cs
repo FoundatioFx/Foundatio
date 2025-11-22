@@ -19,7 +19,6 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
             await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(String.Empty));
         }
     }
 

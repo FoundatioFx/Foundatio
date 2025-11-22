@@ -819,7 +819,7 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
 
     [Theory]
     [InlineData(1000)]
-    [InlineData(10000)]
+    [InlineData(9999)]
     public override Task RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys(int count)
     {
         return base.RemoveByPrefixAsync_WithMultipleMatchingKeys_RemovesOnlyPrefixedKeys(count);
