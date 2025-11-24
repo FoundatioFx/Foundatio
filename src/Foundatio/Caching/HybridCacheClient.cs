@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -174,33 +175,38 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (keys is null)
             throw new ArgumentNullException(nameof(keys));
 
-        string[] keyArray = keys.ToArray();
-        if (keyArray.Length is 0)
+        var keysCollection = keys as ICollection<string> ?? keys.ToList();
+        if (keysCollection.Count is 0)
             return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
 
-        var localValues = await _localCache.GetAllAsync<T>(keyArray).AnyContext();
-        foreach (string key in localValues.Keys)
-        {
-            _logger.LogTrace("Local cache hit: {Key}", key);
-            Interlocked.Increment(ref _localCacheHits);
-        }
+        var localValues = await _localCache.GetAllAsync<T>(keysCollection).AnyContext();
 
-        if (keyArray.Length == localValues.Count)
+        // Collect keys that weren't found in local cache.
+        var missedKeys = new List<string>(keysCollection.Count);
+        foreach (var kvp in localValues)
+        {
+            if (kvp.Value.HasValue)
+            {
+                _logger.LogTrace("Local cache hit: {Key}", kvp.Key);
+            }
+            else
+            {
+                _logger.LogTrace("Local cache miss: {Key}", kvp.Key);
+                missedKeys.Add(kvp.Key);
+            }
+        }
+        Interlocked.Add(ref _localCacheHits, keysCollection.Count - missedKeys.Count);
+
+        // All keys found in local cache.
+        if (missedKeys.Count is 0)
             return localValues;
-
-        // Get the missed keys from the distributed cache.
-        string[] missedKeys = keyArray.Except(localValues.Keys).ToArray();
-        foreach (string key in missedKeys)
-        {
-            _logger.LogTrace("Local cache miss: {Key}", key);
-        }
 
         var result = new Dictionary<string, CacheValue<T>>(localValues);
         var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
 
-        // Get all expirations in a single bulk operation to avoid n+1 problem
-        string[] keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToArray();
-        var expirations = keysWithValues.Length > 0
+        // Get all expirations in a single bulk operation.
+        var keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToList();
+        var expirations = keysWithValues.Count > 0
             ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
             : ReadOnlyDictionary<string, TimeSpan?>.Empty;
 
