@@ -32,23 +32,23 @@ public abstract partial class CacheClientTestsBase
             Assert.NotNull(expirations);
             Assert.Equal(3, expirations.Count); // key3 has no expiration, key5 doesn't exist
 
-            Assert.True(expirations.ContainsKey("key1"));
-            Assert.NotNull(expirations["key1"]);
-            Assert.True(expirations["key1"].Value > TimeSpan.FromMinutes(4));
-            Assert.True(expirations["key1"].Value <= TimeSpan.FromMinutes(5));
+            Assert.True(expirations.TryGetValue("key1", out var key1Expiration));
+            Assert.NotNull(key1Expiration);
+            Assert.True(key1Expiration.Value > TimeSpan.FromMinutes(4));
+            Assert.True(key1Expiration.Value <= TimeSpan.FromMinutes(5));
 
-            Assert.True(expirations.ContainsKey("key2"));
-            Assert.NotNull(expirations["key2"]);
-            Assert.True(expirations["key2"].Value > TimeSpan.FromMinutes(9));
-            Assert.True(expirations["key2"].Value <= TimeSpan.FromMinutes(10));
+            Assert.True(expirations.TryGetValue("key2", out var key2Expiration));
+            Assert.NotNull(key2Expiration);
+            Assert.True(key2Expiration.Value > TimeSpan.FromMinutes(9));
+            Assert.True(key2Expiration.Value <= TimeSpan.FromMinutes(10));
 
             Assert.False(expirations.ContainsKey("key3")); // No expiration
             Assert.False(expirations.ContainsKey("key5")); // Doesn't exist
 
-            Assert.True(expirations.ContainsKey("key4"));
-            Assert.NotNull(expirations["key4"]);
-            Assert.True(expirations["key4"].Value > TimeSpan.FromMinutes(14));
-            Assert.True(expirations["key4"].Value <= TimeSpan.FromMinutes(15));
+            Assert.True(expirations.TryGetValue("key4", out var key4Expiration));
+            Assert.NotNull(key4Expiration);
+            Assert.True(key4Expiration.Value > TimeSpan.FromMinutes(14));
+            Assert.True(key4Expiration.Value <= TimeSpan.FromMinutes(15));
         }
     }
 
