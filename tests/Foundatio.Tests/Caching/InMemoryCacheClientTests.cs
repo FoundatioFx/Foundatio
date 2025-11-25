@@ -57,7 +57,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task AddAsync_WithNullKey_ThrowsArgumentNullException()
     {
         return base.AddAsync_WithNullKey_ThrowsArgumentNullException();
-    }    [Fact]
+    }
+
+    [Fact]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
         return base.CacheOperations_WithMultipleTypes_MeasuresThroughput();
@@ -123,7 +125,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ExistsAsync_WithScopedCache_ChecksOnlyWithinScope()
     {
         return base.ExistsAsync_WithScopedCache_ChecksOnlyWithinScope();
-    }    [Fact]
+    }
+
+    [Fact]
     public override Task GetAllAsync_WithEmptyKeys_ReturnsEmpty()
     {
         return base.GetAllAsync_WithEmptyKeys_ReturnsEmpty();
