@@ -1003,6 +1003,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput()
+    {
+        return base.SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput();
+    }
+
+    [Fact]
     public override Task SetAllAsync_WithEmptyItems_ReturnsTrue()
     {
         return base.SetAllAsync_WithEmptyItems_ReturnsTrue();

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -34,7 +35,8 @@ public abstract partial class CacheClientTestsBase
             }
 
             sw.Stop();
-            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
+            _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                itemCount * 5, sw.ElapsedMilliseconds, itemCount * 5 / sw.Elapsed.TotalSeconds);
         }
     }
 
@@ -147,7 +149,49 @@ public abstract partial class CacheClientTestsBase
             }
 
             sw.Stop();
-            _logger.LogInformation("Time: {Elapsed:g}", sw.Elapsed);
+            _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                itemCount * 2, sw.ElapsedMilliseconds, itemCount * 2 / sw.Elapsed.TotalSeconds);
+        }
+    }
+
+    /// <summary>
+    /// Measures SetAllAsync/GetAllAsync throughput with 9,999 keys in a single batch operation.
+    /// Tests bulk insert and retrieval performance while validating data correctness.
+    /// </summary>
+    public virtual async Task SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            const int keyCount = 9999;
+            var items = new Dictionary<string, int>();
+            for (int i = 0; i < keyCount; i++)
+                items[$"key{i}"] = i;
+
+            var sw = Stopwatch.StartNew();
+
+            int result = await cache.SetAllAsync(items, TimeSpan.FromHours(1));
+            Assert.Equal(keyCount, result);
+
+            var keys = new List<string>();
+            for (int i = 0; i < keyCount; i++)
+                keys.Add($"key{i}");
+
+            var results = await cache.GetAllAsync<int>(keys);
+            Assert.Equal(keyCount, results.Count);
+
+            sw.Stop();
+
+            for (int i = 0; i < keyCount; i++)
+                Assert.Equal(i, results[$"key{i}"].Value);
+
+            _logger.LogInformation("Cache throughput: {Operations} operations in {Elapsed}ms ({Rate} ops/sec)",
+                keyCount * 2, sw.ElapsedMilliseconds, keyCount * 2 / sw.Elapsed.TotalSeconds);
         }
     }
 }
