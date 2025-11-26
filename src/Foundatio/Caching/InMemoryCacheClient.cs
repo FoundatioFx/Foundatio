@@ -129,7 +129,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        return Task.FromResult(_memory.TryRemove(key, out _));
+
+        if (!_memory.TryRemove(key, out var entry))
+            return Task.FromResult(false);
+
+        // Return false if the entry was expired (consistent with Redis behavior)
+        return Task.FromResult(!entry.IsExpired);
     }
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
