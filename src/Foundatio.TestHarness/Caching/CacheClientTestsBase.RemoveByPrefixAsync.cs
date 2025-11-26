@@ -42,7 +42,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys()
+    public virtual async Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyMatchingKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -52,16 +52,62 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            string prefix = "blah:";
-            await cache.SetAsync("test", 1);
-            await cache.SetAsync(prefix + "test", 1);
-            await cache.SetAsync(prefix + "test2", 2);
+            const string prefix = "user:";
+            await cache.SetAsync("order:123", 1);
+            await cache.SetAsync(prefix + "alice", 2);
+            await cache.SetAsync(prefix + "bob", 3);
+            await cache.SetAsync("User:charlie", 4);
+            await cache.SetAsync("USER:dave", 5);
 
-            Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + ":doesntexist"));
+            // Non-matching prefix returns 0
+            Assert.Equal(0, await cache.RemoveByPrefixAsync(prefix + "doesntexist"));
+
+            // Matching prefix removes only prefixed keys (case-sensitive)
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
+            Assert.False(await cache.ExistsAsync(prefix + "alice"));
+            Assert.False(await cache.ExistsAsync(prefix + "bob"));
+
+            // Unmatched keys remain (including different case prefixes)
+            Assert.True(await cache.ExistsAsync("order:123"));
+            Assert.True(await cache.ExistsAsync("User:charlie"));
+            Assert.True(await cache.ExistsAsync("USER:dave"));
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys(string prefix)
+    public virtual async Task RemoveByPrefixAsync_WithNullOrEmptyPrefix_RemovesAllKeys()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            // Test null prefix
+            await cache.RemoveAllAsync();
+            await cache.SetAsync("user:123", 1);
+            await cache.SetAsync("order:456", 2);
+            await cache.SetAsync("Product:789", 3);
+
+            int removed = await cache.RemoveByPrefixAsync(null);
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync("user:123"));
+            Assert.False(await cache.ExistsAsync("order:456"));
+            Assert.False(await cache.ExistsAsync("Product:789"));
+
+            // Test empty prefix
+            await cache.SetAsync("user:123", 1);
+            await cache.SetAsync("order:456", 2);
+            await cache.SetAsync("Product:789", 3);
+
+            removed = await cache.RemoveByPrefixAsync("");
+            Assert.Equal(3, removed);
+            Assert.False(await cache.ExistsAsync("user:123"));
+            Assert.False(await cache.ExistsAsync("order:456"));
+            Assert.False(await cache.ExistsAsync("Product:789"));
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithAsteriskPrefix_TreatedAsLiteral()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -70,15 +116,31 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
+            var scopedCache = new ScopedCacheClient(cache, "scoped1");
 
-            await cache.SetAsync("test", 1);
-            await cache.SetAsync(prefix + "test", 1);
-            await cache.SetAsync(prefix + "test2", 2);
+            const string key = "snowboard";
+            await cache.SetAsync(key, 1);
+            await scopedCache.SetAsync(key, 1);
 
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
-            Assert.False(await cache.ExistsAsync(prefix + "test"));
-            Assert.False(await cache.ExistsAsync(prefix + "test2"));
-            Assert.True(await cache.ExistsAsync("test"));
+            // "*" should be treated as literal, not as wildcard
+            Assert.Equal(0, await scopedCache.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.True(await scopedCache.ExistsAsync(key));
+
+            Assert.Equal(0, await cache.RemoveByPrefixAsync("*"));
+            Assert.True(await cache.ExistsAsync(key));
+            Assert.True(await scopedCache.ExistsAsync(key));
+
+            // "**:" should also be treated as literal prefix
+            await cache.SetAsync("**:globMatch", 100);
+            await cache.SetAsync("*:singleWildcard", 200);
+            await cache.SetAsync("***:tripleAsterisk", 300);
+
+            int removed = await cache.RemoveByPrefixAsync("**:");
+            Assert.Equal(1, removed);
+            Assert.False(await cache.ExistsAsync("**:globMatch"));
+            Assert.True(await cache.ExistsAsync("*:singleWildcard"));
+            Assert.True(await cache.ExistsAsync("***:tripleAsterisk"));
         }
     }
 
@@ -174,30 +236,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            await cache.SetAsync("**:globMatch1", 100);
-            await cache.SetAsync("**:globMatch2", 200);
-            await cache.SetAsync("*:singleWildcard", 300);
-            await cache.SetAsync("***:tripleAsterisk", 400);
-
-            int removed = await cache.RemoveByPrefixAsync("**:");
-            Assert.Equal(2, removed);
-            Assert.False(await cache.ExistsAsync("**:globMatch1"));
-            Assert.False(await cache.ExistsAsync("**:globMatch2"));
-            Assert.True(await cache.ExistsAsync("*:singleWildcard"));
-            Assert.True(await cache.ExistsAsync("***:tripleAsterisk"));
-        }
-    }
-
     public static IEnumerable<object[]> GetSpecialPrefixes()
     {
         return
@@ -267,50 +305,6 @@ public abstract partial class CacheClientTestsBase
             Assert.False(await cache.ExistsAsync($"{specialPrefix}encodedValue"));
             Assert.False(await cache.ExistsAsync($"{specialPrefix}escapedString"));
             Assert.True(await cache.ExistsAsync($"unmatched{specialPrefix}entry"));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.True(await cache.SetAsync("userId", 1));
-            Assert.True(await cache.SetAsync("sessionId", 2));
-            Assert.True(await cache.SetAsync("productId", 3));
-
-            int removed = await cache.RemoveByPrefixAsync(null);
-            Assert.Equal(3, removed);
-            Assert.False(await cache.ExistsAsync("userId"));
-            Assert.False(await cache.ExistsAsync("sessionId"));
-            Assert.False(await cache.ExistsAsync("productId"));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.True(await cache.SetAsync("orderId", 100));
-            Assert.True(await cache.SetAsync("customerId", 200));
-            Assert.True(await cache.SetAsync("invoiceId", 300));
-
-            int removed = await cache.RemoveByPrefixAsync("");
-            Assert.Equal(3, removed);
-            Assert.False(await cache.ExistsAsync("orderId"));
-            Assert.False(await cache.ExistsAsync("customerId"));
-            Assert.False(await cache.ExistsAsync("invoiceId"));
         }
     }
 
@@ -406,33 +400,6 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_AsteriskPrefixWithScopedCache_TreatedAsLiteral()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-            var scopedCache = new ScopedCacheClient(cache, "scoped1");
-
-            const string key = "snowboard";
-            await cache.SetAsync(key, 1);
-            await scopedCache.SetAsync(key, 1);
-
-            // Remove by "*" from scoped cache - should not match "snowboard"
-            Assert.Equal(0, await scopedCache.RemoveByPrefixAsync("*"));
-            Assert.True(await cache.ExistsAsync(key));
-            Assert.True(await scopedCache.ExistsAsync(key));
-
-            // Remove by "*" from unscoped cache - should not match "snowboard"
-            Assert.Equal(0, await cache.RemoveByPrefixAsync("*"));
-            Assert.True(await cache.ExistsAsync(key));
-            Assert.True(await scopedCache.ExistsAsync(key));
-        }
-    }
-
     public virtual async Task RemoveByPrefixAsync_PartialPrefixWithScopedCache_RemovesMatchingKeys()
     {
         var cache = GetCacheClient();
@@ -489,63 +456,6 @@ public abstract partial class CacheClientTestsBase
 
             // Verify only unmatched key remains
             Assert.True(await cache.ExistsAsync(unmatchedKey));
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithCaseSensitivePrefix_RemovesOnlyMatchingCase()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.SetAsync("user:123", "data1");
-            await cache.SetAsync("User:456", "data2");
-            await cache.SetAsync("USER:789", "data3");
-            await cache.SetAsync("user:abc", "data4");
-
-            await cache.RemoveByPrefixAsync("user:");
-
-            bool lower1 = await cache.ExistsAsync("user:123");
-            bool lower2 = await cache.ExistsAsync("user:abc");
-            bool title = await cache.ExistsAsync("User:456");
-            bool upper = await cache.ExistsAsync("USER:789");
-
-            Assert.False(lower1);
-            Assert.False(lower2);
-            Assert.True(title);
-            Assert.True(upper);
-        }
-    }
-
-    public virtual async Task RemoveByPrefixAsync_WithDifferentCasedScopes_RemovesOnlyMatchingScope()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            var scopedLower = new ScopedCacheClient(cache, "project");
-            var scopedTitle = new ScopedCacheClient(cache, "Project");
-
-            await scopedLower.SetAsync("settingA", "valueA");
-            await scopedLower.SetAsync("settingB", "valueB");
-            await scopedTitle.SetAsync("settingA", "valueC");
-            await scopedTitle.SetAsync("settingB", "valueD");
-
-            await scopedLower.RemoveByPrefixAsync("setting");
-
-            var lowerA = await scopedLower.GetAsync<string>("settingA");
-            var lowerB = await scopedLower.GetAsync<string>("settingB");
-            var titleA = await scopedTitle.GetAsync<string>("settingA");
-            var titleB = await scopedTitle.GetAsync<string>("settingB");
-
-            Assert.False(lowerA.HasValue);
-            Assert.False(lowerB.HasValue);
-            Assert.True(titleA.HasValue);
-            Assert.True(titleB.HasValue);
         }
     }
 }

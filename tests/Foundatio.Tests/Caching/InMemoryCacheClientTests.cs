@@ -26,40 +26,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task AddAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.AddAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("user:profile")]
-    [InlineData("   ")]
-    public override Task AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue(string cacheKey)
-    {
-        return base.AddAsync_WithExistingKey_ReturnsFalseAndPreservesValue(cacheKey);
-    }
-
-    [Fact]
-    public override Task AddAsync_WithNestedKeyUsingSeparator_StoresCorrectly()
-    {
-        return base.AddAsync_WithNestedKeyUsingSeparator_StoresCorrectly();
-    }
-
-    [Theory]
-    [InlineData("user:profile")]
-    [InlineData("   ")]
-    public override Task AddAsync_WithValidKey_ReturnsTrue(string cacheKey)
-    {
-        return base.AddAsync_WithValidKey_ReturnsTrue(cacheKey);
-    }
-
-    [Fact]
-    public override Task AddAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.AddAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
         return base.CacheOperations_WithMultipleTypes_MeasuresThroughput();
@@ -72,29 +38,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ExistsAsync_AfterKeyExpires_ReturnsFalse()
+    public override Task ExistsAsync()
     {
-        return base.ExistsAsync_AfterKeyExpires_ReturnsFalse();
-    }
-
-    [Fact]
-    public override Task ExistsAsync_WithDifferentCasedKeys_ChecksExactMatch()
-    {
-        return base.ExistsAsync_WithDifferentCasedKeys_ChecksExactMatch();
-    }
-
-    [Fact]
-    public override Task ExistsAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.ExistsAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("user:profile")]
-    [InlineData("   ")]
-    public override Task ExistsAsync_WithExistingKey_ReturnsTrue(string cacheKey)
-    {
-        return base.ExistsAsync_WithExistingKey_ReturnsTrue(cacheKey);
+        return base.ExistsAsync();
     }
 
     [Fact]
@@ -104,101 +50,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ExistsAsync_WithNonExistentKey_ReturnsFalse()
-    {
-        return base.ExistsAsync_WithNonExistentKey_ReturnsFalse();
-    }
-
-    [Fact]
-    public override Task ExistsAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.ExistsAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ExistsAsync_WithNullStoredValue_ReturnsTrue()
-    {
-        return base.ExistsAsync_WithNullStoredValue_ReturnsTrue();
-    }
-
-    [Fact]
     public override Task ExistsAsync_WithScopedCache_ChecksOnlyWithinScope()
     {
         return base.ExistsAsync_WithScopedCache_ChecksOnlyWithinScope();
     }
 
     [Fact]
-    public override Task GetAllAsync_WithEmptyKeys_ReturnsEmpty()
+    public override Task ExistsAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.GetAllAsync_WithEmptyKeys_ReturnsEmpty();
-    }
-
-    [Theory]
-    [InlineData("test2")]
-    [InlineData("   ")]
-    public override Task GetAllAsync_WithExistingKeys_ReturnsAllValues(string cacheKey)
-    {
-        return base.GetAllAsync_WithExistingKeys_ReturnsAllValues(cacheKey);
+        return base.ExistsAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task GetAllAsync_WithKeysContainingEmpty_ThrowsArgumentException()
+    public override Task GetAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
-        return base.GetAllAsync_WithKeysContainingEmpty_ThrowsArgumentException();
+        return base.GetAllAsync_WithInvalidKeys_ValidatesCorrectly();
     }
 
     [Fact]
-    public override Task GetAllAsync_WithKeysContainingNull_ThrowsArgumentNullException()
+    public override Task GetAllAsync_WithMultipleKeys_ReturnsCorrectValues()
     {
-        return base.GetAllAsync_WithKeysContainingNull_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithMixedCaseKeys_RetrievesExactMatches()
-    {
-        return base.GetAllAsync_WithMixedCaseKeys_RetrievesExactMatches();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithMixedObjectTypes_ReturnsCorrectValues()
-    {
-        return base.GetAllAsync_WithMixedObjectTypes_ReturnsCorrectValues();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithNonExistentKeys_ReturnsEmptyResults()
-    {
-        return base.GetAllAsync_WithNonExistentKeys_ReturnsEmptyResults();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithNullKeys_ThrowsArgumentNullException()
-    {
-        return base.GetAllAsync_WithNullKeys_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithNullValues_HandlesNullsCorrectly()
-    {
-        return base.GetAllAsync_WithNullValues_HandlesNullsCorrectly();
-    }
-
-    [Fact]
-    public override Task GetAllAsync_WithOverlappingKeys_UsesLatestValues()
-    {
-        return base.GetAllAsync_WithOverlappingKeys_UsesLatestValues();
+        return base.GetAllAsync_WithMultipleKeys_ReturnsCorrectValues();
     }
 
     [Fact]
     public override Task GetAllAsync_WithScopedCache_ReturnsUnscopedKeys()
     {
         return base.GetAllAsync_WithScopedCache_ReturnsUnscopedKeys();
-    }
-
-    [Fact]
-    public override Task GetAllExpirationAsync_WithExpiredKeys_ExcludesExpiredKeys()
-    {
-        return base.GetAllExpirationAsync_WithExpiredKeys_ExcludesExpiredKeys();
     }
 
     [Theory]
@@ -210,145 +88,45 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task GetAllExpirationAsync_WithMixedKeys_ReturnsOnlyKeysWithExpiration()
+    public override Task GetAllExpirationAsync_WithMixedKeys_ReturnsExpectedResults()
     {
-        return base.GetAllExpirationAsync_WithMixedKeys_ReturnsOnlyKeysWithExpiration();
+        return base.GetAllExpirationAsync_WithMixedKeys_ReturnsExpectedResults();
     }
 
     [Fact]
-    public override Task GetAsync_WithComplexObject_PreservesAllProperties()
+    public override Task GetAsync_WithComplexObject_PreservesPropertiesAndReturnsNewInstance()
     {
-        return base.GetAsync_WithComplexObject_PreservesAllProperties();
-    }
-
-    [Theory]
-    [InlineData("order:details")]
-    [InlineData("   ")]
-    public override Task GetAsync_WithComplexObject_ReturnsNewInstance(string cacheKey)
-    {
-        return base.GetAsync_WithComplexObject_ReturnsNewInstance(cacheKey);
+        return base.GetAsync_WithComplexObject_PreservesPropertiesAndReturnsNewInstance();
     }
 
     [Fact]
-    public override Task GetAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys()
+    public override Task GetAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.GetAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys();
+        return base.GetAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task GetAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task GetAsync_WithNumericTypeConversion_ConvertsBetweenTypes()
     {
-        return base.GetAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.GetAsync_WithNumericTypeConversion_ConvertsBetweenTypes();
     }
 
     [Fact]
-    public override Task GetAsync_WithLargeNumber_ReturnsCorrectValue()
+    public override Task GetAsync_WithTryGetSemantics_HandlesTypeConversions()
     {
-        return base.GetAsync_WithLargeNumber_ReturnsCorrectValue();
+        return base.GetAsync_WithTryGetSemantics_HandlesTypeConversions();
     }
 
     [Fact]
-    public override Task GetAsync_WithMaxLongAsInt_ThrowsException()
+    public override Task GetExpirationAsync_WithVariousKeyStates_ReturnsExpectedExpiration()
     {
-        return base.GetAsync_WithMaxLongAsInt_ThrowsException();
+        return base.GetExpirationAsync_WithVariousKeyStates_ReturnsExpectedExpiration();
     }
 
     [Fact]
-    public override Task GetAsync_WithNonExistentKey_ReturnsNoValue()
+    public override Task GetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.GetAsync_WithNonExistentKey_ReturnsNoValue();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.GetAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithNumericTypeConversion_ConvertsIntToLong()
-    {
-        return base.GetAsync_WithNumericTypeConversion_ConvertsIntToLong();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithNumericTypeConversion_ConvertsLongToInt()
-    {
-        return base.GetAsync_WithNumericTypeConversion_ConvertsLongToInt();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithTryGetSemanticsAndComplexTypeAsLong_ReturnsNoValue()
-    {
-        return base.GetAsync_WithTryGetSemanticsAndComplexTypeAsLong_ReturnsNoValue();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithTryGetSemanticsAndIntAsLong_ConvertsSuccessfully()
-    {
-        return base.GetAsync_WithTryGetSemanticsAndIntAsLong_ConvertsSuccessfully();
-    }
-
-    [Fact]
-    public override Task GetAsync_WithTryGetSemanticsAndMaxLongAsInt_ReturnsNoValue()
-    {
-        return base.GetAsync_WithTryGetSemanticsAndMaxLongAsInt_ReturnsNoValue();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_AfterExpiry_ReturnsNull()
-    {
-        return base.GetExpirationAsync_AfterExpiry_ReturnsNull();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithDifferentCasedKeys_GetsExactMatch()
-    {
-        return base.GetExpirationAsync_WithDifferentCasedKeys_GetsExactMatch();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.GetExpirationAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("token:refresh")]
-    [InlineData("   ")]
-    public override Task GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan(string cacheKey)
-    {
-        return base.GetExpirationAsync_WithExpiration_ReturnsCorrectTimeSpan(cacheKey);
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithExpiredKey_ReturnsNull()
-    {
-        return base.GetExpirationAsync_WithExpiredKey_ReturnsNull();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithNoExpiration_ReturnsNull()
-    {
-        return base.GetExpirationAsync_WithNoExpiration_ReturnsNull();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithNonExistentKey_ReturnsNull()
-    {
-        return base.GetExpirationAsync_WithNonExistentKey_ReturnsNull();
-    }
-
-    [Fact]
-    public override Task GetExpirationAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.GetExpirationAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.GetListAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.GetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
@@ -358,41 +136,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException()
+    public override Task GetListAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException();
+        return base.GetListAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task GetListAsync_WithMultiplePages_ReturnsAllItems()
+    public override Task GetListAsync_WithPaging_ReturnsCorrectResults()
     {
-        return base.GetListAsync_WithMultiplePages_ReturnsAllItems();
-    }
-
-    [Fact]
-    public override Task GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast()
-    {
-        return base.GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast();
-    }
-
-    [Fact]
-    public override Task GetListAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.GetListAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection()
-    {
-        return base.GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection();
-    }
-
-    [Theory]
-    [InlineData("cart:items")]
-    [InlineData("   ")]
-    public override Task GetListAsync_WithPaging_ReturnsCorrectPageSize(string cacheKey)
-    {
-        return base.GetListAsync_WithPaging_ReturnsCorrectPageSize(cacheKey);
+        return base.GetListAsync_WithPaging_ReturnsCorrectResults();
     }
 
     [Fact]
@@ -414,41 +166,21 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task IncrementAsync_WithDifferentCasedKeys_IncrementsDistinctCounters()
-    {
-        return base.IncrementAsync_WithDifferentCasedKeys_IncrementsDistinctCounters();
-    }
-
-    [Fact]
-    public override Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.IncrementAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("metrics:page-views")]
-    [InlineData("   ")]
-    public override Task IncrementAsync_WithExistingKey_IncrementsValue(string cacheKey)
-    {
-        return base.IncrementAsync_WithExistingKey_IncrementsValue(cacheKey);
-    }
-
-    [Fact]
     public override Task IncrementAsync_WithExpiration_ExpiresCorrectly()
     {
         return base.IncrementAsync_WithExpiration_ExpiresCorrectly();
     }
 
     [Fact]
-    public override Task IncrementAsync_WithNonExistentKey_InitializesToOne()
+    public override Task IncrementAsync_WithInvalidKey_ThrowsException()
     {
-        return base.IncrementAsync_WithNonExistentKey_InitializesToOne();
+        return base.IncrementAsync_WithInvalidKey_ThrowsException();
     }
 
     [Fact]
-    public override Task IncrementAsync_WithNullKey_ThrowsArgumentNullException()
+    public override Task IncrementAsync_WithKey_IncrementsCorrectly()
     {
-        return base.IncrementAsync_WithNullKey_ThrowsArgumentNullException();
+        return base.IncrementAsync_WithKey_IncrementsCorrectly();
     }
 
     [Fact]
@@ -458,89 +190,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly()
+    public override Task ListAddAsync_WithExpiration_ExpiresCorrectly()
     {
-        return base.IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly();
+        return base.ListAddAsync_WithExpiration_ExpiresCorrectly();
     }
 
     [Fact]
-    public override Task ListAddAsync_WithDifferentCasedKeys_MaintainsDistinctLists()
+    public override Task ListAddAsync_WithInvalidArguments_ThrowsException()
     {
-        return base.ListAddAsync_WithDifferentCasedKeys_MaintainsDistinctLists();
-    }
-
-    [Theory]
-    [InlineData("cart:items")]
-    [InlineData("   ")]
-    public override Task ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems(string cacheKey)
-    {
-        return base.ListAddAsync_WithDuplicates_RemovesDuplicatesAndAddsItems(cacheKey);
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithDuplicates_StoresUniqueValuesOnly()
-    {
-        return base.ListAddAsync_WithDuplicates_StoresUniqueValuesOnly();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithEmptyCollection_NoOp()
-    {
-        return base.ListAddAsync_WithEmptyCollection_NoOp();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.ListAddAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithExistingNonListKey_ThrowsException()
-    {
-        return base.ListAddAsync_WithExistingNonListKey_ThrowsException();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithFutureExpiration_AddsAndExpiresCorrectly()
-    {
-        return base.ListAddAsync_WithFutureExpiration_AddsAndExpiresCorrectly();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithMultipleExpirations_ExpiresIndividualItems()
-    {
-        return base.ListAddAsync_WithMultipleExpirations_ExpiresIndividualItems();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithNullCollection_ThrowsArgumentNullException()
-    {
-        return base.ListAddAsync_WithNullCollection_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithNullItem_IgnoresNull()
-    {
-        return base.ListAddAsync_WithNullItem_IgnoresNull();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.ListAddAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithNullValues_ThrowsArgumentNullException()
-    {
-        return base.ListAddAsync_WithNullValues_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListAddAsync_WithPastExpiration_RemovesItem()
-    {
-        return base.ListAddAsync_WithPastExpiration_RemovesItem();
+        return base.ListAddAsync_WithInvalidArguments_ThrowsException();
     }
 
     [Fact]
@@ -550,47 +208,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task ListAddAsync_WithVariousInputs_HandlesCorrectly()
     {
-        return base.ListRemoveAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("cart:items")]
-    [InlineData("   ")]
-    public override Task ListRemoveAsync_WithMultipleValues_RemovesAll(string cacheKey)
-    {
-        return base.ListRemoveAsync_WithMultipleValues_RemovesAll(cacheKey);
+        return base.ListAddAsync_WithVariousInputs_HandlesCorrectly();
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithNullCollection_ThrowsArgumentNullException()
+    public override Task ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException()
     {
-        return base.ListRemoveAsync_WithNullCollection_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListRemoveAsync_WithNullItem_IgnoresNull()
-    {
-        return base.ListRemoveAsync_WithNullItem_IgnoresNull();
-    }
-
-    [Fact]
-    public override Task ListRemoveAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.ListRemoveAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListRemoveAsync_WithNullValues_ThrowsArgumentNullException()
-    {
-        return base.ListRemoveAsync_WithNullValues_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ListRemoveAsync_WithSingleValue_RemovesCorrectly()
-    {
-        return base.ListRemoveAsync_WithSingleValue_RemovesCorrectly();
+        return base.ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException();
     }
 
     [Fact]
@@ -600,21 +226,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveAllAsync_WithEmptyKeys_Succeeds()
+    public override Task ListRemoveAsync_WithValues_RemovesCorrectly()
     {
-        return base.RemoveAllAsync_WithEmptyKeys_Succeeds();
+        return base.ListRemoveAsync_WithValues_RemovesCorrectly();
     }
 
     [Fact]
-    public override Task RemoveAllAsync_WithKeysContainingEmpty_ThrowsArgumentException()
+    public override Task RemoveAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
-        return base.RemoveAllAsync_WithKeysContainingEmpty_ThrowsArgumentException();
-    }
-
-    [Fact]
-    public override Task RemoveAllAsync_WithKeysContainingNull_ThrowsArgumentNullException()
-    {
-        return base.RemoveAllAsync_WithKeysContainingNull_ThrowsArgumentNullException();
+        return base.RemoveAllAsync_WithInvalidKeys_ValidatesCorrectly();
     }
 
     [Fact]
@@ -624,79 +244,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveAllAsync_WithMixedCaseKeys_RemovesOnlyExactMatches()
-    {
-        return base.RemoveAllAsync_WithMixedCaseKeys_RemovesOnlyExactMatches();
-    }
-
-    [Fact]
-    public override Task RemoveAllAsync_WithNullKeys_RemovesAllValues()
-    {
-        return base.RemoveAllAsync_WithNullKeys_RemovesAllValues();
-    }
-
-    [Fact]
     public override Task RemoveAllAsync_WithScopedCache_AffectsOnlyScopedKeys()
     {
         return base.RemoveAllAsync_WithScopedCache_AffectsOnlyScopedKeys();
     }
 
-    [Theory]
-    [InlineData("remove-all-keys:")]
-    [InlineData("   ")]
-    public override Task RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys(string keyPrefix)
+    [Fact]
+    public override Task RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys()
     {
-        return base.RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys(keyPrefix);
+        return base.RemoveAllAsync_WithSpecificKeyCollection_RemovesOnlySpecifiedKeys();
     }
 
     [Fact]
-    public override Task RemoveAsync_AfterSetAndGet_RemovesCorrectly()
+    public override Task RemoveAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.RemoveAsync_AfterSetAndGet_RemovesCorrectly();
+        return base.RemoveAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task RemoveAsync_MultipleTimes_Succeeds()
+    public override Task RemoveAsync_WithNonExistentKey_ReturnsFalse()
     {
-        return base.RemoveAsync_MultipleTimes_Succeeds();
+        return base.RemoveAsync_WithNonExistentKey_ReturnsFalse();
     }
 
     [Fact]
-    public override Task RemoveAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task RemoveAsync_WithExpiredKey_KeyDoesNotExist()
     {
-        return base.RemoveAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("session:active")]
-    [InlineData("   ")]
-    public override Task RemoveAsync_WithExistingKey_RemovesSuccessfully(string cacheKey)
-    {
-        return base.RemoveAsync_WithExistingKey_RemovesSuccessfully(cacheKey);
-    }
-
-    [Fact]
-    public override Task RemoveAsync_WithExpiredKey_Succeeds()
-    {
-        return base.RemoveAsync_WithExpiredKey_Succeeds();
-    }
-
-    [Fact]
-    public override Task RemoveAsync_WithNonExistentKey_Succeeds()
-    {
-        return base.RemoveAsync_WithNonExistentKey_Succeeds();
-    }
-
-    [Fact]
-    public override Task RemoveAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.RemoveAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task RemoveAsync_WithNullValue_RemovesSuccessfully()
-    {
-        return base.RemoveAsync_WithNullValue_RemovesSuccessfully();
+        return base.RemoveAsync_WithExpiredKey_KeyDoesNotExist();
     }
 
     [Fact]
@@ -706,15 +280,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveAsync_WithSpecificCase_RemovesOnlyMatchingKey()
+    public override Task RemoveAsync_WithValidKey_RemovesSuccessfully()
     {
-        return base.RemoveAsync_WithSpecificCase_RemovesOnlyMatchingKey();
-    }
-
-    [Fact]
-    public override Task RemoveByPrefixAsync_AsteriskPrefixWithScopedCache_TreatedAsLiteral()
-    {
-        return base.RemoveByPrefixAsync_AsteriskPrefixWithScopedCache_TreatedAsLiteral();
+        return base.RemoveAsync_WithValidKey_RemovesSuccessfully();
     }
 
     [Theory]
@@ -742,27 +310,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveByPrefixAsync_WithCaseSensitivePrefix_RemovesOnlyMatchingCase()
+    public override Task RemoveByPrefixAsync_WithAsteriskPrefix_TreatedAsLiteral()
     {
-        return base.RemoveByPrefixAsync_WithCaseSensitivePrefix_RemovesOnlyMatchingCase();
-    }
-
-    [Fact]
-    public override Task RemoveByPrefixAsync_WithDifferentCasedScopes_RemovesOnlyMatchingScope()
-    {
-        return base.RemoveByPrefixAsync_WithDifferentCasedScopes_RemovesOnlyMatchingScope();
-    }
-
-    [Fact]
-    public override Task RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral()
-    {
-        return base.RemoveByPrefixAsync_WithDoubleAsteriskPrefix_TreatsAsLiteral();
-    }
-
-    [Fact]
-    public override Task RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys()
-    {
-        return base.RemoveByPrefixAsync_WithEmptyPrefix_RemovesAllKeys();
+        return base.RemoveByPrefixAsync_WithAsteriskPrefix_TreatedAsLiteral();
     }
 
     [Theory]
@@ -770,6 +320,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral(string lineEndingPrefix)
     {
         return base.RemoveByPrefixAsync_WithLineEndingPrefix_TreatsAsLiteral(lineEndingPrefix);
+    }
+
+    [Fact]
+    public override Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyMatchingKeys()
+    {
+        return base.RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyMatchingKeys();
     }
 
     [Theory]
@@ -781,15 +337,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys()
+    public override Task RemoveByPrefixAsync_WithNullOrEmptyPrefix_RemovesAllKeys()
     {
-        return base.RemoveByPrefixAsync_WithNonMatchingPrefix_RemovesZeroKeys();
-    }
-
-    [Fact]
-    public override Task RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys()
-    {
-        return base.RemoveByPrefixAsync_WithNullPrefix_RemovesAllKeys();
+        return base.RemoveByPrefixAsync_WithNullOrEmptyPrefix_RemovesAllKeys();
     }
 
     [Theory]
@@ -813,14 +363,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData("blah:")]
-    [InlineData("   ")]
-    public override Task RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys(string prefix)
-    {
-        return base.RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyPrefixedKeys(prefix);
-    }
-
-    [Theory]
     [MemberData(nameof(GetWildcardPatterns))]
     public override Task RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(string pattern)
     {
@@ -828,17 +370,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
+    public override Task RemoveIfEqualAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.RemoveIfEqualAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
-    [Theory]
-    [InlineData("workflow:state")]
-    [InlineData("   ")]
-    public override Task RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves(string cacheKey)
+    [Fact]
+    public override Task RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves()
     {
-        return base.RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves(cacheKey);
+        return base.RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves();
     }
 
     [Fact]
@@ -848,35 +388,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task RemoveIfEqualAsync_WithNullKey_ThrowsArgumentNullException()
+    public override Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
     {
-        return base.RemoveIfEqualAsync_WithNullKey_ThrowsArgumentNullException();
+        return base.ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue();
     }
 
     [Fact]
-    public override Task ReplaceAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys()
+    public override Task ReplaceAsync_WithInvalidKey_ThrowsException()
     {
-        return base.ReplaceAsync_WithDifferentCasedKeys_TreatsAsDifferentKeys();
-    }
-
-    [Fact]
-    public override Task ReplaceAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.ReplaceAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Theory]
-    [InlineData("settings:theme")]
-    [InlineData("   ")]
-    public override Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue(string cacheKey)
-    {
-        return base.ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue(cacheKey);
-    }
-
-    [Fact]
-    public override Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
-    {
-        return base.ReplaceAsync_WithExpiration_SetsExpirationCorrectly();
+        return base.ReplaceAsync_WithInvalidKey_ThrowsException();
     }
 
     [Fact]
@@ -886,47 +406,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ReplaceAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.ReplaceAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task ReplaceIfEqualAsync_WithDifferentCasedKeys_ReplacesOnlyExactMatch()
-    {
-        return base.ReplaceIfEqualAsync_WithDifferentCasedKeys_ReplacesOnlyExactMatch();
-    }
-
-    [Fact]
-    public override Task ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.ReplaceIfEqualAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Fact]
     public override Task ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
-    [Theory]
-    [InlineData("workflow:state")]
-    [InlineData("   ")]
-    public override Task ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue(string cacheKey)
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue(cacheKey);
+        return base.ReplaceIfEqualAsync_WithInvalidKey_ThrowsArgumentException();
+    }
+
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue()
+    {
+        return base.ReplaceIfEqualAsync_WithMatchingOldValue_ReturnsTrueAndReplacesValue();
     }
 
     [Fact]
     public override Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
-    }
-
-    [Fact]
-    public override Task ReplaceIfEqualAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.ReplaceIfEqualAsync_WithNullKey_ThrowsArgumentNullException();
     }
 
     [Fact]
@@ -942,15 +442,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAllAsync_WithDateTimeMinValue_DoesNotAddKeys()
+    public override Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
     {
-        return base.SetAllAsync_WithDateTimeMinValue_DoesNotAddKeys();
+        return base.SetAllAsync_WithExpiration_KeysExpireCorrectly();
     }
 
     [Fact]
-    public override Task SetAllAsync_WithDifferentCasedKeys_CreatesDistinctEntries()
+    public override Task SetAllAsync_WithInvalidItems_ValidatesCorrectly()
     {
-        return base.SetAllAsync_WithDifferentCasedKeys_CreatesDistinctEntries();
+        return base.SetAllAsync_WithInvalidItems_ValidatesCorrectly();
     }
 
     [Fact]
@@ -959,88 +459,24 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.SetAllAsync_WithLargeNumberOfKeys_MeasuresThroughput();
     }
 
-    [Fact]
-    public override Task SetAllAsync_WithEmptyItems_ReturnsTrue()
-    {
-        return base.SetAllAsync_WithEmptyItems_ReturnsTrue();
-    }
-
-    [Theory]
-    [InlineData("test")]
-    [InlineData("   ")]
-    public override Task SetAllAsync_WithExpiration_KeysExpireCorrectly(string cacheKey)
-    {
-        return base.SetAllAsync_WithExpiration_KeysExpireCorrectly(cacheKey);
-    }
-
-    [Fact]
-    public override Task SetAllAsync_WithItemsContainingEmptyKey_ThrowsArgumentException()
-    {
-        return base.SetAllAsync_WithItemsContainingEmptyKey_ThrowsArgumentException();
-    }
-
-    [Fact]
-    public override Task SetAllAsync_WithNullItems_ThrowsArgumentNullException()
-    {
-        return base.SetAllAsync_WithNullItems_ThrowsArgumentNullException();
-    }
-
     [Theory]
     [InlineData(1000)]
     [InlineData(10000)]
-    public override Task SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(int count)
+    public override Task SetAllExpirationAsync_WithLargeNumberOfKeys_SetsAllExpirations(int count)
     {
-        return base.SetAllExpiration_WithLargeNumberOfKeys_SetsAllExpirations(count);
+        return base.SetAllExpirationAsync_WithLargeNumberOfKeys_SetsAllExpirations(count);
     }
 
     [Fact]
-    public override Task SetAllExpiration_WithMultipleKeys_SetsExpirationForAll()
+    public override Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
     {
-        return base.SetAllExpiration_WithMultipleKeys_SetsExpirationForAll();
+        return base.SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly();
     }
 
     [Fact]
-    public override Task SetAllExpiration_WithNonExistentKeys_HandlesGracefully()
+    public override Task SetAsync_WithComplexObject_StoresCorrectly()
     {
-        return base.SetAllExpiration_WithNonExistentKeys_HandlesGracefully();
-    }
-
-    [Fact]
-    public override Task SetAllExpiration_WithNullValues_RemovesExpiration()
-    {
-        return base.SetAllExpiration_WithNullValues_RemovesExpiration();
-    }
-
-    [Theory]
-    [InlineData("user:profile")]
-    [InlineData("   ")]
-    public override Task SetAsync_WithComplexObject_StoresCorrectly(string cacheKey)
-    {
-        return base.SetAsync_WithComplexObject_StoresCorrectly(cacheKey);
-    }
-
-    [Fact]
-    public override Task SetAsync_WithDifferentCasedKeys_CreatesDistinctEntries()
-    {
-        return base.SetAsync_WithDifferentCasedKeys_CreatesDistinctEntries();
-    }
-
-    [Fact]
-    public override Task SetAsync_WithDifferentCasedScopes_MaintainsDistinctNamespaces()
-    {
-        return base.SetAsync_WithDifferentCasedScopes_MaintainsDistinctNamespaces();
-    }
-
-    [Fact]
-    public override Task SetAsync_WithDifferentScopes_IsolatesKeys()
-    {
-        return base.SetAsync_WithDifferentScopes_IsolatesKeys();
-    }
-
-    [Fact]
-    public override Task SetAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.SetAsync_WithEmptyKey_ThrowsArgumentException();
+        return base.SetAsync_WithComplexObject_StoresCorrectly();
     }
 
     [Fact]
@@ -1050,9 +486,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAsync_WithLargeNumber_StoresCorrectly()
+    public override Task SetAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.SetAsync_WithLargeNumber_StoresCorrectly();
+        return base.SetAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
@@ -1062,27 +498,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAsync_WithNestedScopes_PreservesHierarchy()
+    public override Task SetAsync_WithNullValue_StoresAsNullValue()
     {
-        return base.SetAsync_WithNestedScopes_PreservesHierarchy();
+        return base.SetAsync_WithNullValue_StoresAsNullValue();
     }
 
     [Fact]
-    public override Task SetAsync_WithNullKey_ThrowsArgumentNullException()
+    public override Task SetAsync_WithScopedCaches_IsolatesKeys()
     {
-        return base.SetAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task SetAsync_WithNullReferenceType_StoresAsNullValue()
-    {
-        return base.SetAsync_WithNullReferenceType_StoresAsNullValue();
-    }
-
-    [Fact]
-    public override Task SetAsync_WithNullValueType_StoresAsNullValue()
-    {
-        return base.SetAsync_WithNullValueType_StoresAsNullValue();
+        return base.SetAsync_WithScopedCaches_IsolatesKeys();
     }
 
     [Fact]
@@ -1091,12 +515,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.SetAsync_WithShortExpiration_ExpiresCorrectly();
     }
 
-    [Theory]
-    [InlineData("token:refresh")]
-    [InlineData("   ")]
-    public override Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly(string cacheKey)
+    [Fact]
+    public override Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
     {
-        return base.SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly(cacheKey);
+        return base.SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly();
     }
 
     [Fact]
@@ -1106,51 +528,21 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithCurrentTime_ExpiresImmediately()
-    {
-        return base.SetExpirationAsync_WithCurrentTime_ExpiresImmediately();
-    }
-
-    [Fact]
     public override Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
     {
         return base.SetExpirationAsync_WithDateTimeMaxValue_NeverExpires();
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithDateTimeMinValue_ExpiresImmediately()
+    public override Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
-        return base.SetExpirationAsync_WithDateTimeMinValue_ExpiresImmediately();
+        return base.SetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithDifferentCasedKeys_SetsOnlyExactMatch()
+    public override Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
     {
-        return base.SetExpirationAsync_WithDifferentCasedKeys_SetsOnlyExactMatch();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        return base.SetExpirationAsync_WithEmptyKey_ThrowsArgumentException();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        return base.SetExpirationAsync_WithNullKey_ThrowsArgumentNullException();
-    }
-
-    [Fact]
-    public override Task SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower()
-    {
-        return base.SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower();
-    }
-
-    [Fact]
-    public override Task SetIfHigherAsync_WithDateTime_InitializesWhenKeyNotExists()
-    {
-        return base.SetIfHigherAsync_WithDateTime_InitializesWhenKeyNotExists();
+        return base.SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately();
     }
 
     [Fact]
@@ -1160,21 +552,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher()
+    public override Task SetIfHigherAsync_WithLargeNumbers()
     {
-        return base.SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher();
-    }
-
-    [Fact]
-    public override Task SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher()
-    {
-        return base.SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher();
-    }
-
-    [Fact]
-    public override Task SetIfLowerAsync_WithDateTime_InitializesWhenKeyNotExists()
-    {
-        return base.SetIfLowerAsync_WithDateTime_InitializesWhenKeyNotExists();
+        return base.SetIfHigherAsync_WithLargeNumbers();
     }
 
     [Fact]
@@ -1184,9 +564,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower()
+    public override Task SetIfLowerAsync_WithLargeNumbers()
     {
-        return base.SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower();
+        return base.SetIfLowerAsync_WithLargeNumbers();
     }
 
     [Fact]

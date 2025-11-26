@@ -6,6 +6,41 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
+    public virtual async Task RemoveIfEqualAsync_WithInvalidKey_ThrowsArgumentException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.RemoveIfEqualAsync(null!, "value"));
+
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.RemoveIfEqualAsync(String.Empty, "value"));
+        }
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            Assert.True(await cache.AddAsync("session:active", "123"));
+
+            Assert.True(await cache.RemoveIfEqualAsync("session:active", "123"));
+            var result = await cache.GetAsync<string>("session:active");
+            Assert.NotNull(result);
+            Assert.False(result.HasValue);
+        }
+    }
+
     public virtual async Task RemoveIfEqualAsync_WithMismatchedValue_ReturnsFalseAndDoesNotRemove()
     {
         var cache = GetCacheClient();
@@ -27,50 +62,4 @@ public abstract partial class CacheClientTestsBase
             Assert.Equal("123", result.Value);
         }
     }
-
-    public virtual async Task RemoveIfEqualAsync_WithMatchingValue_ReturnsTrueAndRemoves(string cacheKey)
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.True(await cache.AddAsync(cacheKey, "123"));
-
-            Assert.True(await cache.RemoveIfEqualAsync(cacheKey, "123"));
-            var result = await cache.GetAsync<string>(cacheKey);
-            Assert.NotNull(result);
-            Assert.False(result.HasValue);
-        }
-    }
-
-    public virtual async Task RemoveIfEqualAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.RemoveIfEqualAsync(null, "value"));
-        }
-    }
-
-    public virtual async Task RemoveIfEqualAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentException>(async () =>
-                await cache.RemoveIfEqualAsync(String.Empty, "value"));
-        }
-    }
-
 }

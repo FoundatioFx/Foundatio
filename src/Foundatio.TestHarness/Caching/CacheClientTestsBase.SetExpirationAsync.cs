@@ -7,41 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task SetExpirationAsync_WithDateTimeMinValue_ExpiresImmediately()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // MinValue should expire items immediately
-            Assert.False(await cache.SetAsync("test", 1, DateTime.MinValue));
-            Assert.False(await cache.ExistsAsync("test"));
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // MaxValue should never expire
-            Assert.True(await cache.SetAsync("test", 1, DateTime.MaxValue));
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            var actualExpiration = await cache.GetExpirationAsync("test");
-            Assert.NotNull(actualExpiration);
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_WithCurrentTime_ExpiresImmediately()
+    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -52,25 +18,7 @@ public abstract partial class CacheClientTestsBase
             await cache.RemoveAllAsync();
 
             var utcNow = DateTime.UtcNow;
-
-            // Expiration time set to now should expire immediately
-            Assert.False(await cache.SetAsync("test", 1, utcNow));
-            Assert.False(await cache.ExistsAsync("test"));
-            Assert.Null(await cache.GetExpirationAsync("test"));
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly(string cacheKey)
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var utcNow = DateTime.UtcNow;
+            const string cacheKey = "token:refresh";
 
             // Set with no expiration
             Assert.True(await cache.SetAsync(cacheKey, 1));
@@ -97,17 +45,35 @@ public abstract partial class CacheClientTestsBase
             await cache.RemoveAllAsync();
 
             // Set with future expiration
-            Assert.True(await cache.SetAsync("test", 1, DateTime.UtcNow.AddHours(1)));
-            Assert.True(await cache.ExistsAsync("test"));
+            Assert.True(await cache.SetAsync("expiration-test", 1, DateTime.UtcNow.AddHours(1)));
+            Assert.True(await cache.ExistsAsync("expiration-test"));
 
             // Change expiration to MinValue should remove the key
-            await cache.SetExpirationAsync("test", DateTime.MinValue);
-            Assert.Null(await cache.GetExpirationAsync("test"));
-            Assert.False(await cache.ExistsAsync("test"));
+            await cache.SetExpirationAsync("expiration-test", DateTime.MinValue);
+            Assert.Null(await cache.GetExpirationAsync("expiration-test"));
+            Assert.False(await cache.ExistsAsync("expiration-test"));
         }
     }
 
-    public virtual async Task SetExpirationAsync_WithNullKey_ThrowsArgumentNullException()
+    public virtual async Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // MaxValue should never expire
+            Assert.True(await cache.SetAsync("max-expiration", 1, DateTime.MaxValue));
+            Assert.Equal(1, (await cache.GetAsync<int>("max-expiration")).Value);
+            var actualExpiration = await cache.GetExpirationAsync("max-expiration");
+            Assert.NotNull(actualExpiration);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -117,23 +83,13 @@ public abstract partial class CacheClientTestsBase
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.SetExpirationAsync(null, TimeSpan.FromMinutes(1)));
-        }
-    }
 
-    public virtual async Task SetExpirationAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.SetExpirationAsync(String.Empty, TimeSpan.FromMinutes(1)));
         }
     }
 
-    public virtual async Task SetExpirationAsync_WithDifferentCasedKeys_SetsOnlyExactMatch()
+    public virtual async Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -141,23 +97,19 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("apiKey", "key1");
-            await cache.SetAsync("ApiKey", "key2");
-            await cache.SetAsync("APIKEY", "key3");
+            await cache.RemoveAllAsync();
 
-            var newExpiration = DateTime.UtcNow.AddMinutes(5);
-            await cache.SetExpirationAsync("ApiKey", newExpiration);
+            var utcNow = DateTime.UtcNow;
 
-            var lowerExp = await cache.GetExpirationAsync("apiKey");
-            var titleExp = await cache.GetExpirationAsync("ApiKey");
-            var upperExp = await cache.GetExpirationAsync("APIKEY");
+            // MinValue should return false and not add the key
+            Assert.False(await cache.SetAsync("min-value-key", 1, DateTime.MinValue));
+            Assert.False(await cache.ExistsAsync("min-value-key"));
 
-            Assert.Null(lowerExp);
-            Assert.NotNull(titleExp);
-            Assert.Null(upperExp);
-
-            var actualExpiration = DateTime.UtcNow.Add(titleExp.Value);
-            Assert.True((actualExpiration - newExpiration).TotalSeconds < 2);
+            // Current time (captured earlier) should return false and not add the key
+            // IsExpired uses < comparison, so by the time SetAsync runs, utcNow is in the past
+            Assert.False(await cache.SetAsync("current-time-key", 1, utcNow));
+            Assert.False(await cache.ExistsAsync("current-time-key"));
+            Assert.Null(await cache.GetExpirationAsync("current-time-key"));
         }
     }
 }

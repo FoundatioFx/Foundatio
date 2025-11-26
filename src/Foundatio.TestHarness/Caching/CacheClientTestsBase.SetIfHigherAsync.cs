@@ -8,28 +8,6 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task SetIfHigherAsync_WithLargeNumbers_UpdatesWhenHigher()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            double value = 2 * 1000 * 1000 * 1000;
-            double lowerValue = value - 1000;
-            await cache.SetAsync("test", lowerValue);
-
-            Assert.Equal(1000, await cache.SetIfHigherAsync("test", value));
-            Assert.Equal(value, await cache.GetAsync<double>("test", 0));
-
-            Assert.Equal(0, await cache.SetIfHigherAsync("test", lowerValue));
-            Assert.Equal(value, await cache.GetAsync<double>("test", 0));
-        }
-    }
-
     public virtual async Task SetIfHigherAsync_WithDateTime_UpdatesWhenHigher()
     {
         var cache = GetCacheClient();
@@ -40,20 +18,30 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            var baseTime = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long baseUnixTime = baseTime.ToUnixTimeMilliseconds();
 
-            var higherValue = value + TimeSpan.FromHours(1);
-            long higherUnixTimeValue = higherValue.ToUnixTimeMilliseconds();
+            // Initializes when key doesn't exist
+            Assert.Equal(baseUnixTime, await cache.SetIfHigherAsync("set-if-higher-datetime", baseTime));
+            Assert.Equal(baseUnixTime, await cache.GetAsync<long>("set-if-higher-datetime", 0));
+            Assert.Equal(baseTime, await cache.GetUnixTimeMillisecondsAsync("set-if-higher-datetime"));
 
+            // Updates when higher
+            var higherTime = baseTime + TimeSpan.FromHours(1);
+            long higherUnixTime = higherTime.ToUnixTimeMilliseconds();
             Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds,
-                await cache.SetIfHigherAsync("test", higherValue));
-            Assert.Equal(higherUnixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(higherValue, await cache.GetUnixTimeMillisecondsAsync("test"));
+                await cache.SetIfHigherAsync("set-if-higher-datetime", higherTime));
+            Assert.Equal(higherUnixTime, await cache.GetAsync<long>("set-if-higher-datetime", 0));
+            Assert.Equal(higherTime, await cache.GetUnixTimeMillisecondsAsync("set-if-higher-datetime"));
+
+            // Does not update when lower
+            Assert.Equal(0, await cache.SetIfHigherAsync("set-if-higher-datetime", baseTime));
+            Assert.Equal(higherUnixTime, await cache.GetAsync<long>("set-if-higher-datetime", 0));
+            Assert.Equal(higherTime, await cache.GetUnixTimeMillisecondsAsync("set-if-higher-datetime"));
         }
     }
 
-    public virtual async Task SetIfHigherAsync_WithDateTime_DoesNotUpdateWhenLower()
+    public virtual async Task SetIfHigherAsync_WithLargeNumbers()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -63,32 +51,16 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            long unixTimeValue = value.ToUnixTimeMilliseconds();
-            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            double largeValue = 2 * 1000 * 1000 * 1000;
+            double lowerValue = largeValue - 1000;
 
-            Assert.Equal(0, await cache.SetIfHigherAsync("test", value.AddHours(-1)));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-        }
-    }
+            await cache.SetAsync("set-if-higher-large", lowerValue);
 
-    public virtual async Task SetIfHigherAsync_WithDateTime_InitializesWhenKeyNotExists()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            Assert.Equal(1000, await cache.SetIfHigherAsync("set-if-higher-large", largeValue));
+            Assert.Equal(largeValue, await cache.GetAsync<double>("set-if-higher-large", 0));
 
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            long unixTimeValue = value.ToUnixTimeMilliseconds();
-
-            Assert.Equal(unixTimeValue, await cache.SetIfHigherAsync("test", value));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+            Assert.Equal(0, await cache.SetIfHigherAsync("set-if-higher-large", lowerValue));
+            Assert.Equal(largeValue, await cache.GetAsync<double>("set-if-higher-large", 0));
         }
     }
 }

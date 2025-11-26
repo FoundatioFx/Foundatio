@@ -9,7 +9,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task GetListAsync_WithNullKey_ThrowsArgumentNullException()
+    public virtual async Task GetListAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -18,11 +18,15 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<ICollection<int>>(null));
+            const string key = "list:validation";
+
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<int>(null!));
+            await Assert.ThrowsAsync<ArgumentException>(() => cache.GetListAsync<int>(String.Empty));
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>(key, 0, 5));
         }
     }
 
-    public virtual async Task GetListAsync_WithPaging_ReturnsCorrectPageSize(string cacheKey)
+    public virtual async Task GetListAsync_WithPaging_ReturnsCorrectResults()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -31,106 +35,41 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-            await cache.ListAddAsync(cacheKey, values, TimeSpan.FromMinutes(1));
-
-            var pagedResult = await cache.GetListAsync<int>(cacheKey, 1, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Equal(5, pagedResult.Value.Count);
-        }
-    }
-
-    public virtual async Task GetListAsync_WithMultiplePages_ReturnsAllItems()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-            const string key = "list:paging:multiple";
+            const string key = "list:paging";
 
             int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
             await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
 
-            var actualResults = new HashSet<int>(values.Length);
+            // Verify first page returns correct page size
+            var firstPage = await cache.GetListAsync<int>(key, 1, 5);
+            Assert.NotNull(firstPage);
+            Assert.Equal(5, firstPage.Value.Count);
+            var firstPageItems = new HashSet<int>(firstPage.Value);
 
-            for (int page = 1; page < values.Length / 5 + 1; page++)
+            // Verify all items can be retrieved across multiple pages
+            var allItems = new HashSet<int>(values.Length);
+            for (int page = 1; page <= values.Length / 5; page++)
             {
                 var pagedResult = await cache.GetListAsync<int>(key, page, 5);
                 Assert.NotNull(pagedResult);
                 Assert.Equal(5, pagedResult.Value.Count);
-                actualResults.AddRange(pagedResult.Value);
+                allItems.AddRange(pagedResult.Value);
             }
+            Assert.Equal(values.Length, allItems.Count);
 
-            Assert.Equal(values.Length, actualResults.Count);
-        }
-    }
+            // Verify page beyond end returns empty collection
+            var beyondEnd = await cache.GetListAsync<int>(key, 10, 5);
+            Assert.NotNull(beyondEnd);
+            Assert.Empty(beyondEnd.Value);
 
-    public virtual async Task GetListAsync_WithNewItemsAdded_ReturnsNewItemsLast()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-            const string key = "list:paging:newitems";
-
-            int[] values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
-
-            var firstPageResults = new HashSet<int>(5);
-            var firstResult = await cache.GetListAsync<int>(key, 1, 5);
-            firstPageResults.AddRange(firstResult.Value);
-
-            await cache.ListAddAsync(key, [21, 22], TimeSpan.FromMinutes(2));
+            // Verify new items are added at the end and first page remains stable
+            await cache.ListAddAsync(key, [21, 22], TimeSpan.FromMinutes(1));
             var lastPageResult = await cache.GetListAsync<int>(key, 5, 5);
             Assert.NotNull(lastPageResult);
             Assert.Equal(2, lastPageResult.Value.Count);
 
             var firstPageAgain = await cache.GetListAsync<int>(key, 1, 5);
-            Assert.Equal(firstPageResults, firstPageAgain.Value.ToArray());
-        }
-    }
-
-    public virtual async Task GetListAsync_WithInvalidPageNumber_ThrowsArgumentOutOfRangeException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-            const string key = "list:paging:invalid";
-
-            int[] values = [1, 2, 3, 4, 5];
-            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
-
-            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>(key, 0, 5));
-        }
-    }
-
-    public virtual async Task GetListAsync_WithPageBeyondEnd_ReturnsEmptyCollection()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-            const string key = "list:paging:beyond";
-
-            int[] values = [1, 2, 3, 4, 5];
-            await cache.ListAddAsync(key, values, TimeSpan.FromMinutes(1));
-
-            var pagedResult = await cache.GetListAsync<int>(key, 10, 5);
-            Assert.NotNull(pagedResult);
-            Assert.Empty(pagedResult.Value);
+            Assert.Equal(firstPageItems, firstPageAgain.Value.ToHashSet());
         }
     }
 
@@ -143,7 +82,7 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:expiration:get";
+            const string key = "list:expiration";
 
             Assert.Equal(1, await cache.ListAddAsync(key, [1], TimeSpan.FromMilliseconds(100)));
 
@@ -160,17 +99,4 @@ public abstract partial class CacheClientTestsBase
             Assert.False(await cache.ExistsAsync(key));
         }
     }
-
-    public virtual async Task GetListAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetListAsync<string>(String.Empty));
-        }
-    }
-
 }

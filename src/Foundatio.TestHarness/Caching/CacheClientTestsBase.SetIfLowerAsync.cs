@@ -8,28 +8,6 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task SetIfLowerAsync_WithLargeNumbers_UpdatesWhenLower()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            double value = 2 * 1000 * 1000 * 1000;
-            await cache.SetAsync("test", value);
-
-            double lowerValue = value - 1000;
-            Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue));
-            Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
-
-            Assert.Equal(0, await cache.SetIfLowerAsync("test", value));
-            Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
-        }
-    }
-
     public virtual async Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         var cache = GetCacheClient();
@@ -40,19 +18,30 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            var baseTime = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
+            long baseUnixTime = baseTime.ToUnixTimeMilliseconds();
 
-            var lowerValue = value - TimeSpan.FromHours(1);
-            long lowerUnixTimeValue = lowerValue.ToUnixTimeMilliseconds();
+            // Initializes when key doesn't exist
+            Assert.Equal(baseUnixTime, await cache.SetIfLowerAsync("set-if-lower-datetime", baseTime));
+            Assert.Equal(baseUnixTime, await cache.GetAsync<long>("set-if-lower-datetime", 0));
+            Assert.Equal(baseTime, await cache.GetUnixTimeMillisecondsAsync("set-if-lower-datetime"));
 
+            // Updates when lower
+            var lowerTime = baseTime - TimeSpan.FromHours(1);
+            long lowerUnixTime = lowerTime.ToUnixTimeMilliseconds();
             Assert.Equal((long)TimeSpan.FromHours(1).TotalMilliseconds,
-                await cache.SetIfLowerAsync("test", lowerValue));
-            Assert.Equal(lowerUnixTimeValue, await cache.GetAsync<long>("test", 0));
+                await cache.SetIfLowerAsync("set-if-lower-datetime", lowerTime));
+            Assert.Equal(lowerUnixTime, await cache.GetAsync<long>("set-if-lower-datetime", 0));
+            Assert.Equal(lowerTime, await cache.GetUnixTimeMillisecondsAsync("set-if-lower-datetime"));
+
+            // Does not update when higher
+            Assert.Equal(0, await cache.SetIfLowerAsync("set-if-lower-datetime", baseTime));
+            Assert.Equal(lowerUnixTime, await cache.GetAsync<long>("set-if-lower-datetime", 0));
+            Assert.Equal(lowerTime, await cache.GetUnixTimeMillisecondsAsync("set-if-lower-datetime"));
         }
     }
 
-    public virtual async Task SetIfLowerAsync_WithDateTime_DoesNotUpdateWhenHigher()
+    public virtual async Task SetIfLowerAsync_WithLargeNumbers()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -62,32 +51,16 @@ public abstract partial class CacheClientTestsBase
         {
             await cache.RemoveAllAsync();
 
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            long unixTimeValue = value.ToUnixTimeMilliseconds();
-            await cache.SetUnixTimeMillisecondsAsync("test", value);
+            double largeValue = 2 * 1000 * 1000 * 1000;
+            double lowerValue = largeValue - 1000;
 
-            Assert.Equal(0, await cache.SetIfLowerAsync("test", value.AddHours(1)));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
-        }
-    }
+            await cache.SetAsync("set-if-lower-large", largeValue);
 
-    public virtual async Task SetIfLowerAsync_WithDateTime_InitializesWhenKeyNotExists()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            Assert.Equal(1000, await cache.SetIfLowerAsync("set-if-lower-large", lowerValue));
+            Assert.Equal(lowerValue, await cache.GetAsync<double>("set-if-lower-large", 0));
 
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            DateTime value = DateTime.UtcNow.Floor(TimeSpan.FromMilliseconds(1));
-            long unixTimeValue = value.ToUnixTimeMilliseconds();
-
-            Assert.Equal(unixTimeValue, await cache.SetIfLowerAsync("test", value));
-            Assert.Equal(unixTimeValue, await cache.GetAsync<long>("test", 0));
-            Assert.Equal(value, await cache.GetUnixTimeMillisecondsAsync("test"));
+            Assert.Equal(0, await cache.SetIfLowerAsync("set-if-lower-large", largeValue));
+            Assert.Equal(lowerValue, await cache.GetAsync<double>("set-if-lower-large", 0));
         }
     }
 }

@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task RemoveAsync_WithExistingKey_RemovesSuccessfully(string cacheKey)
+    public virtual async Task RemoveAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -15,18 +15,12 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.RemoveAllAsync();
-            await cache.SetAsync(cacheKey, "value");
-
-            Assert.True(await cache.RemoveAsync(cacheKey));
-            Assert.False(await cache.RemoveAsync(cacheKey));
-
-            var result = await cache.GetAsync<string>(cacheKey);
-            Assert.False(result.HasValue);
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(null));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync(String.Empty));
         }
     }
 
-    public virtual async Task RemoveAsync_WithNonExistentKey_Succeeds()
+    public virtual async Task RemoveAsync_WithNonExistentKey_ReturnsFalse()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -34,13 +28,12 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.RemoveAsync("nonexistent");
-
-            Assert.False(await cache.ExistsAsync("nonexistent"));
+            Assert.False(await cache.RemoveAsync("nonexistent-key"));
+            Assert.False(await cache.ExistsAsync("nonexistent-key"));
         }
     }
 
-    public virtual async Task RemoveAsync_WithNullValue_RemovesSuccessfully()
+    public virtual async Task RemoveAsync_WithExpiredKey_KeyDoesNotExist()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -48,29 +41,11 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("nullable", (string)null);
-            Assert.True(await cache.ExistsAsync("nullable"));
-
-            await cache.RemoveAsync("nullable");
-
-            Assert.False(await cache.ExistsAsync("nullable"));
-        }
-    }
-
-    public virtual async Task RemoveAsync_WithExpiredKey_Succeeds()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.SetAsync("test", "value", TimeSpan.FromMilliseconds(50));
+            await cache.SetAsync("session:expired", "value", TimeSpan.FromMilliseconds(50));
             await Task.Delay(100);
 
-            await cache.RemoveAsync("test");
-
-            Assert.False(await cache.ExistsAsync("test"));
+            Assert.False(await cache.RemoveAsync("session:expired"));
+            Assert.False(await cache.ExistsAsync("session:expired"));
         }
     }
 
@@ -85,17 +60,17 @@ public abstract partial class CacheClientTestsBase
             var scopedCache1 = new ScopedCacheClient(cache, "scope1");
             var scopedCache2 = new ScopedCacheClient(cache, "scope2");
 
-            await scopedCache1.SetAsync("test", 1);
-            await scopedCache2.SetAsync("test", 2);
+            await scopedCache1.SetAsync("session:active", 1);
+            await scopedCache2.SetAsync("session:active", 2);
 
-            await scopedCache1.RemoveAsync("test");
+            await scopedCache1.RemoveAsync("session:active");
 
-            Assert.False(await scopedCache1.ExistsAsync("test"));
-            Assert.True(await scopedCache2.ExistsAsync("test"));
+            Assert.False(await scopedCache1.ExistsAsync("session:active"));
+            Assert.True(await scopedCache2.ExistsAsync("session:active"));
         }
     }
 
-    public virtual async Task RemoveAsync_MultipleTimes_Succeeds()
+    public virtual async Task RemoveAsync_WithValidKey_RemovesSuccessfully()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -103,82 +78,27 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("test", "value");
+            await cache.RemoveAllAsync();
 
-            await cache.RemoveAsync("test");
-            await cache.RemoveAsync("test");
-            await cache.RemoveAsync("test");
+            // Test removing key with value
+            Assert.True(await cache.SetAsync("session:active", "value"));
+            Assert.True(await cache.ExistsAsync("session:active"));
 
-            Assert.False(await cache.ExistsAsync("test"));
-        }
-    }
+            Assert.True(await cache.RemoveAsync("session:active"));
+            Assert.False(await cache.ExistsAsync("session:active"));
+            Assert.False(await cache.RemoveAsync("session:active")); // Already removed
 
-    public virtual async Task RemoveAsync_AfterSetAndGet_RemovesCorrectly()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            // Test case sensitivity - only exact match should be removed
+            Assert.True(await cache.SetAsync("sessionId", "session1"));
+            Assert.True(await cache.SetAsync("SessionId", "session2"));
+            Assert.True(await cache.SetAsync("SESSIONID", "session3"));
 
-        using (cache)
-        {
-            await cache.SetAsync("test", "value");
-            var getValue = await cache.GetAsync<string>("test");
-            Assert.True(getValue.HasValue);
+            Assert.True(await cache.RemoveAsync("SessionId"));
+            Assert.False(await cache.RemoveAsync("SessionId")); // Already removed
 
-            await cache.RemoveAsync("test");
-
-            var result = await cache.GetAsync<string>("test");
-            Assert.False(result.HasValue);
-        }
-    }
-
-    public virtual async Task RemoveAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(null));
-        }
-    }
-
-    public virtual async Task RemoveAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync(String.Empty));
-        }
-    }
-
-    public virtual async Task RemoveAsync_WithSpecificCase_RemovesOnlyMatchingKey()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.SetAsync("sessionId", "session1");
-            await cache.SetAsync("SessionId", "session2");
-            await cache.SetAsync("SESSIONID", "session3");
-
-            await cache.RemoveAsync("SessionId");
-
-            var lower = await cache.GetAsync<string>("sessionId");
-            var title = await cache.GetAsync<string>("SessionId");
-            var upper = await cache.GetAsync<string>("SESSIONID");
-
-            Assert.True(lower.HasValue);
-            Assert.Equal("session1", lower.Value);
-            Assert.False(title.HasValue);
-            Assert.True(upper.HasValue);
-            Assert.Equal("session3", upper.Value);
+            Assert.True(await cache.ExistsAsync("sessionId"));
+            Assert.False(await cache.ExistsAsync("SessionId"));
+            Assert.True(await cache.ExistsAsync("SESSIONID"));
         }
     }
 }

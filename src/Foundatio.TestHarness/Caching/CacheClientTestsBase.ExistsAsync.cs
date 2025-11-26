@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task ExistsAsync_WithExistingKey_ReturnsTrue(string cacheKey)
+    public virtual async Task ExistsAsync()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -16,33 +16,21 @@ public abstract partial class CacheClientTestsBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            await cache.SetAsync(cacheKey, 123);
-            Assert.True(await cache.ExistsAsync(cacheKey));
-        }
-    }
 
-    public virtual async Task ExistsAsync_WithNonExistentKey_ReturnsFalse()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
+            // Non-existent key returns false
             Assert.False(await cache.ExistsAsync("nonexistent"));
-        }
-    }
 
-    public virtual async Task ExistsAsync_WithNullStoredValue_ReturnsTrue()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            // Existing key returns true
+            await cache.SetAsync("test", 123);
+            Assert.True(await cache.ExistsAsync("test"));
 
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
+            // Case-sensitivity check
+            await cache.SetAsync("orderId", "order123");
+            Assert.True(await cache.ExistsAsync("orderId"));
+            Assert.False(await cache.ExistsAsync("OrderId"));
+            Assert.False(await cache.ExistsAsync("ORDERID"));
 
+            // Null stored value still exists
             SimpleModel nullable = null;
             await cache.SetAsync("nullable", nullable);
             Assert.True(await cache.ExistsAsync("nullable"));
@@ -61,12 +49,12 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.SetAsync("test", 123, TimeSpan.FromMilliseconds(50));
+            await cache.SetAsync("test", "value", TimeSpan.FromMilliseconds(50));
+            Assert.True(await cache.ExistsAsync("test"));
+
             await Task.Delay(100);
 
-            bool exists = await cache.ExistsAsync("test");
-
-            Assert.False(exists);
+            Assert.False(await cache.ExistsAsync("test"));
         }
     }
 
@@ -90,44 +78,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task ExistsAsync_AfterKeyExpires_ReturnsFalse()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.SetAsync("test", "value", TimeSpan.FromMilliseconds(100));
-            Assert.True(await cache.ExistsAsync("test"));
-
-            await Task.Delay(150);
-
-            Assert.False(await cache.ExistsAsync("test"));
-        }
-    }
-
-    public virtual async Task ExistsAsync_WithDifferentCasedKeys_ChecksExactMatch()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.SetAsync("orderId", "order123");
-
-            bool lowerExists = await cache.ExistsAsync("orderId");
-            bool titleExists = await cache.ExistsAsync("OrderId");
-            bool upperExists = await cache.ExistsAsync("ORDERID");
-
-            Assert.True(lowerExists);
-            Assert.False(titleExists);
-            Assert.False(upperExists);
-        }
-    }
-
-    public virtual async Task ExistsAsync_WithNullKey_ThrowsArgumentNullException()
+    public virtual async Task ExistsAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -137,20 +88,9 @@ public abstract partial class CacheClientTestsBase
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.ExistsAsync(null));
-        }
-    }
 
-    public virtual async Task ExistsAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
             await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.ExistsAsync(String.Empty));
         }
     }
-
 }

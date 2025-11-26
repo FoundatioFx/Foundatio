@@ -8,93 +8,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task SetAsync_WithNullReferenceType_StoresAsNullValue()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            await cache.SetAsync<SimpleModel>("nullable", null);
-            var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
-            Assert.True(nullCacheValue.HasValue);
-            Assert.True(nullCacheValue.IsNull);
-            Assert.True(await cache.ExistsAsync("nullable"));
-        }
-    }
-
-    public virtual async Task SetAsync_WithNullValueType_StoresAsNullValue()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.False(await cache.ExistsAsync("nullableInt"));
-            await cache.SetAsync<int?>("nullableInt", null);
-            var nullIntCacheValue = await cache.GetAsync<int?>("nullableInt");
-            Assert.True(nullIntCacheValue.HasValue);
-            Assert.True(nullIntCacheValue.IsNull);
-            Assert.True(await cache.ExistsAsync("nullableInt"));
-        }
-    }
-
-    public virtual async Task SetAsync_WithDifferentScopes_IsolatesKeys()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
-            var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
-
-            await cache.SetAsync("test", 1);
-            await scopedCache1.SetAsync("test", 2);
-            await scopedCache2.SetAsync("test", 3);
-
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
-            Assert.Equal(3, (await scopedCache2.GetAsync<int>("test")).Value);
-        }
-    }
-
-    public virtual async Task SetAsync_WithNestedScopes_PreservesHierarchy()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
-            var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
-
-            await cache.SetAsync("test", 1);
-            await scopedCache1.SetAsync("test", 2);
-            await nestedScopedCache1.SetAsync("test", 3);
-
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
-            Assert.Equal(3, (await nestedScopedCache1.GetAsync<int>("test")).Value);
-
-            Assert.Equal(3, (await scopedCache1.GetAsync<int>("nested:test")).Value);
-            Assert.Equal(3, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
-        }
-    }
-
-    public virtual async Task SetAsync_WithComplexObject_StoresCorrectly(string cacheKey)
+    public virtual async Task SetAsync_WithComplexObject_StoresCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -107,36 +21,12 @@ public abstract partial class CacheClientTestsBase
             var dt = DateTimeOffset.Now;
             var value = new MyData { Type = "test", Date = dt, Message = "Hello World" };
 
-            await cache.SetAsync(cacheKey, value);
+            await cache.SetAsync("user:profile", value);
 
-            Assert.True(await cache.ExistsAsync(cacheKey));
-            var cachedValue = await cache.GetAsync<MyData>(cacheKey);
+            Assert.True(await cache.ExistsAsync("user:profile"));
+            var cachedValue = await cache.GetAsync<MyData>("user:profile");
             Assert.NotNull(cachedValue);
             Assert.True(cachedValue.HasValue);
-        }
-    }
-
-    public virtual async Task SetAsync_WithShortExpiration_ExpiresCorrectly()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var expiresAt = DateTime.UtcNow.AddMilliseconds(300);
-            bool success = await cache.SetAsync("test", 1, expiresAt);
-            Assert.True(success);
-            success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(100));
-            Assert.True(success);
-            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
-
-            await Task.Delay(500);
-            Assert.False((await cache.GetAsync<int>("test")).HasValue);
-            Assert.False((await cache.GetAsync<int>("test2")).HasValue);
         }
     }
 
@@ -208,7 +98,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAsync_WithLargeNumber_StoresCorrectly()
+    public virtual async Task SetAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -216,10 +106,8 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await cache.RemoveAllAsync();
-
-            double value = 2 * 1000 * 1000 * 1000;
-            Assert.True(await cache.SetAsync("test", value));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(null, "value"));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync(String.Empty, "value"));
         }
     }
 
@@ -258,7 +146,7 @@ public abstract partial class CacheClientTestsBase
         }
     }
 
-    public virtual async Task SetAsync_WithNullKey_ThrowsArgumentNullException()
+    public virtual async Task SetAsync_WithNullValue_StoresAsNullValue()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -266,11 +154,26 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(null, "value"));
+            await cache.RemoveAllAsync();
+
+            // Test null reference type
+            await cache.SetAsync<SimpleModel>("nullable", null);
+            var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
+            Assert.True(nullCacheValue.HasValue);
+            Assert.True(nullCacheValue.IsNull);
+            Assert.True(await cache.ExistsAsync("nullable"));
+
+            // Test null value type
+            Assert.False(await cache.ExistsAsync("nullableInt"));
+            await cache.SetAsync<int?>("nullableInt", null);
+            var nullIntCacheValue = await cache.GetAsync<int?>("nullableInt");
+            Assert.True(nullIntCacheValue.HasValue);
+            Assert.True(nullIntCacheValue.IsNull);
+            Assert.True(await cache.ExistsAsync("nullableInt"));
         }
     }
 
-    public virtual async Task SetAsync_WithEmptyKey_ThrowsArgumentException()
+    public virtual async Task SetAsync_WithScopedCaches_IsolatesKeys()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -278,40 +181,29 @@ public abstract partial class CacheClientTestsBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync(String.Empty, "value"));
-        }
-    }
+            await cache.RemoveAllAsync();
 
-    public virtual async Task SetAsync_WithDifferentCasedKeys_CreatesDistinctEntries()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            // Test different scopes isolate keys
+            var scopedCache1 = new ScopedCacheClient(cache, "scoped1");
+            var scopedCache2 = new ScopedCacheClient(cache, "scoped2");
 
-        using (cache)
-        {
-            await cache.SetAsync("productId", 100);
-            await cache.SetAsync("ProductId", 200);
-            await cache.SetAsync("PRODUCTID", 300);
+            await cache.SetAsync("test", 1);
+            await scopedCache1.SetAsync("test", 2);
+            await scopedCache2.SetAsync("test", 3);
 
-            var lower = await cache.GetAsync<int>("productId");
-            var title = await cache.GetAsync<int>("ProductId");
-            var upper = await cache.GetAsync<int>("PRODUCTID");
+            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            Assert.Equal(2, (await scopedCache1.GetAsync<int>("test")).Value);
+            Assert.Equal(3, (await scopedCache2.GetAsync<int>("test")).Value);
 
-            Assert.Equal(100, lower.Value);
-            Assert.Equal(200, title.Value);
-            Assert.Equal(300, upper.Value);
-        }
-    }
+            // Test nested scopes preserve hierarchy
+            var nestedScopedCache1 = new ScopedCacheClient(scopedCache1, "nested");
+            await nestedScopedCache1.SetAsync("test", 4);
 
-    public virtual async Task SetAsync_WithDifferentCasedScopes_MaintainsDistinctNamespaces()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
+            Assert.Equal(4, (await nestedScopedCache1.GetAsync<int>("test")).Value);
+            Assert.Equal(4, (await scopedCache1.GetAsync<int>("nested:test")).Value);
+            Assert.Equal(4, (await cache.GetAsync<int>("scoped1:nested:test")).Value);
 
-        using (cache)
-        {
+            // Test case-sensitive scopes maintain distinct namespaces
             var scopedLower = new ScopedCacheClient(cache, "tenant");
             var scopedTitle = new ScopedCacheClient(cache, "Tenant");
             var scopedUpper = new ScopedCacheClient(cache, "TENANT");
@@ -320,13 +212,42 @@ public abstract partial class CacheClientTestsBase
             await scopedTitle.SetAsync("dataId", "title");
             await scopedUpper.SetAsync("dataId", "upper");
 
-            var lowerVal = await scopedLower.GetAsync<string>("dataId");
-            var titleVal = await scopedTitle.GetAsync<string>("dataId");
-            var upperVal = await scopedUpper.GetAsync<string>("dataId");
+            Assert.Equal("lower", (await scopedLower.GetAsync<string>("dataId")).Value);
+            Assert.Equal("title", (await scopedTitle.GetAsync<string>("dataId")).Value);
+            Assert.Equal("upper", (await scopedUpper.GetAsync<string>("dataId")).Value);
 
-            Assert.Equal("lower", lowerVal.Value);
-            Assert.Equal("title", titleVal.Value);
-            Assert.Equal("upper", upperVal.Value);
+            // Test case-sensitive keys create distinct entries
+            await cache.SetAsync("productId", 100);
+            await cache.SetAsync("ProductId", 200);
+            await cache.SetAsync("PRODUCTID", 300);
+
+            Assert.Equal(100, (await cache.GetAsync<int>("productId")).Value);
+            Assert.Equal(200, (await cache.GetAsync<int>("ProductId")).Value);
+            Assert.Equal(300, (await cache.GetAsync<int>("PRODUCTID")).Value);
+        }
+    }
+
+    public virtual async Task SetAsync_WithShortExpiration_ExpiresCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var expiresAt = DateTime.UtcNow.AddMilliseconds(100);
+            bool success = await cache.SetAsync("test", 1, expiresAt);
+            Assert.True(success);
+            success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(50));
+            Assert.True(success);
+            Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
+            Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
+
+            await Task.Delay(200);
+            Assert.False((await cache.GetAsync<int>("test")).HasValue);
+            Assert.False((await cache.GetAsync<int>("test2")).HasValue);
         }
     }
 }

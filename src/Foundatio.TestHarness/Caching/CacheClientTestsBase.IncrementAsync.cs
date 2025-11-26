@@ -7,6 +7,64 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
+    public virtual async Task IncrementAsync_WithExpiration_ExpiresCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            Assert.True(await cache.SetAsync("increment-expiration-test", 0));
+
+            double newVal = await cache.IncrementAsync("increment-expiration-test", 1, TimeSpan.FromMilliseconds(50));
+            Assert.Equal(1, newVal);
+
+            await Task.Delay(100);
+            Assert.False((await cache.GetAsync<int>("increment-expiration-test")).HasValue);
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithInvalidKey_ThrowsException()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(String.Empty, 1));
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithKey_IncrementsCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Non-existent key with default amount initializes to 1 (also tests case-sensitivity)
+            Assert.Equal(1, await cache.IncrementAsync("counter"));
+            Assert.Equal(5, await cache.IncrementAsync("Counter", 5));
+            Assert.Equal(0, await cache.IncrementAsync("COUNTER", 0));
+
+            // Increment existing key
+            Assert.Equal(2, await cache.IncrementAsync("counter"));
+
+            // Verify all three case-sensitive keys have correct values
+            Assert.Equal(2, (await cache.GetAsync<long>("counter")).Value);
+            Assert.Equal(5, (await cache.GetAsync<long>("Counter")).Value);
+            Assert.Equal(0, (await cache.GetAsync<long>("COUNTER")).Value);
+        }
+    }
+
     public virtual async Task IncrementAsync_WithScopedCache_WorksWithinScope()
     {
         var cache = GetCacheClient();
@@ -32,122 +90,6 @@ public abstract partial class CacheClientTestsBase
 
             Assert.Equal(1, await scopedCache1.RemoveAllAsync(["id", "total"]));
             Assert.Equal(0, await scopedCache1.GetAsync<double>("total", 0));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithExistingKey_IncrementsValue(string cacheKey)
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.True(await cache.SetAsync(cacheKey, 0));
-            Assert.Equal(1, await cache.IncrementAsync(cacheKey));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithNonExistentKey_InitializesToOne()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.Equal(1, await cache.IncrementAsync("test1"));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithSpecifiedAmount_IncrementsCorrectly()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            Assert.Equal(0, await cache.IncrementAsync("test3", 0));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithExpiration_ExpiresCorrectly()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            bool success = await cache.SetAsync("test", 0);
-            Assert.True(success);
-
-            var expiresIn = TimeSpan.FromSeconds(1);
-            double newVal = await cache.IncrementAsync("test", 1, expiresIn);
-
-            Assert.Equal(1, newVal);
-
-            await Task.Delay(1500);
-            Assert.False((await cache.GetAsync<int>("test")).HasValue);
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithNullKey_ThrowsArgumentNullException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(null, 1));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithEmptyKey_ThrowsArgumentException()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(String.Empty, 1));
-        }
-    }
-
-    public virtual async Task IncrementAsync_WithDifferentCasedKeys_IncrementsDistinctCounters()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            long lower = await cache.IncrementAsync("counter", 1);
-            long title = await cache.IncrementAsync("Counter", 2);
-            long upper = await cache.IncrementAsync("COUNTER", 3);
-
-            Assert.Equal(1, lower);
-            Assert.Equal(2, title);
-            Assert.Equal(3, upper);
-
-            var lowerFinal = await cache.GetAsync<long>("counter");
-            var titleFinal = await cache.GetAsync<long>("Counter");
-            var upperFinal = await cache.GetAsync<long>("COUNTER");
-
-            Assert.Equal(1, lowerFinal.Value);
-            Assert.Equal(2, titleFinal.Value);
-            Assert.Equal(3, upperFinal.Value);
         }
     }
 }
