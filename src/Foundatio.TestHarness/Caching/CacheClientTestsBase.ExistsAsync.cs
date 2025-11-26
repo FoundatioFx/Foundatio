@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Caching;
 
 public abstract partial class CacheClientTestsBase
 {
-    public virtual async Task ExistsAsync()
+    public virtual async Task ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus()
     {
         var cache = GetCacheClient();
         if (cache is null)

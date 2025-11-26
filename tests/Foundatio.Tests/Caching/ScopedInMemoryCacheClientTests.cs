@@ -35,9 +35,9 @@ public class ScopedInMemoryCacheClientTests : CacheClientTestsBase
     }
 
         [Fact]
-    public override Task ExistsAsync()
+    public override Task ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus()
     {
-        return base.ExistsAsync();
+        return base.ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus();
     }
 
     [Fact]
