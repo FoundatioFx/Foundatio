@@ -80,7 +80,7 @@ jobs:
       if: hashFiles('docker-compose.yml') != ''
       run: ${{ inputs.compose-command }}
     - name: Run Tests
-      run: dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
+      run: dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ steps.slnx.outputs.file }} --configuration Release --no-build
