@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.CompilerServices;
 
 namespace Foundatio.Force.DeepCloner.Helpers;
@@ -53,7 +53,6 @@ internal class DeepCloneState
         private int[] _buckets;
         private Entry[] _entries;
         private int _count;
-
 
         public MiniDictionary() : this(5)
         {

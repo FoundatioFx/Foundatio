@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -105,8 +108,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _localCache.RemoveAsync(key).AnyContext();
@@ -116,8 +118,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _localCache.RemoveIfEqualAsync(key, expected).AnyContext();
@@ -145,8 +146,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
@@ -175,50 +175,58 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (keys is null)
             throw new ArgumentNullException(nameof(keys));
 
-        string[] keyArray = keys.ToArray();
-        var result = new Dictionary<string, CacheValue<T>>(keyArray.Length);
-        if (keyArray.Length is 0)
-            return result;
+        var keysCollection = keys as ICollection<string> ?? keys.ToList();
+        if (keysCollection.Count is 0)
+            return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
 
-        var missedKeys = new List<string>(keyArray.Length);
-        foreach (string key in keyArray.Where(k => !String.IsNullOrEmpty(k)))
+        var localValues = await _localCache.GetAllAsync<T>(keysCollection).AnyContext();
+
+        // Collect keys that weren't found in local cache.
+        var missedKeys = new List<string>(keysCollection.Count);
+        foreach (var kvp in localValues)
         {
-            var localValue = await _localCache.GetAsync<T>(key).AnyContext();
-            if (localValue.HasValue)
+            if (kvp.Value.HasValue)
             {
-                _logger.LogTrace("Local cache hit: {Key}", key);
-                Interlocked.Increment(ref _localCacheHits);
-                result[key] = localValue;
+                _logger.LogTrace("Local cache hit: {Key}", kvp.Key);
             }
             else
             {
-                _logger.LogTrace("Local cache miss: {Key}", key);
-                missedKeys.Add(key);
+                _logger.LogTrace("Local cache miss: {Key}", kvp.Key);
+                missedKeys.Add(kvp.Key);
             }
         }
+        Interlocked.Add(ref _localCacheHits, keysCollection.Count - missedKeys.Count);
 
-        if (missedKeys.Count > 0)
+        // All keys found in local cache.
+        if (missedKeys.Count is 0)
+            return localValues;
+
+        var result = new Dictionary<string, CacheValue<T>>(localValues);
+        var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
+
+        // Get all expirations in a single bulk operation.
+        var keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToList();
+        var expirations = keysWithValues.Count > 0
+            ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
+            : ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+        foreach (var kvp in distributedResults)
         {
-            var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
-            foreach (var kvp in distributedResults)
-            {
-                result[kvp.Key] = kvp.Value;
-                if (kvp.Value.HasValue)
-                {
-                    var expiration = await _distributedCache.GetExpirationAsync(kvp.Key).AnyContext();
-                    _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
-                    await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
-                }
-            }
+            result[kvp.Key] = kvp.Value;
+            if (!kvp.Value.HasValue)
+                continue;
+
+            var expiration = expirations.TryGetValue(kvp.Key, out var exp) ? exp : null;
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
+            await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
         }
 
-        return result;
+        return result.AsReadOnly();
     }
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
@@ -230,8 +238,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -243,7 +250,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values == null || values.Count == 0)
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count is 0)
             return 0;
 
         _logger.LogTrace("Adding keys {Keys} to local cache with expiration: {Expiration}", values.Keys, expiresIn);
@@ -255,8 +263,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
@@ -266,8 +273,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
@@ -277,8 +283,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         double incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
@@ -288,8 +293,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         long incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
@@ -299,8 +303,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ExistsAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         // Check local cache first
         bool localExists = await _localCache.ExistsAsync(key).AnyContext();
@@ -317,8 +320,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         // Check if key exists in local cache first
         bool localExists = await _localCache.ExistsAsync(key).AnyContext();
@@ -333,20 +335,64 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return await _distributedCache.GetExpirationAsync(key).AnyContext();
     }
 
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        string[] keysArray = keys.ToArray();
+        if (keysArray.Length is 0)
+            return ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+        var localExpirations = await _localCache.GetAllExpirationAsync(keysArray).AnyContext();
+        foreach (string key in localExpirations.Keys)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+        }
+
+        if (keysArray.Length == localExpirations.Count)
+            return localExpirations;
+
+        // Get the missed keys from the distributed cache.
+        string[] missedKeys = keysArray.Except(localExpirations.Keys).ToArray();
+        foreach (string key in missedKeys)
+        {
+            _logger.LogTrace("Local cache miss: {Key}", key);
+        }
+
+        var result = new Dictionary<string, TimeSpan?>(localExpirations);
+        var distributedExpirations = await _distributedCache.GetAllExpirationAsync(missedKeys).AnyContext();
+        foreach (var kvp in distributedExpirations)
+            result[kvp.Key] = kvp.Value;
+
+        return result.AsReadOnly();
+    }
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+
+        if (expirations.Count is 0)
+            return;
+
+        await _localCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
+    }
+
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
@@ -356,8 +402,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
@@ -367,8 +412,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
@@ -378,8 +422,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
@@ -389,11 +432,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -414,11 +454,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -439,8 +476,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");

@@ -21,7 +21,9 @@ public interface ICacheClient : IDisposable
     Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null);
     Task<bool> ExistsAsync(string key);
     Task<TimeSpan?> GetExpirationAsync(string key);
+    Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys);
     Task SetExpirationAsync(string key, TimeSpan expiresIn);
+    Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations);
     Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null);
     Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null);
     Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null);

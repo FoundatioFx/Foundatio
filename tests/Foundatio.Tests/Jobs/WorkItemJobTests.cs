@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -46,7 +46,6 @@ public class WorkItemJobTests : TestWithLoggingBase
         {
             SomeData = "Test"
         }, true);
-
 
         var countdown = new AsyncCountdownEvent(12);
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>

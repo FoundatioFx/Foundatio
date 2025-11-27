@@ -47,8 +47,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<bool> RemoveAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -57,8 +56,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -83,32 +81,28 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<CacheValue<T>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return _distributedCache.GetAsync<T>(key);
     }
 
     public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        if (keys is null)
-            return Task.FromException<IDictionary<string, CacheValue<T>>>(new ArgumentNullException(nameof(keys)));
+        ArgumentNullException.ThrowIfNull(keys);
 
         return _distributedCache.GetAllAsync<T>(keys);
     }
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return _distributedCache.AddAsync(key, value, expiresIn);
     }
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool set = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -118,7 +112,8 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values is null || values.Count == 0)
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count is 0)
             return 0;
 
         int set = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
@@ -128,8 +123,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -138,8 +132,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -148,8 +141,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         double incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -158,8 +150,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         long incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -168,33 +159,48 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public Task<bool> ExistsAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return _distributedCache.ExistsAsync(key);
     }
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<TimeSpan?>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return _distributedCache.GetExpirationAsync(key);
     }
 
+    public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        return _distributedCache.GetAllExpirationAsync(keys);
+    }
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+
+        if (expirations.Count is 0)
+            return;
+
+        await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
+    }
+
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -203,8 +209,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -213,8 +218,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -223,8 +227,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -233,11 +236,8 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -255,11 +255,8 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values is null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
@@ -277,11 +274,9 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
 
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentNullException(nameof(key), "Key cannot be null or empty"));
-
-        if (page is < 1)
-            return Task.FromException<CacheValue<ICollection<T>>>(new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1"));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        if (page.HasValue)
+            ArgumentOutOfRangeException.ThrowIfLessThan(page.Value, 1);
 
         return _distributedCache.GetListAsync<T>(key, page, pageSize);
     }

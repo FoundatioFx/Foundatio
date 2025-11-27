@@ -85,7 +85,16 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     protected IEnumerable<string> GetUnscopedCacheKeys(IEnumerable<string> keys)
     {
-        return keys?.Select(GetUnscopedCacheKey);
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var unscopedKeys = keys is ICollection<string> collection ? new List<string>(collection.Count) : [];
+        foreach (string key in keys.Distinct())
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
+            unscopedKeys.Add(GetUnscopedCacheKey(key));
+        }
+
+        return unscopedKeys;
     }
 
     protected string GetScopedCacheKey(string unscopedKey)
@@ -95,23 +104,21 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task<bool> RemoveAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.RemoveAsync(GetUnscopedCacheKey(key));
     }
 
     public Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.RemoveIfEqualAsync(GetUnscopedCacheKey(key), expected);
     }
 
     public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
     {
-        if (keys == null)
+        if (keys is null)
             return RemoveByPrefixAsync(String.Empty);
 
         return UnscopedCache.RemoveAllAsync(GetUnscopedCacheKeys(keys));
@@ -124,16 +131,14 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.GetAsync<T>(GetUnscopedCacheKey(key));
     }
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        if (keys is null)
-            throw new ArgumentNullException(nameof(keys));
+        ArgumentNullException.ThrowIfNull(keys);
 
         var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetUnscopedCacheKeys(keys)).AnyContext();
         return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
@@ -141,137 +146,153 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.AddAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        return UnscopedCache.SetAllAsync(values?.ToDictionary(kvp => GetUnscopedCacheKey(kvp.Key), kvp => kvp.Value), expiresIn);
+        ArgumentNullException.ThrowIfNull(values);
+
+        if (values.Count is 0)
+            return Task.FromResult(0);
+
+        var unscopedValues = new Dictionary<string, T>(values.Count);
+        foreach (var kvp in values)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key, nameof(values));
+            unscopedValues[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+        }
+
+        return UnscopedCache.SetAllAsync(unscopedValues, expiresIn);
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.ReplaceAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.ReplaceIfEqualAsync(GetUnscopedCacheKey(key), value, expected, expiresIn);
     }
 
     public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.IncrementAsync(GetUnscopedCacheKey(key), amount, expiresIn);
     }
 
     public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.IncrementAsync(GetUnscopedCacheKey(key), amount, expiresIn);
     }
 
     public Task<bool> ExistsAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.ExistsAsync(GetUnscopedCacheKey(key));
     }
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.GetExpirationAsync(GetUnscopedCacheKey(key));
     }
 
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var unscopedKeys = GetUnscopedCacheKeys(keys);
+        var unscopedExpirations = await UnscopedCache.GetAllExpirationAsync(unscopedKeys).AnyContext();
+        return unscopedExpirations.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
+    }
+
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetExpirationAsync(GetUnscopedCacheKey(key), expiresIn);
     }
 
+    public Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+
+        var unscopedExpirations = new Dictionary<string, TimeSpan?>(expirations.Count);
+        foreach (var kvp in expirations)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key, nameof(expirations));
+            unscopedExpirations[GetUnscopedCacheKey(kvp.Key)] = kvp.Value;
+        }
+
+        return UnscopedCache.SetAllExpirationAsync(unscopedExpirations);
+    }
+
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetIfHigherAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetIfHigherAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetIfLowerAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.SetIfLowerAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
     public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.ListAddAsync(GetUnscopedCacheKey(key), values, expiresIn);
     }
 
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values, expiresIn);
     }
 
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
+        ArgumentException.ThrowIfNullOrEmpty(key);
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 
