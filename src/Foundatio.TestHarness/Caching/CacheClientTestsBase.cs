@@ -2339,7 +2339,7 @@ public abstract partial class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetIfHigherAsync_WithLargeNumbers()
+    public virtual async Task SetIfHigherAsync_WithLargeNumbers_HandlesCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2395,7 +2395,7 @@ public abstract partial class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetIfLowerAsync_WithLargeNumbers()
+    public virtual async Task SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)

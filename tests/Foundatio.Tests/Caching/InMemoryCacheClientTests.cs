@@ -552,9 +552,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithLargeNumbers()
+    public override Task SetIfHigherAsync_WithLargeNumbers_HandlesCorrectly()
     {
-        return base.SetIfHigherAsync_WithLargeNumbers();
+        return base.SetIfHigherAsync_WithLargeNumbers_HandlesCorrectly();
     }
 
     [Fact]
@@ -564,9 +564,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfLowerAsync_WithLargeNumbers()
+    public override Task SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly()
     {
-        return base.SetIfLowerAsync_WithLargeNumbers();
+        return base.SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly();
     }
 
     [Fact]
