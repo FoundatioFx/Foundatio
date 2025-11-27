@@ -251,6 +251,32 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task GetAllExpirationAsync_WithInvalidKeys_ValidatesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            // Null keys collection throws ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllExpirationAsync(null));
+
+            // Keys containing null throws ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.GetAllExpirationAsync(["key1", null, "key2"]));
+
+            // Keys containing empty string throws ArgumentException
+            await Assert.ThrowsAsync<ArgumentException>(async () =>
+                await cache.GetAllExpirationAsync(["key1", "", "key2"]));
+
+            // Empty keys collection returns empty result (not an error)
+            var result = await cache.GetAllExpirationAsync([]);
+            Assert.NotNull(result);
+            Assert.Empty(result);
+        }
+    }
+
     public virtual async Task GetAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
         var cache = GetCacheClient();
@@ -289,8 +315,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Test with primitive values including mixed-case, whitespace keys, and null
             await cache.SetAsync("test1", 1);
-            await cache.SetAsync("Test1", 2);  // Mixed case - different key
-            await cache.SetAsync("   ", 3);    // Whitespace key
+            await cache.SetAsync("Test1", 2); // Mixed case - different key
+            await cache.SetAsync("   ", 3); // Whitespace key
             var intResult = await cache.GetAllAsync<int>(["test1", "Test1", "   ", "nonexistent"]);
             Assert.NotNull(intResult);
             Assert.Equal(4, intResult.Count);
@@ -1862,6 +1888,29 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SetAllExpirationAsync_WithInvalidItems_ValidatesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Null expirations throws ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () =>
+                await cache.SetAllExpirationAsync(null!));
+            
+            // Items containing empty key throws ArgumentException
+            var itemsWithEmptyKey = new Dictionary<string, TimeSpan?> { { "key1", TimeSpan.FromMinutes(5) }, { String.Empty, TimeSpan.FromMinutes(10) } };
+            await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllExpirationAsync(itemsWithEmptyKey));
+
+            // Empty expirations collection doesn't throw (no-op)
+            await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?>());
+        }
+    }
+
     public virtual async Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
     {
         var cache = GetCacheClient();
@@ -2073,24 +2122,24 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             double value = 2 * 1000 * 1000 * 1000;
             Assert.True(await cache.SetAsync("test", value, TimeSpan.FromHours(2)));
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
-            Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            Assert.InRange((await cache.GetExpirationAsync("test")).GetValueOrDefault(), minExpiration, TimeSpan.FromHours(2));
 
             double lowerValue = value - 1000;
             Assert.Equal(1000, await cache.SetIfLowerAsync("test", lowerValue, TimeSpan.FromHours(2)));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
-            Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            Assert.InRange((await cache.GetExpirationAsync("test")).GetValueOrDefault(), minExpiration, TimeSpan.FromHours(2));
 
             Assert.Equal(0, await cache.SetIfLowerAsync("test", value, TimeSpan.FromHours(2)));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("test", 0));
-            Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            Assert.InRange((await cache.GetExpirationAsync("test")).GetValueOrDefault(), minExpiration, TimeSpan.FromHours(2));
 
             Assert.Equal(1000, await cache.SetIfHigherAsync("test", value, TimeSpan.FromHours(2)));
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
-            Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            Assert.InRange((await cache.GetExpirationAsync("test")).GetValueOrDefault(), minExpiration, TimeSpan.FromHours(2));
 
             Assert.Equal(0, await cache.SetIfHigherAsync("test", lowerValue, TimeSpan.FromHours(2)));
             Assert.Equal(value, await cache.GetAsync<double>("test", 0));
-            Assert.InRange((await cache.GetExpirationAsync("test")).Value, minExpiration, TimeSpan.FromHours(2));
+            Assert.InRange((await cache.GetExpirationAsync("test")).GetValueOrDefault(), minExpiration, TimeSpan.FromHours(2));
         }
     }
 
