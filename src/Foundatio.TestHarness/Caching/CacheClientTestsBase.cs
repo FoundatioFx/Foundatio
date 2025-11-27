@@ -14,7 +14,7 @@ using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
-public abstract partial class CacheClientTestsBase : TestWithLoggingBase
+public abstract class CacheClientTestsBase : TestWithLoggingBase
 {
     protected CacheClientTestsBase(ITestOutputHelper output) : base(output)
     {
