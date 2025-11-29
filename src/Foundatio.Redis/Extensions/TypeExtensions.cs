@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Utility;
 
 namespace Foundatio.Extensions;
@@ -41,7 +41,6 @@ internal static class TypeExtensions
 
         return false;
     }
-
 
     public static bool IsNullableNumeric(this Type type)
     {

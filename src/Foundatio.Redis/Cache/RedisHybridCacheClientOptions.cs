@@ -11,7 +11,6 @@ public class RedisHybridCacheClientOptions : RedisCacheClientOptions
 public class RedisHybridCacheClientOptionsBuilder :
     SharedOptionsBuilder<RedisHybridCacheClientOptions, RedisHybridCacheClientOptionsBuilder>
 {
-
     public RedisHybridCacheClientOptionsBuilder ConnectionMultiplexer(IConnectionMultiplexer connectionMultiplexer)
     {
         Target.ConnectionMultiplexer = connectionMultiplexer;
