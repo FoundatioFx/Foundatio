@@ -7,6 +7,11 @@ on:
         default: ''
         required: false
         type: string
+      new-test-runner:
+        description: 'The test platform to use'
+        default: false
+        required: false
+        type: boolean
       org:
         description: 'The organization to publish CI builds to'
         default: 'foundatiofx'
@@ -29,15 +34,16 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 0
     - name: Setup .NET Core
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: |
           8.0.x
           9.0.x
+          10.0.x
     - name: Build Reason
       run: |
         branch=${GITHUB_REF##*/}.
@@ -55,7 +61,7 @@ jobs:
     - name: Build Version
       run: |
         dotnet tool install --global minver-cli --version 6.0.0
-        version=$(minver --tag-prefix v --default-pre-release-identifiers alpha.${GIT_BRANCH_SUFFIX}0)
+        version=$(minver --tag-prefix v --default-pre-release-identifiers preview.${GIT_BRANCH_SUFFIX}0)
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
     - name: Set Default Solution
@@ -79,7 +85,12 @@ jobs:
       if: hashFiles('docker-compose.yml') != ''
       run: ${{ inputs.compose-command }}
     - name: Run Tests
-      run: dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
+      run: |
+        if [ "${{ inputs.new-test-runner }}" = "true" ]; then
+          dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build
+        else
+          dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
+        fi
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ steps.slnx.outputs.file }} --configuration Release --no-build

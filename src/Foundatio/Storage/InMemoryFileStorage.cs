@@ -24,7 +24,9 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public InMemoryFileStorage() : this(o => o) { }
+    public InMemoryFileStorage() : this(o => o)
+    {
+    }
 
     public InMemoryFileStorage(InMemoryFileStorageOptions options)
     {
@@ -200,7 +202,6 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         string normalizedNewPath = targetPath.NormalizePath();
         _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedNewPath);
 
-
         if (!_storage.TryGetValue(normalizedPath, out var file))
         {
             _logger.LogDebug("Error copying {Path} to {NewPath}: File not found", normalizedPath, normalizedNewPath);
@@ -303,7 +304,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         });
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         _storage?.Clear();
     }

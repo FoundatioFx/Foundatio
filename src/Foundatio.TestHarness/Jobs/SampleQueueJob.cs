@@ -7,13 +7,14 @@ using Exceptionless;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Queues;
+using Foundatio.Resilience;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Tests.Jobs;
 
 public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueueWorkItem>
 {
-    public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, loggerFactory)
+    public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
     }
 
@@ -35,7 +36,7 @@ public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueu
 
 public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem>
 {
-    public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, loggerFactory)
+    public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
     }
 
@@ -49,7 +50,7 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
 {
     private readonly ILockProvider _lockProvider;
 
-    public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, ILockProvider lockProvider, TimeProvider timeProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, loggerFactory)
+    public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, ILockProvider lockProvider, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _lockProvider = lockProvider;
     }

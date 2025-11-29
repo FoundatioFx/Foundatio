@@ -3,7 +3,9 @@ using System.Collections.Generic;
 
 namespace Foundatio.Messaging;
 
-public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable { }
+public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable
+{
+}
 
 public class MessageOptions
 {

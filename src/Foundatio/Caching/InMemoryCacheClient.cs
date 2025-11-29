@@ -1,13 +1,13 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
-using Foundatio.Extensions;
 using Foundatio.Resilience;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
@@ -34,7 +34,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
 
-    public InMemoryCacheClient() : this(o => o) { }
+    public InMemoryCacheClient() : this(o => o)
+    {
+    }
 
     public InMemoryCacheClient(InMemoryCacheClientOptions options = null)
     {
@@ -54,7 +56,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     public InMemoryCacheClient(Builder<InMemoryCacheClientOptionsBuilder, InMemoryCacheClientOptions> config)
-        : this(config(new InMemoryCacheClientOptionsBuilder()).Build()) { }
+        : this(config(new InMemoryCacheClientOptionsBuilder()).Build())
+    {
+    }
 
     public int Count => _memory.Count(i => !i.Value.IsExpired);
     public int? MaxItems => _maxItems;
@@ -187,22 +191,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<bool> RemoveAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        
-        bool removed = _memory.TryRemove(key, out var removedEntry);
-        if (removed && removedEntry != null)
-            UpdateMemorySize(-removedEntry.EstimatedSize);
-        
-        return Task.FromResult(removed);
+        if (!_memory.TryRemove(key, out var entry))
+        {
+            return Task.FromResult(false);
+        }
+
+        // Key was found and removed. Update memory size.
+        UpdateMemorySize(-entry.EstimatedSize);
+
+        // Return false if the entry was expired (consistent with Redis behavior)
+        return Task.FromResult(!entry.IsExpired);
     }
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
@@ -240,10 +246,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         int removed = 0;
-        foreach (string key in keys)
+        foreach (string key in keys.Distinct())
         {
-            if (String.IsNullOrEmpty(key))
-                continue;
+            ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
 
             _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
             if (_memory.TryRemove(key, out var removedEntry))
@@ -287,8 +292,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     internal long RemoveExpiredKey(string key, bool sendNotification = true)
     {
         // Consideration: We could reduce the amount of calls to this by updating ExpiresAt and only having maintenance remove keys.
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("Removing expired key: {Key}", key);
         if (_memory.TryRemove(key, out var removedEntry))
@@ -308,8 +312,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     private long RemoveKeyIfExpired(string key, bool sendNotification = true)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.IsExpired)
         {
@@ -332,8 +335,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
@@ -379,8 +381,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), true);
@@ -388,8 +389,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone));
@@ -397,8 +397,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -445,8 +444,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -493,8 +491,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -541,8 +538,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -587,11 +583,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
@@ -668,11 +661,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
-
-        if (values == null)
-            throw new ArgumentNullException(nameof(values));
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
 
         Interlocked.Increment(ref _writes);
 
@@ -750,8 +740,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
@@ -776,8 +765,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "SetInternalAsync: Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (entry.IsExpired)
         {
@@ -850,7 +838,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values == null || values.Count == 0)
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count is 0)
             return 0;
 
         if (expiresIn?.Ticks <= 0)
@@ -869,36 +858,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 values.Count, _maxItems, limit);
         }
 
-
-        // NOTE: Would be great to target Parallel.ForEachAsync but we need .NET 6+;
-
         // Use the whole dictionary when possible, otherwise copy just the slice we need.
         var work = limit >= values.Count
-            ? (IReadOnlyDictionary<string, T>)values
-            : values.Skip(values.Count - limit).ToDictionary(kv => kv.Key, kv => kv.Value);
+            ? values
+            : values.Skip(values.Count - limit);
 
         int count = 0;
-        const int batchSize = 1_024;
-
-        // Local function satisfies the ValueTask-returning delegate
-        async ValueTask ProcessSliceAsync(ReadOnlyMemory<KeyValuePair<string, T>> slice)
+        await Parallel.ForEachAsync(work, async (pair, cancellationToken) =>
         {
-            for (int i = 0; i < slice.Span.Length; i++)
-            {
-                var pair = slice.Span[i];
-                if (await SetAsync(pair.Key, pair.Value, expiresIn).AnyContext())
-                    Interlocked.Increment(ref count);
-            }
-        }
+            if (await SetAsync(pair.Key, pair.Value, expiresIn).AnyContext())
+                Interlocked.Increment(ref count);
+        }).AnyContext();
 
-        await work.BatchAsync(batchSize, ProcessSliceAsync).AnyContext();
         return count;
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (!_memory.ContainsKey(key))
             return Task.FromResult(false);
@@ -908,8 +885,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
@@ -942,8 +918,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -984,8 +959,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -1026,8 +1000,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<bool> ExistsAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            return Task.FromException<bool>(new ArgumentNullException(nameof(key), "Key cannot be null or empty."));
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
@@ -1047,8 +1020,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (!_memory.TryGetValue(key, out var existingEntry))
         {
@@ -1066,10 +1038,47 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt?.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
+    public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        string[] keysArray = keys.ToArray();
+        if (keysArray.Length is 0)
+            return Task.FromResult<IDictionary<string, TimeSpan?>>(ReadOnlyDictionary<string, TimeSpan?>.Empty);
+
+        var result = new Dictionary<string, TimeSpan?>(keysArray.Length);
+        foreach (string key in keysArray)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(key);
+
+            if (!_memory.TryGetValue(key, out var existingEntry))
+            {
+                Interlocked.Increment(ref _misses);
+                // Don't include non-existent keys in result (consistent with GetExpirationAsync returning null)
+                continue;
+            }
+
+            if (existingEntry.IsExpired)
+            {
+                Interlocked.Increment(ref _misses);
+                // Don't include expired keys in result (consistent with GetExpirationAsync returning null)
+                continue;
+            }
+
+            Interlocked.Increment(ref _hits);
+
+            // Skip keys without expiration (consistent with GetExpirationAsync behavior)
+            if (existingEntry.ExpiresAt.HasValue)
+                result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
+        }
+
+        return Task.FromResult<IDictionary<string, TimeSpan?>>(result.AsReadOnly());
+    }
+
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
-        if (String.IsNullOrEmpty(key))
-            throw new ArgumentNullException(nameof(key), "Key cannot be null or empty");
+        ArgumentException.ThrowIfNullOrEmpty(key);
 
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = utcNow.SafeAdd(expiresIn);
@@ -1079,12 +1088,58 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return;
         }
 
-        Interlocked.Increment(ref _writes);
-        if (_memory.TryGetValue(key, out var existingEntry))
+        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt != expiresAt)
         {
+            Interlocked.Increment(ref _writes);
             existingEntry.ExpiresAt = expiresAt;
             await StartMaintenanceAsync().AnyContext();
         }
+    }
+
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+
+        if (expirations.Count is 0)
+            return;
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        int updated = 0;
+
+        foreach (var kvp in expirations)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(kvp.Key);
+
+            if (!_memory.TryGetValue(kvp.Key, out var existingEntry))
+                continue;
+
+            if (kvp.Value is null)
+            {
+                if (existingEntry.ExpiresAt is null)
+                    continue;
+
+                Interlocked.Increment(ref _writes);
+                existingEntry.ExpiresAt = null;
+                updated++;
+            }
+            else
+            {
+                var expiresAt = utcNow.SafeAdd(kvp.Value.Value);
+                if (expiresAt < utcNow)
+                {
+                    RemoveExpiredKey(kvp.Key);
+                }
+                else if (existingEntry.ExpiresAt != expiresAt)
+                {
+                    Interlocked.Increment(ref _writes);
+                    existingEntry.ExpiresAt = expiresAt;
+                    updated++;
+                }
+            }
+        }
+
+        if (updated > 0)
+            await StartMaintenanceAsync().AnyContext();
     }
 
     private DateTime _lastMaintenance;
@@ -1225,11 +1280,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task DoMaintenanceAsync()
     {
-        _logger.LogTrace("DoMaintenance");
-        var utcNow = _timeProvider.GetUtcNow().AddMilliseconds(50);
+        _logger.LogTrace("DoMaintenance: Starting");
+        var utcNow = _timeProvider.GetUtcNow().SafeAddMilliseconds(50);
 
         // Remove expired items and items that are infrequently accessed as they may be updated by add.
-        long lastAccessMaximumTicks = utcNow.AddMilliseconds(-300).Ticks;
+        long lastAccessMaximumTicks = utcNow.SafeAddMilliseconds(-300).Ticks;
 
         try
         {
@@ -1257,9 +1312,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (ShouldCompact)
             await CompactAsync().AnyContext();
+
+        _logger.LogTrace("DoMaintenance: Finished");
     }
 
-    public void Dispose()
+    public virtual void Dispose()
     {
         _memory.Clear();
         ItemExpired?.Dispose();

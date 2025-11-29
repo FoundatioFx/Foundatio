@@ -35,6 +35,9 @@
 		},
 		{
 			"path": "../Foundatio.Kafka"
+		},
+		{
+			"path": "../Foundatio.Mediator"
 		}
 	],
 	"settings": {

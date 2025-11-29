@@ -28,7 +28,7 @@ public class InstrumentsValues<T1, T2, T3>
         {
             if (_readCount == 0)
             {
-                _logger.LogDebug("Getting values");
+                _logger.LogDebug("Getting metric instruments values");
                 (_value1, _value2, _value3) = _readValuesFunc();
             }
 

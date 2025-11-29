@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -46,7 +46,6 @@ public class WorkItemJobTests : TestWithLoggingBase
         {
             SomeData = "Test"
         }, true);
-
 
         var countdown = new AsyncCountdownEvent(12);
         await messageBus.SubscribeAsync<WorkItemStatus>(status =>
@@ -333,7 +332,9 @@ public class MyWorkItem
 
 public class MyWorkItemHandler : WorkItemHandlerBase
 {
-    public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory) { }
+    public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    {
+    }
 
     public override async Task HandleItemAsync(WorkItemContext context)
     {

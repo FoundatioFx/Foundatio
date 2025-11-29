@@ -22,7 +22,7 @@ public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTime
     public JobBase(TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = resiliencePolicyProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
 

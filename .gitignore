@@ -36,3 +36,5 @@ _NCrunch_*
 
 # Rider
 .idea
+
+.cursor/rules/

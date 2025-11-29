@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,7 +14,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
-public interface IHybridCacheClient : ICacheClient { }
+public interface IHybridCacheClient : ICacheClient
+{
+}
 
 public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
@@ -28,7 +33,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
     {
-        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions.LoggerFactory ?? NullLoggerFactory.Instance;
+        _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
@@ -36,7 +41,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _messageBus = messageBus;
         _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
         if (localCacheOptions == null)
-            localCacheOptions = new InMemoryCacheClientOptions { LoggerFactory = loggerFactory };
+            localCacheOptions = new InMemoryCacheClientOptions
+            {
+                TimeProvider = _timeProvider,
+                ResiliencePolicyProvider = _resiliencePolicyProvider,
+                LoggerFactory = loggerFactory
+            };
         _localCache = new InMemoryCacheClient(localCacheOptions);
         _localCache.ItemExpired.AddHandler(OnLocalCacheItemExpiredAsync);
     }
@@ -98,6 +108,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveAsync(string key)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _localCache.RemoveAsync(key).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -106,6 +118,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _localCache.RemoveIfEqualAsync(key, expected).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -132,6 +146,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
         {
@@ -154,13 +170,64 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return cacheValue.HasValue ? cacheValue : CacheValue<T>.NoValue;
     }
 
-    public Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
+    public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        return _distributedCache.GetAllAsync<T>(keys);
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        var keysCollection = keys as ICollection<string> ?? keys.ToList();
+        if (keysCollection.Count is 0)
+            return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
+
+        var localValues = await _localCache.GetAllAsync<T>(keysCollection).AnyContext();
+
+        // Collect keys that weren't found in local cache.
+        var missedKeys = new List<string>(keysCollection.Count);
+        foreach (var kvp in localValues)
+        {
+            if (kvp.Value.HasValue)
+            {
+                _logger.LogTrace("Local cache hit: {Key}", kvp.Key);
+            }
+            else
+            {
+                _logger.LogTrace("Local cache miss: {Key}", kvp.Key);
+                missedKeys.Add(kvp.Key);
+            }
+        }
+        Interlocked.Add(ref _localCacheHits, keysCollection.Count - missedKeys.Count);
+
+        // All keys found in local cache.
+        if (missedKeys.Count is 0)
+            return localValues;
+
+        var result = new Dictionary<string, CacheValue<T>>(localValues);
+        var distributedResults = await _distributedCache.GetAllAsync<T>(missedKeys).AnyContext();
+
+        // Get all expirations in a single bulk operation.
+        var keysWithValues = distributedResults.Where(kvp => kvp.Value.HasValue).Select(kvp => kvp.Key).ToList();
+        var expirations = keysWithValues.Count > 0
+            ? await _distributedCache.GetAllExpirationAsync(keysWithValues).AnyContext()
+            : ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+        foreach (var kvp in distributedResults)
+        {
+            result[kvp.Key] = kvp.Value;
+            if (!kvp.Value.HasValue)
+                continue;
+
+            var expiration = expirations.TryGetValue(kvp.Key, out var exp) ? exp : null;
+            _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", kvp.Key, expiration);
+            await _localCache.SetAsync(kvp.Key, kvp.Value.Value, expiration).AnyContext();
+        }
+
+        return result.AsReadOnly();
     }
 
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();
         if (added)
@@ -171,6 +238,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         _logger.LogTrace("Setting key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         await _localCache.SetAsync(key, value, expiresIn).AnyContext();
         bool set = await _distributedCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -181,7 +250,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
-        if (values == null || values.Count == 0)
+        ArgumentNullException.ThrowIfNull(values);
+        if (values.Count is 0)
             return 0;
 
         _logger.LogTrace("Adding keys {Keys} to local cache with expiration: {Expiration}", values.Keys, expiresIn);
@@ -193,6 +263,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -201,6 +273,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         bool replaced = await _distributedCache.ReplaceIfEqualAsync(key, value, expected, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -209,6 +283,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         double incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -217,31 +293,107 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         long incremented = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         await _localCache.ReplaceAsync(key, incremented, expiresIn);
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
         return incremented;
     }
 
-    public Task<bool> ExistsAsync(string key)
+    public async Task<bool> ExistsAsync(string key)
     {
-        return _distributedCache.ExistsAsync(key);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        // Check local cache first
+        bool localExists = await _localCache.ExistsAsync(key).AnyContext();
+        if (localExists)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+            return true;
+        }
+
+        _logger.LogTrace("Local cache miss: {Key}", key);
+        return await _distributedCache.ExistsAsync(key).AnyContext();
     }
 
-    public Task<TimeSpan?> GetExpirationAsync(string key)
+    public async Task<TimeSpan?> GetExpirationAsync(string key)
     {
-        return _distributedCache.GetExpirationAsync(key);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        // Check if key exists in local cache first
+        bool localExists = await _localCache.ExistsAsync(key).AnyContext();
+        if (localExists)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+            return await _localCache.GetExpirationAsync(key).AnyContext();
+        }
+
+        _logger.LogTrace("Local cache miss: {Key}", key);
+        return await _distributedCache.GetExpirationAsync(key).AnyContext();
+    }
+
+    public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
+    {
+        if (keys is null)
+            throw new ArgumentNullException(nameof(keys));
+
+        string[] keysArray = keys.ToArray();
+        if (keysArray.Length is 0)
+            return ReadOnlyDictionary<string, TimeSpan?>.Empty;
+
+        var localExpirations = await _localCache.GetAllExpirationAsync(keysArray).AnyContext();
+        foreach (string key in localExpirations.Keys)
+        {
+            _logger.LogTrace("Local cache hit: {Key}", key);
+            Interlocked.Increment(ref _localCacheHits);
+        }
+
+        if (keysArray.Length == localExpirations.Count)
+            return localExpirations;
+
+        // Get the missed keys from the distributed cache.
+        string[] missedKeys = keysArray.Except(localExpirations.Keys).ToArray();
+        foreach (string key in missedKeys)
+        {
+            _logger.LogTrace("Local cache miss: {Key}", key);
+        }
+
+        var result = new Dictionary<string, TimeSpan?>(localExpirations);
+        var distributedExpirations = await _distributedCache.GetAllExpirationAsync(missedKeys).AnyContext();
+        foreach (var kvp in distributedExpirations)
+            result[kvp.Key] = kvp.Value;
+
+        return result.AsReadOnly();
     }
 
     public async Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
     }
 
+    public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
+    {
+        ArgumentNullException.ThrowIfNull(expirations);
+
+        if (expirations.Count is 0)
+            return;
+
+        await _localCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _distributedCache.SetAllExpirationAsync(expirations).AnyContext();
+        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = expirations.Keys.ToArray() }).AnyContext();
+    }
+
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -250,6 +402,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -258,6 +412,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.RemoveAsync(key).AnyContext();
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -266,6 +422,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _localCache.RemoveAsync(key).AnyContext();
         long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -274,6 +432,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
         if (values is string stringValue)
         {
             await _localCache.ListAddAsync(key, stringValue, expiresIn).AnyContext();
@@ -283,7 +444,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         else
         {
-            var items = values?.ToArray();
+            var items = values.ToArray();
             await _localCache.ListAddAsync(key, items, expiresIn).AnyContext();
             long set = await _distributedCache.ListAddAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -293,6 +454,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(values);
+
         if (values is string stringValue)
         {
             await _localCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
@@ -302,7 +466,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         }
         else
         {
-            var items = values?.ToArray();
+            var items = values.ToArray();
             await _localCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
             long removed = await _distributedCache.ListRemoveAsync(key, items, expiresIn).AnyContext();
             await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -312,6 +476,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
     {
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (page is < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
         var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
         {

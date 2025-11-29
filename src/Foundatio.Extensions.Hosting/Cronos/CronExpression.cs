@@ -1,4 +1,4 @@
-﻿// The MIT License(MIT)
+// The MIT License(MIT)
 //
 // Copyright (c) 2017 Sergey Odinokov
 //
@@ -364,7 +364,6 @@ public sealed class CronExpression : IEquatable<CronExpression>
     /// Implements the operator !=.
     /// </summary>
     public static bool operator !=(CronExpression left, CronExpression right) => !Equals(left, right);
-
 
     private DateTimeOffset? GetOccurenceByZonedTimes(DateTimeOffset from, TimeZoneInfo zone, bool inclusive)
     {
@@ -804,7 +803,6 @@ public sealed class CronExpression : IEquatable<CronExpression>
         flags |= CronExpressionFlag.NthDayOfWeek;
         return GetBit(dayOfWeek);
     }
-
 
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -11,10 +11,10 @@ namespace Foundatio.Jobs;
 
 public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
-    protected readonly ILogger _logger;
-    protected readonly ILoggerFactory _loggerFactory;
-    private readonly TimeProvider _timeProvider;
+    protected readonly TimeProvider _timeProvider;
     protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    protected readonly ILoggerFactory _loggerFactory;
+    protected readonly ILogger _logger;
     private readonly string _jobName;
 
     public JobWithLockBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
@@ -25,7 +25,7 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
     {
         _jobName = GetType().Name;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = resiliencePolicyProvider;
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
     }

@@ -165,7 +165,6 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         catch (Exception ex)
         {
-
             if (queueEntry.Value.SendProgressReports)
                 await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
 

@@ -18,7 +18,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
 
     public HybridCacheClientTestBase(ITestOutputHelper output) : base(output)
     {
-        _distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        _distributedCache = new InMemoryCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(true).LoggerFactory(Log));
         _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
     }
 
@@ -35,37 +35,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         };
     }
 
-    protected virtual async Task WillUseLocalCache()
-    {
-        using var firstCache = GetDistributedHybridCacheClient();
-        Assert.NotNull(firstCache);
-
-        using var secondCache = GetDistributedHybridCacheClient();
-        Assert.NotNull(secondCache);
-
-        await firstCache.SetAsync("first1", 1);
-        await firstCache.IncrementAsync("first2");
-        Assert.Equal(1, firstCache.LocalCache.Count);
-
-        string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
-        await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
-        Assert.Equal(2, firstCache.LocalCache.Count);
-        Assert.Equal(0, secondCache.LocalCache.Count);
-        Assert.Equal(0, firstCache.LocalCacheHits);
-
-        Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-        Assert.Equal(1, firstCache.LocalCacheHits);
-        Assert.Equal(2, firstCache.LocalCache.Count);
-
-        Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-        Assert.Equal(0, secondCache.LocalCacheHits);
-        Assert.Equal(1, secondCache.LocalCache.Count);
-
-        Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
-        Assert.Equal(1, secondCache.LocalCacheHits);
-    }
-
-    protected virtual async Task WillExpireRemoteItems()
+    public virtual async Task AddAsync_WithExpiration_ExpiresRemoteItems()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -112,7 +82,104 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         }
     }
 
-    protected virtual async Task WillWorkWithSets()
+    public virtual async Task ExistsAsync_WithLocalCache_ChecksLocalCacheFirst()
+    {
+        using var cache = GetDistributedHybridCacheClient();
+        Assert.NotNull(cache);
+
+        const string key = "exists-local-test";
+
+        // Set value so it exists in both local and distributed cache
+        await cache.SetAsync(key, "test-value");
+        Assert.Equal(1, cache.LocalCache.Count);
+        Assert.Equal(0, cache.LocalCacheHits);
+
+        // First call should hit local cache and increment counter
+        Assert.True(await cache.ExistsAsync(key));
+        Assert.Equal(1, cache.LocalCacheHits);
+
+        // Second call should also hit local cache
+        Assert.True(await cache.ExistsAsync(key));
+        Assert.Equal(2, cache.LocalCacheHits);
+
+        // Remove from local cache only (simulate local expiration)
+        await cache.LocalCache.RemoveAsync(key);
+        Assert.Equal(0, cache.LocalCache.Count);
+
+        // Should now check distributed cache and return true
+        Assert.True(await cache.ExistsAsync(key));
+        Assert.Equal(2, cache.LocalCacheHits); // No increment since it was a miss
+    }
+
+    public virtual async Task GetAllAsync_WithMultipleKeys_UsesHybridCache()
+    {
+        using var cache = GetDistributedHybridCacheClient();
+        Assert.NotNull(cache);
+
+        // Set some values
+        await cache.SetAsync("hybrid1", 1);
+        await cache.SetAsync("hybrid2", 2);
+        await cache.SetAsync("hybrid3", 3);
+        Assert.Equal(3, cache.LocalCache.Count);
+        Assert.Equal(0, cache.LocalCacheHits);
+
+        // GetAll should hit local cache for all keys
+        var result = await cache.GetAllAsync<int>(["hybrid1", "hybrid2", "hybrid3"]);
+        Assert.Equal(3, result.Count);
+        Assert.Equal(1, result["hybrid1"].Value);
+        Assert.Equal(2, result["hybrid2"].Value);
+        Assert.Equal(3, result["hybrid3"].Value);
+        Assert.Equal(3, cache.LocalCacheHits);
+
+        // Remove one key from local cache only
+        await cache.LocalCache.RemoveAsync("hybrid2");
+        Assert.Equal(2, cache.LocalCache.Count);
+
+        // GetAll should hit local cache for 2 keys, distributed for 1
+        result = await cache.GetAllAsync<int>(["hybrid1", "hybrid2", "hybrid3"]);
+        Assert.Equal(3, result.Count);
+        Assert.Equal(1, result["hybrid1"].Value);
+        Assert.Equal(2, result["hybrid2"].Value); // From distributed cache
+        Assert.Equal(3, result["hybrid3"].Value);
+        Assert.Equal(5, cache.LocalCacheHits); // +2 for hybrid1 and hybrid3
+        Assert.Equal(3, cache.LocalCache.Count); // hybrid2 should be back in local cache
+    }
+
+    public virtual async Task GetExpirationAsync_WithLocalCache_ChecksLocalCacheFirst()
+    {
+        using var cache = GetDistributedHybridCacheClient();
+        Assert.NotNull(cache);
+
+        const string key = "expiration-local-test";
+        var expiration = TimeSpan.FromMinutes(5);
+
+        // Set value with expiration
+        await cache.SetAsync(key, "test-value", expiration);
+        Assert.Equal(1, cache.LocalCache.Count);
+        Assert.Equal(0, cache.LocalCacheHits);
+
+        // First call should hit local cache and increment counter
+        var result = await cache.GetExpirationAsync(key);
+        Assert.NotNull(result);
+        Assert.True(result.Value > TimeSpan.Zero);
+        Assert.Equal(1, cache.LocalCacheHits);
+
+        // Second call should also hit local cache
+        result = await cache.GetExpirationAsync(key);
+        Assert.NotNull(result);
+        Assert.Equal(2, cache.LocalCacheHits);
+
+        // Remove from local cache only
+        await cache.LocalCache.RemoveAsync(key);
+        Assert.Equal(0, cache.LocalCache.Count);
+
+        // Should now check distributed cache
+        result = await cache.GetExpirationAsync(key);
+        Assert.NotNull(result);
+        Assert.Equal(2, cache.LocalCacheHits); // No increment since it was a miss
+    }
+
+    public virtual async Task ListAddAsync_WithMultipleInstances_WorksCorrectly()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -125,8 +192,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(3, values.Value.Count);
     }
 
-    [Fact]
-    public virtual async Task CanInvalidateLocalCacheViaRemoveAllAsync()
+    public virtual async Task RemoveAllAsync_WithLocalCache_InvalidatesLocalCache()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -154,7 +220,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, secondCache.LocalCache.Count);
     }
 
-    protected virtual async Task CanInvalidateLocalCacheViaRemoveByPrefixAsync()
+    public virtual async Task RemoveByPrefixAsync_WithLocalCache_InvalidatesLocalCache()
     {
         using var firstCache = GetDistributedHybridCacheClient();
         Assert.NotNull(firstCache);
@@ -180,6 +246,36 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await Task.Delay(250); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
+    }
+
+    public virtual async Task SetAsync_WithMultipleInstances_UsesLocalCache()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        await firstCache.SetAsync("first1", 1);
+        await firstCache.IncrementAsync("first2");
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        string cacheKey = Guid.NewGuid().ToString("N").Substring(10);
+        await firstCache.SetAsync(cacheKey, new SimpleModel { Data1 = "test" });
+        Assert.Equal(2, firstCache.LocalCache.Count);
+        Assert.Equal(0, secondCache.LocalCache.Count);
+        Assert.Equal(0, firstCache.LocalCacheHits);
+
+        Assert.True((await firstCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
+        Assert.Equal(1, firstCache.LocalCacheHits);
+        Assert.Equal(2, firstCache.LocalCache.Count);
+
+        Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
+        Assert.Equal(0, secondCache.LocalCacheHits);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        Assert.True((await secondCache.GetAsync<SimpleModel>(cacheKey)).HasValue);
+        Assert.Equal(1, secondCache.LocalCacheHits);
     }
 
     public void Dispose()

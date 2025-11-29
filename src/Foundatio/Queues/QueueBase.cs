@@ -39,7 +39,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
     private bool _isDisposed;
     private QueueStats _queueStats;
-    private DateTime _nextQueueStatsUpdate = DateTime.MinValue;
+    private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
@@ -55,7 +55,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
-        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider();
+        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
@@ -72,7 +72,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
-            if (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow())
+            if (_isDisposed || (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow()))
             {
                 if (_queueStats is not null)
                 {
@@ -84,7 +84,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
                 return (0, 0, 0);
             }
 
-            _nextQueueStatsUpdate = _timeProvider.GetUtcNow().UtcDateTime.Add(_options.MetricsPollingInterval);
+            _nextQueueStatsUpdate = _timeProvider.GetUtcNow().Add(_options.MetricsPollingInterval);
             _logger.LogTrace("Getting metrics queue stats for {QueueName} ({QueueId}): Next update scheduled for {NextQueueStatsUpdate:O}", _options.Name, QueueId, _nextQueueStatsUpdate);
             try
             {
@@ -414,3 +414,4 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _behaviors.Clear();
     }
 }
+

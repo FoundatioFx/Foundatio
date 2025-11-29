@@ -23,6 +23,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly ILoggerFactory _loggerFactory;
     protected readonly TimeProvider _timeProvider;
     protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    protected readonly IResiliencePolicy _resiliencePolicy;
     protected readonly ISerializer _serializer;
     private bool _isDisposed;
 
@@ -32,7 +33,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
+
         _resiliencePolicyProvider = options.ResiliencePolicyProvider;
+        _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<MessageBusBase<TOptions>, IMessageBus>(_logger, _timeProvider);
+
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
         _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();

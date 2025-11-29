@@ -14,6 +14,7 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 - [Jobs](#jobs)
 - [File Storage](#file-storage)
 - [Resilience](#resilience)
+- [Mediator](https://github.com/FoundatioFx/Foundatio.Mediator)
 
 Includes implementations in Redis, Azure, AWS, RabbitMQ, Kafka and in memory (for development).
 
@@ -317,7 +318,7 @@ You can customize resilience behavior throughout Foundatio by implementing [`IRe
 #### Resilience Policy Sample
 
 ```csharp
-using Foundatio.Utility.Resilience;
+using Foundatio.Resilience;
 
 // Create a basic resilience policy
 var policy = new ResiliencePolicyBuilder()
@@ -337,7 +338,7 @@ await policy.ExecuteAsync(async ct => {
 #### Circuit Breaker Sample
 
 ```csharp
-using Foundatio.Utility.Resilience;
+using Foundatio.Resilience;
 
 // Create a policy with circuit breaker
 var policy = new ResiliencePolicyBuilder()
@@ -357,7 +358,7 @@ await policy.ExecuteAsync(async ct => {
 #### Custom Resilience Provider Sample
 
 ```csharp
-using Foundatio.Utility.Resilience;
+using Foundatio.Resilience;
 
 // Create a custom resilience provider for your application
 var resilienceProvider = new ResiliencePolicyProvider()

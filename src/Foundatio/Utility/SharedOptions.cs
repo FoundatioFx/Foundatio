@@ -47,7 +47,7 @@ public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
     where TOption : SharedOptions, new()
     where TBuilder : SharedOptionsBuilder<TOption, TBuilder>, new()
 {
-    public TBuilder ResiliencePipelineProvider(IResiliencePolicyProvider resiliencePolicyProvider)
+    public TBuilder ResiliencePolicyProvider(IResiliencePolicyProvider resiliencePolicyProvider)
     {
         Target.ResiliencePolicyProvider = resiliencePolicyProvider ?? throw new ArgumentNullException(nameof(resiliencePolicyProvider));
         return (TBuilder)this;

@@ -95,34 +95,6 @@ public class ActionableStream : Stream, IAsyncDisposable
         DisposeAsync().GetAwaiter().GetResult();
     }
 
-#if NETSTANDARD
-    public async ValueTask DisposeAsync()
-    {
-        if (_disposed)
-            return;
-
-        try
-        {
-            _disposed = true;
-            await _disposeAction.Invoke().AnyContext();
-        }
-        catch (ObjectDisposedException)
-        {
-            /* ignore if these are already disposed; this is to make sure they are */
-        }
-
-        if (_stream is IAsyncDisposable streamAsyncDisposable)
-        {
-            await streamAsyncDisposable.DisposeAsync();
-        }
-        else
-        {
-            _stream?.Dispose();
-        }
-
-        GC.SuppressFinalize(this);
-    }
-#else
     public override async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -140,5 +112,4 @@ public class ActionableStream : Stream, IAsyncDisposable
 
         await base.DisposeAsync().AnyContext();
     }
-#endif
 }
