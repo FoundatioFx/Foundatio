@@ -135,6 +135,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
             foreach (var batch in redisKeys.Chunk(batchSize))
             {
+                // NOTE: Consider parallel processing per hash slot for performance optimization
                 foreach (var hashSlotGroup in batch.GroupBy(k => Database.Multiplexer.HashSlot(k)))
                 {
                     var hashSlotKeys = hashSlotGroup.ToArray();
@@ -162,6 +163,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             if (redisKeys.Count is 0)
                 return 0;
 
+            // NOTE: Consider parallel processing of batches for performance optimization
             foreach (var batch in redisKeys.Chunk(batchSize))
             {
                 try
@@ -206,6 +208,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             {
                 if (isCluster)
                 {
+                    // NOTE: Consider parallel processing per hash slot for performance optimization
                     foreach (var slotGroup in keys.GroupBy(k => _options.ConnectionMultiplexer.HashSlot(k)))
                     {
                         long count = await Database.KeyDeleteAsync(slotGroup.ToArray()).AnyContext();
@@ -298,6 +301,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (_options.ConnectionMultiplexer.IsCluster())
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count);
+            // NOTE: Consider parallel processing per hash slot for performance optimization
             foreach (var hashSlotGroup in redisKeys.GroupBy(k => _options.ConnectionMultiplexer.HashSlot(k)))
             {
                 var hashSlotKeys = hashSlotGroup.ToArray();
@@ -599,6 +603,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         {
             // For cluster/sentinel, group keys by hash slot since batch operations
             // require all keys to be in the same slot
+            // NOTE: Consider parallel processing per hash slot for performance optimization
             int successCount = 0;
             foreach (var slotGroup in pairs.GroupBy(p => _options.ConnectionMultiplexer.HashSlot(p.Key)))
             {
@@ -812,6 +817,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (_options.ConnectionMultiplexer.IsCluster())
         {
             var result = new Dictionary<string, TimeSpan?>(keyList.Count);
+            // NOTE: Consider parallel processing per hash slot for performance optimization
             foreach (var hashSlotGroup in keyList.GroupBy(k => _options.ConnectionMultiplexer.HashSlot(k)))
             {
                 var hashSlotKeys = hashSlotGroup.ToArray();
@@ -876,6 +882,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         if (_options.ConnectionMultiplexer.IsCluster())
         {
+            // NOTE: Consider parallel processing per hash slot for performance optimization
             foreach (var hashSlotGroup in expirations.GroupBy(kvp => _options.ConnectionMultiplexer.HashSlot(kvp.Key)))
             {
                 var hashSlotExpirations = hashSlotGroup.ToList();
