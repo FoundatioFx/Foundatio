@@ -59,7 +59,7 @@ The sections below contain a small subset of what's possible with Foundatio. We 
 
 Caching allows you to store and access data lightning fast, saving you exspensive operations to create or get data. We provide four different cache implementations that derive from the [`ICacheClient` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/ICacheClient.cs):
 
-1. [InMemoryCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property. We use this in [Exceptionless](https://github.com/exceptionless/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/exceptionless/Exceptionless/blob/master/src/Exceptionless.Core/Geo/MaxMindGeoIpService.cs).
+1. [InMemoryCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/InMemoryCacheClient.cs): An in memory cache client implementation. This cache implementation is only valid for the lifetime of the process. It's worth noting that the in memory cache client has the ability to cache the last X items via the `MaxItems` property or limit cache size via `MaxMemorySize` (in bytes) with intelligent size-aware eviction. We use this in [Exceptionless](https://github.com/exceptionless/Exceptionless) to only [keep the last 250 resolved geoip results](https://github.com/exceptionless/Exceptionless/blob/master/src/Exceptionless.Core/Geo/MaxMindGeoIpService.cs).
 2. [HybridCacheClient](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Caching/HybridCacheClient.cs): This cache implementation uses both an `ICacheClient` and the `InMemoryCacheClient` and uses an `IMessageBus` to keep the cache in sync across processes. This can lead to **huge wins in performance** as you are saving a serialization operation and a call to the remote cache if the item exists in the local cache.
 3. [RedisCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisCacheClient.cs): A Redis cache client implementation.
 4. [RedisHybridCacheClient](https://github.com/FoundatioFx/Foundatio.Redis/blob/master/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs): An implementation of `HybridCacheClient` that uses the `RedisCacheClient` as `ICacheClient` and the `RedisMessageBus` as `IMessageBus`.
@@ -73,6 +73,28 @@ using Foundatio.Caching;
 ICacheClient cache = new InMemoryCacheClient();
 await cache.SetAsync("test", 1);
 var value = await cache.GetAsync<int>("test");
+```
+
+#### Memory-Limited Cache
+
+The `InMemoryCacheClient` supports memory-based eviction with intelligent size-aware cleanup. When the cache exceeds the memory limit, it evicts items based on a combination of size, age, and access recency.
+
+```csharp
+using Foundatio.Caching;
+
+// Use dynamic sizing for automatic size calculation (recommended for mixed object types)
+var cache = new InMemoryCacheClient(o => o
+    .WithDynamicSizing(maxMemorySize: 100 * 1024 * 1024) // 100 MB limit
+    .MaxItems(10000)); // Optional: also limit by item count
+
+// Use fixed sizing for maximum performance (when objects are uniform)
+var fixedSizeCache = new InMemoryCacheClient(o => o
+    .WithFixedSizing(
+        maxMemorySize: 50 * 1024 * 1024,  // 50 MB limit
+        averageObjectSize: 1024));         // Assume 1KB per object
+
+// Check current memory usage
+Console.WriteLine($"Memory: {cache.CurrentMemorySize:N0} / {cache.MaxMemorySize:N0} bytes");
 ```
 
 ### [Queues](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Queues)
