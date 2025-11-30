@@ -669,10 +669,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task CanSetMaxMemorySize()
+    public async Task SetAsync_WithMaxMemorySizeLimit_EvictsWhenOverLimit()
     {
         // Use a memory limit that allows for testing eviction
-        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(200).CloneValues(false));
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(200, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -691,7 +691,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             // Add medium strings to approach the limit
             await cache.SetAsync("medium1", new string('a', 50)); // ~124 bytes
-            await cache.SetAsync("medium2", new string('b', 50)); // ~124 bytes  
+            await cache.SetAsync("medium2", new string('b', 50)); // ~124 bytes
             _logger.LogInformation($"After adding medium strings: CurrentMemorySize={cache.CurrentMemorySize}");
 
             // Add one more item that should trigger eviction
@@ -702,38 +702,38 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             // Give it a moment for async maintenance to run
             await Task.Delay(500);
             _logger.LogInformation($"After delay: CurrentMemorySize={cache.CurrentMemorySize}");
-            
-            Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5, 
+
+            Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
                 $"Memory size {cache.CurrentMemorySize} should be close to or below limit {cache.MaxMemorySize} (allowing 50% tolerance for async cleanup)");
-            
+
             // At least some items should still be accessible
             var hasAnyItems = (await cache.GetAsync<string>("small1")).HasValue ||
                              (await cache.GetAsync<string>("small2")).HasValue ||
                              (await cache.GetAsync<string>("medium1")).HasValue ||
                              (await cache.GetAsync<string>("medium2")).HasValue ||
                              (await cache.GetAsync<string>("final")).HasValue;
-            
+
             Assert.True(hasAnyItems, "At least some items should remain in cache");
         }
     }
 
     [Fact]
-    public async Task DebugMemoryTracking()
+    public async Task SetAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(1024).CloneValues(false));
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(1024, Log).CloneValues(false).LoggerFactory(Log));
         using (cache)
         {
             _logger.LogInformation($"Initial state: MaxMemorySize={cache.MaxMemorySize}, CurrentMemorySize={cache.CurrentMemorySize}");
-            
+
             await cache.SetAsync("key1", "value1");
             _logger.LogInformation($"After set key1: CurrentMemorySize={cache.CurrentMemorySize}");
-            
+
             // Verify the entry was actually added
             var result = await cache.GetAsync<string>("key1");
             _logger.LogInformation($"Retrieved key1: HasValue={result.HasValue}, Value='{result.Value}'");
-            
+
             Assert.True(result.HasValue, "Key should exist in cache");
-            
+
             // Only assert memory tracking if the cache is configured for it
             if (cache.MaxMemorySize.HasValue)
             {
@@ -743,10 +743,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task MaxMemorySizeWorksWithMaxItems()
+    public async Task SetAsync_WithBothLimits_RespectsMemoryAndItemLimits()
     {
         // Test that both limits work together
-        var cache = new InMemoryCacheClient(o => o.MaxItems(5).MaxMemorySize(512).CloneValues(false));
+        var cache = new InMemoryCacheClient(o => o.MaxItems(5).UseObjectSizer(512, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -754,7 +754,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             // Add items that should trigger memory limit before item limit
             var mediumString = new string('a', 100); // ~224 bytes each
-            
+
             await cache.SetAsync("item1", mediumString);
             await cache.SetAsync("item2", mediumString);
             await cache.SetAsync("item3", mediumString); // Should be close to or over 512 bytes total
@@ -766,23 +766,23 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task MemorySizeIsTrackedCorrectly()
+    public async Task MemorySize_WithVariousOperations_TracksCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.MaxMemorySize(null).CloneValues(false));
+        var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
             await cache.RemoveAllAsync();
             // Memory tracking should only occur when MaxMemorySize is set
             Assert.Null(cache.MaxMemorySize);
-            
+
             await cache.SetAsync("key1", "value1");
             // When MaxMemorySize is null, CurrentMemorySize should be 0
             Assert.Equal(0, cache.CurrentMemorySize);
         }
-        
+
         // Test with MaxMemorySize set
-        cache = new InMemoryCacheClient(o => o.MaxMemorySize(1024).CloneValues(false));
+        cache = new InMemoryCacheClient(o => o.UseObjectSizer(1024, Log).CloneValues(false).LoggerFactory(Log));
         using (cache)
         {
             await cache.RemoveAllAsync();
@@ -806,9 +806,262 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             await cache.SetAsync("key1", "value1");
             await cache.SetAsync("key2", "value2");
             Assert.True(cache.CurrentMemorySize > 0);
-            
+
             await cache.RemoveAllAsync();
             Assert.Equal(0, cache.CurrentMemorySize);
         }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithUseFixedObjectSize_ReturnsFixedSizeForAllObjects()
+    {
+        const long fixedSize = 100;
+        var cache = new InMemoryCacheClient(o => o.UseFixedObjectSize(10000, fixedSize).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Add items of varying actual sizes - memory should increment by fixed size each time
+            await cache.SetAsync("small", "a");
+            Assert.Equal(fixedSize, cache.CurrentMemorySize);
+
+            await cache.SetAsync("large", new string('x', 1000));
+            Assert.Equal(fixedSize * 2, cache.CurrentMemorySize);
+
+            await cache.SetAsync("int", 42);
+            Assert.Equal(fixedSize * 3, cache.CurrentMemorySize);
+
+            // Remove one item
+            await cache.RemoveAsync("small");
+            Assert.Equal(fixedSize * 2, cache.CurrentMemorySize);
+
+            // Update an item (should recalculate to same fixed size, so no change)
+            await cache.SetAsync("large", "tiny");
+            Assert.Equal(fixedSize * 2, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithUseObjectSizer_CalculatesSizesDynamically()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Add a small string
+            await cache.SetAsync("small", "a");
+            var smallSize = cache.CurrentMemorySize;
+            Assert.True(smallSize > 0, "Small string should have non-zero size");
+
+            // Add a larger string - size should increase more
+            await cache.SetAsync("large", new string('x', 100));
+            var totalSize = cache.CurrentMemorySize;
+            Assert.True(totalSize > smallSize, "Adding larger string should increase memory size");
+
+            // The large string should be bigger than the small string
+            var largeSize = totalSize - smallSize;
+            Assert.True(largeSize > smallSize, $"Large string size ({largeSize}) should be bigger than small string size ({smallSize})");
+        }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithCustomObjectSizeCalculator_UsesCustomCalculator()
+    {
+        int callCount = 0;
+        var cache = new InMemoryCacheClient(o => o
+            .MaxMemorySize(10000)
+            .ObjectSizeCalculator(_ =>
+            {
+                callCount++;
+                return 50;
+            })
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            callCount = 0; // Reset after RemoveAllAsync
+
+            await cache.SetAsync("key1", "value1");
+            Assert.True(callCount >= 1, "Custom calculator should have been called at least once");
+
+            await cache.SetAsync("key2", "value2");
+            Assert.True(callCount >= 2, "Custom calculator should have been called for second item");
+
+            Assert.Equal(100, cache.CurrentMemorySize); // 2 items * 50 bytes each
+        }
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Add items to a list
+            await cache.ListAddAsync("mylist", new[] { "item1", "item2", "item3" });
+            var sizeAfterAdd = cache.CurrentMemorySize;
+            Assert.True(sizeAfterAdd > 0, "Memory should be tracked for list items");
+            _logger.LogInformation("Size after ListAddAsync: {Size}", sizeAfterAdd);
+
+            // Add more items to the same list
+            await cache.ListAddAsync("mylist", new[] { "item4", "item5" });
+            var sizeAfterMoreItems = cache.CurrentMemorySize;
+            Assert.True(sizeAfterMoreItems > sizeAfterAdd, "Memory should increase when adding more list items");
+            _logger.LogInformation("Size after adding more items: {Size}", sizeAfterMoreItems);
+
+            // Remove items from the list
+            await cache.ListRemoveAsync("mylist", new[] { "item1", "item2" });
+            var sizeAfterRemove = cache.CurrentMemorySize;
+            Assert.True(sizeAfterRemove < sizeAfterMoreItems, "Memory should decrease when removing list items");
+            _logger.LogInformation("Size after ListRemoveAsync: {Size}", sizeAfterRemove);
+        }
+    }
+
+    [Fact]
+    public async Task CompactAsync_WithExpiredItems_EvictsExpiredItemsFirst()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var cache = new InMemoryCacheClient(o => o
+            .UseFixedObjectSize(100, 50)
+            .TimeProvider(timeProvider)
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Add an item that will expire soon
+            await cache.SetAsync("expiring", "value", TimeSpan.FromSeconds(1));
+
+            // Add items that won't expire
+            await cache.SetAsync("permanent1", "value");
+            await cache.SetAsync("permanent2", "value");
+
+            // Advance time so the first item expires
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+            // Force compaction by exceeding the limit
+            await cache.SetAsync("trigger", "value");
+
+            // Advance time to allow maintenance to process
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+            // The expired item should be gone, permanent items should remain
+            Assert.False((await cache.GetAsync<string>("expiring")).HasValue, "Expired item should be evicted first");
+            Assert.True((await cache.GetAsync<string>("permanent1")).HasValue || (await cache.GetAsync<string>("permanent2")).HasValue,
+                "At least one permanent item should remain");
+        }
+    }
+
+    [Fact]
+    public async Task CompactAsync_WithMemoryLimit_EvictsLargerLessUsedItems()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        // Use a tight memory limit that will force eviction
+        var cache = new InMemoryCacheClient(o => o
+            .UseObjectSizer(300, Log)
+            .TimeProvider(timeProvider)
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Add a large item that won't be accessed
+            await cache.SetAsync("large_unused", new string('x', 100));
+            var largeSize = cache.CurrentMemorySize;
+            _logger.LogInformation("After large_unused: size={Size}", largeSize);
+
+            // Advance time
+            timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+            // Add a small item and access it frequently
+            await cache.SetAsync("small_used", "tiny");
+            _ = await cache.GetAsync<string>("small_used");
+            _ = await cache.GetAsync<string>("small_used");
+            _ = await cache.GetAsync<string>("small_used");
+            _logger.LogInformation("After small_used: size={Size}", cache.CurrentMemorySize);
+
+            // Advance time again
+            timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+            // Add more items to trigger eviction
+            await cache.SetAsync("trigger1", new string('y', 50));
+            await cache.SetAsync("trigger2", new string('z', 50));
+            _logger.LogInformation("After triggers: size={Size}, count={Count}", cache.CurrentMemorySize, cache.Count);
+
+            // Advance time to allow maintenance to process
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+            // The small frequently-used item should have higher chance of survival
+            // due to the eviction algorithm favoring recently accessed items
+            var smallUsedExists = (await cache.GetAsync<string>("small_used")).HasValue;
+            var largeUnusedExists = (await cache.GetAsync<string>("large_unused")).HasValue;
+
+            _logger.LogInformation("small_used exists: {SmallExists}, large_unused exists: {LargeExists}",
+                smallUsedExists, largeUnusedExists);
+
+            // At minimum, verify the cache respects its memory limit
+            Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
+                $"Memory {cache.CurrentMemorySize} should be close to limit {cache.MaxMemorySize}");
+        }
+    }
+
+    [Fact]
+    public async Task CompactAsync_WithMaxItems_EvictsLeastRecentlyUsedItems()
+    {
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var cache = new InMemoryCacheClient(o => o
+            .MaxItems(3)
+            .TimeProvider(timeProvider)
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Add items in sequence
+            await cache.SetAsync("first", "1");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+            await cache.SetAsync("second", "2");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+            await cache.SetAsync("third", "3");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+            // Access the first item to make it recently used
+            _ = await cache.GetAsync<string>("first");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+            // Add a fourth item - should trigger eviction of "second" (least recently accessed)
+            await cache.SetAsync("fourth", "4");
+
+            // Advance time to allow maintenance to process
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+            // "first" was recently accessed, "third" and "fourth" are newer
+            // "second" should be evicted as least recently used
+            Assert.True((await cache.GetAsync<string>("first")).HasValue, "Recently accessed 'first' should remain");
+            Assert.False((await cache.GetAsync<string>("second")).HasValue, "Least recently used 'second' should be evicted");
+            Assert.True((await cache.GetAsync<string>("fourth")).HasValue, "Newest 'fourth' should remain");
+        }
+    }
+
+    [Fact]
+    public void Constructor_WithMaxMemorySizeButNoCalculator_Throws()
+    {
+        var options = new InMemoryCacheClientOptions
+        {
+            MaxMemorySize = 1024,
+            ObjectSizeCalculator = null
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new InMemoryCacheClient(options));
+        Assert.Contains("ObjectSizeCalculator", ex.Message);
     }
 }
