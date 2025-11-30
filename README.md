@@ -75,6 +75,28 @@ await cache.SetAsync("test", 1);
 var value = await cache.GetAsync<int>("test");
 ```
 
+#### Memory-Limited Cache
+
+The `InMemoryCacheClient` supports memory-based eviction with intelligent size-aware cleanup. When the cache exceeds the memory limit, it evicts items based on a combination of size, age, and access recency.
+
+```csharp
+using Foundatio.Caching;
+
+// Use ObjectSizer for dynamic size calculation (recommended for mixed object types)
+var cache = new InMemoryCacheClient(o => o
+    .UseObjectSizer(maxMemorySize: 100 * 1024 * 1024) // 100 MB limit
+    .MaxItems(10000)); // Optional: also limit by item count
+
+// Use fixed object size for maximum performance (when objects are uniform)
+var fixedSizeCache = new InMemoryCacheClient(o => o
+    .UseFixedObjectSize(
+        maxMemorySize: 50 * 1024 * 1024,  // 50 MB limit
+        averageObjectSize: 1024));         // Assume 1KB per object
+
+// Check current memory usage
+Console.WriteLine($"Memory: {cache.CurrentMemorySize:N0} / {cache.MaxMemorySize:N0} bytes");
+```
+
 ### [Queues](https://github.com/FoundatioFx/Foundatio/tree/master/src/Foundatio/Queues)
 
 Queues offer First In, First Out (FIFO) message delivery. We provide four different queue implementations that derive from the [`IQueue` interface](https://github.com/FoundatioFx/Foundatio/blob/master/src/Foundatio/Queues/IQueue.cs):

@@ -1064,4 +1064,178 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var ex = Assert.Throws<InvalidOperationException>(() => new InMemoryCacheClient(options));
         Assert.Contains("ObjectSizeCalculator", ex.Message);
     }
+
+    [Fact]
+    public async Task IncrementAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Increment on new key should track memory
+            var result = await cache.IncrementAsync("counter", 1.5);
+            Assert.Equal(1.5, result);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after Increment on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // Increment again should still track memory
+            result = await cache.IncrementAsync("counter", 2.5);
+            Assert.Equal(4.0, result);
+            var sizeAfterSecond = cache.CurrentMemorySize;
+            Assert.True(sizeAfterSecond > 0, "Memory should still be tracked after incrementing");
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task IncrementAsync_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Increment on new key should track memory
+            var result = await cache.IncrementAsync("counter", 1L);
+            Assert.Equal(1L, result);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after Increment on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // Increment again should still track memory
+            result = await cache.IncrementAsync("counter", 5L);
+            Assert.Equal(6L, result);
+            var sizeAfterSecond = cache.CurrentMemorySize;
+            Assert.True(sizeAfterSecond > 0, "Memory should still be tracked after incrementing");
+
+            // Decrement (negative increment)
+            result = await cache.IncrementAsync("counter", -2L);
+            Assert.Equal(4L, result);
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetIfHigherAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // SetIfHigher on new key should track memory
+            await cache.SetIfHigherAsync("counter", 100.5);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after SetIfHigher on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // SetIfHigher with higher value should update
+            await cache.SetIfHigherAsync("counter", 200.5);
+            var value = await cache.GetAsync<double>("counter");
+            Assert.Equal(200.5, value.Value);
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetIfHigherAsync_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // SetIfHigher on new key should track memory
+            await cache.SetIfHigherAsync("counter", 100L);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after SetIfHigher on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // SetIfHigher with higher value should update (size should remain similar for same type)
+            await cache.SetIfHigherAsync("counter", 200L);
+            var sizeAfterHigher = cache.CurrentMemorySize;
+            Assert.True(sizeAfterHigher > 0, "Memory should still be tracked after updating to higher value");
+
+            // SetIfHigher with lower value should NOT update the value
+            await cache.SetIfHigherAsync("counter", 50L);
+            var value = await cache.GetAsync<long>("counter");
+            Assert.Equal(200L, value.Value);
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetIfLowerAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // SetIfLower on new key should track memory
+            await cache.SetIfLowerAsync("counter", 100.5);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after SetIfLower on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // SetIfLower with lower value should update
+            await cache.SetIfLowerAsync("counter", 50.5);
+            var value = await cache.GetAsync<double>("counter");
+            Assert.Equal(50.5, value.Value);
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetIfLowerAsync_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // SetIfLower on new key should track memory
+            await cache.SetIfLowerAsync("counter", 100L);
+            var sizeAfterFirst = cache.CurrentMemorySize;
+            Assert.True(sizeAfterFirst > 0, $"Memory should be tracked after SetIfLower on new key. CurrentMemorySize={sizeAfterFirst}");
+
+            // SetIfLower with lower value should update (size should remain similar for same type)
+            await cache.SetIfLowerAsync("counter", 50L);
+            var sizeAfterLower = cache.CurrentMemorySize;
+            Assert.True(sizeAfterLower > 0, "Memory should still be tracked after updating to lower value");
+
+            // SetIfLower with higher value should NOT update the value
+            await cache.SetIfLowerAsync("counter", 200L);
+            var value = await cache.GetAsync<long>("counter");
+            Assert.Equal(50L, value.Value);
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
 }

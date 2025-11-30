@@ -422,9 +422,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
+        _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             double? currentValue = null;
             try
             {
@@ -448,8 +458,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -469,9 +487,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         long difference = value;
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
+        _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             long? currentValue = null;
             try
             {
@@ -495,8 +523,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -516,9 +552,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         double difference = value;
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
+        _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             double? currentValue = null;
             try
             {
@@ -542,8 +588,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -560,10 +614,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return -1;
         }
 
+        Interlocked.Increment(ref _writes);
+
         long difference = value;
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        _memory.AddOrUpdate(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
+        _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             long? currentValue = null;
             try
             {
@@ -587,8 +653,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -993,9 +1067,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone);
+        var result = _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             double? currentValue = null;
             try
             {
@@ -1014,8 +1098,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1034,9 +1126,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
+        long oldSize = 0;
+        long newSize = 0;
+        bool wasNewEntry = false;
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var result = _memory.AddOrUpdate(key, new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone), (_, existingEntry) =>
+        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone);
+        var result = _memory.AddOrUpdate(key, _ =>
         {
+            wasNewEntry = true;
+            newSize = newEntry.EstimatedSize;
+            return newEntry;
+        }, (_, existingEntry) =>
+        {
+            oldSize = existingEntry.EstimatedSize;
             long? currentValue = null;
             try
             {
@@ -1055,8 +1157,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
+            newSize = existingEntry.EstimatedSize;
             return existingEntry;
         });
+
+        if (_maxMemorySize.HasValue)
+        {
+            long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
+            if (sizeDelta != 0)
+                UpdateMemorySize(sizeDelta);
+        }
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1379,12 +1489,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         if (ShouldCompact)
+        {
             await CompactAsync().AnyContext();
 
-        // Periodically recalculate memory size to correct any drift from operations
-        // that modify values without tracking (e.g., list operations)
-        if (_maxMemorySize.HasValue)
-            RecalculateMemorySize();
+            // Recalculate memory size after compaction to correct any drift
+            if (_maxMemorySize.HasValue)
+                RecalculateMemorySize();
+        }
 
         _logger.LogTrace("DoMaintenance: Finished");
     }
