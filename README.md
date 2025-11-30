@@ -82,14 +82,14 @@ The `InMemoryCacheClient` supports memory-based eviction with intelligent size-a
 ```csharp
 using Foundatio.Caching;
 
-// Use ObjectSizer for dynamic size calculation (recommended for mixed object types)
+// Use dynamic sizing for automatic size calculation (recommended for mixed object types)
 var cache = new InMemoryCacheClient(o => o
-    .UseObjectSizer(maxMemorySize: 100 * 1024 * 1024) // 100 MB limit
+    .WithDynamicSizing(maxMemorySize: 100 * 1024 * 1024) // 100 MB limit
     .MaxItems(10000)); // Optional: also limit by item count
 
-// Use fixed object size for maximum performance (when objects are uniform)
+// Use fixed sizing for maximum performance (when objects are uniform)
 var fixedSizeCache = new InMemoryCacheClient(o => o
-    .UseFixedObjectSize(
+    .WithFixedSizing(
         maxMemorySize: 50 * 1024 * 1024,  // 50 MB limit
         averageObjectSize: 1024));         // Assume 1KB per object
 

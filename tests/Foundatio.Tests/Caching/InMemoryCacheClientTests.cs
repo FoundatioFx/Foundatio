@@ -672,7 +672,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithMaxMemorySizeLimit_EvictsWhenOverLimit()
     {
         // Use a memory limit that allows for testing eviction
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(200, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(200, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -720,7 +720,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(1024, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
         using (cache)
         {
             _logger.LogInformation($"Initial state: MaxMemorySize={cache.MaxMemorySize}, CurrentMemorySize={cache.CurrentMemorySize}");
@@ -746,7 +746,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public async Task SetAsync_WithBothLimits_RespectsMemoryAndItemLimits()
     {
         // Test that both limits work together
-        var cache = new InMemoryCacheClient(o => o.MaxItems(5).UseObjectSizer(512, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.MaxItems(5).WithDynamicSizing(512, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -782,7 +782,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
 
         // Test with MaxMemorySize set
-        cache = new InMemoryCacheClient(o => o.UseObjectSizer(1024, Log).CloneValues(false).LoggerFactory(Log));
+        cache = new InMemoryCacheClient(o => o.WithDynamicSizing(1024, Log).CloneValues(false).LoggerFactory(Log));
         using (cache)
         {
             await cache.RemoveAllAsync();
@@ -813,10 +813,10 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task SetAsync_WithUseFixedObjectSize_ReturnsFixedSizeForAllObjects()
+    public async Task SetAsync_WithWithFixedSizing_ReturnsFixedSizeForAllObjects()
     {
         const long fixedSize = 100;
-        var cache = new InMemoryCacheClient(o => o.UseFixedObjectSize(10000, fixedSize).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10000, fixedSize).LoggerFactory(Log));
 
         using (cache)
         {
@@ -844,9 +844,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task SetAsync_WithUseObjectSizer_CalculatesSizesDynamically()
+    public async Task SetAsync_WithWithDynamicSizing_CalculatesSizesDynamically()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
 
         using (cache)
         {
@@ -900,7 +900,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task ListAddAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).LoggerFactory(Log));
 
         using (cache)
         {
@@ -932,7 +932,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var cache = new InMemoryCacheClient(o => o
-            .UseFixedObjectSize(100, 50)
+            .WithFixedSizing(100, 50)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
 
@@ -967,7 +967,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         // Use a tight memory limit that will force eviction
         var cache = new InMemoryCacheClient(o => o
-            .UseObjectSizer(300, Log)
+            .WithDynamicSizing(300, Log)
             .TimeProvider(timeProvider)
             .LoggerFactory(Log));
 
@@ -1068,7 +1068,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task IncrementAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1096,7 +1096,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task IncrementAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1128,7 +1128,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetIfHigherAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1154,7 +1154,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetIfHigherAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1185,7 +1185,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetIfLowerAsync_Double_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1211,7 +1211,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task SetIfLowerAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
-        var cache = new InMemoryCacheClient(o => o.UseObjectSizer(10000, Log).CloneValues(false).LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
 
         using (cache)
         {
@@ -1235,6 +1235,50 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             // Remove and verify memory is freed
             await cache.RemoveAsync("counter");
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithMaxMemorySize_TracksMemoryCorrectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.WithDynamicSizing(10000, Log).CloneValues(false).LoggerFactory(Log));
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            Assert.Equal(0, cache.CurrentMemorySize);
+
+            // Set initial value
+            await cache.SetAsync("key", "short");
+            var sizeAfterSet = cache.CurrentMemorySize;
+            Assert.True(sizeAfterSet > 0, $"Memory should be tracked after Set. CurrentMemorySize={sizeAfterSet}");
+
+            // ReplaceIfEqual with matching value and larger replacement should update memory
+            var replaced = await cache.ReplaceIfEqualAsync("key", "much longer replacement string", "short");
+            Assert.True(replaced, "ReplaceIfEqual should succeed when values match");
+
+            var sizeAfterReplace = cache.CurrentMemorySize;
+            Assert.True(sizeAfterReplace > sizeAfterSet,
+                $"Memory should increase when replacing with larger value. Before={sizeAfterSet}, After={sizeAfterReplace}");
+
+            // ReplaceIfEqual with non-matching value should not change memory
+            replaced = await cache.ReplaceIfEqualAsync("key", "tiny", "wrong expected value");
+            Assert.False(replaced, "ReplaceIfEqual should fail when expected value doesn't match");
+
+            var sizeAfterFailedReplace = cache.CurrentMemorySize;
+            Assert.Equal(sizeAfterReplace, sizeAfterFailedReplace);
+
+            // ReplaceIfEqual with smaller replacement should decrease memory
+            replaced = await cache.ReplaceIfEqualAsync("key", "x", "much longer replacement string");
+            Assert.True(replaced, "ReplaceIfEqual should succeed");
+
+            var sizeAfterSmaller = cache.CurrentMemorySize;
+            Assert.True(sizeAfterSmaller < sizeAfterReplace,
+                $"Memory should decrease when replacing with smaller value. Before={sizeAfterReplace}, After={sizeAfterSmaller}");
+
+            // Remove and verify memory is freed
+            await cache.RemoveAsync("key");
             Assert.Equal(0, cache.CurrentMemorySize);
         }
     }

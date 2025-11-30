@@ -1032,13 +1032,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         bool wasExpectedValue = false;
+        long oldSize = 0;
+        long newSize = 0;
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
+                oldSize = existingEntry.EstimatedSize;
                 existingEntry.Value = value;
                 wasExpectedValue = true;
+                newSize = existingEntry.EstimatedSize;
 
                 if (expiresIn.HasValue)
                     existingEntry.ExpiresAt = expiresAt;
@@ -1048,6 +1052,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         });
 
         success = success && wasExpectedValue;
+
+        // Update memory size tracking if the value was replaced
+        if (_maxMemorySize.HasValue && wasExpectedValue && oldSize != newSize)
+            UpdateMemorySize(newSize - oldSize);
+
         await StartMaintenanceAsync().AnyContext();
 
         _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);

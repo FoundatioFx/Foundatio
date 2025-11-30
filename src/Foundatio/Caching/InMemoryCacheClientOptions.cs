@@ -16,14 +16,12 @@ public class InMemoryCacheClientOptions : SharedOptions
     public long? MaxMemorySize { get; set; }
 
     /// <summary>
-    /// Function to calculate the size of cache objects in bytes. If null, no size calculation is performed
-    /// unless <see cref="InMemoryCacheClientOptions.MaxMemorySize"/> is set, in which case an <see cref="ObjectSizer"/> is created automatically.
+    /// Function to calculate the size of cache objects in bytes. Required when <see cref="MaxMemorySize"/> is set.
     /// </summary>
     /// <remarks>
-    /// Object sizing is opt-in for performance. When <see cref="InMemoryCacheClientOptions.MaxMemorySize"/> is set but no calculator is provided,
-    /// an <see cref="ObjectSizer"/> instance is created automatically. The default implementation uses fast paths for common types
-    /// and falls back to JSON serialization for complex objects.
-    /// For performance-critical scenarios, use <see cref="InMemoryCacheClientOptionsBuilder.UseFixedObjectSize"/> to bypass calculation.
+    /// Object sizing is opt-in for performance. When <see cref="MaxMemorySize"/> is set, an <see cref="ObjectSizeCalculator"/> must also be provided.
+    /// Use <see cref="InMemoryCacheClientOptionsBuilder.WithDynamicSizing(long, ILoggerFactory)"/> for automatic size calculation using <see cref="ObjectSizer"/>,
+    /// or <see cref="InMemoryCacheClientOptionsBuilder.WithFixedSizing"/> for maximum performance with uniform object sizes.
     /// </remarks>
     public Func<object, long> ObjectSizeCalculator { get; set; }
 
@@ -53,7 +51,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
 
     /// <summary>
     /// Sets the maximum memory size in bytes. Use this with <see cref="ObjectSizeCalculator"/> for custom size calculation.
-    /// For most scenarios, prefer UseObjectSizer or <see cref="UseFixedObjectSize"/> which set both the limit and calculator.
+    /// For most scenarios, prefer <see cref="WithDynamicSizing(long, ILoggerFactory)"/> or <see cref="WithFixedSizing"/> which set both the limit and calculator.
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     public InMemoryCacheClientOptionsBuilder MaxMemorySize(long maxMemorySize)
@@ -78,7 +76,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     /// <param name="averageObjectSize">The fixed size in bytes to use for each cache entry.</param>
-    public InMemoryCacheClientOptionsBuilder UseFixedObjectSize(long maxMemorySize, long averageObjectSize)
+    public InMemoryCacheClientOptionsBuilder WithFixedSizing(long maxMemorySize, long averageObjectSize)
     {
         Target.MaxMemorySize = maxMemorySize;
         Target.ObjectSizeCalculator = _ => averageObjectSize;
@@ -86,11 +84,12 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     }
 
     /// <summary>
-    /// Use the ObjectSizer to calculate object sizes with a memory limit.
+    /// Use the ObjectSizer to calculate object sizes dynamically with a memory limit.
+    /// The ObjectSizer uses fast paths for common types and falls back to JSON serialization for complex objects.
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public InMemoryCacheClientOptionsBuilder UseObjectSizer(long maxMemorySize, ILoggerFactory loggerFactory = null)
+    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, ILoggerFactory loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
         var sizer = new ObjectSizer(loggerFactory);
@@ -99,12 +98,13 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     }
 
     /// <summary>
-    /// Use the ObjectSizer to calculate object sizes with a memory limit and custom type cache size.
+    /// Use the ObjectSizer to calculate object sizes dynamically with a memory limit and custom type cache size.
+    /// The ObjectSizer uses fast paths for common types and falls back to JSON serialization for complex objects.
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for. Default is 1000.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public InMemoryCacheClientOptionsBuilder UseObjectSizer(long maxMemorySize, int maxTypeCacheSize = 1000, ILoggerFactory loggerFactory = null)
+    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, int maxTypeCacheSize, ILoggerFactory loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
         var sizer = new ObjectSizer(maxTypeCacheSize, loggerFactory);
