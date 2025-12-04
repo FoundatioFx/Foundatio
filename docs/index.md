@@ -139,3 +139,7 @@ When building several large cloud applications we found a lack of great solution
 | [Minio](https://github.com/FoundatioFx/Foundatio.Minio) | | | | | ✅ |
 | [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) | | | | | ✅ |
 | [SshNet](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) | | | | | ✅ |
+
+## Related Projects
+
+- [**Foundatio.Mediator**](https://github.com/FoundatioFx/Foundatio.Mediator) - Blazingly fast, convention-based C# mediator powered by source generators and interceptors. Near-direct call performance with zero runtime reflection.

@@ -29,6 +29,7 @@ export default defineConfig({
     siteTitle: 'Foundatio',
     nav: [
       { text: 'Guide', link: '/guide/what-is-foundatio' },
+      { text: 'Mediator', link: 'https://github.com/FoundatioFx/Foundatio.Mediator' },
       { text: 'GitHub', link: 'https://github.com/FoundatioFx/Foundatio' }
     ],
     sidebar: {
@@ -67,6 +68,12 @@ export default defineConfig({
             { text: 'Redis', link: '/guide/implementations/redis' },
             { text: 'Azure', link: '/guide/implementations/azure' },
             { text: 'AWS', link: '/guide/implementations/aws' }
+          ]
+        },
+        {
+          text: 'Related Projects',
+          items: [
+            { text: 'Foundatio.Mediator', link: 'https://github.com/FoundatioFx/Foundatio.Mediator' }
           ]
         }
       ]
