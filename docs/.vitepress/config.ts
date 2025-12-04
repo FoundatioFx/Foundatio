@@ -29,7 +29,7 @@ export default defineConfig({
     siteTitle: false,
     nav: [
       { text: 'Guide', link: '/guide/what-is-foundatio' },
-      { text: 'Mediator', link: 'https://github.com/FoundatioFx/Foundatio.Mediator' },
+      { text: 'Mediator', link: 'https://mediator.foundatio.dev' },
       { text: 'GitHub', link: 'https://github.com/FoundatioFx/Foundatio' }
     ],
     sidebar: {
@@ -73,7 +73,7 @@ export default defineConfig({
         {
           text: 'Related Projects',
           items: [
-            { text: 'Foundatio.Mediator', link: 'https://github.com/FoundatioFx/Foundatio.Mediator' }
+            { text: 'Foundatio.Mediator', link: 'https://mediator.foundatio.dev' }
           ]
         }
       ]

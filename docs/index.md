@@ -142,4 +142,4 @@ When building several large cloud applications we found a lack of great solution
 
 ## Related Projects
 
-- [**Foundatio.Mediator**](https://github.com/FoundatioFx/Foundatio.Mediator) - Blazingly fast, convention-based C# mediator powered by source generators and interceptors. Near-direct call performance with zero runtime reflection.
+- [**Foundatio.Mediator**](https://mediator.foundatio.dev) - Blazingly fast, convention-based C# mediator powered by source generators and interceptors. Near-direct call performance with zero runtime reflection.
