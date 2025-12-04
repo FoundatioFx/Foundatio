@@ -26,7 +26,7 @@ export default defineConfig({
       light: 'https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio.svg',
       dark: 'https://raw.githubusercontent.com/FoundatioFx/Foundatio/master/media/foundatio-dark-bg.svg'
     },
-    siteTitle: 'Foundatio',
+    siteTitle: false,
     nav: [
       { text: 'Guide', link: '/guide/what-is-foundatio' },
       { text: 'Mediator', link: 'https://github.com/FoundatioFx/Foundatio.Mediator' },
