@@ -1,0 +1,11 @@
+services:
+  valkey:
+    image: valkey/valkey:9
+    ports:
+      - '6379:6379'
+
+  ready:
+    image: andrewlock/wait-for-dependencies
+    command: valkey:6379
+    depends_on:
+      - valkey
