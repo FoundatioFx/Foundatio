@@ -1901,7 +1901,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Null expirations throws ArgumentNullException
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.SetAllExpirationAsync(null!));
-            
+
             // Items containing empty key throws ArgumentException
             var itemsWithEmptyKey = new Dictionary<string, TimeSpan?> { { "key1", TimeSpan.FromMinutes(5) }, { String.Empty, TimeSpan.FromMinutes(10) } };
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllExpirationAsync(itemsWithEmptyKey));
