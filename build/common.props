@@ -10,7 +10,7 @@
     <MinVerSkip Condition="'$(Configuration)' == 'Debug'">true</MinVerSkip>
     <MinVerTagPrefix>v</MinVerTagPrefix>
 
-    <Copyright>Copyright (c) 2025 Foundatio.  All rights reserved.</Copyright>
+    <Copyright>Copyright © $([System.DateTime]::Now.ToString(yyyy)) Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <NoWarn>$(NoWarn);CS1591;</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
@@ -37,8 +37,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
-    <PackageReference Include="AsyncFixer" Version="1.6.0" PrivateAssets="All" />
-    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
+    <PackageReference Include="AsyncFixer" Version="2.1.0" PrivateAssets="All" />
+    <PackageReference Include="MinVer" Version="6.1.0" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
