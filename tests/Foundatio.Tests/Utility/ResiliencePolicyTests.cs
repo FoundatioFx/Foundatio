@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -15,7 +15,6 @@ using Moq;
 using Polly;
 using Polly.Retry;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 

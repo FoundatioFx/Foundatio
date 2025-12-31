@@ -1,10 +1,9 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
 using Foundatio.Storage;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage;
 
@@ -187,7 +186,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
         var storage = GetStorage();
-        if (storage == null)
+        if (storage is null)
             return;
 
         await ResetAsync(storage);

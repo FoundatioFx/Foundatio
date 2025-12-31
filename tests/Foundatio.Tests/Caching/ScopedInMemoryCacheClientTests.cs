@@ -1,7 +1,6 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
@@ -34,7 +33,7 @@ public class ScopedInMemoryCacheClientTests : CacheClientTestsBase
         return base.CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput();
     }
 
-        [Fact]
+    [Fact]
     public override Task ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus()
     {
         return base.ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus();

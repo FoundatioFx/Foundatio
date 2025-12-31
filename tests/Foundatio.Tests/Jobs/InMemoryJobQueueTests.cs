@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Foundatio.Queues;
 
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs;
 

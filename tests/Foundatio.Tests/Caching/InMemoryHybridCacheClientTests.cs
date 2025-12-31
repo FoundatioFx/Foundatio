@@ -4,7 +4,6 @@ using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
