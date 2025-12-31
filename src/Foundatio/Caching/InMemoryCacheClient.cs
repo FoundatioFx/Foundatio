@@ -350,8 +350,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             return existingEntry;
         });
@@ -397,8 +396,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             return existingEntry;
         });
@@ -444,8 +442,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             return existingEntry;
         });
@@ -489,8 +486,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             return existingEntry;
         });
@@ -798,8 +794,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 existingEntry.Value = value;
                 wasExpectedValue = true;
 
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
             }
 
             return existingEntry;
@@ -932,7 +927,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         Interlocked.Increment(ref _hits);
-        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt?.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
+
+        // Return null for keys with no expiration (DateTime.MaxValue means no expiration)
+        if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+            return Task.FromResult<TimeSpan?>(null);
+
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
@@ -966,7 +966,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             Interlocked.Increment(ref _hits);
 
             // Skip keys without expiration (consistent with GetExpirationAsync behavior)
-            if (existingEntry.ExpiresAt.HasValue)
+            // DateTime.MaxValue means no expiration
+            if (existingEntry.ExpiresAt.HasValue && existingEntry.ExpiresAt.Value != DateTime.MaxValue)
                 result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
         }
 
