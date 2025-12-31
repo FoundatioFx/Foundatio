@@ -302,6 +302,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            RemoveExpiredKey(key);
+            return Task.FromResult(false);
+        }
+
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone), true);
     }
@@ -309,6 +315,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            RemoveExpiredKey(key);
+            return Task.FromResult(false);
+        }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone));
@@ -321,7 +333,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -367,7 +379,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -413,7 +425,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -459,7 +471,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         long difference = value;
@@ -501,13 +513,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
-        if (expiresAt < utcNow)
+        if (expiresIn is { Ticks: <= 0 })
         {
-            await ListRemoveAsync(key, values).AnyContext();
+            RemoveExpiredKey(key);
             return 0;
         }
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
 
         Interlocked.Increment(ref _writes);
 
@@ -812,10 +825,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn is { Ticks: <= 0 })
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -853,10 +866,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn is { Ticks: <= 0 })
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
