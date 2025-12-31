@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <Description>xUnit v3 test utilities for Foundatio including test logging. For projects still on xUnit v2, use Foundatio.Xunit2 instead.</Description>
     <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
@@ -8,9 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0" />
-    <PackageReference Include="xunit" Version="2.9.3" />
-  </ItemGroup>
-  <ItemGroup Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net6.0'))">
-    <PackageReference Include="System.Collections.Immutable" Version="8.0" />
+    <PackageReference Include="xunit.v3.assert" Version="3.2.1" />
+    <PackageReference Include="xunit.v3.extensibility.core" Version="3.2.1" />
   </ItemGroup>
 </Project>
