@@ -4,7 +4,6 @@ using Foundatio.Queues;
 using Foundatio.Tests.Queue;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.AWS.Tests.Queues;
 
@@ -286,7 +285,7 @@ public class SQSQueueTests : QueueTestBase
                 Assert.Equal(0, stats.Working);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(3));
+            await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
 
             if (_assertStats)
             {

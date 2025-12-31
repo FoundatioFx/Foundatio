@@ -4,7 +4,6 @@ using Amazon.S3.Model;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.AWS.Tests.Storage;
 
@@ -151,14 +150,14 @@ public class S3FileStorageTests : FileStorageTestsBase
     public virtual async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
         var storage = GetStorage();
-        if (storage == null)
+        if (storage is null)
             return;
 
         await ResetAsync(storage);
 
         using (storage)
         {
-            var result = await storage.GetPagedFileListAsync();
+            var result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -177,9 +176,9 @@ public class S3FileStorageTests : FileStorageTestsBase
                 BucketName = BUCKET_NAME,
                 Key = folderName,
                 ContentBody = String.Empty
-            });
+            }, TestCancellationToken);
 
-            result = await storage.GetPagedFileListAsync();
+            result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -191,7 +190,7 @@ public class S3FileStorageTests : FileStorageTestsBase
             Assert.NotNull(info?.Path);
 
             // Ensure delete files can remove all files including fake folders
-            await storage.DeleteFilesAsync("*");
+            await storage.DeleteFilesAsync("*", TestCancellationToken);
 
             info = await storage.GetFileInfoAsync(folderName);
             Assert.Null(info);
