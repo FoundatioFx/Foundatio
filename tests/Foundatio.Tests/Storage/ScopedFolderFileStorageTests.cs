@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Foundatio.Extensions;
@@ -193,7 +193,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
 
         using (storage)
         {
-            var result = await storage.GetPagedFileListAsync();
+            var result = await storage.GetPagedFileListAsync(cancellationToken: CancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -205,7 +205,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
             Assert.NotNull(folder);
             Directory.CreateDirectory(Path.Combine(folder, "scoped", directory));
 
-            result = await storage.GetPagedFileListAsync();
+            result = await storage.GetPagedFileListAsync(cancellationToken: CancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -217,7 +217,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
             Assert.Null(info);
 
             // Ensure delete files can remove all files including fake folders
-            await storage.DeleteFilesAsync("*");
+            await storage.DeleteFilesAsync("*", CancellationToken);
 
             // Assert folder was removed by Delete Files
             Assert.False(Directory.Exists(Path.Combine(folder, "scoped", directory)));

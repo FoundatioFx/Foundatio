@@ -652,7 +652,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
 
         Assert.Equal(1, await firstCache.RemoveAllAsync());
 
-        await Task.Delay(250); // Allow time for local cache to clear
+        await Task.Delay(250, CancellationToken); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
     }
