@@ -18,7 +18,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 using Xunit;
-using Xunit.Abstractions;
 
 #pragma warning disable 4014
 
@@ -259,7 +258,7 @@ public class RedisQueueTests : QueueTestBase
             Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}:dequeued"));
             Assert.Equal(5, await muxer.CountAllKeysAsync());
 
-            await Task.Delay(TimeSpan.FromSeconds(4));
+            await Task.Delay(TimeSpan.FromSeconds(4), TestCancellationToken);
 
             Assert.True(await db.KeyExistsAsync($"{listPrefix}:{id}"));
             Assert.Equal(0, await db.ListLengthAsync($"{listPrefix}:in"));
@@ -476,7 +475,7 @@ public class RedisQueueTests : QueueTestBase
 
         // Wait longer than the workItemTimeout.
         // This is the period between a queue having DequeueAsync called on it and the first item being enqueued.
-        await Task.Delay(workItemTimeout.Add(TimeSpan.FromMilliseconds(1)));
+        await Task.Delay(workItemTimeout.Add(TimeSpan.FromMilliseconds(1)), TestCancellationToken);
 
         // Add an item. DequeueAsync can now return.
         string id = await queue.EnqueueAsync(new SimpleWorkItem
@@ -699,7 +698,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
             await workItem.CompleteAsync();
             work++;
             countdown.Signal();
-        });
+        }, cancellationToken: TestCancellationToken);
 
         await countdown.WaitAsync(TimeSpan.FromMinutes(1));
         Assert.Equal(0, countdown.CurrentCount);
@@ -721,7 +720,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         await HandlerCommand1Async();
         await HandlerCommand2Async();
 
-        await Task.Delay(1000);
+        await Task.Delay(1000, TestCancellationToken);
 
         await Publish1Async();
         await Publish2Async();

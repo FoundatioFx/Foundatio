@@ -7,8 +7,6 @@ using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
-using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Locks;
 
@@ -106,18 +104,18 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
         _messageBus.Dispose();
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        return muxer.FlushAllAsync();
+        return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
         Dispose();
 
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

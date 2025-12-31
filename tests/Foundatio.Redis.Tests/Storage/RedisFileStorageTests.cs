@@ -4,7 +4,6 @@ using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Storage;
 
@@ -145,16 +144,16 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
         return base.CanSaveOverExistingStoredContent();
     }
 
-    public Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        return muxer.FlushAllAsync();
+        await muxer.FlushAllAsync();
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

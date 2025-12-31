@@ -11,8 +11,6 @@ using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Queue;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
-using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Messaging;
 
@@ -180,7 +178,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
                     {
                         Assert.Equal("Hello", msg.Data);
                         countdown.Signal();
-                    });
+                    }, TestCancellationToken);
 
                     await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" });
                     await countdown.WaitAsync(TimeSpan.FromSeconds(2));
@@ -197,16 +195,16 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
         }
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        return muxer.FlushAllAsync();
+        return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

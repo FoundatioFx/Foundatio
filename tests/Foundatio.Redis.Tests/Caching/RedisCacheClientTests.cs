@@ -7,7 +7,6 @@ using Foundatio.Tests.Caching;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Redis.Tests.Caching;
 
@@ -53,7 +52,7 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
         return base.CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput();
     }
 
-        [Fact]
+    [Fact]
     public override Task ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus()
     {
         return base.ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus();
@@ -644,16 +643,16 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
         }
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        return muxer.FlushAllAsync();
+        return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

@@ -1,12 +1,10 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Jobs;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
-using IAsyncLifetime = Xunit.IAsyncLifetime;
 
 namespace Foundatio.Redis.Tests.Jobs;
 
@@ -50,16 +48,16 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
         return base.ActivityWillFlowThroughQueueJobAsync();
     }
 
-    public Task InitializeAsync()
+    public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log);
-        return muxer.FlushAllAsync();
+        return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public Task DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
