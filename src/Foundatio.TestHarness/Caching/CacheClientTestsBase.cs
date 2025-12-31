@@ -2881,24 +2881,24 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // Past expiration on existing key: should return -1 and remove the key
+            // Past expiration on existing key: should return 0 and remove the key
             await cache.SetAsync("set-if-higher-past-exp", 100.0);
             Assert.True(await cache.ExistsAsync("set-if-higher-past-exp"));
             double result = await cache.SetIfHigherAsync("set-if-higher-past-exp", 200.0, TimeSpan.FromMilliseconds(-1));
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-higher-past-exp"));
             Assert.False((await cache.GetAsync<double>("set-if-higher-past-exp")).HasValue);
 
-            // Past expiration on non-existent key: should return -1
+            // Past expiration on non-existent key: should return 0
             result = await cache.SetIfHigherAsync("set-if-higher-past-exp-nonexistent", 100.0, TimeSpan.FromMilliseconds(-1));
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-higher-past-exp-nonexistent"));
 
             // Zero expiration: should also be treated as expired
             await cache.SetAsync("set-if-higher-zero-exp", 100.0);
             Assert.True(await cache.ExistsAsync("set-if-higher-zero-exp"));
             result = await cache.SetIfHigherAsync("set-if-higher-zero-exp", 200.0, TimeSpan.Zero);
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-higher-zero-exp"));
             Assert.False((await cache.GetAsync<double>("set-if-higher-zero-exp")).HasValue);
 
@@ -3027,24 +3027,24 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // Past expiration on existing key: should return -1 and remove the key
+            // Past expiration on existing key: should return 0 and remove the key
             await cache.SetAsync("set-if-lower-past-exp", 100.0);
             Assert.True(await cache.ExistsAsync("set-if-lower-past-exp"));
             double result = await cache.SetIfLowerAsync("set-if-lower-past-exp", 50.0, TimeSpan.FromMilliseconds(-1));
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-lower-past-exp"));
             Assert.False((await cache.GetAsync<double>("set-if-lower-past-exp")).HasValue);
 
-            // Past expiration on non-existent key: should return -1
+            // Past expiration on non-existent key: should return 0
             result = await cache.SetIfLowerAsync("set-if-lower-past-exp-nonexistent", 100.0, TimeSpan.FromMilliseconds(-1));
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-lower-past-exp-nonexistent"));
 
             // Zero expiration: should also be treated as expired
             await cache.SetAsync("set-if-lower-zero-exp", 100.0);
             Assert.True(await cache.ExistsAsync("set-if-lower-zero-exp"));
             result = await cache.SetIfLowerAsync("set-if-lower-zero-exp", 50.0, TimeSpan.Zero);
-            Assert.Equal(-1, result);
+            Assert.Equal(0, result);
             Assert.False(await cache.ExistsAsync("set-if-lower-zero-exp"));
             Assert.False((await cache.GetAsync<double>("set-if-lower-zero-exp")).HasValue);
 
