@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
 using Microsoft.AspNetCore.TestHost;
@@ -8,7 +9,7 @@ namespace Foundatio.Tests.Hosting;
 
 public static class TestServerExtensions
 {
-    public static async Task WaitForReadyAsync(this TestServer server, TimeSpan? maxWaitTime = null)
+    public static async Task WaitForReadyAsync(this TestServer server, TimeSpan? maxWaitTime = null, CancellationToken cancellationToken = default)
     {
         var startupContext = server.Host.Services.GetService<StartupActionsContext>();
         maxWaitTime ??= TimeSpan.FromSeconds(5);
@@ -17,17 +18,19 @@ public static class TestServerExtensions
         var startTime = DateTime.Now;
         do
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (startupContext != null && startupContext.IsStartupComplete && startupContext.Result.Success == false)
                 throw new OperationCanceledException($"Startup action \"{startupContext.Result.FailedActionName}\" failed");
 
-            var response = await client.GetAsync("/ready");
+            var response = await client.GetAsync("/ready", cancellationToken);
             if (response.IsSuccessStatusCode)
                 break;
 
             if (DateTime.Now.Subtract(startTime) > maxWaitTime)
                 throw new TimeoutException("Failed waiting for server to be ready");
 
-            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
         } while (true);
     }
 }

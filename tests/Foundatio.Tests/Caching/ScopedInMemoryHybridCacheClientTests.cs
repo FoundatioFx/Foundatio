@@ -1,7 +1,6 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
@@ -460,7 +459,9 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task Serialization_WithComplexObjectsAndValidation_MeasuresThroughput()
     {
         return base.Serialization_WithComplexObjectsAndValidation_MeasuresThroughput();
-    }    [Fact]
+    }
+
+    [Fact]
     public override Task Serialization_WithSimpleObjectsAndValidation_MeasuresThroughput()
     {
         return base.Serialization_WithSimpleObjectsAndValidation_MeasuresThroughput();

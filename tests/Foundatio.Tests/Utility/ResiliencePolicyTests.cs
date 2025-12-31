@@ -15,7 +15,6 @@ using Moq;
 using Polly;
 using Polly.Retry;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
@@ -34,7 +33,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var task = Task.Run(() =>
         {
             _logger.LogInformation("Hi");
-        });
+        }, TestCancellationToken);
 
         await task;
         await task;
@@ -239,7 +238,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             await policy.ExecuteAsync(async ct =>
             {
                 await Task.Delay(500, ct);
-            });
+            }, TestCancellationToken);
         });
     }
 
@@ -290,19 +289,19 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // send 10 successful calls
         for (int i = 0; i < 10; i++)
-            await policy.ExecuteAsync(DoStuff);
+            await policy.ExecuteAsync(DoStuff, TestCancellationToken);
 
         // send 1 error call before the circuit breaker is triggered
-        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
 
         // send 1 more error call to trigger the circuit breaker
-        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
         Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
 
         // send 10 error calls and ensure they throw BrokenCircuitException
         for (int i = 0; i < 10; i++)
-            await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(() => DoBoom()));
+            await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
 
         Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
 
@@ -311,7 +310,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // send 10 successful calls to close the circuit breaker
         for (int i = 0; i < 10; i++)
-            await policy.ExecuteAsync(DoStuff);
+            await policy.ExecuteAsync(DoStuff, TestCancellationToken);
 
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
     }
@@ -343,18 +342,18 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             {
                 try
                 {
-                    await policy1.ExecuteAsync(DoStuff);
+                    await policy1.ExecuteAsync(DoStuff, TestCancellationToken);
                 }
                 catch (BrokenCircuitException)
                 {
                     // ignore
                 }
 
-                await Task.Delay(1);
+                await Task.Delay(1, TestCancellationToken);
             }
 
             _logger.LogInformation("Done with task1");
-        });
+        }, TestCancellationToken);
 
         var task2 = Task.Run(async () =>
         {
@@ -362,7 +361,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             {
                 try
                 {
-                    await policy2.ExecuteAsync(async () => await DoBoom());
+                    await policy2.ExecuteAsync(async () => await DoBoom(), TestCancellationToken);
                 }
                 catch (Exception)
                 {
@@ -371,7 +370,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             }
 
             _logger.LogInformation("Done with task2");
-        });
+        }, TestCancellationToken);
 
         await Task.WhenAll(task1, task2);
 

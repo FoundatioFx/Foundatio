@@ -17,7 +17,6 @@ using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 #pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue;

@@ -4,7 +4,6 @@ using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Locks;
 
