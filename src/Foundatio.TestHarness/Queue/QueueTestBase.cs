@@ -21,7 +21,7 @@ using Xunit;
 
 namespace Foundatio.Tests.Queue;
 
-public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
+public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 {
     protected QueueTestBase(ITestOutputHelper output) : base(output)
     {
@@ -1490,12 +1490,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         {
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
-            queue.EnqueueAsync(new SimpleWorkItem
+            var enqueueTask1 = queue.EnqueueAsync(new SimpleWorkItem
             {
                 Data = "Hello World",
                 Id = 1
             });
-            queue.EnqueueAsync(new SimpleWorkItem
+            var enqueueTask2 = queue.EnqueueAsync(new SimpleWorkItem
             {
                 Data = "Hello World",
                 Id = 2
@@ -1524,6 +1524,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
                 Assert.Equal(0, stats.Abandoned);
                 Assert.Equal(2, stats.Completed);
             }
+
+            await Task.WhenAll(enqueueTask1, enqueueTask2);
         }
         finally
         {
@@ -1599,15 +1601,13 @@ public abstract class QueueTestBase : TestWithLoggingBase, IDisposable
         }
     }
 
-    public virtual void Dispose()
+    public async ValueTask DisposeAsync()
     {
         using var queue = GetQueue();
         if (queue is null)
             return;
 
-        using (queue)
-            _ = Task.Run(queue.DeleteQueueAsync);
-
+        await queue.DeleteQueueAsync();
         GC.SuppressFinalize(this);
     }
 }
