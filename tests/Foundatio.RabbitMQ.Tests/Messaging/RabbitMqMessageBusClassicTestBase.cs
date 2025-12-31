@@ -5,7 +5,6 @@ using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
 
@@ -46,12 +45,12 @@ public abstract class RabbitMqMessageBusClassicTestBase : RabbitMqMessageBusTest
                 _logger.LogTrace("SimpleAMessage received");
                 Interlocked.Increment(ref handlerInvocations);
                 throw new Exception("Poisoned message");
-            });
+            }, TestCancellationToken);
 
             await messageBus.PublishAsync(new SimpleMessageA());
             _logger.LogTrace("Published one...");
 
-            await Task.Delay(TimeSpan.FromSeconds(3));
+            await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
             Assert.Equal(3, handlerInvocations);
         }
         finally
