@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 /// <summary>
 /// Used to capture messages to potentially be forwarded later. Messages are forwarded by

@@ -5,7 +5,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 public class TestLogger : ILoggerFactory
 {

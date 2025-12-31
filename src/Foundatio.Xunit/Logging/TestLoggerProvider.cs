@@ -1,7 +1,7 @@
 using System;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 [ProviderAlias("Test")]
 public class TestLoggerProvider : ILoggerProvider

@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 [Serializable]
 public class RetryTestCase : XunitTestCase

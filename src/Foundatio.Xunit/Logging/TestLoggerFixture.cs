@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using Xunit;
 using Xunit.Abstractions;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 public class TestLoggerFixture : IAsyncLifetime
 {

@@ -1,8 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageId>Foundatio.Xunit2</PackageId>
-    <Description>xUnit v2 test utilities for Foundatio including test logging and retry attributes. Use this package for projects still on xUnit v2. For xUnit v3, use Foundatio.Xunit instead.</Description>
-    <PackageTags>$(PackageTags);Logging;Log;Xunit;Xunit2;Retry</PackageTags>
+    <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
   <ItemGroup>

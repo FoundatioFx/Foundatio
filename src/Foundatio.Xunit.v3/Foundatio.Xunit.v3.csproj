@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Description>xUnit v3 test utilities for Foundatio including test logging. For projects still on xUnit v2, use Foundatio.Xunit2 instead.</Description>
+    <Description>xUnit v3 test utilities for Foundatio including test logging. For projects still on xUnit v2, use Foundatio.Xunit instead.</Description>
     <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
     <IsTestProject>false</IsTestProject>
     <RootNamespace>Foundatio.Xunit</RootNamespace>

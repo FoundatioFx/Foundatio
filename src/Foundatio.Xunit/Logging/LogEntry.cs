@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 public class LogEntry
 {

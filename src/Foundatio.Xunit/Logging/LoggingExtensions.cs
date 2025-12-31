@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit.Abstractions;
 
-namespace Foundatio.Xunit2;
+namespace Foundatio.Xunit;
 
 public static class LoggingExtensions
 {
