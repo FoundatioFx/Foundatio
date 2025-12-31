@@ -6,7 +6,6 @@ using Foundatio.Tests.Utility;
 using Microsoft.Azure.Storage.RetryPolicies;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Queue;
 

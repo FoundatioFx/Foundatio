@@ -6,7 +6,6 @@ using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Foundatio.Tests.Utility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Azure.Tests.Storage;
 
@@ -153,14 +152,14 @@ public class AzureStorageTests : FileStorageTestsBase
     public virtual async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
         var storage = GetStorage();
-        if (storage == null)
+        if (storage is null)
             return;
 
         await ResetAsync(storage);
 
         using (storage)
         {
-            var result = await storage.GetPagedFileListAsync();
+            var result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -171,9 +170,9 @@ public class AzureStorageTests : FileStorageTestsBase
             Assert.NotNull(container);
 
             var blockBlob = container.GetBlockBlobReference("EmptyFolder/");
-            await blockBlob.UploadFromStreamAsync(new MemoryStream(), null, null, null);
+            await blockBlob.UploadFromStreamAsync(new MemoryStream(), null, null, null, TestCancellationToken);
 
-            result = await storage.GetPagedFileListAsync();
+            result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
