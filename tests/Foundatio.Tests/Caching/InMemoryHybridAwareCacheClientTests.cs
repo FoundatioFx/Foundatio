@@ -38,6 +38,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
         return base.CacheOperations_WithMultipleTypes_MeasuresThroughput();
@@ -187,9 +193,9 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task IncrementAsync_WithExpiration_ExpiresCorrectly()
+    public override Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.IncrementAsync_WithExpiration_ExpiresCorrectly();
+        return base.IncrementAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -211,9 +217,9 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task ListAddAsync_WithExpiration_ExpiresCorrectly()
+    public override Task ListAddAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.ListAddAsync_WithExpiration_ExpiresCorrectly();
+        return base.ListAddAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -256,6 +262,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task ListRemoveAsync_WithValues_RemovesCorrectly()
     {
         return base.ListRemoveAsync_WithValues_RemovesCorrectly();
+    }
+
+    [Fact]
+    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -445,6 +457,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ReplaceAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly();
@@ -481,9 +499,9 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
+    public override Task SetAllAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllAsync_WithExpiration_KeysExpireCorrectly();
+        return base.SetAllAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -513,9 +531,9 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
+    public override Task SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly();
+        return base.SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -525,9 +543,9 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetAsync_WithExpirationEdgeCases_HandlesCorrectly()
+    public override Task SetAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAsync_WithExpirationEdgeCases_HandlesCorrectly();
+        return base.SetAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -567,33 +585,15 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
-    public override Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
-    {
-        return base.SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey()
-    {
-        return base.SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
-    {
-        return base.SetExpirationAsync_WithDateTimeMaxValue_NeverExpires();
-    }
-
-    [Fact]
     public override Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         return base.SetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
+    public override Task SetExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately();
+        return base.SetExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -609,6 +609,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         return base.SetIfLowerAsync_WithDateTime_UpdatesWhenLower();
@@ -618,6 +624,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly()
     {
         return base.SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
