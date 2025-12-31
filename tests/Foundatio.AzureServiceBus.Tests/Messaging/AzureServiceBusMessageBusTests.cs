@@ -4,7 +4,6 @@ using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Utility;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.AzureServiceBus.Tests.Messaging;
 
