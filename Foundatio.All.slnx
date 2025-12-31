@@ -57,5 +57,6 @@
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />
+  <Project Path="src/Foundatio.Xunit2/Foundatio.Xunit2.csproj" />
   <Project Path="src/Foundatio/Foundatio.csproj" />
 </Solution>

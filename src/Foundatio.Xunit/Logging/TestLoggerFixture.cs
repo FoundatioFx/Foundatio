@@ -70,7 +70,10 @@ public class TestLoggerFixture : IAsyncLifetime
                         break;
                 }
             }
-            catch (ObjectDisposedException) { }
+            catch (ObjectDisposedException)
+            {
+                // Resource was already disposed; safe to ignore during cleanup
+            }
             catch (Exception ex)
             {
                 Log?.LogError(ex, "Error disposing resource.");

@@ -53,11 +53,8 @@ internal class TestLoggerLogger : ILogger
                 break;
         }
 
-        foreach (object scope in scopes)
+        foreach (var scopeData in scopes.OfType<IDictionary<string, object>>())
         {
-            if (!(scope is IDictionary<string, object> scopeData))
-                continue;
-
             foreach (var property in scopeData)
                 logEntry.Properties[property.Key] = property.Value;
         }
