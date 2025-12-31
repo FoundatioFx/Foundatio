@@ -12,7 +12,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foundatio.Xunit\Foundatio.Xunit.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Xunit.v3\Foundatio.Xunit.v3.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>
 </Project>

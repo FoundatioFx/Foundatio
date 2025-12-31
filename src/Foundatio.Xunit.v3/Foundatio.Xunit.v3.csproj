@@ -3,6 +3,7 @@
     <Description>xUnit v3 test utilities for Foundatio including test logging. For projects still on xUnit v2, use Foundatio.Xunit2 instead.</Description>
     <PackageTags>$(PackageTags);Logging;Log;Xunit;Retry</PackageTags>
     <IsTestProject>false</IsTestProject>
+    <RootNamespace>Foundatio.Xunit</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
