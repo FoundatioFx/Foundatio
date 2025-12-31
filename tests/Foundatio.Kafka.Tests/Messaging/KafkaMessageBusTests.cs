@@ -7,7 +7,6 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Kafka.Tests.Messaging;
 

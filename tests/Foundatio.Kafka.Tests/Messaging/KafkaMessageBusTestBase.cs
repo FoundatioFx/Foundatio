@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace Foundatio.Kafka.Tests.Messaging;
 
