@@ -7,31 +7,181 @@ Caching allows you to store and access data lightning fast, saving expensive ope
 ```csharp
 public interface ICacheClient : IDisposable
 {
+    // Key operations
     Task<bool> RemoveAsync(string key);
     Task<bool> RemoveIfEqualAsync<T>(string key, T expected);
     Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
     Task<int> RemoveByPrefixAsync(string prefix);
+    Task<bool> ExistsAsync(string key);
+
+    // Get operations
     Task<CacheValue<T>> GetAsync<T>(string key);
     Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys);
+
+    // Set operations
     Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null);
     Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null);
     Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null);
     Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null);
     Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null);
+
+    // Numeric operations
     Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null);
     Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null);
-    Task<bool> ExistsAsync(string key);
-    Task<TimeSpan?> GetExpirationAsync(string key);
-    Task SetExpirationAsync(string key, TimeSpan expiresIn);
     Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null);
     Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null);
     Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null);
     Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null);
+
+    // Expiration operations
+    Task<TimeSpan?> GetExpirationAsync(string key);
+    Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys);
+    Task SetExpirationAsync(string key, TimeSpan expiresIn);
+    Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations);
+
+    // List operations
     Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
     Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
     Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100);
 }
 ```
+
+## Expiration (TTL) Behavior
+
+Many cache methods accept an optional `expiresIn` parameter that controls the TTL (Time-To-Live) of cached items. Understanding its behavior is critical for correct cache usage.
+
+### Quick Reference
+
+| `expiresIn` Value | Behavior |
+|-------------------|----------|
+| `null` | Entry will not expire. **Removes any existing TTL** on the key. |
+| Positive `TimeSpan` | Entry expires after the specified duration from now. |
+| Zero or negative | **Treated as already expired.** Key is removed, operation returns failure value. |
+| `TimeSpan.MaxValue` | Entry will not expire (equivalent to `null`). |
+
+### TTL Behavior by Method
+
+Different methods handle the `expiresIn` parameter slightly differently. The table below shows exactly what happens for each method:
+
+| Method | `null` expiresIn | Positive expiresIn | Zero/Negative | Return on Failure |
+|--------|------------------|-------------------|---------------|-------------------|
+| `SetAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
+| `AddAsync` | No TTL | Sets TTL | Removes key | `false` |
+| `SetAllAsync` | No TTL (removes existing) | Sets TTL | Removes all keys | `0` |
+| `ReplaceAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
+| `ReplaceIfEqualAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
+| `IncrementAsync` | **Preserves existing TTL** | Sets/updates TTL | Removes key | `0` |
+| `SetIfHigherAsync` | No TTL (removes existing) | Sets TTL | Removes key | `-1` |
+| `SetIfLowerAsync` | No TTL (removes existing) | Sets TTL | Removes key | `-1` |
+| `ListAddAsync` | No TTL | Sets TTL | Removes key | `0` |
+| `ListRemoveAsync` | Preserves existing TTL | Sets TTL | Removes key | `0` |
+
+::: tip Key Difference: IncrementAsync
+`IncrementAsync` is unique: passing `null` **preserves** any existing TTL rather than removing it. This is intentional for use cases like rate limiting, where you want to increment a counter without resetting its expiration window.
+
+```csharp
+// Set counter with 1-hour window
+await cache.SetAsync("rate:user:123", 0, TimeSpan.FromHours(1));
+
+// Increment without changing the TTL
+await cache.IncrementAsync("rate:user:123", 1, null); // TTL unchanged!
+
+// Increment AND reset TTL to 1 hour from now
+await cache.IncrementAsync("rate:user:123", 1, TimeSpan.FromHours(1));
+```
+:::
+
+### Detailed Examples
+
+```csharp
+// === Basic Set Operations ===
+
+// No expiration - item lives until explicitly removed
+await cache.SetAsync("permanent-key", value);           // null is default
+await cache.SetAsync("also-permanent", value, null);    // explicit null
+
+// Expires in 30 minutes
+await cache.SetAsync("session", data, TimeSpan.FromMinutes(30));
+
+// Never expires (equivalent to null)
+await cache.SetAsync("config", settings, TimeSpan.MaxValue);
+
+// Zero/negative = expired, key removed, returns false
+var success = await cache.SetAsync("invalid", value, TimeSpan.Zero);        // false
+var alsoFails = await cache.SetAsync("invalid", value, TimeSpan.FromSeconds(-1)); // false
+
+
+// === Increment Operations (TTL Preservation) ===
+
+// Create counter with TTL
+await cache.SetAsync("counter", 0, TimeSpan.FromMinutes(5));
+
+// Increment preserves TTL when null
+await cache.IncrementAsync("counter", 1, null);  // TTL still ~5 min
+
+// Increment with explicit TTL resets it
+await cache.IncrementAsync("counter", 1, TimeSpan.FromMinutes(10)); // TTL now 10 min
+
+// Zero/negative removes key, returns 0
+var result = await cache.IncrementAsync("counter", 5, TimeSpan.Zero); // 0
+
+
+// === SetIfHigher/SetIfLower (TTL Removal) ===
+
+// Create with TTL
+await cache.SetAsync("max-users", 100, TimeSpan.FromHours(1));
+
+// Update without TTL - REMOVES the existing TTL
+await cache.SetIfHigherAsync("max-users", 150, null); // No TTL now!
+
+// Update with TTL - sets new TTL
+await cache.SetIfHigherAsync("max-users", 200, TimeSpan.FromHours(2)); // TTL = 2 hours
+
+// Zero/negative removes key, returns -1
+var diff = await cache.SetIfHigherAsync("max-users", 999, TimeSpan.Zero); // -1
+```
+
+### Managing Expiration
+
+```csharp
+// Check remaining TTL
+TimeSpan? ttl = await cache.GetExpirationAsync("session");
+if (ttl == null)
+{
+    // Key doesn't exist OR has no expiration
+}
+
+// Update expiration on existing key
+await cache.SetExpirationAsync("session", TimeSpan.FromMinutes(30));
+
+// Remove expiration (make permanent) - use SetAllExpirationAsync with null
+await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?>
+{
+    ["session"] = null  // Removes TTL, key becomes permanent
+});
+
+// Bulk get/set expirations
+var ttls = await cache.GetAllExpirationAsync(new[] { "key1", "key2", "key3" });
+await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?>
+{
+    ["key1"] = TimeSpan.FromMinutes(10),
+    ["key2"] = TimeSpan.FromHours(1),
+    ["key3"] = null  // Remove expiration
+});
+```
+
+::: warning Azure Managed Redis
+On Azure Managed Redis (and many Redis deployments), the default eviction policy is `volatile-lru`, meaning **only keys with a TTL are eligible for eviction**. If you create many non-expiring keys, you may experience memory pressure and write failures.
+
+**Recommendations:**
+- Always set appropriate TTLs for cache entries when possible
+- Use `TimeSpan.MaxValue` only when you explicitly need permanent storage
+- Monitor your Redis memory usage and eviction metrics
+
+**Further Reading:**
+- [Azure Cache for Redis eviction policies](https://docs.microsoft.com/en-us/azure/azure-cache-for-redis/cache-configure#memory-policies)
+- [Redis eviction policies documentation](https://redis.io/docs/reference/eviction/)
+:::
 
 ## Implementations
 
