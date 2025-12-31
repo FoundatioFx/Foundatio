@@ -1,5 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
+using System.Threading;
+using Microsoft.Extensions.Logging;
+using Xunit;
 
 namespace Foundatio.Xunit;
 
@@ -14,4 +15,9 @@ public abstract class TestWithLoggingBase
     }
 
     protected TestLogger Log { get; }
+
+    /// <summary>
+    /// Gets the cancellation token for the current test. This token is automatically cancelled when the test times out.
+    /// </summary>
+    protected static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 }

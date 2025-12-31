@@ -1,34 +1,63 @@
-﻿using System;
-using System.ComponentModel;
+﻿#nullable enable
+
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using Xunit.Abstractions;
 using Xunit.Sdk;
+using Xunit.v3;
 
 namespace Foundatio.Xunit;
 
-[Serializable]
-public class RetryTestCase : XunitTestCase
+public class RetryTestCase : XunitTestCase, ISelfExecutingXunitTestCase
 {
-    private int maxRetries;
+    private int _maxRetries;
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [Obsolete("Called by the de-serializer", true)]
-    public RetryTestCase() { }
+    [Obsolete("Called by the de-serializer; should only be called by deriving classes for de-serialization purposes")]
+    public RetryTestCase()
+    { }
 
-    public RetryTestCase(IMessageSink diagnosticMessageSink, TestMethodDisplay testMethodDisplay, TestMethodDisplayOptions testMethodDisplayOptions, ITestMethod testMethod, int maxRetries)
-        : base(diagnosticMessageSink, testMethodDisplay, testMethodDisplayOptions, testMethod, testMethodArguments: null)
+    public RetryTestCase(
+        IXunitTestMethod testMethod,
+        string testCaseDisplayName,
+        string uniqueID,
+        bool @explicit,
+        Type[]? skipExceptions,
+        string? skipReason,
+        Type? skipType,
+        string? skipUnless,
+        string? skipWhen,
+        Dictionary<string, HashSet<string>>? traits,
+        object?[]? testMethodArguments,
+        string? sourceFilePath,
+        int? sourceLineNumber,
+        int? timeout,
+        int maxRetries)
+        : base(
+            testMethod,
+            testCaseDisplayName,
+            uniqueID,
+            @explicit,
+            skipExceptions,
+            skipReason,
+            skipType,
+            skipUnless,
+            skipWhen,
+            traits,
+            testMethodArguments,
+            sourceFilePath,
+            sourceLineNumber,
+            timeout)
     {
-        this.maxRetries = maxRetries;
+        _maxRetries = maxRetries;
     }
 
-    // This method is called by the xUnit test framework classes to run the test case. We will do the
-    // loop here, forwarding on to the implementation in XunitTestCase to do the heavy lifting. We will
-    // continue to re-run the test until the aggregator has an error (meaning that some internal error
-    // condition happened), or the test runs without failure, or we've hit the maximum number of tries.
-    public override async Task<RunSummary> RunAsync(IMessageSink diagnosticMessageSink,
+    public int MaxRetries => _maxRetries;
+
+    public async ValueTask<RunSummary> Run(
+        ExplicitOption explicitOption,
         IMessageBus messageBus,
-        object[] constructorArguments,
+        object?[] constructorArguments,
         ExceptionAggregator aggregator,
         CancellationTokenSource cancellationTokenSource)
     {
@@ -36,32 +65,42 @@ public class RetryTestCase : XunitTestCase
 
         while (true)
         {
-            // This is really the only tricky bit: we need to capture and delay messages (since those will
-            // contain run status) until we know we've decided to accept the final result;
-            var delayedMessageBus = new DelayedMessageBus(messageBus);
+            // Capture and delay messages until we know we've decided to accept the final result
+            using var delayedMessageBus = new DelayedMessageBus(messageBus);
+            var testAggregator = new ExceptionAggregator();
 
-            var summary = await base.RunAsync(diagnosticMessageSink, delayedMessageBus, constructorArguments, aggregator, cancellationTokenSource);
-            if (aggregator.HasExceptions || summary.Failed == 0 || ++runCount >= maxRetries)
+            var tests = await CreateTests();
+            var summary = await XunitTestCaseRunner.Instance.Run(
+                this,
+                tests,
+                delayedMessageBus,
+                testAggregator,
+                cancellationTokenSource,
+                TestMethod.TestClass.Class.Name,
+                TestMethod.TestClass.Class.Name,
+                explicitOption,
+                constructorArguments);
+
+            if (testAggregator.HasExceptions || summary.Failed == 0 || ++runCount >= _maxRetries)
             {
-                delayedMessageBus.Dispose();  // Sends all the delayed messages
+                aggregator.Aggregate(testAggregator);
+                delayedMessageBus.Flush();
                 return summary;
             }
 
-            diagnosticMessageSink.OnMessage(new DiagnosticMessage("Execution of '{0}' failed (attempt #{1}), retrying...", DisplayName, runCount));
+            // Retry silently - messages are discarded when delayedMessageBus is disposed
         }
     }
 
-    public override void Serialize(IXunitSerializationInfo data)
+    protected override void Serialize(IXunitSerializationInfo info)
     {
-        base.Serialize(data);
-
-        data.AddValue("MaxRetries", maxRetries);
+        base.Serialize(info);
+        info.AddValue("MaxRetries", _maxRetries);
     }
 
-    public override void Deserialize(IXunitSerializationInfo data)
+    protected override void Deserialize(IXunitSerializationInfo info)
     {
-        base.Deserialize(data);
-
-        maxRetries = data.GetValue<int>("MaxRetries");
+        base.Deserialize(info);
+        _maxRetries = info.GetValue<int>("MaxRetries");
     }
 }

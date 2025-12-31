@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Xunit;
 
@@ -25,14 +24,14 @@ public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncL
     {
     }
 
-    public virtual Task InitializeAsync()
+    public virtual ValueTask InitializeAsync()
     {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public virtual Task DisposeAsync()
+    public virtual ValueTask DisposeAsync()
     {
         Fixture.TestLogger.Reset();
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }

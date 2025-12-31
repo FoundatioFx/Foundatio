@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
-using Xunit.Abstractions;
+using Xunit;
 
 namespace Foundatio.Xunit;
 
