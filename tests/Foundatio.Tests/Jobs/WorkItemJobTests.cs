@@ -14,7 +14,6 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Jobs;
 
@@ -37,7 +36,7 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             for (int i = 0; i < 10; i++)
             {
-                await Task.Delay(100);
+                await Task.Delay(100, TestCancellationToken);
                 await ctx.ReportProgressAsync(10 * i);
             }
         });
@@ -53,9 +52,9 @@ public class WorkItemJobTests : TestWithLoggingBase
             _logger.LogInformation("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
-        });
+        }, TestCancellationToken);
 
-        await job.RunAsync();
+        await job.RunAsync(TestCancellationToken);
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
     }
@@ -113,7 +112,7 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             lock (completedItemsLock)
                 completedItems.Add(status.WorkItemId);
-        });
+        }, TestCancellationToken);
 
         var cancellationTokenSource = new CancellationTokenSource(10000);
         var tasks = new List<Task> {
@@ -140,7 +139,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             _logger.LogError(ex, "One or more tasks were cancelled: {Message}", ex.Message);
         }
 
-        await Task.Delay(100);
+        await Task.Delay(100, TestCancellationToken);
         _logger.LogInformation("Completed: {CompletedItems} Errors: {Errors}", completedItems.Count, errors);
         Assert.Equal(workItemCount, completedItems.Count + errors);
         Assert.Equal(3, jobIds.Count);
@@ -168,9 +167,9 @@ public class WorkItemJobTests : TestWithLoggingBase
             _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
-        });
+        }, TestCancellationToken);
 
-        Assert.Equal(1, await job.RunUntilEmptyAsync());
+        Assert.Equal(1, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
     }
@@ -190,7 +189,7 @@ public class WorkItemJobTests : TestWithLoggingBase
 
             for (int i = 1; i < 10; i++)
             {
-                await Task.Delay(100);
+                await Task.Delay(100, TestCancellationToken);
                 await ctx.ReportProgressAsync(10 * i);
             }
         }, Log.CreateLogger("MyWorkItem"));
@@ -206,9 +205,9 @@ public class WorkItemJobTests : TestWithLoggingBase
             _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
-        });
+        }, TestCancellationToken);
 
-        Assert.Equal(1, await job.RunUntilEmptyAsync());
+        Assert.Equal(1, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
     }
@@ -233,7 +232,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             SomeData = "Test"
         }, true);
 
-        Assert.Equal(2, await job.RunUntilEmptyAsync());
+        Assert.Equal(2, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(2, stats.Enqueued);
         Assert.Equal(2, stats.Dequeued);
@@ -251,7 +250,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         handlerRegistry.Register<MyWorkItem>(new MyWorkItemHandler(Log));
 
         var sw = Stopwatch.StartNew();
-        Assert.Equal(0, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(100)));
+        Assert.Equal(0, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(100), TestCancellationToken));
         sw.Stop();
 
         Assert.True(sw.Elapsed < TimeSpan.FromMilliseconds(250));
@@ -282,7 +281,7 @@ public class WorkItemJobTests : TestWithLoggingBase
             SomeData = "Test"
         }, true);
 
-        Assert.Equal(1, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(50)));
+        Assert.Equal(1, await job.RunUntilEmptyAsync(TimeSpan.FromMilliseconds(50), TestCancellationToken));
 
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(2, stats.Enqueued);
@@ -316,9 +315,9 @@ public class WorkItemJobTests : TestWithLoggingBase
             _logger.LogTrace("Progress: {Progress}", status.Progress);
             Assert.Equal(jobId, status.WorkItemId);
             countdown.Signal();
-        });
+        }, TestCancellationToken);
 
-        Assert.Equal(0, await job.RunUntilEmptyAsync());
+        Assert.Equal(0, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
     }

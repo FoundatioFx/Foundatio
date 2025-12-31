@@ -7,7 +7,6 @@ using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 
@@ -71,7 +70,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
         });
 
         _logger.LogInformation("Waiting for 300ms");
-        await countdown.WaitAsync(TimeSpan.FromMilliseconds(300));
+        await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromMilliseconds(300)));
         _logger.LogInformation("Finished waiting for 300ms");
         Assert.Equal(iterations - 1, countdown.CurrentCount);
 

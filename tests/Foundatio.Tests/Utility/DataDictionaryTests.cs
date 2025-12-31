@@ -6,7 +6,6 @@ using Foundatio.Serializer;
 using Foundatio.Utility;
 using Foundatio.Xunit;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Utility;
 

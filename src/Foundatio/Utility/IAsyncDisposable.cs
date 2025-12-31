@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 
@@ -46,11 +46,11 @@ public static class Async
 
     public static Task Using<TResource>(TResource resource, Func<TResource, Task> body) where TResource : IAsyncDisposable
     {
-        return Using(resource, async r =>
+        return Using(resource, async _ =>
         {
             await body(resource).AnyContext();
             return Task.CompletedTask;
-        });
+        }).Unwrap();
     }
 
     public static Task<TReturn> Using<TResource, TReturn>(TResource resource, Func<Task<TReturn>> body) where TResource : IAsyncDisposable

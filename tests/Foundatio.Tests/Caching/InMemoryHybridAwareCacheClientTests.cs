@@ -1,7 +1,6 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
@@ -50,7 +49,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
         return base.CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput();
     }
 
-        [Fact]
+    [Fact]
     public override Task ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus()
     {
         return base.ExistsAsync_WithVariousKeys_ReturnsCorrectExistenceStatus();
@@ -653,7 +652,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
 
         Assert.Equal(1, await firstCache.RemoveAllAsync());
 
-        await Task.Delay(250); // Allow time for local cache to clear
+        await Task.Delay(250, TestCancellationToken); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
     }
