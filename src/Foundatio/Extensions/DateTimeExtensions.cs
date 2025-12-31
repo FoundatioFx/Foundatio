@@ -42,28 +42,37 @@ internal static class DateTimeExtensions
 
     public static DateTime SafeAdd(this DateTime date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
-            return DateTime.MinValue;
-
-        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+        // Check for overflow before adding to avoid integer wraparound
+        if (value.Ticks > 0 && date.Ticks > DateTime.MaxValue.Ticks - value.Ticks)
             return DateTime.MaxValue;
+
+        if (value.Ticks < 0 && date.Ticks < DateTime.MinValue.Ticks - value.Ticks)
+            return DateTime.MinValue;
 
         return date.Add(value);
     }
 
     public static DateTimeOffset SafeAdd(this DateTimeOffset date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTimeOffset.MinValue.Ticks)
-            return DateTimeOffset.MinValue;
-
-        if (date.Ticks + value.Ticks > DateTimeOffset.MaxValue.Ticks)
+        // Check for overflow before adding to avoid integer wraparound
+        if (value.Ticks > 0 && date.Ticks > DateTimeOffset.MaxValue.Ticks - value.Ticks)
             return DateTimeOffset.MaxValue;
+
+        if (value.Ticks < 0 && date.Ticks < DateTimeOffset.MinValue.Ticks - value.Ticks)
+            return DateTimeOffset.MinValue;
 
         return date.Add(value);
     }
 
     public static DateTimeOffset SafeAddMilliseconds(this DateTimeOffset date, double milliseconds)
     {
+        // Check for overflow before creating TimeSpan to avoid exception in TimeSpan.FromMilliseconds
+        if (milliseconds > TimeSpan.MaxValue.TotalMilliseconds)
+            return DateTimeOffset.MaxValue;
+
+        if (milliseconds < TimeSpan.MinValue.TotalMilliseconds)
+            return DateTimeOffset.MinValue;
+
         return date.SafeAdd(TimeSpan.FromMilliseconds(milliseconds));
     }
 }
