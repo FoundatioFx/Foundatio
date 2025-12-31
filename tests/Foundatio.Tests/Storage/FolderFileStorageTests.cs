@@ -151,7 +151,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
 
         using (storage)
         {
-            var result = await storage.GetPagedFileListAsync(cancellationToken: CancellationToken);
+            var result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -163,7 +163,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.NotNull(folder);
             Directory.CreateDirectory(Path.Combine(folder, directory));
 
-            result = await storage.GetPagedFileListAsync(cancellationToken: CancellationToken);
+            result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -175,7 +175,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.Null(info);
 
             // Ensure delete files can remove all files including fake folders
-            await storage.DeleteFilesAsync("*", CancellationToken);
+            await storage.DeleteFilesAsync("*", TestCancellationToken);
 
             // Assert folder was removed by Delete Files
             Assert.False(Directory.Exists(Path.Combine(folder, directory)));

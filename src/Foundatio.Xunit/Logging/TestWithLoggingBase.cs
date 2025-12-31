@@ -19,5 +19,5 @@ public abstract class TestWithLoggingBase
     /// <summary>
     /// Gets the cancellation token for the current test. This token is automatically cancelled when the test times out.
     /// </summary>
-    protected static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
+    protected static CancellationToken TestCancellationToken => TestContext.Current.CancellationToken;
 }

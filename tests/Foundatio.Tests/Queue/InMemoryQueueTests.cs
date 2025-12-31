@@ -413,7 +413,7 @@ public class InMemoryQueueTests : QueueTestBase
         await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
 
         // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
-        bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2), CancellationToken))) != taskCompletionSource.Task;
+        bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken))) != taskCompletionSource.Task;
         Assert.False(timedout);
 
         // enqueue another item and make sure it was handled (worker loop didn't crash)
@@ -421,7 +421,7 @@ public class InMemoryQueueTests : QueueTestBase
         await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
 
         // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
-        timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(30), CancellationToken))) != taskCompletionSource.Task;
+        timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(30), TestCancellationToken))) != taskCompletionSource.Task;
         Assert.False(timedout);
     }
 
