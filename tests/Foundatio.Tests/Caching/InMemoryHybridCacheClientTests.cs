@@ -67,6 +67,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task ExistsAsync_WithInvalidKey_ThrowsArgumentException() => base.ExistsAsync_WithInvalidKey_ThrowsArgumentException();
 
     [Fact]
+    public override Task ExistsAsync_WithLocalCache_ChecksLocalCacheFirst()
+    {
+        return base.ExistsAsync_WithLocalCache_ChecksLocalCacheFirst();
+    }
+
+    [Fact]
     public override Task GetAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
         return base.GetAllAsync_WithInvalidKeys_ValidatesCorrectly();
@@ -210,6 +216,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task IncrementAsync_WithScopedCache_WorksWithinScope()
     {
         return base.IncrementAsync_WithScopedCache_WorksWithinScope();
+    }
+
+    [Fact]
+    public override Task IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
     }
 
     [Fact]
@@ -435,6 +447,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
     public override Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
     {
         return base.ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue();
@@ -480,6 +498,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
+    }
+
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
     }
 
     [Fact]
@@ -560,6 +584,12 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task SetAsync_WithMultipleInstances_UsesLocalCache()
     {
         return base.SetAsync_WithMultipleInstances_UsesLocalCache();
+    }
+
+    [Fact]
+    public override Task SetAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.SetAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
     }
 
     [Fact]

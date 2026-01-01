@@ -178,6 +178,42 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(2, cache.LocalCacheHits); // No increment since it was a miss
     }
 
+    public virtual async Task IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "increment-invalidate-test";
+
+        // Arrange: Client A sets key to 10
+        await firstCache.SetAsync(cacheKey, 10L);
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Client B reads key (populates B's local cache with 10)
+        var result = await secondCache.GetAsync<long>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal(10L, result.Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Act: Client A increments by 5
+        var newValue = await firstCache.IncrementAsync(cacheKey, 5L);
+        Assert.Equal(15L, newValue);
+
+        // Wait for invalidation message to propagate
+        await Task.Delay(250);
+
+        // Assert: Client B's local cache should be invalidated
+        Assert.Equal(0, secondCache.LocalCache.Count);
+
+        // Client B reads key - should get 15 (not stale 10)
+        result = await secondCache.GetAsync<long>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal(15L, result.Value);
+    }
+
     public virtual async Task ListAddAsync_WithMultipleInstances_WorksCorrectly()
     {
         using var firstCache = GetDistributedHybridCacheClient();
@@ -245,6 +281,110 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await Task.Delay(250); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "remove-if-equal-invalidate-test";
+
+        // Arrange: Client A sets key to "value"
+        await firstCache.SetAsync(cacheKey, "value");
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Client B reads key (populates B's local cache)
+        var result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("value", result.Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Act: Client A removes key (expected="value")
+        Assert.True(await firstCache.RemoveIfEqualAsync(cacheKey, "value"));
+
+        // Wait for invalidation message to propagate
+        await Task.Delay(250);
+
+        // Assert: Client B's local cache should be invalidated
+        Assert.Equal(0, secondCache.LocalCache.Count);
+
+        // Client B reads key - should get NoValue
+        result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.False(result.HasValue);
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "replace-if-equal-invalidate-test";
+
+        // Arrange: Client A sets key to "original"
+        await firstCache.SetAsync(cacheKey, "original");
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Client B reads key (populates B's local cache)
+        var result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("original", result.Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Act: Client A replaces key with "new" (expected="original")
+        Assert.True(await firstCache.ReplaceIfEqualAsync(cacheKey, "new", "original"));
+
+        // Wait for invalidation message to propagate
+        await Task.Delay(250);
+
+        // Assert: Client B's local cache should be invalidated
+        Assert.Equal(0, secondCache.LocalCache.Count);
+
+        // Client B reads key - should get "new"
+        result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("new", result.Value);
+    }
+
+    public virtual async Task SetAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "set-invalidate-test";
+
+        // Arrange: Client A sets key to "value1"
+        await firstCache.SetAsync(cacheKey, "value1");
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Client B reads key (populates B's local cache with "value1")
+        var result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("value1", result.Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Act: Client A sets key to "value2" (should invalidate B's local cache)
+        await firstCache.SetAsync(cacheKey, "value2");
+
+        // Wait for invalidation message to propagate
+        await Task.Delay(250);
+
+        // Assert: Client B's local cache should be invalidated
+        Assert.Equal(0, secondCache.LocalCache.Count);
+
+        // Client B reads key - should get "value2" (not stale "value1")
+        result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("value2", result.Value);
     }
 
     public virtual async Task SetAsync_WithMultipleInstances_UsesLocalCache()
