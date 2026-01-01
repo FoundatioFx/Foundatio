@@ -284,8 +284,9 @@ public interface ICacheClient : IDisposable
     /// Duplicate keys are automatically deduplicated.
     /// </param>
     /// <returns>
-    /// A dictionary mapping each key to its remaining TTL.
-    /// Keys that don't exist or have no expiration return <c>null</c> as their value.
+    /// A dictionary mapping each existing key to its remaining TTL.
+    /// Keys that exist but have no expiration will have a <c>null</c> value.
+    /// Keys that don't exist or are expired are omitted from the result.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="keys"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when any key in <paramref name="keys"/> is null or empty.</exception>

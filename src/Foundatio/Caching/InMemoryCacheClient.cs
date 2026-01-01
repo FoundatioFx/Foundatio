@@ -965,22 +965,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (!_memory.TryGetValue(key, out var existingEntry))
             {
                 Interlocked.Increment(ref _misses);
-                // Don't include non-existent keys in result (consistent with GetExpirationAsync returning null)
+                // Omit non-existent keys from result
                 continue;
             }
 
             if (existingEntry.IsExpired)
             {
                 Interlocked.Increment(ref _misses);
-                // Don't include expired keys in result (consistent with GetExpirationAsync returning null)
+                // Omit expired keys from result
                 continue;
             }
 
             Interlocked.Increment(ref _hits);
 
-            // Skip keys without expiration (consistent with GetExpirationAsync behavior)
-            // DateTime.MaxValue means no expiration
-            if (existingEntry.ExpiresAt.HasValue && existingEntry.ExpiresAt.Value != DateTime.MaxValue)
+            // Include keys without expiration with null value (DateTime.MaxValue means no expiration)
+            if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+                result[key] = null;
+            else
                 result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
         }
 

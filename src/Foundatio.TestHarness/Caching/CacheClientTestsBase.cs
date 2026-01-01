@@ -236,10 +236,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Set up keys with various states:
-            // - expired-key: will expire before we query
-            // - valid-key: has expiration, will be returned
-            // - no-expiration-key: no expiration, should not be returned
-            // - nonexistent-key: never created, should not be returned
+            // - expired-key: will expire before we query (omitted from result)
+            // - valid-key: has expiration, will be returned with TimeSpan
+            // - no-expiration-key: no expiration, will be returned with null
+            // - nonexistent-key: never created (omitted from result)
             await cache.SetAsync("expired-key", 1, TimeSpan.FromMilliseconds(50));
             await cache.SetAsync("valid-key", 2, TimeSpan.FromMinutes(10));
             await cache.SetAsync("no-expiration-key", 3);
@@ -252,11 +252,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Assert
             Assert.NotNull(expirations);
-            Assert.Single(expirations); // Only valid-key should be returned
+            Assert.Equal(2, expirations.Count); // valid-key and no-expiration-key
 
-            Assert.False(expirations.ContainsKey("expired-key")); // Expired
-            Assert.False(expirations.ContainsKey("no-expiration-key")); // No expiration
-            Assert.False(expirations.ContainsKey("nonexistent-key")); // Doesn't exist
+            Assert.False(expirations.ContainsKey("expired-key")); // Expired - omitted
+            Assert.False(expirations.ContainsKey("nonexistent-key")); // Doesn't exist - omitted
+
+            Assert.True(expirations.ContainsKey("no-expiration-key")); // Exists without TTL
+            Assert.Null(expirations["no-expiration-key"]);
 
             Assert.True(expirations.TryGetValue("valid-key", out var validKeyExpiration));
             Assert.NotNull(validKeyExpiration);
