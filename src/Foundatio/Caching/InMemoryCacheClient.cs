@@ -515,7 +515,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (expiresIn is { Ticks: <= 0 })
         {
-            RemoveExpiredKey(key);
+            await ListRemoveAsync(key, values).AnyContext();
             return 0;
         }
 

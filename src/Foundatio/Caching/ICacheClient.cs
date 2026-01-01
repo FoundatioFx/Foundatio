@@ -418,14 +418,22 @@ public interface ICacheClient : IDisposable
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="values">The values to add to the list. Cannot be null. Null values within the collection are ignored.</param>
     /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry.
+    /// Optional expiration time for each value being added (per-value expiration, NOT per-key).
     /// <list type="bullet">
-    ///   <item><description><b>null</b>: Entry will not expire.</description></item>
-    ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
+    ///   <item><description><b>null</b>: Values will not expire.</description></item>
+    ///   <item><description><b>Positive value</b>: Each value expires independently after this duration.</description></item>
+    ///   <item><description><b>Zero or negative</b>: The specified values are removed from the list if present, returns 0.</description></item>
     /// </list>
+    /// <para>
+    /// <b>Design Note:</b> Per-value expiration prevents unbounded list growth. Without it, adding any item
+    /// would reset the entire list's TTL (sliding expiration), causing lists to grow indefinitely in
+    /// scenarios like tracking deleted items or recent activity.
+    /// </para>
     /// </param>
     /// <returns>The number of values that were added to the list.</returns>
+    /// <remarks>
+    /// The key's overall expiration is automatically set to the maximum expiration of all items in the list.
+    /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="values"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
     Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);

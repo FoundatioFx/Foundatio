@@ -353,22 +353,58 @@ await cache.SetIfLowerAsync("fastest-response-ms", responseTime);
 
 ### List Operations
 
-Store and manage lists:
+Foundatio lists support **per-value expiration**, where each item in the list can have its own independent TTL. This is different from standard cache keys where expiration applies to the entire key.
+
+#### Why Per-Value Expiration?
+
+Per-value expiration prevents unbounded list growth. Consider tracking recently deleted items:
 
 ```csharp
-// Add to a list
-await cache.ListAddAsync("user:123:recent-searches", new[] { "query1" });
+// Without per-value expiration (sliding expiration problem):
+// Adding ANY item resets the entire list's TTL, causing indefinite growth
+await cache.ListAddAsync("deleted-items", [itemId], TimeSpan.FromDays(7));
+// After months: list has 100,000+ items because TTL keeps resetting!
 
-// Get paginated list
+// With per-value expiration (Foundatio's approach):
+// Each item expires independently after 7 days
+await cache.ListAddAsync("deleted-items", [itemId], TimeSpan.FromDays(7));
+// List stays bounded - old items expire even as new ones are added
+```
+
+**Real-world use cases:**
+- **Soft-delete tracking**: Track deleted document IDs that should be filtered from queries
+- **Recent activity feeds**: Each activity expires independently (e.g., "active in last 5 minutes")
+- **Rate limiting windows**: Track individual requests with their own expiration
+- **Session tracking**: Track user sessions where each session has its own timeout
+
+#### Basic List Usage
+
+```csharp
+// Add items with per-value expiration (each item expires in 1 hour)
+await cache.ListAddAsync("user:123:recent-searches", new[] { "query1" }, TimeSpan.FromHours(1));
+await cache.ListAddAsync("user:123:recent-searches", new[] { "query2" }, TimeSpan.FromHours(1));
+
+// Items expire independently - query1 expires 1 hour after it was added,
+// query2 expires 1 hour after IT was added (not when query1 was added)
+
+// Get paginated list (expired items are automatically filtered)
 var searches = await cache.GetListAsync<string>(
     "user:123:recent-searches",
     page: 0,
     pageSize: 10
 );
 
-// Remove from list
+// Remove specific items from list
 await cache.ListRemoveAsync("user:123:recent-searches", new[] { "query1" });
 ```
+
+#### List Expiration Behavior
+
+| `expiresIn` Value | Behavior |
+|-------------------|----------|
+| `null` | Values will not expire. Key expiration is set to max of all item expirations. |
+| Positive `TimeSpan` | Each value expires independently after this duration. |
+| Zero or negative | The specified values are removed from the list (if present), returns 0. |
 
 ### Bulk Operations
 

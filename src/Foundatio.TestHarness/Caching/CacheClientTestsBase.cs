@@ -989,13 +989,40 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.ExistsAsync("list-past-exp-new"));
             Assert.False((await cache.GetListAsync<int>("list-past-exp-new")).HasValue);
 
-            // Past expiration on existing key: should return 0 and remove the key
+            // Past expiration on existing key: should return 0 and only remove the values being added (not the whole key)
             Assert.Equal(1, await cache.ListAddAsync("list-past-exp-existing", [1]));
             Assert.True(await cache.ExistsAsync("list-past-exp-existing"));
             result = await cache.ListAddAsync("list-past-exp-existing", [2], TimeSpan.FromSeconds(-1));
             Assert.Equal(0, result);
-            Assert.False(await cache.ExistsAsync("list-past-exp-existing"));
-            Assert.False((await cache.GetListAsync<int>("list-past-exp-existing")).HasValue);
+            Assert.True(await cache.ExistsAsync("list-past-exp-existing")); // Key still exists!
+            var existingList = await cache.GetListAsync<int>("list-past-exp-existing");
+            Assert.True(existingList.HasValue);
+            Assert.Single(existingList.Value);
+            Assert.Contains(1, existingList.Value); // Item 1 still present
+
+            // Past expiration on existing key with multiple items: should only remove the values being added
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-multi", [1]));
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-multi", [2]));
+            Assert.Equal(2, (await cache.GetListAsync<int>("list-past-exp-multi")).Value.Count);
+            // Add item 3 with negative expiration - should NOT delete existing items
+            result = await cache.ListAddAsync("list-past-exp-multi", [3], TimeSpan.FromSeconds(-1));
+            Assert.Equal(0, result);
+            Assert.True(await cache.ExistsAsync("list-past-exp-multi")); // Key still exists!
+            var multiList = await cache.GetListAsync<int>("list-past-exp-multi");
+            Assert.Equal(2, multiList.Value.Count); // Items 1 and 2 still present
+            Assert.Contains(1, multiList.Value);
+            Assert.Contains(2, multiList.Value);
+
+            // Past expiration removes existing item if it matches
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-remove", [1]));
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-remove", [2]));
+            result = await cache.ListAddAsync("list-past-exp-remove", [1], TimeSpan.FromSeconds(-1)); // Remove item 1
+            Assert.Equal(0, result);
+            Assert.True(await cache.ExistsAsync("list-past-exp-remove"));
+            var removeList = await cache.GetListAsync<int>("list-past-exp-remove");
+            Assert.Single(removeList.Value);
+            Assert.Contains(2, removeList.Value); // Only item 2 remains
+            Assert.DoesNotContain(1, removeList.Value); // Item 1 was removed
 
             // Zero expiration: should also be treated as expired
             result = await cache.ListAddAsync("list-zero-exp", [1], TimeSpan.Zero);
@@ -1039,6 +1066,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
             Assert.Contains(3, cacheValue.Value);
+            Assert.DoesNotContain(2, cacheValue.Value); // Explicit verification item 2 expired
 
             // Wait for second item to expire
             await Task.Delay(100);
