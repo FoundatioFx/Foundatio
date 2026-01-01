@@ -170,7 +170,7 @@ await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?>
 });
 ```
 
-::: warning Azure Managed Redis
+::: Warning Azure Managed Redis
 On Azure Managed Redis (and many Redis deployments), the default eviction policy is `volatile-lru`, meaning **only keys with a TTL are eligible for eviction**. If you create many non-expiring keys, you may experience memory pressure and write failures.
 
 **Recommendations:**
@@ -179,7 +179,7 @@ On Azure Managed Redis (and many Redis deployments), the default eviction policy
 - Monitor your Redis memory usage and eviction metrics
 
 **Further Reading:**
-- [Azure Cache for Redis eviction policies](https://docs.microsoft.com/en-us/azure/azure-cache-for-redis/cache-configure#memory-policies)
+- [Azure Managed Cache for Redis eviction policies](https://docs.microsoft.com/en-us/azure/azure-cache-for-redis/cache-configure#memory-policies)
 - [Redis eviction policies documentation](https://redis.io/docs/reference/eviction/)
 :::
 
