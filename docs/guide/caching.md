@@ -71,8 +71,8 @@ Different methods handle the `expiresIn` parameter slightly differently. The tab
 | `ReplaceAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `ReplaceIfEqualAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `IncrementAsync` | **Preserves existing TTL** | Sets/updates TTL | Removes key | `0` |
-| `SetIfHigherAsync` | No TTL (removes existing) | Sets TTL | Removes key | `-1` |
-| `SetIfLowerAsync` | No TTL (removes existing) | Sets TTL | Removes key | `-1` |
+| `SetIfHigherAsync` | No TTL (removes existing) | Sets TTL | Removes key | `0` |
+| `SetIfLowerAsync` | No TTL (removes existing) | Sets TTL | Removes key | `0` |
 | `ListAddAsync` | No TTL | Sets TTL | Removes key | `0` |
 | `ListRemoveAsync` | Preserves existing TTL | Sets TTL | Removes key | `0` |
 
@@ -137,8 +137,8 @@ await cache.SetIfHigherAsync("max-users", 150, null); // No TTL now!
 // Update with TTL - sets new TTL
 await cache.SetIfHigherAsync("max-users", 200, TimeSpan.FromHours(2)); // TTL = 2 hours
 
-// Zero/negative removes key, returns -1
-var diff = await cache.SetIfHigherAsync("max-users", 999, TimeSpan.Zero); // -1
+// Zero/negative removes key, returns 0
+var diff = await cache.SetIfHigherAsync("max-users", 999, TimeSpan.Zero); // 0
 ```
 
 ### Managing Expiration

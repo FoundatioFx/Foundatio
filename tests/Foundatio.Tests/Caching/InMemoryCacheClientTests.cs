@@ -677,7 +677,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task DoMaintenanceAsync_WithMaxTimeSpanExpiration_ShouldNotThrowException()
     {
-        // Arrange - use normal time, not DateTimeOffset.MaxValue which causes overflow issues
+        // Arrange - use a normal current time so using TimeSpan.MaxValue for expiration does not cause overflow issues
         var timeProvider = new FakeTimeProvider();
         timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 

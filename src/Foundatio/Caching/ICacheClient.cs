@@ -17,7 +17,7 @@ namespace Foundatio.Caching;
 ///   When called on an existing key, passing null removes any existing expiration.</description></item>
 ///   <item><description><b>Positive value</b>: The entry will expire after the specified duration from now.</description></item>
 ///   <item><description><b>Zero or negative value</b>: The operation is treated as expired - any existing key is removed
-///   and the method returns a failure/default value (false, 0, -1, depending on the method).</description></item>
+///   and the method returns a failure/default value (false, 0, depending on the method).</description></item>
 ///   <item><description><b>TimeSpan.MaxValue</b>: The entry will not expire (treated as no expiration).</description></item>
 /// </list>
 /// <para>
@@ -325,13 +325,12 @@ public interface ICacheClient : IDisposable
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns -1.</description></item>
+    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
     /// </param>
     /// <returns>
     /// The difference between the new value and the old value if the value was updated;
-    /// 0 if the current value was already higher or equal;
-    /// -1 if the operation failed due to invalid expiration.
+    /// 0 if the current value was already higher or equal or invalid expiration.
     /// For new keys, returns the value itself (difference from 0).
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
@@ -350,13 +349,12 @@ public interface ICacheClient : IDisposable
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns -1.</description></item>
+    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
     /// </param>
     /// <returns>
     /// The difference between the new value and the old value if the value was updated;
-    /// 0 if the current value was already higher or equal;
-    /// -1 if the operation failed due to invalid expiration.
+    /// 0 if the current value was already higher or equal or invalid expiration.
     /// For new keys, returns the value itself (difference from 0).
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
@@ -375,13 +373,12 @@ public interface ICacheClient : IDisposable
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns -1.</description></item>
+    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
     /// </param>
     /// <returns>
     /// The difference between the old value and the new value if the value was updated;
-    /// 0 if the current value was already lower or equal;
-    /// -1 if the operation failed due to invalid expiration.
+    /// 0 if the current value was already lower or equal or invalid expiration.
     /// For new keys, returns the value itself (difference from 0).
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
@@ -400,13 +397,12 @@ public interface ICacheClient : IDisposable
     /// <list type="bullet">
     ///   <item><description><b>null</b>: Entry will not expire (removes any existing expiration).</description></item>
     ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns -1.</description></item>
+    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
     /// </param>
     /// <returns>
     /// The difference between the old value and the new value if the value was updated;
-    /// 0 if the current value was already lower or equal;
-    /// -1 if the operation failed due to invalid expiration.
+    /// 0 if the current value was already lower or equal or invalid expiration.
     /// For new keys, returns the value itself (difference from 0).
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
