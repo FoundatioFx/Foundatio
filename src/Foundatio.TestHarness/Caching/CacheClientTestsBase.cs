@@ -896,6 +896,12 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Verify the values with tolerance for floating-point precision
             var storedValue = (await cache.GetAsync<double>("small-decimal")).Value;
             Assert.True(Math.Abs(storedValue - 0.003) < 0.0001, $"Expected ~0.003 but got {storedValue}");
+
+            // Mixed type: increment an integer-initialized key with a fractional amount
+            await cache.SetAsync("mixed-type", 10L);
+            result = await cache.IncrementAsync("mixed-type", 2.5);
+            Assert.Equal(12.5, result);
+            Assert.Equal(12.5, (await cache.GetAsync<double>("mixed-type")).Value);
         }
     }
 

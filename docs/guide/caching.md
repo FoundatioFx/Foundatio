@@ -71,10 +71,12 @@ Different methods handle the `expiresIn` parameter slightly differently. The tab
 | `ReplaceAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `ReplaceIfEqualAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `IncrementAsync` | **Preserves existing TTL** | Sets/updates TTL | Removes key | `0` |
-| `SetIfHigherAsync` | No TTL (removes existing) | Sets TTL | Removes key | `0` |
-| `SetIfLowerAsync` | No TTL (removes existing) | Sets TTL | Removes key | `0` |
+| `SetIfHigherAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
+| `SetIfLowerAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
 | `ListAddAsync` | No TTL | Sets TTL | Removes key | `0` |
 | `ListRemoveAsync` | Preserves existing TTL | Sets TTL | Removes key | `0` |
+
+\* **Conditional operations**: `SetIfHigherAsync` and `SetIfLowerAsync` only update TTL when the condition is met. If the value is not higher/lower, the entire operation is a no-op (including expiration).
 
 ::: tip Key Difference: IncrementAsync
 `IncrementAsync` is unique: passing `null` **preserves** any existing TTL rather than removing it. This is intentional for use cases like rate limiting, where you want to increment a counter without resetting its expiration window.
@@ -89,6 +91,27 @@ await cache.IncrementAsync("rate:user:123", 1, null); // TTL unchanged!
 // Increment AND reset TTL to 1 hour from now
 await cache.IncrementAsync("rate:user:123", 1, TimeSpan.FromHours(1));
 ```
+:::
+
+::: info Integer vs Floating-Point Increments
+`IncrementAsync` supports both integer (`long`) and floating-point (`double`) amounts. Both overloads work correctly with expiration:
+
+```csharp
+// Integer increments
+await cache.IncrementAsync("counter", 1L, TimeSpan.FromHours(1));    // long overload
+await cache.IncrementAsync("counter", 5L, TimeSpan.FromHours(1));
+
+// Floating-point increments
+await cache.IncrementAsync("score", 1.5, TimeSpan.FromHours(1));     // double overload
+await cache.IncrementAsync("score", 2.25, TimeSpan.FromHours(1));    // Total: 3.75
+
+// Mixed increments work correctly
+await cache.IncrementAsync("mixed", 1, TimeSpan.FromHours(1));       // 1
+await cache.IncrementAsync("mixed", 1.5, TimeSpan.FromHours(1));     // 2.5
+await cache.IncrementAsync("mixed", 2, TimeSpan.FromHours(1));       // 4.5
+```
+
+For Redis implementations, integer amounts (including `2.0` where the fractional part is zero) use the more efficient `INCRBY` command, while fractional amounts use `INCRBYFLOAT`.
 :::
 
 ### Detailed Examples
@@ -350,6 +373,43 @@ await cache.SetIfHigherAsync("max-concurrent-users", currentUsers);
 // Track minimums
 await cache.SetIfLowerAsync("fastest-response-ms", responseTime);
 ```
+
+#### SetIfHigher/SetIfLower Return Values
+
+These methods return the **difference** between the new and old values, not the new value itself:
+
+```csharp
+// Key doesn't exist - returns the value itself (difference from 0)
+double diff = await cache.SetIfHigherAsync("max-users", 100); // Returns 100
+
+// Value is higher - returns the delta
+diff = await cache.SetIfHigherAsync("max-users", 150); // Returns 50 (150 - 100)
+
+// Value is NOT higher - returns 0 (no change)
+diff = await cache.SetIfHigherAsync("max-users", 120); // Returns 0
+
+// To get the actual current value after the operation:
+var currentMax = (await cache.GetAsync<double>("max-users")).Value; // 150
+```
+
+::: warning Conditional Expiration Behavior
+`SetIfHigherAsync` and `SetIfLowerAsync` only update the expiration **when the condition is met**. If the value is not higher/lower, the operation is a complete no-op—including the expiration.
+
+```csharp
+// Set with 1-hour TTL
+await cache.SetIfHigherAsync("max-users", 100, TimeSpan.FromHours(1));
+
+// Try to set lower value with 2-hour TTL
+await cache.SetIfHigherAsync("max-users", 50, TimeSpan.FromHours(2));
+// TTL is STILL 1 hour! The condition failed, so nothing changed.
+
+// Set higher value with 2-hour TTL
+await cache.SetIfHigherAsync("max-users", 200, TimeSpan.FromHours(2));
+// TTL is now 2 hours (condition was met)
+```
+
+This is intentional—the semantic is "set IF higher/lower", so a failed condition means the entire operation is skipped.
+:::
 
 ### List Operations
 
