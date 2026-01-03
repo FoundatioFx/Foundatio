@@ -181,7 +181,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
                     }, TestCancellationToken);
 
                     await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" });
-                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(2)));
                     Assert.Equal(1, countdown.CurrentCount);
 
                     cache.Dispose();

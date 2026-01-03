@@ -3,6 +3,7 @@ if (currentVal == false or currentVal == @expected) then
   if (@expires ~= nil and @expires ~= '') then
     return redis.call('set', @key, @value, 'PX', @expires) and 1 or 0
   else
+    -- No expiration specified - plain SET removes any existing TTL
     return redis.call('set', @key, @value) and 1 or 0
   end
 else

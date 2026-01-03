@@ -16,11 +16,12 @@ internal static class DateTimeExtensions
 
     public static DateTime SafeAdd(this DateTime date, TimeSpan value)
     {
-        if (date.Ticks + value.Ticks < DateTime.MinValue.Ticks)
-            return DateTime.MinValue;
-
-        if (date.Ticks + value.Ticks > DateTime.MaxValue.Ticks)
+        // Check for overflow before adding to avoid integer wraparound
+        if (value.Ticks > 0 && date.Ticks > DateTime.MaxValue.Ticks - value.Ticks)
             return DateTime.MaxValue;
+
+        if (value.Ticks < 0 && date.Ticks < DateTime.MinValue.Ticks - value.Ticks)
+            return DateTime.MinValue;
 
         return date.Add(value);
     }

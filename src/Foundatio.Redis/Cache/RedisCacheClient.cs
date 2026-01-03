@@ -370,12 +370,13 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
-        if (expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+        if (expiresIn is { Ticks: <= 0 })
         {
             await ListRemoveAsync(key, values).AnyContext();
             return 0;
         }
+
+        var expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : DateTime.MaxValue;
 
         var redisValues = new List<SortedSetEntry>();
         long expiresAtMilliseconds = expiresAt.ToUnixTimeMilliseconds();
@@ -432,9 +433,10 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
 
         long highestExpirationInMs = (long)items.Single().Score;
-        if (highestExpirationInMs > MaxUnixEpochMilliseconds)
+        if (highestExpirationInMs >= MaxUnixEpochMilliseconds)
         {
-            await SetExpirationAsync(key, TimeSpan.MaxValue).AnyContext();
+            // Items have max expiration, remove any existing TTL (persist the key)
+            await Database.KeyPersistAsync(key).AnyContext();
             return;
         }
 
@@ -496,72 +498,72 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
         await LoadScriptsAsync().AnyContext();
 
-        if (expiresIn.HasValue)
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (double)result;
-        }
-        else
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
-            return (double)result;
-        }
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (double)result;
     }
 
     public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
         await LoadScriptsAsync().AnyContext();
 
-        if (expiresIn.HasValue)
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (long)result;
-        }
-        else
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
-            return (long)result;
-        }
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(_setIfHigher, new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (long)result;
     }
 
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
         await LoadScriptsAsync().AnyContext();
 
-        if (expiresIn.HasValue)
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (double)result;
-        }
-        else
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
-            return (double)result;
-        }
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (double)result;
     }
 
     public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            await RemoveAsync(key).AnyContext();
+            return 0;
+        }
+
         await LoadScriptsAsync().AnyContext();
 
-        if (expiresIn.HasValue)
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (long)result;
-        }
-        else
-        {
-            var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = RedisValue.EmptyString }).AnyContext();
-            return (long)result;
-        }
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var result = await Database.ScriptEvaluateAsync(_setIfLower, new { key = (RedisKey)key, value, expires = expiresArg }).AnyContext();
+        return (long)result;
     }
 
     private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
@@ -572,6 +574,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             await RemoveAsync(key).AnyContext();
             return false;
         }
+
+        expiresIn = NormalizeExpiration(expiresIn);
 
         var redisValue = value.ToRedisValue(_options.Serializer);
         return await Database.StringSetAsync(key, redisValue, expiresIn, when, flags).AnyContext();
@@ -589,6 +593,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             await RemoveAllAsync(values.Keys).AnyContext();
             return 0;
         }
+
+        expiresIn = NormalizeExpiration(expiresIn);
 
         // Validate keys and serialize values upfront
         var pairs = new KeyValuePair<RedisKey, RedisValue>[values.Count];
@@ -725,17 +731,21 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return false;
+        }
+
         await LoadScriptsAsync().AnyContext();
 
         var redisValue = value.ToRedisValue(_options.Serializer);
         var expectedValue = expected.ToRedisValue(_options.Serializer);
-        RedisResult redisResult;
 
-        // NOTE: If the expires is negative, we need to set it to 1ms to avoid an exception. We could look into replacing the operation to PEXPIRE
-        if (expiresIn.HasValue)
-            redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = Math.Max((int)expiresIn.Value.TotalMilliseconds, 1) }).AnyContext();
-        else
-            redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = "" }).AnyContext();
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
+        var redisResult = await Database.ScriptEvaluateAsync(_replaceIfEqual, new { key = (RedisKey)key, value = redisValue, expected = expectedValue, expires = expiresArg }).AnyContext();
 
         var result = (int)redisResult;
 
@@ -746,35 +756,46 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn.HasValue)
+        if (expiresIn is { Ticks: <= 0 })
         {
-            await LoadScriptsAsync().AnyContext();
-            var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (double)result;
+            _logger.LogTrace("Removing expired key: {Key}", key);
+            await RemoveAsync(key).AnyContext();
+            return 0;
         }
 
-        return await Database.StringIncrementAsync(key, amount).AnyContext();
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
+
+        // If no expiration needed, use native Redis command (preserves existing TTL)
+        if (!expiresMs.HasValue)
+            return await Database.StringIncrementAsync(key, amount).AnyContext();
+
+        // Need to set expiration - use Lua script for atomicity
+        await LoadScriptsAsync().AnyContext();
+        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresMs.Value }).AnyContext();
+        return (double)result;
     }
 
     public async Task<long> IncrementAsync(string key, long amount = 1, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn is { Ticks: <= 0 })
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
-            return -1;
+            return 0;
         }
 
-        if (expiresIn.HasValue)
-        {
-            await LoadScriptsAsync().AnyContext();
-            var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = (int)expiresIn.Value.TotalMilliseconds }).AnyContext();
-            return (long)result;
-        }
+        var expiresMs = GetExpirationMilliseconds(expiresIn);
 
-        return await Database.StringIncrementAsync(key, amount).AnyContext();
+        // If no expiration needed, use native Redis command (preserves existing TTL)
+        if (!expiresMs.HasValue)
+            return await Database.StringIncrementAsync(key, amount).AnyContext();
+
+        // Need to set expiration - use Lua script for atomicity
+        await LoadScriptsAsync().AnyContext();
+        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresMs.Value }).AnyContext();
+        return (long)result;
     }
 
     public Task<bool> ExistsAsync(string key)
@@ -794,6 +815,10 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        // TimeSpan.MaxValue means "no expiration" - persist the key to remove any existing TTL
+        if (expiresIn == TimeSpan.MaxValue)
+            return Database.KeyPersistAsync(key);
 
         return Database.KeyExpireAsync(key, expiresIn);
     }
@@ -825,8 +850,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 if (redisResult.IsNull)
                     continue;
 
-                // Lua script returns array of TTL values in milliseconds (in same order as keys)
-                // -2 = key doesn't exist, -1 = no expiration, positive = TTL in ms
+                // Lua script uses Redis PTTL command which returns TTL in milliseconds.
+                // PTTL return values (https://redis.io/docs/latest/commands/pttl/):
+                //   -2 = Key does not exist
+                //   -1 = Key exists but has no associated expiration
+                //   Positive integer = Remaining TTL in milliseconds
                 long[] ttls = (long[])redisResult;
                 if (ttls is null || ttls.Length != hashSlotKeys.Length)
                     throw new InvalidOperationException($"Script returned {ttls?.Length ?? 0} results for {hashSlotKeys.Length} keys");
@@ -835,7 +863,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 {
                     string key = hashSlotKeys[hashSlotIndex];
                     long ttl = ttls[hashSlotIndex];
-                    if (ttl >= 0) // Only include keys with positive TTL (exclude non-existent and persistent)
+                    if (ttl == -2) // Key doesn't exist - omit from result
+                        continue;
+                    if (ttl == -1) // Key exists but no expiration - include with null value
+                        result[key] = null;
+                    else // Key has TTL - include with TimeSpan value
                         result[key] = TimeSpan.FromMilliseconds(ttl);
                 }
             }
@@ -850,8 +882,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             if (redisResult.IsNull)
                 return ReadOnlyDictionary<string, TimeSpan?>.Empty;
 
-            // Lua script returns array of TTL values in milliseconds (in same order as keys)
-            // -2 = key doesn't exist, -1 = no expiration, positive = TTL in ms
+            // Lua script uses Redis PTTL command which returns TTL in milliseconds.
+            // PTTL return values (https://redis.io/docs/latest/commands/pttl/):
+            //   -2 = Key does not exist
+            //   -1 = Key exists but has no associated expiration
+            //   Positive integer = Remaining TTL in milliseconds
             long[] ttls = (long[])redisResult;
             if (ttls is null || ttls.Length != redisKeys.Length)
                 throw new InvalidOperationException($"Script returned {ttls?.Length ?? 0} results for {redisKeys.Length} keys");
@@ -861,7 +896,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             {
                 string key = redisKeys[keyIndex];
                 long ttl = ttls[keyIndex];
-                if (ttl >= 0) // Only include keys with positive TTL (exclude non-existent and persistent)
+                if (ttl == -2) // Key doesn't exist - omit from result
+                    continue;
+                if (ttl == -1) // Key exists but no expiration - include with null value
+                    result[key] = null;
+                else // Key has TTL - include with TimeSpan value
                     result[key] = TimeSpan.FromMilliseconds(ttl);
             }
 
@@ -958,6 +997,35 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         _options.ConnectionMultiplexer.ConnectionFailed -= ConnectionMultiplexerOnConnectionFailed;
+    }
+
+    /// <summary>
+    /// Normalizes expiration: TimeSpan.MaxValue or overflow to DateTime.MaxValue means "no expiration".
+    /// </summary>
+    private TimeSpan? NormalizeExpiration(TimeSpan? expiresIn)
+    {
+        if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
+            return null;
+
+        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        return expiresAt == DateTime.MaxValue ? null : expiresIn;
+    }
+
+    /// <summary>
+    /// Gets the expiration in milliseconds for use in Lua scripts.
+    /// Returns null if no expiration should be set (null, TimeSpan.MaxValue, or overflow to DateTime.MaxValue).
+    /// </summary>
+    private long? GetExpirationMilliseconds(TimeSpan? expiresIn)
+    {
+        if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
+            return null;
+
+        // Check if adding expiresIn to now would overflow to DateTime.MaxValue
+        var expiresAt = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        if (expiresAt == DateTime.MaxValue)
+            return null;
+
+        return (long)expiresIn.Value.TotalMilliseconds;
     }
 
     ISerializer IHaveSerializer.Serializer => _options.Serializer;

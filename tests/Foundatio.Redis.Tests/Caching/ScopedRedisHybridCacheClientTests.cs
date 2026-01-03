@@ -43,6 +43,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
         return base.AddAsync_WithExpiration_ExpiresRemoteItems();
     }
 
+    [Fact]
+    public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
     [Fact(Skip = "Performance Test")]
     public override Task CacheOperations_WithMultipleTypes_MeasuresThroughput()
     {
@@ -69,6 +75,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
 
     [Fact]
     public override Task ExistsAsync_WithInvalidKey_ThrowsArgumentException() => base.ExistsAsync_WithInvalidKey_ThrowsArgumentException();
+
+    [Fact]
+    public override Task ExistsAsync_WithLocalCache_ChecksLocalCacheFirst()
+    {
+        return base.ExistsAsync_WithLocalCache_ChecksLocalCacheFirst();
+    }
 
     [Fact]
     public override Task GetAllAsync_WithInvalidKeys_ValidatesCorrectly()
@@ -175,9 +187,9 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task IncrementAsync_WithExpiration_ExpiresCorrectly()
+    public override Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.IncrementAsync_WithExpiration_ExpiresCorrectly();
+        return base.IncrementAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -199,9 +211,15 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task ListAddAsync_WithExpiration_ExpiresCorrectly()
+    public override Task IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
     {
-        return base.ListAddAsync_WithExpiration_ExpiresCorrectly();
+        return base.IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
+    public override Task ListAddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ListAddAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -245,6 +263,13 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     {
         return base.ListRemoveAsync_WithValues_RemovesCorrectly();
     }
+
+    [Fact]
+    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
     [Fact]
     public override Task RemoveAllAsync_WithInvalidKeys_ValidatesCorrectly()
     {
@@ -416,6 +441,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
+    public override Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
     public override Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
     {
         return base.ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue();
@@ -431,6 +462,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public override Task ReplaceAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
     {
         return base.ReplaceAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey();
+    }
+
+    [Fact]
+    public override Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ReplaceAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -457,6 +494,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
     }
 
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
     [Fact(Skip = "Performance Test")]
     public override Task Serialization_WithComplexObjectsAndValidation_MeasuresThroughput()
     {
@@ -470,9 +513,9 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
+    public override Task SetAllAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllAsync_WithExpiration_KeysExpireCorrectly();
+        return base.SetAllAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -502,9 +545,9 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
+    public override Task SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly();
+        return base.SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -514,9 +557,9 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task SetAsync_WithExpirationEdgeCases_HandlesCorrectly()
+    public override Task SetAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAsync_WithExpirationEdgeCases_HandlesCorrectly();
+        return base.SetAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -538,6 +581,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
+    public override Task SetAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
+    {
+        return base.SetAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
     public override Task SetAsync_WithNullValue_StoresAsNullValue()
     {
         return base.SetAsync_WithNullValue_StoresAsNullValue();
@@ -556,33 +605,15 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
-    {
-        return base.SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey()
-    {
-        return base.SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
-    {
-        return base.SetExpirationAsync_WithDateTimeMaxValue_NeverExpires();
-    }
-
-    [Fact]
     public override Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         return base.SetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
     }
 
     [Fact]
-    public override Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
+    public override Task SetExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately();
+        return base.SetExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -598,6 +629,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
+    public override Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         return base.SetIfLowerAsync_WithDateTime_UpdatesWhenLower();
@@ -607,6 +644,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public override Task SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly()
     {
         return base.SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]

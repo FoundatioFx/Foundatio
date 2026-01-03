@@ -1,9 +1,11 @@
--- Get expiration times for multiple keys
+-- Get expiration times for multiple keys using Redis PTTL command.
 -- KEYS: All keys to check expiration for
 -- Returns: Array of TTL values in milliseconds (in same order as KEYS)
---          Returns -2 for non-existent keys
---          Returns -1 for keys without expiration
---          Returns positive number for keys with expiration
+--
+-- PTTL return values (per Redis documentation https://redis.io/docs/latest/commands/pttl/):
+--   -2 = Key does not exist
+--   -1 = Key exists but has no associated expiration
+--   Positive integer = Remaining TTL in milliseconds
 
 local result = {}
 
