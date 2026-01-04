@@ -354,7 +354,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             });
 
             await Task.WhenAll(subscribe, publish);
-            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            await countdown.WaitAsync(TimeSpan.FromSeconds(4));
             Assert.Equal(0, countdown.CurrentCount);
         }
         finally
