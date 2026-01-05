@@ -16,6 +16,8 @@ namespace Foundatio.Redis.Tests.Messaging;
 
 public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
 {
+    private readonly string _topic = $"test-messages-{Guid.NewGuid().ToString("N")[..10]}";
+
     public RedisMessageBusTests(ITestOutputHelper output) : base(output)
     {
     }
@@ -25,7 +27,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
         return new RedisMessageBus(o =>
         {
             o.Subscriber(SharedConnection.GetMuxer(Log).GetSubscriber());
-            o.Topic("test-messages");
+            o.Topic(_topic);
             o.LoggerFactory(Log);
             if (config != null)
                 config(o.Target);
@@ -152,7 +154,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
     {
         var muxer = SharedConnection.GetMuxer(Log);
-        var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = "test-messages", LoggerFactory = Log });
+        var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = _topic, LoggerFactory = Log });
 
         var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
         Assert.NotNull(cache);

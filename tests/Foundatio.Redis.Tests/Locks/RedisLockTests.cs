@@ -12,6 +12,7 @@ namespace Foundatio.Redis.Tests.Locks;
 
 public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 {
+    private readonly string _topic = $"test-lock-{Guid.NewGuid().ToString("N")[..10]}";
     private readonly ICacheClient _cache;
     private readonly IMessageBus _messageBus;
 
@@ -19,7 +20,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     {
         var muxer = SharedConnection.GetMuxer(Log);
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
-        _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic("test-lock").LoggerFactory(Log));
+        _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic(_topic).LoggerFactory(Log));
     }
 
     protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)

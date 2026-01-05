@@ -778,7 +778,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 if (_isSubscribed)
                 {
                     _logger.LogTrace("Unsubscribing from topic {Topic}", GetTopicName());
-                    _subscriber.Unsubscribe(RedisChannel.Literal(GetTopicName()), OnTopicMessage, CommandFlags.FireAndForget);
+                    try
+                    {
+                        _subscriber.Unsubscribe(RedisChannel.Literal(GetTopicName()), OnTopicMessage, CommandFlags.FireAndForget);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error unsubscribing from topic {Topic}: {Message}", GetTopicName(), ex.Message);
+                    }
                     _isSubscribed = false;
                     _logger.LogTrace("Unsubscribed from topic {Topic}", GetTopicName());
                 }
