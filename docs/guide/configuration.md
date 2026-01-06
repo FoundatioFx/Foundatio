@@ -497,7 +497,7 @@ builder.Services.AddOptions<CacheOptions>()
 
 ### 3. Use Environment-Specific Settings
 
-```
+```bash
 appsettings.json              # Base settings
 appsettings.Development.json  # In-memory implementations
 appsettings.Production.json   # Redis/Azure implementations

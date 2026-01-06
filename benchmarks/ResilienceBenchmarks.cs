@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
@@ -10,7 +10,8 @@ namespace Foundatio.Benchmarks;
 
 [MemoryDiagnoser]
 [SimpleJob]
-public class Benchmarks
+[BenchmarkCategory("Resilience")]
+public class ResilienceBenchmarks
 {
     private IResiliencePolicy _policy;
     private IResiliencePolicy _minimalPolicy;
@@ -171,3 +172,4 @@ public class Benchmarks
         return Interlocked.Increment(ref _counter);
     }
 }
+

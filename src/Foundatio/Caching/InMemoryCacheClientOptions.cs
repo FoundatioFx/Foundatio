@@ -20,7 +20,7 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Entry sizing is opt-in for performance. When <see cref="MaxMemorySize"/> or <see cref="MaxEntrySize"/> is set, 
+    /// Entry sizing is opt-in for performance. When <see cref="MaxMemorySize"/> or <see cref="MaxEntrySize"/> is set,
     /// a <see cref="SizeCalculator"/> must also be provided.
     /// </para>
     /// <para>
