@@ -733,7 +733,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             // The cache should respect the memory limit (allowing some tolerance for async cleanup)
             // Give it a moment for async maintenance to run
-            await Task.Delay(500);
+            await Task.Delay(500, TestCancellationToken);
             _logger.LogInformation($"After delay: CurrentMemorySize={cache.CurrentMemorySize}");
 
             Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
@@ -1094,8 +1094,41 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             SizeCalculator = null
         };
 
-        var ex = Assert.Throws<InvalidOperationException>(() => new InMemoryCacheClient(options));
+        var ex = Assert.Throws<ArgumentException>(() => new InMemoryCacheClient(options));
         Assert.Contains("SizeCalculator", ex.Message);
+    }
+
+    [Fact]
+    public void Constructor_WithMaxEntrySizeButNoCalculator_Throws()
+    {
+        var options = new InMemoryCacheClientOptions
+        {
+            MaxEntrySize = 1024,
+            SizeCalculator = null
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => new InMemoryCacheClient(options));
+        Assert.Contains("SizeCalculator", ex.Message);
+    }
+
+    [Fact]
+    public async Task SetAsync_WithNegativeSizeFromCalculator_SkipsEntry()
+    {
+        var cache = new InMemoryCacheClient(o => o
+            .MaxMemorySize(10000)
+            .SizeCalculator(_ => -1) // Always returns negative size
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Entry should be skipped due to negative size
+            var result = await cache.SetAsync("key", "value");
+            Assert.False(result, "SetAsync should return false when entry is skipped due to negative size");
+
+            // Verify entry was not cached
+            var cached = await cache.GetAsync<string>("key");
+            Assert.False(cached.HasValue, "Entry should not be cached when size calculator returns negative");
+        }
     }
 
     [Fact]

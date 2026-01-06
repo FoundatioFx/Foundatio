@@ -282,6 +282,25 @@ public class SizeCalculatorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public void CalculateSize_WithVeryLargeArray_DoesNotOverflow()
+    {
+        // This test verifies that the size calculation uses long arithmetic
+        // to prevent integer overflow for large arrays.
+        // Array.Length is int, but when multiplied by element size, we need long.
+        // Example: int[500_000_000] * 4 bytes = 2_000_000_000 which fits in int
+        // But int[600_000_000] * 4 bytes = 2_400_000_000 which overflows int (max ~2.1B)
+
+        // We can't actually allocate such large arrays in tests, but we can verify
+        // the formula works correctly for moderately large arrays
+        var largeArray = new long[100_000]; // 100K longs = 800KB
+        long size = _sizer.CalculateSize(largeArray);
+
+        // Expected: ArrayOverhead (24) + 100_000 * 8 = 800,024 bytes
+        long expectedMinSize = 24 + (100_000L * 8);
+        Assert.True(size >= expectedMinSize, $"Expected size >= {expectedMinSize} for long[100000], got {size}");
+    }
+
+    [Fact]
     public void CalculateSize_WithTimeSpan_ReturnsExpectedSize()
     {
         long size = _sizer.CalculateSize(TimeSpan.FromHours(1));
@@ -292,7 +311,8 @@ public class SizeCalculatorTests : TestWithLoggingBase
     public void CalculateSize_WithDateTimeOffset_ReturnsExpectedSize()
     {
         long size = _sizer.CalculateSize(DateTimeOffset.UtcNow);
-        Assert.True(size >= 8, $"Expected size >= 8 for DateTimeOffset, got {size}");
+        // DateTimeOffset is 16 bytes (DateTime 8 bytes + TimeSpan offset 8 bytes)
+        Assert.Equal(16, size);
     }
 
     [Fact]

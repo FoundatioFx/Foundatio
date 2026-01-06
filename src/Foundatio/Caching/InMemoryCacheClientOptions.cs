@@ -16,12 +16,26 @@ public class InMemoryCacheClientOptions : SharedOptions
     public long? MaxMemorySize { get; set; }
 
     /// <summary>
-    /// Function to calculate the size of cache entries in bytes. Required when <see cref="MaxMemorySize"/> is set.
+    /// Function to calculate the size of cache entries in bytes. Required when <see cref="MaxMemorySize"/> or <see cref="MaxEntrySize"/> is set.
     /// </summary>
     /// <remarks>
-    /// Entry sizing is opt-in for performance. When <see cref="MaxMemorySize"/> is set, a <see cref="SizeCalculator"/> must also be provided.
+    /// <para>
+    /// Entry sizing is opt-in for performance. When <see cref="MaxMemorySize"/> or <see cref="MaxEntrySize"/> is set, 
+    /// a <see cref="SizeCalculator"/> must also be provided.
+    /// </para>
+    /// <para>
     /// Use <see cref="InMemoryCacheClientOptionsBuilder.WithDynamicSizing(long, ILoggerFactory)"/> for automatic size calculation using <see cref="Foundatio.Utility.SizeCalculator"/>,
     /// or <see cref="InMemoryCacheClientOptionsBuilder.WithFixedSizing"/> for maximum performance with uniform entry sizes.
+    /// </para>
+    /// <para>
+    /// <strong>Custom SizeCalculator contract:</strong>
+    /// <list type="bullet">
+    /// <item>Must return a non-negative value representing the estimated size in bytes</item>
+    /// <item>Negative return values will cause the entry to be skipped (not cached) with a warning logged</item>
+    /// <item>Should be thread-safe as it may be called concurrently</item>
+    /// <item>Should handle null values gracefully (typically return 8 bytes for a null reference)</item>
+    /// </list>
+    /// </para>
     /// </remarks>
     public Func<object, long> SizeCalculator { get; set; }
 
@@ -99,23 +113,23 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, ILoggerFactory loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
-        var sizer = new Utility.SizeCalculator(loggerFactory);
-        Target.SizeCalculator = sizer.CalculateSize;
+        var sizeCalculator = new Utility.SizeCalculator(loggerFactory);
+        Target.SizeCalculator = sizeCalculator.CalculateSize;
         return this;
     }
 
     /// <summary>
-    /// Use the SizeCalculator to calculate entry sizes dynamically with a memory limit and custom type cache size.
+    /// Use the SizeCalculator to calculate entry sizes dynamically with a memory limit.
     /// The SizeCalculator uses fast paths for common types and falls back to JSON serialization for complex objects.
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
-    /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for. Default is 1000.</param>
+    /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
     public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, int maxTypeCacheSize, ILoggerFactory loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
-        var sizer = new Utility.SizeCalculator(maxTypeCacheSize, loggerFactory);
-        Target.SizeCalculator = sizer.CalculateSize;
+        var sizeCalculator = new Utility.SizeCalculator(maxTypeCacheSize, loggerFactory);
+        Target.SizeCalculator = sizeCalculator.CalculateSize;
         return this;
     }
 
@@ -123,9 +137,13 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     /// Sets the maximum size in bytes for individual cache entries. Entries exceeding this size will be skipped (not cached) and a warning will be logged.
     /// Must be less than or equal to <see cref="MaxMemorySize"/> when both are set.
     /// </summary>
-    /// <param name="maxEntrySize">The maximum entry size in bytes.</param>
+    /// <param name="maxEntrySize">The maximum entry size in bytes. Must be positive when specified.</param>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when maxEntrySize is less than or equal to zero.</exception>
     public InMemoryCacheClientOptionsBuilder MaxEntrySize(long? maxEntrySize)
     {
+        if (maxEntrySize.HasValue && maxEntrySize.Value <= 0)
+            throw new ArgumentOutOfRangeException(nameof(maxEntrySize), "MaxEntrySize must be positive when specified.");
+
         Target.MaxEntrySize = maxEntrySize;
         return this;
     }

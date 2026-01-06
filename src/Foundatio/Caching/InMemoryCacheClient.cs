@@ -56,7 +56,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         // Validate that MaxMemorySize requires a SizeCalculator
         if (options.MaxMemorySize.HasValue && options.SizeCalculator is null)
-            throw new InvalidOperationException($"{nameof(options.MaxMemorySize)} requires a {nameof(options.SizeCalculator)}. Use WithDynamicSizing() or WithFixedSizing() builder methods.");
+            throw new ArgumentException($"{nameof(options.MaxMemorySize)} requires a {nameof(options.SizeCalculator)}. Use WithDynamicSizing() or WithFixedSizing() builder methods.", nameof(options));
+
+        // Validate that MaxEntrySize requires a SizeCalculator
+        if (options.MaxEntrySize.HasValue && options.SizeCalculator is null)
+            throw new ArgumentException($"{nameof(options.MaxEntrySize)} requires a {nameof(options.SizeCalculator)}. Use WithDynamicSizing() or WithFixedSizing() builder methods.", nameof(options));
 
         // Validate that MaxEntrySize is not greater than MaxMemorySize
         if (options.MaxEntrySize.HasValue && options.MaxMemorySize.HasValue && options.MaxEntrySize.Value > options.MaxMemorySize.Value)
@@ -936,11 +940,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return false;
         }
 
-        // Check entry size before caching - may throw or return -1 to skip
+        // Check entry size before caching - may throw if ShouldThrowOnMaxEntrySizeExceeded is true
+        // EstimatedSize returns 0 for entries that should be skipped (logged internally)
         var entrySize = entry.EstimatedSize;
         if (entrySize < 0)
         {
-            // Entry exceeds MaxEntrySize and should be skipped (warning already logged)
+            // Entry exceeds MaxEntrySize or has invalid size (warning already logged)
             return false;
         }
 
@@ -1548,7 +1553,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         _memory.Clear();
         ItemExpired?.Dispose();
-        _sizeCalculator = null; // Allow GC to collect any captured EntrySizer
+        _sizeCalculator = null; // Allow GC to collect any captured closures
     }
 
     private sealed record CacheEntry
@@ -1558,7 +1563,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private readonly bool _shouldClone;
         private readonly TimeProvider _timeProvider;
         private readonly InMemoryCacheClient _cacheClient;
-        private long? _estimatedSize;
+        private long _estimatedSize = NotCalculatedSentinel;
+
+        /// <summary>
+        /// Sentinel value indicating the estimated size has not been calculated yet.
+        /// Using long.MinValue as it's an impossible valid size.
+        /// </summary>
+        private const long NotCalculatedSentinel = long.MinValue;
+
 #if DEBUG
         private long _usageCount;
 #endif
@@ -1579,7 +1591,28 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
-        internal long EstimatedSize => _estimatedSize ??= _cacheClient.CalculateEntrySize(_cacheValue);
+
+        /// <summary>
+        /// Gets the estimated size of this cache entry in bytes.
+        /// Returns -1 if the entry should be skipped (exceeds MaxEntrySize or invalid size).
+        /// Thread-safe lazy initialization using Interlocked operations.
+        /// </summary>
+        internal long EstimatedSize
+        {
+            get
+            {
+                var currentSize = Interlocked.Read(ref _estimatedSize);
+                if (currentSize != NotCalculatedSentinel)
+                    return currentSize;
+
+                // Calculate size and try to set it atomically
+                var calculatedSize = _cacheClient.CalculateEntrySize(_cacheValue);
+                // If another thread already set it, use their value (it should be the same)
+                Interlocked.CompareExchange(ref _estimatedSize, calculatedSize, NotCalculatedSentinel);
+                return Interlocked.Read(ref _estimatedSize);
+            }
+        }
+
 #if DEBUG
         internal long UsageCount => _usageCount;
 #endif
@@ -1597,7 +1630,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             set
             {
                 _cacheValue = _shouldClone ? value.DeepClone() : value;
-                _estimatedSize = null; // Reset cached size calculation
+                // Reset cached size calculation using atomic operation
+                Interlocked.Exchange(ref _estimatedSize, NotCalculatedSentinel);
 
                 var utcNow = _timeProvider.GetUtcNow();
                 LastAccessTicks = utcNow.Ticks;
@@ -1638,8 +1672,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Calculates the size of a cache entry. Returns -1 if the entry exceeds MaxEntrySize and should be skipped.
+    /// Calculates the size of a cache entry.
+    /// Returns -1 if the entry should not be cached (exceeds MaxEntrySize or invalid size from calculator).
     /// </summary>
+    /// <param name="value">The value to calculate size for.</param>
+    /// <returns>The calculated size in bytes, or -1 if the entry should be skipped.</returns>
     /// <exception cref="MaxEntrySizeExceededCacheException">Thrown when entry exceeds MaxEntrySize and ShouldThrowOnMaxEntrySizeExceeded is true.</exception>
     private long CalculateEntrySize(object value)
     {
@@ -1650,6 +1687,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         try
         {
             var size = _sizeCalculator(value);
+
+            // Validate the size returned by the calculator
+            if (size < 0)
+            {
+                _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
+                    "Custom SizeCalculator functions must return non-negative values.",
+                    size, value?.GetType().Name ?? "null");
+                return -1;
+            }
 
             // Check if entry exceeds maximum size
             if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
@@ -1662,7 +1708,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
                     size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
 
-                return -1; // Signal to skip caching this entry
+                return -1;
             }
 
             return size;
@@ -1680,7 +1726,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return value switch
             {
                 null => 8,
-                string str => 24 + (str.Length * 2),
+                string stringValue => 24 + ((long)stringValue.Length * 2),
                 _ => 64 // Default object overhead
             };
         }
@@ -1710,3 +1756,4 @@ public class ItemExpiredEventArgs : EventArgs
     public string Key { get; set; }
     public bool SendNotification { get; set; }
 }
+
