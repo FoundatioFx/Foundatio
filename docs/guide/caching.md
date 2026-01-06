@@ -236,6 +236,74 @@ var cache = new InMemoryCacheClient(o => o.MaxItems = 250);
 // Useful for caching resolved data like geo-ip lookups
 ```
 
+#### Memory-Based Eviction (MaxMemorySize)
+
+Limit cache size by memory consumption with intelligent size-aware eviction. When the cache exceeds the memory limit, it evicts items based on a combination of size, age, and access recency.
+
+```csharp
+using Foundatio.Caching;
+
+// Dynamic sizing: Automatically calculates entry sizes (recommended for mixed object types)
+var cache = new InMemoryCacheClient(o => o
+    .WithDynamicSizing(maxMemorySize: 100 * 1024 * 1024) // 100 MB limit
+    .MaxItems(10000)); // Optional: also limit by item count
+
+// Fixed sizing: Maximum performance when entries are uniform size
+var fixedSizeCache = new InMemoryCacheClient(o => o
+    .WithFixedSizing(
+        maxMemorySize: 50 * 1024 * 1024,  // 50 MB limit
+        averageEntrySize: 1024));          // Assume 1KB per entry
+
+// Check current memory usage
+Console.WriteLine($"Memory: {cache.CurrentMemorySize:N0} / {cache.MaxMemorySize:N0} bytes");
+```
+
+**How dynamic sizing works:**
+- Uses fast paths for common types (strings, primitives, arrays)
+- Falls back to JSON serialization for complex objects
+- Caches type size calculations for performance
+
+#### Per-Entry Size Limits (MaxEntrySize)
+
+Prevent individual large entries from consuming too much cache space:
+
+```csharp
+// Skip oversized entries (default behavior)
+var cache = new InMemoryCacheClient(o => o
+    .WithDynamicSizing(100 * 1024 * 1024)  // 100 MB total
+    .MaxEntrySize(1 * 1024 * 1024));        // 1 MB per entry limit
+
+// Entries exceeding MaxEntrySize are skipped (not cached) and a warning is logged
+var result = await cache.SetAsync("large-data", veryLargeObject);
+// result = false if entry exceeds MaxEntrySize
+
+// Strict mode: Throw exception on oversized entries
+var strictCache = new InMemoryCacheClient(o => o
+    .WithDynamicSizing(100 * 1024 * 1024)
+    .MaxEntrySize(1 * 1024 * 1024)
+    .ShouldThrowOnMaxEntrySizeExceeded()); // Throws MaxEntrySizeExceededCacheException
+
+try
+{
+    await strictCache.SetAsync("large-data", veryLargeObject);
+}
+catch (MaxEntrySizeExceededCacheException ex)
+{
+    // Handle oversized entry
+    _logger.LogError(ex, "Entry too large for cache: {EntrySize} > {MaxEntrySize}", ex.EntrySize, ex.MaxEntrySize);
+}
+```
+
+::: tip When to Use MaxEntrySize
+- **API response caching**: Prevent a single large response from evicting many smaller cached items
+- **User data caching**: Limit impact of users with unusually large data
+- **Memory protection**: Guard against unbounded object growth
+:::
+
+::: warning Validation
+`MaxEntrySize` must be less than or equal to `MaxMemorySize` when both are set. An `ArgumentOutOfRangeException` is thrown at construction time if this constraint is violated.
+:::
+
 ### HybridCacheClient
 
 Combines local in-memory caching with a distributed cache for maximum performance:

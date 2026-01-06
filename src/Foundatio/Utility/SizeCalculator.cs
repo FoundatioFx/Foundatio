@@ -7,7 +7,7 @@ using System.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Caching;
+namespace Foundatio.Utility;
 
 /// <summary>
 /// Calculates the estimated memory size of objects. Uses fast paths for common types
@@ -16,9 +16,9 @@ namespace Foundatio.Caching;
 /// <remarks>
 /// The type size cache is bounded to prevent unbounded memory growth. When the cache
 /// reaches its limit, older entries are evicted. Call <see cref="Dispose"/> to clear
-/// the cache when the sizer is no longer needed.
+/// the cache when the calculator is no longer needed.
 /// </remarks>
-public class ObjectSizer : IDisposable
+public class SizeCalculator : IDisposable
 {
     private ConcurrentDictionary<Type, TypeSizeCacheEntry> _typeSizeCache;
     private readonly int _maxTypeCacheSize;
@@ -38,25 +38,25 @@ public class ObjectSizer : IDisposable
     private const int DefaultMaxTypeCacheSize = 1000;
 
     /// <summary>
-    /// Creates a new ObjectSizer instance with default settings.
+    /// Creates a new SizeCalculator instance with default settings.
     /// </summary>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public ObjectSizer(ILoggerFactory loggerFactory) : this(DefaultMaxTypeCacheSize, loggerFactory)
+    public SizeCalculator(ILoggerFactory loggerFactory) : this(DefaultMaxTypeCacheSize, loggerFactory)
     {
     }
 
     /// <summary>
-    /// Creates a new ObjectSizer instance.
+    /// Creates a new SizeCalculator instance.
     /// </summary>
     /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for. Default is 1000.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public ObjectSizer(int maxTypeCacheSize = DefaultMaxTypeCacheSize, ILoggerFactory loggerFactory = null)
+    public SizeCalculator(int maxTypeCacheSize = DefaultMaxTypeCacheSize, ILoggerFactory loggerFactory = null)
     {
         _maxTypeCacheSize = maxTypeCacheSize > 0 ? maxTypeCacheSize : 1000;
         // Pre-size dictionary to avoid resizing; -1 uses default concurrency level
         _typeSizeCache = new ConcurrentDictionary<Type, TypeSizeCacheEntry>(-1, _maxTypeCacheSize);
 
-        _logger = loggerFactory?.CreateLogger<ObjectSizer>() ?? NullLogger<ObjectSizer>.Instance;
+        _logger = loggerFactory?.CreateLogger<SizeCalculator>() ?? NullLogger<SizeCalculator>.Instance;
     }
 
     /// <summary>
@@ -82,12 +82,12 @@ public class ObjectSizer : IDisposable
     /// </summary>
     /// <param name="value">The object to calculate size for.</param>
     /// <returns>Estimated size in bytes.</returns>
-    /// <exception cref="ObjectDisposedException">Thrown if the sizer has been disposed.</exception>
+    /// <exception cref="ObjectDisposedException">Thrown if the calculator has been disposed.</exception>
     public long CalculateSize(object value)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (value == null)
+        if (value is null)
             return 8; // Reference size
 
         var type = value.GetType();
@@ -144,7 +144,7 @@ public class ObjectSizer : IDisposable
                     // For string arrays, we need to account for actual string lengths
                     foreach (string str in array)
                     {
-                        if (str != null)
+                        if (str is not null)
                             size += str.Length * 2 - elementSize; // Adjust for actual string size
                     }
                 }
@@ -153,7 +153,7 @@ public class ObjectSizer : IDisposable
         }
 
         // Handle collections with sampling for large ones
-        if (value is IEnumerable enumerable && !(value is string))
+        if (value is IEnumerable enumerable && value is not string)
         {
             long size = 32; // Collection overhead
             int count = 0;
@@ -196,7 +196,7 @@ public class ObjectSizer : IDisposable
     private long GetCachedTypeSize(Type type)
     {
         var cache = _typeSizeCache;
-        if (cache == null)
+        if (cache is null)
             return 64; // Default if disposed
 
         var accessOrder = Interlocked.Increment(ref _cacheAccessCounter);
@@ -281,3 +281,4 @@ public class ObjectSizer : IDisposable
         public long LastAccess { get; set; }
     }
 }
+

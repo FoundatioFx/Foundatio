@@ -903,12 +903,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task SetAsync_WithCustomObjectSizeCalculator_UsesCustomCalculator()
+    public async Task SetAsync_WithCustomSizeCalculator_UsesCustomCalculator()
     {
         int callCount = 0;
         var cache = new InMemoryCacheClient(o => o
             .MaxMemorySize(10000)
-            .ObjectSizeCalculator(_ =>
+            .SizeCalculator(_ =>
             {
                 callCount++;
                 return 50;
@@ -1091,11 +1091,11 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         var options = new InMemoryCacheClientOptions
         {
             MaxMemorySize = 1024,
-            ObjectSizeCalculator = null
+            SizeCalculator = null
         };
 
         var ex = Assert.Throws<InvalidOperationException>(() => new InMemoryCacheClient(options));
-        Assert.Contains("ObjectSizeCalculator", ex.Message);
+        Assert.Contains("SizeCalculator", ex.Message);
     }
 
     [Fact]
@@ -1313,6 +1313,109 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             // Remove and verify memory is freed
             await cache.RemoveAsync("key");
             Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithOversizedEntry_LogsWarningAndReturnsFalse()
+    {
+        // Arrange
+        var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(50) // Very small limit
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Act - try to cache a string larger than MaxEntrySize
+            var largeString = new string('x', 100); // ~224 bytes, exceeds 50 byte limit
+            var result = await cache.SetAsync("oversized", largeString);
+
+            // Assert - should return false and not cache the entry
+            Assert.False(result);
+            Assert.False((await cache.GetAsync<string>("oversized")).HasValue);
+            Assert.Equal(0, cache.CurrentMemorySize);
+        }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithOversizedEntryAndThrowEnabled_ThrowsMaxEntrySizeExceededCacheException()
+    {
+        // Arrange
+        var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(50) // Very small limit
+            .ShouldThrowOnMaxEntrySizeExceeded()
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Act & Assert - should throw MaxEntrySizeExceededCacheException
+            var largeString = new string('x', 100); // ~224 bytes, exceeds 50 byte limit
+            var ex = await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync("oversized", largeString));
+            Assert.Contains("exceeds maximum allowed size", ex.Message);
+            Assert.True(ex.EntrySize > 50);
+            Assert.Equal(50, ex.MaxEntrySize);
+            Assert.Equal("String", ex.EntryType);
+
+            // Entry should not be cached
+            Assert.False((await cache.GetAsync<string>("oversized")).HasValue);
+        }
+    }
+
+    [Fact]
+    public void Constructor_WithMaxEntrySizeGreaterThanMaxMemorySize_ThrowsArgumentOutOfRangeException()
+    {
+        // Arrange & Act & Assert
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new InMemoryCacheClient(o => o
+            .WithDynamicSizing(1000) // 1000 bytes total limit
+            .MaxEntrySize(2000))); // 2000 bytes per entry - INVALID
+
+        Assert.Contains("MaxEntrySize", ex.Message);
+        Assert.Contains("MaxMemorySize", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddAsync_WithOversizedEntry_ReturnsFalse()
+    {
+        // Arrange
+        var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(50)
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Act
+            var largeString = new string('x', 100);
+            var result = await cache.AddAsync("oversized", largeString);
+
+            // Assert
+            Assert.False(result);
+            Assert.False((await cache.GetAsync<string>("oversized")).HasValue);
+        }
+    }
+
+    [Fact]
+    public async Task SetAsync_WithEntryUnderLimit_CachesSuccessfully()
+    {
+        // Arrange
+        var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(1000) // 1KB limit
+            .LoggerFactory(Log));
+
+        using (cache)
+        {
+            // Act - cache a small string under the limit
+            var smallString = "hello";
+            var result = await cache.SetAsync("small", smallString);
+
+            // Assert
+            Assert.True(result);
+            var cached = await cache.GetAsync<string>("small");
+            Assert.True(cached.HasValue);
+            Assert.Equal(smallString, cached.Value);
         }
     }
 }

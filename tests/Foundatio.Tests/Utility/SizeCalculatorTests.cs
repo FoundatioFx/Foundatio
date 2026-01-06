@@ -1,20 +1,19 @@
 using System;
 using System.Collections.Generic;
-using Foundatio.Caching;
+using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
-namespace Foundatio.Tests.Caching;
+namespace Foundatio.Tests.Utility;
 
-public class ObjectSizerTests : TestWithLoggingBase
+public class SizeCalculatorTests : TestWithLoggingBase
 {
-    private readonly ObjectSizer _sizer;
+    private readonly SizeCalculator _sizer;
 
-    public ObjectSizerTests(ITestOutputHelper output) : base(output)
+    public SizeCalculatorTests(ITestOutputHelper output) : base(output)
     {
-        _sizer = new ObjectSizer(Log);
+        _sizer = new SizeCalculator(Log);
     }
 
     [Fact]
@@ -310,7 +309,7 @@ public class ObjectSizerTests : TestWithLoggingBase
     [Fact]
     public void Dispose_WhenCalled_ClearsCache()
     {
-        var sizer = new ObjectSizer(Log);
+        var sizer = new SizeCalculator(Log);
 
         // Use the sizer to populate the cache
         sizer.CalculateSize(new SimpleTestObject { Id = 1, Name = "Test" });
@@ -326,7 +325,7 @@ public class ObjectSizerTests : TestWithLoggingBase
     [Fact]
     public void Dispose_WhenCalledMultipleTimes_DoesNotThrow()
     {
-        var sizer = new ObjectSizer(Log);
+        var sizer = new SizeCalculator(Log);
         sizer.CalculateSize("test");
 
         // Multiple dispose calls should be safe
@@ -338,7 +337,7 @@ public class ObjectSizerTests : TestWithLoggingBase
     [Fact]
     public void CalculateSize_WithManyDistinctTypes_RespectsMaxCacheSize()
     {
-        var sizer = new ObjectSizer(Log);
+        var sizer = new SizeCalculator(Log);
 
         // Create many distinct types by using generic types with different type arguments
         // This tests the LRU eviction logic
@@ -368,7 +367,7 @@ public class ObjectSizerTests : TestWithLoggingBase
     public void TypeSizeCache_CachesTypeSizeCalculations()
     {
         // Use a small cache size so we can test caching behavior
-        var sizer = new ObjectSizer(maxTypeCacheSize: 10, loggerFactory: Log);
+        var sizer = new SizeCalculator(maxTypeCacheSize: 10, loggerFactory: Log);
 
         Assert.Equal(0, sizer.TypeCacheCount);
 
@@ -402,7 +401,7 @@ public class ObjectSizerTests : TestWithLoggingBase
     public void TypeSizeCache_EvictsWhenMaxSizeReached()
     {
         // Use a very small cache size to test eviction
-        var sizer = new ObjectSizer(maxTypeCacheSize: 5, loggerFactory: Log);
+        var sizer = new SizeCalculator(maxTypeCacheSize: 5, loggerFactory: Log);
 
         // Add types up to the limit using arrays (which cache element types)
         sizer.CalculateSize(new int[] { 1 });      // int
@@ -454,3 +453,4 @@ public class ObjectSizerTests : TestWithLoggingBase
         public long Count { get; set; }
     }
 }
+

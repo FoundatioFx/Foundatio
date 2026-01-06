@@ -22,8 +22,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly bool _shouldThrowOnSerializationErrors;
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
-    private Func<object, long> _objectSizeCalculator;
-    private readonly long? _maxObjectSize;
+    private Func<object, long> _sizeCalculator;
+    private readonly long? _maxEntrySize;
+    private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
     private long _writes;
     private long _hits;
     private long _misses;
@@ -40,23 +41,28 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public InMemoryCacheClient(InMemoryCacheClientOptions options = null)
     {
-        if (options == null)
+        if (options is null)
             options = new InMemoryCacheClientOptions();
         _shouldClone = options.CloneValues;
         _shouldThrowOnSerializationErrors = options.ShouldThrowOnSerializationError;
         _maxItems = options.MaxItems;
         _maxMemorySize = options.MaxMemorySize;
-        _maxObjectSize = options.MaxObjectSize;
+        _maxEntrySize = options.MaxEntrySize;
+        _shouldThrowOnMaxEntrySizeExceeded = options.ShouldThrowOnMaxEntrySizeExceeded;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         _resiliencePolicyProvider = options.ResiliencePolicyProvider;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<InMemoryCacheClient>();
 
-        // Validate that MaxMemorySize requires an ObjectSizeCalculator
-        if (options.MaxMemorySize.HasValue && options.ObjectSizeCalculator == null)
-            throw new InvalidOperationException($"{nameof(options.MaxMemorySize)} requires an {nameof(options.ObjectSizeCalculator)}. Use UseObjectSizer() or UseFixedObjectSize() builder methods.");
+        // Validate that MaxMemorySize requires a SizeCalculator
+        if (options.MaxMemorySize.HasValue && options.SizeCalculator is null)
+            throw new InvalidOperationException($"{nameof(options.MaxMemorySize)} requires a {nameof(options.SizeCalculator)}. Use WithDynamicSizing() or WithFixedSizing() builder methods.");
 
-        _objectSizeCalculator = options.ObjectSizeCalculator;
+        // Validate that MaxEntrySize is not greater than MaxMemorySize
+        if (options.MaxEntrySize.HasValue && options.MaxMemorySize.HasValue && options.MaxEntrySize.Value > options.MaxMemorySize.Value)
+            throw new ArgumentOutOfRangeException(nameof(options.MaxEntrySize), $"{nameof(options.MaxEntrySize)} ({options.MaxEntrySize.Value:N0} bytes) cannot be greater than {nameof(options.MaxMemorySize)} ({options.MaxMemorySize.Value:N0} bytes).");
+
+        _sizeCalculator = options.SizeCalculator;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
     }
@@ -930,6 +936,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return false;
         }
 
+        // Check entry size before caching - may throw or return -1 to skip
+        var entrySize = entry.EstimatedSize;
+        if (entrySize < 0)
+        {
+            // Entry exceeds MaxEntrySize and should be skipped (warning already logged)
+            return false;
+        }
+
         Interlocked.Increment(ref _writes);
 
         bool wasUpdated = true;
@@ -971,8 +985,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Update memory size tracking
         if (_maxMemorySize.HasValue)
         {
-            long sizeDelta = entry.EstimatedSize;
-            if (oldEntry != null)
+            long sizeDelta = entrySize;
+            if (oldEntry is not null)
                 sizeDelta -= oldEntry.EstimatedSize;
 
             if (wasUpdated && sizeDelta != 0)
@@ -1534,7 +1548,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         _memory.Clear();
         ItemExpired?.Dispose();
-        _objectSizeCalculator = null; // Allow GC to collect any captured ObjectSizer
+        _sizeCalculator = null; // Allow GC to collect any captured EntrySizer
     }
 
     private sealed record CacheEntry
@@ -1565,7 +1579,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
         internal long LastModifiedTicks { get; private set; }
-        internal long EstimatedSize => _estimatedSize ??= _cacheClient.CalculateObjectSize(_cacheValue);
+        internal long EstimatedSize => _estimatedSize ??= _cacheClient.CalculateEntrySize(_cacheValue);
 #if DEBUG
         internal long UsageCount => _usageCount;
 #endif
@@ -1623,28 +1637,43 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    private long CalculateObjectSize(object value)
+    /// <summary>
+    /// Calculates the size of a cache entry. Returns -1 if the entry exceeds MaxEntrySize and should be skipped.
+    /// </summary>
+    /// <exception cref="MaxEntrySizeExceededCacheException">Thrown when entry exceeds MaxEntrySize and ShouldThrowOnMaxEntrySizeExceeded is true.</exception>
+    private long CalculateEntrySize(object value)
     {
         // Skip size calculation if no calculator is configured (opt-in behavior)
-        if (_objectSizeCalculator == null)
+        if (_sizeCalculator is null)
             return 0;
 
         try
         {
-            var size = _objectSizeCalculator(value);
+            var size = _sizeCalculator(value);
 
-            // Log warning if object exceeds maximum size
-            if (_maxObjectSize.HasValue && size > _maxObjectSize.Value)
+            // Check if entry exceeds maximum size
+            if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
             {
-                _logger.LogWarning("Cache object size {ObjectSize:N0} bytes exceeds maximum recommended size {MaxObjectSize:N0} bytes for type {ObjectType}",
-                    size, _maxObjectSize.Value, value?.GetType().Name ?? "null");
+                if (_shouldThrowOnMaxEntrySizeExceeded)
+                {
+                    throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+                }
+
+                _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+                    size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+
+                return -1; // Signal to skip caching this entry
             }
 
             return size;
         }
+        catch (MaxEntrySizeExceededCacheException)
+        {
+            throw; // Re-throw MaxEntrySizeExceededCacheException from size check
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calculating object size for type {ObjectType}, using fallback estimation",
+            _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation",
                 value?.GetType().Name ?? "null");
 
             // Fallback to simple estimation
