@@ -349,15 +349,12 @@ public class SizeCalculator : IDisposable
             foreach (var kvp in cache)
             {
                 var lastAccess = Interlocked.Read(ref kvp.Value.LastAccessField);
-                if (lastAccess < threshold)
+                if (lastAccess < threshold && cache.TryRemove(kvp.Key, out _))
                 {
-                    if (cache.TryRemove(kvp.Key, out _))
-                    {
-                        removed++;
-                        // Stop once we've removed enough
-                        if (removed >= toRemove)
-                            break;
-                    }
+                    removed++;
+                    // Stop once we've removed enough
+                    if (removed >= toRemove)
+                        break;
                 }
             }
         }
