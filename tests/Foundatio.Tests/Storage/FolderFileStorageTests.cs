@@ -2,7 +2,6 @@
 using System.Threading.Tasks;
 using Foundatio.Storage;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Storage;
 
@@ -145,14 +144,14 @@ public class FolderFileStorageTests : FileStorageTestsBase
     public async Task WillNotReturnDirectoryInGetPagedFileListAsync()
     {
         var storage = GetStorage();
-        if (storage == null)
+        if (storage is null)
             return;
 
         await ResetAsync(storage);
 
         using (storage)
         {
-            var result = await storage.GetPagedFileListAsync();
+            var result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -164,7 +163,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.NotNull(folder);
             Directory.CreateDirectory(Path.Combine(folder, directory));
 
-            result = await storage.GetPagedFileListAsync();
+            result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
             Assert.False(await result.NextPageAsync());
@@ -176,7 +175,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.Null(info);
 
             // Ensure delete files can remove all files including fake folders
-            await storage.DeleteFilesAsync("*");
+            await storage.DeleteFilesAsync("*", TestCancellationToken);
 
             // Assert folder was removed by Delete Files
             Assert.False(Directory.Exists(Path.Combine(folder, directory)));

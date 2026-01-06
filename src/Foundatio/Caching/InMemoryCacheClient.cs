@@ -397,6 +397,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            RemoveExpiredKey(key);
+            return Task.FromResult(false);
+        }
+
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), true);
     }
@@ -404,6 +410,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            RemoveExpiredKey(key);
+            return Task.FromResult(false);
+        }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone));
@@ -416,7 +428,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -455,8 +467,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             newSize = existingEntry.EstimatedSize;
             return existingEntry;
@@ -481,7 +492,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -520,8 +531,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             newSize = existingEntry.EstimatedSize;
             return existingEntry;
@@ -546,7 +556,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -585,8 +595,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             newSize = existingEntry.EstimatedSize;
             return existingEntry;
@@ -611,7 +620,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (expiresIn?.Ticks <= 0)
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -650,8 +659,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 difference = 0;
             }
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             newSize = existingEntry.EstimatedSize;
             return existingEntry;
@@ -674,13 +682,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
-        if (expiresAt < utcNow)
+        if (expiresIn is { Ticks: <= 0 })
         {
             await ListRemoveAsync(key, values).AnyContext();
             return 0;
         }
+
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
 
         Interlocked.Increment(ref _writes);
 
@@ -1026,6 +1035,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn?.Ticks <= 0)
+        {
+            RemoveExpiredKey(key);
+            return false;
+        }
+
         _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         Interlocked.Increment(ref _writes);
@@ -1044,8 +1059,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 wasExpectedValue = true;
                 newSize = existingEntry.EstimatedSize;
 
-                if (expiresIn.HasValue)
-                    existingEntry.ExpiresAt = expiresAt;
+                existingEntry.ExpiresAt = expiresAt;
             }
 
             return existingEntry;
@@ -1068,10 +1082,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn is { Ticks: <= 0 })
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -1127,10 +1141,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn is { Ticks: <= 0 })
         {
             RemoveExpiredKey(key);
-            return -1;
+            return 0;
         }
 
         Interlocked.Increment(ref _writes);
@@ -1219,7 +1233,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         Interlocked.Increment(ref _hits);
-        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt?.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
+
+        // Return null for keys with no expiration (DateTime.MaxValue means no expiration)
+        if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+            return Task.FromResult<TimeSpan?>(null);
+
+        return Task.FromResult<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
     }
 
     public Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
@@ -1239,21 +1258,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (!_memory.TryGetValue(key, out var existingEntry))
             {
                 Interlocked.Increment(ref _misses);
-                // Don't include non-existent keys in result (consistent with GetExpirationAsync returning null)
+                // Omit non-existent keys from result
                 continue;
             }
 
             if (existingEntry.IsExpired)
             {
                 Interlocked.Increment(ref _misses);
-                // Don't include expired keys in result (consistent with GetExpirationAsync returning null)
+                // Omit expired keys from result
                 continue;
             }
 
             Interlocked.Increment(ref _hits);
 
-            // Skip keys without expiration (consistent with GetExpirationAsync behavior)
-            if (existingEntry.ExpiresAt.HasValue)
+            // Include keys without expiration with null value (DateTime.MaxValue means no expiration)
+            if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+                result[key] = null;
+            else
                 result[key] = existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime);
         }
 

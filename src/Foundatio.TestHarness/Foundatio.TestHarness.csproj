@@ -5,15 +5,14 @@
     <IsTestProject>false</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.6" />
+    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.1" />
-    <PackageReference Include="xunit" Version="2.9.3" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Foundatio.Xunit\Foundatio.Xunit.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Xunit.v3\Foundatio.Xunit.v3.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
   </ItemGroup>
 </Project>

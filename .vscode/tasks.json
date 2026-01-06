@@ -54,19 +54,6 @@
                 "panel": "dedicated"
             },
             "problemMatcher": []
-        },
-        {
-            "label": "setup cursor rules",
-            "command": "pwsh",
-            "args": [
-                ".github/setup-cursor-rules.ps1"
-            ],
-            "type": "shell",
-            "group": "build",
-            "presentation": {
-                "panel": "dedicated"
-            },
-            "problemMatcher": []
         }
     ]
 }

@@ -11,15 +11,14 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Hosting;
 
-public class HostingTests
+public class HostingTests : TestWithLoggingBase
 {
     private readonly ITestOutputHelper _output;
 
-    public HostingTests(ITestOutputHelper output)
+    public HostingTests(ITestOutputHelper output) : base(output)
     {
         _output = output;
     }
@@ -42,11 +41,11 @@ public class HostingTests
 
         var server = new TestServer(builder);
 
-        await server.WaitForReadyAsync();
-        await resetEvent.WaitAsync();
+        await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
+        await resetEvent.WaitAsync(TestCancellationToken);
 
         var client = server.CreateClient();
-        var response = await client.GetAsync("/ready");
+        var response = await client.GetAsync("/ready", TestCancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -73,11 +72,11 @@ public class HostingTests
 
         var server = new TestServer(builder);
 
-        await server.WaitForReadyAsync();
-        await resetEvent.WaitAsync();
+        await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
+        await resetEvent.WaitAsync(TestCancellationToken);
 
         var client = server.CreateClient();
-        var response = await client.GetAsync("/ready");
+        var response = await client.GetAsync("/ready", TestCancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -99,11 +98,11 @@ public class HostingTests
 
         var server = new TestServer(builder);
 
-        await server.WaitForReadyAsync();
+        await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
         Assert.True(TestStartupAction.HasRun);
 
         var client = server.CreateClient();
-        var response = await client.GetAsync("/ready");
+        var response = await client.GetAsync("/ready", TestCancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
@@ -127,7 +126,7 @@ public class HostingTests
         var server = new TestServer(builder);
 
         var sw = Stopwatch.StartNew();
-        await Assert.ThrowsAsync<OperationCanceledException>(() => server.WaitForReadyAsync());
+        await Assert.ThrowsAsync<OperationCanceledException>(() => server.WaitForReadyAsync(cancellationToken: TestCancellationToken));
         sw.Stop();
 
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
@@ -153,7 +152,7 @@ public class HostingTests
         var server = new TestServer(builder);
 
         var sw = Stopwatch.StartNew();
-        await server.WaitForReadyAsync();
+        await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
         sw.Stop();
 
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));

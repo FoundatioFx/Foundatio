@@ -39,7 +39,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
         _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
-        if (localCacheOptions == null)
+        if (localCacheOptions is null)
             localCacheOptions = new InMemoryCacheClientOptions
             {
                 TimeProvider = _timeProvider,
@@ -226,6 +226,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        if (expiresIn is { Ticks: <= 0 })
+        {
+            await RemoveAsync(key).AnyContext();
+            return false;
+        }
 
         _logger.LogTrace("Adding key {Key} to local cache with expiration: {Expiration}", key, expiresIn);
         bool added = await _distributedCache.AddAsync(key, value, expiresIn).AnyContext();

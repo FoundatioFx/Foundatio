@@ -40,10 +40,19 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     /// </summary>
     /// <param name="client">The underlying cache client to use.</param>
     /// <param name="scope">The scope for cache keys. When specified, all operations will be prefixed with this scope.</param>
+    public ScopedCacheClient(ICacheClient client, string scope) : this(client, scope, false)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ScopedCacheClient"/> class with the specified cache client and scope.
+    /// </summary>
+    /// <param name="client">The underlying cache client to use.</param>
+    /// <param name="scope">The scope for cache keys. When specified, all operations will be prefixed with this scope.</param>
     /// <param name="shouldDispose">Whether to dispose the underlying cache client when this instance is disposed.
     /// Defaults to false, meaning the underlying cache client will not be disposed when this instance is disposed.
     /// Set to true to have the underlying cache client automatically disposed when this instance is disposed, enabling use with 'using' statements.</param>
-    public ScopedCacheClient(ICacheClient client, string scope, bool shouldDispose = false)
+    public ScopedCacheClient(ICacheClient client, string scope, bool shouldDispose)
     {
         UnscopedCache = client ?? new NullCacheClient();
         _isLocked = scope != null;

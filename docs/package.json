@@ -1,0 +1,16 @@
+{
+  "name": "foundatio-docs",
+  "version": "1.0.0",
+  "description": "Documentation site for Foundatio",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^2.0.0-alpha.15",
+    "vitepress-plugin-llms": "^1.9.3",
+    "mermaid": "^11.12.2"
+  }
+}

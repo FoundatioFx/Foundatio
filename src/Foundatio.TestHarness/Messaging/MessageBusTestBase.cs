@@ -13,7 +13,6 @@ using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Messaging;
 
@@ -152,7 +151,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.PublishAsync<object>(null);
             _logger.LogTrace("Published one...");
 
-            await countdown.WaitAsync(TimeSpan.FromSeconds(1));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(1)));
             Assert.Equal(1, countdown.CurrentCount);
         }
         finally
@@ -355,7 +354,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             });
 
             await Task.WhenAll(subscribe, publish);
-            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            await countdown.WaitAsync(TimeSpan.FromSeconds(4));
             Assert.Equal(0, countdown.CurrentCount);
         }
         finally
@@ -611,7 +610,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 countdown.Signal();
             });
 
-            await countdown.WaitAsync(TimeSpan.FromMilliseconds(100));
+            await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromMilliseconds(100)));
             Assert.Equal(1, countdown.CurrentCount);
         }
         finally

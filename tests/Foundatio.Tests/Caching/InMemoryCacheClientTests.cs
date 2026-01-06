@@ -4,7 +4,6 @@ using Foundatio.Caching;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
@@ -23,6 +22,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task AddAsync_WithConcurrentRequests_OnlyOneSucceeds()
     {
         return base.AddAsync_WithConcurrentRequests_OnlyOneSucceeds();
+    }
+
+    [Fact]
+    public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -172,9 +177,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task IncrementAsync_WithExpiration_ExpiresCorrectly()
+    public override Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.IncrementAsync_WithExpiration_ExpiresCorrectly();
+        return base.IncrementAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -196,9 +201,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ListAddAsync_WithExpiration_ExpiresCorrectly()
+    public override Task IncrementAsync_WithFloatingPointDecimals_PreservesDecimalPrecision()
     {
-        return base.ListAddAsync_WithExpiration_ExpiresCorrectly();
+        return base.IncrementAsync_WithFloatingPointDecimals_PreservesDecimalPrecision();
+    }
+
+    [Fact]
+    public override Task SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly()
+    {
+        return base.SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithFloatingPointDecimals_ComparesCorrectly()
+    {
+        return base.SetIfLowerAsync_WithFloatingPointDecimals_ComparesCorrectly();
+    }
+
+    [Fact]
+    public override Task ListAddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ListAddAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -229,6 +252,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListRemoveAsync_WithValidValues_RemovesKeyWhenEmpty()
     {
         return base.ListRemoveAsync_WithValidValues_RemovesKeyWhenEmpty();
+    }
+
+    [Fact]
+    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -412,6 +441,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.ReplaceAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly();
@@ -448,9 +483,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
+    public override Task SetAllAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllAsync_WithExpiration_KeysExpireCorrectly();
+        return base.SetAllAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -480,9 +515,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
+    public override Task SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly();
+        return base.SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -492,9 +527,15 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetAsync_WithExpirationEdgeCases_HandlesCorrectly()
+    public override Task SetAsync_WithExpiration_SetsExpirationCorrectly()
     {
-        return base.SetAsync_WithExpirationEdgeCases_HandlesCorrectly();
+        return base.SetAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public override Task SetExpirationAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetExpirationAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -528,33 +569,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
-    {
-        return base.SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey()
-    {
-        return base.SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
-    {
-        return base.SetExpirationAsync_WithDateTimeMaxValue_NeverExpires();
-    }
-
-    [Fact]
     public override Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         return base.SetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
-    }
-
-    [Fact]
-    public override Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
-    {
-        return base.SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately();
     }
 
     [Fact]
@@ -570,6 +587,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
     public override Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         return base.SetIfLowerAsync_WithDateTime_UpdatesWhenLower();
@@ -579,6 +602,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly()
     {
         return base.SetIfLowerAsync_WithLargeNumbers_HandlesCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        return base.SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly();
     }
 
     [Fact]
@@ -631,7 +660,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                 Assert.Equal(1, cache.Misses);
 
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50)); // keep the last access ticks from being the same for all items
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), TestCancellationToken); // keep the last access ticks from being the same for all items
                 Assert.NotNull(await cache.GetAsync<int?>("test1"));
                 Assert.Equal(1, cache.Hits);
 
@@ -646,11 +675,11 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task DoMaintenanceAsync_WithMaxDateTimeExpiration_ShouldNotThrowException()
+    public async Task DoMaintenanceAsync_WithMaxTimeSpanExpiration_ShouldNotThrowException()
     {
-        // Arrange
+        // Arrange - use a normal current time so using TimeSpan.MaxValue for expiration does not cause overflow issues
         var timeProvider = new FakeTimeProvider();
-        timeProvider.SetUtcNow(DateTimeOffset.MaxValue);
+        timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
         var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
         using (cache)
@@ -658,13 +687,17 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             await cache.RemoveAllAsync();
             const string key = "cached-with-max-expiration";
 
-            // Act
-            await cache.SetAsync(key, "value", DateTime.MaxValue);
+            // Act - use TimeSpan.MaxValue which should result in no expiration
+            await cache.SetAsync(key, "value", TimeSpan.MaxValue);
 
             // Assert
             var result = await cache.GetAsync<string>(key);
             Assert.True(result.HasValue);
             Assert.Equal("value", result.Value);
+
+            // Verify no expiration (TimeSpan.MaxValue means no expiration, returns null)
+            var expiration = await cache.GetExpirationAsync(key);
+            Assert.Null(expiration);
         }
     }
 

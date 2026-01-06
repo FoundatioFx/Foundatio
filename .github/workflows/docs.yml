@@ -1,0 +1,53 @@
+name: Docs
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy-docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v6
+      with:
+        node-version: 24
+
+    - name: Clean npm cache and dependencies
+      run: |
+        rm -rf node_modules package-lock.json
+        npm cache clean --force
+      working-directory: docs
+
+    - name: Install dependencies
+      run: npm install --force
+      working-directory: docs
+
+    - name: Build documentation
+      run: npm run build
+      working-directory: docs
+
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: docs/.vitepress/dist
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

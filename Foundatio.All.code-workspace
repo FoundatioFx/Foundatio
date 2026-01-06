@@ -38,6 +38,12 @@
 		},
 		{
 			"path": "../Foundatio.Mediator"
+		},
+		{
+			"path": "../Foundatio.CommandQuery"
+		},
+		{
+			"path": "../Foundatio.Lucene"
 		}
 	],
 	"settings": {

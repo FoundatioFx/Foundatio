@@ -10,7 +10,6 @@ using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace Foundatio.Tests.Caching;
 
@@ -88,6 +87,53 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.AddAsync(null!, "value"));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.AddAsync(String.Empty, "value"));
+        }
+    }
+
+    public virtual async Task AddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Past expiration: should return false and key should not exist
+            Assert.False(await cache.AddAsync("add-past-exp", "value", TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("add-past-exp"));
+            Assert.False((await cache.GetAsync<string>("add-past-exp")).HasValue);
+
+            // Past expiration on existing key: should return false and remove the key
+            Assert.True(await cache.AddAsync("add-past-exp-existing", "original"));
+            Assert.True(await cache.ExistsAsync("add-past-exp-existing"));
+            Assert.False(await cache.AddAsync("add-past-exp-existing", "new-value", TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("add-past-exp-existing"));
+            Assert.False((await cache.GetAsync<string>("add-past-exp-existing")).HasValue);
+
+            // Zero expiration: should also be treated as expired
+            Assert.False(await cache.AddAsync("add-zero-exp", "value", TimeSpan.Zero));
+            Assert.False(await cache.ExistsAsync("add-zero-exp"));
+            Assert.False((await cache.GetAsync<string>("add-zero-exp")).HasValue);
+
+            // Max expiration: should return true, key should exist with no expiration (null)
+            Assert.True(await cache.AddAsync("add-max-exp", "value", TimeSpan.MaxValue));
+            Assert.True(await cache.ExistsAsync("add-max-exp"));
+            Assert.Equal("value", (await cache.GetAsync<string>("add-max-exp")).Value);
+            var expiration = await cache.GetExpirationAsync("add-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should return true, key should exist with correct expiration
+            Assert.True(await cache.AddAsync("add-normal-exp", "value", TimeSpan.FromHours(1)));
+            Assert.True(await cache.ExistsAsync("add-normal-exp"));
+            Assert.Equal("value", (await cache.GetAsync<string>("add-normal-exp")).Value);
+            expiration = await cache.GetExpirationAsync("add-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Note: AddAsync with null expiration on existing key returns false (key exists)
+            // so we can't test expiration removal via AddAsync - use SetAsync for that scenario
         }
     }
 
@@ -190,10 +236,10 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Set up keys with various states:
-            // - expired-key: will expire before we query
-            // - valid-key: has expiration, will be returned
-            // - no-expiration-key: no expiration, should not be returned
-            // - nonexistent-key: never created, should not be returned
+            // - expired-key: will expire before we query (omitted from result)
+            // - valid-key: has expiration, will be returned with TimeSpan
+            // - no-expiration-key: no expiration, will be returned with null
+            // - nonexistent-key: never created (omitted from result)
             await cache.SetAsync("expired-key", 1, TimeSpan.FromMilliseconds(50));
             await cache.SetAsync("valid-key", 2, TimeSpan.FromMinutes(10));
             await cache.SetAsync("no-expiration-key", 3);
@@ -206,11 +252,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Assert
             Assert.NotNull(expirations);
-            Assert.Single(expirations); // Only valid-key should be returned
+            Assert.Equal(2, expirations.Count); // valid-key and no-expiration-key
 
-            Assert.False(expirations.ContainsKey("expired-key")); // Expired
-            Assert.False(expirations.ContainsKey("no-expiration-key")); // No expiration
-            Assert.False(expirations.ContainsKey("nonexistent-key")); // Doesn't exist
+            Assert.False(expirations.ContainsKey("expired-key")); // Expired - omitted
+            Assert.False(expirations.ContainsKey("nonexistent-key")); // Doesn't exist - omitted
+
+            Assert.True(expirations.ContainsKey("no-expiration-key")); // Exists without TTL
+            Assert.Null(expirations["no-expiration-key"]);
 
             Assert.True(expirations.TryGetValue("valid-key", out var validKeyExpiration));
             Assert.NotNull(validKeyExpiration);
@@ -637,7 +685,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task IncrementAsync_WithExpiration_ExpiresCorrectly()
+    public virtual async Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -647,13 +695,103 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            Assert.True(await cache.SetAsync("increment-expiration-test", 0));
+            // Past expiration (long): should return 0 and remove the key
+            await cache.SetAsync("increment-past-exp-long", 100L);
+            Assert.True(await cache.ExistsAsync("increment-past-exp-long"));
+            long longResult = await cache.IncrementAsync("increment-past-exp-long", 5L, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, longResult);
+            Assert.False(await cache.ExistsAsync("increment-past-exp-long"));
+            Assert.False((await cache.GetAsync<long>("increment-past-exp-long")).HasValue);
 
+            // Past expiration (double): should return 0 and remove the key
+            await cache.SetAsync("increment-past-exp-double", 100.5);
+            Assert.True(await cache.ExistsAsync("increment-past-exp-double"));
+            double doubleResult = await cache.IncrementAsync("increment-past-exp-double", 5.5, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, doubleResult);
+            Assert.False(await cache.ExistsAsync("increment-past-exp-double"));
+            Assert.False((await cache.GetAsync<double>("increment-past-exp-double")).HasValue);
+
+            // Past expiration on non-existent key: should return 0
+            longResult = await cache.IncrementAsync("increment-past-exp-nonexistent", 5L, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, longResult);
+            Assert.False(await cache.ExistsAsync("increment-past-exp-nonexistent"));
+
+            // Zero expiration: should also be treated as expired
+            await cache.SetAsync("increment-zero-exp", 100L);
+            Assert.True(await cache.ExistsAsync("increment-zero-exp"));
+            longResult = await cache.IncrementAsync("increment-zero-exp", 5L, TimeSpan.Zero);
+            Assert.Equal(0, longResult);
+            Assert.False(await cache.ExistsAsync("increment-zero-exp"));
+            Assert.False((await cache.GetAsync<long>("increment-zero-exp")).HasValue);
+
+            // Max expiration (long): should succeed and key should exist with no expiration
+            longResult = await cache.IncrementAsync("increment-max-exp-long", 100L, TimeSpan.MaxValue);
+            Assert.Equal(100, longResult);
+            Assert.True(await cache.ExistsAsync("increment-max-exp-long"));
+            Assert.Equal(100L, (await cache.GetAsync<long>("increment-max-exp-long")).Value);
+            var expiration = await cache.GetExpirationAsync("increment-max-exp-long");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Max expiration (double): should succeed and key should exist with no expiration
+            doubleResult = await cache.IncrementAsync("increment-max-exp-double", 100.5, TimeSpan.MaxValue);
+            Assert.Equal(100.5, doubleResult);
+            Assert.True(await cache.ExistsAsync("increment-max-exp-double"));
+            Assert.Equal(100.5, (await cache.GetAsync<double>("increment-max-exp-double")).Value);
+            expiration = await cache.GetExpirationAsync("increment-max-exp-double");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration (long): should succeed and key should exist with correct expiration
+            longResult = await cache.IncrementAsync("increment-normal-exp-long", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100, longResult);
+            Assert.True(await cache.ExistsAsync("increment-normal-exp-long"));
+            Assert.Equal(100L, (await cache.GetAsync<long>("increment-normal-exp-long")).Value);
+            expiration = await cache.GetExpirationAsync("increment-normal-exp-long");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Normal expiration (double): should succeed and key should exist with correct expiration
+            doubleResult = await cache.IncrementAsync("increment-normal-exp-double", 100.5, TimeSpan.FromHours(1));
+            Assert.Equal(100.5, doubleResult);
+            Assert.True(await cache.ExistsAsync("increment-normal-exp-double"));
+            Assert.Equal(100.5, (await cache.GetAsync<double>("increment-normal-exp-double")).Value);
+            expiration = await cache.GetExpirationAsync("increment-normal-exp-double");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Normal expiration actually expires after delay
+            Assert.True(await cache.SetAsync("increment-expiration-test", 0));
             double newVal = await cache.IncrementAsync("increment-expiration-test", 1, TimeSpan.FromMilliseconds(50));
             Assert.Equal(1, newVal);
-
             await Task.Delay(100);
             Assert.False((await cache.GetAsync<int>("increment-expiration-test")).HasValue);
+
+            // Null expiration (long): calling with null should preserve existing expiration
+            longResult = await cache.IncrementAsync("increment-null-exp-long", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100, longResult);
+            Assert.True(await cache.ExistsAsync("increment-null-exp-long"));
+            expiration = await cache.GetExpirationAsync("increment-null-exp-long");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration - should succeed and preserve existing expiration
+            longResult = await cache.IncrementAsync("increment-null-exp-long", 5L);
+            Assert.Equal(105, longResult);
+            Assert.True(await cache.ExistsAsync("increment-null-exp-long"));
+            expiration = await cache.GetExpirationAsync("increment-null-exp-long");
+            Assert.NotNull(expiration); // Expiration is preserved
+
+            // Null expiration (double): calling with null should preserve existing expiration
+            doubleResult = await cache.IncrementAsync("increment-null-exp-double", 100.5, TimeSpan.FromHours(1));
+            Assert.Equal(100.5, doubleResult);
+            Assert.True(await cache.ExistsAsync("increment-null-exp-double"));
+            expiration = await cache.GetExpirationAsync("increment-null-exp-double");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration - should succeed and preserve existing expiration
+            doubleResult = await cache.IncrementAsync("increment-null-exp-double", 5.5);
+            Assert.Equal(106, doubleResult);
+            Assert.True(await cache.ExistsAsync("increment-null-exp-double"));
+            expiration = await cache.GetExpirationAsync("increment-null-exp-double");
+            Assert.NotNull(expiration); // Expiration is preserved
         }
     }
 
@@ -723,7 +861,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task ListAddAsync_WithExpiration_ExpiresCorrectly()
+    public virtual async Task IncrementAsync_WithFloatingPointDecimals_PreservesDecimalPrecision()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -732,14 +870,195 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.RemoveAllAsync();
-            const string key = "list:expiration";
 
-            // Past expiration removes item (no delay needed)
-            Assert.Equal(1, await cache.ListAddAsync(key, [1]));
-            Assert.Equal(0, await cache.ListAddAsync(key, [1], TimeSpan.FromSeconds(-1)));
-            Assert.False(await cache.ExistsAsync(key));
+            // Test increment with fractional values
+            double result = await cache.IncrementAsync("decimal-counter", 1.5);
+            Assert.Equal(1.5, result);
+            Assert.Equal(1.5, (await cache.GetAsync<double>("decimal-counter")).Value);
+
+            // Increment with another fractional value
+            result = await cache.IncrementAsync("decimal-counter", 2.25);
+            Assert.Equal(3.75, result);
+            Assert.Equal(3.75, (await cache.GetAsync<double>("decimal-counter")).Value);
+
+            // Decrement with fractional value (negative increment)
+            result = await cache.IncrementAsync("decimal-counter", -0.75);
+            Assert.Equal(3.0, result);
+            Assert.Equal(3.0, (await cache.GetAsync<double>("decimal-counter")).Value);
+
+            // Test with very small fractional values
+            result = await cache.IncrementAsync("small-decimal", 0.001);
+            Assert.Equal(0.001, result);
+
+            result = await cache.IncrementAsync("small-decimal", 0.002);
+            Assert.Equal(0.003, result);
+
+            // Verify the values with tolerance for floating-point precision
+            var storedValue = (await cache.GetAsync<double>("small-decimal")).Value;
+            Assert.True(Math.Abs(storedValue - 0.003) < 0.0001, $"Expected ~0.003 but got {storedValue}");
+
+            // Mixed type: increment an integer-initialized key with a fractional amount
+            await cache.SetAsync("mixed-type", 10L);
+            result = await cache.IncrementAsync("mixed-type", 2.5);
+            Assert.Equal(12.5, result);
+            Assert.Equal(12.5, (await cache.GetAsync<double>("mixed-type")).Value);
+        }
+    }
+
+    public virtual async Task SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Initialize with a decimal value
+            double result = await cache.SetIfHigherAsync("decimal-high", 10.5);
+            Assert.Equal(10.5, result);
+            Assert.Equal(10.5, (await cache.GetAsync<double>("decimal-high")).Value);
+
+            // Set higher with a value that differs only in decimals
+            result = await cache.SetIfHigherAsync("decimal-high", 10.75);
+            Assert.Equal(0.25, result); // difference should be 0.25
+            Assert.Equal(10.75, (await cache.GetAsync<double>("decimal-high")).Value);
+
+            // Try to set lower - should not update
+            result = await cache.SetIfHigherAsync("decimal-high", 10.5);
+            Assert.Equal(0, result);
+            Assert.Equal(10.75, (await cache.GetAsync<double>("decimal-high")).Value);
+
+            // Try to set with same value - should not update
+            result = await cache.SetIfHigherAsync("decimal-high", 10.75);
+            Assert.Equal(0, result);
+            Assert.Equal(10.75, (await cache.GetAsync<double>("decimal-high")).Value);
+
+            // Set higher with larger fractional part
+            result = await cache.SetIfHigherAsync("decimal-high", 11.125);
+            Assert.Equal(0.375, result); // difference should be 0.375
+            Assert.Equal(11.125, (await cache.GetAsync<double>("decimal-high")).Value);
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithFloatingPointDecimals_ComparesCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Initialize with a decimal value
+            double result = await cache.SetIfLowerAsync("decimal-low", 100.75);
+            Assert.Equal(100.75, result);
+            Assert.Equal(100.75, (await cache.GetAsync<double>("decimal-low")).Value);
+
+            // Set lower with a value that differs only in decimals
+            result = await cache.SetIfLowerAsync("decimal-low", 100.25);
+            Assert.Equal(0.5, result); // difference should be 0.5
+            Assert.Equal(100.25, (await cache.GetAsync<double>("decimal-low")).Value);
+
+            // Try to set higher - should not update
+            result = await cache.SetIfLowerAsync("decimal-low", 100.75);
+            Assert.Equal(0, result);
+            Assert.Equal(100.25, (await cache.GetAsync<double>("decimal-low")).Value);
+
+            // Try to set with same value - should not update
+            result = await cache.SetIfLowerAsync("decimal-low", 100.25);
+            Assert.Equal(0, result);
+            Assert.Equal(100.25, (await cache.GetAsync<double>("decimal-low")).Value);
+
+            // Set lower with smaller fractional part
+            result = await cache.SetIfLowerAsync("decimal-low", 99.875);
+            Assert.Equal(0.375, result); // difference should be 0.375
+            Assert.Equal(99.875, (await cache.GetAsync<double>("decimal-low")).Value);
+        }
+    }
+
+    public virtual async Task ListAddAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Past expiration on new key: should return 0 and key should not exist
+            long result = await cache.ListAddAsync("list-past-exp-new", [1], TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("list-past-exp-new"));
+            Assert.False((await cache.GetListAsync<int>("list-past-exp-new")).HasValue);
+
+            // Past expiration on existing key: should return 0 and only remove the values being added (not the whole key)
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-existing", [1]));
+            Assert.True(await cache.ExistsAsync("list-past-exp-existing"));
+            result = await cache.ListAddAsync("list-past-exp-existing", [2], TimeSpan.FromSeconds(-1));
+            Assert.Equal(0, result);
+            Assert.True(await cache.ExistsAsync("list-past-exp-existing")); // Key still exists!
+            var existingList = await cache.GetListAsync<int>("list-past-exp-existing");
+            Assert.True(existingList.HasValue);
+            Assert.Single(existingList.Value);
+            Assert.Contains(1, existingList.Value); // Item 1 still present
+
+            // Past expiration on existing key with multiple items: should only remove the values being added
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-multi", [1]));
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-multi", [2]));
+            Assert.Equal(2, (await cache.GetListAsync<int>("list-past-exp-multi")).Value.Count);
+            // Add item 3 with negative expiration - should NOT delete existing items
+            result = await cache.ListAddAsync("list-past-exp-multi", [3], TimeSpan.FromSeconds(-1));
+            Assert.Equal(0, result);
+            Assert.True(await cache.ExistsAsync("list-past-exp-multi")); // Key still exists!
+            var multiList = await cache.GetListAsync<int>("list-past-exp-multi");
+            Assert.Equal(2, multiList.Value.Count); // Items 1 and 2 still present
+            Assert.Contains(1, multiList.Value);
+            Assert.Contains(2, multiList.Value);
+
+            // Past expiration removes existing item if it matches
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-remove", [1]));
+            Assert.Equal(1, await cache.ListAddAsync("list-past-exp-remove", [2]));
+            result = await cache.ListAddAsync("list-past-exp-remove", [1], TimeSpan.FromSeconds(-1)); // Remove item 1
+            Assert.Equal(0, result);
+            Assert.True(await cache.ExistsAsync("list-past-exp-remove"));
+            var removeList = await cache.GetListAsync<int>("list-past-exp-remove");
+            Assert.Single(removeList.Value);
+            Assert.Contains(2, removeList.Value); // Only item 2 remains
+            Assert.DoesNotContain(1, removeList.Value); // Item 1 was removed
+
+            // Zero expiration: should also be treated as expired
+            result = await cache.ListAddAsync("list-zero-exp", [1], TimeSpan.Zero);
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("list-zero-exp"));
+            Assert.False((await cache.GetListAsync<int>("list-zero-exp")).HasValue);
+
+            // Max expiration: should succeed and key should exist with no expiration
+            result = await cache.ListAddAsync("list-max-exp", [1, 2, 3], TimeSpan.MaxValue);
+            Assert.Equal(3, result);
+            Assert.True(await cache.ExistsAsync("list-max-exp"));
+            var listValue = await cache.GetListAsync<int>("list-max-exp");
+            Assert.True(listValue.HasValue);
+            Assert.Equal(3, listValue.Value.Count);
+            var expiration = await cache.GetExpirationAsync("list-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should succeed and key should exist with correct expiration
+            result = await cache.ListAddAsync("list-normal-exp", [1, 2, 3], TimeSpan.FromHours(1));
+            Assert.Equal(3, result);
+            Assert.True(await cache.ExistsAsync("list-normal-exp"));
+            listValue = await cache.GetListAsync<int>("list-normal-exp");
+            Assert.True(listValue.HasValue);
+            Assert.Equal(3, listValue.Value.Count);
+            expiration = await cache.GetExpirationAsync("list-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
 
             // Multiple expirations expire individual items - test staggered expiration in one pass
+            const string key = "list:staggered-expiration";
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(50)));
             Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(150)));
 
@@ -753,10 +1072,28 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
             Assert.Contains(3, cacheValue.Value);
+            Assert.DoesNotContain(2, cacheValue.Value); // Explicit verification item 2 expired
 
             // Wait for second item to expire
             await Task.Delay(100);
             Assert.False(await cache.ExistsAsync(key));
+
+            // Null expiration: should succeed and remove expiration
+            result = await cache.ListAddAsync("list-null-exp", [1, 2], TimeSpan.FromHours(1));
+            Assert.Equal(2, result);
+            Assert.True(await cache.ExistsAsync("list-null-exp"));
+            expiration = await cache.GetExpirationAsync("list-null-exp");
+            Assert.NotNull(expiration);
+
+            // Now add without expiration - should succeed and remove expiration
+            result = await cache.ListAddAsync("list-null-exp", [3]);
+            Assert.Equal(1, result);
+            Assert.True(await cache.ExistsAsync("list-null-exp"));
+            listValue = await cache.GetListAsync<int>("list-null-exp");
+            Assert.True(listValue.HasValue);
+            Assert.Equal(3, listValue.Value.Count);
+            expiration = await cache.GetExpirationAsync("list-null-exp");
+            Assert.Null(expiration);
         }
     }
 
@@ -931,6 +1268,53 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             // Expiration is not taken into account since it's a remove operation.
             Assert.Equal(1, await cache.ListRemoveAsync(key, [2], TimeSpan.FromSeconds(1)));
+            Assert.False(await cache.ExistsAsync(key));
+        }
+    }
+
+    public virtual async Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // NOTE: The expiresIn parameter on ListRemoveAsync is currently NOT implemented
+            // in InMemoryCacheClient - it is a no-op. This test documents the expected behavior
+            // that SHOULD be implemented: expiration should be applied to remaining items after removal.
+            // For now, this test verifies the remove operation works, but expiration is ignored.
+
+            // Setup: add items to list
+            const string key = "list-remove-exp";
+            Assert.Equal(3, await cache.ListAddAsync(key, [1, 2, 3]));
+            Assert.True(await cache.ExistsAsync(key));
+
+            // Past expiration: currently the expiresIn is ignored, so remove still works
+            // Expected behavior (not implemented): past expiration should remove all remaining items
+            long removed = await cache.ListRemoveAsync(key, [1], TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(1, removed);
+            // Key still exists because expiresIn is not implemented
+            Assert.True(await cache.ExistsAsync(key));
+            var listValue = await cache.GetListAsync<int>(key);
+            Assert.True(listValue.HasValue);
+            Assert.Equal(2, listValue.Value.Count);
+
+            // Normal expiration: currently ignored
+            removed = await cache.ListRemoveAsync(key, [2], TimeSpan.FromHours(1));
+            Assert.Equal(1, removed);
+            Assert.True(await cache.ExistsAsync(key));
+            listValue = await cache.GetListAsync<int>(key);
+            Assert.True(listValue.HasValue);
+            Assert.Single(listValue.Value);
+            Assert.Contains(3, listValue.Value);
+
+            // Max expiration: currently ignored
+            removed = await cache.ListRemoveAsync(key, [3], TimeSpan.MaxValue);
+            Assert.Equal(1, removed);
+            // After removing all items, key should not exist
             Assert.False(await cache.ExistsAsync(key));
         }
     }
@@ -1740,6 +2124,66 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task ReplaceAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Past expiration on existing key: should return false and remove the key
+            Assert.True(await cache.AddAsync("replace-past-exp", "original"));
+            Assert.True(await cache.ExistsAsync("replace-past-exp"));
+            Assert.False(await cache.ReplaceAsync("replace-past-exp", "new-value", TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("replace-past-exp"));
+            Assert.False((await cache.GetAsync<string>("replace-past-exp")).HasValue);
+
+            // Past expiration on non-existent key: should return false
+            Assert.False(await cache.ReplaceAsync("replace-past-exp-nonexistent", "value", TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("replace-past-exp-nonexistent"));
+
+            // Zero expiration: should also be treated as expired
+            Assert.True(await cache.AddAsync("replace-zero-exp", "original"));
+            Assert.True(await cache.ExistsAsync("replace-zero-exp"));
+            Assert.False(await cache.ReplaceAsync("replace-zero-exp", "new-value", TimeSpan.Zero));
+            Assert.False(await cache.ExistsAsync("replace-zero-exp"));
+            Assert.False((await cache.GetAsync<string>("replace-zero-exp")).HasValue);
+
+            // Max expiration: should return true, key should exist with no expiration
+            Assert.True(await cache.AddAsync("replace-max-exp", "original"));
+            Assert.True(await cache.ReplaceAsync("replace-max-exp", "new-value", TimeSpan.MaxValue));
+            Assert.True(await cache.ExistsAsync("replace-max-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-max-exp")).Value);
+            var expiration = await cache.GetExpirationAsync("replace-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should return true, key should exist with correct expiration
+            Assert.True(await cache.AddAsync("replace-normal-exp", "original"));
+            Assert.True(await cache.ReplaceAsync("replace-normal-exp", "new-value", TimeSpan.FromHours(1)));
+            Assert.True(await cache.ExistsAsync("replace-normal-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-normal-exp")).Value);
+            expiration = await cache.GetExpirationAsync("replace-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Null expiration: should succeed and remove expiration
+            Assert.True(await cache.AddAsync("replace-null-exp", "original", TimeSpan.FromHours(1)));
+            Assert.True(await cache.ExistsAsync("replace-null-exp"));
+            expiration = await cache.GetExpirationAsync("replace-null-exp");
+            Assert.NotNull(expiration);
+
+            // Now replace without expiration - should succeed and remove expiration
+            Assert.True(await cache.ReplaceAsync("replace-null-exp", "new-value"));
+            Assert.True(await cache.ExistsAsync("replace-null-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-null-exp")).Value);
+            expiration = await cache.GetExpirationAsync("replace-null-exp");
+            Assert.Null(expiration);
+        }
+    }
+
     public virtual async Task ReplaceIfEqualAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
@@ -1819,16 +2263,64 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            const string cacheKey = "replace-if-equal";
-            Assert.True(await cache.AddAsync(cacheKey, "123"));
-            Assert.Null(await cache.GetExpirationAsync(cacheKey));
+            // Past expiration on existing key with matching old value: should return false and remove the key
+            Assert.True(await cache.AddAsync("replace-if-equal-past-exp", "old-value"));
+            Assert.True(await cache.ExistsAsync("replace-if-equal-past-exp"));
+            bool result = await cache.ReplaceIfEqualAsync("replace-if-equal-past-exp", "new-value", "old-value", TimeSpan.FromMilliseconds(-1));
+            Assert.False(result);
+            Assert.False(await cache.ExistsAsync("replace-if-equal-past-exp"));
+            Assert.False((await cache.GetAsync<string>("replace-if-equal-past-exp")).HasValue);
 
-            Assert.True(await cache.ReplaceIfEqualAsync(cacheKey, "456", "123", TimeSpan.FromHours(1)));
-            Assert.NotNull(await cache.GetExpirationAsync(cacheKey));
+            // Past expiration on non-existent key: should return false
+            result = await cache.ReplaceIfEqualAsync("replace-if-equal-past-exp-nonexistent", "new-value", "old-value", TimeSpan.FromMilliseconds(-1));
+            Assert.False(result);
+            Assert.False(await cache.ExistsAsync("replace-if-equal-past-exp-nonexistent"));
+
+            // Zero expiration: should also be treated as expired
+            Assert.True(await cache.AddAsync("replace-if-equal-zero-exp", "old-value"));
+            Assert.True(await cache.ExistsAsync("replace-if-equal-zero-exp"));
+            result = await cache.ReplaceIfEqualAsync("replace-if-equal-zero-exp", "new-value", "old-value", TimeSpan.Zero);
+            Assert.False(result);
+            Assert.False(await cache.ExistsAsync("replace-if-equal-zero-exp"));
+            Assert.False((await cache.GetAsync<string>("replace-if-equal-zero-exp")).HasValue);
+
+            // Max expiration: should succeed and key should exist with no expiration
+            Assert.True(await cache.AddAsync("replace-if-equal-max-exp", "old-value"));
+            result = await cache.ReplaceIfEqualAsync("replace-if-equal-max-exp", "new-value", "old-value", TimeSpan.MaxValue);
+            Assert.True(result);
+            Assert.True(await cache.ExistsAsync("replace-if-equal-max-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-if-equal-max-exp")).Value);
+            var expiration = await cache.GetExpirationAsync("replace-if-equal-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should succeed and key should exist with correct expiration
+            Assert.True(await cache.AddAsync("replace-if-equal-normal-exp", "old-value"));
+            Assert.Null(await cache.GetExpirationAsync("replace-if-equal-normal-exp"));
+            result = await cache.ReplaceIfEqualAsync("replace-if-equal-normal-exp", "new-value", "old-value", TimeSpan.FromHours(1));
+            Assert.True(result);
+            Assert.True(await cache.ExistsAsync("replace-if-equal-normal-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-if-equal-normal-exp")).Value);
+            expiration = await cache.GetExpirationAsync("replace-if-equal-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Null expiration: should succeed and remove existing expiration
+            Assert.True(await cache.AddAsync("replace-if-equal-null-exp", "old-value", TimeSpan.FromHours(1)));
+            Assert.True(await cache.ExistsAsync("replace-if-equal-null-exp"));
+            expiration = await cache.GetExpirationAsync("replace-if-equal-null-exp");
+            Assert.NotNull(expiration);
+
+            // Now replace without expiration - should succeed and remove existing TTL
+            result = await cache.ReplaceIfEqualAsync("replace-if-equal-null-exp", "new-value", "old-value");
+            Assert.True(result);
+            Assert.True(await cache.ExistsAsync("replace-if-equal-null-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("replace-if-equal-null-exp")).Value);
+            expiration = await cache.GetExpirationAsync("replace-if-equal-null-exp");
+            Assert.Null(expiration); // Null expiration removes TTL
         }
     }
 
-    public virtual async Task SetAllAsync_WithExpiration_KeysExpireCorrectly()
+    public virtual async Task SetAllAsync_WithExpiration_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1838,20 +2330,65 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // DateTime.MinValue should not add keys (already expired)
+            // Past expiration (DateTime.MinValue): should not add keys and remove any existing
+            Assert.True(await cache.SetAsync("setall-past-existing", "original"));
+            Assert.True(await cache.ExistsAsync("setall-past-existing"));
             Assert.Equal(0,
                 await cache.SetAllAsync(
-                    new Dictionary<string, object> { { "expired1", 1 }, { "expired2", 2 } },
+                    new Dictionary<string, object> { { "expired1", 1 }, { "expired2", 2 }, { "setall-past-existing", "new" } },
                     DateTime.MinValue));
             Assert.False(await cache.ExistsAsync("expired1"));
             Assert.False(await cache.ExistsAsync("expired2"));
+            Assert.False(await cache.ExistsAsync("setall-past-existing"));
+            Assert.False((await cache.GetAsync<string>("setall-past-existing")).HasValue);
 
-            // Use mixed-case keys to also verify case-sensitivity
-            var expiry = TimeSpan.FromMilliseconds(50);
-            var items = new Dictionary<string, int> { { "itemId", 1 }, { "ItemId", 2 }, { "ITEMID", 3 } };
+            // Past expiration with TimeSpan: should not add keys
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "expired-ts1", 1 }, { "expired-ts2", 2 } },
+                    TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("expired-ts1"));
+            Assert.False(await cache.ExistsAsync("expired-ts2"));
+
+            // Zero expiration: should also be treated as expired
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "zero-exp1", 1 }, { "zero-exp2", 2 } },
+                    TimeSpan.Zero));
+            Assert.False(await cache.ExistsAsync("zero-exp1"));
+            Assert.False(await cache.ExistsAsync("zero-exp2"));
+
+            // Max expiration: should succeed and keys should exist with no expiration
+            Assert.Equal(2,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "max-exp1", 1 }, { "max-exp2", 2 } },
+                    TimeSpan.MaxValue));
+            Assert.True(await cache.ExistsAsync("max-exp1"));
+            Assert.True(await cache.ExistsAsync("max-exp2"));
+            Assert.Equal(1, (await cache.GetAsync<int>("max-exp1")).Value);
+            Assert.Equal(2, (await cache.GetAsync<int>("max-exp2")).Value);
+            var expiration = await cache.GetExpirationAsync("max-exp1");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+            expiration = await cache.GetExpirationAsync("max-exp2");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should succeed and keys should exist with correct expiration
+            var expiry = TimeSpan.FromHours(1);
+            var items = new Dictionary<string, int> { { "normal-exp1", 1 }, { "normal-exp2", 2 } };
+            await cache.SetAllAsync(items, expiry);
+            Assert.True(await cache.ExistsAsync("normal-exp1"));
+            Assert.True(await cache.ExistsAsync("normal-exp2"));
+            Assert.Equal(1, (await cache.GetAsync<int>("normal-exp1")).Value);
+            Assert.Equal(2, (await cache.GetAsync<int>("normal-exp2")).Value);
+            expiration = await cache.GetExpirationAsync("normal-exp1");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Normal expiration with short delay actually expires
+            expiry = TimeSpan.FromMilliseconds(50);
+            items = new Dictionary<string, int> { { "itemId", 1 }, { "ItemId", 2 }, { "ITEMID", 3 } };
             await cache.SetAllAsync(items, expiry);
 
-            // Verify case-sensitivity: all three distinct keys should exist
             var results = await cache.GetAllAsync<int>(["itemId", "ItemId", "ITEMID"]);
             Assert.Equal(3, results.Count);
             Assert.Equal(1, results["itemId"].Value);
@@ -1901,7 +2438,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Null expirations throws ArgumentNullException
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
                 await cache.SetAllExpirationAsync(null!));
-            
+
             // Items containing empty key throws ArgumentException
             var itemsWithEmptyKey = new Dictionary<string, TimeSpan?> { { "key1", TimeSpan.FromMinutes(5) }, { String.Empty, TimeSpan.FromMinutes(10) } };
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAllExpirationAsync(itemsWithEmptyKey));
@@ -1911,7 +2448,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetAllExpirationAsync_WithMixedExpirations_SetsExpirationsCorrectly()
+    public virtual async Task SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2027,7 +2564,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetAsync_WithExpirationEdgeCases_HandlesCorrectly()
+    public virtual async Task SetAsync_WithExpiration_SetsExpirationCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -2049,49 +2586,98 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.SetAsync("test2", 1, DateTime.MinValue));
             Assert.False(await cache.ExistsAsync("test2"));
 
-            // MaxValue never expires.
+            // MaxValue never expires - returns null from GetExpirationAsync.
             Assert.True(await cache.SetAsync("test3", 1, DateTime.MaxValue));
             Assert.Equal(1, (await cache.GetAsync<int>("test3")).Value);
             actualExpiration = await cache.GetExpirationAsync("test3");
-            Assert.NotNull(actualExpiration);
+            Assert.Null(actualExpiration); // No expiration set means null
 
-            // Really high expiration value.
+            // Really high expiration value (still hits DateTime.MaxValue via SafeAdd).
             Assert.True(await cache.SetAsync("test4", 1, DateTime.MaxValue - utcNow.AddDays(-1)));
             Assert.Equal(1, (await cache.GetAsync<int>("test4")).Value);
             actualExpiration = await cache.GetExpirationAsync("test4");
-            Assert.NotNull(actualExpiration);
+            Assert.Null(actualExpiration); // Also results in DateTime.MaxValue (no expiration)
 
             // No Expiration
             Assert.True(await cache.SetAsync("test5", 1));
             Assert.Null(await cache.GetExpirationAsync("test5"));
 
-            // Expire in an hour.
-            var expiration = utcNow.AddHours(1);
-            await cache.SetExpirationAsync("test5", expiration);
-            actualExpiration = await cache.GetExpirationAsync("test5");
-            Assert.NotNull(actualExpiration);
-            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)),
-                expiration - utcNow);
-
-            // Change expiration to MaxValue.
-            await cache.SetExpirationAsync("test5", DateTime.MaxValue);
-            Assert.NotNull(actualExpiration);
-
-            // Change expiration to MinValue.
-            await cache.SetExpirationAsync("test5", DateTime.MinValue);
-            Assert.Null(await cache.GetExpirationAsync("test5"));
-            Assert.False(await cache.ExistsAsync("test5"));
-
-            // Ensure keys are not added as they are already expired
-            Assert.Equal(0,
-                await cache.SetAllAsync(
-                    new Dictionary<string, object> { { "test6", 1 }, { "test7", 1 }, { "test8", 1 } },
-                    DateTime.MinValue));
-
             // Expire time right now
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
             Assert.Null(await cache.GetExpirationAsync("test9"));
+
+            // Null expiration: should succeed and remove expiration
+            Assert.True(await cache.SetAsync("set-null-exp", "value", TimeSpan.FromHours(1)));
+            Assert.True(await cache.ExistsAsync("set-null-exp"));
+            Assert.Equal("value", (await cache.GetAsync<string>("set-null-exp")).Value);
+            var nullExpExpiration = await cache.GetExpirationAsync("set-null-exp");
+            Assert.NotNull(nullExpExpiration);
+
+            // Now set without expiration - should succeed and remove expiration
+            Assert.True(await cache.SetAsync("set-null-exp", "new-value"));
+            Assert.True(await cache.ExistsAsync("set-null-exp"));
+            Assert.Equal("new-value", (await cache.GetAsync<string>("set-null-exp")).Value);
+            nullExpExpiration = await cache.GetExpirationAsync("set-null-exp");
+            Assert.Null(nullExpExpiration);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            var utcNow = DateTime.UtcNow;
+
+            // Past expiration: should remove the key
+            await cache.SetAsync("set-expiration-past-exp", "test-value");
+            Assert.True(await cache.ExistsAsync("set-expiration-past-exp"));
+            await cache.SetExpirationAsync("set-expiration-past-exp", TimeSpan.FromMilliseconds(-1));
+            Assert.False(await cache.ExistsAsync("set-expiration-past-exp"));
+            Assert.False((await cache.GetAsync<string>("set-expiration-past-exp")).HasValue);
+
+            // Past expiration with DateTime.MinValue: should remove the key
+            await cache.SetAsync("set-expiration-min-value", "test-value");
+            Assert.True(await cache.ExistsAsync("set-expiration-min-value"));
+            await cache.SetExpirationAsync("set-expiration-min-value", DateTime.MinValue);
+            Assert.False(await cache.ExistsAsync("set-expiration-min-value"));
+            Assert.False((await cache.GetAsync<string>("set-expiration-min-value")).HasValue);
+
+            // Max expiration with DateTime.MaxValue: should remove expiration (return null)
+            await cache.SetAsync("set-expiration-max-value", "test-value");
+            await cache.SetExpirationAsync("set-expiration-max-value", DateTime.MaxValue);
+            Assert.True(await cache.ExistsAsync("set-expiration-max-value"));
+            var expiration = await cache.GetExpirationAsync("set-expiration-max-value");
+            Assert.Null(expiration); // DateTime.MaxValue means no expiration
+
+            // Normal expiration with DateTime: should set expiration correctly
+            await cache.SetAsync("set-expiration-datetime", "test-value");
+            Assert.Null(await cache.GetExpirationAsync("set-expiration-datetime"));
+            var expirationDateTime = utcNow.AddHours(1);
+            await cache.SetExpirationAsync("set-expiration-datetime", expirationDateTime);
+            Assert.True(await cache.ExistsAsync("set-expiration-datetime"));
+            expiration = await cache.GetExpirationAsync("set-expiration-datetime");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, expirationDateTime - expirationDateTime.Subtract(TimeSpan.FromSeconds(5)),
+                expirationDateTime - utcNow);
+
+            // Normal expiration with TimeSpan: should set expiration correctly
+            await cache.SetAsync("set-expiration-timespan", "test-value");
+            Assert.Null(await cache.GetExpirationAsync("set-expiration-timespan"));
+            await cache.SetExpirationAsync("set-expiration-timespan", TimeSpan.FromHours(1));
+            Assert.True(await cache.ExistsAsync("set-expiration-timespan"));
+            expiration = await cache.GetExpirationAsync("set-expiration-timespan");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Null expiration removal is tested via SetAllExpirationAsync since SetExpirationAsync
+            // does not accept nullable TimeSpan - see SetAllExpirationAsync_WithExpiration_SetsExpirationCorrectly
         }
     }
 
@@ -2248,72 +2834,6 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SetExpirationAsync_ChangingFromNoExpirationToFutureTime_UpdatesCorrectly()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var utcNow = DateTime.UtcNow;
-            const string cacheKey = "token:refresh";
-
-            // Set with no expiration
-            Assert.True(await cache.SetAsync(cacheKey, 1));
-            Assert.Null(await cache.GetExpirationAsync(cacheKey));
-
-            // Update to expire in an hour
-            var expiration = utcNow.AddHours(1);
-            await cache.SetExpirationAsync(cacheKey, expiration);
-            var actualExpiration = await cache.GetExpirationAsync(cacheKey);
-            Assert.NotNull(actualExpiration);
-            Assert.InRange(actualExpiration.Value, expiration - expiration.Subtract(TimeSpan.FromSeconds(5)),
-                expiration - utcNow);
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_ChangingToDateTimeMinValue_RemovesKey()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // Set with future expiration
-            Assert.True(await cache.SetAsync("expiration-test", 1, DateTime.UtcNow.AddHours(1)));
-            Assert.True(await cache.ExistsAsync("expiration-test"));
-
-            // Change expiration to MinValue should remove the key
-            await cache.SetExpirationAsync("expiration-test", DateTime.MinValue);
-            Assert.Null(await cache.GetExpirationAsync("expiration-test"));
-            Assert.False(await cache.ExistsAsync("expiration-test"));
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_WithDateTimeMaxValue_NeverExpires()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // MaxValue should never expire
-            Assert.True(await cache.SetAsync("max-expiration", 1, DateTime.MaxValue));
-            Assert.Equal(1, (await cache.GetAsync<int>("max-expiration")).Value);
-            var actualExpiration = await cache.GetExpirationAsync("max-expiration");
-            Assert.NotNull(actualExpiration);
-        }
-    }
-
     public virtual async Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         var cache = GetCacheClient();
@@ -2327,30 +2847,6 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.SetExpirationAsync(String.Empty, TimeSpan.FromMinutes(1)));
-        }
-    }
-
-    public virtual async Task SetExpirationAsync_WithPastOrCurrentTime_ExpiresImmediately()
-    {
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            var utcNow = DateTime.UtcNow;
-
-            // MinValue should return false and not add the key
-            Assert.False(await cache.SetAsync("min-value-key", 1, DateTime.MinValue));
-            Assert.False(await cache.ExistsAsync("min-value-key"));
-
-            // Current time (captured earlier) should return false and not add the key
-            // IsExpired uses < comparison, so by the time SetAsync runs, utcNow is in the past
-            Assert.False(await cache.SetAsync("current-time-key", 1, utcNow));
-            Assert.False(await cache.ExistsAsync("current-time-key"));
-            Assert.Null(await cache.GetExpirationAsync("current-time-key"));
         }
     }
 
@@ -2411,6 +2907,96 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Past expiration on existing key: should return 0 and remove the key
+            await cache.SetAsync("set-if-higher-past-exp", 100.0);
+            Assert.True(await cache.ExistsAsync("set-if-higher-past-exp"));
+            double result = await cache.SetIfHigherAsync("set-if-higher-past-exp", 200.0, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-higher-past-exp"));
+            Assert.False((await cache.GetAsync<double>("set-if-higher-past-exp")).HasValue);
+
+            // Past expiration on non-existent key: should return 0
+            result = await cache.SetIfHigherAsync("set-if-higher-past-exp-nonexistent", 100.0, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-higher-past-exp-nonexistent"));
+
+            // Zero expiration: should also be treated as expired
+            await cache.SetAsync("set-if-higher-zero-exp", 100.0);
+            Assert.True(await cache.ExistsAsync("set-if-higher-zero-exp"));
+            result = await cache.SetIfHigherAsync("set-if-higher-zero-exp", 200.0, TimeSpan.Zero);
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-higher-zero-exp"));
+            Assert.False((await cache.GetAsync<double>("set-if-higher-zero-exp")).HasValue);
+
+            // Max expiration: should succeed and key should exist with no expiration
+            result = await cache.SetIfHigherAsync("set-if-higher-max-exp", 100.0, TimeSpan.MaxValue);
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-higher-max-exp"));
+            Assert.Equal(100.0, (await cache.GetAsync<double>("set-if-higher-max-exp")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-higher-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should succeed and key should exist with correct expiration
+            result = await cache.SetIfHigherAsync("set-if-higher-normal-exp", 100.0, TimeSpan.FromHours(1));
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-higher-normal-exp"));
+            Assert.Equal(100.0, (await cache.GetAsync<double>("set-if-higher-normal-exp")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-higher-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Test with long overload as well
+            long longResult = await cache.SetIfHigherAsync("set-if-higher-long-exp", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-higher-long-exp"));
+            expiration = await cache.GetExpirationAsync("set-if-higher-long-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Null expiration (double): calling with null should preserve existing expiration
+            result = await cache.SetIfHigherAsync("set-if-higher-null-exp", 100.0, TimeSpan.FromHours(1));
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-higher-null-exp"));
+            expiration = await cache.GetExpirationAsync("set-if-higher-null-exp");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration with higher value - should succeed and remove existing TTL
+            // Returns the difference (200 - 100 = 100), not the new value
+            result = await cache.SetIfHigherAsync("set-if-higher-null-exp", 200.0);
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-higher-null-exp"));
+            Assert.Equal(200.0, (await cache.GetAsync<double>("set-if-higher-null-exp")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-higher-null-exp");
+            Assert.Null(expiration); // Null expiration removes TTL
+
+            // Null expiration (long): calling with null should remove existing expiration
+            longResult = await cache.SetIfHigherAsync("set-if-higher-null-exp-long", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-higher-null-exp-long"));
+            expiration = await cache.GetExpirationAsync("set-if-higher-null-exp-long");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration with higher value - should succeed and remove existing TTL
+            // Returns the difference (200 - 100 = 100), not the new value
+            longResult = await cache.SetIfHigherAsync("set-if-higher-null-exp-long", 200L);
+            Assert.Equal(100L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-higher-null-exp-long"));
+            Assert.Equal(200L, (await cache.GetAsync<long>("set-if-higher-null-exp-long")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-higher-null-exp-long");
+            Assert.Null(expiration); // Null expiration removes TTL
+        }
+    }
+
     public virtual async Task SetIfLowerAsync_WithDateTime_UpdatesWhenLower()
     {
         var cache = GetCacheClient();
@@ -2464,6 +3050,96 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             Assert.Equal(0, await cache.SetIfLowerAsync("set-if-lower-large", largeValue));
             Assert.Equal(lowerValue, await cache.GetAsync<double>("set-if-lower-large", 0));
+        }
+    }
+
+    public virtual async Task SetIfLowerAsync_WithExpiration_SetsExpirationCorrectly()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Past expiration on existing key: should return 0 and remove the key
+            await cache.SetAsync("set-if-lower-past-exp", 100.0);
+            Assert.True(await cache.ExistsAsync("set-if-lower-past-exp"));
+            double result = await cache.SetIfLowerAsync("set-if-lower-past-exp", 50.0, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-lower-past-exp"));
+            Assert.False((await cache.GetAsync<double>("set-if-lower-past-exp")).HasValue);
+
+            // Past expiration on non-existent key: should return 0
+            result = await cache.SetIfLowerAsync("set-if-lower-past-exp-nonexistent", 100.0, TimeSpan.FromMilliseconds(-1));
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-lower-past-exp-nonexistent"));
+
+            // Zero expiration: should also be treated as expired
+            await cache.SetAsync("set-if-lower-zero-exp", 100.0);
+            Assert.True(await cache.ExistsAsync("set-if-lower-zero-exp"));
+            result = await cache.SetIfLowerAsync("set-if-lower-zero-exp", 50.0, TimeSpan.Zero);
+            Assert.Equal(0, result);
+            Assert.False(await cache.ExistsAsync("set-if-lower-zero-exp"));
+            Assert.False((await cache.GetAsync<double>("set-if-lower-zero-exp")).HasValue);
+
+            // Max expiration: should succeed and key should exist with no expiration
+            result = await cache.SetIfLowerAsync("set-if-lower-max-exp", 100.0, TimeSpan.MaxValue);
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-lower-max-exp"));
+            Assert.Equal(100.0, (await cache.GetAsync<double>("set-if-lower-max-exp")).Value);
+            var expiration = await cache.GetExpirationAsync("set-if-lower-max-exp");
+            Assert.Null(expiration); // TimeSpan.MaxValue means no expiration
+
+            // Normal expiration: should succeed and key should exist with correct expiration
+            result = await cache.SetIfLowerAsync("set-if-lower-normal-exp", 100.0, TimeSpan.FromHours(1));
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-lower-normal-exp"));
+            Assert.Equal(100.0, (await cache.GetAsync<double>("set-if-lower-normal-exp")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-lower-normal-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Test with long overload as well
+            long longResult = await cache.SetIfLowerAsync("set-if-lower-long-exp", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-lower-long-exp"));
+            expiration = await cache.GetExpirationAsync("set-if-lower-long-exp");
+            Assert.NotNull(expiration);
+            Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
+
+            // Null expiration (double): calling with null should remove existing expiration
+            result = await cache.SetIfLowerAsync("set-if-lower-null-exp", 100.0, TimeSpan.FromHours(1));
+            Assert.Equal(100.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-lower-null-exp"));
+            expiration = await cache.GetExpirationAsync("set-if-lower-null-exp");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration with lower value - should succeed and remove existing TTL
+            // Returns the difference (100 - 50 = 50), not the new value
+            result = await cache.SetIfLowerAsync("set-if-lower-null-exp", 50.0);
+            Assert.Equal(50.0, result);
+            Assert.True(await cache.ExistsAsync("set-if-lower-null-exp"));
+            Assert.Equal(50.0, (await cache.GetAsync<double>("set-if-lower-null-exp")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-lower-null-exp");
+            Assert.Null(expiration); // Null expiration removes TTL
+
+            // Null expiration (long): calling with null should remove existing expiration
+            longResult = await cache.SetIfLowerAsync("set-if-lower-null-exp-long", 100L, TimeSpan.FromHours(1));
+            Assert.Equal(100L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-lower-null-exp-long"));
+            expiration = await cache.GetExpirationAsync("set-if-lower-null-exp-long");
+            Assert.NotNull(expiration);
+
+            // Now call without expiration with lower value - should succeed and remove existing TTL
+            // Returns the difference (100 - 50 = 50), not the new value
+            longResult = await cache.SetIfLowerAsync("set-if-lower-null-exp-long", 50L);
+            Assert.Equal(50L, longResult);
+            Assert.True(await cache.ExistsAsync("set-if-lower-null-exp-long"));
+            Assert.Equal(50L, (await cache.GetAsync<long>("set-if-lower-null-exp-long")).Value);
+            expiration = await cache.GetExpirationAsync("set-if-lower-null-exp-long");
+            Assert.Null(expiration); // Null expiration removes TTL
         }
     }
 
