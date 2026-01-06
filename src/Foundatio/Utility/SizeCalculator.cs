@@ -204,21 +204,28 @@ public class SizeCalculator : IDisposable
         {
             long size = ArrayOverhead;
             var elementType = array.GetType().GetElementType();
-            var elementSize = GetCachedTypeSize(elementType);
 
             // For primitive arrays, we can calculate size efficiently
-            if (elementSize > 0 && array.Length > 0 && (elementType.IsPrimitive || elementType == typeof(string)))
+            if (array.Length > 0 && elementType.IsPrimitive)
             {
-                // Use long cast to prevent integer overflow for large arrays
-                size += (long)array.Length * elementSize;
-                if (elementType == typeof(string))
+                var elementSize = GetCachedTypeSize(elementType);
+                if (elementSize > 0)
                 {
-                    // For string arrays, we need to account for actual string lengths
-                    foreach (string stringElement in array)
-                    {
-                        if (stringElement is not null)
-                            size += (long)stringElement.Length * 2 - elementSize; // Adjust for actual string size
-                    }
+                    // Use long cast to prevent integer overflow for large arrays
+                    size += (long)array.Length * elementSize;
+                    return size;
+                }
+            }
+
+            // For string arrays, calculate actual string sizes directly
+            if (elementType == typeof(string))
+            {
+                // Account for reference pointer for each array slot
+                size += (long)array.Length * ReferenceSize;
+                foreach (string stringElement in array)
+                {
+                    if (stringElement is not null)
+                        size += StringOverhead + ((long)stringElement.Length * 2);
                 }
                 return size;
             }

@@ -22,6 +22,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly bool _shouldThrowOnSerializationErrors;
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
+    private readonly bool _hasSizeCalculator;
     private Func<object, long> _sizeCalculator;
     private readonly long? _maxEntrySize;
     private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
@@ -67,6 +68,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             throw new ArgumentOutOfRangeException(nameof(options.MaxEntrySize), $"{nameof(options.MaxEntrySize)} ({options.MaxEntrySize.Value:N0} bytes) cannot be greater than {nameof(options.MaxMemorySize)} ({options.MaxMemorySize.Value:N0} bytes).");
 
         _sizeCalculator = options.SizeCalculator;
+        _hasSizeCalculator = _sizeCalculator is not null;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
     }
@@ -127,14 +129,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <summary>
     /// Recalculates the current memory size by summing all cache entries.
     /// </summary>
+    /// <remarks>
+    /// Note: This method iterates over the cache dictionary which may be modified concurrently.
+    /// The calculated total may be temporarily inaccurate if entries are added/removed during
+    /// iteration, but this is acceptable for memory tracking purposes and will self-correct
+    /// on subsequent operations or recalculations.
+    /// </remarks>
     private long RecalculateMemorySize()
     {
         if (!_maxMemorySize.HasValue) return 0;
 
+        // Take a snapshot of values to reduce (but not eliminate) race condition window
+        var entries = _memory.Values.ToArray();
         long totalSize = 0;
-        foreach (var entry in _memory.Values)
+        foreach (var entry in entries)
         {
-            totalSize += entry.EstimatedSize;
+            totalSize += entry.Size;
         }
 
         Interlocked.Exchange(ref _currentMemorySize, totalSize);
@@ -224,7 +234,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         // Key was found and removed. Update memory size.
-        UpdateMemorySize(-entry.EstimatedSize);
+        UpdateMemorySize(-entry.Size);
 
         // Return false if the entry was expired (consistent with Redis behavior)
         return Task.FromResult(!entry.IsExpired);
@@ -279,7 +289,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 removed++;
                 if (removedEntry != null)
-                    UpdateMemorySize(-removedEntry.EstimatedSize);
+                    UpdateMemorySize(-removedEntry.Size);
             }
         }
 
@@ -322,7 +332,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (_memory.TryRemove(key, out var removedEntry))
         {
             // Update memory size tracking
-            UpdateMemorySize(-removedEntry.EstimatedSize);
+            UpdateMemorySize(-removedEntry.Size);
 
             OnItemExpired(key, sendNotification);
             return 1;
@@ -346,7 +356,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     throw new Exception("Removed item was not expired");
 
                 // Update memory size tracking
-                UpdateMemorySize(-removedEntry.EstimatedSize);
+                UpdateMemorySize(-removedEntry.Size);
 
                 _logger.LogDebug("Removing expired cache entry {Key}", key);
                 OnItemExpired(key, sendNotification);
@@ -414,7 +424,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone), true);
+        var entry = CreateEntry(value, expiresAt);
+        if (entry is null)
+            return Task.FromResult(false); // Entry exceeds limits
+
+        return SetInternalAsync(key, entry, true);
     }
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -428,7 +442,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone));
+
+        // Fast path: when no size calculator, create entry directly (matches main branch behavior)
+        if (!_hasSizeCalculator)
+            return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, 0));
+
+        // Slow path: calculate size and check limits
+        var entry = CreateEntry(value, expiresAt);
+        if (entry is null)
+            return Task.FromResult(false); // Entry exceeds limits
+
+        return SetInternalAsync(key, entry);
     }
 
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
@@ -441,22 +465,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(value, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         double difference = value;
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
         _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             double? currentValue = null;
             try
             {
@@ -471,6 +498,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = value - currentValue.Value;
                 existingEntry.Value = value;
+                // Recalculate size after value change
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
             }
             else
             {
@@ -479,11 +508,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -505,22 +534,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(value, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         long difference = value;
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
         _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             long? currentValue = null;
             try
             {
@@ -535,6 +567,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = value - currentValue.Value;
                 existingEntry.Value = value;
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
             }
             else
             {
@@ -543,11 +576,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -569,22 +602,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(value, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         double difference = value;
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
         _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             double? currentValue = null;
             try
             {
@@ -599,6 +635,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = currentValue.Value - value;
                 existingEntry.Value = value;
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
             }
             else
             {
@@ -607,11 +644,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -633,22 +670,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(value, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         long difference = value;
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(value, expiresAt, _timeProvider, this, _shouldClone);
         _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             long? currentValue = null;
             try
             {
@@ -663,6 +703,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = currentValue.Value - value;
                 existingEntry.Value = value;
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
             }
             else
             {
@@ -671,11 +712,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -701,8 +742,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
 
-        Interlocked.Increment(ref _writes);
-
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
@@ -714,30 +753,36 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 { stringValue, expiresAt }
             };
 
-            var entry = new CacheEntry(items, expiresAt, _timeProvider, this, _shouldClone);
+            var entry = CreateEntry(items, expiresAt);
+            if (entry is null)
+                return 0;
+
+            Interlocked.Increment(ref _writes);
+
             _memory.AddOrUpdate(key, k =>
             {
                 wasNewEntry = true;
-                newSize = entry.EstimatedSize;
+                newSize = entry.Size;
                 return entry;
             }, (existingKey, existingEntry) =>
             {
                 if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
 
-                oldSize = existingEntry.EstimatedSize;
+                oldSize = existingEntry.Size;
 
                 ExpireListValues(dictionary, existingKey);
 
                 dictionary[stringValue] = expiresAt;
                 existingEntry.Value = dictionary;
                 existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
 
-                newSize = existingEntry.EstimatedSize;
+                newSize = existingEntry.Size;
                 return existingEntry;
             });
 
-            if (_maxMemorySize.HasValue)
+            if (_hasSizeCalculator && _maxMemorySize.HasValue)
             {
                 long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
                 if (sizeDelta != 0)
@@ -753,18 +798,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (items.Count == 0)
                 return 0;
 
-            var entry = new CacheEntry(items, expiresAt, _timeProvider, this, _shouldClone);
+            var entry = CreateEntry(items, expiresAt);
+            if (entry is null)
+                return 0;
+
+            Interlocked.Increment(ref _writes);
+
             _memory.AddOrUpdate(key, k =>
             {
                 wasNewEntry = true;
-                newSize = entry.EstimatedSize;
+                newSize = entry.Size;
                 return entry;
             }, (existingKey, existingEntry) =>
             {
                 if (existingEntry.Value is not IDictionary<T, DateTime?> dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
-                oldSize = existingEntry.EstimatedSize;
+                oldSize = existingEntry.Size;
 
                 ExpireListValues(dictionary, existingKey);
 
@@ -773,12 +823,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 existingEntry.Value = dictionary;
                 existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
 
-                newSize = existingEntry.EstimatedSize;
+                newSize = existingEntry.Size;
                 return existingEntry;
             });
 
-            if (_maxMemorySize.HasValue)
+            if (_hasSizeCalculator && _maxMemorySize.HasValue)
             {
                 long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
                 if (sizeDelta != 0)
@@ -819,7 +870,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
                 {
-                    oldSize = existingEntry.EstimatedSize;
+                    oldSize = existingEntry.Size;
 
                     int expired = ExpireListValues(dictionary, existingKey);
 
@@ -837,7 +888,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                         else
                             existingEntry.ExpiresAt = DateTime.MinValue;
 
-                        newSize = existingEntry.EstimatedSize;
+                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
+                        newSize = existingEntry.Size;
                     }
                     else
                     {
@@ -851,7 +903,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            if (_maxMemorySize.HasValue && oldSize != newSize)
+            if (_hasSizeCalculator && _maxMemorySize.HasValue && oldSize != newSize)
                 UpdateMemorySize(newSize - oldSize);
 
             return Task.FromResult(removed);
@@ -866,7 +918,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 if (existingEntry.Value is IDictionary<T, DateTime?> { Count: > 0 } dictionary)
                 {
-                    oldSize = existingEntry.EstimatedSize;
+                    oldSize = existingEntry.Size;
 
                     int expired = ExpireListValues(dictionary, existingKey);
 
@@ -884,7 +936,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                         else
                             existingEntry.ExpiresAt = DateTime.MinValue;
 
-                        newSize = existingEntry.EstimatedSize;
+                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
+                        newSize = existingEntry.Size;
                     }
                     else
                     {
@@ -898,7 +951,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return existingEntry;
             });
 
-            if (_maxMemorySize.HasValue && oldSize != newSize)
+            if (_hasSizeCalculator && _maxMemorySize.HasValue && oldSize != newSize)
                 UpdateMemorySize(newSize - oldSize);
 
             return Task.FromResult(removed);
@@ -940,18 +993,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return false;
         }
 
-        // Check entry size before caching - may throw if ShouldThrowOnMaxEntrySizeExceeded is true
-        // EstimatedSize returns -1 for entries that should be skipped (logged internally)
-        var entrySize = entry.EstimatedSize;
-        if (entrySize < 0)
-        {
-            // Entry exceeds MaxEntrySize or has invalid size (warning already logged)
-            return false;
-        }
-
         Interlocked.Increment(ref _writes);
 
         bool wasUpdated = true;
+        bool trackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
         CacheEntry oldEntry = null;
 
         if (addOnly)
@@ -977,8 +1022,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (wasUpdated)
                 _logger.LogTrace("Added cache key: {Key}", key);
         }
-        else
+        else if (trackMemory)
         {
+            // Need to capture oldEntry for memory tracking
             _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
             {
                 oldEntry = existingEntry;
@@ -986,14 +1032,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             });
             _logger.LogTrace("Set cache key: {Key}", key);
         }
-
-        // Update memory size tracking
-        if (_maxMemorySize.HasValue)
+        else
         {
-            long sizeDelta = entrySize;
-            if (oldEntry is not null)
-                sizeDelta -= oldEntry.EstimatedSize;
+            // Fast path: no memory tracking needed
+            _memory.AddOrUpdate(key, entry, (_, _) => entry);
+            _logger.LogTrace("Set cache key: {Key}", key);
+        }
 
+        // Update memory size tracking (size was pre-calculated and stored in entry.Size)
+        if (trackMemory)
+        {
+            long sizeDelta = entry.Size - (oldEntry?.Size ?? 0);
             if (wasUpdated && sizeDelta != 0)
                 UpdateMemorySize(sizeDelta);
         }
@@ -1073,10 +1122,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             var currentValue = existingEntry.GetValue<T>();
             if (currentValue.Equals(expected))
             {
-                oldSize = existingEntry.EstimatedSize;
+                oldSize = existingEntry.Size;
                 existingEntry.Value = value;
+                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
                 wasExpectedValue = true;
-                newSize = existingEntry.EstimatedSize;
+                newSize = existingEntry.Size;
 
                 existingEntry.ExpiresAt = expiresAt;
             }
@@ -1087,7 +1137,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         success = success && wasExpectedValue;
 
         // Update memory size tracking if the value was replaced
-        if (_maxMemorySize.HasValue && wasExpectedValue && oldSize != newSize)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue && wasExpectedValue && oldSize != newSize)
             UpdateMemorySize(newSize - oldSize);
 
         await StartMaintenanceAsync().AnyContext();
@@ -1107,21 +1157,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(amount, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone);
         var result = _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             double? currentValue = null;
             try
             {
@@ -1140,11 +1193,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(existingEntry.Value) : 0;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -1166,21 +1220,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return 0;
         }
 
+        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var newEntry = CreateEntry(amount, expiresAt);
+        if (newEntry is null)
+            return 0;
+
         Interlocked.Increment(ref _writes);
 
         long oldSize = 0;
         long newSize = 0;
         bool wasNewEntry = false;
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = new CacheEntry(amount, expiresAt, _timeProvider, this, _shouldClone);
         var result = _memory.AddOrUpdate(key, _ =>
         {
             wasNewEntry = true;
-            newSize = newEntry.EstimatedSize;
+            newSize = newEntry.Size;
             return newEntry;
         }, (_, existingEntry) =>
         {
-            oldSize = existingEntry.EstimatedSize;
+            oldSize = existingEntry.Size;
             long? currentValue = null;
             try
             {
@@ -1199,11 +1256,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (expiresIn.HasValue)
                 existingEntry.ExpiresAt = expiresAt;
 
-            newSize = existingEntry.EstimatedSize;
+            newSize = existingEntry.Size;
             return existingEntry;
         });
 
-        if (_maxMemorySize.HasValue)
+        if (_hasSizeCalculator && _maxMemorySize.HasValue)
         {
             long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
             if (sizeDelta != 0)
@@ -1424,7 +1481,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 {
                     // Update memory size tracking
                     if (cacheEntry != null)
-                        UpdateMemorySize(-cacheEntry.EstimatedSize);
+                        UpdateMemorySize(-cacheEntry.Size);
 
                     if (cacheEntry is { IsExpired: true })
                         expiredKeys.Add(keyToRemove);
@@ -1478,7 +1535,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return kvp.Key;
 
             // Calculate a "waste score" based on size vs recent usage
-            var size = kvp.Value.EstimatedSize;
+            var size = kvp.Value.Size;
             var timeSinceLastAccess = currentTime - kvp.Value.LastAccessTicks;
             var timeSinceCreation = currentTime - kvp.Value.LastModifiedTicks;
 
@@ -1556,34 +1613,40 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _sizeCalculator = null; // Allow GC to collect any captured closures
     }
 
+    /// <summary>
+    /// Creates a CacheEntry with pre-calculated size. Returns null if the entry should be skipped (exceeds size limits).
+    /// </summary>
+    private CacheEntry CreateEntry<T>(T value, DateTime? expiresAt)
+    {
+        long size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
+        if (size < 0)
+            return null;
+
+        return new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, size);
+    }
+
     private sealed record CacheEntry
     {
         private object _cacheValue;
         private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly TimeProvider _timeProvider;
-        private readonly InMemoryCacheClient _cacheClient;
-        private long _estimatedSize = NotCalculatedSentinel;
-
-        /// <summary>
-        /// Sentinel value indicating the estimated size has not been calculated yet.
-        /// Using long.MinValue as it's an impossible valid size.
-        /// </summary>
-        private const long NotCalculatedSentinel = long.MinValue;
 
 #if DEBUG
         private long _usageCount;
 #endif
 
-        public CacheEntry(object value, DateTime? expiresAt, TimeProvider timeProvider, InMemoryCacheClient cacheClient, bool shouldClone = true)
+        public CacheEntry(object value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true, long size = 0)
         {
             _timeProvider = timeProvider;
-            _cacheClient = cacheClient;
-            _shouldClone = shouldClone && InMemoryCacheClient.TypeRequiresCloning(value?.GetType());
-            Value = value;
+            _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
+            _cacheValue = _shouldClone ? value.DeepClone() : value;
+            var utcNow = _timeProvider.GetUtcNow();
+            LastAccessTicks = utcNow.Ticks;
+            LastModifiedTicks = utcNow.Ticks;
             ExpiresAt = expiresAt;
-            LastModifiedTicks = _timeProvider.GetUtcNow().Ticks;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
+            Size = size;
         }
 
         internal long InstanceNumber { get; private set; }
@@ -1593,25 +1656,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal long LastModifiedTicks { get; private set; }
 
         /// <summary>
-        /// Gets the estimated size of this cache entry in bytes.
-        /// Returns -1 if the entry should be skipped (exceeds MaxEntrySize or invalid size).
-        /// Thread-safe lazy initialization using Interlocked operations.
+        /// The size of this cache entry in bytes. Set at construction time.
         /// </summary>
-        internal long EstimatedSize
-        {
-            get
-            {
-                var currentSize = Interlocked.Read(ref _estimatedSize);
-                if (currentSize != NotCalculatedSentinel)
-                    return currentSize;
-
-                // Calculate size and try to set it atomically
-                var calculatedSize = _cacheClient.CalculateEntrySize(_cacheValue);
-                // If another thread already set it, use their value (it should be the same)
-                Interlocked.CompareExchange(ref _estimatedSize, calculatedSize, NotCalculatedSentinel);
-                return Interlocked.Read(ref _estimatedSize);
-            }
-        }
+        internal long Size { get; set; }
 
 #if DEBUG
         internal long UsageCount => _usageCount;
@@ -1630,9 +1677,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             set
             {
                 _cacheValue = _shouldClone ? value.DeepClone() : value;
-                // Reset cached size calculation using atomic operation
-                Interlocked.Exchange(ref _estimatedSize, NotCalculatedSentinel);
-
                 var utcNow = _timeProvider.GetUtcNow();
                 LastAccessTicks = utcNow.Ticks;
                 LastModifiedTicks = utcNow.Ticks;
@@ -1652,36 +1696,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             return (T)val;
         }
-
-        private bool TypeRequiresCloning(Type t)
-        {
-            if (t == null)
-                return true;
-
-            if (t == TypeHelper.BoolType ||
-                t == TypeHelper.NullableBoolType ||
-                t == TypeHelper.StringType ||
-                t == TypeHelper.CharType ||
-                t == TypeHelper.NullableCharType ||
-                t.IsNumeric() ||
-                t.IsNullableNumeric())
-                return false;
-
-            return !t.GetTypeInfo().IsValueType;
-        }
     }
 
     /// <summary>
     /// Calculates the size of a cache entry.
     /// Returns -1 if the entry should not be cached (exceeds MaxEntrySize or invalid size from calculator).
+    /// Returns 0 immediately if no size calculator is configured.
     /// </summary>
     /// <param name="value">The value to calculate size for.</param>
     /// <returns>The calculated size in bytes, or -1 if the entry should be skipped.</returns>
     /// <exception cref="MaxEntrySizeExceededCacheException">Thrown when entry exceeds MaxEntrySize and ShouldThrowOnMaxEntrySizeExceeded is true.</exception>
     private long CalculateEntrySize(object value)
     {
-        // Skip size calculation if no calculator is configured (opt-in behavior)
-        if (_sizeCalculator is null)
+        // Fast bail-out: no size calculator configured
+        if (!_hasSizeCalculator)
             return 0;
 
         try

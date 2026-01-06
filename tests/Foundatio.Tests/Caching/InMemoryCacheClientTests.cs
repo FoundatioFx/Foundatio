@@ -1452,3 +1452,43 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 }
+
+/// <summary>
+/// Runs the full cache client test suite with fixed sizing configuration.
+/// This ensures all cache operations work correctly when fixed sizing is enabled.
+/// </summary>
+public class InMemoryCacheClientWithFixedSizingTests : InMemoryCacheClientTests
+{
+    public InMemoryCacheClientWithFixedSizingTests(ITestOutputHelper output) : base(output)
+    {
+    }
+
+    protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+    {
+        return new InMemoryCacheClient(o => o
+            .LoggerFactory(Log)
+            .CloneValues(true)
+            .ShouldThrowOnSerializationError(shouldThrowOnSerializationError)
+            .WithFixedSizing(maxMemorySize: 10_000_000, averageEntrySize: 100)); // 10MB limit, 100 bytes per entry
+    }
+}
+
+/// <summary>
+/// Runs the full cache client test suite with dynamic sizing configuration.
+/// This ensures all cache operations work correctly when dynamic sizing is enabled.
+/// </summary>
+public class InMemoryCacheClientWithDynamicSizingTests : InMemoryCacheClientTests
+{
+    public InMemoryCacheClientWithDynamicSizingTests(ITestOutputHelper output) : base(output)
+    {
+    }
+
+    protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+    {
+        return new InMemoryCacheClient(o => o
+            .LoggerFactory(Log)
+            .CloneValues(true)
+            .ShouldThrowOnSerializationError(shouldThrowOnSerializationError)
+            .WithDynamicSizing(maxMemorySize: 10_000_000, Log)); // 10MB limit with dynamic size calculation
+    }
+}
