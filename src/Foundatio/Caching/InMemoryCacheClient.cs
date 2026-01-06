@@ -941,7 +941,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         // Check entry size before caching - may throw if ShouldThrowOnMaxEntrySizeExceeded is true
-        // EstimatedSize returns 0 for entries that should be skipped (logged internally)
+        // EstimatedSize returns -1 for entries that should be skipped (logged internally)
         var entrySize = entry.EstimatedSize;
         if (entrySize < 0)
         {
@@ -1399,9 +1399,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         using (await _lock.LockAsync().AnyContext())
         {
             int removalCount = 0;
-            const int maxRemovals = 10; // Safety limit to prevent infinite loops
+            const int MaxRemovals = 10; // Safety limit to prevent infinite loops
 
-            while (ShouldCompact && removalCount < maxRemovals)
+            while (ShouldCompact && removalCount < MaxRemovals)
             {
                 // Check if we still need compaction
                 bool needsItemCompaction = _maxItems.HasValue && _memory.Count > _maxItems;
