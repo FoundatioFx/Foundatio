@@ -178,6 +178,7 @@ Apple M1 Max, 1 CPU, 10 logical and 10 physical cores
 **Fix**: Changed from capturing `oldEntry` (entire CacheEntry object) to capturing only `oldSize` (a `long`).
 
 **Before** (wasteful):
+
 ```csharp
 CacheEntry oldEntry = null;
 _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
@@ -189,6 +190,7 @@ long sizeDelta = entry.Size - (oldEntry?.Size ?? 0);
 ```
 
 **After** (optimized):
+
 ```csharp
 long oldSize = 0;
 _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
@@ -200,10 +202,12 @@ long sizeDelta = entry.Size - oldSize;
 ```
 
 **Benchmark Results**: All 15 benchmarks passed:
+
 - SetAsync_String: 226.6ns (default) vs 237.0ns (fixed/dynamic) = **+4.6% / +10.4ns**
 - SetAsync_ComplexObject: 228.2ns (default) vs 239.5ns (fixed) = **+5.0% / +11.3ns**
 
 **Conclusion**: The ~5% overhead is **inherent to the memory-sizing feature**:
+
 - Size must be calculated via `CreateEntry()` calling the configured `SizeCalculator`
 - Size delta must be tracked for memory accounting
 - This is the minimum overhead for accurate memory tracking
