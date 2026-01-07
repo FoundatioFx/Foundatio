@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
@@ -28,8 +29,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData(false)]
     public void CalculateSize_WithBoolean_ReturnsExpectedSize(bool value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size > 0, $"Expected size > 0 for boolean, got {size}");
+
+        // Assert
+        Assert.Equal(1, size);
     }
 
     [Theory]
@@ -37,8 +41,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData((byte)255)]
     public void CalculateSize_WithByte_ReturnsExpectedSize(byte value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size > 0, $"Expected size > 0 for byte, got {size}");
+
+        // Assert
+        Assert.Equal(1, size);
     }
 
     [Theory]
@@ -47,8 +54,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData((short)32767)]
     public void CalculateSize_WithInt16_ReturnsExpectedSize(short value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 2, $"Expected size >= 2 for short, got {size}");
+
+        // Assert
+        Assert.Equal(2, size);
     }
 
     [Theory]
@@ -57,8 +67,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData(int.MaxValue)]
     public void CalculateSize_WithInt32_ReturnsExpectedSize(int value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 4, $"Expected size >= 4 for int, got {size}");
+
+        // Assert
+        Assert.Equal(4, size);
     }
 
     [Theory]
@@ -67,8 +80,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData(long.MaxValue)]
     public void CalculateSize_WithInt64_ReturnsExpectedSize(long value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 8, $"Expected size >= 8 for long, got {size}");
+
+        // Assert
+        Assert.Equal(8, size);
     }
 
     [Theory]
@@ -77,8 +93,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData(float.MaxValue)]
     public void CalculateSize_WithFloat_ReturnsExpectedSize(float value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 4, $"Expected size >= 4 for float, got {size}");
+
+        // Assert
+        Assert.Equal(4, size);
     }
 
     [Theory]
@@ -87,8 +106,11 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [InlineData(double.MaxValue)]
     public void CalculateSize_WithDouble_ReturnsExpectedSize(double value)
     {
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 8, $"Expected size >= 8 for double, got {size}");
+
+        // Assert
+        Assert.Equal(8, size);
     }
 
     [Theory]
@@ -107,36 +129,51 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [Fact]
     public void CalculateSize_WithEmptyString_ReturnsStringOverhead()
     {
+        // Act
         long size = _sizer.CalculateSize(string.Empty);
-        Assert.True(size >= 24, $"Expected size >= 24 for empty string (overhead), got {size}");
+
+        // Assert - string overhead (24 bytes) + 0 chars
+        Assert.Equal(24, size);
     }
 
     [Fact]
     public void CalculateSize_WithChar_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize('a');
-        Assert.True(size >= 2, $"Expected size >= 2 for char, got {size}");
+
+        // Assert
+        Assert.Equal(2, size);
     }
 
     [Fact]
     public void CalculateSize_WithDateTime_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize(DateTime.UtcNow);
-        Assert.True(size >= 8, $"Expected size >= 8 for DateTime, got {size}");
+
+        // Assert
+        Assert.Equal(8, size);
     }
 
     [Fact]
     public void CalculateSize_WithGuid_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize(Guid.NewGuid());
-        Assert.True(size >= 16, $"Expected size >= 16 for Guid, got {size}");
+
+        // Assert
+        Assert.Equal(16, size);
     }
 
     [Fact]
     public void CalculateSize_WithDecimal_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize(123.456m);
-        Assert.True(size >= 16, $"Expected size >= 16 for decimal, got {size}");
+
+        // Assert
+        Assert.Equal(16, size);
     }
 
     [Theory]
@@ -156,103 +193,153 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [Fact]
     public void CalculateSize_WithStringArray_IncludesStringContents()
     {
+        // Arrange
         var array = new[] { "hello", "world" };
+
+        // Act
         long size = _sizer.CalculateSize(array);
-        // Array overhead + string sizes
-        Assert.True(size > 24, $"Expected size > 24 for string array, got {size}");
-        _logger.LogInformation("String array size: {Size}", size);
+
+        // Assert - Array overhead (24) + 2 references (16) + "hello" (24+10) + "world" (24+10) = 108
+        Assert.Equal(108, size);
     }
 
     [Fact]
     public void CalculateSize_WithByteArray_ReturnsExpectedSize()
     {
+        // Arrange
         var array = new byte[100];
+
+        // Act
         long size = _sizer.CalculateSize(array);
-        // Array overhead (24 bytes) + 100 bytes
-        Assert.True(size >= 124, $"Expected size >= 124 for byte[100], got {size}");
+
+        // Assert - Array overhead (24) + 100 bytes
+        Assert.Equal(124, size);
     }
 
     [Fact]
     public void CalculateSize_WithEmptyList_ReturnsOverheadSize()
     {
+        // Arrange
         var list = new List<int>();
+
+        // Act
         long size = _sizer.CalculateSize(list);
-        Assert.True(size > 0, $"Expected size > 0 for empty list, got {size}");
+
+        // Assert - Collection overhead (32)
+        Assert.Equal(32, size);
     }
 
     [Fact]
     public void CalculateSize_WithPopulatedList_IncludesElements()
     {
+        // Arrange
         var list = new List<int> { 1, 2, 3, 4, 5 };
-        long size = _sizer.CalculateSize(list);
         var emptyListSize = _sizer.CalculateSize(new List<int>());
+
+        // Act
+        long size = _sizer.CalculateSize(list);
+
+        // Assert - populated list should be larger than empty list
         Assert.True(size > emptyListSize, $"Expected size > {emptyListSize} for populated list, got {size}");
     }
 
     [Fact]
     public void CalculateSize_WithDictionary_ReturnsExpectedSize()
     {
+        // Arrange
         var dict = new Dictionary<string, int>
         {
             { "one", 1 },
             { "two", 2 },
             { "three", 3 }
         };
+
+        // Act
         long size = _sizer.CalculateSize(dict);
-        Assert.True(size > 0, $"Expected size > 0 for dictionary, got {size}");
-        _logger.LogInformation("Dictionary size: {Size}", size);
+
+        // Assert - Collection overhead (32) + 3 items with references and content
+        Assert.True(size > 32, $"Expected size > 32 for dictionary with 3 items, got {size}");
     }
 
     [Fact]
     public void CalculateSize_WithEmptyDictionary_ReturnsOverheadSize()
     {
+        // Arrange
         var dict = new Dictionary<string, string>();
+
+        // Act
         long size = _sizer.CalculateSize(dict);
-        Assert.True(size > 0, $"Expected size > 0 for empty dictionary, got {size}");
+
+        // Assert - Collection overhead (32)
+        Assert.Equal(32, size);
     }
 
     [Fact]
     public void CalculateSize_WithHashSet_ReturnsExpectedSize()
     {
+        // Arrange
         var set = new HashSet<string> { "a", "b", "c" };
+
+        // Act
         long size = _sizer.CalculateSize(set);
-        Assert.True(size > 0, $"Expected size > 0 for HashSet, got {size}");
+
+        // Assert - Collection overhead (32) + 3 strings with content
+        Assert.True(size > 32, $"Expected size > 32 for HashSet with 3 items, got {size}");
     }
 
     [Fact]
     public void CalculateSize_WithNullableIntWithValue_ReturnsExpectedSize()
     {
+        // Arrange
         int? value = 42;
+
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.True(size >= 4, $"Expected size >= 4 for int?, got {size}");
+
+        // Assert - When a nullable value type with a value is boxed, it boxes as the underlying type.
+        // So int? with a value becomes a boxed int (4 bytes), not int? (5 bytes).
+        // This is standard .NET boxing behavior.
+        Assert.Equal(4, size);
     }
 
     [Fact]
     public void CalculateSize_WithNullableIntWithNull_ReturnsReferenceSize()
     {
+        // Arrange
         int? value = null;
+
+        // Act
         long size = _sizer.CalculateSize(value);
-        Assert.Equal(8, size); // Null reference size
+
+        // Assert - null reference size (8 bytes)
+        Assert.Equal(8, size);
     }
 
     [Fact]
     public void CalculateSize_WithSimpleObject_ReturnsReasonableSize()
     {
+        // Arrange
         var obj = new SimpleTestObject { Id = 1, Name = "Test", Value = 123.45 };
+
+        // Act
         long size = _sizer.CalculateSize(obj);
-        Assert.True(size > 0, $"Expected size > 0 for simple object, got {size}");
-        _logger.LogInformation("SimpleTestObject size: {Size}", size);
+
+        // Assert - should include object overhead + serialized content
+        Assert.True(size > 24, $"Expected size > 24 (object overhead) for simple object, got {size}");
     }
 
     [Fact]
     public void CalculateSize_WithNestedObject_IncludesNestedSize()
     {
+        // Arrange
         var inner = new SimpleTestObject { Id = 1, Name = "Inner", Value = 1.0 };
         var outer = new NestedTestObject { Id = 2, Inner = inner };
-
         long innerSize = _sizer.CalculateSize(inner);
+
+        // Act
         long outerSize = _sizer.CalculateSize(outer);
 
+        // Assert - outer should be larger since it contains inner
         Assert.True(outerSize > innerSize, $"Expected outer size ({outerSize}) > inner size ({innerSize})");
     }
 
@@ -303,15 +390,20 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [Fact]
     public void CalculateSize_WithTimeSpan_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize(TimeSpan.FromHours(1));
-        Assert.True(size >= 8, $"Expected size >= 8 for TimeSpan, got {size}");
+
+        // Assert
+        Assert.Equal(8, size);
     }
 
     [Fact]
     public void CalculateSize_WithDateTimeOffset_ReturnsExpectedSize()
     {
+        // Act
         long size = _sizer.CalculateSize(DateTimeOffset.UtcNow);
-        // DateTimeOffset is 16 bytes (DateTime 8 bytes + TimeSpan offset 8 bytes)
+
+        // Assert - DateTimeOffset is 16 bytes (DateTime 8 bytes + TimeSpan offset 8 bytes)
         Assert.Equal(16, size);
     }
 
@@ -370,9 +462,9 @@ public class SizeCalculatorTests : TestWithLoggingBase
         }
 
         // Calculate sizes for all - this should trigger eviction
-        foreach (var obj in types)
+        // Use Select to explicitly map objects to their sizes
+        foreach (long size in types.Select(obj => sizer.CalculateSize(obj)))
         {
-            long size = sizer.CalculateSize(obj);
             Assert.True(size > 0);
         }
 

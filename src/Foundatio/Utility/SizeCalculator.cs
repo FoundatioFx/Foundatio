@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -99,6 +101,56 @@ public class SizeCalculator : IDisposable
     private const int MaxEvictionCount = 100;
 
     /// <summary>
+    /// Static lookup table for primitive and common value type sizes.
+    /// Uses FrozenDictionary for optimal read performance.
+    /// </summary>
+    private static readonly FrozenDictionary<Type, long> TypeSizeLookupTable = new Dictionary<Type, long>
+    {
+        // Primitives (1 byte)
+        [typeof(bool)] = 1,
+        [typeof(byte)] = 1,
+        [typeof(sbyte)] = 1,
+        // Primitives (2 bytes)
+        [typeof(char)] = 2,
+        [typeof(short)] = 2,
+        [typeof(ushort)] = 2,
+        // Primitives (4 bytes)
+        [typeof(int)] = 4,
+        [typeof(uint)] = 4,
+        [typeof(float)] = 4,
+        // Primitives (8 bytes)
+        [typeof(long)] = 8,
+        [typeof(ulong)] = 8,
+        [typeof(double)] = 8,
+        [typeof(DateTime)] = 8,
+        [typeof(TimeSpan)] = 8,
+        [typeof(nint)] = 8,
+        [typeof(nuint)] = 8,
+        // Larger value types (16 bytes)
+        [typeof(decimal)] = 16,
+        [typeof(Guid)] = 16,
+        [typeof(DateTimeOffset)] = 16,
+        // Nullable primitives (underlying size + 1 for hasValue flag, but cached as underlying for simplicity)
+        [typeof(bool?)] = 2,
+        [typeof(byte?)] = 2,
+        [typeof(sbyte?)] = 2,
+        [typeof(char?)] = 3,
+        [typeof(short?)] = 3,
+        [typeof(ushort?)] = 3,
+        [typeof(int?)] = 5,
+        [typeof(uint?)] = 5,
+        [typeof(float?)] = 5,
+        [typeof(long?)] = 9,
+        [typeof(ulong?)] = 9,
+        [typeof(double?)] = 9,
+        [typeof(DateTime?)] = 9,
+        [typeof(TimeSpan?)] = 9,
+        [typeof(decimal?)] = 17,
+        [typeof(Guid?)] = 17,
+        [typeof(DateTimeOffset?)] = 17,
+    }.ToFrozenDictionary();
+
+    /// <summary>
     /// Creates a new SizeCalculator instance with default settings.
     /// </summary>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
@@ -163,13 +215,11 @@ public class SizeCalculator : IDisposable
             return DefaultObjectSize;
         }
 
-        var type = value.GetType();
-
         // Fast paths for common types - no caching needed
         switch (value)
         {
             case string stringValue:
-                return StringOverhead + ((long)stringValue.Length * 2); // Object overhead + UTF-16 chars
+                return StringOverhead + (long)stringValue.Length * 2; // Object overhead + UTF-16 chars
             case bool:
                 return 1;
             case byte:
@@ -195,9 +245,14 @@ public class SizeCalculator : IDisposable
                 return 16;
         }
 
-        // Handle nullable types
+        var type = value.GetType();
+
+        // Handle nullable types - check static dictionary first for common nullable types
         if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
         {
+            if (TypeSizeLookupTable.TryGetValue(type, out long nullableSize))
+                return nullableSize;
+
             var underlyingType = Nullable.GetUnderlyingType(type);
             return GetCachedTypeSize(underlyingType) + 1; // Add 1 for hasValue flag
         }
@@ -210,15 +265,15 @@ public class SizeCalculator : IDisposable
 
             // For value type arrays (primitives and common structs like DateTime, Guid),
             // we can calculate size efficiently using cached type sizes
-            if (array.Length > 0 && elementType.IsValueType)
+            if (array.Length > 0 && elementType is { IsValueType: true })
             {
-                var elementSize = GetCachedTypeSize(elementType);
+                long elementSize = GetCachedTypeSize(elementType);
                 if (elementSize > 0)
                 {
                     // Use long arithmetic and guard against overflow when calculating total element size
                     long elementCount = array.Length;
-                    if (elementSize > long.MaxValue / elementCount)
-                        return long.MaxValue;
+                    if (elementSize > Int64.MaxValue / elementCount)
+                        return Int64.MaxValue;
 
                     size += elementCount * elementSize;
                     return size;
@@ -229,24 +284,24 @@ public class SizeCalculator : IDisposable
             if (elementType == typeof(string))
             {
                 // Account for reference pointer for each array slot
-                size += (long)array.Length * ReferenceSize;
+                size += array.Length * ReferenceSize;
                 foreach (string stringElement in array)
                 {
                     if (stringElement is not null)
-                        size += StringOverhead + ((long)stringElement.Length * 2);
+                        size += StringOverhead + (long)stringElement.Length * 2;
                 }
                 return size;
             }
         }
 
         // Handle collections with sampling for large ones
-        if (value is IEnumerable enumerable && value is not string)
+        if (value is IEnumerable enumerable and not string)
         {
             long size = CollectionOverhead;
             int count = 0;
             long itemSizeSum = 0;
 
-            foreach (var item in enumerable)
+            foreach (object item in enumerable)
             {
                 count++;
                 itemSizeSum += CalculateSizeInternal(item, depth + 1);
@@ -255,20 +310,20 @@ public class SizeCalculator : IDisposable
                     // Estimate based on sample
                     if (enumerable is ICollection collection)
                     {
-                        var avgItemSize = itemSizeSum / count;
-                        return size + ((long)collection.Count * avgItemSize) + ((long)collection.Count * ReferenceSize);
+                        long avgItemSize = itemSizeSum / count;
+                        return size + collection.Count * avgItemSize + collection.Count * ReferenceSize;
                     }
                     break;
                 }
             }
 
-            return size + itemSizeSum + ((long)count * ReferenceSize); // Collection overhead + items + reference overhead
+            return size + itemSizeSum + count * ReferenceSize; // Collection overhead + items + reference overhead
         }
 
         // Fall back to JSON serialization for complex objects
         try
         {
-            var jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, _jsonSerializerOptions);
+            byte[] jsonBytes = JsonSerializer.SerializeToUtf8Bytes(value, _jsonSerializerOptions);
             return jsonBytes.Length + ObjectOverhead;
         }
         catch (Exception ex)
@@ -285,7 +340,7 @@ public class SizeCalculator : IDisposable
         if (cache is null)
             return DefaultObjectSize; // Default if disposed
 
-        var accessOrder = Interlocked.Increment(ref _cacheAccessCounter);
+        long accessOrder = Interlocked.Increment(ref _cacheAccessCounter);
 
         if (cache.TryGetValue(type, out var entry))
         {
@@ -311,18 +366,17 @@ public class SizeCalculator : IDisposable
 
     private long CalculateTypeSize(Type type)
     {
-        // Handle primitive types
-        if (type.IsPrimitive)
-        {
-            return type == typeof(bool) || type == typeof(byte) || type == typeof(sbyte) ? 1L :
-                   type == typeof(char) || type == typeof(short) || type == typeof(ushort) ? 2L :
-                   type == typeof(int) || type == typeof(uint) || type == typeof(float) ? 4L :
-                   type == typeof(long) || type == typeof(ulong) || type == typeof(double) ? 8L : 8L;
-        }
+        // Fast path: lookup in static frozen dictionary for primitives and common types
+        if (TypeSizeLookupTable.TryGetValue(type, out long knownSize))
+            return knownSize;
 
-        // Handle common value types
-        if (type == typeof(decimal) || type == typeof(Guid) || type == typeof(DateTimeOffset)) return 16;
-        if (type == typeof(DateTime) || type == typeof(TimeSpan)) return 8;
+        // Handle nullable types not in the static dictionary
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+        {
+            var underlyingType = Nullable.GetUnderlyingType(type);
+            if (underlyingType != null && TypeSizeLookupTable.TryGetValue(underlyingType, out long underlyingSize))
+                return underlyingSize + 1; // Add 1 for hasValue flag
+        }
 
         // For reference types, estimate based on fields/properties
         try
@@ -334,7 +388,7 @@ public class SizeCalculator : IDisposable
                                                 System.Reflection.BindingFlags.Public);
 
             // Base object overhead + estimated field/property sizes
-            return ObjectOverhead + (((long)fields.Length + properties.Length) * ReferenceSize);
+            return ObjectOverhead + ((long)fields.Length + properties.Length) * ReferenceSize;
         }
         catch (Exception ex)
         {
@@ -357,13 +411,13 @@ public class SizeCalculator : IDisposable
             // Remove ~10% of entries (minimum 1, maximum 100) to avoid frequent evictions
             // while also preventing massive evictions for very large caches
             int toRemove = Math.Clamp(_maxTypeCacheSize / EvictionPercentage, 1, MaxEvictionCount);
-            var currentCounter = Interlocked.Read(ref _cacheAccessCounter);
-            var threshold = currentCounter - (_maxTypeCacheSize - toRemove);
+            long currentCounter = Interlocked.Read(ref _cacheAccessCounter);
+            long threshold = currentCounter - (_maxTypeCacheSize - toRemove);
             int removed = 0;
 
             foreach (var kvp in cache)
             {
-                var lastAccess = Interlocked.Read(ref kvp.Value.LastAccessField);
+                long lastAccess = Interlocked.Read(ref kvp.Value.LastAccessField);
                 if (lastAccess < threshold && cache.TryRemove(kvp.Key, out _))
                 {
                     removed++;
