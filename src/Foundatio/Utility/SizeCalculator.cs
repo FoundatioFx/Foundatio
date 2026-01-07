@@ -195,6 +195,16 @@ public class SizeCalculator : IDisposable
     /// </summary>
     /// <param name="value">The object to calculate size for.</param>
     /// <returns>Estimated size in bytes.</returns>
+    /// <remarks>
+    /// <para>
+    /// For primitive types passed as <c>object</c>, this method returns the raw value size
+    /// (e.g., 4 bytes for int, 8 bytes for long) rather than the full boxed object size.
+    /// Boxed primitives in .NET actually consume more memory (typically 12-24 bytes due to
+    /// object header overhead), but this calculator prioritizes performance over absolute
+    /// accuracy for primitive types. The returned sizes are useful for relative comparisons
+    /// and capacity planning.
+    /// </para>
+    /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown if the calculator has been disposed.</exception>
     public long CalculateSize(object value)
     {

@@ -36,10 +36,29 @@ public class MaxEntrySizeExceededCacheException : CacheException
         EntryType = entryType;
     }
 
+    /// <summary>
+    /// Creates a new instance of <see cref="MaxEntrySizeExceededCacheException"/> with a custom message.
+    /// </summary>
+    /// <remarks>
+    /// This overload is intended for advanced scenarios where entry size metadata is unavailable,
+    /// such as deserialization or wrapping other exceptions. When using this constructor,
+    /// <see cref="EntrySize"/>, <see cref="MaxEntrySize"/>, and <see cref="EntryType"/> will be 0/null.
+    /// </remarks>
+    /// <param name="message">The error message.</param>
     public MaxEntrySizeExceededCacheException(string message) : base(message)
     {
     }
 
+    /// <summary>
+    /// Creates a new instance of <see cref="MaxEntrySizeExceededCacheException"/> with a custom message and inner exception.
+    /// </summary>
+    /// <remarks>
+    /// This overload is intended for advanced scenarios where entry size metadata is unavailable,
+    /// such as deserialization or wrapping other exceptions. When using this constructor,
+    /// <see cref="EntrySize"/>, <see cref="MaxEntrySize"/>, and <see cref="EntryType"/> will be 0/null.
+    /// </remarks>
+    /// <param name="message">The error message.</param>
+    /// <param name="innerException">The inner exception.</param>
     public MaxEntrySizeExceededCacheException(string message, Exception innerException) : base(message, innerException)
     {
     }

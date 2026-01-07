@@ -451,13 +451,13 @@ public class SizeCalculatorTests : TestWithLoggingBase
     {
         var sizer = new SizeCalculator(Log);
 
-        // Create many distinct types by using generic types with different type arguments
-        // This tests the LRU eviction logic
+        // Create many objects to exercise the size calculator
+        // Note: These are all the same type (Dictionary<string, int>), but the test
+        // exercises the type cache eviction by triggering many calculations
         var types = new List<object>();
         for (int i = 0; i < 1100; i++)
         {
-            // Create objects that will exercise the type cache
-            // Using Dictionary with different value types creates distinct generic types
+            // Create dictionary objects that will exercise the size calculator
             types.Add(new Dictionary<string, int> { { $"key{i}", i } });
         }
 

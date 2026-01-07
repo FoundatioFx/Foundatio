@@ -108,20 +108,26 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         else
         {
             // For positive deltas (additions), check for overflow and clamp to long.MaxValue
+            bool overflowed = false;
             do
             {
                 currentValue = _currentMemorySize;
                 if (currentValue > Int64.MaxValue - delta)
                 {
                     newValue = Int64.MaxValue;
-                    _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
-                        Int64.MaxValue, currentValue, delta);
+                    overflowed = true;
                 }
                 else
                 {
                     newValue = currentValue + delta;
                 }
             } while (Interlocked.CompareExchange(ref _currentMemorySize, newValue, currentValue) != currentValue);
+
+            if (overflowed)
+            {
+                _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
+                    Int64.MaxValue, currentValue, delta);
+            }
         }
 
         _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
@@ -528,8 +534,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = value - currentValue.Value;
                 existingEntry.Value = value;
-                // Recalculate size after value change
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
+                // Size remains unchanged for primitive numeric types (double = 8 bytes)
             }
             else
             {
@@ -592,7 +597,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = value - currentValue.Value;
                 existingEntry.Value = value;
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
+                // Size remains unchanged for primitive numeric types (long = 8 bytes)
             }
             else
             {
@@ -655,7 +660,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = currentValue.Value - value;
                 existingEntry.Value = value;
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
+                // Size remains unchanged for primitive numeric types (double = 8 bytes)
             }
             else
             {
@@ -718,7 +723,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 difference = currentValue.Value - value;
                 existingEntry.Value = value;
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
+                // Size remains unchanged for primitive numeric types (long = 8 bytes)
             }
             else
             {
@@ -871,7 +876,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
                 {
                     oldSize = existingEntry.Size;
-
                     int expired = ExpireListValues(dictionary, existingKey);
 
                     foreach (string value in items)
@@ -1445,7 +1449,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         using (await _lock.LockAsync().AnyContext())
         {
             int removalCount = 0;
-            const int maxRemovals = 10; // Safety limit to prevent infinite loops
+
+            // Scale maxRemovals based on how far over the limits we are
+            // Base limit of 10, but increase proportionally (up to 1000) if significantly over limit
+            const int baseMaxRemovals = 10;
+            const int absoluteMaxRemovals = 1000;
+
+            int itemOverLimitFactor = 1;
+            if (_maxItems.HasValue && _maxItems.Value > 0 && _memory.Count > _maxItems.Value)
+                itemOverLimitFactor = (int)Math.Ceiling((double)_memory.Count / _maxItems.Value);
+
+            int memoryOverLimitFactor = 1;
+            if (_shouldTrackMemory && _maxMemorySize.HasValue && _maxMemorySize.Value > 0 && _currentMemorySize > _maxMemorySize.Value)
+                memoryOverLimitFactor = (int)Math.Ceiling((double)_currentMemorySize / _maxMemorySize.Value);
+
+            int overLimitFactor = Math.Max(itemOverLimitFactor, memoryOverLimitFactor);
+            if (overLimitFactor < 1)
+                overLimitFactor = 1;
+
+            int maxRemovals = baseMaxRemovals * overLimitFactor;
+            if (maxRemovals > absoluteMaxRemovals)
+                maxRemovals = absoluteMaxRemovals;
 
             while (ShouldCompact && removalCount < maxRemovals)
             {
@@ -1482,6 +1506,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     // Couldn't remove the item, break to prevent infinite loop
                     break;
                 }
+            }
+
+            // Log if we hit maxRemovals but still need compaction
+            if (removalCount >= maxRemovals && ShouldCompact)
+            {
+                _logger.LogDebug("CompactAsync: Reached max removals ({MaxRemovals}) but still over limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0}). Will retry on next maintenance cycle.",
+                    maxRemovals, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
             }
         }
 
@@ -1530,6 +1561,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </para>
     /// <para>
     /// Expired entries are always prioritized and returned immediately if found.
+    /// </para>
+    /// <para>
+    /// <strong>Performance note:</strong> This method performs an O(n) iteration over all cache entries
+    /// on each eviction. For very large caches (100k+ entries), this could become a bottleneck during
+    /// high-contention compaction. However, because eviction typically removes multiple items per
+    /// compaction cycle (scaled by <c>maxRemovals</c>) and compaction is throttled to run infrequently,
+    /// this trade-off favors simplicity and correctness over more complex data structures like priority
+    /// queues that would add memory overhead and complexity for all cache operations. For extremely
+    /// large caches with frequent eviction, consider using <see cref="InMemoryCacheClientOptionsBuilder.MaxItems"/>
+    /// to bound the cache size at a level where O(n) iteration remains acceptable.
     /// </para>
     /// </remarks>
     /// <returns>The key of the entry to evict, or null if no suitable candidate found.</returns>
