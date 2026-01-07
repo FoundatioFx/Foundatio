@@ -1000,7 +1000,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         bool wasUpdated = true;
-        CacheEntry oldEntry = null;
+        long oldSize = 0;
 
         if (addOnly)
         {
@@ -1014,7 +1014,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 {
                     _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
 
-                    oldEntry = existingEntry;
+                    oldSize = existingEntry.Size;
                     wasUpdated = true;
                     return entry;
                 }
@@ -1027,10 +1027,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else if (_shouldTrackMemory)
         {
-            // Need to capture oldEntry for memory tracking
+            // Capture only the size, not the whole entry
             _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
             {
-                oldEntry = existingEntry;
+                oldSize = existingEntry.Size;
                 return entry;
             });
             _logger.LogTrace("Set cache key: {Key}", key);
@@ -1045,7 +1045,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Update memory size tracking (size was pre-calculated and stored in entry.Size)
         if (_shouldTrackMemory)
         {
-            long sizeDelta = entry.Size - (oldEntry?.Size ?? 0);
+            long sizeDelta = entry.Size - oldSize;
             if (wasUpdated && sizeDelta != 0)
                 UpdateMemorySize(sizeDelta);
         }
