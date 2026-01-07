@@ -59,17 +59,17 @@ This overhead is minimal and acceptable given the value of the memory sizing fea
 
 | Benchmark | Mean | Overhead vs Default | Allocated | Notes |
 |-----------|------|---------------------|-----------|-------|
-| **SetAsync_String_Default** | 226.3 ns | Baseline | 288 B | Fast path, no sizing |
-| **SetAsync_String_FixedSizing** | 229.8 ns | +2% | 288 B | Fixed size calculation |
-| **SetAsync_String_DynamicSizing** | 229.8 ns | +2% | 288 B | Fast path for strings |
-| **SetAsync_ComplexObject_Default** | 226.7 ns | Baseline | 288 B | Fast path, no sizing |
-| **SetAsync_ComplexObject_FixedSizing** | 231.3 ns | +2% | 288 B | Fixed size calculation |
-| **SetAsync_ComplexObject_DynamicSizing** | 760.6 ns | **+236%** | 992 B | JSON serialization fallback |
+| **SetAsync_String_Default** | 224.4 ns | Baseline | 288 B | Fast path, no sizing |
+| **SetAsync_String_FixedSizing** | 225.6 ns | +1% | 288 B | Fixed size calculation |
+| **SetAsync_String_DynamicSizing** | 231.8 ns | +3% | 288 B | Fast path for strings |
+| **SetAsync_ComplexObject_Default** | 221.1 ns | Baseline | 288 B | Fast path, no sizing |
+| **SetAsync_ComplexObject_FixedSizing** | 226.9 ns | +3% | 288 B | Fixed size calculation |
+| **SetAsync_ComplexObject_DynamicSizing** | 753.5 ns | **+241%** | 992 B | JSON serialization fallback |
 
 ### Key Observations
 
-1. **Default vs FixedSizing**: Only ~2% overhead - the fixed size lookup is very fast
-2. **Default vs DynamicSizing (strings)**: Only ~2% overhead - strings use a fast path calculation
+1. **Default vs FixedSizing (strings)**: Only ~1% overhead - fixed size lookup is very fast
+2. **Default vs DynamicSizing (strings)**: Only ~3% overhead - strings use a fast path calculation
 3. **DynamicSizing (complex objects)**: ~3.4x slower due to JSON serialization fallback
 
 ## Key Findings
@@ -139,20 +139,31 @@ Apple M1 Max, 1 CPU, 10 logical and 10 physical cores
   [Host]     : .NET 8.0.22 (8.0.2225.52707), Arm64 RyuJIT AdvSIMD
   DefaultJob : .NET 8.0.22 (8.0.2225.52707), Arm64 RyuJIT AdvSIMD
 
-| Method                               | Mean     | Error   | StdDev  | Ratio | Gen0   | Allocated | Alloc Ratio |
-|------------------------------------- |---------:|--------:|--------:|------:|-------:|----------:|------------:|
-| SetAsync_String_Default              | 226.3 ns | 1.17 ns | 0.97 ns |  1.00 | 0.0458 |     288 B |        1.00 |
-| SetAsync_String_FixedSizing          | 229.8 ns | 0.96 ns | 0.85 ns |  1.02 | 0.0458 |     288 B |        1.00 |
-| SetAsync_String_DynamicSizing        | 229.8 ns | 1.30 ns | 1.15 ns |  1.02 | 0.0458 |     288 B |        1.00 |
-| SetAsync_ComplexObject_Default       | 226.7 ns | 1.89 ns | 1.58 ns |  1.00 | 0.0458 |     288 B |        1.00 |
-| SetAsync_ComplexObject_FixedSizing   | 231.3 ns | 0.55 ns | 0.46 ns |  1.02 | 0.0458 |     288 B |        1.00 |
-| SetAsync_ComplexObject_DynamicSizing | 760.6 ns | 1.05 ns | 0.82 ns |  3.36 | 0.1574 |     992 B |        3.44 |
+| Method                               | Mean     | Error    | StdDev   | Ratio | Gen0   | Allocated | Alloc Ratio |
+|------------------------------------- |---------:|---------:|---------:|------:|-------:|----------:|------------:|
+| GetManyAsync_String_Default          |  29.8 us |  6.06 us |  0.94 us |     ? |      - |   20768 B |           ? |
+| GetManyAsync_String_FixedSizing      |  29.3 us | 10.22 us |  2.65 us |     ? |      - |   20768 B |           ? |
+| GetManyAsync_String_DynamicSizing    |  29.0 us | 15.93 us |  2.46 us |     ? |      - |   20768 B |           ? |
+| GetAsync_String_Default              |   1.9 us |  2.87 us |  0.74 us |     ? |      - |     176 B |           ? |
+| GetAsync_String_FixedSizing          |   2.0 us |  3.14 us |  0.82 us |     ? |      - |     176 B |           ? |
+| GetAsync_String_DynamicSizing        |   1.3 us |  1.72 us |  0.27 us |     ? |      - |     176 B |           ? |
+| SetManyAsync_String_Default          | 233.3 us | 12.58 us |  3.27 us |  1.04 | 6.8359 |   42387 B |      147.18 |
+| SetManyAsync_String_FixedSizing      | 444.4 us | 47.34 us |  7.33 us |  1.98 | 5.8594 |   40031 B |      139.00 |
+| SetManyAsync_String_DynamicSizing    | 221.1 us |  7.35 us |  1.91 us |  0.99 | 7.0801 |   43339 B |      150.48 |
+| SetAsync_ComplexObject_Default       | 221.1 ns |  1.88 ns |  0.29 ns |  0.99 | 0.0458 |     288 B |        1.00 |
+| SetAsync_ComplexObject_FixedSizing   | 226.9 ns |  0.82 ns |  0.13 ns |  1.01 | 0.0458 |     288 B |        1.00 |
+| SetAsync_ComplexObject_DynamicSizing | 753.5 ns |  8.14 ns |  1.26 ns |  3.36 | 0.1574 |     992 B |        3.44 |
+| SetAsync_String_Default              | 224.4 ns |  1.03 ns |  0.16 ns |  1.00 | 0.0458 |     288 B |        1.00 |
+| SetAsync_String_FixedSizing          | 225.6 ns |  3.09 ns |  0.80 ns |  1.01 | 0.0458 |     288 B |        1.00 |
+| SetAsync_String_DynamicSizing        | 231.8 ns |  1.16 ns |  0.30 ns |  1.03 | 0.0458 |     288 B |        1.00 |
 ```
 
 ## Changelog
 
-### Latest Optimizations (Current Run)
-- Cached `trackMemory` boolean to avoid duplicate field reads
-- Restructured `SetInternalAsync` to use `else if` for cleaner branching
-- Optimized size delta calculation with null-coalescing operator
-- **Result**: Reduced overhead from +8.8% to +6.7%
+### Latest Run (PR #400 - Clean _writes Counter)
+
+- **Reverted `_writes` counter to simple approach**: Increment is inside `SetInternalAsync` where it always was. Rejected entries (too large) are correctly NOT counted as writes.
+- **Removed MaxRemovals warning log**: Unnecessary - if we hit the limit, the next maintenance cycle continues evicting.
+- **Extended type cache to value types**: Changed `IsPrimitive` check to `IsValueType` so DateTime, Guid, TimeSpan arrays now benefit from type caching.
+- **Improved exception handling**: Replaced generic `catch (Exception)` with specific exceptions per code quality feedback.
+- **Result**: ~1-3% overhead for sizing modes, all 851 tests pass

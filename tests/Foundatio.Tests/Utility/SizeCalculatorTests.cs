@@ -391,8 +391,9 @@ public class SizeCalculatorTests : TestWithLoggingBase
 
         Assert.Equal(0, sizer.TypeCacheCount);
 
-        // The type cache is used for array element types
-        // Each array type will cache its element type
+        // The type cache is used for value type array element types
+        // Each value type array will cache its element type via GetCachedTypeSize
+        // This includes primitives AND common value types like DateTime and Guid
         sizer.CalculateSize(new int[] { 1, 2, 3 });
         Assert.Equal(1, sizer.TypeCacheCount); // int type cached
 
@@ -402,16 +403,16 @@ public class SizeCalculatorTests : TestWithLoggingBase
         sizer.CalculateSize(new bool[] { true, false });
         Assert.Equal(3, sizer.TypeCacheCount); // bool type cached
 
-        sizer.CalculateSize(new DateTime[] { DateTime.Now });
+        sizer.CalculateSize(new DateTime[] { DateTime.Now, DateTime.UtcNow });
         Assert.Equal(4, sizer.TypeCacheCount); // DateTime type cached
 
-        sizer.CalculateSize(new Guid[] { Guid.NewGuid() });
+        sizer.CalculateSize(new Guid[] { Guid.NewGuid(), Guid.Empty });
         Assert.Equal(5, sizer.TypeCacheCount); // Guid type cached
 
         // Re-calculating the same array element types should NOT increase the cache count
         sizer.CalculateSize(new int[] { 100, 200 });
         sizer.CalculateSize(new double[] { 2.71 });
-        sizer.CalculateSize(new bool[] { false });
+        sizer.CalculateSize(new DateTime[] { DateTime.MinValue });
         Assert.Equal(5, sizer.TypeCacheCount);
 
         sizer.Dispose();
@@ -453,24 +454,5 @@ public class SizeCalculatorTests : TestWithLoggingBase
         public SimpleTestObject Inner { get; set; }
     }
 
-    private class TypeCacheTestClass1
-    {
-        public int Value { get; set; }
-    }
-
-    private class TypeCacheTestClass2
-    {
-        public string Data { get; set; }
-    }
-
-    private class TypeCacheTestClass3
-    {
-        public bool Flag { get; set; }
-    }
-
-    private class TypeCacheTestClass4
-    {
-        public long Count { get; set; }
-    }
 }
 

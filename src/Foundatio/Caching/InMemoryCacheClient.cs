@@ -130,10 +130,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// Recalculates the current memory size by summing all cache entries.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Note: This method iterates over the cache dictionary which may be modified concurrently.
     /// The calculated total may be temporarily inaccurate if entries are added/removed during
     /// iteration, but this is acceptable for memory tracking purposes and will self-correct
     /// on subsequent operations or recalculations.
+    /// </para>
+    /// <para>
+    /// Known limitation: If an entry's value is updated during iteration (via the Value setter
+    /// which resets the estimated size), the calculation could include a mix of old and newly-calculated
+    /// sizes. This is acceptable for approximate memory tracking. To reduce this window, a snapshot
+    /// of values is taken at the start of the iteration.
+    /// </para>
     /// </remarks>
     private long RecalculateMemorySize()
     {
@@ -428,7 +436,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (entry is null)
             return Task.FromResult(false); // Entry exceeds limits
 
-        return SetInternalAsync(key, entry, true);
+        return SetInternalAsync(key, entry, addOnly: true);
     }
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -1520,6 +1528,30 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return oldest.Key;
     }
 
+    /// <summary>
+    /// Finds the cache entry with the worst size-to-usage ratio for eviction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method implements a "waste score" algorithm that considers multiple factors:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Size: Larger entries receive higher scores (logarithmic scale in KB)</item>
+    /// <item>Age: Older entries receive slightly higher scores (0.5x weight)</item>
+    /// <item>Access recency: Less recently accessed entries receive higher scores (2x weight)</item>
+    /// </list>
+    /// <para>
+    /// The algorithm prioritizes evicting entries that consume more memory and haven't been
+    /// accessed recently. In uniform access patterns (all entries accessed equally), the
+    /// algorithm may evict entries based primarily on size and age, which means recently-accessed
+    /// entries could still be evicted if they are large and old. This is intentional behavior
+    /// to optimize memory usage over strict LRU ordering.
+    /// </para>
+    /// <para>
+    /// Expired entries are always prioritized and returned immediately if found.
+    /// </para>
+    /// </remarks>
+    /// <returns>The key of the entry to evict, or null if no suitable candidate found.</returns>
     private string FindWorstSizeToUsageRatio()
     {
         string candidateKey = null;

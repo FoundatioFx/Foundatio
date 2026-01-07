@@ -731,13 +731,13 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             await cache.SetAsync("final", "trigger"); // Should trigger cleanup
             _logger.LogInformation($"After adding final item: CurrentMemorySize={cache.CurrentMemorySize}");
 
-            // The cache should respect the memory limit (allowing some tolerance for async cleanup)
+            // The cache should respect the memory limit (allowing up to 50% above limit for async cleanup)
             // Give it a moment for async maintenance to run
             await Task.Delay(500, TestCancellationToken);
             _logger.LogInformation($"After delay: CurrentMemorySize={cache.CurrentMemorySize}");
 
             Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
-                $"Memory size {cache.CurrentMemorySize} should be close to or below limit {cache.MaxMemorySize} (allowing 50% tolerance for async cleanup)");
+                $"Memory size {cache.CurrentMemorySize} should be close to or below limit {cache.MaxMemorySize} (allowing up to 50% above limit for async cleanup)");
 
             // At least some items should still be accessible
             var hasAnyItems = (await cache.GetAsync<string>("small1")).HasValue ||

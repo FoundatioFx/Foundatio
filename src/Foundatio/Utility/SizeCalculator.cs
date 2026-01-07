@@ -18,8 +18,11 @@ namespace Foundatio.Utility;
 /// reaches its limit, older entries are evicted. Call <see cref="Dispose"/> to clear
 /// the cache when the calculator is no longer needed.
 ///
-/// Note: Collection size estimation samples the first 50 items and extrapolates.
-/// This may underestimate size if later items are significantly larger.
+/// Note: For collections implementing <see cref="ICollection"/>, size estimation samples
+/// the first 50 items and extrapolates based on the collection's total item count. For
+/// other <see cref="System.Collections.IEnumerable"/> types, only the sampled items are
+/// measured without extrapolation. In both cases, estimates may underestimate size if
+/// unsampled later items are significantly larger.
 /// </remarks>
 public class SizeCalculator : IDisposable
 {
@@ -205,14 +208,19 @@ public class SizeCalculator : IDisposable
             long size = ArrayOverhead;
             var elementType = array.GetType().GetElementType();
 
-            // For primitive arrays, we can calculate size efficiently
-            if (array.Length > 0 && elementType.IsPrimitive)
+            // For value type arrays (primitives and common structs like DateTime, Guid),
+            // we can calculate size efficiently using cached type sizes
+            if (array.Length > 0 && elementType.IsValueType)
             {
                 var elementSize = GetCachedTypeSize(elementType);
                 if (elementSize > 0)
                 {
-                    // Use long cast to prevent integer overflow for large arrays
-                    size += (long)array.Length * elementSize;
+                    // Use long arithmetic and guard against overflow when calculating total element size
+                    long elementCount = array.Length;
+                    if (elementSize > long.MaxValue / elementCount)
+                        return long.MaxValue;
+
+                    size += elementCount * elementSize;
                     return size;
                 }
             }
