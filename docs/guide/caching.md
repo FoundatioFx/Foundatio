@@ -91,6 +91,7 @@ await cache.IncrementAsync("rate:user:123", 1, null); // TTL unchanged!
 // Increment AND reset TTL to 1 hour from now
 await cache.IncrementAsync("rate:user:123", 1, TimeSpan.FromHours(1));
 ```
+
 :::
 
 ::: info Integer vs Floating-Point Increments
@@ -197,11 +198,13 @@ await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?>
 On Azure Managed Redis (and many Redis deployments), the default eviction policy is `volatile-lru`, meaning **only keys with a TTL are eligible for eviction**. If you create many non-expiring keys, you may experience memory pressure and write failures.
 
 **Recommendations:**
+
 - Always set appropriate TTLs for cache entries when possible
 - Use `TimeSpan.MaxValue` only when you explicitly need permanent storage
 - Monitor your Redis memory usage and eviction metrics
 
 **Further Reading:**
+
 - [Azure Managed Cache for Redis eviction policies](https://docs.microsoft.com/en-us/azure/azure-cache-for-redis/cache-configure#memory-policies)
 - [Redis eviction policies documentation](https://redis.io/docs/reference/eviction/)
 :::
@@ -210,7 +213,7 @@ On Azure Managed Redis (and many Redis deployments), the default eviction policy
 
 ### InMemoryCacheClient
 
-An in-memory cache implementation valid for the lifetime of the process:
+An in-memory cache implementation valid for the lifetime of the process. See the [In-Memory Implementation Guide](./implementations/in-memory) for detailed configuration options including memory-based eviction.
 
 ```csharp
 using Foundatio.Caching;
@@ -223,17 +226,9 @@ var result = await cache.GetAsync<string>("key");
 
 // With expiration
 await cache.SetAsync("session", sessionData, TimeSpan.FromMinutes(30));
-```
 
-#### MaxItems Configuration
-
-Limit the number of cached items (LRU eviction):
-
-```csharp
-var cache = new InMemoryCacheClient(o => o.MaxItems = 250);
-
-// Only keeps the last 250 items accessed
-// Useful for caching resolved data like geo-ip lookups
+// With item limits (LRU eviction)
+var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 ```
 
 ### HybridCacheClient
@@ -256,12 +251,14 @@ var sameUser = await hybridCache.GetAsync<User>("user:123");
 ```
 
 **How it works:**
+
 1. Reads check local cache first
 2. On miss, reads from distributed cache and caches locally
 3. Writes go to distributed cache and publish invalidation message
 4. All instances receive invalidation and clear local cache
 
 **Benefits:**
+
 - **Huge performance gains**: Skip serialization and network calls
 - **Consistency**: Message bus keeps all instances in sync
 - **Automatic**: No manual cache invalidation logic
@@ -285,6 +282,7 @@ await tenantCache.RemoveByPrefixAsync("");  // Removes tenant:abc:*
 ```
 
 **Use cases:**
+
 - Multi-tenant applications
 - Feature-specific caches
 - Test isolation
@@ -432,6 +430,7 @@ await cache.ListAddAsync("deleted-items", [itemId], TimeSpan.FromDays(7));
 ```
 
 **Real-world use cases:**
+
 - **Soft-delete tracking**: Track deleted document IDs that should be filtered from queries
 - **Recent activity feeds**: Each activity expires independently (e.g., "active in last 5 minutes")
 - **Rate limiting windows**: Track individual requests with their own expiration

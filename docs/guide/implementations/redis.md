@@ -49,7 +49,7 @@ var redis = await ConnectionMultiplexer.ConnectAsync(options);
 
 ### Connection String Format
 
-```
+```txt
 redis:6379,password=secret,ssl=true,abortConnect=false
 ```
 
@@ -112,7 +112,7 @@ Combines Redis with a local in-memory cache for optimal performance.
 
 ### How It Works
 
-```
+```txt
 ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
 │   Request   │───▶│ Local Cache │───▶│ Redis Cache │
 └─────────────┘    └─────────────┘    └─────────────┘
