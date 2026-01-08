@@ -138,10 +138,10 @@ Different operations use different strategies to keep L1 in sync with L2:
 
 | Strategy | When Used | Operations |
 |----------|-----------|------------|
-| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync` |
-| **Remove to invalidate** | When the final value is uncertain or depends on distributed state | `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync`, `ListAddAsync`, `ListRemoveAsync` |
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` (with expiration) |
+| **Set on full success** | When all items in a batch succeed | `ListAddAsync`, `ListRemoveAsync` (when count matches) |
+| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, `IncrementAsync` (without expiration), partial `ListAddAsync`/`ListRemoveAsync` |
 | **Remove on failure** | When the operation fails (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
-| **Skip local caching** | When per-item expiration can't be tracked locally | `GetListAsync` |
 
 **Set on success** - Used when the operation's result is deterministic:
 
@@ -149,15 +149,35 @@ Different operations use different strategies to keep L1 in sync with L2:
 // After successful distributed write, we know the exact value
 await distributedCache.SetAsync(key, value);
 await localCache.SetAsync(key, value);  // Same value, guaranteed consistent
+
+// IncrementAsync returns the new value, so we can cache it (when expiration is specified)
+long newValue = await distributedCache.IncrementAsync(key, amount, TimeSpan.FromMinutes(5));
+await localCache.SetAsync(key, newValue, TimeSpan.FromMinutes(5));  // Cache the authoritative value
 ```
 
-**Remove to invalidate** - Used for conditional operations where the final value depends on distributed state:
+**Set on full success** - Used for batch operations when all items succeed:
 
 ```csharp
-// IncrementAsync: expiration behavior (preserve vs set) depends on distributed state
-// SetIfHigherAsync: final value depends on current distributed value
-await localCache.RemoveAsync(key);  // Force re-fetch on next read
-await distributedCache.IncrementAsync(key, amount);
+// ListAddAsync: if all items were added, update local cache
+long added = await distributedCache.ListAddAsync(key, items, expiresIn);
+if (added == items.Length)
+    await localCache.ListAddAsync(key, items, expiresIn);  // Full success
+else
+    await localCache.RemoveAsync(key);  // Partial success - force re-fetch
+```
+
+**Remove to invalidate** - Used for conditional operations where we don't know the actual value:
+
+```csharp
+// SetIfHigherAsync: even when difference == 0, we don't know the actual current value
+// We only know our value wasn't higher, not what the distributed cache contains
+double difference = await distributedCache.SetIfHigherAsync(key, value, expiresIn);
+await localCache.RemoveAsync(key);  // Always remove - we don't know the actual value
+
+// IncrementAsync without expiration: preserves existing TTL in distributed cache
+// We can't replicate TTL preservation locally, so remove to force re-fetch
+long newValue = await distributedCache.IncrementAsync(key, amount);  // null expiration
+await localCache.RemoveAsync(key);  // Force re-fetch to get correct TTL
 ```
 
 **Remove on failure** - Ensures local cache doesn't contain stale data when distributed operation fails:
@@ -167,14 +187,6 @@ await distributedCache.IncrementAsync(key, amount);
 bool replaced = await distributedCache.ReplaceAsync(key, value, expiresIn);
 if (!replaced)
     await localCache.RemoveAsync(key);
-```
-
-**Skip local caching** - Lists have per-item expiration that can't be tracked in L1:
-
-```csharp
-// GetListAsync always fetches from distributed cache
-// because individual list items may have different expiration times
-return await distributedCache.GetListAsync<T>(key);
 ```
 
 This approach ensures consistency even when:
