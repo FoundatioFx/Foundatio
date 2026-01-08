@@ -88,10 +88,8 @@ var queue = new RedisQueue<WorkItem>(options =>
     // Work item timeout
     options.WorkItemTimeout = TimeSpan.FromMinutes(5);
 
-    // How often to check for dead items
-    options.DeadLetterCheckInterval = TimeSpan.FromMinutes(1);
-
-    // Maximum items per dead letter check
+    // Dead letter settings
+    options.DeadLetterTimeToLive = TimeSpan.FromDays(1);
     options.DeadLetterMaxItems = 100;
 
     // Retry settings

@@ -243,7 +243,7 @@ var queue = new RedisQueue<WorkItem>(options =>
     options.RetryDelay = TimeSpan.FromSeconds(30);
 
     // Dead letter settings
-    options.DeadLetterCheckInterval = TimeSpan.FromMinutes(1);
+    options.DeadLetterTimeToLive = TimeSpan.FromDays(1);
     options.DeadLetterMaxItems = 100;
 
     // Run maintenance (cleanup dead letters)
