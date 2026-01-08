@@ -132,6 +132,16 @@ This ensures that:
 - L1 never contains data that doesn't exist in L2
 - Failed distributed writes don't leave stale data in local cache
 
+::: info TTL Skew Between L1 and L2
+When setting expiration times, there is a small timing skew between L1 and L2:
+
+1. L2 (distributed cache) sets TTL at time T
+2. Network latency and processing occur
+3. L1 (local cache) sets TTL at time T + delta
+
+This means L1 may expire slightly **after** L2, potentially serving stale data for a brief window (typically milliseconds). For most use cases, this is negligible. If sub-second TTL accuracy is critical, consider using shorter L1 TTLs via `InMemoryCacheClientOptions`.
+:::
+
 ### Local Cache Synchronization Strategies
 
 Different operations use different strategies to keep L1 in sync with L2:
@@ -179,6 +189,16 @@ await localCache.RemoveAsync(key);  // Always remove - we don't know the actual 
 long newValue = await distributedCache.IncrementAsync(key, amount);  // null expiration
 await localCache.RemoveAsync(key);  // Force re-fetch to get correct TTL
 ```
+
+::: info IncrementAsync with null expiration
+When `IncrementAsync` is called with `expiresIn = null`, the distributed cache (L2) preserves any existing TTL on the key (this is documented behavior - see [Caching Guide](/guide/caching#ttl-behavior-by-method)). However, the hybrid cache removes the key from local cache (L1) to force a re-fetch. This ensures consistency because:
+
+1. L1 cannot replicate TTL preservation without an extra network call to fetch the TTL
+2. Using `SetAsync(null)` would make L1 permanent while L2 has a TTL, risking stale data after L2 expires
+3. The re-fetch on next read gets both the correct value AND the correct remaining TTL from L2
+
+If you want to avoid the re-fetch overhead, pass an explicit expiration value to `IncrementAsync`.
+:::
 
 **Remove on failure** - Ensures local cache doesn't contain stale data when distributed operation fails:
 
