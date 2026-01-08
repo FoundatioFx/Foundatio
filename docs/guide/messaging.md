@@ -4,6 +4,8 @@ Messaging allows you to publish and subscribe to messages flowing through your a
 
 ## The IMessageBus Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/IMessageBus.cs)
+
 ```csharp
 public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable
 {
@@ -29,6 +31,8 @@ public interface IMessageSubscriber
 
 An in-memory message bus for development and testing:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/InMemoryMessageBus.cs)
+
 ```csharp
 using Foundatio.Messaging;
 
@@ -48,6 +52,8 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 
 Distributed messaging using Redis pub/sub (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
+
 ```csharp
 // dotnet add package Foundatio.Redis
 
@@ -61,6 +67,8 @@ var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
 ### RabbitMQMessageBus
 
 Messaging using RabbitMQ (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
@@ -76,6 +84,8 @@ var messageBus = new RabbitMQMessageBus(o => {
 
 Messaging using Apache Kafka (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.Kafka/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs)
+
 ```csharp
 // dotnet add package Foundatio.Kafka
 
@@ -89,6 +99,8 @@ var messageBus = new KafkaMessageBus(o => {
 ### AzureServiceBusMessageBus
 
 Messaging using Azure Service Bus (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureServiceBus
