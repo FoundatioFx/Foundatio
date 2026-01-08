@@ -45,18 +45,22 @@ await cache.SetAsync("temp", "data", TimeSpan.FromMinutes(5));
 var cache = new InMemoryCacheClient(options =>
 {
     // Maximum items (enables LRU eviction)
-    options.MaxItems(1000);
+    options.MaxItems = 1000;
 
-    // Clone values on get/set (thread safety)
-    options.CloneValues(true);
+    // Clone values on get/set (prevents reference sharing bugs)
+    options.CloneValues = true;
 
     // Logger factory
-    options.LoggerFactory(loggerFactory);
+    options.LoggerFactory = loggerFactory;
 
     // Time provider (useful for testing)
-    options.TimeProvider(TimeProvider.System);
+    options.TimeProvider = TimeProvider.System;
 });
 ```
+
+### Value Cloning
+
+The `CloneValues` option controls whether cached values are cloned on read and write operations to prevent reference sharing bugs. See [Caching Guide - Value Cloning](/guide/caching#clonevalues) for complete documentation including the problem, solution, performance trade-offs, and best practices.
 
 ### Features
 

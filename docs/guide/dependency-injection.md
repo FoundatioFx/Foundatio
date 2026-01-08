@@ -344,7 +344,65 @@ public class OrderServiceTests
 
 ## Best Practices
 
-### 1. Use Interfaces for Dependencies
+### 1. Proper Resource Disposal
+
+Foundatio services implement `IDisposable` and/or `IAsyncDisposable`. The DI container handles disposal for registered services, but you must handle disposal correctly for manually created instances.
+
+```csharp
+// ✅ Good: DI container handles disposal
+builder.Services.AddSingleton<ICacheClient, InMemoryCacheClient>();
+// Container disposes when application shuts down
+
+// ✅ Good: Using statement for short-lived instances
+await using var cache = new InMemoryCacheClient();
+await cache.SetAsync("key", "value");
+// Automatically disposed
+
+// ✅ Good: Manual disposal when needed
+var queue = new InMemoryQueue<WorkItem>();
+try
+{
+    await queue.EnqueueAsync(new WorkItem());
+}
+finally
+{
+    queue.Dispose();  // Or await using for IAsyncDisposable
+}
+
+// ❌ Bad: Not disposing manually created instances
+var cache = new InMemoryCacheClient();
+// ... use cache
+// Never disposed - resources leak!
+```
+
+### 2. Async Disposal with `await using`
+
+For services implementing `IAsyncDisposable`, prefer `await using`:
+
+```csharp
+// Locks implement IAsyncDisposable
+await using var lck = await locker.AcquireAsync("resource");
+if (lck is null)
+    throw new InvalidOperationException("Failed to acquire lock on 'resource'");
+
+await DoWork();
+// Lock automatically released
+
+// Queue entries should be completed/abandoned
+var entry = await queue.DequeueAsync();
+try
+{
+    await ProcessAsync(entry.Value);
+    await entry.CompleteAsync();
+}
+catch
+{
+    await entry.AbandonAsync();
+    throw;
+}
+```
+
+### 3. Use Interfaces for Dependencies
 
 ```csharp
 // ✅ Good: Interface dependency
@@ -365,7 +423,7 @@ public class OrderService
 }
 ```
 
-### 2. Avoid Service Locator Pattern
+### 4. Avoid Service Locator Pattern
 
 ```csharp
 // ✅ Good: Constructor injection
@@ -391,7 +449,7 @@ public class MyService
 }
 ```
 
-### 3. Register as Singletons When Appropriate
+### 5. Register as Singletons When Appropriate
 
 ```csharp
 // Stateless services that maintain connections
@@ -401,7 +459,7 @@ builder.Services.AddSingleton<IMessageBus>(...);
 // Not scoped unless you need tenant isolation
 ```
 
-### 4. Validate Configuration at Startup
+### 6. Validate Configuration at Startup
 
 ```csharp
 builder.Services.AddSingleton<ICacheClient>(sp =>

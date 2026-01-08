@@ -88,8 +88,8 @@ Distributed locking for coordinating access:
 
 ```csharp
 ILockProvider locker = new CacheLockProvider(cache, messageBus);
-await using var @lock = await locker.AcquireAsync("my-resource");
-if (@lock != null)
+await using var lck = await locker.AcquireAsync("my-resource");
+if (lck != null)
 {
     // Exclusive access to resource
 }

@@ -45,7 +45,7 @@ npm run docs:preview
 
 ## Project Structure
 
-```
+```txt
 docs/
 ├── .vitepress/
 │   ├── config.ts          # VitePress configuration
@@ -79,11 +79,13 @@ docs/
 
 1. Create a new `.md` file in the appropriate directory
 2. Add frontmatter with title:
+
    ```yaml
    ---
    title: Your Page Title
    ---
    ```
+
 3. Add the page to the sidebar in `.vitepress/config.ts`
 
 ### Code Blocks
@@ -135,14 +137,19 @@ This documentation site uses:
 - **vitepress-plugin-llms**: Generates LLM-friendly documentation at `/llms.txt`
 - **vitepress-plugin-mermaid**: Enables Mermaid diagrams in markdown
 
-### Mermaid Diagrams
+### Diagrams
+
+The documentation uses diagrams for visual explanations:
 
 ```markdown
-```mermaid
-graph LR
-    A[Client] --> B[Cache]
-    B --> C[Redis]
-```
+​```txt
+┌─────────┐     ┌──────────────┐     ┌──────────────┐
+│ Request │────▶│ Local Cache  │────▶│ Redis Cache  │
+└─────────┘     └──────────────┘     └──────────────┘
+                      │                      │
+                      ▼                      ▼
+                 Cache Hit?            Cache Hit?
+​```
 ```
 
 ## Deployment
@@ -163,6 +170,7 @@ The documentation can be deployed to any static hosting service:
 ### Netlify / Vercel
 
 Connect your repository and configure:
+
 - Build command: `npm run docs:build`
 - Output directory: `.vitepress/dist`
 

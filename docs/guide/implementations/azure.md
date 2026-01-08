@@ -1,6 +1,6 @@
-# Azure Implementation
+# Foundatio.AzureStorage / Foundatio.AzureServiceBus
 
-Foundatio provides Azure implementations for storage and messaging using Azure Blob Storage and Azure Service Bus.
+Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus)
 
 ## Overview
 
@@ -14,580 +14,125 @@ Foundatio provides Azure implementations for storage and messaging using Azure B
 ## Installation
 
 ```bash
-# Azure Storage (Blobs and Queues)
+# Azure Storage (Blob, Storage Queues)
 dotnet add package Foundatio.AzureStorage
 
-# Azure Service Bus (Queues and Messaging)
+# Azure Service Bus (Queues, Messaging)
 dotnet add package Foundatio.AzureServiceBus
 ```
 
-## Azure Blob Storage
+## AzureFileStorage
 
-Store files in Azure Blob Storage with full support for containers, virtual directories, and metadata.
-
-### Basic Usage
+Azure Blob Storage file storage.
 
 ```csharp
 using Foundatio.Storage;
 
-var storage = new AzureFileStorage(options =>
+var storage = new AzureFileStorage(o =>
 {
-    options.ConnectionString =
-        "DefaultEndpointsProtocol=https;AccountName=...";
-    options.ContainerName = "files";
+    o.ConnectionString = connectionString;
+    o.ContainerName = "files";
 });
 
-// Save a file
 await storage.SaveFileAsync("documents/report.pdf", pdfStream);
-
-// Read a file
-var stream = await storage.GetFileStreamAsync("documents/report.pdf");
-
-// Get file contents as string
-var content = await storage.GetFileContentsAsync("config/settings.json");
-```
-
-### Configuration Options
-
-```csharp
-var storage = new AzureFileStorage(options =>
-{
-    // Connection string
-    options.ConnectionString = connectionString;
-
-    // Container name
-    options.ContainerName = "myfiles";
-
-    // Create container if not exists
-    options.ShouldCreateContainer = true;
-
-    // Logger
-    options.LoggerFactory = loggerFactory;
-
-    // Serializer for metadata
-    options.Serializer = serializer;
-});
-```
-
-### Using Managed Identity
-
-```csharp
-using Azure.Identity;
-
-var storage = new AzureFileStorage(options =>
-{
-    options.BlobServiceClient = new BlobServiceClient(
-        new Uri("https://mystorageaccount.blob.core.windows.net"),
-        new DefaultAzureCredential()
-    );
-    options.ContainerName = "files";
-});
-```
-
-### File Operations
-
-```csharp
-// List files
-var files = await storage.GetFileListAsync("documents/");
-await foreach (var file in files)
-{
-    Console.WriteLine($"{file.Path} - {file.Size} bytes");
-}
-
-// Check existence
-if (await storage.ExistsAsync("documents/report.pdf"))
-{
-    // File exists
-}
-
-// Get file info
-var info = await storage.GetFileInfoAsync("documents/report.pdf");
-Console.WriteLine($"Modified: {info?.Modified}");
-
-// Copy files
-await storage.CopyFileAsync("source.txt", "backup/source.txt");
-
-// Delete files
-await storage.DeleteFileAsync("old-file.txt");
-await storage.DeleteFilesAsync("temp/"); // Delete folder
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IFileStorage>(sp =>
-    new AzureFileStorage(options =>
-    {
-        options.ConnectionString =
-            configuration.GetConnectionString("AzureStorage");
-        options.ContainerName = "files";
-        options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    }));
-```
-
-## Azure Storage Queue
-
-Use Azure Storage Queues for simple, reliable message queuing.
-
-### Basic Usage
-
-```csharp
-using Foundatio.Queues;
-
-var queue = new AzureStorageQueue<WorkItem>(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Name = "work-items";
-});
-
-// Enqueue
-await queue.EnqueueAsync(new WorkItem { Id = 1, Data = "Process this" });
-
-// Dequeue
-var entry = await queue.DequeueAsync();
-if (entry != null)
-{
-    await ProcessAsync(entry.Value);
-    await entry.CompleteAsync();
-}
-```
-
-### Configuration Options
-
-```csharp
-var queue = new AzureStorageQueue<WorkItem>(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Name = "work-items";
-
-    // Visibility timeout
-    options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-
-    // Retry settings
-    options.Retries = 3;
-    options.RetryDelay = TimeSpan.FromSeconds(30);
-
-    // Dequeue batch size
-    options.DequeueCount = 1;
-
-    options.LoggerFactory = loggerFactory;
-});
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new AzureStorageQueue<WorkItem>(options =>
-    {
-        options.ConnectionString =
-            configuration.GetConnectionString("AzureStorage");
-        options.Name = "work-items";
-        options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    }));
-```
-
-## Azure Service Bus Queue
-
-Use Azure Service Bus for enterprise-grade messaging with advanced features.
-
-### Basic Usage
-
-```csharp
-using Foundatio.Queues;
-
-var queue = new AzureServiceBusQueue<WorkItem>(options =>
-{
-    options.ConnectionString = serviceBusConnectionString;
-    options.Name = "work-items";
-});
-
-// Enqueue
-await queue.EnqueueAsync(new WorkItem { Id = 1 });
-
-// Process messages
-await queue.StartWorkingAsync(async (entry, token) =>
-{
-    await ProcessWorkItemAsync(entry.Value);
-});
-```
-
-### Configuration Options
-
-```csharp
-var queue = new AzureServiceBusQueue<WorkItem>(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Name = "work-items";
-
-    // Processing options
-    options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-    options.Retries = 3;
-    options.AutoCreateQueue = true;
-
-    // Prefetch for better performance
-    options.PrefetchCount = 10;
-
-    options.LoggerFactory = loggerFactory;
-});
-```
-
-### Advanced Features
-
-```csharp
-// Scheduled messages
-await queue.EnqueueAsync(new WorkItem { Id = 1 }, new QueueEntryOptions
-{
-    DeliveryDelay = TimeSpan.FromHours(1)
-});
-
-// Sessions (ordered processing)
-var queue = new AzureServiceBusQueue<OrderItem>(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Name = "orders";
-    options.RequiresSession = true;
-});
-
-// Enqueue with session
-await queue.EnqueueAsync(item, new QueueEntryOptions
-{
-    Properties = new Dictionary<string, string>
-    {
-        ["SessionId"] = orderId
-    }
-});
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new AzureServiceBusQueue<WorkItem>(options =>
-    {
-        options.ConnectionString =
-            configuration.GetConnectionString("ServiceBus");
-        options.Name = "work-items";
-        options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    }));
-```
-
-## Azure Service Bus Message Bus
-
-Use Azure Service Bus Topics for pub/sub messaging.
-
-### Basic Usage
-
-```csharp
-using Foundatio.Messaging;
-
-var messageBus = new AzureServiceBusMessageBus(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Topic = "events";
-});
-
-// Subscribe
-await messageBus.SubscribeAsync<OrderCreatedEvent>(async message =>
-{
-    await HandleOrderCreatedAsync(message);
-});
-
-// Publish
-await messageBus.PublishAsync(new OrderCreatedEvent { OrderId = "123" });
-```
-
-### Configuration Options
-
-```csharp
-var messageBus = new AzureServiceBusMessageBus(options =>
-{
-    options.ConnectionString = connectionString;
-    options.Topic = "events";
-
-    // Subscription name (unique per consumer)
-    options.SubscriptionName = "order-processor";
-
-    // Auto-create topic/subscription
-    options.AutoCreateTopic = true;
-
-    // Message prefetch
-    options.PrefetchCount = 10;
-
-    options.LoggerFactory = loggerFactory;
-});
-```
-
-### Multiple Subscribers
-
-```csharp
-// Each service gets its own subscription
-// All subscribers receive all messages
-
-// Order Service
-var orderBus = new AzureServiceBusMessageBus(options =>
-{
-    options.Topic = "events";
-    options.SubscriptionName = "order-service";
-});
-
-// Notification Service
-var notificationBus = new AzureServiceBusMessageBus(options =>
-{
-    options.Topic = "events";
-    options.SubscriptionName = "notification-service";
-});
-
-// Both receive OrderCreatedEvent
-await messageBus.PublishAsync(new OrderCreatedEvent());
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IMessageBus>(sp =>
-    new AzureServiceBusMessageBus(options =>
-    {
-        options.ConnectionString =
-            configuration.GetConnectionString("ServiceBus");
-        options.Topic = "events";
-        options.SubscriptionName = configuration["ServiceBus:SubscriptionName"];
-        options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    }));
-
-services.AddSingleton<IMessagePublisher>(sp =>
-    sp.GetRequiredService<IMessageBus>());
-services.AddSingleton<IMessageSubscriber>(sp =>
-    sp.GetRequiredService<IMessageBus>());
-```
-
-## Complete Azure Setup
-
-### Combined Services
-
-```csharp
-public static IServiceCollection AddFoundatioAzure(
-    this IServiceCollection services,
-    IConfiguration configuration)
-{
-    var storageConnection = configuration.GetConnectionString("AzureStorage");
-    var serviceBusConnection = configuration.GetConnectionString("ServiceBus");
-
-    // File Storage
-    services.AddSingleton<IFileStorage>(sp =>
-        new AzureFileStorage(options =>
-        {
-            options.ConnectionString = storageConnection;
-            options.ContainerName = "files";
-            options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-        }));
-
-    // Message Bus
-    services.AddSingleton<IMessageBus>(sp =>
-        new AzureServiceBusMessageBus(options =>
-        {
-            options.ConnectionString = serviceBusConnection;
-            options.Topic = "events";
-            options.SubscriptionName =
-                configuration["Azure:ServiceBus:SubscriptionName"];
-            options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-        }));
-
-    services.AddSingleton<IMessagePublisher>(sp =>
-        sp.GetRequiredService<IMessageBus>());
-    services.AddSingleton<IMessageSubscriber>(sp =>
-        sp.GetRequiredService<IMessageBus>());
-
-    return services;
-}
-
-// Add Service Bus queue
-public static IServiceCollection AddAzureServiceBusQueue<T>(
-    this IServiceCollection services,
-    string name,
-    IConfiguration configuration) where T : class
-{
-    services.AddSingleton<IQueue<T>>(sp =>
-        new AzureServiceBusQueue<T>(options =>
-        {
-            options.ConnectionString =
-                configuration.GetConnectionString("ServiceBus");
-            options.Name = name;
-            options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-        }));
-
-    return services;
-}
 ```
 
 ### Configuration
 
-```json
-{
-  "ConnectionStrings": {
-    "AzureStorage": "DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net",
-    "ServiceBus": "Endpoint=sb://....servicebus.windows.net/;SharedAccessKeyName=...;SharedAccessKey=..."
-  },
-  "Azure": {
-    "ServiceBus": {
-      "SubscriptionName": "my-service"
-    }
-  }
-}
-```
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `ConnectionString` | `string` | ✅ | | Azure Storage connection string |
+| `ContainerName` | `string` | | `"storage"` | Blob container name |
 
-## Managed Identity
+For additional options, see [AzureFileStorageOptions source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorageOptions.cs).
 
-### Azure Storage with Managed Identity
+## AzureStorageQueue
+
+Azure Storage Queue implementation.
 
 ```csharp
-using Azure.Identity;
+using Foundatio.Queues;
 
-var storage = new AzureFileStorage(options =>
+var queue = new AzureStorageQueue<WorkItem>(o =>
 {
-    options.BlobServiceClient = new BlobServiceClient(
-        new Uri("https://mystorageaccount.blob.core.windows.net"),
-        new DefaultAzureCredential()
-    );
-    options.ContainerName = "files";
+    o.ConnectionString = connectionString;
+    o.Name = "work-items";
 });
+
+await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 ```
 
-### Azure Service Bus with Managed Identity
+### Configuration
+
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `ConnectionString` | `string` | ✅ | | Azure Storage connection string |
+| `DequeueInterval` | `TimeSpan` | | 2s | Polling interval |
+
+For additional options, see [AzureStorageQueueOptions source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueueOptions.cs).
+
+## AzureServiceBusQueue
+
+Azure Service Bus queue with advanced features.
 
 ```csharp
-using Azure.Identity;
+using Foundatio.Queues;
 
-var messageBus = new AzureServiceBusMessageBus(options =>
+var queue = new AzureServiceBusQueue<WorkItem>(o =>
 {
-    options.ServiceBusClient = new ServiceBusClient(
-        "mynamespace.servicebus.windows.net",
-        new DefaultAzureCredential()
-    );
-    options.Topic = "events";
+    o.ConnectionString = connectionString;
+    o.Name = "work-items";
 });
+
+await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 ```
 
-## Production Considerations
+### Configuration
 
-### Health Checks
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `ConnectionString` | `string` | ✅ | Service Bus connection string |
+| `RequiresSession` | `bool?` | | Enable sessions for ordered processing |
+| `RequiresDuplicateDetection` | `bool?` | | Enable duplicate detection |
+| `EnableDeadLetteringOnMessageExpiration` | `bool?` | | DLQ on expiration |
+
+For additional options, see [AzureServiceBusQueueOptions source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueueOptions.cs).
+
+## AzureServiceBusMessageBus
+
+Azure Service Bus pub/sub messaging.
 
 ```csharp
-builder.Services.AddHealthChecks()
-    .AddAzureBlobStorage(storageConnection, name: "azure-storage")
-    .AddAzureServiceBusQueue(serviceBusConnection, "work-items",
-        name: "azure-servicebus-queue")
-    .AddAzureServiceBusTopic(serviceBusConnection, "events",
-        name: "azure-servicebus-topic");
-```
+using Foundatio.Messaging;
 
-### Retry Policies
-
-```csharp
-// Azure SDK has built-in retry policies
-// Foundatio integrates with them automatically
-
-var storage = new AzureFileStorage(options =>
+var messageBus = new AzureServiceBusMessageBus(o =>
 {
-    options.BlobServiceClient = new BlobServiceClient(
-        connectionString,
-        new BlobClientOptions
-        {
-            Retry =
-            {
-                MaxRetries = 5,
-                Delay = TimeSpan.FromSeconds(1),
-                MaxDelay = TimeSpan.FromSeconds(30),
-                Mode = RetryMode.Exponential
-            }
-        });
+    o.ConnectionString = connectionString;
+    o.Topic = "events";
+    o.SubscriptionName = "my-service";
 });
-```
 
-### Cost Optimization
-
-```csharp
-// Use cool or archive tier for infrequently accessed files
-var blobClient = containerClient.GetBlobClient("archive/old-data.zip");
-await blobClient.SetAccessTierAsync(AccessTier.Cool);
-
-// Batch operations where possible
-var files = new[] { "file1.txt", "file2.txt", "file3.txt" };
-foreach (var file in files)
+await messageBus.SubscribeAsync<OrderCreated>(async order =>
 {
-    await storage.SaveFileAsync($"batch/{file}", content);
-}
+    Console.WriteLine($"Order created: {order.OrderId}");
+});
+
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
 
-## Azure Storage vs Service Bus
+### Configuration
 
-### When to Use Azure Storage Queue
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `ConnectionString` | `string` | ✅ | Service Bus connection string |
+| `SubscriptionName` | `string` | | Subscription name (unique per consumer) |
+| `PrefetchCount` | `int?` | | Message prefetch count |
 
-- Simple message queuing
-- High volume, low latency not critical
-- Cost-sensitive scenarios
-- No advanced features needed
-
-### When to Use Azure Service Bus
-
-- Enterprise messaging requirements
-- Ordered message processing (sessions)
-- Scheduled messages
-- Dead letter handling
-- Topics and subscriptions (pub/sub)
-- Transactions
-
-## Best Practices
-
-### 1. Use Managed Identity
-
-```csharp
-// ✅ Managed Identity (no secrets in code)
-new DefaultAzureCredential()
-
-// ❌ Connection strings with secrets
-"AccountKey=..."
-```
-
-### 2. Container Naming
-
-```csharp
-// ✅ Lowercase, descriptive names
-options.ContainerName = "user-uploads";
-
-// ❌ Invalid characters
-options.ContainerName = "User_Uploads"; // Invalid
-```
-
-### 3. Handle Transient Failures
-
-```csharp
-// Azure SDK handles retries automatically
-// Add application-level resilience for business logic
-var policy = new ResiliencePolicy
-{
-    MaxAttempts = 3,
-    GetDelay = ResiliencePolicy.ExponentialDelay(TimeSpan.FromSeconds(1))
-};
-
-await policy.ExecuteAsync(async ct =>
-{
-    await storage.SaveFileAsync("file.txt", content);
-}, cancellationToken);
-```
-
-### 4. Monitor and Alert
-
-```csharp
-// Use Application Insights
-builder.Services.AddApplicationInsightsTelemetry();
-
-// Log operations
-logger.LogInformation("Saved file {Path} to Azure Storage", path);
-```
+For additional options, see [AzureServiceBusMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBusOptions.cs).
 
 ## Next Steps
 
-- [AWS Implementation](./aws) - S3 and SQS integration
-- [Redis Implementation](./redis) - Distributed caching
-- [In-Memory Implementation](./in-memory) - Local development
+- [File Storage Guide](/guide/storage) - Usage patterns
+- [Queues Guide](/guide/queues) - Queue processing patterns
+- [Messaging Guide](/guide/messaging) - Pub/sub patterns
+- [Serialization](/guide/serialization) - Configure serialization

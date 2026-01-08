@@ -112,17 +112,42 @@ Combines Redis with a local in-memory cache for optimal performance.
 
 ### How It Works
 
+**Read Flow:**
 ```txt
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Request   │───▶│ Local Cache │───▶│ Redis Cache │
-└─────────────┘    └─────────────┘    └─────────────┘
-                         │                   │
-                         ▼                   ▼
-                   Cache Hit?          Cache Hit?
-                         │                   │
-                    Yes: Return         Yes: Return
-                                        & Store Local
+┌─────────┐     ┌──────────────┐     ┌──────────────┐
+│ Request │────▶│ Local Cache  │────▶│ Redis Cache  │
+└─────────┘     └──────────────┘     └──────────────┘
+                      │                      │
+                      ▼                      ▼
+                 Cache Hit?            Cache Hit?
+                      │                      │
+                  Yes: Return          Yes: Store in Local
+                                       Then: Return
 ```
+
+**Write Flow:**
+```txt
+┌──────────────────┐
+│ Write Operation  │
+└────────┬─────────┘
+         │
+         ├────────────────────────┬──────────────────────┬─────────────────────┐
+         ▼                        ▼                      ▼                     ▼
+  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐    ┌──────────────────┐
+  │ Local Cache  │      │ Redis Cache  │      │ Message Bus  │───▶│ Other Instances: │
+  │  (Update)    │      │  (Update)    │      │ (Publish)    │    │ Clear SPECIFIC   │
+  └──────────────┘      └──────────────┘      └──────────────┘    │ Keys Only        │
+                                                                  └──────────────────┘
+```
+
+- On **read**: Check local first, then Redis. Store in local if found in Redis.
+- On **write**: Update local AND Redis, then publish invalidation so other instances clear **only the affected keys** from their local cache.
+- **Prefix removal**: `RemoveByPrefixAsync("user:")` clears all `user:*` keys on all instances.
+- **Full flush**: `RemoveAllAsync()` with no keys clears entire local cache on all instances.
+
+::: warning Shared Message Bus Topic
+By default, all instances share the same Redis pub/sub topic for invalidation. In high-write scenarios, consider using separate topics per feature area. See the [Caching Guide](/guide/caching#hybrid-cache-invalidation-traffic) for details.
+:::
 
 ### Basic Usage
 
@@ -217,7 +242,7 @@ var queue = new RedisQueue<WorkItem>(options =>
 var stats = await queue.GetQueueStatsAsync();
 Console.WriteLine($"Queued: {stats.Queued}");
 Console.WriteLine($"Working: {stats.Working}");
-Console.WriteLine($"Dead Letter: {stats.Deadlettered}");
+Console.WriteLine($"Dead Letter: {stats.Deadletter}");
 
 // Process continuously
 await queue.StartWorkingAsync(async (entry, token) =>
@@ -533,3 +558,7 @@ await cache.SetAsync("session", data,
 - [Azure Implementation](./azure) - Azure Storage and Service Bus
 - [AWS Implementation](./aws) - S3 and SQS
 - [In-Memory Implementation](./in-memory) - Local development
+
+## GitHub Repository
+
+- [Foundatio.Redis](https://github.com/FoundatioFx/Foundatio.Redis) - View source code and contribute

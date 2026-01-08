@@ -14,9 +14,6 @@ export default defineConfig({
       })
     ]
   },
-  mermaid: {
-    // Mermaid configuration
-  },
   head: [
     ['link', { rel: 'icon', href: 'https://raw.githubusercontent.com/FoundatioFx/Foundatio/main/media/foundatio-icon.png', type: 'image/png' }],
     ['meta', { name: 'theme-color', content: '#3c8772' }]
@@ -56,24 +53,35 @@ export default defineConfig({
         {
           text: 'Advanced Topics',
           items: [
-            { text: 'Resilience', link: '/guide/resilience' },
+            { text: 'Configuration', link: '/guide/configuration' },
             { text: 'Dependency Injection', link: '/guide/dependency-injection' },
-            { text: 'Configuration', link: '/guide/configuration' }
+            { text: 'Resilience', link: '/guide/resilience' },
+            { text: 'Serialization', link: '/guide/serialization' }
           ]
         },
         {
           text: 'Implementations',
           items: [
-            { text: 'In-Memory', link: '/guide/implementations/in-memory' },
-            { text: 'Redis', link: '/guide/implementations/redis' },
+            { text: 'Aliyun', link: '/guide/implementations/aliyun' },
+            { text: 'AWS', link: '/guide/implementations/aws' },
             { text: 'Azure', link: '/guide/implementations/azure' },
-            { text: 'AWS', link: '/guide/implementations/aws' }
+            { text: 'Hybrid Cache', link: '/guide/implementations/hybrid-cache' },
+            { text: 'In-Memory', link: '/guide/implementations/in-memory' },
+            { text: 'Kafka', link: '/guide/implementations/kafka' },
+            { text: 'Minio', link: '/guide/implementations/minio' },
+            { text: 'RabbitMQ', link: '/guide/implementations/rabbitmq' },
+            { text: 'Redis', link: '/guide/implementations/redis' },
+            { text: 'SshNet', link: '/guide/implementations/sshnet' }
           ]
         },
         {
           text: 'Related Projects',
           items: [
-            { text: 'Foundatio.Mediator', link: 'https://mediator.foundatio.dev' }
+            { text: 'Foundatio.CommandQuery', link: 'https://github.com/FoundatioFx/Foundatio.CommandQuery' },
+            { text: 'Foundatio.Lucene', link: 'https://lucene.foundatio.dev' },
+            { text: 'Foundatio.Mediator', link: 'https://mediator.foundatio.dev' },
+            { text: 'Foundatio.Parsers', link: 'https://github.com/FoundatioFx/Foundatio.Parsers' },
+            { text: 'Foundatio.Repositories', link: 'https://github.com/FoundatioFx/Foundatio.Repositories' }
           ]
         }
       ]

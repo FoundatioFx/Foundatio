@@ -95,8 +95,8 @@ public class OrderService
     public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
     {
         // Use distributed lock to prevent duplicate orders
-        await using var @lock = await _locker.AcquireAsync($"order:{request.CustomerId}");
-        if (@lock == null)
+        await using var lck = await _locker.AcquireAsync($"order:{request.CustomerId}");
+        if (lck == null)
             throw new InvalidOperationException("Could not acquire lock");
 
         // Create order
@@ -207,8 +207,8 @@ while (true)
     if (entry == null) break;
 
     // Acquire lock for this item
-    await using var @lock = await locker.AcquireAsync($"work:{entry.Value.Id}");
-    if (@lock != null)
+    await using var lck = await locker.AcquireAsync($"work:{entry.Value.Id}");
+    if (lck != null)
     {
         // Cache progress
         await cache.SetAsync($"progress:{entry.Value.Id}", "processing");

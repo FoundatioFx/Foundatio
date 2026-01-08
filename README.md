@@ -54,7 +54,7 @@ ILockProvider locker = new CacheLockProvider(cache, messageBus);
 await using var handle = await locker.AcquireAsync("resource-key");
 ```
 
-## 📦 Implementations
+## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
 |----------|---------|--------|-----------|---------|-------|
@@ -73,12 +73,21 @@ await using var handle = await locker.AcquireAsync("resource-key");
 
 **👉 [Complete Documentation](https://foundatio.dev)**
 
-Key topics:
+### Core Features
 
 - [Getting Started](https://foundatio.dev/guide/getting-started) - Installation and setup
-- [Caching](https://foundatio.dev/guide/caching) - Cache implementations and patterns
-- [Queues](https://foundatio.dev/guide/queues) - Message queue processing
-- [Jobs](https://foundatio.dev/guide/jobs) - Background job execution
+- [Caching](https://foundatio.dev/guide/caching) - In-memory, Redis, and hybrid caching with invalidation
+- [Queues](https://foundatio.dev/guide/queues) - FIFO message delivery with lock renewal and retry policies
+- [Locks](https://foundatio.dev/guide/locks) - Distributed locking with null handling patterns
+- [Messaging](https://foundatio.dev/guide/messaging) - Pub/sub with size limits and notification patterns
+- [File Storage](https://foundatio.dev/guide/storage) - Unified file API across providers
+- [Jobs](https://foundatio.dev/guide/jobs) - Background job processing and hosted service integration
+
+### Advanced Topics
+
+- [Resilience](https://foundatio.dev/guide/resilience) - Retry policies, circuit breakers, and timeouts
+- [Serialization](https://foundatio.dev/guide/serialization) - Serializer configuration and performance
+- [Dependency Injection](https://foundatio.dev/guide/dependency-injection) - DI setup and patterns
 - [Configuration](https://foundatio.dev/guide/configuration) - Options and settings
 
 ## 📦 CI Packages (Feedz)

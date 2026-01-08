@@ -228,19 +228,20 @@ var result = await cache.GetAsync<string>("key");
 await cache.SetAsync("session", sessionData, TimeSpan.FromMinutes(30));
 
 // With item limits (LRU eviction)
-var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
+var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 ```
 
 ### HybridCacheClient
 
-Combines local in-memory caching with a distributed cache for maximum performance:
+Combines local in-memory caching with a distributed cache for maximum performance. Ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
 
 ```csharp
 using Foundatio.Caching;
 
 var hybridCache = new HybridCacheClient(
-    distributedCache: redisCacheClient,
-    messageBus: redisMessageBus
+    distributedCacheClient: redisCacheClient,
+    messageBus: redisMessageBus,
+    localCacheOptions: new InMemoryCacheClientOptions { MaxItems = 1000 }
 );
 
 // First access: fetches from Redis, caches locally
@@ -250,18 +251,16 @@ var user = await hybridCache.GetAsync<User>("user:123");
 var sameUser = await hybridCache.GetAsync<User>("user:123");
 ```
 
-**How it works:**
+**Key features:**
 
-1. Reads check local cache first
-2. On miss, reads from distributed cache and caches locally
-3. Writes go to distributed cache and publish invalidation message
-4. All instances receive invalidation and clear local cache
+- **Read-through**: Local cache miss falls back to distributed cache
+- **Write-through**: Writes go to both local and distributed caches
+- **Key-specific invalidation**: Only affected keys are cleared on other instances
+- **Message bus coordination**: Automatic invalidation across all hybrid cache instances
 
-**Benefits:**
-
-- **Huge performance gains**: Skip serialization and network calls
-- **Consistency**: Message bus keeps all instances in sync
-- **Automatic**: No manual cache invalidation logic
+::: tip Full Documentation
+See [Hybrid Cache Implementation](/guide/implementations/hybrid-cache) for detailed configuration, performance considerations, and best practices.
+:::
 
 ### ScopedCacheClient
 
@@ -314,6 +313,206 @@ var hybridCache = new RedisHybridCacheClient(o => {
     o.LocalCacheMaxItems = 1000;
 });
 ```
+
+## Cache Interface Hierarchy
+
+Foundatio provides several cache interfaces for different use cases:
+
+```
+ICacheClient (base interface)
+├── IMemoryCacheClient (in-memory specific)
+├── IHybridCacheClient (local + distributed)
+└── IHybridAwareCacheClient (distributed with invalidation)
+```
+
+### IHybridCacheClient
+
+Implemented by `HybridCacheClient`. Combines a local in-memory cache with a distributed cache. When you write data, it:
+
+1. Writes to the distributed cache
+2. Updates the local cache
+3. Publishes an invalidation message via `IMessageBus`
+
+When you read data:
+
+1. Checks local cache first (fast, no network)
+2. Falls back to distributed cache on miss
+3. Populates local cache with result
+
+### IHybridAwareCacheClient
+
+Implemented by `HybridAwareCacheClient`. Wraps a distributed cache and publishes invalidation messages **without maintaining a local cache**. Use this when:
+
+- You have a service that only writes to cache (e.g., background processor)
+- You want to notify `HybridCacheClient` instances to invalidate their local caches
+- You don't need local caching on this particular service
+
+```csharp
+// Service that writes data but doesn't need local caching
+var cacheWriter = new HybridAwareCacheClient(
+    distributedCacheClient: redisCacheClient,
+    messagePublisher: redisMessageBus
+);
+
+// Write goes to Redis AND notifies all HybridCacheClient instances
+await cacheWriter.SetAsync("user:123", user);
+
+// Other services using HybridCacheClient will clear their local "user:123" cache
+```
+
+### IMemoryCacheClient
+
+A marker interface that identifies in-memory cache implementations (e.g., `InMemoryCacheClient`). This interface is used for type checking and dependency injection scenarios where you need to distinguish between in-memory and distributed cache implementations.
+
+```csharp
+// Register specific implementation type
+services.AddSingleton<IMemoryCacheClient, InMemoryCacheClient>();
+
+// Inject when you specifically need in-memory behavior
+public class MyService(IMemoryCacheClient localCache) { }
+```
+
+## Performance Considerations
+
+### Serialization and Cloning Overhead
+
+Every cache operation has performance overhead from serialization, deserialization, and optional value cloning:
+
+**Distributed Cache (Redis, Azure, etc.):**
+- **Write**: Serialize object to bytes for storage
+- **Read**: Deserialize bytes back to object
+
+**In-Memory Cache:**
+- **With `CloneValues = true`** (default: `false`): Serialize and deserialize on every get/set to create independent copies
+- **With `CloneValues = false`**: Direct reference storage (no overhead, but risk of mutation)
+
+### Value Cloning {#clonevalues}
+
+The `CloneValues` option controls whether cached values are cloned on read and write operations. This is critical for preventing reference sharing bugs.
+
+**Default: `false`** (no cloning, direct reference storage)
+
+#### The Problem: Reference Sharing
+
+Without cloning, the cache stores direct references to objects. If code mutates a cached object, **all future reads see the mutated value**:
+
+```csharp
+var cache = new InMemoryCacheClient(); // CloneValues = false (default)
+
+var user = new User { Name = "Alice", Balance = 100.0 };
+await cache.SetAsync("user:1", user);
+
+// Get from cache and accidentally mutate
+var cached = (await cache.GetAsync<User>("user:1")).Value;
+cached.Balance = 0.0;  // ⚠️ Mutates the cached object!
+
+// Later reads return the MUTATED value
+var again = (await cache.GetAsync<User>("user:1")).Value;
+Console.WriteLine(again.Balance); // 0.0 (not 100.0!)
+```
+
+This is especially dangerous when:
+- Multiple code paths access the same cached data
+- Objects are passed through layers (controllers → services → repositories)
+- Async code shares cached instances across concurrent requests
+
+#### The Solution: Enable Cloning
+
+```csharp
+var cache = new InMemoryCacheClient(o => o.CloneValues = true);
+
+var user = new User { Name = "Alice", Balance = 100.0 };
+await cache.SetAsync("user:1", user);
+
+// Mutations are isolated to this copy
+var cached = (await cache.GetAsync<User>("user:1")).Value;
+cached.Balance = 0.0;  // Only affects this instance
+
+// Fresh reads get original value
+var fresh = (await cache.GetAsync<User>("user:1")).Value;
+Console.WriteLine(fresh.Balance); // 100.0 ✓
+```
+
+**How it works:**
+
+When `CloneValues = true`, each `GetAsync` and `SetAsync` serializes and deserializes the value using the configured serializer (default: JSON). This creates independent copies that are isolated from mutation.
+
+#### Performance Trade-offs
+
+| Operation | `CloneValues = false` | `CloneValues = true` |
+|-----------|----------------------|---------------------|
+| `SetAsync` | Store reference (zero overhead) | Serialize → Deserialize (overhead) |
+| `GetAsync` | Return reference (zero overhead) | Serialize → Deserialize (overhead) |
+| Memory | Single instance | Multiple copies |
+
+**Benchmark example (10,000 operations):**
+- Simple objects (< 1KB): ~2-5ms overhead per 10k ops
+- Complex objects (> 10KB): ~50-100ms overhead per 10k ops
+- Primitive types: Negligible difference
+
+#### When to Enable Cloning
+
+✅ **Enable `CloneValues = true` when:**
+- Caching mutable objects (DTOs, entities, view models)
+- Multiple code paths access the same cached data
+- You can't guarantee code won't mutate cached objects
+- Working with shared state across async operations
+- Debugging unexplained cache corruption
+
+❌ **Keep `CloneValues = false` when:**
+- Caching immutable types (strings, primitives, records with `init`-only properties)
+- You have strict control over mutation (internal APIs, single code path)
+- Performance is critical and you can guarantee immutability
+- Using frozen/immutable collections (`ImmutableArray`, `FrozenDictionary`)
+
+#### Best Practices
+
+**Pattern 1: Use immutable types (no cloning needed):**
+
+```csharp
+var cache = new InMemoryCacheClient(); // CloneValues = false
+
+// C# records are immutable by default
+public record UserDto(int Id, string Name, decimal Balance);
+
+await cache.SetAsync("user:1", new UserDto(1, "Alice", 100.0));
+// Safe: Cannot mutate records
+```
+
+**Pattern 2: Clone when mutability is unavoidable:**
+
+```csharp
+var cache = new InMemoryCacheClient(o => o.CloneValues = true);
+
+// Mutable class
+public class UserEntity
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+    public decimal Balance { get; set; }
+}
+
+await cache.SetAsync("user:1", userEntity);
+// Safe: Mutations are isolated
+```
+
+**Pattern 3: Mix both strategies:**
+
+```csharp
+// Separate caches for different needs
+var immutableCache = new InMemoryCacheClient(o => o.CloneValues = false);
+var mutableCache = new InMemoryCacheClient(o => o.CloneValues = true);
+
+// Immutable config
+await immutableCache.SetAsync("config:theme", "dark");
+
+// Mutable user data
+await mutableCache.SetAsync("user:1", userEntity);
+```
+
+### Hybrid Cache Performance
+
+For `HybridCacheClient`-specific performance considerations including message bus traffic, memory pressure, and optimization strategies, see [Hybrid Cache - Performance Considerations](/guide/implementations/hybrid-cache#performance-considerations).
 
 ## Common Patterns
 
@@ -587,3 +786,4 @@ If you're doing many reads of the same data across instances, `HybridCacheClient
 - [Queues](./queues) - Message queuing for background processing
 - [Locks](./locks) - Distributed locking with cache-based implementation
 - [Redis Implementation](./implementations/redis) - Production Redis setup
+- [Serialization](./serialization) - Serializer configuration and performance

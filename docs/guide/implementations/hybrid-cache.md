@@ -1,0 +1,345 @@
+# Hybrid Cache
+
+The `HybridCacheClient` combines a local in-memory cache with a distributed cache for maximum performance. It's ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
+
+**GitHub**: [Foundatio](https://github.com/FoundatioFx/Foundatio) (included in core package)
+
+## Overview
+
+| Feature | Description |
+|---------|-------------|
+| **Local Cache** | Fast in-process memory (no network) |
+| **Distributed Cache** | Shared state across instances (Redis, etc.) |
+| **Invalidation** | Automatic key-specific invalidation via message bus |
+| **Best For** | Read-heavy, low-write workloads |
+
+## Installation
+
+Hybrid cache is included in the core Foundatio package:
+
+```bash
+dotnet add package Foundatio
+```
+
+For Redis-based hybrid cache:
+
+```bash
+dotnet add package Foundatio.Redis
+```
+
+## How It Works
+
+### Read Flow
+
+```txt
+┌─────────┐     ┌──────────────┐     ┌────────────────────┐
+│ Request │────▶│ Local Cache  │────▶│ Distributed Cache  │
+└─────────┘     └──────────────┘     └────────────────────┘
+                      │                        │
+                      ▼                        ▼
+                 Cache Hit?              Cache Hit?
+                      │                        │
+                  Yes: Return            Yes: Store in Local
+                                         Then: Return
+```
+
+1. Check local in-memory cache first (zero network latency)
+2. On miss, check distributed cache (Redis, etc.)
+3. If found in distributed cache, store in local cache for future requests
+4. Return value to caller
+
+### Write Flow
+
+```txt
+┌──────────────────┐
+│ Write Operation  │
+└────────┬─────────┘
+         │
+         ├────────────────────────────┬───────────────────────────┐
+         ▼                            ▼                           ▼
+  ┌──────────────┐          ┌────────────────────┐      ┌──────────────────┐
+  │ Local Cache  │          │ Distributed Cache  │      │  Message Bus     │
+  │  (Update)    │          │    (Update)        │      │ (Invalidation)   │
+  └──────────────┘          └────────────────────┘      └──────────────────┘
+                                                                  │
+                                                                  ▼
+                                                    ┌─────────────────────────┐
+                                                    │   Other Hybrid Cache    │
+                                                    │   Instances: Clear      │
+                                                    │   SPECIFIC Keys Only    │
+                                                    └─────────────────────────┘
+```
+
+1. Write to local cache (current instance has latest value)
+2. Write to distributed cache (shared state)
+3. Publish invalidation message via message bus
+4. **Other instances** receive message and clear **only the affected keys** from their local cache
+5. Current instance ignores its own invalidation messages (filtered by `CacheId`)
+
+### Key-Specific Invalidation
+
+Invalidation is **surgical** - only the affected keys are cleared on other instances, not the entire cache:
+
+| Operation | Invalidation Scope |
+|-----------|-------------------|
+| `SetAsync("user:123", ...)` | Clears `user:123` on other instances |
+| `SetAllAsync(dict)` | Clears all specified keys |
+| `RemoveAsync("user:123")` | Clears `user:123` on other instances |
+| `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
+| `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
+
+## Basic Usage
+
+### With Generic HybridCacheClient
+
+```csharp
+using Foundatio.Caching;
+using Foundatio.Messaging;
+
+// Create dependencies
+var distributedCache = new RedisCacheClient(o => o.ConnectionMultiplexer = redis);
+var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
+
+// Create hybrid cache
+var hybridCache = new HybridCacheClient(
+    distributedCacheClient: distributedCache,
+    messageBus: messageBus,
+    localCacheOptions: new InMemoryCacheClientOptions { MaxItems = 1000 }
+);
+
+// First access: fetches from Redis, caches locally
+var user = await hybridCache.GetAsync<User>("user:123");
+
+// Subsequent access: returns from local cache (no network call)
+var sameUser = await hybridCache.GetAsync<User>("user:123");
+```
+
+### With RedisHybridCacheClient (Convenience)
+
+```csharp
+using Foundatio.Redis.Cache;
+using StackExchange.Redis;
+
+var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
+
+// All-in-one Redis hybrid cache
+var hybridCache = new RedisHybridCacheClient(o =>
+{
+    o.ConnectionMultiplexer = redis;
+    o.LocalCacheMaxItems = 1000;
+});
+```
+
+## Configuration
+
+### Local Cache Options
+
+The local cache is an `InMemoryCacheClient`. Configure via `localCacheOptions`:
+
+```csharp
+var hybridCache = new HybridCacheClient(
+    distributedCacheClient: distributedCache,
+    messageBus: messageBus,
+    localCacheOptions: new InMemoryCacheClientOptions
+    {
+        // Maximum items (LRU eviction when exceeded)
+        MaxItems = 1000,
+
+        // Clone values to prevent reference sharing bugs
+        // See: /guide/implementations/in-memory#clonevalues
+        CloneValues = false,  // Default: false
+
+        // Custom serializer for cloning
+        Serializer = mySerializer,
+
+        // Logger factory
+        LoggerFactory = loggerFactory
+    }
+);
+```
+
+For memory-based eviction and other advanced options, see [In-Memory Implementation](/guide/implementations/in-memory).
+
+### Message Bus Topic
+
+::: warning Shared Topic
+By default, all `HybridCacheClient` instances share the same message bus topic. In high-write scenarios, consider using separate message bus instances with different topics to isolate invalidation traffic by feature area (e.g., separate topics for user cache vs order cache).
+:::
+
+## Monitoring
+
+Access local cache statistics:
+
+```csharp
+// Local cache hits (reads served from local cache)
+Console.WriteLine($"Local cache hits: {hybridCache.LocalCacheHits}");
+
+// Current local cache item count
+Console.WriteLine($"Local cache count: {hybridCache.LocalCache.Count}");
+
+// Number of invalidation messages received from other instances
+Console.WriteLine($"Invalidation calls: {hybridCache.InvalidateCacheCalls}");
+```
+
+## Performance Considerations
+
+### Message Bus Traffic
+
+::: warning Shared Topic Traffic
+`HybridCacheClient` publishes an invalidation message for **every write operation**. In high-write scenarios with a shared topic, this can generate significant traffic across all instances.
+:::
+
+**The problem:**
+
+```csharp
+// Each write publishes an InvalidateCache message to ALL instances
+await hybridCache.SetAsync("key1", value1);  // 1 message to all
+await hybridCache.SetAsync("key2", value2);  // 1 message to all
+await hybridCache.SetAsync("key3", value3);  // 1 message to all
+// 1000 writes = 1000 messages to ALL instances
+```
+
+**Impact:**
+
+- With 10 instances and 1000 writes/second = 10,000 messages/second total
+- Every instance processes every invalidation message (even if irrelevant)
+- Can overwhelm Redis pub/sub or other message bus implementations
+
+**Solutions:**
+
+**1. Use separate scoped hybrid cache client/message bus topics per model type** (recommended):
+
+Consider isolating invalidation traffic by using separate message bus instances with different topics for unrelated caching concerns.
+
+**2. Use `HybridAwareCacheClient` for write-heavy services:**
+
+```csharp
+// Background processor that writes lots of data
+// No local cache, just publishes invalidations
+var processor = new HybridAwareCacheClient(redisCache, messageBus);
+
+// Web servers that read data
+// Has local cache, receives invalidations
+var webCache = new HybridCacheClient(redisCache, messageBus);
+```
+
+**3. Batch writes when possible:**
+
+```csharp
+// ❌ Individual sets = N messages
+foreach (var user in users)
+    await cache.SetAsync($"user:{user.Id}", user);
+
+// ✅ SetAllAsync = 1 message (with all keys)
+await cache.SetAllAsync(users.ToDictionary(u => $"user:{u.Id}", u => u));
+```
+
+**4. Consider if you need hybrid caching:**
+
+```csharp
+// Write-heavy, read-once data: just use distributed cache
+var cache = new RedisCacheClient(o => o.ConnectionMultiplexer = redis);
+
+// Read-heavy, rarely-written data: hybrid is beneficial
+var hybridCache = new HybridCacheClient(cache, messageBus);
+```
+
+### Local Cache Memory
+
+The local cache can consume significant memory. Always configure limits:
+
+```csharp
+var hybridCache = new HybridCacheClient(
+    distributedCacheClient: distributedCache,
+    messageBus: messageBus,
+    localCacheOptions: new InMemoryCacheClientOptions
+    {
+        MaxItems = 1000  // LRU eviction when exceeded
+    }
+);
+```
+
+For memory-based limits, see [In-Memory - Memory-Based Eviction](/guide/implementations/in-memory#memory-based-eviction).
+
+## Related Interfaces
+
+### IHybridCacheClient
+
+Implemented by `HybridCacheClient`. Marker interface for caches that combine local and distributed storage with automatic invalidation.
+
+### IHybridAwareCacheClient
+
+Implemented by `HybridAwareCacheClient`. Wraps a distributed cache and publishes invalidation messages **without maintaining a local cache**:
+
+```csharp
+// Service that only writes (e.g., background processor)
+var cacheWriter = new HybridAwareCacheClient(
+    distributedCacheClient: redisCacheClient,
+    messagePublisher: redisMessageBus
+);
+
+// Write goes to Redis AND notifies all HybridCacheClient instances
+await cacheWriter.SetAsync("user:123", user);
+// Other services using HybridCacheClient will clear their local "user:123" cache
+```
+
+**Use cases:**
+
+- Background processors that write data but don't need local caching
+- Services that need to notify `HybridCacheClient` instances to invalidate
+- Write-heavy services where local caching would be wasteful
+
+### IMemoryCacheClient
+
+Marker interface for in-memory cache implementations. Used for type checking and DI scenarios:
+
+```csharp
+// Register specific implementation type
+services.AddSingleton<IMemoryCacheClient, InMemoryCacheClient>();
+
+// Inject when you specifically need in-memory behavior
+public class MyService(IMemoryCacheClient localCache) { }
+```
+
+## When to Use Hybrid Cache
+
+### ✅ Good Use Cases
+
+- **Configuration data**: Rarely changes, frequently read
+- **User profiles**: Read on every request, updated occasionally
+- **Product catalogs**: High read volume, batch updates
+- **Reference data**: Lookup tables, enums, static data
+- **Session data**: Read-heavy with occasional updates
+
+### ⚠️ Consider Alternatives
+
+- **High-write workloads**: Use distributed cache only (no invalidation traffic)
+- **Large objects**: Serialization overhead may outweigh benefits
+- **Single instance**: Just use `InMemoryCacheClient`
+- **Real-time data**: Invalidation latency may be unacceptable
+
+## DI Registration
+
+```csharp
+// Register dependencies
+services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect("localhost:6379"));
+
+services.AddSingleton<ICacheClient>(sp =>
+{
+    var redis = sp.GetRequiredService<IConnectionMultiplexer>();
+    return new RedisHybridCacheClient(o =>
+    {
+        o.ConnectionMultiplexer = redis;
+        o.LocalCacheMaxItems = 1000;
+        o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    });
+});
+```
+
+## Next Steps
+
+- [In-Memory Implementation](/guide/implementations/in-memory) - Local cache configuration options
+- [Redis Implementation](/guide/implementations/redis) - Distributed cache setup
+- [Caching Guide](/guide/caching) - Core caching concepts and patterns
+- [Serialization](/guide/serialization) - Serializer configuration and performance

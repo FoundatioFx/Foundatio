@@ -309,7 +309,80 @@ await job.RunContinuousAsync(options, stoppingToken);
 
 ## Hosted Service Integration
 
-Run jobs as ASP.NET Core hosted services:
+Foundatio provides `Foundatio.Extensions.Hosting` for seamless ASP.NET Core integration with hosted services.
+
+### Installation
+
+```bash
+dotnet add package Foundatio.Extensions.Hosting
+```
+
+### AddJob Extension
+
+Register jobs as hosted services:
+
+```csharp
+using Foundatio.Extensions.Hosting.Jobs;
+
+// Simple job registration
+services.AddJob<CleanupJob>();
+
+// With configuration
+services.AddJob<CleanupJob>(o => o
+    .Interval(TimeSpan.FromHours(1))
+    .WaitForStartupActions()
+    .InitialDelay(TimeSpan.FromSeconds(30)));
+
+// Multiple instances
+services.AddJob<OrderProcessorJob>(o => o.InstanceCount(4));
+```
+
+### Cron Job Scheduling
+
+Schedule jobs using cron expressions:
+
+```csharp
+using Foundatio.Extensions.Hosting.Jobs;
+
+// Every 6 hours
+services.AddCronJob<CleanupJob>("0 */6 * * *");
+
+// Every Monday at midnight
+services.AddCronJob<ReportJob>("0 0 * * MON");
+
+// With configuration
+services.AddCronJob<MaintenanceJob>("0 2 * * *", o => o
+    .Name("nightly-maintenance")
+    .WaitForStartupActions());
+
+// Inline action
+services.AddCronJob("health-check", "*/5 * * * *", async (sp, ct) =>
+{
+    var healthService = sp.GetRequiredService<IHealthService>();
+    await healthService.CheckAsync(ct);
+});
+```
+
+### Distributed Cron Jobs
+
+Ensure only one instance runs a scheduled job across all servers:
+
+```csharp
+using Foundatio.Extensions.Hosting.Jobs;
+
+// Only one server runs this job at the scheduled time
+services.AddDistributedCronJob<ReportJob>("0 0 * * *");
+
+// Requires ILockProvider to be registered
+services.AddSingleton<ILockProvider>(sp =>
+    new CacheLockProvider(
+        sp.GetRequiredService<ICacheClient>(),
+        sp.GetRequiredService<IMessageBus>()));
+```
+
+### Manual BackgroundService
+
+For custom control, implement `BackgroundService` directly:
 
 ```csharp
 public class CleanupJobHostedService : BackgroundService
@@ -355,17 +428,6 @@ services.AddHostedService<CleanupJobHostedService>();
 
 ## Common Patterns
 
-### Scheduled Jobs
-
-Run jobs on a schedule using Foundatio.Extensions.Hosting:
-
-```csharp
-using Foundatio.Extensions.Hosting.Jobs;
-
-services.AddCronJob<CleanupJob>("0 */6 * * *");  // Every 6 hours
-services.AddCronJob<ReportJob>("0 0 * * MON");    // Every Monday at midnight
-```
-
 ### Job with Locking
 
 Ensure only one instance runs:
@@ -382,9 +444,9 @@ public class SingletonJob : JobBase
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
     {
-        await using var @lock = await _locker.AcquireAsync("singleton-job");
+        await using var lck = await _locker.AcquireAsync("singleton-job");
 
-        if (@lock == null)
+        if (lck is null)
         {
             _logger.LogDebug("Another instance is running");
             return JobResult.Success;
@@ -586,3 +648,4 @@ protected override async Task<JobResult> RunInternalAsync(JobContext context)
 - [Queues](./queues) - Queue implementations for job processing
 - [Locks](./locks) - Distributed locking for singleton jobs
 - [Resilience](./resilience) - Retry policies for job reliability
+- [Serialization](./serialization) - Serializer configuration and performance

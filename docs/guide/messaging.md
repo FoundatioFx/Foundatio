@@ -567,6 +567,8 @@ public record OrderEvent { public string Action { get; set; } }
 
 ### 5. Keep Messages Small
 
+Messages should contain identifiers and essential data only, not full entity payloads.
+
 ```csharp
 // ✅ Good: Just identifiers
 public record OrderCreated
@@ -579,6 +581,137 @@ public record OrderCreated
 {
     public Order FullOrderWithAllDetails { get; init; }
 }
+```
+
+## Message Size Limits
+
+Different message bus implementations have different size limits. Understanding these limits is essential for reliable messaging.
+
+| Provider | Max Message Size | Notes |
+|----------|------------------|-------|
+| InMemoryMessageBus | Limited by available memory | No practical limit |
+| RedisMessageBus | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
+| RabbitMQMessageBus | 128 MB (default) | Configurable, but keep small |
+| KafkaMessageBus | 1 MB (default) | Configurable via `message.max.bytes` |
+| AzureServiceBusMessageBus | 256 KB (Standard) / 100 MB (Premium) | Use claim check for large payloads |
+
+### Claim Check Pattern for Large Payloads
+
+For large data, store it externally and pass a reference (also known as the Claim Check Pattern):
+
+```csharp
+// Instead of embedding large data
+public record DocumentProcessed
+{
+    public string DocumentId { get; init; }
+    public string BlobPath { get; init; }  // Reference to storage
+    public long SizeBytes { get; init; }
+}
+
+// Subscriber retrieves from storage
+await messageBus.SubscribeAsync<DocumentProcessed>(async msg =>
+{
+    var document = await _fileStorage.GetObjectAsync<Document>(msg.BlobPath);
+    await ProcessDocumentAsync(document);
+});
+```
+
+## Notification Patterns
+
+### Real-Time Notifications with SignalR
+
+```csharp
+public class NotificationService : IHostedService
+{
+    private readonly IMessageBus _messageBus;
+    private readonly IHubContext<NotificationHub> _hubContext;
+
+    public NotificationService(IMessageBus messageBus, IHubContext<NotificationHub> hubContext)
+    {
+        _messageBus = messageBus;
+        _hubContext = hubContext;
+    }
+
+    public async Task StartAsync(CancellationToken ct)
+    {
+        // Bridge message bus to SignalR
+        await _messageBus.SubscribeAsync<UserNotification>(async (msg, ct) =>
+        {
+            await _hubContext.Clients
+                .User(msg.UserId)
+                .SendAsync("Notification", msg.Title, msg.Body, ct);
+        }, ct);
+
+        // Broadcast to all users
+        await _messageBus.SubscribeAsync<SystemAnnouncement>(async (msg, ct) =>
+        {
+            await _hubContext.Clients.All
+                .SendAsync("Announcement", msg.Message, ct);
+        }, ct);
+    }
+
+    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
+}
+```
+
+### Delayed Notifications
+
+```csharp
+// Schedule a reminder
+await messageBus.PublishAsync(new ReminderNotification
+{
+    UserId = "user-123",
+    Message = "Don't forget to complete your order!"
+}, new MessageOptions
+{
+    DeliveryDelay = TimeSpan.FromHours(24)
+});
+```
+
+### Fan-Out Pattern
+
+Publish once, process in multiple ways:
+
+```csharp
+// Single publish
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
+
+// Multiple subscribers handle different concerns
+await messageBus.SubscribeAsync<OrderCreated>(async order =>
+{
+    await _emailService.SendConfirmationAsync(order.OrderId);
+});
+
+await messageBus.SubscribeAsync<OrderCreated>(async order =>
+{
+    await _inventoryService.ReserveAsync(order.OrderId);
+});
+
+await messageBus.SubscribeAsync<OrderCreated>(async order =>
+{
+    await _analyticsService.TrackAsync("order_created", order.OrderId);
+});
+```
+
+## Resource Management
+
+### Proper Disposal
+
+Message buses implement `IDisposable` and should be properly disposed:
+
+```csharp
+// ✅ Good: DI container manages lifetime
+services.AddSingleton<IMessageBus, InMemoryMessageBus>();
+
+// ✅ Good: Manual disposal when needed
+await using var messageBus = new InMemoryMessageBus();
+await messageBus.SubscribeAsync<MyEvent>(async e => { });
+// Disposed when scope ends
+
+// ❌ Bad: Not disposing
+var messageBus = new InMemoryMessageBus();
+// ... use it
+// Never disposed, subscriptions leak
 ```
 
 ## Next Steps

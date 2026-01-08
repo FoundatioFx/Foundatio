@@ -135,12 +135,38 @@ var policy = new ResiliencePolicyBuilder()
 
 ### Circuit Breaker States
 
-```mermaid
-graph LR
-    A[Closed] -->|Failures exceed threshold| B[Open]
-    B -->|Break duration expires| C[Half-Open]
-    C -->|Test call succeeds| A
-    C -->|Test call fails| B
+```txt
+                    ┌────────────────┐
+                    │     Closed     │
+                    │ (Normal Ops)   │
+                    └───────┬────────┘
+                            │
+              Failures      │      All calls
+              exceed        │      pass through
+              threshold     │
+                            │
+                            ▼
+                    ┌────────────────┐
+              ┌────▶│      Open      │
+              │     │ (Fail Fast)    │
+              │     └───────┬────────┘
+              │             │
+    Test call │             │ Break duration
+    fails     │             │ expires
+              │             │
+              │             ▼
+              │     ┌────────────────┐
+              └─────│   Half-Open    │
+                    │  (Testing)     │
+                    └───────┬────────┘
+                            │
+                            │ Test call
+                            │ succeeds
+                            │
+                            ▼
+                    ┌────────────────┐
+                    │     Closed     │
+                    └────────────────┘
 ```
 
 - **Closed**: Normal operation, calls pass through
