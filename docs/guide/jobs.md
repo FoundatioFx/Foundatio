@@ -4,6 +4,8 @@ Jobs allow you to run long-running processes without worrying about them being t
 
 ## The IJob Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Jobs/IJob.cs)
+
 ```csharp
 public interface IJob
 {
@@ -23,7 +25,7 @@ Foundatio provides three main patterns for defining jobs:
 
 ### Basic Job
 
-Create a job by implementing `IJob` or deriving from `JobBase`:
+Create a job by implementing `IJob` or deriving from `JobBase` ([view source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Jobs/JobBase.cs)):
 
 ```csharp
 using Foundatio.Jobs;
