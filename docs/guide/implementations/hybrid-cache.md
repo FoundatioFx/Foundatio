@@ -251,8 +251,8 @@ var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
 
 // All-in-one Redis hybrid cache
 var hybridCache = new RedisHybridCacheClient(
-    o => o.ConnectionMultiplexer(redis),
-    o => o.MaxItems(1000)
+    redisConfig => redisConfig.ConnectionMultiplexer(redis),
+    localConfig => localConfig.MaxItems(1000)
 );
 ```
 
@@ -455,10 +455,10 @@ services.AddSingleton<ICacheClient>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
     return new RedisHybridCacheClient(
-        o => o
+        redisConfig => redisConfig
             .ConnectionMultiplexer(redis)
             .LoggerFactory(sp.GetRequiredService<ILoggerFactory>()),
-        o => o.MaxItems(1000)
+        localConfig => localConfig.MaxItems(1000)
     );
 });
 ```
