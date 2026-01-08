@@ -4,6 +4,8 @@ File storage provides abstracted file operations with multiple backend implement
 
 ## The IFileStorage Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Storage/IFileStorage.cs)
+
 ```csharp
 public interface IFileStorage : IHaveSerializer, IDisposable
 {
@@ -32,6 +34,8 @@ public interface IFileStorage : IHaveSerializer, IDisposable
 
 An in-memory storage for development and testing:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Storage/InMemoryFileStorage.cs)
+
 ```csharp
 using Foundatio.Storage;
 
@@ -48,6 +52,8 @@ var stream = await storage.GetFileStreamAsync("documents/report.pdf", StreamMode
 
 File storage backed by the local file system:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Storage/FolderFileStorage.cs)
+
 ```csharp
 using Foundatio.Storage;
 
@@ -60,6 +66,8 @@ await storage.SaveFileAsync("documents/report.pdf", pdfStream);
 ### ScopedFileStorage
 
 Prefix all paths with a scope:
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Storage/ScopedFileStorage.cs)
 
 ```csharp
 using Foundatio.Storage;
@@ -74,6 +82,8 @@ await tenantStorage.SaveFileAsync("documents/report.pdf", pdfStream);
 ### AzureFileStorage
 
 Azure Blob Storage (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Storage/AzureFileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureStorage
@@ -90,6 +100,8 @@ var storage = new AzureFileStorage(o => {
 
 AWS S3 Storage (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Storage/S3FileStorage.cs)
+
 ```csharp
 // dotnet add package Foundatio.AWS
 
@@ -105,6 +117,8 @@ var storage = new S3FileStorage(o => {
 
 Redis-backed storage (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Storage/RedisFileStorage.cs)
+
 ```csharp
 // dotnet add package Foundatio.Redis
 
@@ -118,6 +132,8 @@ var storage = new RedisFileStorage(o => {
 ### MinioFileStorage
 
 Minio object storage (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.Minio/blob/main/src/Foundatio.Minio/Storage/MinioFileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.Minio
@@ -135,6 +151,8 @@ var storage = new MinioFileStorage(o => {
 ### SshNetFileStorage
 
 SFTP-backed storage (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.Storage.SshNet/blob/main/src/Foundatio.Storage.SshNet/SshNetFileStorage.cs)
 
 ```csharp
 // dotnet add package Foundatio.Storage.SshNet
@@ -500,6 +518,8 @@ await stream.CopyToAsync(destination);
 | Legacy systems | SshNetFileStorage |
 
 ## FileSpec Properties
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Storage/FileSpec.cs)
 
 ```csharp
 public class FileSpec
