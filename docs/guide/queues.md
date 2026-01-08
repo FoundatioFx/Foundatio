@@ -4,6 +4,8 @@ Queues offer First In, First Out (FIFO) message delivery with reliable processin
 
 ## The IQueue Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Queues/IQueue.cs)
+
 ```csharp
 public interface IQueue<T> : IQueue where T : class
 {
@@ -41,6 +43,8 @@ public interface IQueue : IHaveSerializer, IDisposable
 
 An in-memory queue implementation for development and testing:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Queues/InMemoryQueue.cs)
+
 ```csharp
 using Foundatio.Queues;
 
@@ -59,6 +63,8 @@ await entry.CompleteAsync();
 
 Distributed queue using Redis (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Queues/RedisQueue.cs)
+
 ```csharp
 // dotnet add package Foundatio.Redis
 
@@ -75,6 +81,8 @@ var queue = new RedisQueue<WorkItem>(o => {
 
 Queue using Azure Service Bus (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs)
+
 ```csharp
 // dotnet add package Foundatio.AzureServiceBus
 
@@ -90,6 +98,8 @@ var queue = new AzureServiceBusQueue<WorkItem>(o => {
 
 Queue using Azure Storage Queues (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.AzureStorage/blob/main/src/Foundatio.AzureStorage/Queues/AzureStorageQueue.cs)
+
 ```csharp
 // dotnet add package Foundatio.AzureStorage
 
@@ -104,6 +114,8 @@ var queue = new AzureStorageQueue<WorkItem>(o => {
 ### SQSQueue
 
 Queue using AWS SQS (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Queues/SQSQueue.cs)
 
 ```csharp
 // dotnet add package Foundatio.AWS
