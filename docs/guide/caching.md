@@ -4,6 +4,8 @@ Caching allows you to store and access data lightning fast, saving expensive ope
 
 ## The ICacheClient Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/ICacheClient.cs)
+
 ```csharp
 public interface ICacheClient : IDisposable
 {
@@ -215,6 +217,8 @@ On Azure Managed Redis (and many Redis deployments), the default eviction policy
 
 An in-memory cache implementation (L1 cache) valid for the lifetime of the process. See the [In-Memory Implementation Guide](./implementations/in-memory) for detailed configuration options including memory-based eviction.
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/InMemoryCacheClient.cs)
+
 ```csharp
 using Foundatio.Caching;
 
@@ -234,6 +238,8 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 ### HybridCacheClient
 
 Combines a local in-memory cache (L1) with a distributed cache (L2) for maximum performance. This implements the industry-standard L1/L2 caching architecture, ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/HybridCacheClient.cs)
 
 ```csharp
 using Foundatio.Caching;
@@ -266,6 +272,8 @@ See [Hybrid Cache Implementation](/guide/implementations/hybrid-cache) for detai
 
 Prefix all cache keys for easy namespacing:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/ScopedCacheClient.cs)
+
 ```csharp
 using Foundatio.Caching;
 
@@ -290,6 +298,8 @@ await tenantCache.RemoveByPrefixAsync("");  // Removes tenant:abc:*
 
 Distributed cache using Redis (separate package):
 
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Cache/RedisCacheClient.cs)
+
 ```csharp
 // dotnet add package Foundatio.Redis
 
@@ -305,6 +315,8 @@ await cache.SetAsync("user:123", user, TimeSpan.FromHours(1));
 ### RedisHybridCacheClient
 
 Combines `RedisCacheClient` with `HybridCacheClient`:
+
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs)
 
 ```csharp
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
@@ -327,7 +339,7 @@ ICacheClient (base interface)
 
 ### IHybridCacheClient
 
-Implemented by `HybridCacheClient`. Combines a local in-memory cache (L1) with a distributed cache (L2). When you write data, it:
+Implemented by `HybridCacheClient` ([view source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/HybridCacheClient.cs)). Combines a local in-memory cache (L1) with a distributed cache (L2). When you write data, it:
 
 1. Writes to L2 (distributed cache) first - the source of truth
 2. Updates L1 (local cache) only if L2 succeeds
@@ -341,7 +353,7 @@ When you read data:
 
 ### IHybridAwareCacheClient
 
-Implemented by `HybridAwareCacheClient`. Wraps a distributed cache (L2) and publishes invalidation messages **without maintaining a local cache (L1)**. Use this when:
+Implemented by `HybridAwareCacheClient` ([view source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Caching/HybridAwareCacheClient.cs)). Wraps a distributed cache (L2) and publishes invalidation messages **without maintaining a local cache (L1)**. Use this when:
 
 - You have a service that only writes to cache (e.g., background processor)
 - You want to notify `HybridCacheClient` instances to invalidate their L1 caches
