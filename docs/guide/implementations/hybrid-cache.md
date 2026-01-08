@@ -139,7 +139,7 @@ When setting expiration times, there is a small timing skew between L1 and L2:
 2. Network latency and processing occur
 3. L1 (local cache) sets TTL at time T + delta
 
-This means L1 may expire slightly **after** L2, potentially serving stale data for a brief window (typically milliseconds). For most use cases, this is negligible. If sub-second TTL accuracy is critical, consider using shorter L1 TTLs via `InMemoryCacheClientOptions`.
+This means L1 may expire slightly **after** L2, potentially serving stale data for a brief window (typically milliseconds). For most use cases, this is negligible. If sub-second TTL accuracy is critical, consider raising a PR.
 :::
 
 ### Local Cache Synchronization Strategies
