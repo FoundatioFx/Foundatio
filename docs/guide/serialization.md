@@ -33,6 +33,7 @@ var cache = new InMemoryCacheClient(o =>
 ```
 
 **Why System.Text.Json?**
+
 - Built into .NET (no extra dependencies)
 - Fast and efficient
 - Human-readable JSON format
@@ -72,6 +73,7 @@ var queue = new InMemoryQueue<WorkItem>(); // Uses your custom serializer
 ```
 
 **How it works:**
+
 - When you don't specify a serializer, `SharedOptions.Serializer` falls back to `DefaultSerializer.Instance`
 - This allows you to configure serialization once for your entire application
 - Useful for setting up camelCase naming, custom converters, or other JSON options globally
@@ -92,6 +94,7 @@ var serializer = new SystemTextJsonSerializer(jsonOptions);
 ```
 
 **When to use:**
+
 - Default choice for most applications
 - Good performance and .NET native support
 - Human-readable JSON for debugging
@@ -113,6 +116,7 @@ var serializer = new JsonNetSerializer(settings);
 ```
 
 **When to use:**
+
 - Need `$type` handling for polymorphic types
 - Existing codebase uses Newtonsoft.Json extensively
 - Require specific Newtonsoft.Json features not in System.Text.Json
@@ -131,6 +135,7 @@ var serializer = new MessagePackSerializer(options);
 ```
 
 **When to use:**
+
 - High-throughput scenarios where size and speed are critical
 - Queue messages, cache values in high-volume systems
 - Network bandwidth is limited
@@ -138,40 +143,25 @@ var serializer = new MessagePackSerializer(options);
 
 **Performance:** ~2-5x faster than JSON, 50-70% smaller payloads
 
-### Utf8Json (Binary JSON)
-
-```bash
-dotnet add package Foundatio.Utf8Json
-```
-
-```csharp
-var serializer = new Utf8JsonSerializer(StandardResolver.Default);
-```
-
-**When to use:**
-- Similar to MessagePack but with JSON compatibility
-- High-performance scenarios with UTF-8 encoding
-- Faster than System.Text.Json in some scenarios
-- Note: This library is less actively maintained
-
 ## Performance Comparison
 
 | Serializer | Speed | Size | Human Readable | Type Info | Dependencies |
 |------------|-------|------|----------------|-----------|--------------|
 | System.Text.Json | Fast | Medium | ✅ | ❌ | Built-in |
 | MessagePack | **Very Fast** | **Small** | ❌ | Optional | MessagePack NuGet |
-| Utf8Json | Very Fast | Small | ❌ | ❌ | Utf8Json NuGet |
 | Newtonsoft.Json | Medium | Medium | ✅ | ✅ | Newtonsoft.Json NuGet |
 
 ## Choosing the Right Serializer
 
 ### Use System.Text.Json (Default) When:
+
 - Starting a new project
 - You want good balance of speed, size, and debuggability
 - You don't need advanced features like `$type` handling
 - You prefer built-in .NET support
 
 ### Use MessagePack When:
+
 - Processing high message volumes (>10k messages/sec)
 - Network bandwidth or storage size is constrained
 - Speed is more important than human-readability
@@ -188,6 +178,7 @@ var queue = new RedisQueue<HighVolumeEvent>(o =>
 ```
 
 ### Use Newtonsoft.Json When:
+
 - You need `$type` handling for polymorphic serialization
 - Migrating from legacy code that uses Json.NET
 - Require specific Json.NET features (custom converters, complex scenarios)
@@ -228,12 +219,14 @@ For DI configuration and shared options across implementations, see [Dependency 
 ### Binary vs Text Serializers
 
 **Text Serializers (JSON):**
+
 - Implement `ITextSerializer`
 - Human-readable (can debug with text tools)
 - Slightly larger payloads
 - Compatible across different systems/languages
 
 **Binary Serializers (MessagePack):**
+
 - Implement `ISerializer` only
 - Much faster and smaller
 - Not human-readable

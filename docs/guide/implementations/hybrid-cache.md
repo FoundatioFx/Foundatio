@@ -55,23 +55,43 @@ dotnet add package Foundatio.Redis
 │ Write Operation  │
 └────────┬─────────┘
          │
-         ├────────────────────────────┬───────────────────────────┐
-         ▼                            ▼                           ▼
-  ┌──────────────┐          ┌────────────────────┐      ┌──────────────────┐
-  │ Local Cache  │          │ Distributed Cache  │      │  Message Bus     │
-  │  (Update)    │          │    (Update)        │      │ (Invalidation)   │
-  └──────────────┘          └────────────────────┘      └──────────────────┘
-                                                                  │
-                                                                  ▼
-                                                    ┌─────────────────────────┐
-                                                    │   Other Hybrid Cache    │
-                                                    │   Instances: Clear      │
-                                                    │   SPECIFIC Keys Only    │
-                                                    └─────────────────────────┘
+         ▼
+  ┌────────────────────┐
+  │ Distributed Cache  │  ◀── Write to L2 first (source of truth)
+  │    (L2 - Update)   │
+  └────────┬───────────┘
+           │
+           │ Success?
+           │
+     ┌─────┴─────┐
+     │           │
+     ▼           ▼
+   Yes          No
+     │           │
+     ▼           │
+┌──────────────┐ │
+│ Local Cache  │ │
+│ (L1 - Update)│ │
+└──────────────┘ │
+     │           │
+     └─────┬─────┘
+           │
+           ▼
+  ┌──────────────────┐
+  │  Message Bus     │
+  │ (Invalidation)   │
+  └────────┬─────────┘
+           │
+           ▼
+┌─────────────────────────┐
+│   Other Hybrid Cache    │
+│   Instances: Clear      │
+│   SPECIFIC Keys Only    │
+└─────────────────────────┘
 ```
 
-1. Write to local cache (current instance has latest value)
-2. Write to distributed cache (shared state)
+1. Write to distributed cache first (L2 is the source of truth)
+2. Only update local cache (L1) if distributed write succeeds
 3. Publish invalidation message via message bus
 4. **Other instances** receive message and clear **only the affected keys** from their local cache
 5. Current instance ignores its own invalidation messages (filtered by `CacheId`)
@@ -87,6 +107,61 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 | `RemoveAsync("user:123")` | Clears `user:123` on other instances |
 | `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
+
+## L1/L2 Cache Architecture
+
+`HybridCacheClient` implements a two-tier caching architecture following industry-standard terminology:
+
+| Tier | Name | Implementation | Characteristics |
+|------|------|----------------|-----------------|
+| **L1** | Local Cache | `InMemoryCacheClient` | Fast (no network), per-instance, volatile |
+| **L2** | Distributed Cache | Redis, etc. | Shared across instances, source of truth |
+
+This architecture is similar to Microsoft's `HybridCache` (.NET 9+) and other distributed caching solutions like EasyCaching.
+
+### Consistency Model
+
+`HybridCacheClient` uses a **write-through** pattern to ensure consistency:
+
+1. **Distributed-first writes**: All write operations go to L2 (distributed cache) first
+2. **Conditional local update**: L1 (local cache) is only updated if L2 succeeds
+3. **Cross-instance invalidation**: Message bus notifies other instances to clear affected keys
+
+This ensures that:
+- L2 is always the **source of truth**
+- L1 never contains data that doesn't exist in L2
+- Failed distributed writes don't leave stale data in local cache
+
+### Local Cache Synchronization Strategies
+
+Different operations use different strategies to keep L1 in sync with L2:
+
+| Strategy | When Used | Operations |
+|----------|-----------|------------|
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
+| **Remove to invalidate** | When the final value is uncertain or depends on distributed state | `SetIfHigherAsync`, `SetIfLowerAsync`, `ListAddAsync`, `ListRemoveAsync` |
+
+**Set on success** - Used when the operation's result is deterministic:
+
+```csharp
+// After successful distributed write, we know the exact value
+await distributedCache.SetAsync(key, value);
+await localCache.SetAsync(key, value);  // Same value, guaranteed consistent
+```
+
+**Remove to invalidate** - Used for conditional operations where the final value depends on distributed state:
+
+```csharp
+// SetIfHigherAsync: final value depends on current distributed value
+// which may differ from local cache, so we can't predict the result
+await localCache.RemoveAsync(key);  // Force re-fetch on next read
+await distributedCache.SetIfHigherAsync(key, value);
+```
+
+This approach ensures consistency even when:
+- Local and distributed caches have different values
+- Conditional operations have partial success (e.g., list operations)
+- Multiple instances are writing concurrently
 
 ## Basic Usage
 

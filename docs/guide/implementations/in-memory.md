@@ -1,6 +1,6 @@
 # In-Memory Implementations
 
-Foundatio provides in-memory implementations for all core abstractions. These are perfect for development, testing, and single-process applications.
+Foundatio provides in-memory implementations for all core abstractions. These are perfect for development, testing, and single-process applications. In L1/L2 caching terminology, these serve as L1 (local) caches.
 
 ## Overview
 
@@ -22,7 +22,7 @@ dotnet add package Foundatio
 
 ## InMemoryCacheClient
 
-A high-performance in-memory cache with optional LRU eviction and memory-based limits.
+A high-performance in-memory cache (L1) with optional LRU eviction and memory-based limits. When used with `HybridCacheClient`, this serves as the L1 (local) tier in an L1/L2 caching architecture.
 
 ### Basic Usage
 

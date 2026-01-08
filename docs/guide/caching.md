@@ -213,7 +213,7 @@ On Azure Managed Redis (and many Redis deployments), the default eviction policy
 
 ### InMemoryCacheClient
 
-An in-memory cache implementation valid for the lifetime of the process. See the [In-Memory Implementation Guide](./implementations/in-memory) for detailed configuration options including memory-based eviction.
+An in-memory cache implementation (L1 cache) valid for the lifetime of the process. See the [In-Memory Implementation Guide](./implementations/in-memory) for detailed configuration options including memory-based eviction.
 
 ```csharp
 using Foundatio.Caching;
@@ -233,7 +233,7 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 
 ### HybridCacheClient
 
-Combines local in-memory caching with a distributed cache for maximum performance. Ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
+Combines a local in-memory cache (L1) with a distributed cache (L2) for maximum performance. This implements the industry-standard L1/L2 caching architecture, ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
 
 ```csharp
 using Foundatio.Caching;
@@ -253,8 +253,8 @@ var sameUser = await hybridCache.GetAsync<User>("user:123");
 
 **Key features:**
 
-- **Read-through**: Local cache miss falls back to distributed cache
-- **Write-through**: Writes go to both local and distributed caches
+- **Read-through**: L1 (local) cache miss falls back to L2 (distributed) cache
+- **Write-through**: Writes go to L2 first, then L1 only on success (distributed-first pattern)
 - **Key-specific invalidation**: Only affected keys are cleared on other instances
 - **Message bus coordination**: Automatic invalidation across all hybrid cache instances
 
@@ -327,24 +327,24 @@ ICacheClient (base interface)
 
 ### IHybridCacheClient
 
-Implemented by `HybridCacheClient`. Combines a local in-memory cache with a distributed cache. When you write data, it:
+Implemented by `HybridCacheClient`. Combines a local in-memory cache (L1) with a distributed cache (L2). When you write data, it:
 
-1. Writes to the distributed cache
-2. Updates the local cache
+1. Writes to L2 (distributed cache) first - the source of truth
+2. Updates L1 (local cache) only if L2 succeeds
 3. Publishes an invalidation message via `IMessageBus`
 
 When you read data:
 
-1. Checks local cache first (fast, no network)
-2. Falls back to distributed cache on miss
-3. Populates local cache with result
+1. Checks L1 (local cache) first (fast, no network)
+2. Falls back to L2 (distributed cache) on miss
+3. Populates L1 with result
 
 ### IHybridAwareCacheClient
 
-Implemented by `HybridAwareCacheClient`. Wraps a distributed cache and publishes invalidation messages **without maintaining a local cache**. Use this when:
+Implemented by `HybridAwareCacheClient`. Wraps a distributed cache (L2) and publishes invalidation messages **without maintaining a local cache (L1)**. Use this when:
 
 - You have a service that only writes to cache (e.g., background processor)
-- You want to notify `HybridCacheClient` instances to invalidate their local caches
+- You want to notify `HybridCacheClient` instances to invalidate their L1 caches
 - You don't need local caching on this particular service
 
 ```csharp
@@ -362,7 +362,7 @@ await cacheWriter.SetAsync("user:123", user);
 
 ### IMemoryCacheClient
 
-A marker interface that identifies in-memory cache implementations (e.g., `InMemoryCacheClient`). This interface is used for type checking and dependency injection scenarios where you need to distinguish between in-memory and distributed cache implementations.
+A marker interface that identifies in-memory cache implementations (e.g., `InMemoryCacheClient`). This interface is used for type checking and dependency injection scenarios where you need to distinguish between L1 (in-memory) and L2 (distributed) cache implementations.
 
 ```csharp
 // Register specific implementation type

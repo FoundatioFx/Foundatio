@@ -108,42 +108,62 @@ var users = await cache.GetAllAsync<User>(new[] { "user:1", "user:2" });
 
 ## RedisHybridCacheClient
 
-Combines Redis with a local in-memory cache for optimal performance.
+Combines Redis (L2 distributed cache) with a local in-memory cache (L1) for optimal performance. This implements the industry-standard L1/L2 caching architecture.
 
 ### How It Works
 
 **Read Flow:**
 ```txt
 ┌─────────┐     ┌──────────────┐     ┌──────────────┐
-│ Request │────▶│ Local Cache  │────▶│ Redis Cache  │
+│ Request │────▶│  L1 Cache    │────▶│  L2 Cache    │
+│         │     │ (In-Memory)  │     │   (Redis)    │
 └─────────┘     └──────────────┘     └──────────────┘
                       │                      │
                       ▼                      ▼
                  Cache Hit?            Cache Hit?
                       │                      │
-                  Yes: Return          Yes: Store in Local
+                  Yes: Return          Yes: Store in L1
                                        Then: Return
 ```
 
-**Write Flow:**
+**Write Flow (Distributed-First):**
 ```txt
 ┌──────────────────┐
 │ Write Operation  │
 └────────┬─────────┘
          │
-         ├────────────────────────┬──────────────────────┬─────────────────────┐
-         ▼                        ▼                      ▼                     ▼
-  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐    ┌──────────────────┐
-  │ Local Cache  │      │ Redis Cache  │      │ Message Bus  │───▶│ Other Instances: │
-  │  (Update)    │      │  (Update)    │      │ (Publish)    │    │ Clear SPECIFIC   │
-  └──────────────┘      └──────────────┘      └──────────────┘    │ Keys Only        │
-                                                                  └──────────────────┘
+         ▼
+  ┌──────────────┐
+  │  L2 Cache    │  ◀── Write to L2 first (source of truth)
+  │   (Redis)    │
+  └──────┬───────┘
+         │
+         │ Success?
+         │
+   ┌─────┴─────┐
+   │           │
+   ▼           ▼
+  Yes          No
+   │           │
+   ▼           │
+┌──────────────┐ │
+│  L1 Cache    │ │
+│ (In-Memory)  │ │
+└──────────────┘ │
+   │           │
+   └─────┬─────┘
+         │
+         ▼
+  ┌──────────────┐
+  │ Message Bus  │───▶ Other Instances:
+  │ (Publish)    │     Clear SPECIFIC
+  └──────────────┘     Keys Only
 ```
 
-- On **read**: Check local first, then Redis. Store in local if found in Redis.
-- On **write**: Update local AND Redis, then publish invalidation so other instances clear **only the affected keys** from their local cache.
+- On **read**: Check L1 (local) first, then L2 (Redis). Store in L1 if found in L2.
+- On **write**: Write to L2 (Redis) first, then update L1 only on success, then publish invalidation so other instances clear **only the affected keys** from their L1 cache.
 - **Prefix removal**: `RemoveByPrefixAsync("user:")` clears all `user:*` keys on all instances.
-- **Full flush**: `RemoveAllAsync()` with no keys clears entire local cache on all instances.
+- **Full flush**: `RemoveAllAsync()` with no keys clears entire L1 cache on all instances.
 
 ::: warning Shared Message Bus Topic
 By default, all instances share the same Redis pub/sub topic for invalidation. In high-write scenarios, consider using separate topics per feature area. See the [Caching Guide](/guide/caching#hybrid-cache-invalidation-traffic) for details.
