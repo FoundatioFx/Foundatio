@@ -173,7 +173,7 @@ By default, all instances share the same Redis pub/sub topic for invalidation. I
 
 ```csharp
 var hybridCache = new RedisHybridCacheClient(
-    o => o.ConnectionMultiplexer = redis,
+    o => o.ConnectionMultiplexer(redis),
     o => o.MaxItems(1000).LoggerFactory(loggerFactory)
 );
 ```
