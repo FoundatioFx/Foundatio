@@ -310,7 +310,7 @@ Combines `RedisCacheClient` with `HybridCacheClient`:
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
 var hybridCache = new RedisHybridCacheClient(
     o => o.ConnectionMultiplexer = redis,
-    localConfig: o => o.MaxItems(1000)
+    o => o.MaxItems(1000)
 );
 ```
 
