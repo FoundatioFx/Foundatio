@@ -239,9 +239,9 @@ Combines a local in-memory cache (L1) with a distributed cache (L2) for maximum 
 using Foundatio.Caching;
 
 var hybridCache = new HybridCacheClient(
-    distributedCacheClient: redisCacheClient,
-    messageBus: redisMessageBus,
-    localCacheOptions: new InMemoryCacheClientOptions { MaxItems = 1000 }
+    redisCacheClient,
+    redisMessageBus,
+    new InMemoryCacheClientOptions { MaxItems = 1000 }
 );
 
 // First access: fetches from Redis, caches locally
@@ -308,10 +308,10 @@ Combines `RedisCacheClient` with `HybridCacheClient`:
 
 ```csharp
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-var hybridCache = new RedisHybridCacheClient(o => {
-    o.ConnectionMultiplexer = redis;
-    o.LocalCacheMaxItems = 1000;
-});
+var hybridCache = new RedisHybridCacheClient(
+    o => o.ConnectionMultiplexer = redis,
+    localConfig: o => o.MaxItems(1000)
+);
 ```
 
 ## Cache Interface Hierarchy
@@ -709,8 +709,8 @@ services.AddSingleton<ICacheClient>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
     return new HybridCacheClient(
-        distributedCacheClient: new RedisCacheClient(o => o.ConnectionMultiplexer = redis),
-        messageBus: sp.GetRequiredService<IMessageBus>()
+        new RedisCacheClient(o => o.ConnectionMultiplexer = redis),
+        sp.GetRequiredService<IMessageBus>()
     );
 });
 ```

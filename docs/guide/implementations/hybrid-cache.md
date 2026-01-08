@@ -229,9 +229,9 @@ var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
 
 // Create hybrid cache
 var hybridCache = new HybridCacheClient(
-    distributedCacheClient: distributedCache,
-    messageBus: messageBus,
-    localCacheOptions: new InMemoryCacheClientOptions { MaxItems = 1000 }
+    distributedCache,
+    messageBus,
+    new InMemoryCacheClientOptions { MaxItems = 1000 }
 );
 
 // First access: fetches from Redis, caches locally
@@ -250,11 +250,10 @@ using StackExchange.Redis;
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
 
 // All-in-one Redis hybrid cache
-var hybridCache = new RedisHybridCacheClient(o =>
-{
-    o.ConnectionMultiplexer = redis;
-    o.LocalCacheMaxItems = 1000;
-});
+var hybridCache = new RedisHybridCacheClient(
+    o => o.ConnectionMultiplexer = redis,
+    localConfig: o => o.MaxItems(1000)
+);
 ```
 
 ## Configuration
@@ -265,9 +264,9 @@ The local cache is an `InMemoryCacheClient`. Configure via `localCacheOptions`:
 
 ```csharp
 var hybridCache = new HybridCacheClient(
-    distributedCacheClient: distributedCache,
-    messageBus: messageBus,
-    localCacheOptions: new InMemoryCacheClientOptions
+    distributedCache,
+    messageBus,
+    new InMemoryCacheClientOptions
     {
         // Maximum items (LRU eviction when exceeded)
         MaxItems = 1000,
@@ -377,9 +376,9 @@ The local cache can consume significant memory. Always configure limits:
 
 ```csharp
 var hybridCache = new HybridCacheClient(
-    distributedCacheClient: distributedCache,
-    messageBus: messageBus,
-    localCacheOptions: new InMemoryCacheClientOptions
+    distributedCache,
+    messageBus,
+    new InMemoryCacheClientOptions
     {
         MaxItems = 1000  // LRU eviction when exceeded
     }
@@ -455,12 +454,12 @@ services.AddSingleton<IConnectionMultiplexer>(
 services.AddSingleton<ICacheClient>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
-    return new RedisHybridCacheClient(o =>
-    {
-        o.ConnectionMultiplexer = redis;
-        o.LocalCacheMaxItems = 1000;
-        o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    });
+    return new RedisHybridCacheClient(
+        o => o
+            .ConnectionMultiplexer(redis)
+            .LoggerFactory(sp.GetRequiredService<ILoggerFactory>()),
+        localConfig: o => o.MaxItems(1000)
+    );
 });
 ```
 

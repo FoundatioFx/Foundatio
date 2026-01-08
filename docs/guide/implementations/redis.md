@@ -172,12 +172,10 @@ By default, all instances share the same Redis pub/sub topic for invalidation. I
 ### Basic Usage
 
 ```csharp
-var hybridCache = new RedisHybridCacheClient(options =>
-{
-    options.ConnectionMultiplexer = redis;
-    options.LocalCacheMaxItems = 1000;
-    options.LoggerFactory = loggerFactory;
-});
+var hybridCache = new RedisHybridCacheClient(
+    options => options.ConnectionMultiplexer = redis,
+    localConfig: o => o.MaxItems(1000).LoggerFactory(loggerFactory)
+);
 ```
 
 ### Cache Invalidation
@@ -415,14 +413,12 @@ public static IServiceCollection AddFoundatioRedis(
 
     // Cache (Hybrid for best performance)
     services.AddSingleton<ICacheClient>(sp =>
-        new RedisHybridCacheClient(options =>
-        {
-            options.ConnectionMultiplexer =
-                sp.GetRequiredService<IConnectionMultiplexer>();
-            options.LocalCacheMaxItems = 1000;
-            options.LoggerFactory =
-                sp.GetRequiredService<ILoggerFactory>();
-        }));
+        new RedisHybridCacheClient(
+            options => options
+                .ConnectionMultiplexer(sp.GetRequiredService<IConnectionMultiplexer>())
+                .LoggerFactory(sp.GetRequiredService<ILoggerFactory>()),
+            localConfig: o => o.MaxItems(1000)
+        ));
 
     // Message Bus
     services.AddSingleton<IMessageBus>(sp =>
