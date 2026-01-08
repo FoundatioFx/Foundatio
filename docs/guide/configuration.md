@@ -30,15 +30,15 @@ var cache = new InMemoryCacheClient(options =>
 
 ```csharp
 var hybridCache = new HybridCacheClient(
-    distributedCache: redisCacheClient,
+    distributedCacheClient: redisCacheClient,
     messageBus: redisMessageBus,
-    options =>
+    localCacheOptions: new InMemoryCacheClientOptions
     {
         // Local cache max items
-        options.LocalCacheMaxItems = 500;
+        MaxItems = 500,
 
         // Logger
-        options.LoggerFactory = loggerFactory;
+        LoggerFactory = loggerFactory
     }
 );
 ```

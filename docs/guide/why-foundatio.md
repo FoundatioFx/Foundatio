@@ -147,7 +147,7 @@ Combine local and distributed caching for maximum performance:
 
 ```csharp
 var hybridCache = new HybridCacheClient(
-    distributedCache: new RedisCacheClient(...),
+    distributedCacheClient: new RedisCacheClient(...),
     messageBus: new RedisMessageBus(...)
 );
 ```

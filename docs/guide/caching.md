@@ -709,8 +709,8 @@ services.AddSingleton<ICacheClient>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
     return new HybridCacheClient(
-        new RedisCacheClient(o => o.ConnectionMultiplexer = redis),
-        sp.GetRequiredService<IMessageBus>()
+        distributedCacheClient: new RedisCacheClient(o => o.ConnectionMultiplexer = redis),
+        messageBus: sp.GetRequiredService<IMessageBus>()
     );
 });
 ```
