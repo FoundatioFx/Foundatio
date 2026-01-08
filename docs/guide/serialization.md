@@ -6,6 +6,8 @@ All Foundatio implementations use serialization for storing and transmitting dat
 
 Foundatio defines a simple serialization interface that all implementations use:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Serializer/ISerializer.cs)
+
 ```csharp
 public interface ISerializer
 {
@@ -88,6 +90,8 @@ Foundatio provides several serializer implementations via NuGet packages:
 # Included in Foundatio package (no extra install needed)
 dotnet add package Foundatio
 ```
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Serializer/SystemTextJsonSerializer.cs)
 
 ```csharp
 var serializer = new SystemTextJsonSerializer(jsonOptions);
