@@ -4,6 +4,8 @@ Locks ensure a resource is only accessed by one consumer at any given time. Foun
 
 ## The ILockProvider Interface
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Lock/ILockProvider.cs)
+
 ```csharp
 public interface ILockProvider
 {
@@ -33,6 +35,8 @@ public interface ILock : IAsyncDisposable
 ### CacheLockProvider
 
 Uses a cache client and message bus for distributed locking:
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Lock/CacheLockProvider.cs)
 
 ```csharp
 using Foundatio.Lock;
@@ -64,6 +68,8 @@ var locker = new CacheLockProvider(cache, messageBus);
 
 Limits the number of operations within a time period:
 
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Lock/ThrottlingLockProvider.cs)
+
 ```csharp
 using Foundatio.Lock;
 
@@ -90,6 +96,8 @@ else
 ### ScopedLockProvider
 
 Prefixes all lock keys with a scope:
+
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Lock/ScopedLockProvider.cs)
 
 ```csharp
 using Foundatio.Lock;
