@@ -138,8 +138,10 @@ Different operations use different strategies to keep L1 in sync with L2:
 
 | Strategy | When Used | Operations |
 |----------|-----------|------------|
-| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
-| **Remove to invalidate** | When the final value is uncertain or depends on distributed state | `SetIfHigherAsync`, `SetIfLowerAsync`, `ListAddAsync`, `ListRemoveAsync` |
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync` |
+| **Remove to invalidate** | When the final value is uncertain or depends on distributed state | `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync`, `ListAddAsync`, `ListRemoveAsync` |
+| **Remove on failure** | When the operation fails (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
+| **Skip local caching** | When per-item expiration can't be tracked locally | `GetListAsync` |
 
 **Set on success** - Used when the operation's result is deterministic:
 
@@ -152,16 +154,34 @@ await localCache.SetAsync(key, value);  // Same value, guaranteed consistent
 **Remove to invalidate** - Used for conditional operations where the final value depends on distributed state:
 
 ```csharp
+// IncrementAsync: expiration behavior (preserve vs set) depends on distributed state
 // SetIfHigherAsync: final value depends on current distributed value
-// which may differ from local cache, so we can't predict the result
 await localCache.RemoveAsync(key);  // Force re-fetch on next read
-await distributedCache.SetIfHigherAsync(key, value);
+await distributedCache.IncrementAsync(key, amount);
+```
+
+**Remove on failure** - Ensures local cache doesn't contain stale data when distributed operation fails:
+
+```csharp
+// If ReplaceAsync fails (e.g., past expiration removes the key), remove from local
+bool replaced = await distributedCache.ReplaceAsync(key, value, expiresIn);
+if (!replaced)
+    await localCache.RemoveAsync(key);
+```
+
+**Skip local caching** - Lists have per-item expiration that can't be tracked in L1:
+
+```csharp
+// GetListAsync always fetches from distributed cache
+// because individual list items may have different expiration times
+return await distributedCache.GetListAsync<T>(key);
 ```
 
 This approach ensures consistency even when:
 - Local and distributed caches have different values
 - Conditional operations have partial success (e.g., list operations)
 - Multiple instances are writing concurrently
+- Operations fail due to past expiration
 
 ## Basic Usage
 
