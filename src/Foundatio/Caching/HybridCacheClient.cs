@@ -99,7 +99,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _localCache.RemoveAsync(key).AnyContext();
-        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
+        // Only notify other nodes if the key actually existed and was removed from distributed cache.
+        // If removed == false, the key didn't exist, so no other node needs to be notified.
+        if (removed)
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
         return removed;
     }
 
@@ -108,8 +113,16 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
-        await _localCache.RemoveIfEqualAsync(key, expected).AnyContext();
-        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
+        // Always remove from local cache unconditionally. We use RemoveAsync (not RemoveIfEqualAsync)
+        // because the local cache might have a stale value that doesn't match 'expected'.
+        await _localCache.RemoveAsync(key).AnyContext();
+
+        // Only notify other nodes if the key was actually removed from distributed cache.
+        // If removed == false, either the key didn't exist or the value didn't match.
+        if (removed)
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
         return removed;
     }
 
@@ -119,7 +132,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         bool flushAll = items == null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
         await _localCache.RemoveAllAsync(items).AnyContext();
-        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+
+        // Only notify other nodes if keys were actually removed from distributed cache.
+        if (removed > 0)
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+
         return removed;
     }
 
@@ -127,7 +144,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         int removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
         await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
-        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [$"{prefix}*"] }).AnyContext();
+
+        // Only notify other nodes if keys were actually removed from distributed cache.
+        if (removed > 0)
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [$"{prefix}*"] }).AnyContext();
+
         return removed;
     }
 
@@ -656,7 +677,10 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
                 await _localCache.RemoveAsync(key).AnyContext();
             }
 
-            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+            // Only notify other nodes if the item was actually removed from distributed cache.
+            if (removed > 0)
+                await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
             return removed;
         }
 
@@ -673,7 +697,10 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             await _localCache.RemoveAsync(key).AnyContext();
         }
 
-        await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+        // Only notify other nodes if items were actually removed from distributed cache.
+        if (removedCount > 0)
+            await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
         return removedCount;
     }
 

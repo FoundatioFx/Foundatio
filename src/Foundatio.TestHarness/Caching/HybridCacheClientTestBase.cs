@@ -203,7 +203,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(15L, newValue);
 
         // Wait for invalidation message to propagate
-        await Task.Delay(250);
+        await Task.Delay(250, TestCancellationToken);
 
         // Assert: Client B's local cache should be invalidated
         Assert.Equal(0, secondCache.LocalCache.Count);
@@ -218,7 +218,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, zeroExpResult);
         Assert.Equal(0, firstCache.LocalCache.Count);
 
-        await Task.Delay(250); // Allow invalidation to propagate
+        await Task.Delay(250, TestCancellationToken); // Allow invalidation to propagate
         Assert.Equal(0, secondCache.LocalCache.Count);
         Assert.False(await firstCache.ExistsAsync(cacheKey));
         Assert.False(await secondCache.ExistsAsync(cacheKey));
@@ -235,6 +235,39 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await firstCache.ListAddAsync("set1", [1, 2, 3]);
         var values = await secondCache.GetListAsync<int>("set1");
         Assert.Equal(3, values.Value.Count);
+    }
+
+    public virtual async Task ListRemoveAsync_WithNonExistentValues_DoesNotPublishInvalidation()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "list-remove-no-publish-test";
+
+        // Add some values to the list
+        await firstCache.ListAddAsync(cacheKey, [1, 2, 3]);
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Populate second cache's local cache
+        var values = await secondCache.GetListAsync<int>(cacheKey);
+        Assert.Equal(3, values.Value.Count);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Reset invalidation counter
+        long initialInvalidateCalls = secondCache.InvalidateCacheCalls;
+
+        // Try to remove values that don't exist in the list
+        long removed = await firstCache.ListRemoveAsync(cacheKey, [99, 100]);
+        Assert.Equal(0, removed);
+
+        // Wait for any potential invalidation message
+        await Task.Delay(250, TestCancellationToken);
+
+        // No invalidation should have been published since nothing was removed
+        Assert.Equal(initialInvalidateCalls, secondCache.InvalidateCacheCalls);
     }
 
     public virtual async Task RemoveAllAsync_WithLocalCache_InvalidatesLocalCache()
@@ -260,9 +293,67 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, firstCache.InvalidateCacheCalls);
         Assert.Equal(0, firstCache.LocalCache.Count);
 
-        await Task.Delay(250); // Allow time for local cache to clear
+        await Task.Delay(250, TestCancellationToken); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
+    }
+
+    public virtual async Task RemoveAllAsync_WithNonExistentKeys_DoesNotPublishInvalidation()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        // Set a value in second cache to verify it's not affected
+        await secondCache.SetAsync("unrelated-key", "value");
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Reset invalidation counter
+        long initialInvalidateCalls = secondCache.InvalidateCacheCalls;
+
+        // Try to remove keys that don't exist
+        int removed = await firstCache.RemoveAllAsync(["non-existent-1", "non-existent-2"]);
+        Assert.Equal(0, removed);
+
+        // Wait for any potential invalidation message
+        await Task.Delay(250, TestCancellationToken);
+
+        // No invalidation should have been published since nothing was removed
+        Assert.Equal(initialInvalidateCalls, secondCache.InvalidateCacheCalls);
+
+        // Second cache's local cache should still have the unrelated key
+        Assert.Equal(1, secondCache.LocalCache.Count);
+    }
+
+    public virtual async Task RemoveAsync_WithNonExistentKey_DoesNotPublishInvalidation()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        // Set a value in second cache to verify it's not affected
+        await secondCache.SetAsync("unrelated-key", "value");
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Reset invalidation counter
+        long initialInvalidateCalls = secondCache.InvalidateCacheCalls;
+
+        // Try to remove a key that doesn't exist
+        bool removed = await firstCache.RemoveAsync("non-existent-key");
+        Assert.False(removed);
+
+        // Wait for any potential invalidation message
+        await Task.Delay(250, TestCancellationToken);
+
+        // No invalidation should have been published since nothing was removed
+        Assert.Equal(initialInvalidateCalls, secondCache.InvalidateCacheCalls);
+
+        // Second cache's local cache should still have the unrelated key
+        Assert.Equal(1, secondCache.LocalCache.Count);
     }
 
     public virtual async Task RemoveByPrefixAsync_WithLocalCache_InvalidatesLocalCache()
@@ -288,9 +379,38 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.Equal(0, firstCache.InvalidateCacheCalls);
         Assert.Equal(0, firstCache.LocalCache.Count);
 
-        await Task.Delay(250); // Allow time for local cache to clear
+        await Task.Delay(250, TestCancellationToken); // Allow time for local cache to clear
         Assert.Equal(1, secondCache.InvalidateCacheCalls);
         Assert.Equal(0, secondCache.LocalCache.Count);
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithNonMatchingPrefix_DoesNotPublishInvalidation()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        // Set a value in second cache to verify it's not affected
+        await secondCache.SetAsync("unrelated-key", "value");
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Reset invalidation counter
+        long initialInvalidateCalls = secondCache.InvalidateCacheCalls;
+
+        // Try to remove by prefix that doesn't match any keys
+        int removed = await firstCache.RemoveByPrefixAsync("non-matching-prefix-");
+        Assert.Equal(0, removed);
+
+        // Wait for any potential invalidation message
+        await Task.Delay(250, TestCancellationToken);
+
+        // No invalidation should have been published since nothing was removed
+        Assert.Equal(initialInvalidateCalls, secondCache.InvalidateCacheCalls);
+
+        // Second cache's local cache should still have the unrelated key
+        Assert.Equal(1, secondCache.LocalCache.Count);
     }
 
     public virtual async Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
@@ -317,7 +437,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.True(await firstCache.RemoveIfEqualAsync(cacheKey, "value"));
 
         // Wait for invalidation message to propagate
-        await Task.Delay(250);
+        await Task.Delay(250, TestCancellationToken);
 
         // Assert: Client B's local cache should be invalidated
         Assert.Equal(0, secondCache.LocalCache.Count);
@@ -325,6 +445,43 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         // Client B reads key - should get NoValue
         result = await secondCache.GetAsync<string>(cacheKey);
         Assert.False(result.HasValue);
+    }
+
+    public virtual async Task RemoveIfEqualAsync_WithNonMatchingValue_DoesNotPublishInvalidation()
+    {
+        using var firstCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(firstCache);
+
+        using var secondCache = GetDistributedHybridCacheClient();
+        Assert.NotNull(secondCache);
+
+        const string cacheKey = "remove-if-equal-no-publish-test";
+
+        // Set a value in first cache
+        await firstCache.SetAsync(cacheKey, "actual-value");
+        Assert.Equal(1, firstCache.LocalCache.Count);
+
+        // Populate second cache's local cache
+        var result = await secondCache.GetAsync<string>(cacheKey);
+        Assert.True(result.HasValue);
+        Assert.Equal("actual-value", result.Value);
+        Assert.Equal(1, secondCache.LocalCache.Count);
+
+        // Reset invalidation counter
+        long initialInvalidateCalls = secondCache.InvalidateCacheCalls;
+
+        // Try to remove with non-matching expected value
+        bool removed = await firstCache.RemoveIfEqualAsync(cacheKey, "wrong-value");
+        Assert.False(removed);
+
+        // Wait for any potential invalidation message
+        await Task.Delay(250, TestCancellationToken);
+
+        // No invalidation should have been published since value didn't match
+        Assert.Equal(initialInvalidateCalls, secondCache.InvalidateCacheCalls);
+
+        // Second cache's local cache should still have the key
+        Assert.Equal(1, secondCache.LocalCache.Count);
     }
 
     public virtual async Task ReplaceIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
@@ -351,7 +508,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         Assert.True(await firstCache.ReplaceIfEqualAsync(cacheKey, "new", "original"));
 
         // Wait for invalidation message to propagate
-        await Task.Delay(250);
+        await Task.Delay(250, TestCancellationToken);
 
         // Assert: Client B's local cache should be invalidated
         Assert.Equal(0, secondCache.LocalCache.Count);
@@ -386,7 +543,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await firstCache.SetAsync(cacheKey, "value2");
 
         // Wait for invalidation message to propagate
-        await Task.Delay(250);
+        await Task.Delay(250, TestCancellationToken);
 
         // Assert: Client B's local cache should be invalidated
         Assert.Equal(0, secondCache.LocalCache.Count);

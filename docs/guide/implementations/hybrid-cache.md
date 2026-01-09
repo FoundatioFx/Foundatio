@@ -108,6 +108,27 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 | `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
 
+### Smart Cache Invalidation
+
+The hybrid cache optimizes message bus traffic by **only publishing invalidation messages when the distributed cache actually changed**. This reduces unnecessary network traffic and processing overhead.
+
+| Operation | Publishes When |
+|-----------|---------------|
+| `RemoveAsync(key)` | Key existed and was removed |
+| `RemoveIfEqualAsync(key, expected)` | Key existed with matching value and was removed |
+| `RemoveAllAsync(keys)` | At least one key was removed |
+| `RemoveAllAsync()` (flush) | At least one key was removed |
+| `RemoveByPrefixAsync(prefix)` | At least one key matched and was removed |
+| `ListRemoveAsync(key, values)` | At least one value was removed from the list |
+
+**Example**: If you call `RemoveAsync("user:123")` but the key doesn't exist in the distributed cache, no invalidation message is published because there's nothing for other instances to clear.
+
+This optimization is safe because:
+
+1. **Distributed cache is the source of truth** - if a key doesn't exist there, it shouldn't exist in any local cache
+2. **Local caches are eventually consistent** - expired entries are cleaned up naturally
+3. **Redis handles expiration automatically** - expired keys are already removed, so `KeyDeleteAsync` returns `false` only when the key truly doesn't exist
+
 ## L1/L2 Cache Architecture
 
 `HybridCacheClient` implements a two-tier caching architecture following industry-standard terminology:
