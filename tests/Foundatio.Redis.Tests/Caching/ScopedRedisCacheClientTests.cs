@@ -1,4 +1,3 @@
-using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
@@ -217,9 +216,9 @@ public class ScopedRedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    public override Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
-        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
+        return base.ListRemoveAsync_WithMultipleItems_RemovesCorrectly();
     }
 
     [Fact]

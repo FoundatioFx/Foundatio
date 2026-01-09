@@ -398,7 +398,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         return added;
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -584,6 +584,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
+
         if (values.Count is 0)
             return 0;
 
@@ -764,14 +765,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
 
         var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        // If no expiration needed, use native Redis command (preserves existing TTL)
-        if (!expiresMs.HasValue)
-            return await Database.StringIncrementAsync(key, amount).AnyContext();
-
-        // Need to set expiration - use Lua script for atomicity
+        // Always use Lua script - handles both expiration and TTL removal (null expiration removes TTL)
         await LoadScriptsAsync().AnyContext();
-        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresMs.Value }).AnyContext();
+        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresArg }).AnyContext();
         return (double)result;
     }
 
@@ -787,14 +785,11 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         }
 
         var expiresMs = GetExpirationMilliseconds(expiresIn);
+        var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;
 
-        // If no expiration needed, use native Redis command (preserves existing TTL)
-        if (!expiresMs.HasValue)
-            return await Database.StringIncrementAsync(key, amount).AnyContext();
-
-        // Need to set expiration - use Lua script for atomicity
+        // Always use Lua script - handles both expiration and TTL removal (null expiration removes TTL)
         await LoadScriptsAsync().AnyContext();
-        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresMs.Value }).AnyContext();
+        var result = await Database.ScriptEvaluateAsync(_incrementWithExpire, new { key = (RedisKey)key, value = amount, expires = expiresArg }).AnyContext();
         return (long)result;
     }
 

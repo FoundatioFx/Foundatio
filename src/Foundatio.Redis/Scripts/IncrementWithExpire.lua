@@ -1,10 +1,15 @@
 local integral, fractional = math.modf(@value)
+local v
 if fractional == 0 then
-  local v = redis.call('incrby', @key, @value)
-  redis.call('pexpire', @key, math.ceil(@expires))
-  return v
+  v = redis.call('incrby', @key, @value)
 else
-  local v = redis.call('incrbyfloat', @key, @value)
-  redis.call('pexpire', @key, math.ceil(@expires))
-  return v
+  v = redis.call('incrbyfloat', @key, @value)
 end
+
+if (@expires ~= nil and @expires ~= '') then
+  redis.call('pexpire', @key, math.ceil(@expires))
+else
+  redis.call('persist', @key)
+end
+
+return v

@@ -265,9 +265,15 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    public override Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
-        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
+        return base.ListRemoveAsync_WithMultipleItems_RemovesCorrectly();
+    }
+
+    [Fact]
+    public override Task ListRemoveAsync_WithNonExistentValues_DoesNotPublishInvalidation()
+    {
+        return base.ListRemoveAsync_WithNonExistentValues_DoesNotPublishInvalidation();
     }
 
     [Fact]
@@ -286,6 +292,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public override Task RemoveAllAsync_WithLocalCache_InvalidatesLocalCache()
     {
         return base.RemoveAllAsync_WithLocalCache_InvalidatesLocalCache();
+    }
+
+    [Fact]
+    public override Task RemoveAllAsync_WithNonExistentKeys_DoesNotPublishInvalidation()
+    {
+        return base.RemoveAllAsync_WithNonExistentKeys_DoesNotPublishInvalidation();
     }
 
     [Fact]
@@ -310,6 +322,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public override Task RemoveAsync_WithNonExistentKey_ReturnsFalse()
     {
         return base.RemoveAsync_WithNonExistentKey_ReturnsFalse();
+    }
+
+    [Fact]
+    public override Task RemoveAsync_WithNonExistentKey_DoesNotPublishInvalidation()
+    {
+        return base.RemoveAsync_WithNonExistentKey_DoesNotPublishInvalidation();
     }
 
     [Fact]
@@ -379,6 +397,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
         return base.RemoveByPrefixAsync_WithMatchingPrefix_RemovesOnlyMatchingKeys();
     }
 
+    [Fact]
+    public override Task RemoveByPrefixAsync_WithNonMatchingPrefix_DoesNotPublishInvalidation()
+    {
+        return base.RemoveByPrefixAsync_WithNonMatchingPrefix_DoesNotPublishInvalidation();
+    }
+
     [Theory]
     [InlineData(50)]
     [InlineData(500)]
@@ -444,6 +468,12 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public override Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
     {
         return base.RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
+    public override Task RemoveIfEqualAsync_WithNonMatchingValue_DoesNotPublishInvalidation()
+    {
+        return base.RemoveIfEqualAsync_WithNonMatchingValue_DoesNotPublishInvalidation();
     }
 
     [Fact]
