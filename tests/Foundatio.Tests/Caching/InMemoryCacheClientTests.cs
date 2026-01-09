@@ -255,9 +255,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    public override Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
-        return base.ListRemoveAsync_WithExpiration_SetsExpirationCorrectly();
+        return base.ListRemoveAsync_WithMultipleItems_RemovesCorrectly();
     }
 
     [Fact]

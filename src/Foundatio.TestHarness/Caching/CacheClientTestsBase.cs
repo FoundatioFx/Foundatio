@@ -765,33 +765,33 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await Task.Delay(100);
             Assert.False((await cache.GetAsync<int>("increment-expiration-test")).HasValue);
 
-            // Null expiration (long): calling with null should preserve existing expiration
+            // Null expiration (long): calling with null should remove existing expiration
             longResult = await cache.IncrementAsync("increment-null-exp-long", 100L, TimeSpan.FromHours(1));
             Assert.Equal(100, longResult);
             Assert.True(await cache.ExistsAsync("increment-null-exp-long"));
             expiration = await cache.GetExpirationAsync("increment-null-exp-long");
             Assert.NotNull(expiration);
 
-            // Now call without expiration - should succeed and preserve existing expiration
+            // Now call without expiration - should succeed and remove existing expiration
             longResult = await cache.IncrementAsync("increment-null-exp-long", 5L);
             Assert.Equal(105, longResult);
             Assert.True(await cache.ExistsAsync("increment-null-exp-long"));
             expiration = await cache.GetExpirationAsync("increment-null-exp-long");
-            Assert.NotNull(expiration); // Expiration is preserved
+            Assert.Null(expiration); // Expiration is removed (consistent with SetAsync behavior)
 
-            // Null expiration (double): calling with null should preserve existing expiration
+            // Null expiration (double): calling with null should remove existing expiration
             doubleResult = await cache.IncrementAsync("increment-null-exp-double", 100.5, TimeSpan.FromHours(1));
             Assert.Equal(100.5, doubleResult);
             Assert.True(await cache.ExistsAsync("increment-null-exp-double"));
             expiration = await cache.GetExpirationAsync("increment-null-exp-double");
             Assert.NotNull(expiration);
 
-            // Now call without expiration - should succeed and preserve existing expiration
+            // Now call without expiration - should succeed and remove existing expiration
             doubleResult = await cache.IncrementAsync("increment-null-exp-double", 5.5);
             Assert.Equal(106, doubleResult);
             Assert.True(await cache.ExistsAsync("increment-null-exp-double"));
             expiration = await cache.GetExpirationAsync("increment-null-exp-double");
-            Assert.NotNull(expiration); // Expiration is preserved
+            Assert.Null(expiration); // Expiration is removed (consistent with SetAsync behavior)
         }
     }
 
@@ -1258,21 +1258,20 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
             Assert.Equal(2, await cache.ListAddAsync(key, [1, 2]));
 
-            Assert.Equal(1, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
-            Assert.Equal(0, await cache.ListRemoveAsync(key, [1], TimeSpan.FromSeconds(-1)));
+            Assert.Equal(1, await cache.ListRemoveAsync(key, [1]));
+            Assert.Equal(0, await cache.ListRemoveAsync(key, [1]));
 
             var cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
             Assert.True(cacheValue.Value.Contains(2));
 
-            // Expiration is not taken into account since it's a remove operation.
-            Assert.Equal(1, await cache.ListRemoveAsync(key, [2], TimeSpan.FromSeconds(1)));
+            Assert.Equal(1, await cache.ListRemoveAsync(key, [2]));
             Assert.False(await cache.ExistsAsync(key));
         }
     }
 
-    public virtual async Task ListRemoveAsync_WithExpiration_SetsExpirationCorrectly()
+    public virtual async Task ListRemoveAsync_WithMultipleItems_RemovesCorrectly()
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1282,28 +1281,21 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             await cache.RemoveAllAsync();
 
-            // NOTE: The expiresIn parameter on ListRemoveAsync is currently NOT implemented
-            // in InMemoryCacheClient - it is a no-op. This test documents the expected behavior
-            // that SHOULD be implemented: expiration should be applied to remaining items after removal.
-            // For now, this test verifies the remove operation works, but expiration is ignored.
-
             // Setup: add items to list
-            const string key = "list-remove-exp";
+            const string key = "list-remove-multi";
             Assert.Equal(3, await cache.ListAddAsync(key, [1, 2, 3]));
             Assert.True(await cache.ExistsAsync(key));
 
-            // Past expiration: currently the expiresIn is ignored, so remove still works
-            // Expected behavior (not implemented): past expiration should remove all remaining items
-            long removed = await cache.ListRemoveAsync(key, [1], TimeSpan.FromMilliseconds(-1));
+            // Remove single item
+            long removed = await cache.ListRemoveAsync(key, [1]);
             Assert.Equal(1, removed);
-            // Key still exists because expiresIn is not implemented
             Assert.True(await cache.ExistsAsync(key));
             var listValue = await cache.GetListAsync<int>(key);
             Assert.True(listValue.HasValue);
             Assert.Equal(2, listValue.Value.Count);
 
-            // Normal expiration: currently ignored
-            removed = await cache.ListRemoveAsync(key, [2], TimeSpan.FromHours(1));
+            // Remove another item
+            removed = await cache.ListRemoveAsync(key, [2]);
             Assert.Equal(1, removed);
             Assert.True(await cache.ExistsAsync(key));
             listValue = await cache.GetListAsync<int>(key);
@@ -1311,8 +1303,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Single(listValue.Value);
             Assert.Contains(3, listValue.Value);
 
-            // Max expiration: currently ignored
-            removed = await cache.ListRemoveAsync(key, [3], TimeSpan.MaxValue);
+            // Remove last item
+            removed = await cache.ListRemoveAsync(key, [3]);
             Assert.Equal(1, removed);
             // After removing all items, key should not exist
             Assert.False(await cache.ExistsAsync(key));
@@ -2357,6 +2349,21 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                     TimeSpan.Zero));
             Assert.False(await cache.ExistsAsync("zero-exp1"));
             Assert.False(await cache.ExistsAsync("zero-exp2"));
+
+            // Empty values with past expiration: should still remove any existing keys that match
+            Assert.True(await cache.SetAsync("empty-past-existing", "original"));
+            Assert.True(await cache.ExistsAsync("empty-past-existing"));
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object> { { "empty-past-existing", "new" } },
+                    TimeSpan.FromMilliseconds(-1)));
+            Assert.False(await cache.ExistsAsync("empty-past-existing"));
+
+            // Empty dictionary with past expiration: should return 0 and not throw
+            Assert.Equal(0,
+                await cache.SetAllAsync(
+                    new Dictionary<string, object>(),
+                    TimeSpan.FromMilliseconds(-1)));
 
             // Max expiration: should succeed and keys should exist with no expiration
             Assert.Equal(2,

@@ -291,12 +291,12 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.ListAddAsync(GetUnscopedCacheKey(key), values, expiresIn);
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values, expiresIn);
+        return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values);
     }
 
     public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)

@@ -148,9 +148,9 @@ Different operations use different strategies to keep L1 in sync with L2:
 
 | Strategy | When Used | Operations |
 |----------|-----------|------------|
-| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` (with expiration) |
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
 | **Set on full success** | When all items in a batch succeed | `ListAddAsync`, `ListRemoveAsync` (when count matches) |
-| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, `IncrementAsync` (without expiration), partial `ListAddAsync`/`ListRemoveAsync` |
+| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, partial `ListAddAsync`/`ListRemoveAsync` |
 | **Remove on failure** | When the operation fails (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
 
 **Set on success** - Used when the operation's result is deterministic:
@@ -160,9 +160,13 @@ Different operations use different strategies to keep L1 in sync with L2:
 await distributedCache.SetAsync(key, value);
 await localCache.SetAsync(key, value);  // Same value, guaranteed consistent
 
-// IncrementAsync returns the new value, so we can cache it (when expiration is specified)
+// IncrementAsync returns the new value, so we can cache it
 long newValue = await distributedCache.IncrementAsync(key, amount, TimeSpan.FromMinutes(5));
 await localCache.SetAsync(key, newValue, TimeSpan.FromMinutes(5));  // Cache the authoritative value
+
+// IncrementAsync with null expiration removes TTL (consistent with SetAsync)
+long newValue = await distributedCache.IncrementAsync(key, amount, null);
+await localCache.SetAsync(key, newValue, null);  // Both caches: no expiration
 ```
 
 **Set on full success** - Used for batch operations when all items succeed:
@@ -182,23 +186,11 @@ else
 // SetIfHigherAsync: even when difference == 0, we don't know the actual current value
 // We only know our value wasn't higher, not what the distributed cache contains
 double difference = await distributedCache.SetIfHigherAsync(key, value, expiresIn);
-await localCache.RemoveAsync(key);  // Always remove - we don't know the actual value
-
-// IncrementAsync without expiration: preserves existing TTL in distributed cache
-// We can't replicate TTL preservation locally, so remove to force re-fetch
-long newValue = await distributedCache.IncrementAsync(key, amount);  // null expiration
-await localCache.RemoveAsync(key);  // Force re-fetch to get correct TTL
+if (difference > 0)
+    await localCache.SetAsync(key, value, expiresIn);  // Value was updated
+else
+    await localCache.RemoveAsync(key);  // Value wasn't updated - force re-fetch
 ```
-
-::: info IncrementAsync with null expiration
-When `IncrementAsync` is called with `expiresIn = null`, the distributed cache (L2) preserves any existing TTL on the key (this is documented behavior - see [Caching Guide](/guide/caching#ttl-behavior-by-method)). However, the hybrid cache removes the key from local cache (L1) to force a re-fetch. This ensures consistency because:
-
-1. L1 cannot replicate TTL preservation without an extra network call to fetch the TTL
-2. Using `SetAsync(null)` would make L1 permanent while L2 has a TTL, risking stale data after L2 expires
-3. The re-fetch on next read gets both the correct value AND the correct remaining TTL from L2
-
-If you want to avoid the re-fetch overhead, pass an explicit expiration value to `IncrementAsync`.
-:::
 
 **Remove on failure** - Ensures local cache doesn't contain stale data when distributed operation fails:
 

@@ -253,20 +253,20 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
-            long removed = await _distributedCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
+            long removed = await _distributedCache.ListRemoveAsync(key, stringValue).AnyContext();
             await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
             return removed;
         }
         else
         {
-            long removed = await _distributedCache.ListRemoveAsync(key, values, expiresIn).AnyContext();
+            long removed = await _distributedCache.ListRemoveAsync(key, values).AnyContext();
             await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
             return removed;
         }

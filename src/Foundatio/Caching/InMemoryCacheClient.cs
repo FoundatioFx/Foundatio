@@ -857,7 +857,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return expiredValues;
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -1058,8 +1058,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
-        if (values.Count is 0)
-            return 0;
 
         if (expiresIn?.Ticks <= 0)
         {
@@ -1068,6 +1066,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             return 0;
         }
+
+        if (values.Count is 0)
+            return 0;
 
         int limit = Math.Min(_maxItems.GetValueOrDefault(values.Count), values.Count);
         if (_maxItems.HasValue && values.Count > _maxItems)
@@ -1193,8 +1194,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             else
                 existingEntry.Value = amount;
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(existingEntry.Value) : 0;
             newSize = existingEntry.Size;
@@ -1251,8 +1251,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             else
                 existingEntry.Value = amount;
 
-            if (expiresIn.HasValue)
-                existingEntry.ExpiresAt = expiresAt;
+            existingEntry.ExpiresAt = expiresAt;
 
             newSize = existingEntry.Size;
             return existingEntry;

@@ -235,7 +235,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(0L);
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
