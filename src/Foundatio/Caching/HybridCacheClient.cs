@@ -280,15 +280,15 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
+        
+        if (values.Count is 0)
+            return 0;
 
         if (expiresIn is { Ticks: <= 0 })
         {
             await RemoveAllAsync(values.Keys).AnyContext();
             return 0;
         }
-
-        if (values.Count is 0)
-            return 0;
 
         _logger.LogTrace("Setting keys {Keys} with expiration: {Expiration}", values.Keys, expiresIn);
         int setCount = await _distributedCache.SetAllAsync(values, expiresIn).AnyContext();
