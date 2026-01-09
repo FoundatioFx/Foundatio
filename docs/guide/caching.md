@@ -107,7 +107,7 @@ For Redis implementations, integer amounts (including `2.0` where the fractional
 ### Detailed Examples
 
 ```csharp
-// === Basic Set Operations ===
+// Basic Set Operations
 
 // No expiration - item lives until explicitly removed
 await cache.SetAsync("permanent-key", value);           // null is default
@@ -124,7 +124,7 @@ var success = await cache.SetAsync("invalid", value, TimeSpan.Zero);        // f
 var alsoFails = await cache.SetAsync("invalid", value, TimeSpan.FromSeconds(-1)); // false
 
 
-// === Increment Operations (TTL Behavior) ===
+// Increment Operations (TTL Behavior)
 
 // Create counter with TTL
 await cache.SetAsync("counter", 0, TimeSpan.FromMinutes(5));
@@ -139,7 +139,7 @@ await cache.IncrementAsync("counter", 1, TimeSpan.FromMinutes(10)); // TTL now 1
 var result = await cache.IncrementAsync("counter", 5, TimeSpan.Zero); // 0
 
 
-// === SetIfHigher/SetIfLower (TTL Removal) ===
+// SetIfHigher/SetIfLower (TTL Removal)
 
 // Create with TTL
 await cache.SetAsync("max-users", 100, TimeSpan.FromHours(1));
