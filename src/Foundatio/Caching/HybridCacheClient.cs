@@ -372,8 +372,10 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         double newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         if (newValue is 0)
         {
-            // If IncrementAsync returns 0, the key was removed (zero/negative expiration)
-            // Remove from local cache instead of setting
+            // When the result is 0, we remove from local cache rather than caching the value.
+            // This handles the edge case where 0 could indicate either a legitimate zero value
+            // or an error condition. Removing is conservative - the next read will fetch from
+            // distributed cache if the key exists there.
             await _localCache.RemoveAsync(key).AnyContext();
         }
         else
@@ -400,8 +402,10 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         long newValue = await _distributedCache.IncrementAsync(key, amount, expiresIn).AnyContext();
         if (newValue is 0)
         {
-            // If IncrementAsync returns 0, the key was removed (zero/negative expiration)
-            // Remove from local cache instead of setting
+            // When the result is 0, we remove from local cache rather than caching the value.
+            // This handles the edge case where 0 could indicate either a legitimate zero value
+            // or an error condition. Removing is conservative - the next read will fetch from
+            // distributed cache if the key exists there.
             await _localCache.RemoveAsync(key).AnyContext();
         }
         else
@@ -516,7 +520,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
 
-        if (difference > 0)
+        if (difference != 0)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -544,7 +548,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         long difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
 
-        if (difference > 0)
+        if (difference != 0)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -572,7 +576,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
 
-        if (difference > 0)
+        if (difference != 0)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -600,7 +604,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         long difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
 
-        if (difference > 0)
+        if (difference != 0)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();

@@ -939,6 +939,38 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             result = await cache.SetIfHigherAsync("decimal-high", 11.125);
             Assert.Equal(0.375, result); // difference should be 0.375
             Assert.Equal(11.125, (await cache.GetAsync<double>("decimal-high")).Value);
+
+            // Negative value tests
+
+            // Initialize with a negative value on new key - returns the value itself
+            result = await cache.SetIfHigherAsync("negative-high", -10.0);
+            Assert.Equal(-10.0, result); // For new keys, returns the value itself
+            Assert.Equal(-10.0, (await cache.GetAsync<double>("negative-high")).Value);
+
+            // Set higher with a less negative value (e.g., -5 is higher than -10)
+            result = await cache.SetIfHigherAsync("negative-high", -5.0);
+            Assert.Equal(5.0, result); // difference: -5 - (-10) = 5
+            Assert.Equal(-5.0, (await cache.GetAsync<double>("negative-high")).Value);
+
+            // Try to set with more negative value - should not update
+            result = await cache.SetIfHigherAsync("negative-high", -15.0);
+            Assert.Equal(0, result);
+            Assert.Equal(-5.0, (await cache.GetAsync<double>("negative-high")).Value);
+
+            // Set higher with positive value
+            result = await cache.SetIfHigherAsync("negative-high", 10.0);
+            Assert.Equal(15.0, result); // difference: 10 - (-5) = 15
+            Assert.Equal(10.0, (await cache.GetAsync<double>("negative-high")).Value);
+
+            // Long overload: Initialize with negative value on new key
+            long longResult = await cache.SetIfHigherAsync("negative-high-long", -100L);
+            Assert.Equal(-100L, longResult); // For new keys, returns the value itself
+            Assert.Equal(-100L, (await cache.GetAsync<long>("negative-high-long")).Value);
+
+            // Long overload: Set higher with less negative value
+            longResult = await cache.SetIfHigherAsync("negative-high-long", -50L);
+            Assert.Equal(50L, longResult); // difference: -50 - (-100) = 50
+            Assert.Equal(-50L, (await cache.GetAsync<long>("negative-high-long")).Value);
         }
     }
 
@@ -976,6 +1008,38 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             result = await cache.SetIfLowerAsync("decimal-low", 99.875);
             Assert.Equal(0.375, result); // difference should be 0.375
             Assert.Equal(99.875, (await cache.GetAsync<double>("decimal-low")).Value);
+
+            // Negative value tests
+
+            // Initialize with a negative value on new key - returns the value itself
+            result = await cache.SetIfLowerAsync("negative-low", -5.0);
+            Assert.Equal(-5.0, result); // For new keys, returns the value itself
+            Assert.Equal(-5.0, (await cache.GetAsync<double>("negative-low")).Value);
+
+            // Set lower with a more negative value (e.g., -10 is lower than -5)
+            result = await cache.SetIfLowerAsync("negative-low", -10.0);
+            Assert.Equal(5.0, result); // difference: -5 - (-10) = 5
+            Assert.Equal(-10.0, (await cache.GetAsync<double>("negative-low")).Value);
+
+            // Try to set with less negative value - should not update
+            result = await cache.SetIfLowerAsync("negative-low", -5.0);
+            Assert.Equal(0, result);
+            Assert.Equal(-10.0, (await cache.GetAsync<double>("negative-low")).Value);
+
+            // Set lower with even more negative value
+            result = await cache.SetIfLowerAsync("negative-low", -20.0);
+            Assert.Equal(10.0, result); // difference: -10 - (-20) = 10
+            Assert.Equal(-20.0, (await cache.GetAsync<double>("negative-low")).Value);
+
+            // Long overload: Initialize with negative value on new key
+            long longResult = await cache.SetIfLowerAsync("negative-low-long", -50L);
+            Assert.Equal(-50L, longResult); // For new keys, returns the value itself
+            Assert.Equal(-50L, (await cache.GetAsync<long>("negative-low-long")).Value);
+
+            // Long overload: Set lower with more negative value
+            longResult = await cache.SetIfLowerAsync("negative-low-long", -100L);
+            Assert.Equal(50L, longResult); // difference: -50 - (-100) = 50
+            Assert.Equal(-100L, (await cache.GetAsync<long>("negative-low-long")).Value);
         }
     }
 

@@ -228,6 +228,20 @@ This approach ensures consistency even when:
 - Multiple instances are writing concurrently
 - Operations fail due to past expiration
 
+### Edge Cases with Zero Values
+
+The `IncrementAsync` operation has an edge case where L1 and L2 may temporarily be inconsistent when the result is 0:
+
+**IncrementAsync returning 0:**
+- If `IncrementAsync` returns 0 (e.g., incrementing 5 by -5, or creating a new key with amount 0), the key is removed from L1 rather than cached
+- This is a conservative approach since 0 could indicate either a legitimate value or an error condition
+- **Self-healing**: The next `GetAsync` will fetch from L2 and populate L1
+
+This edge case is rare in practice and the inconsistency is temporary. The design prioritizes:
+1. **Safety**: Removing uncertain values prevents serving stale data
+2. **Simplicity**: Avoiding complex state tracking for rare edge cases
+3. **Self-healing**: Any inconsistency is automatically resolved on the next read
+
 ## Basic Usage
 
 ### With Generic HybridCacheClient
