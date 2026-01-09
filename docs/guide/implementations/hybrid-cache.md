@@ -108,6 +108,27 @@ Invalidation is **surgical** - only the affected keys are cleared on other insta
 | `RemoveByPrefixAsync("user:")` | Clears `user:*` pattern on other instances |
 | `RemoveAllAsync()` (no keys) | Clears **entire** local cache on all instances |
 
+### Smart Cache Invalidation
+
+The hybrid cache optimizes message bus traffic by **only publishing invalidation messages when the distributed cache actually changed**. This reduces unnecessary network traffic and processing overhead.
+
+| Operation | Publishes When |
+|-----------|---------------|
+| `RemoveAsync(key)` | Key existed and was removed |
+| `RemoveIfEqualAsync(key, expected)` | Key existed with matching value and was removed |
+| `RemoveAllAsync(keys)` | At least one key was removed |
+| `RemoveAllAsync()` (flush) | At least one key was removed |
+| `RemoveByPrefixAsync(prefix)` | At least one key matched and was removed |
+| `ListRemoveAsync(key, values)` | At least one value was removed from the list |
+
+**Example**: If you call `RemoveAsync("user:123")` but the key doesn't exist in the distributed cache, no invalidation message is published because there's nothing for other instances to clear.
+
+This optimization is safe because:
+
+1. **Distributed cache is the source of truth** - if a key doesn't exist there, it shouldn't exist in any local cache
+2. **Local caches are eventually consistent** - expired entries are cleaned up naturally
+3. **Redis handles expiration automatically** - expired keys are already removed, so `KeyDeleteAsync` returns `false` only when the key truly doesn't exist
+
 ## L1/L2 Cache Architecture
 
 `HybridCacheClient` implements a two-tier caching architecture following industry-standard terminology:
@@ -148,9 +169,9 @@ Different operations use different strategies to keep L1 in sync with L2:
 
 | Strategy | When Used | Operations |
 |----------|-----------|------------|
-| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` (with expiration) |
+| **Set on success** | When we know the exact value after the operation | `SetAsync`, `ReplaceAsync`, `IncrementAsync` |
 | **Set on full success** | When all items in a batch succeed | `ListAddAsync`, `ListRemoveAsync` (when count matches) |
-| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, `IncrementAsync` (without expiration), partial `ListAddAsync`/`ListRemoveAsync` |
+| **Remove to invalidate** | When the final value is uncertain or partial success | `SetIfHigherAsync`, `SetIfLowerAsync`, partial `ListAddAsync`/`ListRemoveAsync` |
 | **Remove on failure** | When the operation fails (e.g., past expiration) | `SetAsync`, `SetAllAsync`, `ReplaceAsync`, `ReplaceIfEqualAsync` |
 
 **Set on success** - Used when the operation's result is deterministic:
@@ -160,9 +181,13 @@ Different operations use different strategies to keep L1 in sync with L2:
 await distributedCache.SetAsync(key, value);
 await localCache.SetAsync(key, value);  // Same value, guaranteed consistent
 
-// IncrementAsync returns the new value, so we can cache it (when expiration is specified)
+// IncrementAsync returns the new value, so we can cache it
 long newValue = await distributedCache.IncrementAsync(key, amount, TimeSpan.FromMinutes(5));
 await localCache.SetAsync(key, newValue, TimeSpan.FromMinutes(5));  // Cache the authoritative value
+
+// IncrementAsync with null expiration removes TTL (consistent with SetAsync)
+long newValue = await distributedCache.IncrementAsync(key, amount, null);
+await localCache.SetAsync(key, newValue, null);  // Both caches: no expiration
 ```
 
 **Set on full success** - Used for batch operations when all items succeed:
@@ -182,23 +207,11 @@ else
 // SetIfHigherAsync: even when difference == 0, we don't know the actual current value
 // We only know our value wasn't higher, not what the distributed cache contains
 double difference = await distributedCache.SetIfHigherAsync(key, value, expiresIn);
-await localCache.RemoveAsync(key);  // Always remove - we don't know the actual value
-
-// IncrementAsync without expiration: preserves existing TTL in distributed cache
-// We can't replicate TTL preservation locally, so remove to force re-fetch
-long newValue = await distributedCache.IncrementAsync(key, amount);  // null expiration
-await localCache.RemoveAsync(key);  // Force re-fetch to get correct TTL
+if (difference > 0)
+    await localCache.SetAsync(key, value, expiresIn);  // Value was updated
+else
+    await localCache.RemoveAsync(key);  // Value wasn't updated - force re-fetch
 ```
-
-::: info IncrementAsync with null expiration
-When `IncrementAsync` is called with `expiresIn = null`, the distributed cache (L2) preserves any existing TTL on the key (this is documented behavior - see [Caching Guide](/guide/caching#ttl-behavior-by-method)). However, the hybrid cache removes the key from local cache (L1) to force a re-fetch. This ensures consistency because:
-
-1. L1 cannot replicate TTL preservation without an extra network call to fetch the TTL
-2. Using `SetAsync(null)` would make L1 permanent while L2 has a TTL, risking stale data after L2 expires
-3. The re-fetch on next read gets both the correct value AND the correct remaining TTL from L2
-
-If you want to avoid the re-fetch overhead, pass an explicit expiration value to `IncrementAsync`.
-:::
 
 **Remove on failure** - Ensures local cache doesn't contain stale data when distributed operation fails:
 
@@ -214,6 +227,20 @@ This approach ensures consistency even when:
 - Conditional operations have partial success (e.g., list operations)
 - Multiple instances are writing concurrently
 - Operations fail due to past expiration
+
+### Edge Cases with Zero Values
+
+The `IncrementAsync` operation has an edge case where L1 and L2 may temporarily be inconsistent when the result is 0:
+
+**IncrementAsync returning 0:**
+- If `IncrementAsync` returns 0 (e.g., incrementing 5 by -5, or creating a new key with amount 0), the key is removed from L1 rather than cached
+- This is a conservative approach since 0 could indicate either a legitimate value or an error condition
+- **Self-healing**: The next `GetAsync` will fetch from L2 and populate L1
+
+This edge case is rare in practice and the inconsistency is temporary. The design prioritizes:
+1. **Safety**: Removing uncertain values prevents serving stale data
+2. **Simplicity**: Avoiding complex state tracking for rare edge cases
+3. **Self-healing**: Any inconsistency is automatically resolved on the next read
 
 ## Basic Usage
 

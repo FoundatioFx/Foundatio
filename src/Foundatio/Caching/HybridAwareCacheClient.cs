@@ -50,7 +50,12 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
-        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
+        // Only notify other nodes if the key actually existed and was removed from distributed cache.
+        // If removed == false, the key didn't exist, so no other node needs to be notified.
+        if (removed)
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
         return removed;
     }
 
@@ -59,7 +64,12 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
-        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
+        // Only notify other nodes if the key was actually removed from distributed cache.
+        // If removed == false, either the key didn't exist or the value didn't match.
+        if (removed)
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
         return removed;
     }
 
@@ -68,14 +78,22 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         string[] items = keys?.ToArray();
         bool flushAll = items == null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
-        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+
+        // Only notify other nodes if keys were actually removed from distributed cache.
+        if (removed > 0)
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, FlushAll = flushAll, Keys = items }).AnyContext();
+
         return removed;
     }
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
         int removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
-        await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [prefix + "*"] }).AnyContext();
+
+        // Only notify other nodes if keys were actually removed from distributed cache.
+        if (removed > 0)
+            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [prefix + "*"] }).AnyContext();
+
         return removed;
     }
 
@@ -113,6 +131,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
+        
         if (values.Count is 0)
             return 0;
 
@@ -253,21 +272,29 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
         if (values is string stringValue)
         {
-            long removed = await _distributedCache.ListRemoveAsync(key, stringValue, expiresIn).AnyContext();
-            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+            long removed = await _distributedCache.ListRemoveAsync(key, stringValue).AnyContext();
+
+            // Only notify other nodes if items were actually removed from distributed cache.
+            if (removed > 0)
+                await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
             return removed;
         }
         else
         {
-            long removed = await _distributedCache.ListRemoveAsync(key, values, expiresIn).AnyContext();
-            await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+            long removed = await _distributedCache.ListRemoveAsync(key, values).AnyContext();
+
+            // Only notify other nodes if items were actually removed from distributed cache.
+            if (removed > 0)
+                await _messagePublisher.PublishAsync(new HybridCacheClient.InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
+
             return removed;
         }
     }

@@ -43,7 +43,7 @@ public interface ICacheClient : IDisposable
 
     // List operations
     Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
-    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
+    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values);
     Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100);
 }
 ```
@@ -72,28 +72,15 @@ Different methods handle the `expiresIn` parameter slightly differently. The tab
 | `SetAllAsync` | No TTL (removes existing) | Sets TTL | Removes all keys | `0` |
 | `ReplaceAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `ReplaceIfEqualAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
-| `IncrementAsync` | **Preserves existing TTL** | Sets/updates TTL | Removes key | `0` |
+| `IncrementAsync` | No TTL (removes existing) | Sets/updates TTL | Removes key | `0` |
 | `SetIfHigherAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
 | `SetIfLowerAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
 | `ListAddAsync` | No TTL | Sets TTL | Removes key | `0` |
-| `ListRemoveAsync` | Preserves existing TTL | Sets TTL | Removes key | `0` |
 
 \* **Conditional operations**: `SetIfHigherAsync` and `SetIfLowerAsync` only update TTL when the condition is met. If the value is not higher/lower, the entire operation is a no-op (including expiration).
 
-::: tip Key Difference: IncrementAsync
-`IncrementAsync` is unique: passing `null` **preserves** any existing TTL rather than removing it. This is intentional for use cases like rate limiting, where you want to increment a counter without resetting its expiration window.
-
-```csharp
-// Set counter with 1-hour window
-await cache.SetAsync("rate:user:123", 0, TimeSpan.FromHours(1));
-
-// Increment without changing the TTL
-await cache.IncrementAsync("rate:user:123", 1, null); // TTL unchanged!
-
-// Increment AND reset TTL to 1 hour from now
-await cache.IncrementAsync("rate:user:123", 1, TimeSpan.FromHours(1));
-```
-
+::: tip ListRemoveAsync
+`ListRemoveAsync` does not accept an `expiresIn` parameter. It simply removes values from the list without modifying the key's expiration.
 :::
 
 ::: info Integer vs Floating-Point Increments
@@ -120,7 +107,7 @@ For Redis implementations, integer amounts (including `2.0` where the fractional
 ### Detailed Examples
 
 ```csharp
-// === Basic Set Operations ===
+// Basic Set Operations
 
 // No expiration - item lives until explicitly removed
 await cache.SetAsync("permanent-key", value);           // null is default
@@ -137,22 +124,22 @@ var success = await cache.SetAsync("invalid", value, TimeSpan.Zero);        // f
 var alsoFails = await cache.SetAsync("invalid", value, TimeSpan.FromSeconds(-1)); // false
 
 
-// === Increment Operations (TTL Preservation) ===
+// Increment Operations (TTL Behavior)
 
 // Create counter with TTL
 await cache.SetAsync("counter", 0, TimeSpan.FromMinutes(5));
 
-// Increment preserves TTL when null
-await cache.IncrementAsync("counter", 1, null);  // TTL still ~5 min
+// Increment with null removes TTL (consistent with SetAsync)
+await cache.IncrementAsync("counter", 1, null);  // TTL removed!
 
-// Increment with explicit TTL resets it
+// Increment with explicit TTL sets it
 await cache.IncrementAsync("counter", 1, TimeSpan.FromMinutes(10)); // TTL now 10 min
 
 // Zero/negative removes key, returns 0
 var result = await cache.IncrementAsync("counter", 5, TimeSpan.Zero); // 0
 
 
-// === SetIfHigher/SetIfLower (TTL Removal) ===
+// SetIfHigher/SetIfLower (TTL Removal)
 
 // Create with TTL
 await cache.SetAsync("max-users", 100, TimeSpan.FromHours(1));

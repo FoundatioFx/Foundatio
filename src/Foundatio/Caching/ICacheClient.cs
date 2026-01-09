@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -20,12 +20,6 @@ namespace Foundatio.Caching;
 ///   and the method returns a failure/default value (false, 0, depending on the method).</description></item>
 ///   <item><description><b>TimeSpan.MaxValue</b>: The entry will not expire (treated as no expiration).</description></item>
 /// </list>
-/// <para>
-/// <b>Note on IncrementAsync:</b> Unlike other operations, <see cref="IncrementAsync(string, double, TimeSpan?)"/>
-/// preserves any existing expiration when <c>expiresIn</c> is null. This is because increment is an in-place
-/// modification rather than a value replacement, making TTL preservation the expected behavior for use cases
-/// like rate limiting counters.
-/// </para>
 /// </remarks>
 public interface ICacheClient : IDisposable
 {
@@ -221,7 +215,7 @@ public interface ICacheClient : IDisposable
     /// <param name="expiresIn">
     /// Optional expiration time for the cache entry.
     /// <list type="bullet">
-    ///   <item><description><b>null</b>: Preserves any existing expiration. For new keys, no expiration is set.</description></item>
+    ///   <item><description><b>null</b>: Removes any existing expiration. For new keys, no expiration is set.</description></item>
     ///   <item><description><b>Positive value</b>: Sets or updates expiration to this duration from now.</description></item>
     ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
@@ -244,7 +238,7 @@ public interface ICacheClient : IDisposable
     /// <param name="expiresIn">
     /// Optional expiration time for the cache entry.
     /// <list type="bullet">
-    ///   <item><description><b>null</b>: Preserves any existing expiration. For new keys, no expiration is set.</description></item>
+    ///   <item><description><b>null</b>: Removes any existing expiration. For new keys, no expiration is set.</description></item>
     ///   <item><description><b>Positive value</b>: Sets or updates expiration to this duration from now.</description></item>
     ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
     /// </list>
@@ -444,18 +438,10 @@ public interface ICacheClient : IDisposable
     /// <typeparam name="T">The type of values in the list.</typeparam>
     /// <param name="key">The unique identifier for the cache entry. Cannot be null or empty.</param>
     /// <param name="values">The values to remove from the list. Cannot be null. Null values within the collection are ignored.</param>
-    /// <param name="expiresIn">
-    /// Optional expiration time for the cache entry (applied after the remove operation).
-    /// <list type="bullet">
-    ///   <item><description><b>null</b>: Expiration is not modified.</description></item>
-    ///   <item><description><b>Positive value</b>: Entry expires after this duration.</description></item>
-    ///   <item><description><b>Zero or negative</b>: Any existing key is removed, returns 0.</description></item>
-    /// </list>
-    /// </param>
     /// <returns>The number of values that were removed from the list.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="values"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
-    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
+    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values);
 
     /// <summary>
     /// Retrieves values from a list stored at the specified key.

@@ -99,7 +99,7 @@ public class NullCacheClient : ICacheClient
     public Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
-
+        
         if (values.Count is 0)
             return Task.FromResult(0);
 
@@ -235,7 +235,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(0L);
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
