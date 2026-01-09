@@ -520,7 +520,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         double difference = await _distributedCache.SetIfHigherAsync(key, value, expiresIn).AnyContext();
 
-        if (difference != 0)
+        if (Math.Abs(difference) > double.Epsilon)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
@@ -576,7 +576,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         double difference = await _distributedCache.SetIfLowerAsync(key, value, expiresIn).AnyContext();
 
-        if (difference != 0)
+        if (Math.Abs(difference) > double.Epsilon)
         {
             // Value was updated - we know the new value is exactly what we passed in
             await _localCache.SetAsync(key, value, expiresIn).AnyContext();
