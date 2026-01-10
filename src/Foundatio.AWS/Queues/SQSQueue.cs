@@ -373,30 +373,30 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         if (handler == null)
             throw new ArgumentNullException(nameof(handler));
 
-        var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
 
         Task.Run(async () =>
         {
             _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
-            while (!linkedCancellationToken.IsCancellationRequested)
+            while (!linkedCancellationTokenSource.IsCancellationRequested)
             {
                 _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> entry = null;
                 try
                 {
-                    entry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+                    entry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
                 }
                 catch (OperationCanceledException) { }
 
-                if (linkedCancellationToken.IsCancellationRequested || entry == null)
+                if (linkedCancellationTokenSource.IsCancellationRequested || entry == null)
                     continue;
 
                 try
                 {
-                    await handler(entry, linkedCancellationToken.Token).AnyContext();
-                    if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
+                    await handler(entry, linkedCancellationTokenSource.Token).AnyContext();
+                    if (autoComplete && !entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationTokenSource.IsCancellationRequested)
                         await entry.CompleteAsync().AnyContext();
                 }
                 catch (Exception ex)
@@ -404,13 +404,13 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
                     Interlocked.Increment(ref _workerErrorCount);
                     _logger.LogError(ex, "Worker error: {Message}", ex.Message);
 
-                    if (!entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationToken.IsCancellationRequested)
+                    if (!entry.IsAbandoned && !entry.IsCompleted && !linkedCancellationTokenSource.IsCancellationRequested)
                         await entry.AbandonAsync().AnyContext();
                 }
             }
 
-            _logger.LogTrace("Worker exiting: {QueueName} IsCancellationRequested={IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-        }, linkedCancellationToken.Token).ContinueWith(_ => linkedCancellationToken.Dispose());
+            _logger.LogTrace("Worker exiting: {QueueName} IsCancellationRequested={IsCancellationRequested}", _options.Name, linkedCancellationTokenSource.IsCancellationRequested);
+        }, linkedCancellationTokenSource.Token).ContinueWith(_ => linkedCancellationTokenSource.Dispose());
     }
 
     public override void Dispose()
