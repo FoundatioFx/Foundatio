@@ -71,30 +71,30 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask != null && !_maintenanceTask.IsCanceled && !_maintenanceTask.IsFaulted && !_maintenanceTask.IsCompleted;
+    private bool IsMaintenanceRunning => !_options.RunMaintenanceTasks || _maintenanceTask is { IsCanceled: false, IsFaulted: false, IsCompleted: false };
     private async Task EnsureMaintenanceRunningAsync()
     {
-        if (_queueDisposedCancellationTokenSource.IsCancellationRequested || IsMaintenanceRunning)
+        if (DisposedCancellationToken.IsCancellationRequested || IsMaintenanceRunning)
             return;
 
-        using (await _lock.LockAsync(_queueDisposedCancellationTokenSource.Token).AnyContext())
+        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
         {
-            if (_queueDisposedCancellationTokenSource.IsCancellationRequested || _maintenanceTask != null)
+            if (DisposedCancellationToken.IsCancellationRequested || _maintenanceTask != null)
                 return;
 
             _logger.LogTrace("Starting maintenance for {QueueName}", _options.Name);
-            _maintenanceTask = Task.Run(DoMaintenanceWorkLoopAsync);
+            _maintenanceTask = Task.Run(DoMaintenanceWorkLoopAsync, DisposedCancellationToken);
         }
     }
 
     private async Task EnsureTopicSubscriptionAsync()
     {
-        if (_queueDisposedCancellationTokenSource.IsCancellationRequested || _isSubscribed)
+        if (DisposedCancellationToken.IsCancellationRequested || _isSubscribed)
             return;
 
-        using (await _lock.LockAsync(_queueDisposedCancellationTokenSource.Token).AnyContext())
+        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
         {
-            if (_queueDisposedCancellationTokenSource.IsCancellationRequested || _isSubscribed)
+            if (DisposedCancellationToken.IsCancellationRequested || _isSubscribed)
                 return;
 
             _logger.LogTrace("Subscribing to enqueue messages for {QueueName}", _options.Name);
@@ -248,31 +248,31 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         _logger.LogTrace("Queue {QueueName} start working", _options.Name);
 
+        var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         _workers.Add(Task.Run(async () =>
         {
-            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
             _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
-            while (!linkedCancellationToken.IsCancellationRequested)
+            while (!linkedCancellationTokenSource.IsCancellationRequested)
             {
                 _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> queueEntry = null;
                 try
                 {
-                    queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+                    queueEntry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                 }
 
-                if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
+                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry == null)
                     continue;
 
                 try
                 {
-                    await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
+                    await handler(queueEntry, linkedCancellationTokenSource.Token).AnyContext();
                 }
                 catch (Exception ex)
                 {
@@ -296,7 +296,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 {
                     try
                     {
-                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), cancellationToken: linkedCancellationToken.Token).AnyContext();
+                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), cancellationToken: linkedCancellationTokenSource.Token).AnyContext();
                     }
                     catch (Exception ex)
                     {
@@ -305,8 +305,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 }
             }
 
-            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-        }, GetLinkedDisposableCancellationTokenSource(cancellationToken).Token));
+            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationTokenSource.IsCancellationRequested);
+        }, linkedCancellationTokenSource.Token).ContinueWith(_ => linkedCancellationTokenSource.Dispose()));
     }
 
     protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
@@ -631,7 +631,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     public async Task DoMaintenanceWorkAsync()
     {
-        if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
+        if (DisposedCancellationToken.IsCancellationRequested)
             return;
 
         _logger.LogTrace("Starting DoMaintenance: {QueueName} ({QueueId})", _options.Name, QueueId);
@@ -642,7 +642,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             var workIds = await Database.ListRangeAsync(_workListName).AnyContext();
             foreach (var workId in workIds)
             {
-                if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
+                if (DisposedCancellationToken.IsCancellationRequested)
                     return;
 
                 var renewedTimeTicks = await _cache.GetAsync<long>(GetRenewedTimeKey(workId)).AnyContext();
@@ -676,7 +676,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             _logger.LogError(ex, "Error checking for work item timeouts: {Message}", ex.Message);
         }
 
-        if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
+        if (DisposedCancellationToken.IsCancellationRequested)
             return;
 
         try
@@ -684,7 +684,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             var waitIds = await Database.ListRangeAsync(_waitListName).AnyContext();
             foreach (var waitId in waitIds)
             {
-                if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
+                if (DisposedCancellationToken.IsCancellationRequested)
                     return;
 
                 var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId)).AnyContext();
@@ -704,7 +704,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: _queueDisposedCancellationTokenSource.Token).AnyContext();
+                await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: DisposedCancellationToken).AnyContext();
             }
         }
         catch (Exception ex)
@@ -712,7 +712,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             _logger.LogError(ex, "Error adding items back to the queue after the retry delay: {Message}", ex.Message);
         }
 
-        if (_queueDisposedCancellationTokenSource.IsCancellationRequested)
+        if (DisposedCancellationToken.IsCancellationRequested)
             return;
 
         try
@@ -729,12 +729,13 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     private async Task DoMaintenanceWorkLoopAsync()
     {
-        while (!_queueDisposedCancellationTokenSource.IsCancellationRequested)
+        while (!DisposedCancellationToken.IsCancellationRequested)
         {
             _logger.LogTrace("Requesting Maintenance Lock. {QueueName} ({QueueId})", _options.Name, QueueId);
 
             var utcNow = _timeProvider.GetUtcNow();
-            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(timeoutCts.Token);
             bool gotLock = await _maintenanceLockProvider.TryUsingAsync($"{_options.Name}-maintenance", DoMaintenanceWorkAsync, cancellationToken: linkedCancellationToken.Token).AnyContext();
 
             _logger.LogTrace("{Status} Maintenance Lock. {QueueName} ({QueueId}) Time To Acquire: {AcquireDuration:g}", gotLock ? "Acquired" : "Failed to acquire", _options.Name, QueueId, _timeProvider.GetUtcNow().Subtract(utcNow));
