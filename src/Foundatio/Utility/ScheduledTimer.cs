@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,8 +18,10 @@ public class ScheduledTimer : IDisposable
     private readonly TimeProvider _timeProvider;
     private readonly TimeSpan _minimumInterval;
     private readonly AsyncLock _lock = new();
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private bool _isRunning = false;
     private bool _shouldRunAgainImmediately = false;
+    private bool _isDisposed;
 
     public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
     {
@@ -29,11 +31,29 @@ public class ScheduledTimer : IDisposable
         _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
         int dueTimeMs = dueTime.HasValue ? (int)dueTime.Value.TotalMilliseconds : Timeout.Infinite;
-        _timer = new Timer(s => Task.Run(RunCallbackAsync), null, dueTimeMs, Timeout.Infinite);
+        _timer = new Timer(_ => OnTimerCallback(), null, dueTimeMs, Timeout.Infinite);
+    }
+
+    private void OnTimerCallback()
+    {
+        if (_disposedCancellationTokenSource.IsCancellationRequested)
+        {
+            _logger.LogTrace("OnTimerCallback: Ignoring because disposed");
+            return;
+        }
+
+        _logger.LogTrace("OnTimerCallback: Starting callback task");
+        _ = Task.Run(RunCallbackAsync);
     }
 
     public void ScheduleNext(DateTime? utcDate = null)
     {
+        if (_disposedCancellationTokenSource.IsCancellationRequested)
+        {
+            _logger.LogTrace("ScheduleNext: Ignoring because disposed");
+            return;
+        }
+
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         if (!utcDate.HasValue || utcDate.Value < utcNow)
             utcDate = utcNow;
@@ -60,8 +80,14 @@ public class ScheduledTimer : IDisposable
             return;
         }
 
-        using (_lock.Lock())
+        using (_lock.Lock(_disposedCancellationTokenSource.Token))
         {
+            if (_disposedCancellationTokenSource.IsCancellationRequested)
+            {
+                _logger.LogTrace("ScheduleNext: Ignoring because disposed after acquiring lock");
+                return;
+            }
+
             // already have an earlier scheduled time
             if (_next > utcNow && utcDate > _next)
             {
@@ -85,7 +111,7 @@ public class ScheduledTimer : IDisposable
             if (delay > 0)
                 _timer.Change(delay, Timeout.Infinite);
             else
-                _ = Task.Run(RunCallbackAsync);
+                OnTimerCallback();
         }
     }
 
@@ -145,7 +171,7 @@ public class ScheduledTimer : IDisposable
             if (_minimumInterval > TimeSpan.Zero)
             {
                 _logger.LogTrace("Sleeping for minimum interval: {Interval:g}", _minimumInterval);
-                await _timeProvider.Delay(_minimumInterval).AnyContext();
+                await _timeProvider.Delay(_minimumInterval, _disposedCancellationTokenSource.Token).AnyContext();
                 _logger.LogTrace("Finished sleeping");
             }
 
@@ -173,6 +199,13 @@ public class ScheduledTimer : IDisposable
 
     public void Dispose()
     {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _logger.LogTrace("Disposing scheduled timer");
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
         _timer?.Dispose();
     }
 }
