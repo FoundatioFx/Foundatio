@@ -26,8 +26,10 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private long _localCacheHits;
     private long _invalidateCacheCalls;
+    private bool _isDisposed;
 
     public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
     {
@@ -37,7 +39,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
-        _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync).AnyContext().GetAwaiter().GetResult();
+        _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext().GetAwaiter().GetResult();
         localCacheOptions ??= new InMemoryCacheClientOptions
         {
             TimeProvider = _timeProvider,
@@ -280,7 +282,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
-        
+
         if (values.Count is 0)
             return 0;
 
@@ -738,9 +740,13 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public virtual void Dispose()
     {
-        _localCache.Dispose();
+        if (_isDisposed)
+            return;
 
-        // TODO: unsubscribe handler from messagebus.
+        _isDisposed = true;
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
+        _localCache.Dispose();
     }
 
     public class InvalidateCache

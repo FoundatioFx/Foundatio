@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -358,7 +358,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
             _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
             await PublishAsync(messageType, message).AnyContext();
-        });
+        }, _messageBusDisposedCancellationTokenSource.Token);
     }
 
     public string MessageBusId { get; protected set; }

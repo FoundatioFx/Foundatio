@@ -36,6 +36,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
+    private bool _isDisposed;
 
     public InMemoryCacheClient() : this(o => o)
     {
@@ -1058,7 +1060,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
-        
+
         if (values.Count is 0)
             return 0;
 
@@ -1421,6 +1423,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         _logger.LogTrace("StartMaintenanceAsync called with compactImmediately={CompactImmediately}", compactImmediately);
 
+        if (_disposedCancellationTokenSource.IsCancellationRequested)
+            return;
+
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         if (compactImmediately)
             await CompactAsync().AnyContext();
@@ -1428,11 +1433,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (TimeSpan.FromMilliseconds(250) < utcNow - _lastMaintenance)
         {
             _lastMaintenance = utcNow;
-            _ = Task.Run(DoMaintenanceAsync);
+            _ = Task.Run(DoMaintenanceAsync, _disposedCancellationTokenSource.Token);
         }
     }
 
-    private bool ShouldCompact => (_maxItems.HasValue && _memory.Count > _maxItems) || (_shouldTrackMemory && _currentMemorySize > _maxMemorySize);
+    private bool ShouldCompact => !_disposedCancellationTokenSource.IsCancellationRequested && ((_maxItems.HasValue && _memory.Count > _maxItems) || (_shouldTrackMemory && _currentMemorySize > _maxMemorySize));
 
     private async Task CompactAsync()
     {
@@ -1445,7 +1450,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _logger.LogTrace("CompactAsync: Compacting cache");
 
         var expiredKeys = new List<string>();
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(_disposedCancellationTokenSource.Token).AnyContext())
         {
             int removalCount = 0;
 
@@ -1455,11 +1460,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             const int absoluteMaxRemovals = 1000;
 
             int itemOverLimitFactor = 1;
-            if (_maxItems.HasValue && _maxItems.Value > 0 && _memory.Count > _maxItems.Value)
+            if (_maxItems is > 0 && _memory.Count > _maxItems.Value)
                 itemOverLimitFactor = (int)Math.Ceiling((double)_memory.Count / _maxItems.Value);
 
             int memoryOverLimitFactor = 1;
-            if (_shouldTrackMemory && _maxMemorySize.HasValue && _maxMemorySize.Value > 0 && _currentMemorySize > _maxMemorySize.Value)
+            if (_shouldTrackMemory && _maxMemorySize is > 0 && _currentMemorySize > _maxMemorySize.Value)
                 memoryOverLimitFactor = (int)Math.Ceiling((double)_currentMemorySize / _maxMemorySize.Value);
 
             int overLimitFactor = Math.Max(itemOverLimitFactor, memoryOverLimitFactor);
@@ -1514,6 +1519,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     maxRemovals, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
             }
         }
+
+        if (_disposedCancellationTokenSource.IsCancellationRequested)
+            return;
 
         // Notify about expired items
         foreach (string expiredKey in expiredKeys)
@@ -1661,7 +1669,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public virtual void Dispose()
     {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
         _memory.Clear();
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
         ItemExpired?.Dispose();
         _sizeCalculator = null; // Allow GC to collect any captured closures
     }

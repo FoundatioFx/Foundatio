@@ -36,7 +36,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly TagList _emptyTags = default;
 
     private readonly List<IQueueBehavior<T>> _behaviors = new();
-    protected readonly CancellationTokenSource _queueDisposedCancellationTokenSource;
     private bool _isDisposed;
     private QueueStats _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
@@ -52,8 +51,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         options.Behaviors.ForEach(AttachBehavior);
-
-        _queueDisposedCancellationTokenSource = new CancellationTokenSource();
 
         var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
@@ -130,7 +127,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);
     public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null)
     {
-        await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();
         options ??= new QueueEntryOptions();
@@ -141,7 +138,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken)
     {
-        await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastDequeueActivity = _timeProvider.GetUtcNow();
         using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
@@ -163,7 +160,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
     public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
         return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
     }
 
@@ -186,7 +183,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
     public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default)
     {
-        await EnsureQueueCreatedAsync(_queueDisposedCancellationTokenSource.Token).AnyContext();
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
         StartWorkingImpl(handler, autoComplete, cancellationToken);
     }
 
@@ -384,7 +381,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken)
     {
-        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _queueDisposedCancellationTokenSource.Token);
+        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, DisposedCancellationToken);
     }
 
     public override void Dispose()
@@ -397,8 +394,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         _isDisposed = true;
         _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose", _options.Name, QueueId);
-        _queueDisposedCancellationTokenSource?.Cancel();
-        _queueDisposedCancellationTokenSource?.Dispose();
         base.Dispose();
 
         Abandoned?.Dispose();

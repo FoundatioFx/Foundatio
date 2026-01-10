@@ -107,7 +107,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
                 await OnEnqueuedAsync(entry).AnyContext();
                 _logger.LogTrace("Enqueue done");
-            }, _timeProvider, _queueDisposedCancellationTokenSource.Token);
+            }, _timeProvider, DisposedCancellationToken);
             return id;
         }
 
@@ -131,31 +131,32 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         _logger.LogTrace("Queue {QueueName} start working", _options.Name);
 
+        var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         _workers.Add(Task.Run(async () =>
         {
-            using var linkedCancellationToken = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+            using var _ = new DisposableAction(linkedCancellationTokenSource.Dispose);
             _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
 
-            while (!linkedCancellationToken.IsCancellationRequested)
+            while (!linkedCancellationTokenSource.IsCancellationRequested)
             {
                 _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
                 IQueueEntry<T> queueEntry = null;
                 try
                 {
-                    queueEntry = await DequeueImplAsync(linkedCancellationToken.Token).AnyContext();
+                    queueEntry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                 }
 
-                if (linkedCancellationToken.IsCancellationRequested || queueEntry == null)
+                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry == null)
                     return;
 
                 try
                 {
-                    await handler(queueEntry, linkedCancellationToken.Token).AnyContext();
+                    await handler(queueEntry, linkedCancellationTokenSource.Token).AnyContext();
                 }
                 catch (Exception ex)
                 {
@@ -165,7 +166,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     {
                         try
                         {
-                            await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationToken.Token).AnyContext();
+                            await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationTokenSource.Token).AnyContext();
                         }
                         catch (Exception abandonEx)
                         {
@@ -180,7 +181,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 {
                     try
                     {
-                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationToken.Token).AnyContext();
+                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationTokenSource.Token).AnyContext();
                     }
                     catch (Exception ex)
                     {
@@ -189,8 +190,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 }
             }
 
-            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
-        }, GetLinkedDisposableCancellationTokenSource(cancellationToken).Token));
+            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationTokenSource.IsCancellationRequested);
+        }, linkedCancellationTokenSource.Token));
     }
 
     protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
@@ -312,12 +313,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
                     _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId}", queueEntry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, _queueDisposedCancellationTokenSource.Token);
+                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, DisposedCancellationToken);
                 }
                 else
                 {
                     _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId}", queueEntry.Id);
-                    _ = Task.Run(() => RetryAsync(targetEntry));
+                    _ = Task.Run(() => RetryAsync(targetEntry), DisposedCancellationToken);
                 }
             }
             else
