@@ -94,34 +94,10 @@ public static class CacheClientExtensions
         return await client.ListRemoveAsync(key, [value]).AnyContext() > 0;
     }
 
-    [Obsolete("Use ListAddAsync instead")]
-    public static async Task<bool> SetAddAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null)
+    [Obsolete("Use ListRemoveAsync without expiresIn parameter")]
+    public static async Task<long> ListRemoveAsync<T>(this ICacheClient client, string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
     {
-        return await client.ListAddAsync(key, [value], expiresIn).AnyContext() > 0;
-    }
-
-    [Obsolete("Use ListRemoveAsync instead")]
-    public static async Task<bool> SetRemoveAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null)
-    {
-        return await client.ListRemoveAsync(key, [value]).AnyContext() > 0;
-    }
-
-    [Obsolete("Use ListAddAsync instead")]
-    public static Task<long> SetAddAsync<T>(this ICacheClient client, string key, IEnumerable<T> value, TimeSpan? expiresIn = null)
-    {
-        return client.ListAddAsync(key, [value], expiresIn);
-    }
-
-    [Obsolete("Use ListRemoveAsync instead")]
-    public static Task<long> SetRemoveAsync<T>(this ICacheClient client, string key, IEnumerable<T> value, TimeSpan? expiresIn = null)
-    {
-        return client.ListRemoveAsync(key, value);
-    }
-
-    [Obsolete("Use ListAddAsync instead")]
-    public static Task<CacheValue<ICollection<T>>> GetSetAsync<T>(this ICacheClient client, string key)
-    {
-        return client.GetListAsync<T>(key);
+        return await client.ListRemoveAsync(key, values).AnyContext();
     }
 
     public static Task<long> SetIfHigherAsync(this ICacheClient client, string key, DateTime value, TimeSpan? expiresIn = null)
