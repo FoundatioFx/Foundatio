@@ -52,7 +52,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         if (_queueCreated)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
         {
             if (_queueCreated)
                 return;
