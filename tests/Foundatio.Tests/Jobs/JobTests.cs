@@ -25,7 +25,7 @@ public class JobTests : TestWithLoggingBase
     {
         var job = new HelloWorldJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
-        var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         var resultTask = new JobRunner(job, sp, Log).RunAsync(timeoutCancellationTokenSource.Token);
         await TimeProvider.System.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
         Assert.True(await resultTask);
@@ -37,7 +37,7 @@ public class JobTests : TestWithLoggingBase
         var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
-        var cts = new CancellationTokenSource(1000);
+        using var cts = new CancellationTokenSource(1000);
         bool result = await runner.RunAsync(cts.Token);
 
         Assert.True(result);
@@ -49,7 +49,7 @@ public class JobTests : TestWithLoggingBase
         var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
-        var cts = new CancellationTokenSource(1000);
+        using var cts = new CancellationTokenSource(1000);
         bool result = await runner.RunAsync(cts.Token);
 
         Assert.True(result);
@@ -147,7 +147,7 @@ public class JobTests : TestWithLoggingBase
         ]);
 
         var sw = Stopwatch.StartNew();
-        var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
+        using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         await Task.WhenAll(jobs.Select(job => job.RunContinuousAsync(TimeSpan.FromMilliseconds(1), cancellationToken: timeoutCancellationTokenSource.Token)));
         sw.Stop();
 
@@ -165,7 +165,7 @@ public class JobTests : TestWithLoggingBase
 
         var job = new HelloWorldJob(timeProvider, Log);
 
-        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval));
+        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval), TestCancellationToken);
         while (job.RunCount < 1)
             await Task.Delay(10, TestCancellationToken);
         timeProvider.Advance(interval);
@@ -184,7 +184,7 @@ public class JobTests : TestWithLoggingBase
 
         var job = new FailingJob(timeProvider, Log);
 
-        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval));
+        var jobTask = Task.Run(() => job.RunContinuousAsync(iterationLimit: 2, interval: interval), TestCancellationToken);
         while (job.RunCount < 1)
             await Task.Delay(10, TestCancellationToken);
         timeProvider.Advance(interval);

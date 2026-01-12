@@ -114,21 +114,27 @@ public class WorkItemJobTests : TestWithLoggingBase
                 completedItems.Add(status.WorkItemId);
         }, TestCancellationToken);
 
-        var cancellationTokenSource = new CancellationTokenSource(10000);
-        var tasks = new List<Task> {
-            Task.Run(async () => {
+        using var cancellationTokenSource = new CancellationTokenSource(10000);
+        List<Task> tasks =
+        [
+            Task.Run(async () =>
+            {
                 await j1.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             }, cancellationTokenSource.Token),
-            Task.Run(async () => {
+
+            Task.Run(async () =>
+            {
                 await j2.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             }, cancellationTokenSource.Token),
-            Task.Run(async () => {
+
+            Task.Run(async () =>
+            {
                 await j3.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             }, cancellationTokenSource.Token)
-        };
+        ];
 
         try
         {

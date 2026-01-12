@@ -67,7 +67,7 @@ public class ScheduledTimerTests : TestWithLoggingBase
                 await Task.Delay(10);
                 timer.ScheduleNext();
             }
-        });
+        }, TestCancellationToken);
 
         _logger.LogInformation("Waiting for 300ms");
         await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromMilliseconds(300)));

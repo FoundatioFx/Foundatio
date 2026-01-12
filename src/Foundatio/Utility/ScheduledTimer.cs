@@ -43,7 +43,7 @@ public class ScheduledTimer : IDisposable
         }
 
         _logger.LogTrace("OnTimerCallback: Starting callback task");
-        _ = Task.Run(RunCallbackAsync);
+        _ = Task.Run(RunCallbackAsync, _disposedCancellationTokenSource.Token);
     }
 
     public void ScheduleNext(DateTime? utcDate = null)

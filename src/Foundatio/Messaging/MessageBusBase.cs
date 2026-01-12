@@ -281,7 +281,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 }
 
                 _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
-            });
+            }, DisposedCancellationToken);
         });
 
         try

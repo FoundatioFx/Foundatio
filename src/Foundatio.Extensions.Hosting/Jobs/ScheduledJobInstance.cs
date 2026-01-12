@@ -55,6 +55,7 @@ internal class ScheduledJobInstance
 
                 _logger.LogDebug("Cron schedule changed for job {JobName} ({JobId}): {CronSchedule}", _jobOptions.Name, Id, _jobOptions.CronSchedule);
 
+                // NOTE: Do we want to cancel this via DisposedCancellationToken?
                 Task.Run(() => UpdateDistributedStateAsync(true, "Cron schedule changed"));
             }
 
@@ -62,6 +63,7 @@ internal class ScheduledJobInstance
             {
                 NextRun = GetNextScheduledRun();
 
+                // NOTE: Do we want to cancel this via DisposedCancellationToken?
                 Task.Run(() => UpdateDistributedStateAsync(true, "Enabled changed"));
             }
         };
