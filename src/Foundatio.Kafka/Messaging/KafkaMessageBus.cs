@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,14 +19,13 @@ public interface IKafkaMessageBus : IMessageBus
 
 public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMessageBus
 {
-    private bool _isDisposed;
-    private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource = new();
     private Task _listeningTask;
     private readonly AdminClientConfig _adminClientConfig;
     private readonly ConsumerConfig _consumerConfig;
     private readonly IProducer<string, byte[]> _producer;
     private readonly AsyncLock _lock = new();
     private bool _topicCreated;
+    private bool _isDisposed;
 
     public KafkaMessageBus(KafkaMessageBusOptions options) : base(options)
     {
@@ -189,7 +188,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
     private void EnsureListening()
     {
-        if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
+        if (DisposedCancellationToken.IsCancellationRequested)
             return;
 
         if (_listeningTask is { Status: TaskStatus.Running })
@@ -218,9 +217,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
                 consumer.Subscribe(_options.Topic);
                 _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
 
-                while (!_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
+                while (!DisposedCancellationToken.IsCancellationRequested)
                 {
-                    var consumeResult = consumer.Consume(_messageBusDisposedCancellationTokenSource.Token);
+                    var consumeResult = consumer.Consume(DisposedCancellationToken);
                     await OnMessageAsync(consumer, consumeResult).AnyContext();
                 }
             }
@@ -239,7 +238,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
                 _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
             }
-        }, _messageBusDisposedCancellationTokenSource.Token);
+        }, DisposedCancellationToken);
     }
 
     public override void Dispose()
@@ -258,8 +257,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             _logger.LogTrace("Flushed producer {queueSize}", queueSize);
 
         _producer?.Dispose();
-        _messageBusDisposedCancellationTokenSource.Cancel();
-        _messageBusDisposedCancellationTokenSource.Dispose();
         base.Dispose();
     }
 
