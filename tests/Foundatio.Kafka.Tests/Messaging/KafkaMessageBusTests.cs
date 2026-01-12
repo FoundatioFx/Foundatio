@@ -120,59 +120,55 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     public async Task CanPersistAndNotLoseMessages()
     {
         var messageBus1 = GetMessageBus();
-        try
+
+        var countdownEvent = new AsyncCountdownEvent(1);
+        var cts = new CancellationTokenSource();
+        await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
         {
-            var countdownEvent = new AsyncCountdownEvent(1);
-            var cts = new CancellationTokenSource();
-            await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
-            {
-                _logger.LogInformation("[Subscriber1] Got message: {Message}", msg.Data);
-                countdownEvent.Signal();
-            }, cts.Token);
+            _logger.LogInformation("[Subscriber1] Got message: {Message}", msg.Data);
+            countdownEvent.Signal();
+        }, cts.Token);
 
-            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
-            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(0, countdownEvent.CurrentCount);
-            await cts.CancelAsync();
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
+        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, countdownEvent.CurrentCount);
+        await cts.CancelAsync();
 
-            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
 
-            cts = new CancellationTokenSource();
-            countdownEvent.AddCount(1);
-            await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
-            {
-                _logger.LogInformation("[Subscriber2] Got message: {Message}", msg.Data);
-                countdownEvent.Signal();
-            }, cts.Token);
-            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(0, countdownEvent.CurrentCount);
-            await cts.CancelAsync();
-
-            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
-            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
-            await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
-
-            messageBus1.Dispose();
-
-            using var messageBus2 = GetMessageBus();
-
-            cts = new CancellationTokenSource();
-            countdownEvent.AddCount(4);
-            await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
-            {
-                _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
-                countdownEvent.Signal();
-            }, cts.Token);
-            await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
-            await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
-            Assert.Equal(0, countdownEvent.CurrentCount);
-
-            // Cleanup
-            cts.Dispose();
-        }
-        finally
+        cts = new CancellationTokenSource();
+        countdownEvent.AddCount(1);
+        await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
         {
-            await CleanupMessageBusAsync(messageBus1);
-        }
+            _logger.LogInformation("[Subscriber2] Got message: {Message}", msg.Data);
+            countdownEvent.Signal();
+        }, cts.Token);
+        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, countdownEvent.CurrentCount);
+        await cts.CancelAsync();
+
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
+
+        messageBus1.Dispose();
+
+        using var messageBus2 = GetMessageBus();
+
+        cts = new CancellationTokenSource();
+        countdownEvent.AddCount(4);
+        await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+        {
+            _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
+            countdownEvent.Signal();
+        }, cts.Token);
+        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
+        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, countdownEvent.CurrentCount);
+
+        // Cleanup
+        cts.Dispose();
+
+        await CleanupMessageBusAsync(messageBus2);
     }
 }
