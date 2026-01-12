@@ -1,7 +1,7 @@
 <Project>
   <Import Project="..\build\common.props" />
   <PropertyGroup>
-    <TargetFrameworks>net8.0</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <IsPackable>False</IsPackable>
     <NoWarn>$(NoWarn);CS1591;NU1701</NoWarn>
