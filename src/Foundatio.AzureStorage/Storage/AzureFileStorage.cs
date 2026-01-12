@@ -1,52 +1,61 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Azure.Extensions;
+using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
-using Microsoft.Azure.Storage;
-using Microsoft.Azure.Storage.Blob;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Storage;
 
-public class AzureFileStorage : IFileStorage
+public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider
 {
-    private readonly CloudBlobContainer _container;
+    private readonly BlobContainerClient _container;
     private readonly ISerializer _serializer;
-    protected readonly ILogger _logger;
-    protected readonly TimeProvider _timeProvider;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly ILogger _logger;
+    private readonly TimeProvider _timeProvider;
 
     public AzureFileStorage(AzureFileStorageOptions options)
     {
-        if (options == null)
-            throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
 
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
-        _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
+        _logger = _loggerFactory.CreateLogger(GetType());
 
-        var account = CloudStorageAccount.Parse(options.ConnectionString);
-        var client = account.CreateCloudBlobClient();
+        var clientOptions = new BlobClientOptions();
+        options.ConfigureRetry?.Invoke(clientOptions.Retry);
 
-        _container = client.GetContainerReference(options.ContainerName);
+        _container = new BlobContainerClient(options.ConnectionString, options.ContainerName, clientOptions);
 
         _logger.LogTrace("Checking if {Container} container exists", _container.Name);
-        bool created = _container.CreateIfNotExistsAsync().GetAwaiter().GetResult();
-        if (created)
-            _logger.LogInformation("Created {Container}", _container.Name);
+        var response = _container.CreateIfNotExists();
+        if (response != null)
+            _logger.LogDebug("Created {Container}", _container.Name);
+        else
+            _logger.LogDebug("{Container} already exists", _container.Name);
     }
 
     public AzureFileStorage(Builder<AzureFileStorageOptionsBuilder, AzureFileStorageOptions> config)
-        : this(config(new AzureFileStorageOptionsBuilder()).Build()) { }
+        : this(config(new AzureFileStorageOptionsBuilder()).Build())
+    {
+    }
 
     ISerializer IHaveSerializer.Serializer => _serializer;
-    public CloudBlobContainer Container => _container;
+    ILogger IHaveLogger.Logger => _logger;
+    ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
+    TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
+    public BlobContainerClient Container => _container;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behavior of stream")]
     public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
@@ -54,140 +63,196 @@ public class AzureFileStorage : IFileStorage
 
     public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
 
-        var blockBlob = _container.GetBlockBlobReference(normalizedPath);
+        var blobClient = _container.GetBlobClient(normalizedPath);
 
         try
         {
             return streamMode switch
             {
-                StreamMode.Read => await blockBlob.OpenReadAsync(null, null, null, cancellationToken).AnyContext(),
-                StreamMode.Write => await blockBlob.OpenWriteAsync(null, null, null, cancellationToken).AnyContext(),
+                StreamMode.Read => await blobClient.OpenReadAsync(cancellationToken: cancellationToken).AnyContext(),
+                StreamMode.Write => await blobClient.OpenWriteAsync(overwrite: true, cancellationToken: cancellationToken).AnyContext(),
                 _ => throw new NotSupportedException($"Stream mode {streamMode} is not supported.")
             };
         }
-        catch (Microsoft.Azure.Storage.StorageException ex) when (ex is { RequestInformation.HttpStatusCode: 404 })
+        catch (RequestFailedException ex) when (ex.Status is 404)
         {
-            _logger.LogDebug(ex, "Unable to get file stream for {Path}: File Not Found", normalizedPath);
+            _logger.LogDebug(ex, "[{Status}] Unable to get file stream for {Path}: File Not Found", ex.Status, normalizedPath);
             return null;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Unable to get file stream for {Path}: {Message}", ex.Status, normalizedPath, ex.Message);
+            throw new StorageException("Unable to get file stream.", ex);
         }
     }
 
     public async Task<FileSpec> GetFileInfoAsync(string path)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Getting file info for {Path}", normalizedPath);
 
-        var blob = _container.GetBlockBlobReference(normalizedPath);
+        var blobClient = _container.GetBlobClient(normalizedPath);
         try
         {
-            await blob.FetchAttributesAsync().AnyContext();
-            return blob.ToFileInfo();
+            var properties = await blobClient.GetPropertiesAsync().AnyContext();
+            return ToFileInfo(normalizedPath, properties.Value);
+        }
+        catch (RequestFailedException ex) when (ex.Status is 404)
+        {
+            _logger.LogDebug(ex, "[{Status}] Unable to get file info for {Path}: File Not Found", ex.Status, normalizedPath);
+            return null;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Unable to get file info for {Path}: {Message}", ex.Status, normalizedPath, ex.Message);
+            return null;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unable to get file info for {Path}: {Message}", normalizedPath, ex.Message);
+            return null;
         }
-
-        return null;
     }
 
-    public Task<bool> ExistsAsync(string path)
+    public async Task<bool> ExistsAsync(string path)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Checking if {Path} exists", normalizedPath);
 
-        var blockBlob = _container.GetBlockBlobReference(normalizedPath);
-        return blockBlob.ExistsAsync();
+        var blobClient = _container.GetBlobClient(normalizedPath);
+        var response = await blobClient.ExistsAsync().AnyContext();
+        return response.Value;
     }
 
     public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentNullException.ThrowIfNull(stream);
 
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Saving {Path}", normalizedPath);
 
-        var blockBlob = _container.GetBlockBlobReference(normalizedPath);
-        await blockBlob.UploadFromStreamAsync(stream, null, null, null, cancellationToken).AnyContext();
-
-        return true;
+        try
+        {
+            var blobClient = _container.GetBlobClient(normalizedPath);
+            await blobClient.UploadAsync(stream, overwrite: true, cancellationToken: cancellationToken).AnyContext();
+            return true;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Error saving {Path}: {Message}", ex.Status, normalizedPath, ex.Message);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving {Path}: {Message}", normalizedPath, ex.Message);
+            return false;
+        }
     }
 
     public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
-        if (String.IsNullOrEmpty(newPath))
-            throw new ArgumentNullException(nameof(newPath));
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentException.ThrowIfNullOrEmpty(newPath);
 
         string normalizedPath = NormalizePath(path);
         string normalizedNewPath = NormalizePath(newPath);
-        _logger.LogInformation("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
+        _logger.LogDebug("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
 
-        var oldBlob = _container.GetBlockBlobReference(normalizedPath);
-        if (!(await CopyFileAsync(normalizedPath, normalizedNewPath, cancellationToken).AnyContext()))
+        try
         {
-            _logger.LogError("Unable to rename {Path} to {NewPath}", normalizedPath, normalizedNewPath);
+            if (!await CopyFileAsync(normalizedPath, normalizedNewPath, cancellationToken).AnyContext())
+            {
+                _logger.LogError("Unable to rename {Path} to {NewPath}", normalizedPath, normalizedNewPath);
+                return false;
+            }
+
+            var oldBlob = _container.GetBlobClient(normalizedPath);
+            _logger.LogDebug("Deleting renamed {Path}", normalizedPath);
+            var deleteResponse = await oldBlob.DeleteIfExistsAsync(cancellationToken: cancellationToken).AnyContext();
+            if (!deleteResponse.Value)
+            {
+                _logger.LogDebug("Unable to delete renamed {Path}", normalizedPath);
+                return false;
+            }
+
+            return true;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Unable to rename {Path} to {NewPath}: {Message}", ex.Status, normalizedPath, normalizedNewPath, ex.Message);
             return false;
         }
-
-        _logger.LogDebug("Deleting renamed {Path}", normalizedPath);
-        bool deleted = await oldBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken).AnyContext();
-        if (!deleted)
-        {
-            _logger.LogDebug("Unable to delete renamed {Path}", normalizedPath);
-            return false;
-        }
-
-        return true;
     }
 
     public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
-        if (String.IsNullOrEmpty(targetPath))
-            throw new ArgumentNullException(nameof(targetPath));
+        ArgumentException.ThrowIfNullOrEmpty(path);
+        ArgumentException.ThrowIfNullOrEmpty(targetPath);
 
         string normalizedPath = NormalizePath(path);
         string normalizedTargetPath = NormalizePath(targetPath);
-        _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
+        _logger.LogDebug("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
 
-        var oldBlob = _container.GetBlockBlobReference(normalizedPath);
-        var newBlob = _container.GetBlockBlobReference(normalizedTargetPath);
+        try
+        {
+            var sourceBlob = _container.GetBlobClient(normalizedPath);
+            var targetBlob = _container.GetBlobClient(normalizedTargetPath);
 
-        await newBlob.StartCopyAsync(oldBlob, cancellationToken).AnyContext();
-        while (newBlob.CopyState.Status == CopyStatus.Pending)
-            await _timeProvider.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
+            var copyOperation = await targetBlob.StartCopyFromUriAsync(sourceBlob.Uri, cancellationToken: cancellationToken).AnyContext();
 
-        return newBlob.CopyState.Status == CopyStatus.Success;
+            // Wait for copy operation to complete
+            await copyOperation.WaitForCompletionAsync(cancellationToken).ConfigureAwait(false);
+            if (!copyOperation.HasCompleted)
+            {
+                _logger.LogError("Copy operation did not complete for {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
+                return false;
+            }
+
+            // Check final status
+            var properties = await targetBlob.GetPropertiesAsync(cancellationToken: cancellationToken).AnyContext();
+            if (properties.Value.CopyStatus == CopyStatus.Success)
+                return true;
+
+            _logger.LogError("Copy operation failed for {Path} to {TargetPath}: {CopyStatus}", normalizedPath, normalizedTargetPath, properties.Value.CopyStatus);
+            return false;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Unable to copy {Path} to {TargetPath}: {Message}", ex.Status, normalizedPath, normalizedTargetPath, ex.Message);
+            return false;
+        }
     }
 
-    public Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         string normalizedPath = NormalizePath(path);
         _logger.LogTrace("Deleting {Path}", normalizedPath);
 
-        var blockBlob = _container.GetBlockBlobReference(normalizedPath);
-        return blockBlob.DeleteIfExistsAsync(DeleteSnapshotsOption.None, null, null, null, cancellationToken);
+        try
+        {
+            var blobClient = _container.GetBlobClient(normalizedPath);
+            var response = await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken).AnyContext();
+            if (!response.Value)
+                _logger.LogDebug("Unable to delete {Path}: File not found", normalizedPath);
+            return response.Value;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "[{Status}] Unable to delete {Path}: {Message}", ex.Status, normalizedPath, ex.Message);
+            return false;
+        }
     }
 
     public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default)
@@ -196,7 +261,8 @@ public class AzureFileStorage : IFileStorage
         int count = 0;
 
         // TODO: We could batch this, but we should ensure the batch isn't thousands of files.
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", files.Count, searchPattern);
+        _logger.LogDebug("Deleting {FileCount} files matching {SearchPattern}", files.Count, searchPattern);
+
         foreach (var file in files)
         {
             await DeleteFileAsync(file.Path, cancellationToken).AnyContext();
@@ -249,28 +315,25 @@ public class AzureFileStorage : IFileStorage
         var criteria = GetRequestCriteria(searchPattern);
 
         int totalLimit = limit.GetValueOrDefault(Int32.MaxValue) < Int32.MaxValue
-            ? skip.GetValueOrDefault() + limit.Value
+            ? skip.GetValueOrDefault() + limit.GetValueOrDefault()
             : Int32.MaxValue;
 
-        BlobContinuationToken continuationToken = null;
-        var blobs = new List<CloudBlockBlob>();
-        do
+        _logger.LogTrace("Getting file list: Prefix={Prefix} Pattern={Pattern} Limit={Limit}", criteria.Prefix, criteria.Pattern, totalLimit);
+
+        var blobs = new List<FileSpec>();
+        await foreach (var blobItem in _container.GetBlobsAsync(new GetBlobsOptions { Prefix = criteria.Prefix }, cancellationToken: cancellationToken))
         {
-            var listingResult = await _container.ListBlobsSegmentedAsync(criteria.Prefix, true, BlobListingDetails.Metadata, limit, continuationToken, null, null, cancellationToken).AnyContext();
-            continuationToken = listingResult.ContinuationToken;
-
-            foreach (var blob in listingResult.Results.OfType<CloudBlockBlob>())
+            // TODO: Verify if it's possible to create empty folders in storage. If so, don't return them.
+            if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blobItem.Name))
             {
-                // TODO: Verify if it's possible to create empty folders in storage. If so, don't return them.
-                if (criteria.Pattern != null && !criteria.Pattern.IsMatch(blob.Name))
-                {
-                    _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blob.Name);
-                    continue;
-                }
-
-                blobs.Add(blob);
+                _logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
+                continue;
             }
-        } while (continuationToken != null && blobs.Count < totalLimit);
+
+            blobs.Add(ToFileInfo(blobItem));
+            if (blobs.Count >= totalLimit)
+                break;
+        }
 
         if (skip.HasValue)
             blobs = blobs.Skip(skip.Value).ToList();
@@ -278,15 +341,37 @@ public class AzureFileStorage : IFileStorage
         if (limit.HasValue)
             blobs = blobs.Take(limit.Value).ToList();
 
-        return blobs.Select(blob => blob.ToFileInfo()).ToList();
+        return blobs;
     }
 
-    private string NormalizePath(string path)
+    private static FileSpec ToFileInfo(BlobItem blob)
+    {
+        return new FileSpec
+        {
+            Path = blob.Name,
+            Size = blob.Properties.ContentLength ?? -1,
+            Created = blob.Properties.CreatedOn?.UtcDateTime ?? DateTime.MinValue,
+            Modified = blob.Properties.LastModified?.UtcDateTime ?? DateTime.MinValue
+        };
+    }
+
+    private static FileSpec ToFileInfo(string path, BlobProperties properties)
+    {
+        return new FileSpec
+        {
+            Path = path,
+            Size = properties.ContentLength,
+            Created = properties.CreatedOn.UtcDateTime,
+            Modified = properties.LastModified.UtcDateTime
+        };
+    }
+
+    private static string NormalizePath(string path)
     {
         return path?.Replace('\\', '/');
     }
 
-    private class SearchCriteria
+    private record SearchCriteria
     {
         public string Prefix { get; set; }
         public Regex Pattern { get; set; }
@@ -308,7 +393,7 @@ public class AzureFileStorage : IFileStorage
         {
             patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
             int slashPos = normalizedSearchPattern.LastIndexOf('/');
-            prefix = slashPos >= 0 ? normalizedSearchPattern.Substring(0, slashPos) : String.Empty;
+            prefix = slashPos >= 0 ? normalizedSearchPattern[..slashPos] : String.Empty;
         }
 
         return new SearchCriteria
@@ -318,5 +403,7 @@ public class AzureFileStorage : IFileStorage
         };
     }
 
-    public void Dispose() { }
+    public void Dispose()
+    {
+    }
 }

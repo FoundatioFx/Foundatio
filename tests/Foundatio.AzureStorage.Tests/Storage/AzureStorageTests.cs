@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Threading.Tasks;
 
@@ -11,7 +11,9 @@ namespace Foundatio.Azure.Tests.Storage;
 
 public class AzureStorageTests : FileStorageTestsBase
 {
-    public AzureStorageTests(ITestOutputHelper output) : base(output) { }
+    public AzureStorageTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected override IFileStorage GetStorage()
     {
@@ -166,11 +168,14 @@ public class AzureStorageTests : FileStorageTestsBase
             Assert.False(result.HasMore);
             Assert.Empty(result.Files);
 
-            var container = storage is AzureFileStorage azureFileStorage ? azureFileStorage.Container : null;
+            var azureFileStorage = Assert.IsType<AzureFileStorage>(storage);
+            var container = azureFileStorage.Container;
             Assert.NotNull(container);
 
-            var blockBlob = container.GetBlockBlobReference("EmptyFolder/");
-            await blockBlob.UploadFromStreamAsync(new MemoryStream(), null, null, null, TestCancellationToken);
+            var blobClient = container.GetBlobClient("EmptyFolder/");
+            Assert.NotNull(blobClient);
+            using var ms = new MemoryStream();
+            await blobClient.UploadAsync(ms, TestCancellationToken);
 
             result = await storage.GetPagedFileListAsync(cancellationToken: TestCancellationToken);
             Assert.False(result.HasMore);
