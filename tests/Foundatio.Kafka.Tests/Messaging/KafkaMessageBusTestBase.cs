@@ -32,10 +32,10 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
 
     protected override async Task CleanupMessageBusAsync(IMessageBus messageBus)
     {
-        await base.CleanupMessageBusAsync(messageBus);
-
         if (EnableTopicDeletion && messageBus is IKafkaMessageBus kafkaMessageBus)
             await kafkaMessageBus.DeleteTopicAsync();
+
+        await base.CleanupMessageBusAsync(messageBus);
     }
 
     public bool EnableTopicDeletion { get; set; }

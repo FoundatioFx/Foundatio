@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -265,7 +265,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (_topicCreated || !_consumerConfig.AllowAutoCreateTopics.GetValueOrDefault())
             return;
 
-        using var topicLock = await _lock.LockAsync().AnyContext();
+        using var topicLock = await _lock.LockAsync(DisposedCancellationToken).AnyContext();
         if (_topicCreated)
             return;
 
@@ -332,7 +332,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
     async Task IKafkaMessageBus.DeleteTopicAsync()
     {
-        using var topicLock = await _lock.LockAsync().AnyContext();
+        using var topicLock = await _lock.LockAsync(DisposedCancellationToken).AnyContext();
         using var adminClient = new AdminClientBuilder(_adminClientConfig)
             .SetLogHandler(LogHandler)
             .SetStatisticsHandler(LogStatisticsHandler)
