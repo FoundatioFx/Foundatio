@@ -56,7 +56,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
     public AmazonSQSClient Client => _client.Value;
 
-    protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = new CancellationToken())
+    protected override async Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default)
     {
         if (!String.IsNullOrEmpty(_queueUrl))
             return;
