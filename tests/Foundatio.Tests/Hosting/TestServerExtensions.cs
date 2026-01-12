@@ -11,7 +11,7 @@ public static class TestServerExtensions
 {
     public static async Task WaitForReadyAsync(this TestServer server, TimeSpan? maxWaitTime = null, CancellationToken cancellationToken = default)
     {
-        var startupContext = server.Host.Services.GetService<StartupActionsContext>();
+        var startupContext = server.Services.GetService<StartupActionsContext>();
         maxWaitTime ??= TimeSpan.FromSeconds(5);
 
         var client = server.CreateClient();

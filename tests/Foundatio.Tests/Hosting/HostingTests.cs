@@ -27,19 +27,27 @@ public class HostingTests : TestWithLoggingBase
     public async Task WillRunSyncStartupAction()
     {
         var resetEvent = new AsyncManualResetEvent(false);
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l => l.AddTestLogger(_output))
-            .ConfigureServices(s =>
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
             {
-                s.AddStartupAction("Hey", () => resetEvent.Set());
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureLogging(l => l.AddTestLogger(_output))
+                    .ConfigureServices(s =>
+                    {
+                        s.AddStartupAction("Hey", () => resetEvent.Set());
+                        s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseReadyHealthChecks("Critical");
+                    });
             })
-            .Configure(app =>
-            {
-                app.UseReadyHealthChecks("Critical");
-            });
+            .Build();
 
-        var server = new TestServer(builder);
+        await host.StartAsync(TestCancellationToken);
+
+        var server = host.GetTestServer();
 
         await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
         await resetEvent.WaitAsync(TestCancellationToken);
@@ -54,23 +62,31 @@ public class HostingTests : TestWithLoggingBase
     public async Task WillRunAsyncStartupAction()
     {
         var resetEvent = new AsyncManualResetEvent(false);
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l => l.AddTestLogger(_output))
-            .ConfigureServices(s =>
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
             {
-                s.AddStartupAction("Hey", () =>
-                {
-                    resetEvent.Set();
-                    return Task.CompletedTask;
-                });
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureLogging(l => l.AddTestLogger(_output))
+                    .ConfigureServices(s =>
+                    {
+                        s.AddStartupAction("Hey", () =>
+                        {
+                            resetEvent.Set();
+                            return Task.CompletedTask;
+                        });
+                        s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseReadyHealthChecks("Critical");
+                    });
             })
-            .Configure(app =>
-            {
-                app.UseReadyHealthChecks("Critical");
-            });
+            .Build();
 
-        var server = new TestServer(builder);
+        await host.StartAsync(TestCancellationToken);
+
+        var server = host.GetTestServer();
 
         await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
         await resetEvent.WaitAsync(TestCancellationToken);
@@ -84,19 +100,27 @@ public class HostingTests : TestWithLoggingBase
     [Fact]
     public async Task WillRunClassStartupAction()
     {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l => l.AddTestLogger(_output))
-            .ConfigureServices(s =>
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
             {
-                s.AddStartupAction<TestStartupAction>("Hey");
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureLogging(l => l.AddTestLogger(_output))
+                    .ConfigureServices(s =>
+                    {
+                        s.AddStartupAction<TestStartupAction>("Hey");
+                        s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseReadyHealthChecks("Critical");
+                    });
             })
-            .Configure(app =>
-            {
-                app.UseReadyHealthChecks("Critical");
-            });
+            .Build();
 
-        var server = new TestServer(builder);
+        await host.StartAsync(TestCancellationToken);
+
+        var server = host.GetTestServer();
 
         await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
         Assert.True(TestStartupAction.HasRun);
@@ -110,20 +134,28 @@ public class HostingTests : TestWithLoggingBase
     [Fact]
     public async Task WillStopWaitingWhenStartupActionFails()
     {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l => l.AddTestLogger(_output))
-            .CaptureStartupErrors(true)
-            .ConfigureServices(s =>
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
             {
-                s.AddStartupAction("Boom", () => throw new ApplicationException("Boom"));
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureLogging(l => l.AddTestLogger(_output))
+                    .CaptureStartupErrors(true)
+                    .ConfigureServices(s =>
+                    {
+                        s.AddStartupAction("Boom", () => throw new ApplicationException("Boom"));
+                        s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseReadyHealthChecks("Critical");
+                    });
             })
-            .Configure(app =>
-            {
-                app.UseReadyHealthChecks("Critical");
-            });
+            .Build();
 
-        var server = new TestServer(builder);
+        await host.StartAsync(TestCancellationToken);
+
+        var server = host.GetTestServer();
 
         var sw = Stopwatch.StartNew();
         await Assert.ThrowsAsync<OperationCanceledException>(() => server.WaitForReadyAsync(cancellationToken: TestCancellationToken));
@@ -135,21 +167,29 @@ public class HostingTests : TestWithLoggingBase
     [Fact]
     public async Task WillHandleNoRegisteredStartupActions()
     {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l => l.AddTestLogger(_output))
-            .UseEnvironment(Environments.Development)
-            .CaptureStartupErrors(true)
-            .ConfigureServices(s =>
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
             {
-                s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureLogging(l => l.AddTestLogger(_output))
+                    .UseEnvironment(Environments.Development)
+                    .CaptureStartupErrors(true)
+                    .ConfigureServices(s =>
+                    {
+                        s.AddHealthChecks().AddCheckForStartupActions("Critical");
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseReadyHealthChecks("Critical");
+                        app.UseWaitForStartupActionsBeforeServingRequests();
+                    });
             })
-            .Configure(app =>
-            {
-                app.UseReadyHealthChecks("Critical");
-                app.UseWaitForStartupActionsBeforeServingRequests();
-            });
+            .Build();
 
-        var server = new TestServer(builder);
+        await host.StartAsync(TestCancellationToken);
+
+        var server = host.GetTestServer();
 
         var sw = Stopwatch.StartNew();
         await server.WaitForReadyAsync(cancellationToken: TestCancellationToken);
