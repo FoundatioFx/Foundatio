@@ -18,18 +18,18 @@ public class ScheduledTimerTests : TestWithLoggingBase
     }
 
     [Fact]
-    public Task CanRun()
+    public async Task CanRun()
     {
         var resetEvent = new AsyncAutoResetEvent();
         Task<DateTime?> Callback()
         {
             resetEvent.Set();
-            return null;
+            return Task.FromResult<DateTime?>(null);
         }
 
         using var timer = new ScheduledTimer(Callback, loggerFactory: Log);
         timer.ScheduleNext();
-        return resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
+        await resetEvent.WaitAsync(new CancellationTokenSource(500).Token);
     }
 
     [Fact]
