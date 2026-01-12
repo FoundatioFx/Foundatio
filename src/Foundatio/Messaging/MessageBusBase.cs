@@ -16,7 +16,6 @@ namespace Foundatio.Messaging;
 
 public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable where TOptions : SharedMessageBusOptions
 {
-    private readonly CancellationTokenSource _messageBusDisposedCancellationTokenSource;
     protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     protected readonly TOptions _options;
     protected readonly ILogger _logger;
@@ -25,6 +24,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     protected readonly IResiliencePolicy _resiliencePolicy;
     protected readonly ISerializer _serializer;
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private bool _isDisposed;
 
     public MessageBusBase(TOptions options)
@@ -39,8 +39,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);
-        _messageBusDisposedCancellationTokenSource = new CancellationTokenSource();
     }
+
+    /// <summary>
+    /// Gets a cancellation token that is canceled when this instance is disposed.
+    /// Use this token to cancel background operations during shutdown.
+    /// </summary>
+    protected CancellationToken DisposedCancellationToken => _disposedCancellationTokenSource.Token;
 
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
@@ -348,9 +353,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         var sendTime = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(delay);
         Task.Factory.StartNew(async () =>
         {
-            await _timeProvider.SafeDelay(delay, _messageBusDisposedCancellationTokenSource.Token).AnyContext();
-
-            if (_messageBusDisposedCancellationTokenSource.IsCancellationRequested)
+            await _timeProvider.SafeDelay(delay, _disposedCancellationTokenSource.Token).AnyContext();
+            if (_disposedCancellationTokenSource.IsCancellationRequested)
             {
                 _logger.LogTrace("Discarding delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
                 return;
@@ -358,7 +362,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
             _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
             await PublishAsync(messageType, message).AnyContext();
-        }, _messageBusDisposedCancellationTokenSource.Token);
+        }, _disposedCancellationTokenSource.Token);
     }
 
     public string MessageBusId { get; protected set; }
@@ -375,8 +379,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
         _subscribers?.Clear();
-        _messageBusDisposedCancellationTokenSource?.Cancel();
-        _messageBusDisposedCancellationTokenSource?.Dispose();
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
     }
 
     [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
