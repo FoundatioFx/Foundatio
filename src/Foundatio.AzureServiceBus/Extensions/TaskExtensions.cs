@@ -24,6 +24,13 @@ internal static class TaskExtensions
 
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
+    {
+        return task.ConfigureAwait(false);
+    }
+
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredTaskAwaitable<TResult> AnyContext<TResult>(this AwaitableDisposable<TResult> task) where TResult : IDisposable
     {
         return task.ConfigureAwait(continueOnCapturedContext: false);

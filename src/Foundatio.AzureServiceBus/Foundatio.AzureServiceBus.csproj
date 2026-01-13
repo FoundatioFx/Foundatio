@@ -1,16 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
-    <PackageReference Include="Microsoft.Azure.Management.ServiceBus" Version="5.0.0" />
-    <PackageReference Include="Microsoft.Azure.ServiceBus" Version="5.2.0" />
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
+    <PackageReference Include="Azure.Identity" Version="1.17.1" />
 
     <PackageReference Include="Foundatio" Version="13.0.0-beta1" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
-
-    <!-- NOTE: Forcing minimum for security patch. Remove once SDK versions are updated -->
-    <PackageReference Include="Microsoft.Rest.ClientRuntime" Condition="" Version="2.3.24" />
-
-    <!-- NOTE: Forcing minimum for security patch. Remove once SDK versions are updated -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>

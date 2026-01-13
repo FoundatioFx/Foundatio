@@ -1,12 +1,41 @@
 ﻿using System;
-using Microsoft.Azure.ServiceBus;
-using Microsoft.Azure.ServiceBus.Management;
+using Azure.Core;
+using Azure.Messaging.ServiceBus.Administration;
 
 namespace Foundatio.Queues;
 
 public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : class
 {
+    /// <summary>
+    /// The connection string to the Azure Service Bus namespace.
+    /// </summary>
     public string ConnectionString { get; set; }
+
+    /// <summary>
+    /// The fully qualified Service Bus namespace to use for Azure Identity authentication.
+    /// Example: "yournamespace.servicebus.windows.net"
+    /// </summary>
+    public string FullyQualifiedNamespace { get; set; }
+
+    /// <summary>
+    /// The token credential to use for Azure Identity authentication.
+    /// </summary>
+    public TokenCredential Credential { get; set; }
+
+    /// <summary>
+    /// Whether the queue can be created if it doesn't exist.
+    /// </summary>
+    public bool CanCreateQueue { get; set; } = true;
+
+    /// <summary>
+    /// The timeout for reading from the queue during dequeue operations.
+    /// </summary>
+    public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// The interval between dequeue attempts when the queue is empty.
+    /// </summary>
+    public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// The queue idle interval after which the queue is automatically deleted.
@@ -49,16 +78,6 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     public bool? EnableBatchedOperations { get; set; }
 
     /// <summary>
-    /// Returns true if the message is anonymous accessible.
-    /// </summary>
-    public bool? IsAnonymousAccessible { get; set; }
-
-    /// <summary>
-    /// Returns true if the queue supports ordering.
-    /// </summary>
-    public bool? SupportOrdering { get; set; }
-
-    /// <summary>
     /// Returns the status of the queue (enabled or disabled). When an entity is disabled, that entity cannot send or receive messages.
     /// </summary>
     public EntityStatus? Status { get; set; }
@@ -84,21 +103,62 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     public string UserMetadata { get; set; }
 
     /// <summary>
-    /// Returns true if the queue holds a message in memory temporarily before writing it to persistent storage.
+    /// The function to calculate retry delay based on the attempt number.
     /// </summary>
-    public bool? EnableExpress { get; set; }
-
-    /// <summary>
-    /// Returns the retry policy;
-    /// </summary>
-    public RetryPolicy RetryPolicy { get; set; }
+    public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100));
 }
 
 public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureServiceBusQueueOptions<T>, AzureServiceBusQueueOptionsBuilder<T>> where T : class
 {
     public AzureServiceBusQueueOptionsBuilder<T> ConnectionString(string connectionString)
     {
-        Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        ArgumentException.ThrowIfNullOrEmpty(connectionString);
+        Target.ConnectionString = connectionString;
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> FullyQualifiedNamespace(string fullyQualifiedNamespace)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(fullyQualifiedNamespace);
+        Target.FullyQualifiedNamespace = fullyQualifiedNamespace;
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> Credential(TokenCredential credential)
+    {
+        Target.Credential = credential ?? throw new ArgumentNullException(nameof(credential));
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> CanCreateQueue(bool enabled)
+    {
+        Target.CanCreateQueue = enabled;
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> EnableCreateQueue() => CanCreateQueue(true);
+
+    public AzureServiceBusQueueOptionsBuilder<T> DisableCreateQueue() => CanCreateQueue(false);
+
+    public AzureServiceBusQueueOptionsBuilder<T> ReadQueueTimeout(TimeSpan timeout)
+    {
+        if (timeout < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Read Queue timeout must be greater than or equal to zero.");
+        Target.ReadQueueTimeout = timeout;
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> DequeueInterval(TimeSpan interval)
+    {
+        if (interval < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(interval), "Dequeue interval must be greater than or equal to zero.");
+        Target.DequeueInterval = interval;
+        return this;
+    }
+
+    public AzureServiceBusQueueOptionsBuilder<T> RetryDelay(Func<int, TimeSpan> retryDelay)
+    {
+        Target.RetryDelay = retryDelay ?? throw new ArgumentNullException(nameof(retryDelay));
         return this;
     }
 
@@ -150,18 +210,6 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
         return this;
     }
 
-    public AzureServiceBusQueueOptionsBuilder<T> IsAnonymousAccessible(bool isAnonymousAccessible)
-    {
-        Target.IsAnonymousAccessible = isAnonymousAccessible;
-        return this;
-    }
-
-    public AzureServiceBusQueueOptionsBuilder<T> SupportOrdering(bool supportOrdering)
-    {
-        Target.SupportOrdering = supportOrdering;
-        return this;
-    }
-
     public AzureServiceBusQueueOptionsBuilder<T> Status(EntityStatus status)
     {
         Target.Status = status;
@@ -189,18 +237,6 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
     public AzureServiceBusQueueOptionsBuilder<T> UserMetadata(string userMetadata)
     {
         Target.UserMetadata = userMetadata ?? throw new ArgumentNullException(nameof(userMetadata));
-        return this;
-    }
-
-    public AzureServiceBusQueueOptionsBuilder<T> EnableExpress(bool enableExpress)
-    {
-        Target.EnableExpress = enableExpress;
-        return this;
-    }
-
-    public AzureServiceBusQueueOptionsBuilder<T> RetryPolicy(RetryPolicy retryPolicy)
-    {
-        Target.RetryPolicy = retryPolicy ?? throw new ArgumentNullException(nameof(retryPolicy));
         return this;
     }
 }

@@ -1,18 +1,43 @@
-﻿using System;
-using Microsoft.Azure.ServiceBus;
-using Microsoft.Azure.ServiceBus.Management;
+using System;
+using Azure.Core;
+using Azure.Messaging.ServiceBus;
+using Azure.Messaging.ServiceBus.Administration;
 
 namespace Foundatio.Messaging;
 
 public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
 {
+    /// <summary>
+    /// The connection string to the Azure Service Bus namespace.
+    /// </summary>
     public string ConnectionString { get; set; }
+
+    /// <summary>
+    /// The fully qualified Service Bus namespace to use for Azure Identity authentication.
+    /// Example: "yournamespace.servicebus.windows.net"
+    /// </summary>
+    public string FullyQualifiedNamespace { get; set; }
+
+    /// <summary>
+    /// The token credential to use for Azure Identity authentication.
+    /// </summary>
+    public TokenCredential Credential { get; set; }
+
+    /// <summary>
+    /// Whether the topic can be created if it doesn't exist.
+    /// </summary>
+    public bool CanCreateTopic { get; set; } = true;
 
     /// <summary>
     /// Prefetching enables the queue or subscription client to load additional messages from the service when it performs a receive operation.
     /// https://docs.microsoft.com/en-us/azure/service-bus-messaging/service-bus-performance-improvements
     /// </summary>
     public int? PrefetchCount { get; set; }
+
+    /// <summary>
+    /// The maximum number of concurrent calls to the message handler.
+    /// </summary>
+    public int MaxConcurrentCalls { get; set; } = 6;
 
     /// <summary>
     /// The idle interval after which the topic is automatically deleted. The minimum duration is 5 minutes.
@@ -45,16 +70,6 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     public bool? TopicEnableBatchedOperations { get; set; }
 
     /// <summary>
-    /// Controls whether messages should be filtered before publishing.
-    /// </summary>
-    public bool? TopicEnableFilteringMessagesBeforePublishing { get; set; }
-
-    /// <summary>
-    /// Returns true if the message is anonymous accessible.
-    /// </summary>
-    public bool? TopicIsAnonymousAccessible { get; set; }
-
-    /// <summary>
     /// Returns the status of the topic (enabled or disabled). When an entity is disabled, that entity cannot send or receive messages.
     /// </summary>
     public EntityStatus? TopicStatus { get; set; }
@@ -68,11 +83,6 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// Returns true if the topic is to be partitioned across multiple message brokers.
     /// </summary>
     public bool? TopicEnablePartitioning { get; set; }
-
-    /// <summary>
-    /// Returns true if the queue holds a message in memory temporarily before writing it to persistent storage.
-    /// </summary>
-    public bool? TopicEnableExpress { get; set; }
 
     /// <summary>
     /// Returns user metadata.
@@ -97,10 +107,10 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// The lock duration time span for the subscription.
     /// </summary>
-    public TimeSpan? SubscriptionWorkItemTimeout { get; set; }
+    public TimeSpan? SubscriptionLockDuration { get; set; }
 
     /// <summary>
-    /// the value indicating if a subscription supports the concept of session.
+    /// The value indicating if a subscription supports the concept of session.
     /// </summary>
     public bool? SubscriptionRequiresSession { get; set; }
 
@@ -125,7 +135,7 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     public bool? SubscriptionEnableBatchedOperations { get; set; }
 
     /// <summary>
-    /// Returns the status of the subcription (enabled or disabled). When an entity is disabled, that entity cannot send or receive messages.
+    /// Returns the status of the subscription (enabled or disabled). When an entity is disabled, that entity cannot send or receive messages.
     /// </summary>
     public EntityStatus? SubscriptionStatus { get; set; }
 
@@ -144,24 +154,57 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// </summary>
     public string SubscriptionUserMetadata { get; set; }
 
-    public RetryPolicy SubscriptionRetryPolicy { get; set; }
+    /// <summary>
+    /// The receive mode for the subscription processor.
+    /// </summary>
+    public ServiceBusReceiveMode SubscriptionReceiveMode { get; set; } = ServiceBusReceiveMode.ReceiveAndDelete;
 
-    public ReceiveMode SubscriptionReceiveMode { get; set; } = ReceiveMode.ReceiveAndDelete;
 }
 
 public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<
     AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder>
 {
-
     public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString)
     {
+        if (String.IsNullOrEmpty(connectionString))
+            throw new ArgumentNullException(nameof(connectionString));
         Target.ConnectionString = connectionString;
         return this;
     }
 
+    public AzureServiceBusMessageBusOptionsBuilder FullyQualifiedNamespace(string fullyQualifiedNamespace)
+    {
+        if (String.IsNullOrEmpty(fullyQualifiedNamespace))
+            throw new ArgumentNullException(nameof(fullyQualifiedNamespace));
+        Target.FullyQualifiedNamespace = fullyQualifiedNamespace;
+        return this;
+    }
+
+    public AzureServiceBusMessageBusOptionsBuilder Credential(TokenCredential credential)
+    {
+        Target.Credential = credential ?? throw new ArgumentNullException(nameof(credential));
+        return this;
+    }
+
+    public AzureServiceBusMessageBusOptionsBuilder CanCreateTopic(bool enabled)
+    {
+        Target.CanCreateTopic = enabled;
+        return this;
+    }
+
+    public AzureServiceBusMessageBusOptionsBuilder EnableCreateTopic() => CanCreateTopic(true);
+
+    public AzureServiceBusMessageBusOptionsBuilder DisableCreateTopic() => CanCreateTopic(false);
+
     public AzureServiceBusMessageBusOptionsBuilder PrefetchCount(int prefetchCount)
     {
         Target.PrefetchCount = prefetchCount;
+        return this;
+    }
+
+    public AzureServiceBusMessageBusOptionsBuilder MaxConcurrentCalls(int maxConcurrentCalls)
+    {
+        Target.MaxConcurrentCalls = maxConcurrentCalls;
         return this;
     }
 
@@ -201,18 +244,6 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
         return this;
     }
 
-    public AzureServiceBusMessageBusOptionsBuilder TopicEnableFilteringMessagesBeforePublishing(bool topicEnableFilteringMessagesBeforePublishing)
-    {
-        Target.TopicEnableFilteringMessagesBeforePublishing = topicEnableFilteringMessagesBeforePublishing;
-        return this;
-    }
-
-    public AzureServiceBusMessageBusOptionsBuilder TopicIsAnonymousAccessible(bool topicIsAnonymousAccessible)
-    {
-        Target.TopicIsAnonymousAccessible = topicIsAnonymousAccessible;
-        return this;
-    }
-
     public AzureServiceBusMessageBusOptionsBuilder TopicStatus(EntityStatus topicStatus)
     {
         Target.TopicStatus = topicStatus;
@@ -228,12 +259,6 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
     public AzureServiceBusMessageBusOptionsBuilder TopicEnablePartitioning(bool topicEnablePartitioning)
     {
         Target.TopicEnablePartitioning = topicEnablePartitioning;
-        return this;
-    }
-
-    public AzureServiceBusMessageBusOptionsBuilder TopicEnableExpress(bool topicEnableExpress)
-    {
-        Target.TopicEnableExpress = topicEnableExpress;
         return this;
     }
 
@@ -261,9 +286,9 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
         return this;
     }
 
-    public AzureServiceBusMessageBusOptionsBuilder SubscriptionWorkItemTimeout(TimeSpan subscriptionWorkItemTimeout)
+    public AzureServiceBusMessageBusOptionsBuilder SubscriptionLockDuration(TimeSpan subscriptionLockDuration)
     {
-        Target.SubscriptionWorkItemTimeout = subscriptionWorkItemTimeout;
+        Target.SubscriptionLockDuration = subscriptionLockDuration;
         return this;
     }
 
@@ -321,15 +346,10 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
         return this;
     }
 
-    public AzureServiceBusMessageBusOptionsBuilder SubscriptionRetryPolicy(RetryPolicy subscriptionRetryPolicy)
-    {
-        Target.SubscriptionRetryPolicy = subscriptionRetryPolicy ?? throw new ArgumentNullException(nameof(subscriptionRetryPolicy));
-        return this;
-    }
-
-    public AzureServiceBusMessageBusOptionsBuilder SubscriptionReceiveMode(ReceiveMode receiveMode)
+    public AzureServiceBusMessageBusOptionsBuilder SubscriptionReceiveMode(ServiceBusReceiveMode receiveMode)
     {
         Target.SubscriptionReceiveMode = receiveMode;
         return this;
     }
+
 }

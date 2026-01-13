@@ -1,0 +1,41 @@
+{
+  "UserConfig": {
+    "Namespaces": [
+      {
+        "Name": "sbemulatorns",
+        "Queues": [
+          {
+            "Name": "foundatio-test-queue",
+            "Properties": {
+              "LockDuration": "PT1M",
+              "MaxDeliveryCount": 5,
+              "DefaultMessageTimeToLive": "PT1H",
+              "DeadLetteringOnMessageExpiration": true
+            }
+          }
+        ],
+        "Topics": [
+          {
+            "Name": "test-messages",
+            "Properties": {
+              "DefaultMessageTimeToLive": "PT1H"
+            },
+            "Subscriptions": [
+              {
+                "Name": "test-subscription",
+                "Properties": {
+                  "LockDuration": "PT1M",
+                  "MaxDeliveryCount": 5,
+                  "DeadLetteringOnMessageExpiration": true
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "Logging": {
+      "Type": "Console"
+    }
+  }
+}

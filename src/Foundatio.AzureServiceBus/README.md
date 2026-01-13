@@ -43,12 +43,12 @@ To summarize, if you want pain free development and testing while allowing your 
 
 ## Getting Started (Development)
 
-[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/FoundatioFx/Foundatio/issues/new) or join our [Discord](https://discord.gg/6HxgFCx) chat room. We’re always here to help if you have any questions!
+[Foundatio can be installed](https://www.nuget.org/packages?q=Foundatio) via the [NuGet package manager](https://docs.nuget.org/consume/Package-Manager-Dialog). If you need help, please [open an issue](https://github.com/FoundatioFx/Foundatio/issues/new) or join our [Discord](https://discord.gg/6HxgFCx) chat room. We're always here to help if you have any questions!
 
 **This section is for development purposes only! If you are trying to use the Foundatio libraries, please get them from NuGet.**
 
 1. You will need to have [Visual Studio Code](https://code.visualstudio.com) installed.
-2. Open the `Foundatio.slnx` Visual Studio solution file.
+2. Open the `Foundatio.AzureServiceBus.slnx` Visual Studio solution file.
 
 ## Using Foundatio
 
