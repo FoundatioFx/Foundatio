@@ -93,7 +93,7 @@ jobs:
     - name: Run Tests
       run: |
         if [ "${{ inputs.new-test-runner }}" = "true" ]; then
-          dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build
+          dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build --report-github
         else
           dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
         fi
