@@ -52,6 +52,30 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     }
 
     [Fact]
+    public override void Serialize_WithDateTimeValue_PreservesValue()
+    {
+        base.Serialize_WithDateTimeValue_PreservesValue();
+    }
+
+    [Fact]
+    public override void Serialize_WithEmptyCollection_ReturnsValidOutput()
+    {
+        base.Serialize_WithEmptyCollection_ReturnsValidOutput();
+    }
+
+    [Fact]
+    public override void Serialize_WithNullPropertyInObject_HandlesCorrectly()
+    {
+        base.Serialize_WithNullPropertyInObject_HandlesCorrectly();
+    }
+
+    [Fact]
+    public override void Serialize_WithNumericTypes_PreservesValues()
+    {
+        base.Serialize_WithNumericTypes_PreservesValues();
+    }
+
+    [Fact]
     public override void SerializeToBytes_WithNullValue_ReturnsNull()
     {
         base.SerializeToBytes_WithNullValue_ReturnsNull();
@@ -114,6 +138,30 @@ public class SystemTextJsonSerializerWithOptionsTests : SerializerTestsBase
     public override void Deserialize_WithValidString_ReturnsDeserializedObject()
     {
         base.Deserialize_WithValidString_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void Serialize_WithDateTimeValue_PreservesValue()
+    {
+        base.Serialize_WithDateTimeValue_PreservesValue();
+    }
+
+    [Fact]
+    public override void Serialize_WithEmptyCollection_ReturnsValidOutput()
+    {
+        base.Serialize_WithEmptyCollection_ReturnsValidOutput();
+    }
+
+    [Fact]
+    public override void Serialize_WithNullPropertyInObject_HandlesCorrectly()
+    {
+        base.Serialize_WithNullPropertyInObject_HandlesCorrectly();
+    }
+
+    [Fact]
+    public override void Serialize_WithNumericTypes_PreservesValues()
+    {
+        base.Serialize_WithNumericTypes_PreservesValues();
     }
 
     [Fact]

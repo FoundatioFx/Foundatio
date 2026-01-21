@@ -18,16 +18,16 @@ public class SystemTextJsonSerializer : ITextSerializer
         _deserializeOptions = deserializeOptions ?? serializeOptions ?? _defaultDeserializeOptions;
     }
 
-    public void Serialize(object data, Stream outputStream)
+    public void Serialize(object value, Stream output)
     {
-        var writer = new Utf8JsonWriter(outputStream);
-        JsonSerializer.Serialize(writer, data, data.GetType(), _serializeOptions);
+        using var writer = new Utf8JsonWriter(output);
+        JsonSerializer.Serialize(writer, value, value.GetType(), _serializeOptions);
         writer.Flush();
     }
 
-    public object Deserialize(Stream inputStream, Type objectType)
+    public object Deserialize(Stream data, Type objectType)
     {
-        using var reader = new StreamReader(inputStream);
+        using var reader = new StreamReader(data);
         object result = JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
 
         if (result is not JsonElement jsonElement)

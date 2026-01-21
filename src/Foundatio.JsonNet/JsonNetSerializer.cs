@@ -13,16 +13,17 @@ public class JsonNetSerializer : ITextSerializer
         _serializer = JsonSerializer.Create(settings ?? new JsonSerializerSettings());
     }
 
-    public void Serialize(object data, Stream outputStream)
+    public void Serialize(object value, Stream output)
     {
-        var writer = new JsonTextWriter(new StreamWriter(outputStream));
-        _serializer.Serialize(writer, data, data.GetType());
+        using var streamWriter = new StreamWriter(output, leaveOpen: true);
+        using var writer = new JsonTextWriter(streamWriter);
+        _serializer.Serialize(writer, value, value.GetType());
         writer.Flush();
     }
 
-    public object Deserialize(Stream inputStream, Type objectType)
+    public object Deserialize(Stream data, Type objectType)
     {
-        using var sr = new StreamReader(inputStream);
+        using var sr = new StreamReader(data);
         using var reader = new JsonTextReader(sr);
         return _serializer.Deserialize(reader, objectType);
     }

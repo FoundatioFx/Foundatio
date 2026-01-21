@@ -14,13 +14,13 @@ public class Utf8JsonSerializer : ITextSerializer
         _formatterResolver = resolver ?? StandardResolver.Default;
     }
 
-    public void Serialize(object data, Stream output)
+    public void Serialize(object value, Stream output)
     {
-        JsonSerializer.NonGeneric.Serialize(data.GetType(), output, data, _formatterResolver);
+        JsonSerializer.NonGeneric.Serialize(value.GetType(), output, value, _formatterResolver);
     }
 
-    public object Deserialize(Stream input, Type objectType)
+    public object Deserialize(Stream data, Type objectType)
     {
-        return JsonSerializer.NonGeneric.Deserialize(objectType, input, _formatterResolver);
+        return JsonSerializer.NonGeneric.Deserialize(objectType, data, _formatterResolver);
     }
 }

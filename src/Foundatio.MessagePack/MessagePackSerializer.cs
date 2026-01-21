@@ -14,13 +14,13 @@ public class MessagePackSerializer : ISerializer
         _options = options ?? MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);
     }
 
-    public void Serialize(object data, Stream output)
+    public void Serialize(object value, Stream output)
     {
-        MessagePack.MessagePackSerializer.Serialize(data.GetType(), output, data, _options);
+        MessagePack.MessagePackSerializer.Serialize(value.GetType(), output, value, _options);
     }
 
-    public object Deserialize(Stream input, Type objectType)
+    public object Deserialize(Stream data, Type objectType)
     {
-        return MessagePack.MessagePackSerializer.Deserialize(objectType, input, _options);
+        return MessagePack.MessagePackSerializer.Deserialize(objectType, data, _options);
     }
 }

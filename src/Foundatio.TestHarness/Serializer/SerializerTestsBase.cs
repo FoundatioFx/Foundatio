@@ -33,6 +33,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>([]));
         Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((string)null));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>(String.Empty));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>("   "));
     }
 
     public virtual void Deserialize_WithPrimitiveType_ReturnsValue()
@@ -188,6 +189,109 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         // Assert
         Assert.Null(result);
     }
+
+    public virtual void Serialize_WithEmptyCollection_ReturnsValidOutput()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = []
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.ListProperty);
+        Assert.Empty(result.ListProperty);
+    }
+
+    public virtual void Serialize_WithNullPropertyInObject_HandlesCorrectly()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = null,
+            ListProperty = null,
+            ObjectProperty = null
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.IntProperty);
+        Assert.Null(result.StringProperty);
+        Assert.Null(result.ListProperty);
+        Assert.Null(result.ObjectProperty);
+    }
+
+    public virtual void Serialize_WithDateTimeValue_PreservesValue()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModelWithDateTime
+        {
+            DateTimeProperty = new DateTime(2024, 6, 15, 12, 30, 45, DateTimeKind.Utc),
+            DateTimeOffsetProperty = new DateTimeOffset(2024, 6, 15, 12, 30, 45, TimeSpan.FromHours(-5))
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModelWithDateTime>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.DateTimeProperty, result.DateTimeProperty);
+        Assert.Equal(model.DateTimeOffsetProperty, result.DateTimeOffsetProperty);
+    }
+
+    public virtual void Serialize_WithNumericTypes_PreservesValues()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModelWithNumerics
+        {
+            IntValue = 42,
+            LongValue = 9_223_372_036_854_775_807L,
+            DoubleValue = 3.14159265358979,
+            DecimalValue = 123456.789m,
+            BoolValue = true
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModelWithNumerics>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.IntValue, result.IntValue);
+        Assert.Equal(model.LongValue, result.LongValue);
+        Assert.Equal(model.DoubleValue, result.DoubleValue, 10);
+        Assert.Equal(model.DecimalValue, result.DecimalValue);
+        Assert.Equal(model.BoolValue, result.BoolValue);
+    }
 }
 
 [MemoryDiagnoser]
@@ -240,4 +344,19 @@ public class SerializeModel
     public string StringProperty { get; set; }
     public List<int> ListProperty { get; set; }
     public object ObjectProperty { get; set; }
+}
+
+public class SerializeModelWithDateTime
+{
+    public DateTime DateTimeProperty { get; set; }
+    public DateTimeOffset DateTimeOffsetProperty { get; set; }
+}
+
+public class SerializeModelWithNumerics
+{
+    public int IntValue { get; set; }
+    public long LongValue { get; set; }
+    public double DoubleValue { get; set; }
+    public decimal DecimalValue { get; set; }
+    public bool BoolValue { get; set; }
 }
