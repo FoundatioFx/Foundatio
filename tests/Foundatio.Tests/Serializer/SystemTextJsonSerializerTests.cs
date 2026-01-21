@@ -6,34 +6,6 @@ using Xunit;
 
 namespace Foundatio.Tests.Serializer;
 
-public class SystemTextJsonSerializerWithOptionsTests : SerializerTestsBase
-{
-    public SystemTextJsonSerializerWithOptionsTests(ITestOutputHelper output) : base(output) { }
-
-    protected override ISerializer GetSerializer()
-    {
-        return new SystemTextJsonSerializer(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseUpper });
-    }
-
-    [Fact]
-    public override void CanRoundTripBytes()
-    {
-        base.CanRoundTripBytes();
-    }
-
-    [Fact]
-    public override void CanRoundTripString()
-    {
-        base.CanRoundTripString();
-    }
-
-    [Fact]
-    public override void CanHandlePrimitiveTypes()
-    {
-        base.CanHandlePrimitiveTypes();
-    }
-}
-
 public class SystemTextJsonSerializerTests : SerializerTestsBase
 {
     public SystemTextJsonSerializerTests(ITestOutputHelper output) : base(output) { }
@@ -44,21 +16,51 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     }
 
     [Fact]
-    public override void CanRoundTripBytes()
+    public override void Deserialize_WithInvalidInput_ThrowsArgumentException()
     {
-        base.CanRoundTripBytes();
+        base.Deserialize_WithInvalidInput_ThrowsArgumentException();
     }
 
     [Fact]
-    public override void CanRoundTripString()
+    public override void Deserialize_WithPrimitiveType_ReturnsValue()
     {
-        base.CanRoundTripString();
+        base.Deserialize_WithPrimitiveType_ReturnsValue();
     }
 
     [Fact]
-    public override void CanHandlePrimitiveTypes()
+    public override void Deserialize_WithUnicodeAndSpecialCharacters_PreservesContent()
     {
-        base.CanHandlePrimitiveTypes();
+        base.Deserialize_WithUnicodeAndSpecialCharacters_PreservesContent();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidBytes_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidBytes_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidStream_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidStream_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidString_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidString_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void SerializeToBytes_WithNullValue_ReturnsNull()
+    {
+        base.SerializeToBytes_WithNullValue_ReturnsNull();
+    }
+
+    [Fact]
+    public override void SerializeToString_WithNullValue_ReturnsNull()
+    {
+        base.SerializeToString_WithNullValue_ReturnsNull();
     }
 
     [Fact(Skip = "Skip benchmarks for now")]
@@ -66,6 +68,64 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     {
         var summary = BenchmarkDotNet.Running.BenchmarkRunner.Run<SystemTextJsonSerializerBenchmark>();
         _logger.LogInformation(summary.ToJson());
+    }
+}
+
+public class SystemTextJsonSerializerWithOptionsTests : SerializerTestsBase
+{
+    public SystemTextJsonSerializerWithOptionsTests(ITestOutputHelper output) : base(output) { }
+
+    protected override ISerializer GetSerializer()
+    {
+        return new SystemTextJsonSerializer(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseUpper });
+    }
+
+    [Fact]
+    public override void Deserialize_WithInvalidInput_ThrowsArgumentException()
+    {
+        base.Deserialize_WithInvalidInput_ThrowsArgumentException();
+    }
+
+    [Fact]
+    public override void Deserialize_WithPrimitiveType_ReturnsValue()
+    {
+        base.Deserialize_WithPrimitiveType_ReturnsValue();
+    }
+
+    [Fact]
+    public override void Deserialize_WithUnicodeAndSpecialCharacters_PreservesContent()
+    {
+        base.Deserialize_WithUnicodeAndSpecialCharacters_PreservesContent();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidBytes_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidBytes_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidStream_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidStream_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void Deserialize_WithValidString_ReturnsDeserializedObject()
+    {
+        base.Deserialize_WithValidString_ReturnsDeserializedObject();
+    }
+
+    [Fact]
+    public override void SerializeToBytes_WithNullValue_ReturnsNull()
+    {
+        base.SerializeToBytes_WithNullValue_ReturnsNull();
+    }
+
+    [Fact]
+    public override void SerializeToString_WithNullValue_ReturnsNull()
+    {
+        base.SerializeToString_WithNullValue_ReturnsNull();
     }
 }
 
