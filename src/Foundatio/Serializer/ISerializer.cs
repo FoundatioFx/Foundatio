@@ -52,9 +52,7 @@ public static class SerializerExtensions
     {
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
-
-        if (data.Length is 0)
-            throw new ArgumentException("Data cannot be empty.", nameof(data));
+        ArgumentOutOfRangeException.ThrowIfZero(data.Length);
 
         using var stream = new MemoryStream(data);
         return (T)serializer.Deserialize(stream, typeof(T));
