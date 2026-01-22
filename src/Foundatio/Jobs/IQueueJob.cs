@@ -46,10 +46,8 @@ public static class QueueJobExtensions
 
         return job.RunContinuousAsync(cancellationToken: cancellationToken, continuationCallback: async () =>
         {
-            // Allow abandoned items to be re-queued by background retry tasks.
-            // Task.Yield alone is insufficient as Task.Run may not have started yet.
-            // A small delay ensures retry tasks have time to re-queue items.
-            await Task.Delay(1).AnyContext();
+            // Allow abandoned items to be added in a background task.
+            Thread.Yield();
 
             var stats = await job.Queue.GetQueueStatsAsync().AnyContext();
             logger.LogTrace("RunUntilEmpty continuation: Queued={Queued}, Working={Working}, Abandoned={Abandoned}", stats.Queued, stats.Working, stats.Abandoned);

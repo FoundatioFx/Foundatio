@@ -27,7 +27,9 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     private int _workerErrorCount;
     private int _workerItemTimeoutCount;
 
-    public InMemoryQueue() : this(o => o) { }
+    public InMemoryQueue() : this(o => o)
+    {
+    }
 
     public InMemoryQueue(InMemoryQueueOptions<T> options) : base(options)
     {
@@ -35,7 +37,9 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     }
 
     public InMemoryQueue(Builder<InMemoryQueueOptionsBuilder<T>, InMemoryQueueOptions<T>> config)
-        : this(config(new InMemoryQueueOptionsBuilder<T>()).Build()) { }
+        : this(config(new InMemoryQueueOptionsBuilder<T>()).Build())
+    {
+    }
 
     protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default)
     {
@@ -313,12 +317,17 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
                     _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId}", queueEntry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, DisposedCancellationToken);
+                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () =>
+                    {
+                        Retry(targetEntry);
+                        return Task.CompletedTask;
+                    }, _timeProvider, DisposedCancellationToken);
                 }
                 else
                 {
                     _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId}", queueEntry.Id);
-                    _ = Task.Run(() => RetryAsync(targetEntry), DisposedCancellationToken);
+                    // Retry synchronously to ensure item is back in queue before AbandonAsync returns.
+                    Retry(targetEntry);
                 }
             }
             else
@@ -329,14 +338,13 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         }
     }
 
-    private Task RetryAsync(QueueEntry<T> entry)
+    private void Retry(QueueEntry<T> entry)
     {
         _logger.LogTrace("Queue {QueueName} retrying item: {QueueEntryId} Attempts: {QueueEntryAttempts}", _options.Name, entry.Id, entry.Attempts);
 
         entry.Reset();
         _queue.Enqueue(entry);
         _autoResetEvent.Set();
-        return Task.CompletedTask;
     }
 
     private TimeSpan GetRetryDelay(int attempts)
