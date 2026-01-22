@@ -21,6 +21,8 @@ public interface ISerializer
 
     /// <summary>
     /// Serializes an object to the specified output stream.
+    /// Null values are valid and will be serialized (e.g., as "null" for JSON serializers
+    /// or nil markers for binary serializers).
     /// </summary>
     void Serialize(object value, Stream output);
 }
