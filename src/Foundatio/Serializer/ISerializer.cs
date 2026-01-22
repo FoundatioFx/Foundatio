@@ -53,10 +53,11 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
 
-        if (data.Length == 0)
+        if (data.Length is 0)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
-        return (T)serializer.Deserialize(new MemoryStream(data), typeof(T));
+        using var stream = new MemoryStream(data);
+        return (T)serializer.Deserialize(stream, typeof(T));
     }
 
     public static object Deserialize(this ISerializer serializer, byte[] data, Type objectType)
@@ -66,7 +67,8 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(objectType);
         ArgumentOutOfRangeException.ThrowIfZero(data.Length);
 
-        return serializer.Deserialize(new MemoryStream(data), objectType);
+        using var stream = new MemoryStream(data);
+        return serializer.Deserialize(stream, objectType);
     }
 
     public static T Deserialize<T>(this ISerializer serializer, string data)
@@ -75,7 +77,8 @@ public static class SerializerExtensions
         ArgumentException.ThrowIfNullOrWhiteSpace(data);
 
         var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
-        return (T)serializer.Deserialize(new MemoryStream(bytes), typeof(T));
+        using var stream = new MemoryStream(bytes);
+        return (T)serializer.Deserialize(stream, typeof(T));
     }
 
     public static object Deserialize(this ISerializer serializer, string data, Type objectType)
@@ -85,16 +88,15 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(objectType);
 
         var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
-        return serializer.Deserialize(new MemoryStream(bytes), objectType);
+        using var stream = new MemoryStream(bytes);
+        return serializer.Deserialize(stream, objectType);
     }
 
     public static string SerializeToString<T>(this ISerializer serializer, T value)
     {
         ArgumentNullException.ThrowIfNull(serializer);
 
-        if (value is null)
-            return null;
-
+        // Serialize null to "null" literal (matches underlying library behavior)
         var bytes = serializer.SerializeToBytes(value);
         return serializer is ITextSerializer ? Encoding.UTF8.GetString(bytes) : Convert.ToBase64String(bytes);
     }
@@ -103,10 +105,9 @@ public static class SerializerExtensions
     {
         ArgumentNullException.ThrowIfNull(serializer);
 
-        if (value is null)
-            return null;
-
-        var stream = new MemoryStream();
+        // Serialize null values - underlying serializers handle this correctly
+        // (produces "null" for JSON, nil marker for MessagePack)
+        using var stream = new MemoryStream();
         serializer.Serialize(value, stream);
 
         return stream.ToArray();

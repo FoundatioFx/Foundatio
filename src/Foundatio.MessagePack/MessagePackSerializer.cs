@@ -16,11 +16,16 @@ public class MessagePackSerializer : ISerializer
 
     public void Serialize(object value, Stream output)
     {
-        MessagePack.MessagePackSerializer.Serialize(value.GetType(), output, value, _options);
+        ArgumentNullException.ThrowIfNull(output);
+
+        MessagePack.MessagePackSerializer.Serialize(value?.GetType() ?? typeof(object), output, value, _options);
     }
 
     public object Deserialize(Stream data, Type objectType)
     {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(objectType);
+
         return MessagePack.MessagePackSerializer.Deserialize(objectType, data, _options);
     }
 }

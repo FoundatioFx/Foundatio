@@ -16,11 +16,16 @@ public class Utf8JsonSerializer : ITextSerializer
 
     public void Serialize(object value, Stream output)
     {
-        JsonSerializer.NonGeneric.Serialize(value.GetType(), output, value, _formatterResolver);
+        ArgumentNullException.ThrowIfNull(output);
+
+        JsonSerializer.NonGeneric.Serialize(value?.GetType() ?? typeof(object), output, value, _formatterResolver);
     }
 
     public object Deserialize(Stream data, Type objectType)
     {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(objectType);
+
         return JsonSerializer.NonGeneric.Deserialize(objectType, data, _formatterResolver);
     }
 }

@@ -77,6 +77,20 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Equal(model.StringProperty, result.StringProperty);
     }
 
+    public virtual void Deserialize_WithInvalidArguments_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        using var stream = new MemoryStream([0x7B, 0x7D]); // "{}"
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(null, typeof(object)));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(stream, null));
+    }
+
     public virtual void Deserialize_WithValidBytes_ReturnsDeserializedObject()
     {
         // Arrange
@@ -162,32 +176,84 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
     }
 
-    public virtual void SerializeToBytes_WithNullValue_ReturnsNull()
+    public virtual void Serialize_WithInvalidArguments_ThrowsArgumentNullException()
     {
         // Arrange
         var serializer = GetSerializer();
         if (serializer is null)
             return;
 
-        // Act
-        var result = serializer.SerializeToBytes<SerializeModel>(null);
-
-        // Assert
-        Assert.Null(result);
+        // Act & Assert - only stream is validated (null value is allowed)
+        Assert.Throws<ArgumentNullException>(() => serializer.Serialize(new object(), null));
     }
 
-    public virtual void SerializeToString_WithNullValue_ReturnsNull()
+    public virtual void Serialize_WithNullValue_RoundTripsCorrectly()
     {
         // Arrange
         var serializer = GetSerializer();
         if (serializer is null)
             return;
 
-        // Act
-        var result = serializer.SerializeToString<SerializeModel>(null);
+        // Act & Assert - extension methods produce valid output (not null)
+        var bytes = serializer.SerializeToBytes<object>(null);
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 0);
 
-        // Assert
-        Assert.Null(result);
+        var str = serializer.SerializeToString<object>(null);
+        Assert.NotNull(str);
+        Assert.NotEmpty(str);
+
+        // Act & Assert - round trip via extension methods
+        var resultFromBytes = serializer.Deserialize<object>(bytes);
+        Assert.Null(resultFromBytes);
+
+        var resultFromString = serializer.Deserialize<object>(str);
+        Assert.Null(resultFromString);
+
+        // Act & Assert - round trip via core Serialize method
+        using var stream = new MemoryStream();
+        serializer.Serialize(null, stream);
+        Assert.True(stream.Length > 0);
+        stream.Position = 0;
+        var resultFromStream = serializer.Deserialize<object>(stream);
+        Assert.Null(resultFromStream);
+    }
+
+    public virtual void Serialize_WithSpecialCharacters_RoundTripsCorrectly()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 42,
+            StringProperty = "Unicode: 中文 日本語 العربية Русский 🎉🚀💻 " +
+                             "Escapes: line1\nline2\r\nwindows\ttab\"quote\\backslash " +
+                             "Surrogate: 𝄞🎵 " +
+                             "Null: before\0after",
+            ListProperty = [1, 2, 3]
+        };
+
+        // Act - round trip via bytes
+        var bytes = serializer.SerializeToBytes(model);
+        var resultFromBytes = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Act - round trip via string
+        var str = serializer.SerializeToString(model);
+        var resultFromString = serializer.Deserialize<SerializeModel>(str);
+
+        // Assert - semantic equality (not comparing serialized output)
+        Assert.NotNull(resultFromBytes);
+        Assert.Equal(model.IntProperty, resultFromBytes.IntProperty);
+        Assert.Equal(model.StringProperty, resultFromBytes.StringProperty);
+        Assert.Equal(model.ListProperty, resultFromBytes.ListProperty);
+
+        Assert.NotNull(resultFromString);
+        Assert.Equal(model.IntProperty, resultFromString.IntProperty);
+        Assert.Equal(model.StringProperty, resultFromString.StringProperty);
+        Assert.Equal(model.ListProperty, resultFromString.ListProperty);
     }
 
     public virtual void Serialize_WithEmptyCollection_ReturnsValidOutput()

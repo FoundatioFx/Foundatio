@@ -6,46 +6,77 @@ namespace Foundatio.Serializer;
 
 public class SystemTextJsonSerializer : ITextSerializer
 {
-    private readonly JsonSerializerOptions _defaultSerializeOptions = new();
-    private readonly JsonSerializerOptions _defaultDeserializeOptions = new();
-
     private readonly JsonSerializerOptions _serializeOptions;
     private readonly JsonSerializerOptions _deserializeOptions;
 
     public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null)
     {
-        _serializeOptions = serializeOptions ?? _defaultSerializeOptions;
-        _deserializeOptions = deserializeOptions ?? serializeOptions ?? _defaultDeserializeOptions;
+        _serializeOptions = serializeOptions ?? JsonSerializerOptions.Default;
+        _deserializeOptions = deserializeOptions ?? serializeOptions ?? JsonSerializerOptions.Default;
     }
 
     public void Serialize(object value, Stream output)
     {
-        using var writer = new Utf8JsonWriter(output);
-        JsonSerializer.Serialize(writer, value, value.GetType(), _serializeOptions);
-        writer.Flush();
+        ArgumentNullException.ThrowIfNull(output);
+
+        // Use direct stream serialization (more efficient than Utf8JsonWriter)
+        // Handles null values correctly (writes "null")
+        JsonSerializer.Serialize(output, value, value?.GetType() ?? typeof(object), _serializeOptions);
     }
 
     public object Deserialize(Stream data, Type objectType)
     {
-        using var reader = new StreamReader(data);
-        object result = JsonSerializer.Deserialize(reader.ReadToEnd(), objectType, _deserializeOptions);
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(objectType);
 
-        if (result is not JsonElement jsonElement)
-            return result;
+        // Use direct stream deserialization (avoids string allocation)
+        object result = JsonSerializer.Deserialize(data, objectType, _deserializeOptions);
 
-        // return primitive types
-        switch (jsonElement.ValueKind)
-        {
-            case JsonValueKind.True:
-                return true;
-            case JsonValueKind.False:
-                return false;
-            case JsonValueKind.Number:
-                return jsonElement.TryGetInt64(out long number) ? number : (object)jsonElement.GetDouble();
-            case JsonValueKind.String:
-                return jsonElement.TryGetDateTime(out var datetime) ? datetime : (object)jsonElement.GetString();
-        }
+        // Handle primitive types when deserializing to object
+        if (result is JsonElement jsonElement)
+            return ConvertJsonElement(jsonElement);
 
         return result;
+    }
+
+    private static object ConvertJsonElement(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => GetNumber(element),
+            JsonValueKind.String => GetStringOrDateTime(element),
+            _ => element // Array/Object remain as JsonElement
+        };
+    }
+
+    private static object GetNumber(JsonElement element)
+    {
+        // Try smallest to largest integer types first for optimal boxing
+        if (element.TryGetInt32(out int i))
+            return i;
+
+        if (element.TryGetInt64(out long l))
+            return l;
+
+        // Try decimal for precise values (e.g., financial data) before double
+        if (element.TryGetDecimal(out decimal d))
+            return d;
+
+        return element.GetDouble();
+    }
+
+    private static object GetStringOrDateTime(JsonElement element)
+    {
+        // Try DateTimeOffset first (more specific, preserves timezone info)
+        if (element.TryGetDateTimeOffset(out var dto))
+            return dto;
+
+        if (element.TryGetDateTime(out var dt))
+            return dt;
+
+        return element.GetString();
     }
 }

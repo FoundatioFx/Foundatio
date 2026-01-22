@@ -15,14 +15,19 @@ public class JsonNetSerializer : ITextSerializer
 
     public void Serialize(object value, Stream output)
     {
+        ArgumentNullException.ThrowIfNull(output);
+
         using var streamWriter = new StreamWriter(output, leaveOpen: true);
         using var writer = new JsonTextWriter(streamWriter);
-        _serializer.Serialize(writer, value, value.GetType());
+        _serializer.Serialize(writer, value, value?.GetType() ?? typeof(object));
         writer.Flush();
     }
 
     public object Deserialize(Stream data, Type objectType)
     {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(objectType);
+
         using var sr = new StreamReader(data);
         using var reader = new JsonTextReader(sr);
         return _serializer.Deserialize(reader, objectType);
