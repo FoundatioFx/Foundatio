@@ -358,6 +358,75 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Equal(model.DecimalValue, result.DecimalValue);
         Assert.Equal(model.BoolValue, result.BoolValue);
     }
+
+    public virtual void Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        // Test integer that fits in int32
+        int intValue = 42;
+        var intBytes = serializer.SerializeToBytes<object>(intValue);
+        var intResult = serializer.Deserialize<object>(intBytes);
+
+        // Assert - should be a numeric type that can represent the value
+        Assert.NotNull(intResult);
+        Assert.True(IsNumericType(intResult),
+            $"Expected numeric type for int value, got {intResult?.GetType().Name}");
+        Assert.Equal(intValue, Convert.ToInt32(intResult));
+
+        // Test integer that requires int64 (skip for serializers that can't handle large numbers precisely)
+        long longValue = 9_223_372_036_854_775_807L;
+        var longBytes = serializer.SerializeToBytes<object>(longValue);
+        var longResult = serializer.Deserialize<object>(longBytes);
+
+        // Assert - should be a numeric type (some serializers may lose precision for very large values)
+        Assert.NotNull(longResult);
+        Assert.True(IsNumericType(longResult),
+            $"Expected numeric type for long value, got {longResult?.GetType().Name}");
+        // Note: Some serializers (Utf8Json) may return double which loses precision for very large longs
+        // We only verify the type is numeric, not the exact value for edge cases
+
+        // Test decimal value - Note: Some binary serializers (MessagePack) serialize decimals as strings
+        // when deserializing to object type, so we accept string as a valid representation
+        decimal decimalValue = 123.456m;
+        var decimalBytes = serializer.SerializeToBytes<object>(decimalValue);
+        var decimalResult = serializer.Deserialize<object>(decimalBytes);
+
+        // Assert - should be a numeric type or string representation
+        Assert.NotNull(decimalResult);
+        Assert.True(IsNumericType(decimalResult) || decimalResult is string,
+            $"Expected numeric type or string for decimal value, got {decimalResult?.GetType().Name}");
+
+        // Test boolean
+        bool boolValue = true;
+        var boolBytes = serializer.SerializeToBytes<object>(boolValue);
+        var boolResult = serializer.Deserialize<object>(boolBytes);
+
+        // Assert
+        Assert.NotNull(boolResult);
+        Assert.True(boolResult is bool, $"Expected bool, got {boolResult?.GetType().Name}");
+        Assert.Equal(boolValue, (bool)boolResult);
+
+        // Test negative number
+        int negativeValue = -42;
+        var negativeBytes = serializer.SerializeToBytes<object>(negativeValue);
+        var negativeResult = serializer.Deserialize<object>(negativeBytes);
+
+        // Assert
+        Assert.NotNull(negativeResult);
+        Assert.True(IsNumericType(negativeResult),
+            $"Expected numeric type for negative value, got {negativeResult?.GetType().Name}");
+        Assert.Equal(negativeValue, Convert.ToInt32(negativeResult));
+    }
+
+    private static bool IsNumericType(object value)
+    {
+        return value is byte or sbyte or short or ushort or int or uint or long or ulong
+            or float or double or decimal;
+    }
 }
 
 [MemoryDiagnoser]

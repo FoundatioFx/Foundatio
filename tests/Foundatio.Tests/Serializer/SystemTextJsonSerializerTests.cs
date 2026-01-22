@@ -99,6 +99,12 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
         base.Serialize_WithSpecialCharacters_RoundTripsCorrectly();
     }
 
+    [Fact]
+    public override void Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes()
+    {
+        base.Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes();
+    }
+
     [Fact(Skip = "Skip benchmarks for now")]
     public virtual void Benchmark()
     {
@@ -198,6 +204,12 @@ public class SystemTextJsonSerializerWithOptionsTests : SerializerTestsBase
     public override void Serialize_WithSpecialCharacters_RoundTripsCorrectly()
     {
         base.Serialize_WithSpecialCharacters_RoundTripsCorrectly();
+    }
+
+    [Fact]
+    public override void Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes()
+    {
+        base.Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes();
     }
 }
 

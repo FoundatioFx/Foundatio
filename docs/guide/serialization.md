@@ -59,7 +59,7 @@ string SerializeToString<T>(this ISerializer serializer, T value)
 
 - **Serialization methods** (`SerializeToBytes`, `SerializeToString`):
   - Throw `ArgumentNullException` if serializer is null
-  - Return `null` if value is null (no exception thrown)
+  - Null values are serialized to valid output (e.g., `"null"` for JSON, nil marker for MessagePack)
 
 **Text vs Binary Serializers:**
 

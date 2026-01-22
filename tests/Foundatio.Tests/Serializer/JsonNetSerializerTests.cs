@@ -98,6 +98,12 @@ public class JsonNetSerializerTests : SerializerTestsBase
         base.Serialize_WithSpecialCharacters_RoundTripsCorrectly();
     }
 
+    [Fact]
+    public override void Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes()
+    {
+        base.Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes();
+    }
+
     [Fact(Skip = "Skip benchmarks for now")]
     public virtual void Benchmark()
     {
