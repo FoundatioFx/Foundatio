@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
 using BenchmarkDotNet.Attributes;
 using Foundatio.Serializer;
 using Foundatio.Xunit;
@@ -9,77 +11,421 @@ namespace Foundatio.Tests.Serializer;
 
 public abstract class SerializerTestsBase : TestWithLoggingBase
 {
-    protected SerializerTestsBase(ITestOutputHelper output) : base(output) { }
+    protected SerializerTestsBase(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected virtual ISerializer GetSerializer()
     {
         return null;
     }
 
-    public virtual void CanRoundTripBytes()
+    public virtual void Deserialize_WithInvalidInput_ThrowsArgumentException()
     {
+        // Arrange
         var serializer = GetSerializer();
-        if (serializer == null)
+        if (serializer is null)
             return;
 
-        var model = new SerializeModel
-        {
-            IntProperty = 1,
-            StringProperty = "test",
-            ListProperty = new List<int> { 1 },
-            ObjectProperty = new SerializeModel { IntProperty = 1 }
-        };
-
-        byte[] bytes = serializer.SerializeToBytes(model);
-        var actual = serializer.Deserialize<SerializeModel>(bytes);
-        Assert.Equal(model.IntProperty, actual.IntProperty);
-        Assert.Equal(model.StringProperty, actual.StringProperty);
-        Assert.Equal(model.ListProperty, actual.ListProperty);
-
-        string text = serializer.SerializeToString(model);
-        actual = serializer.Deserialize<SerializeModel>(text);
-        Assert.Equal(model.IntProperty, actual.IntProperty);
-        Assert.Equal(model.StringProperty, actual.StringProperty);
-        Assert.Equal(model.ListProperty, actual.ListProperty);
-        Assert.NotNull(model.ObjectProperty);
-        Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((Stream)null));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((byte[])null));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>([]));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((string)null));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>(String.Empty));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>("   "));
     }
 
-    public virtual void CanRoundTripString()
+    public virtual void Deserialize_WithPrimitiveType_ReturnsValue()
     {
+        // Arrange
         var serializer = GetSerializer();
-        if (serializer == null)
-            return;
-
-        var model = new SerializeModel
-        {
-            IntProperty = 1,
-            StringProperty = "test",
-            ListProperty = new List<int> { 1 },
-            ObjectProperty = new SerializeModel { IntProperty = 1 }
-        };
-
-        string text = serializer.SerializeToString(model);
-        _logger.LogInformation(text);
-        var actual = serializer.Deserialize<SerializeModel>(text);
-        Assert.Equal(model.IntProperty, actual.IntProperty);
-        Assert.Equal(model.StringProperty, actual.StringProperty);
-        Assert.Equal(model.ListProperty, actual.ListProperty);
-        Assert.NotNull(model.ObjectProperty);
-        Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
-    }
-
-    public virtual void CanHandlePrimitiveTypes()
-    {
-        var serializer = GetSerializer();
-        if (serializer == null)
+        if (serializer is null)
             return;
 
         object expected = "primitive";
+
+        // Act
         string text = serializer.SerializeToString(expected);
         _logger.LogInformation(text);
         var actual = serializer.Deserialize<object>(text);
+
+        // Assert
         Assert.Equal(expected, actual);
+    }
+
+    public virtual void Deserialize_WithUnicodeAndSpecialCharacters_PreservesContent()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = "Unicode: 中文 日本語 العربية Русский 🎉🚀💻 Special: \t\n\"\\",
+            ListProperty = [1, 2, 3]
+        };
+
+        // Act
+        string text = serializer.SerializeToString(model);
+        var result = serializer.Deserialize<SerializeModel>(text);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.StringProperty, result.StringProperty);
+    }
+
+    public virtual void Deserialize_WithInvalidArguments_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        using var stream = new MemoryStream([0x7B, 0x7D]); // "{}"
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(null, typeof(object)));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(stream, null));
+    }
+
+    public virtual void Deserialize_WithValidBytes_ReturnsDeserializedObject()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = [1],
+            ObjectProperty = new SerializeModel { IntProperty = 1 }
+        };
+
+        // Act
+        byte[] bytes = serializer.SerializeToBytes(model);
+        var actual = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Assert
+        Assert.Equal(model.IntProperty, actual.IntProperty);
+        Assert.Equal(model.StringProperty, actual.StringProperty);
+        Assert.Equal(model.ListProperty, actual.ListProperty);
+
+        // Act
+        string text = serializer.SerializeToString(model);
+        actual = serializer.Deserialize<SerializeModel>(text);
+
+        // Assert
+        Assert.Equal(model.IntProperty, actual.IntProperty);
+        Assert.Equal(model.StringProperty, actual.StringProperty);
+        Assert.Equal(model.ListProperty, actual.ListProperty);
+        Assert.NotNull(model.ObjectProperty);
+        Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
+    }
+
+    public virtual void Deserialize_WithValidStream_ReturnsDeserializedObject()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel { IntProperty = 42, StringProperty = "test" };
+
+        // Act
+        using var stream = new MemoryStream();
+        serializer.Serialize(model, stream);
+        stream.Position = 0;
+        var result = serializer.Deserialize<SerializeModel>(stream);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.IntProperty, result.IntProperty);
+        Assert.Equal(model.StringProperty, result.StringProperty);
+    }
+
+    public virtual void Deserialize_WithValidString_ReturnsDeserializedObject()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = [1],
+            ObjectProperty = new SerializeModel { IntProperty = 1 }
+        };
+
+        // Act
+        string text = serializer.SerializeToString(model);
+        _logger.LogInformation(text);
+        var actual = serializer.Deserialize<SerializeModel>(text);
+
+        // Assert
+        Assert.Equal(model.IntProperty, actual.IntProperty);
+        Assert.Equal(model.StringProperty, actual.StringProperty);
+        Assert.Equal(model.ListProperty, actual.ListProperty);
+        Assert.NotNull(model.ObjectProperty);
+        Assert.Equal(1, ((dynamic)model.ObjectProperty).IntProperty);
+    }
+
+    public virtual void Serialize_WithInvalidArguments_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        // Act & Assert - only stream is validated (null value is allowed)
+        Assert.Throws<ArgumentNullException>(() => serializer.Serialize(new object(), null));
+    }
+
+    public virtual void Serialize_WithNullValue_RoundTripsCorrectly()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        // Act & Assert - extension methods produce valid output (not null)
+        var bytes = serializer.SerializeToBytes<object>(null);
+        Assert.NotNull(bytes);
+        Assert.True(bytes.Length > 0);
+
+        var str = serializer.SerializeToString<object>(null);
+        Assert.NotNull(str);
+        Assert.NotEmpty(str);
+
+        // Act & Assert - round trip via extension methods
+        var resultFromBytes = serializer.Deserialize<object>(bytes);
+        Assert.Null(resultFromBytes);
+
+        var resultFromString = serializer.Deserialize<object>(str);
+        Assert.Null(resultFromString);
+
+        // Act & Assert - round trip via core Serialize method
+        using var stream = new MemoryStream();
+        serializer.Serialize(null, stream);
+        Assert.True(stream.Length > 0);
+        stream.Position = 0;
+        var resultFromStream = serializer.Deserialize<object>(stream);
+        Assert.Null(resultFromStream);
+    }
+
+    public virtual void Serialize_WithSpecialCharacters_RoundTripsCorrectly()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 42,
+            StringProperty = "Unicode: 中文 日本語 العربية Русский 🎉🚀💻 " +
+                             "Escapes: line1\nline2\r\nwindows\ttab\"quote\\backslash " +
+                             "Surrogate: 𝄞🎵 " +
+                             "Null: before\0after",
+            ListProperty = [1, 2, 3]
+        };
+
+        // Act - round trip via bytes
+        var bytes = serializer.SerializeToBytes(model);
+        var resultFromBytes = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Act - round trip via string
+        var str = serializer.SerializeToString(model);
+        var resultFromString = serializer.Deserialize<SerializeModel>(str);
+
+        // Assert - semantic equality (not comparing serialized output)
+        Assert.NotNull(resultFromBytes);
+        Assert.Equal(model.IntProperty, resultFromBytes.IntProperty);
+        Assert.Equal(model.StringProperty, resultFromBytes.StringProperty);
+        Assert.Equal(model.ListProperty, resultFromBytes.ListProperty);
+
+        Assert.NotNull(resultFromString);
+        Assert.Equal(model.IntProperty, resultFromString.IntProperty);
+        Assert.Equal(model.StringProperty, resultFromString.StringProperty);
+        Assert.Equal(model.ListProperty, resultFromString.ListProperty);
+    }
+
+    public virtual void Serialize_WithEmptyCollection_ReturnsValidOutput()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = "test",
+            ListProperty = []
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.ListProperty);
+        Assert.Empty(result.ListProperty);
+    }
+
+    public virtual void Serialize_WithNullPropertyInObject_HandlesCorrectly()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModel
+        {
+            IntProperty = 1,
+            StringProperty = null,
+            ListProperty = null,
+            ObjectProperty = null
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModel>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(1, result.IntProperty);
+        Assert.Null(result.StringProperty);
+        Assert.Null(result.ListProperty);
+        Assert.Null(result.ObjectProperty);
+    }
+
+    public virtual void Serialize_WithDateTimeValue_PreservesValue()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModelWithDateTime
+        {
+            DateTimeProperty = new DateTime(2024, 6, 15, 12, 30, 45, DateTimeKind.Utc),
+            DateTimeOffsetProperty = new DateTimeOffset(2024, 6, 15, 12, 30, 45, TimeSpan.FromHours(-5))
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModelWithDateTime>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.DateTimeProperty, result.DateTimeProperty);
+        Assert.Equal(model.DateTimeOffsetProperty, result.DateTimeOffsetProperty);
+    }
+
+    public virtual void Serialize_WithNumericTypes_PreservesValues()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        var model = new SerializeModelWithNumerics
+        {
+            IntValue = 42,
+            LongValue = 9_223_372_036_854_775_807L,
+            DoubleValue = 3.14159265358979,
+            DecimalValue = 123456.789m,
+            BoolValue = true
+        };
+
+        // Act
+        var bytes = serializer.SerializeToBytes(model);
+        var result = serializer.Deserialize<SerializeModelWithNumerics>(bytes);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(model.IntValue, result.IntValue);
+        Assert.Equal(model.LongValue, result.LongValue);
+        Assert.Equal(model.DoubleValue, result.DoubleValue, 10);
+        Assert.Equal(model.DecimalValue, result.DecimalValue);
+        Assert.Equal(model.BoolValue, result.BoolValue);
+    }
+
+    public virtual void Deserialize_WithNumericPrimitivesToObject_ReturnsCorrectTypes()
+    {
+        // Arrange
+        var serializer = GetSerializer();
+        if (serializer is null)
+            return;
+
+        // Test integer that fits in int32
+        int intValue = 42;
+        var intBytes = serializer.SerializeToBytes<object>(intValue);
+        var intResult = serializer.Deserialize<object>(intBytes);
+
+        // Assert - should be a numeric type that can represent the value
+        Assert.NotNull(intResult);
+        Assert.True(IsNumericType(intResult),
+            $"Expected numeric type for int value, got {intResult?.GetType().Name}");
+        Assert.Equal(intValue, Convert.ToInt32(intResult));
+
+        // Test integer that requires int64 (skip for serializers that can't handle large numbers precisely)
+        long longValue = 9_223_372_036_854_775_807L;
+        var longBytes = serializer.SerializeToBytes<object>(longValue);
+        var longResult = serializer.Deserialize<object>(longBytes);
+
+        // Assert - should be a numeric type (some serializers may lose precision for very large values)
+        Assert.NotNull(longResult);
+        Assert.True(IsNumericType(longResult),
+            $"Expected numeric type for long value, got {longResult?.GetType().Name}");
+        // Note: Some serializers (Utf8Json) may return double which loses precision for very large longs
+        // We only verify the type is numeric, not the exact value for edge cases
+
+        // Test decimal value - Note: Some binary serializers (MessagePack) serialize decimals as strings
+        // when deserializing to object type, so we accept string as a valid representation
+        decimal decimalValue = 123.456m;
+        var decimalBytes = serializer.SerializeToBytes<object>(decimalValue);
+        var decimalResult = serializer.Deserialize<object>(decimalBytes);
+
+        // Assert - should be a numeric type or string representation
+        Assert.NotNull(decimalResult);
+        Assert.True(IsNumericType(decimalResult) || decimalResult is string,
+            $"Expected numeric type or string for decimal value, got {decimalResult?.GetType().Name}");
+
+        // Test boolean
+        bool boolValue = true;
+        var boolBytes = serializer.SerializeToBytes<object>(boolValue);
+        var boolResult = serializer.Deserialize<object>(boolBytes);
+
+        // Assert
+        Assert.NotNull(boolResult);
+        Assert.True(boolResult is bool, $"Expected bool, got {boolResult?.GetType().Name}");
+        Assert.Equal(boolValue, (bool)boolResult);
+
+        // Test negative number
+        int negativeValue = -42;
+        var negativeBytes = serializer.SerializeToBytes<object>(negativeValue);
+        var negativeResult = serializer.Deserialize<object>(negativeBytes);
+
+        // Assert
+        Assert.NotNull(negativeResult);
+        Assert.True(IsNumericType(negativeResult),
+            $"Expected numeric type for negative value, got {negativeResult?.GetType().Name}");
+        Assert.Equal(negativeValue, Convert.ToInt32(negativeResult));
+    }
+
+    private static bool IsNumericType(object value)
+    {
+        return value is byte or sbyte or short or ushort or int or uint or long or ulong
+            or float or double or decimal;
     }
 }
 
@@ -92,7 +438,7 @@ public abstract class SerializerBenchmarkBase
     {
         IntProperty = 1,
         StringProperty = "test",
-        ListProperty = new List<int> { 1 },
+        ListProperty = [1],
         ObjectProperty = new SerializeModel { IntProperty = 1 }
     };
 
@@ -133,4 +479,19 @@ public class SerializeModel
     public string StringProperty { get; set; }
     public List<int> ListProperty { get; set; }
     public object ObjectProperty { get; set; }
+}
+
+public class SerializeModelWithDateTime
+{
+    public DateTime DateTimeProperty { get; set; }
+    public DateTimeOffset DateTimeOffsetProperty { get; set; }
+}
+
+public class SerializeModelWithNumerics
+{
+    public int IntValue { get; set; }
+    public long LongValue { get; set; }
+    public double DoubleValue { get; set; }
+    public decimal DecimalValue { get; set; }
+    public bool BoolValue { get; set; }
 }

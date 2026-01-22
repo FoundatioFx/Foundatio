@@ -9,17 +9,65 @@ Foundatio defines a simple serialization interface that all implementations use:
 [View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Serializer/ISerializer.cs)
 
 ```csharp
+/// <summary>
+/// Defines methods for serializing and deserializing objects to and from streams.
+/// </summary>
 public interface ISerializer
 {
-    void Serialize(object value, Stream output);
+    /// <summary>
+    /// Deserializes data from a stream into an object of the specified type.
+    /// </summary>
     object Deserialize(Stream data, Type objectType);
+
+    /// <summary>
+    /// Serializes an object to the specified output stream.
+    /// Null values are valid and will be serialized (e.g., as "null" for JSON serializers
+    /// or nil markers for binary serializers).
+    /// </summary>
+    void Serialize(object value, Stream output);
 }
 
-// Text serializers (JSON, XML) also implement ITextSerializer
+/// <summary>
+/// Marker interface for serializers that produce human-readable text output (e.g., JSON, XML).
+/// Text serializers use UTF-8 encoding for string conversions in extension methods.
+/// </summary>
 public interface ITextSerializer : ISerializer { }
 ```
 
 This abstraction allows you to swap serializers without changing your code.
+
+## Extension Methods
+
+The `SerializerExtensions` class provides convenient methods for common serialization scenarios:
+
+```csharp
+// Deserialize from various sources
+T Deserialize<T>(this ISerializer serializer, Stream data)
+T Deserialize<T>(this ISerializer serializer, byte[] data)
+T Deserialize<T>(this ISerializer serializer, string data)
+object Deserialize(this ISerializer serializer, byte[] data, Type objectType)
+object Deserialize(this ISerializer serializer, string data, Type objectType)
+
+// Serialize to various formats
+byte[] SerializeToBytes<T>(this ISerializer serializer, T value)
+string SerializeToString<T>(this ISerializer serializer, T value)
+```
+
+**Input Validation:**
+
+- **Deserialization methods** validate inputs and throw exceptions:
+  - `ArgumentNullException` - when serializer, stream, or byte array is null
+  - `ArgumentException` - when byte array is empty, or string is null, empty, or whitespace
+
+- **Serialization methods** (`SerializeToBytes`, `SerializeToString`):
+  - Throw `ArgumentNullException` if serializer is null
+  - Null values are serialized to valid output (e.g., `"null"` for JSON, nil marker for MessagePack)
+
+**Text vs Binary Serializers:**
+
+When using string-based methods:
+- **Text serializers** (`ITextSerializer`): Strings are treated as UTF-8 encoded text
+- **Binary serializers**: Strings are treated as Base64-encoded binary data
 
 ## Default Serializer
 
@@ -224,17 +272,19 @@ For DI configuration and shared options across implementations, see [Dependency 
 
 **Text Serializers (JSON):**
 
-- Implement `ITextSerializer`
+- Implement `ITextSerializer` marker interface
 - Human-readable (can debug with text tools)
 - Slightly larger payloads
 - Compatible across different systems/languages
+- Extension methods use UTF-8 encoding for string conversions
 
 **Binary Serializers (MessagePack):**
 
-- Implement `ISerializer` only
+- Implement `ISerializer` only (not `ITextSerializer`)
 - Much faster and smaller
 - Not human-readable
 - Requires same serializer on both ends
+- Extension methods use Base64 encoding for string conversions
 
 ### Shared Message Bus Topics
 
