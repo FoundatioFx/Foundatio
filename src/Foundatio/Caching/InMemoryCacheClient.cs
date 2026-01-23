@@ -1611,7 +1611,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             double accessWeight = Math.Log10(accessRecency);
 
             double wasteScore = sizeWeight + (ageWeight * 0.5) + (accessWeight * 2.0); // Access recency weighted more heavily
-
             if (wasteScore > worstRatio)
             {
                 worstRatio = wasteScore;
@@ -1626,7 +1625,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private async Task DoMaintenanceAsync()
     {
         _logger.LogTrace("DoMaintenance: Starting");
-        var utcNow = _timeProvider.GetUtcNow().SafeAddMilliseconds(50);
+
+        // NOTE: We want to ensure we are comparing DateTimes to avoid using the systems timezone for implicit conversion between DateTime and DateTimeOffset.
+        var utcNow = _timeProvider.GetUtcNow().UtcDateTime.SafeAddMilliseconds(50);
 
         // Remove expired items and items that are infrequently accessed as they may be updated by add.
         long lastAccessMaximumTicks = utcNow.SafeAddMilliseconds(-300).Ticks;

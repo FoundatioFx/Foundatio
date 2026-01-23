@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace Foundatio.Utility;
 
@@ -72,6 +72,18 @@ internal static class DateTimeExtensions
 
         if (milliseconds < TimeSpan.MinValue.TotalMilliseconds)
             return DateTimeOffset.MinValue;
+
+        return date.SafeAdd(TimeSpan.FromMilliseconds(milliseconds));
+    }
+
+    public static DateTime SafeAddMilliseconds(this DateTime date, double milliseconds)
+    {
+        // Check for overflow before creating TimeSpan to avoid exception in TimeSpan.FromMilliseconds
+        if (milliseconds > TimeSpan.MaxValue.TotalMilliseconds)
+            return DateTime.MaxValue;
+
+        if (milliseconds < TimeSpan.MinValue.TotalMilliseconds)
+            return DateTime.MinValue;
 
         return date.SafeAdd(TimeSpan.FromMilliseconds(milliseconds));
     }

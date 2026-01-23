@@ -101,6 +101,54 @@ public class DateTimeExtensionsTests
     }
 
     [Fact]
+    public void SafeAddMilliseconds_DateTime_WithPositiveOverflow_ReturnsMaxValue()
+    {
+        var date = DateTime.MaxValue.AddDays(-1);
+        var result = date.SafeAddMilliseconds(Double.MaxValue);
+        Assert.Equal(DateTime.MaxValue, result);
+    }
+
+    [Fact]
+    public void SafeAddMilliseconds_DateTime_WithNegativeOverflow_ReturnsMinValue()
+    {
+        var date = DateTime.MinValue.AddDays(1);
+        var result = date.SafeAddMilliseconds(Double.MinValue);
+        Assert.Equal(DateTime.MinValue, result);
+    }
+
+    [Fact]
+    public void SafeAddMilliseconds_DateTime_WithNormalValue_AddsCorrectly()
+    {
+        var date = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var result = date.SafeAddMilliseconds(1000);
+        Assert.Equal(new DateTime(2020, 1, 1, 0, 0, 1, DateTimeKind.Utc), result);
+    }
+
+    [Fact]
+    public void SafeAddMilliseconds_DateTime_WithNegativeValue_SubtractsCorrectly()
+    {
+        var date = new DateTime(2020, 1, 1, 0, 0, 1, DateTimeKind.Utc);
+        var result = date.SafeAddMilliseconds(-1000);
+        Assert.Equal(new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc), result);
+    }
+
+    [Fact]
+    public void SafeAddMilliseconds_DateTime_PreservesDateTimeKind()
+    {
+        var utcDate = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var utcResult = utcDate.SafeAddMilliseconds(1000);
+        Assert.Equal(DateTimeKind.Utc, utcResult.Kind);
+
+        var localDate = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Local);
+        var localResult = localDate.SafeAddMilliseconds(1000);
+        Assert.Equal(DateTimeKind.Local, localResult.Kind);
+
+        var unspecifiedDate = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        var unspecifiedResult = unspecifiedDate.SafeAddMilliseconds(1000);
+        Assert.Equal(DateTimeKind.Unspecified, unspecifiedResult.Kind);
+    }
+
+    [Fact]
     public void Floor_WithMinuteInterval_FloorsCorrectly()
     {
         var date = new DateTime(2020, 1, 1, 12, 34, 56, 789, DateTimeKind.Utc);
