@@ -1,13 +1,16 @@
 <Solution>
   <Folder Name="/Samples/">
+    <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
+    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="../Foundatio.Kafka/samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="../Foundatio.Kafka/samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
     <Project Path="../Foundatio.RabbitMQ/samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
     <Project Path="../Foundatio.RabbitMQ/samples/Foundatio.RabbitMQ.Subscribe/Foundatio.RabbitMQ.Subscribe.csproj" />
     <Project Path="../Foundatio.Redis/samples/Foundatio.SampleJob/Foundatio.SampleJob.csproj" />
     <Project Path="../Foundatio.Redis/samples/Foundatio.SampleJobClient/Foundatio.SampleJobClient.csproj" />
-    <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+    <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Client/Foundatio.SampleApp.Client.csproj" />
+    <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Server/Foundatio.SampleApp.Server.csproj" />
+    <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Shared/Foundatio.SampleApp.Shared.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
@@ -38,6 +41,9 @@
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
+  <Folder Name="/Benchmarks/">
+    <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+  </Folder>
   <Project Path="../Foundatio.Aliyun/src/Foundatio.Aliyun/Foundatio.Aliyun.csproj" />
   <Project Path="../Foundatio.AWS/src/Foundatio.AWS/Foundatio.AWS.csproj" />
   <Project Path="../Foundatio.AzureServiceBus/src/Foundatio.AzureServiceBus/Foundatio.AzureServiceBus.csproj" />
@@ -49,14 +55,15 @@
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.SqlQueries/Foundatio.Parsers.SqlQueries.csproj" />
   <Project Path="../Foundatio.RabbitMQ/src/Foundatio.RabbitMQ/Foundatio.RabbitMQ.csproj" />
   <Project Path="../Foundatio.Redis/src/Foundatio.Redis/Foundatio.Redis.csproj" />
-  <Project Path="../Foundatio.Repositories/src/Foundatio.Repositories.Elasticsearch/Foundatio.Repositories.Elasticsearch.csproj" />
   <Project Path="../Foundatio.Repositories/src/Foundatio.Repositories/Foundatio.Repositories.csproj" />
+  <Project Path="../Foundatio.Repositories/src/Foundatio.Repositories.Elasticsearch/Foundatio.Repositories.Elasticsearch.csproj" />
   <Project Path="../Foundatio.Storage.SshNet/src/Foundatio.Storage.SshNet/Foundatio.Storage.SshNet.csproj" />
+  <Project Path="src/Foundatio/Foundatio.csproj" />
+  <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />
   <Project Path="src/Foundatio.Xunit.v3/Foundatio.Xunit.v3.csproj" />
-  <Project Path="src/Foundatio/Foundatio.csproj" />
 </Solution>
