@@ -7,3 +7,4 @@ jobs:
     secrets: inherit
     with:
       solution: Foundatio.slnx
+      new-test-runner: true
