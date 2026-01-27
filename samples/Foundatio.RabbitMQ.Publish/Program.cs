@@ -1,24 +1,187 @@
 using System;
-using System.Threading.Tasks;
+using System.CommandLine;
 using Foundatio.Messaging;
+using Foundatio.RabbitMQ;
+using Microsoft.Extensions.Logging;
 
-namespace Foundatio.RabbitMQ.Publish;
-
-public class Program
+Option<string> connectionStringOption = new("--connection-string")
 {
-    public static async Task Main()
-    {
-        Console.WriteLine("Enter the message and press enter to send:");
+    Description = "RabbitMQ connection string",
+    DefaultValueFactory = _ => "amqp://localhost:5672"
+};
 
-        using var messageBus = new RabbitMQMessageBus(new RabbitMQMessageBusOptions { ConnectionString = "amqp://localhost:5672" });
-        string message;
-        do
-        {
-            message = Console.ReadLine();
-            var delay = TimeSpan.FromSeconds(1);
-            var body = new MyMessage { Hey = message };
-            await messageBus.PublishAsync(body, delay);
-            Console.WriteLine("Message sent. Enter new message or press enter to exit:");
-        } while (!String.IsNullOrEmpty(message));
+Option<string> topicOption = new("--topic")
+{
+    Description = "Message topic/exchange name",
+    DefaultValueFactory = _ => "sample-topic"
+};
+
+Option<bool> durableOption = new("--durable")
+{
+    Description = "Use durable queues that survive broker restarts"
+};
+
+Option<bool> delayedOption = new("--delayed")
+{
+    Description = "Use delayed exchange (connects to port 5673)"
+};
+
+Option<string> acknowledgmentStrategyOption = new("--acknowledgment-strategy")
+{
+    Description = "Acknowledgment strategy: fireandforget or automatic",
+    DefaultValueFactory = _ => "fireandforget"
+};
+
+Option<int> messageSizeOption = new("--message-size")
+{
+    Description = "Target message size in bytes (for testing broker limits)",
+    DefaultValueFactory = _ => 0
+};
+
+Option<ushort> prefetchCountOption = new("--prefetch-count")
+{
+    Description = "Consumer prefetch count",
+    DefaultValueFactory = _ => 10
+};
+
+Option<long> deliveryLimitOption = new("--delivery-limit")
+{
+    Description = "Maximum delivery attempts before discarding",
+    DefaultValueFactory = _ => 2
+};
+
+Option<int> delaySecondsOption = new("--delay-seconds")
+{
+    Description = "Delay in seconds before message delivery",
+    DefaultValueFactory = _ => 0
+};
+
+Option<LogLevel> logLevelOption = new("--log-level")
+{
+    Description = "Minimum log level",
+    DefaultValueFactory = _ => LogLevel.Information
+};
+
+RootCommand rootCommand = new("RabbitMQ Message Publisher Sample")
+{
+    connectionStringOption,
+    topicOption,
+    durableOption,
+    delayedOption,
+    acknowledgmentStrategyOption,
+    messageSizeOption,
+    prefetchCountOption,
+    deliveryLimitOption,
+    delaySecondsOption,
+    logLevelOption
+};
+
+rootCommand.SetAction(parseResult =>
+{
+    string connectionString = parseResult.GetValue(connectionStringOption);
+    string topic = parseResult.GetValue(topicOption);
+    bool durable = parseResult.GetValue(durableOption);
+    bool delayed = parseResult.GetValue(delayedOption);
+    string acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
+    int messageSize = parseResult.GetValue(messageSizeOption);
+    ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
+    long deliveryLimit = parseResult.GetValue(deliveryLimitOption);
+    int delaySeconds = parseResult.GetValue(delaySecondsOption);
+    LogLevel logLevel = parseResult.GetValue(logLevelOption);
+
+    RunPublisher(
+        connectionString, topic, durable, delayed, acknowledgmentStrategy,
+        messageSize, prefetchCount, deliveryLimit, delaySeconds, logLevel);
+});
+
+return await rootCommand.Parse(args).InvokeAsync();
+
+static void RunPublisher(
+    string connectionString,
+    string topic,
+    bool durable,
+    bool delayed,
+    string acknowledgmentStrategy,
+    int messageSize,
+    ushort prefetchCount,
+    long deliveryLimit,
+    int delaySeconds,
+    LogLevel logLevel)
+{
+    using var loggerFactory = LoggerFactory.Create(builder =>
+    {
+        builder.AddConsole().SetMinimumLevel(logLevel);
+    });
+    var logger = loggerFactory.CreateLogger("Publisher");
+
+    if (delayed)
+    {
+        Uri uri = new(connectionString);
+        connectionString = new UriBuilder(uri) { Port = 5673 }.Uri.ToString();
     }
+
+    var ackStrategy = String.Equals("automatic", acknowledgmentStrategy, StringComparison.OrdinalIgnoreCase)
+        ? AcknowledgementStrategy.Automatic
+        : AcknowledgementStrategy.FireAndForget;
+
+    string processName = "sample-publisher";
+    string queueName = durable
+        ? $"{processName}-{nameof(MyMessage).ToLower()}"
+        : $"{processName}-{nameof(MyMessage).ToLower()}-{Guid.NewGuid():N}";
+
+    RabbitMQMessageBusOptions options = new()
+    {
+        ConnectionString = connectionString,
+        Topic = topic,
+        AcknowledgementStrategy = ackStrategy,
+        IsDurable = durable,
+        SubscriptionQueueName = queueName,
+        IsSubscriptionQueueExclusive = !durable,
+        SubscriptionQueueAutoDelete = !durable,
+        PrefetchCount = prefetchCount,
+        DeliveryLimit = deliveryLimit,
+        LoggerFactory = loggerFactory
+    };
+
+    logger.LogInformation("Configuration:");
+    logger.LogInformation("  Connection String: {ConnectionString}", connectionString);
+    logger.LogInformation("  Topic: {Topic}", topic);
+    logger.LogInformation("  Durable: {Durable}", durable);
+    logger.LogInformation("  Delayed Exchange: {Delayed}", delayed);
+    logger.LogInformation("  Acknowledgment Strategy: {AckStrategy}", ackStrategy);
+    logger.LogInformation("  Message Size: {MessageSize} bytes", messageSize);
+    logger.LogInformation("  Prefetch Count: {PrefetchCount}", prefetchCount);
+    logger.LogInformation("  Delivery Limit: {DeliveryLimit}", deliveryLimit);
+    logger.LogInformation("  Delay Seconds: {DelaySeconds}", delaySeconds);
+
+    using RabbitMQMessageBus messageBus = new(options);
+    logger.LogInformation("Enter the message and press enter to send (empty to exit):");
+
+    int messageCount = 0;
+    do
+    {
+        string message = Console.ReadLine();
+        if (String.IsNullOrEmpty(message))
+            break;
+
+        var body = MyMessage.Create(message, messageSize);
+
+        TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
+        if (delay.HasValue)
+        {
+            messageBus.PublishAsync(body, delay.Value).GetAwaiter().GetResult();
+            logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} ({Size} bytes)",
+                ++messageCount, delaySeconds, body.Id, messageSize > 0 ? messageSize : message.Length);
+        }
+        else
+        {
+            messageBus.PublishAsync(body).GetAwaiter().GetResult();
+            logger.LogInformation("Message {Count} sent: {MessageId} ({Size} bytes)",
+                ++messageCount, body.Id, messageSize > 0 ? messageSize : message.Length);
+        }
+
+        logger.LogInformation("Enter new message or press enter to exit:");
+    } while (true);
+
+    logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
 }
