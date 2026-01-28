@@ -53,11 +53,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
+
     public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default)
     {
-        if (messageType == null || message == null)
-            return;
+        ArgumentNullException.ThrowIfNull(messageType);
+        ArgumentNullException.ThrowIfNull(message);
 
         options ??= new MessageOptions();
 
@@ -68,8 +70,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 options.Properties.Add("TraceState", Activity.Current.TraceStateString);
         }
 
-        await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-        await PublishImplAsync(GetMappedMessageType(messageType), message, options ?? new MessageOptions(), cancellationToken).AnyContext();
+        try
+        {
+            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, options, cancellationToken).AnyContext();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not MessageBusException)
+        {
+            throw new MessageBusException($"Error publishing {messageType.Name}: {ex.Message}", ex);
+        }
     }
 
     private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
@@ -113,7 +122,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+                    _logger.LogError(ex, "Error getting message body type: {MessageType}", type);
 
                     return null;
                 }
@@ -290,8 +299,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
-            throw;
+            _logger.LogError(ex, "Error sending message to subscribers: {Message}", ex.Message);
+            throw new MessageBusException($"Error sending message to subscribers: {ex.Message}", ex);
         }
 
         _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
@@ -322,7 +331,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         activity.AddTag("UniqueId", message.UniqueId);
         activity.AddTag("CorrelationId", message.CorrelationId);
 
-        if (message.Properties == null || message.Properties.Count <= 0)
+        if (message.Properties is not { Count: > 0 })
             return;
 
         foreach (var p in message.Properties)
@@ -332,23 +341,22 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }
     }
 
-    protected Task AddDelayedMessageAsync(Type messageType, object message, TimeSpan delay)
+    /// <summary>
+    /// Schedules a message for delayed delivery using an in-memory timer.
+    /// </summary>
+    /// <remarks>
+    /// This method calls <see cref="PublishAsync"/> (not <see cref="PublishImplAsync"/>) to ensure
+    /// topic infrastructure is re-established if needed (e.g., after reconnection for external providers).
+    /// The <see cref="MessageOptions.DeliveryDelay"/> is cleared via record copy to prevent infinite recursion.
+    /// </remarks>
+    protected void SendDelayedMessage(Type messageType, object message, MessageOptions options)
     {
-        if (message == null)
-            throw new ArgumentNullException(nameof(message));
+        ArgumentNullException.ThrowIfNull(messageType);
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(options);
 
-        SendDelayedMessage(messageType, message, delay);
-
-        return Task.CompletedTask;
-    }
-
-    protected void SendDelayedMessage(Type messageType, object message, TimeSpan delay)
-    {
-        if (message == null)
-            throw new ArgumentNullException(nameof(message));
-
-        if (delay <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(delay));
+        var delay = options.DeliveryDelay.GetValueOrDefault();
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(delay, TimeSpan.Zero);
 
         var sendTime = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(delay);
         Task.Factory.StartNew(async () =>
@@ -361,7 +369,19 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             }
 
             _logger.LogTrace("Sending delayed message scheduled for {SendTime:O} for type {MessageType}", sendTime, messageType);
-            await PublishAsync(messageType, message).AnyContext();
+
+            try
+            {
+                await _resiliencePolicy.ExecuteAsync(async ct =>
+                {
+                    // Clear DeliveryDelay to prevent infinite recursion
+                    await PublishAsync(messageType, message, options with { DeliveryDelay = null }, ct).AnyContext();
+                }, _disposedCancellationTokenSource.Token).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to publish delayed message for type {MessageType}: {Message}", messageType, ex.Message);
+            }
         }, _disposedCancellationTokenSource.Token);
     }
 

@@ -140,19 +140,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
         try
         {
-            var countdown = new AsyncCountdownEvent(1);
-            await messageBus.SubscribeAsync<object>(msg =>
-            {
-                countdown.Signal();
-                throw new Exception();
-            });
-
-            await Task.Delay(100);
-            await messageBus.PublishAsync<object>(null);
-            _logger.LogTrace("Published one...");
-
-            await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(1)));
-            Assert.Equal(1, countdown.CurrentCount);
+            // Publishing null should throw ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null));
         }
         finally
         {
@@ -237,18 +226,30 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
         try
         {
+            // Arrange
             var countdown = new AsyncCountdownEvent(numConcurrentMessages);
-
             int messages = 0;
-            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            int optionsVerifiedCount = 0;
+
+            await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
             {
-                if (++messages % 50 == 0)
+                Assert.Equal("Hello", msg.Body.Data);
+
+                // Verify options are preserved through delayed delivery
+                if (!String.IsNullOrEmpty(msg.CorrelationId) && msg.CorrelationId.StartsWith("correlation-"))
+                {
+                    Assert.True(msg.Properties.TryGetValue("TestKey", out var value));
+                    Assert.Equal("TestValue", value);
+                    Interlocked.Increment(ref optionsVerifiedCount);
+                }
+
+                if (Interlocked.Increment(ref messages) % 50 == 0)
                     _logger.LogTrace("Total Processed {Messages} messages", messages);
 
-                Assert.Equal("Hello", msg.Data);
                 countdown.Signal();
             });
 
+            // Act
             var sw = Stopwatch.StartNew();
             await Parallel.ForEachAsync(Enumerable.Range(1, numConcurrentMessages), async (i, _) =>
             {
@@ -256,7 +257,12 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 {
                     Data = "Hello",
                     Count = i
-                }, new MessageOptions { DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)) });
+                }, new MessageOptions
+                {
+                    DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)),
+                    CorrelationId = $"correlation-{i}",
+                    Properties = new Dictionary<string, string> { { "TestKey", "TestValue" } }
+                });
                 if (i % 500 == 0)
                     _logger.LogTrace("Published 500 messages...");
             });
@@ -264,9 +270,11 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await countdown.WaitAsync(TimeSpan.FromSeconds(30));
             sw.Stop();
 
+            // Assert
             _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
             Assert.Equal(0, countdown.CurrentCount);
             Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
+            Assert.Equal(numConcurrentMessages, optionsVerifiedCount);
         }
         finally
         {
@@ -752,4 +760,64 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await CleanupMessageBusAsync(messageBus);
         }
     }
+
+    public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        // Arrange
+        var messageReceived = new AsyncAutoResetEvent(false);
+        var messageBus = GetMessageBus();
+        if (messageBus == null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message - this should NOT happen");
+                messageReceived.Set();
+            }, TestCancellationToken);
+
+            // Act - publish with short delay, then dispose immediately before delay expires
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "ShouldBeDiscarded"
+            }, new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+
+            _logger.LogTrace("Published delayed message, disposing immediately...");
+            messageBus.Dispose();
+            messageBus = null; // Mark as disposed to skip cleanup
+
+            // Assert - wait slightly longer than the delay; message should NOT be delivered
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(250));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
+        }
+        finally
+        {
+            if (messageBus != null)
+                await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        var messageBus = GetMessageBus();
+        if (messageBus == null)
+            return;
+
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: cts.Token));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
 }

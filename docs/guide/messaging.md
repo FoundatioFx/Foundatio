@@ -557,10 +557,10 @@ await messageBus.SubscribeAsync<IMessage>(async (message, ct) =>
 {
     // Access correlation ID
     var correlationId = message.CorrelationId;
-    
+
     // Access custom properties
     var traceState = message.Properties.GetValueOrDefault("TraceState");
-    
+
     // Activity.Current is automatically set with the message's trace context
     _logger.LogInformation("Processing message with trace {TraceId}", Activity.Current?.TraceId);
 });
@@ -627,6 +627,77 @@ services.AddHostedService<MessageSubscriber>();
 ```
 
 ## Error Handling
+
+### MessageBusException
+
+All message bus implementations throw `MessageBusException` for transport-level errors. This provides a consistent exception type regardless of the underlying provider:
+
+```csharp
+try
+{
+    await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
+}
+catch (MessageBusException ex)
+{
+    _logger.LogError(ex, "Failed to publish message: {Message}", ex.Message);
+    // Handle transport error (network, broker unavailable, etc.)
+}
+catch (OperationCanceledException)
+{
+    // Handle cancellation
+}
+```
+
+**Exception Behavior:**
+
+| Scenario | Exception Type | Notes |
+|----------|---------------|-------|
+| Transport error (network, broker) | `MessageBusException` | Wraps underlying exception |
+| Null message/type | `ArgumentNullException` | Thrown immediately |
+| Cancellation requested | `OperationCanceledException` | Passed through unchanged |
+| Serialization error | `MessageBusException` | Wraps serialization exception |
+
+### Subscriber Error Handling
+
+**Important:** Subscriber errors do NOT propagate to the publisher. This behavior is consistent across ALL implementations, including `InMemoryMessageBus`. This design ensures:
+
+1. **Consistent behavior** - Code that works with `InMemoryMessageBus` in tests will behave the same with distributed buses in production
+2. **Matches distributed reality** - In distributed systems, publishers and subscribers run in separate processes; publisher cannot see subscriber errors
+3. **Predictable error handling** - Subscribers are responsible for handling their own errors
+
+```csharp
+// Publisher - will NOT see subscriber errors
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
+// Returns successfully even if a subscriber throws
+
+// Subscriber - handle your own errors
+await messageBus.SubscribeAsync<OrderCreated>(async order =>
+{
+    try
+    {
+        await ProcessOrderAsync(order);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Failed to process order {OrderId}", order.OrderId);
+        // Optionally publish failure event, retry, etc.
+    }
+});
+```
+
+### Provider Behavior Summary
+
+| Provider | Publish Errors | Subscriber Errors | Redelivery on Failure |
+|----------|---------------|-------------------|----------------------|
+| **InMemoryMessageBus** | Throws `MessageBusException` | Logged, swallowed | No |
+| **RedisMessageBus** | Throws `MessageBusException` | Logged, swallowed | No (pub/sub has no ack) |
+| **RabbitMQMessageBus** | Throws `MessageBusException` | Logged, nack/requeue | Yes (`DeliveryLimit`) |
+| **KafkaMessageBus** | Fire-and-forget with callback | Logged, offset not committed | Yes (redelivered) |
+| **AzureServiceBusMessageBus** | Throws `MessageBusException` | Logged, SDK handles | Yes (`MaxDeliveryCount`) |
+
+::: tip Logging
+All errors are logged at `Error` level. Subscriber errors are logged exactly once by the base class.
+:::
 
 ### In Subscribers
 
