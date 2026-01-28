@@ -433,6 +433,152 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOpt
 });
 ```
 
+## Delayed Message Delivery
+
+The `DeliveryDelay` option schedules messages for future delivery. This is useful for scenarios like:
+
+- **Eventual consistency** - Wait for data to propagate before processing
+- **Scheduled reminders** - Send notifications after a delay
+- **Retry with backoff** - Republish failed messages with increasing delays
+
+### Basic Usage
+
+```csharp
+// Using MessageOptions
+await messageBus.PublishAsync(new OrderReminder { OrderId = 123 }, new MessageOptions
+{
+    DeliveryDelay = TimeSpan.FromMinutes(30)
+});
+
+// Using extension method
+await messageBus.PublishAsync(new OrderReminder { OrderId = 123 }, TimeSpan.FromMinutes(30));
+```
+
+### Provider Support
+
+Different providers handle delayed delivery differently:
+
+| Provider | Implementation | Persistence | Survives Restart |
+|----------|---------------|-------------|------------------|
+| **InMemoryMessageBus** | In-memory timer | None | No |
+| **RedisMessageBus** | In-memory timer | None | No |
+| **RabbitMQMessageBus** | Plugin or fallback | Plugin: Yes, Fallback: No | Plugin: Yes, Fallback: No |
+| **KafkaMessageBus** | In-memory timer | None | No |
+| **AzureServiceBusMessageBus** | Native `ScheduledEnqueueTime` | Azure | Yes |
+
+### Native vs Fallback Implementation
+
+**Native implementations** (Azure Service Bus, RabbitMQ with plugin) persist the delayed message in the broker. The message survives application restarts and is delivered reliably.
+
+**Fallback implementations** hold the message in memory using a timer. This has important limitations:
+
+::: warning Fallback Limitations
+- **Messages are lost on restart** - If your application restarts before the delay expires, the message is permanently lost
+- **Messages are discarded on disposal** - During graceful shutdown, pending delayed messages are discarded
+- **Best-effort delivery** - No guarantee the message will be delivered
+:::
+
+### RabbitMQ Plugin
+
+RabbitMQ requires the `rabbitmq_delayed_message_exchange` plugin for native delayed delivery:
+
+```bash
+# Enable the plugin
+rabbitmq-plugins enable rabbitmq_delayed_message_exchange
+```
+
+The `RabbitMQMessageBus` automatically detects if the plugin is available and uses it when present. Otherwise, it falls back to the in-memory timer.
+
+### When to Use Delayed Delivery
+
+**Appropriate use cases (fallback is acceptable):**
+
+- Cache invalidation
+- Non-critical notifications
+- Eventual consistency delays (e.g., waiting for Elasticsearch to refresh)
+
+**NOT appropriate for fallback:**
+
+- Financial transactions
+- Order processing
+- Any message where loss is unacceptable
+
+For guaranteed delayed delivery, use:
+- Azure Service Bus (native support)
+- RabbitMQ with the delayed message plugin
+- `IQueue<T>` with `DeliveryDelay` for work items that must be processed
+
+## Distributed Tracing
+
+Foundatio automatically integrates with .NET's distributed tracing infrastructure (`System.Diagnostics.Activity`) to enable end-to-end request tracing across services.
+
+### Automatic CorrelationId Injection
+
+When you publish a message, Foundatio automatically captures the current trace context:
+
+```csharp
+// If Activity.Current exists, its ID is automatically used as CorrelationId
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
+
+// The message will have:
+// - CorrelationId = Activity.Current?.Id
+// - Properties["TraceState"] = Activity.Current?.TraceStateString (if present)
+```
+
+### Manual CorrelationId
+
+You can also set the `CorrelationId` explicitly:
+
+```csharp
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOptions
+{
+    CorrelationId = "my-custom-correlation-id"
+});
+```
+
+When you provide a `CorrelationId`, the automatic injection is skipped.
+
+### Trace Propagation
+
+When a subscriber receives a message, Foundatio:
+
+1. Creates a new `Activity` with the message's `CorrelationId` as the parent
+2. Restores the `TraceState` from message properties
+3. Adds the `CorrelationId` to the logging scope
+
+This enables distributed tracing tools (like Application Insights, Jaeger, or Zipkin) to correlate requests across services.
+
+### Accessing Trace Information
+
+In your subscriber, you can access the trace context:
+
+```csharp
+await messageBus.SubscribeAsync<IMessage>(async (message, ct) =>
+{
+    // Access correlation ID
+    var correlationId = message.CorrelationId;
+    
+    // Access custom properties
+    var traceState = message.Properties.GetValueOrDefault("TraceState");
+    
+    // Activity.Current is automatically set with the message's trace context
+    _logger.LogInformation("Processing message with trace {TraceId}", Activity.Current?.TraceId);
+});
+```
+
+### Integration with OpenTelemetry
+
+Foundatio's tracing integrates seamlessly with OpenTelemetry:
+
+```csharp
+services.AddOpenTelemetry()
+    .WithTracing(builder =>
+    {
+        builder.AddSource(FoundatioDiagnostics.ActivitySource.Name);
+        // ... other configuration
+    });
+```
+
 ## Dependency Injection
 
 ### Basic Registration
