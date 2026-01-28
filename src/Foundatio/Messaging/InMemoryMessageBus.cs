@@ -69,10 +69,17 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
         {
             await SendMessageToSubscribersAsync(messageData).AnyContext();
         }
+        catch (MessageBusException)
+        {
+            // Swallow handler errors to match distributed message bus behavior.
+            // In distributed buses (Redis, RabbitMQ, etc.), subscriber errors occur
+            // in a separate process and never propagate to the publisher.
+            // Note: SendMessageToSubscribersAsync already logged the error, so we don't log again.
+        }
         catch (Exception ex)
         {
-            // swallow exceptions from subscriber handlers for the in memory bus
-            _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
+            // Catch any other unexpected exceptions for defensive purposes
+            _logger.LogError(ex, "Error sending message to subscribers: {Message}", ex.Message);
         }
     }
 

@@ -53,7 +53,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
+
     public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messageType);
@@ -68,8 +70,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 options.Properties.Add("TraceState", Activity.Current.TraceStateString);
         }
 
-        await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-        await PublishImplAsync(GetMappedMessageType(messageType), message, options, cancellationToken).AnyContext();
+        try
+        {
+            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, options, cancellationToken).AnyContext();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not MessageBusException)
+        {
+            throw new MessageBusException($"Error publishing {messageType.Name}: {ex.Message}", ex);
+        }
     }
 
     private readonly ConcurrentDictionary<Type, string> _mappedMessageTypesCache = new();
@@ -113,7 +122,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error getting message body type: {MessageType}", type);
+                    _logger.LogError(ex, "Error getting message body type: {MessageType}", type);
 
                     return null;
                 }
@@ -290,8 +299,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Error sending message to subscribers: {Message}", ex.Message);
-            throw;
+            _logger.LogError(ex, "Error sending message to subscribers: {Message}", ex.Message);
+            throw new MessageBusException($"Error sending message to subscribers: {ex.Message}", ex);
         }
 
         _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);

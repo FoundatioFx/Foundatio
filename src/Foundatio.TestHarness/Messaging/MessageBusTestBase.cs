@@ -140,19 +140,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
         try
         {
-            var countdown = new AsyncCountdownEvent(1);
-            await messageBus.SubscribeAsync<object>(msg =>
-            {
-                countdown.Signal();
-                throw new Exception();
-            });
-
-            await Task.Delay(100);
-            await messageBus.PublishAsync<object>(null);
-            _logger.LogTrace("Published one...");
-
-            await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(1)));
-            Assert.Equal(1, countdown.CurrentCount);
+            // Publishing null should throw ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null));
         }
         finally
         {
@@ -807,6 +796,27 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         {
             if (messageBus != null)
                 await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        var messageBus = GetMessageBus();
+        if (messageBus == null)
+            return;
+
+        try
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: cts.Token));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
         }
     }
 
