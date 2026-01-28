@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
@@ -49,7 +49,7 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            SendDelayedMessage(mappedType, message, options.DeliveryDelay.Value);
+            SendDelayedMessage(mappedType, message, options);
             return;
         }
 
