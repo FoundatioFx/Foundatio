@@ -56,7 +56,7 @@ public static class QueueExtensions
 }
 
 [DebuggerDisplay("Queued={Queued}, Working={Working}, Deadletter={Deadletter}, Enqueued={Enqueued}, Dequeued={Dequeued}, Completed={Completed}, Abandoned={Abandoned}, Errors={Errors}, Timeouts={Timeouts}")]
-public class QueueStats
+public record QueueStats
 {
     public long Queued { get; set; }
     public long Working { get; set; }
@@ -69,7 +69,7 @@ public class QueueStats
     public long Timeouts { get; set; }
 }
 
-public class QueueEntryOptions
+public record QueueEntryOptions
 {
     public string UniqueId { get; set; }
     public string CorrelationId { get; set; }
