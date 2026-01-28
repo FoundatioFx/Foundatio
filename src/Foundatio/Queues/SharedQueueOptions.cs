@@ -41,8 +41,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     public TBuilder Retries(int retries)
     {
-        if (retries < 0)
-            throw new ArgumentOutOfRangeException(nameof(retries));
+        ArgumentOutOfRangeException.ThrowIfNegative(retries);
 
         Target.Retries = retries;
         return (TBuilder)this;
@@ -50,8 +49,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     public TBuilder WorkItemTimeout(TimeSpan timeout)
     {
-        if (timeout < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(timeout));
+        ArgumentOutOfRangeException.ThrowIfLessThan(timeout, TimeSpan.Zero);
 
         Target.WorkItemTimeout = timeout;
         return (TBuilder)this;
@@ -65,8 +63,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     public TBuilder AddBehavior(IQueueBehavior<T> behavior)
     {
-        if (behavior == null)
-            throw new ArgumentNullException(nameof(behavior));
+        ArgumentNullException.ThrowIfNull(behavior);
 
         if (Target.Behaviors == null)
             Target.Behaviors = new List<IQueueBehavior<T>>();
@@ -90,8 +87,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     /// </summary>
     public TBuilder MetricsPollingInterval(TimeSpan interval)
     {
-        if (interval < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(interval));
+        ArgumentOutOfRangeException.ThrowIfLessThan(interval, TimeSpan.Zero);
 
         Target.MetricsPollingInterval = interval;
         return (TBuilder)this;

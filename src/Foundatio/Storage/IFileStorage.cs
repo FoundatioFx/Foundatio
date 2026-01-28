@@ -141,8 +141,7 @@ public static class FileStorageExtensions
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)
     {
-        if (files == null)
-            throw new ArgumentNullException(nameof(files));
+        ArgumentNullException.ThrowIfNull(files);
 
         foreach (var file in files)
             await storage.DeleteFileAsync(file.Path).AnyContext();

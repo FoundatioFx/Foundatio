@@ -13,8 +13,7 @@ public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, InMem
 {
     public InMemoryQueueOptionsBuilder<T> RetryDelay(TimeSpan retryDelay)
     {
-        if (retryDelay < TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(retryDelay));
+        ArgumentOutOfRangeException.ThrowIfLessThan(retryDelay, TimeSpan.Zero);
 
         Target.RetryDelay = retryDelay;
         return this;
@@ -22,8 +21,7 @@ public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, InMem
 
     public InMemoryQueueOptionsBuilder<T> CompletedEntryRetentionLimit(int retentionCount)
     {
-        if (retentionCount < 0)
-            throw new ArgumentOutOfRangeException(nameof(retentionCount));
+        ArgumentOutOfRangeException.ThrowIfNegative(retentionCount);
 
         Target.CompletedEntryRetentionLimit = retentionCount;
         return this;
@@ -31,8 +29,7 @@ public class InMemoryQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, InMem
 
     public InMemoryQueueOptionsBuilder<T> RetryMultipliers(int[] multipliers)
     {
-        if (multipliers == null)
-            throw new ArgumentNullException(nameof(multipliers));
+        ArgumentNullException.ThrowIfNull(multipliers);
 
         foreach (int multiplier in multipliers)
         {

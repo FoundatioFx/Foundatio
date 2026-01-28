@@ -25,8 +25,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
     public FolderFileStorage(FolderFileStorageOptions options)
     {
-        if (options == null)
-            throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
@@ -114,8 +113,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
+        ArgumentNullException.ThrowIfNull(stream);
 
         try
         {

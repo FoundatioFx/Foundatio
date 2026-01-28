@@ -137,8 +137,7 @@ public static class LockProviderExtensions
 
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        if (resources == null)
-            throw new ArgumentNullException(nameof(resources));
+        ArgumentNullException.ThrowIfNull(resources);
 
         string[] resourceList = resources.Distinct().OrderBy(r => r).ToArray();
         if (resourceList.Length == 0)

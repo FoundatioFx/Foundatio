@@ -168,11 +168,9 @@ public static class ResiliencePolicyExtensions
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
     public static ValueTask ExecuteAsync(this IResiliencePolicy policy, Func<ValueTask> action, CancellationToken cancellationToken = default)
     {
-        if (policy == null)
-            throw new ArgumentNullException(nameof(policy));
+        ArgumentNullException.ThrowIfNull(policy);
 
-        if (action == null)
-            throw new ArgumentNullException(nameof(action));
+        ArgumentNullException.ThrowIfNull(action);
 
         return policy.ExecuteAsync(_ => action(), cancellationToken);
     }
@@ -187,11 +185,9 @@ public static class ResiliencePolicyExtensions
     /// <returns>A <see cref="ValueTask{T}"/> representing the asynchronous operation and its result.</returns>
     public static ValueTask<T> ExecuteAsync<T>(this IResiliencePolicy policy, Func<ValueTask<T>> action, CancellationToken cancellationToken = default)
     {
-        if (policy == null)
-            throw new ArgumentNullException(nameof(policy));
+        ArgumentNullException.ThrowIfNull(policy);
 
-        if (action == null)
-            throw new ArgumentNullException(nameof(action));
+        ArgumentNullException.ThrowIfNull(action);
 
         return policy.ExecuteAsync(_ => action(), cancellationToken);
     }

@@ -58,8 +58,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
     public ResiliencePolicyProvider WithPolicy(string name, IResiliencePolicy policy)
     {
-        if (name == null)
-            throw new ArgumentNullException(nameof(name));
+        ArgumentNullException.ThrowIfNull(name);
 
         _policies[name] = policy ?? throw new ArgumentNullException(nameof(policy));
         return this;
@@ -73,8 +72,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
     public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder> builder = null)
     {
-        if (name == null)
-            throw new ArgumentNullException(nameof(name));
+        ArgumentNullException.ThrowIfNull(name);
 
         var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);

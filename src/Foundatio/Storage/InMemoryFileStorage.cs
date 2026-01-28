@@ -30,8 +30,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
 
     public InMemoryFileStorage(InMemoryFileStorageOptions options)
     {
-        if (options == null)
-            throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
 
         MaxFileSize = options.MaxFileSize;
         MaxFiles = options.MaxFiles;
@@ -131,8 +130,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
+        ArgumentNullException.ThrowIfNull(stream);
 
         string normalizedPath = path.NormalizePath();
         _logger.LogTrace("Saving {Path}", normalizedPath);

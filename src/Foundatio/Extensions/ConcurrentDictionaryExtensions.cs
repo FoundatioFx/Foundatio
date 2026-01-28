@@ -10,8 +10,7 @@ internal static class ConcurrentDictionaryExtensions
         if (key == null)
             throw new ArgumentNullException(nameof(key));
 
-        if (updateValueFactory == null)
-            throw new ArgumentNullException(nameof(updateValueFactory));
+        ArgumentNullException.ThrowIfNull(updateValueFactory);
 
         TValue comparisonValue;
         TValue newValue;

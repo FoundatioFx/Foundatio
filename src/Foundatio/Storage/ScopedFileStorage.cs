@@ -88,8 +88,7 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
+        ArgumentNullException.ThrowIfNull(stream);
 
         return UnscopedStorage.SaveFileAsync(String.Concat(_pathPrefix, path), stream, cancellationToken);
     }

@@ -59,8 +59,7 @@ public class ResiliencePolicyBuilder
     /// <exception cref="ArgumentNullException"></exception>
     public ResiliencePolicyBuilder WithUnhandledException(params Type[] unhandledExceptionTypes)
     {
-        if (unhandledExceptionTypes == null)
-            throw new ArgumentNullException(nameof(unhandledExceptionTypes));
+        ArgumentNullException.ThrowIfNull(unhandledExceptionTypes);
 
         _policy.UnhandledExceptions.AddRange(unhandledExceptionTypes);
         return this;
@@ -172,8 +171,7 @@ public class ResiliencePolicyBuilder
     /// <param name="circuitBreaker"></param>
     public ResiliencePolicyBuilder WithCircuitBreaker(Action<CircuitBreakerBuilder> circuitBreaker)
     {
-        if (circuitBreaker == null)
-            throw new ArgumentNullException(nameof(circuitBreaker));
+        ArgumentNullException.ThrowIfNull(circuitBreaker);
 
         var cb = new CircuitBreaker(_policy.Logger, _policy.GetTimeProvider());
         var builder = new CircuitBreakerBuilder(cb);

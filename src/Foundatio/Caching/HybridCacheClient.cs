@@ -182,8 +182,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
-        if (keys is null)
-            throw new ArgumentNullException(nameof(keys));
+        ArgumentNullException.ThrowIfNull(keys);
 
         var keysCollection = keys as ICollection<string> ?? keys.ToList();
         if (keysCollection.Count is 0)
@@ -457,8 +456,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
-        if (keys is null)
-            throw new ArgumentNullException(nameof(keys));
+        ArgumentNullException.ThrowIfNull(keys);
 
         string[] keysArray = keys.ToArray();
         if (keysArray.Length is 0)

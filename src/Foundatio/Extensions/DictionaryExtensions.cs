@@ -27,9 +27,9 @@ internal static class DictionaryExtensions
         int batchSize,
         Func<ReadOnlyMemory<KeyValuePair<TKey, TValue>>, ValueTask> handler)
     {
-        if (source is null) throw new ArgumentNullException(nameof(source));
-        if (handler is null) throw new ArgumentNullException(nameof(handler));
-        if (batchSize <= 0) throw new ArgumentOutOfRangeException(nameof(batchSize));
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(handler);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(batchSize);
 
         // Fast path for very small dictionaries
         if (source.Count == 0)

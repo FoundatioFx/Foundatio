@@ -20,8 +20,7 @@ internal class DisposableLockCollection : ILock
 
     public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, DateTime acquiredTimeUtc, TimeSpan timeWaitedForLock, ILogger logger)
     {
-        if (locks == null)
-            throw new ArgumentNullException(nameof(locks));
+        ArgumentNullException.ThrowIfNull(locks);
 
         _locks.AddRange(locks);
         Resource = String.Join("+", _locks.Select(l => l.Resource));

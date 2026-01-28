@@ -93,8 +93,7 @@ public class CircuitBreakerBuilder
     /// <exception cref="ArgumentNullException"></exception>
     public CircuitBreakerBuilder WithUnrecordedException(params Type[] unrecordedExceptionTypes)
     {
-        if (unrecordedExceptionTypes == null)
-            throw new ArgumentNullException(nameof(unrecordedExceptionTypes));
+        ArgumentNullException.ThrowIfNull(unrecordedExceptionTypes);
 
         _circuitBreaker.UnrecordedExceptions.AddRange(unrecordedExceptionTypes);
         return this;
