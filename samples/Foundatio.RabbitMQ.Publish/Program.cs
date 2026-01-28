@@ -42,7 +42,7 @@ Option<string> acknowledgmentStrategyOption = new("--acknowledgment-strategy")
 
 Option<int> messageSizeOption = new("--message-size")
 {
-    Description = "Target message size in bytes (for testing broker limits)",
+    Description = "Target message size in bytes (pads Notes field to reach size)",
     DefaultValueFactory = _ => 0
 };
 
@@ -76,7 +76,7 @@ Option<LogLevel> logLevelOption = new("--log-level")
     DefaultValueFactory = _ => LogLevel.Information
 };
 
-RootCommand rootCommand = new("RabbitMQ Message Publisher Sample")
+RootCommand rootCommand = new("RabbitMQ Order Publisher Sample")
 {
     connectionStringOption,
     hostsOption,
@@ -146,11 +146,11 @@ static async Task RunPublisher(
 
     string processName = "sample-publisher";
     string queueName = durable
-        ? $"{processName}-{nameof(MyMessage).ToLower()}"
-        : $"{processName}-{nameof(MyMessage).ToLower()}-{Guid.NewGuid():N}";
+        ? $"{processName}-{nameof(OrderEvent).ToLower()}"
+        : $"{processName}-{nameof(OrderEvent).ToLower()}-{Guid.NewGuid():N}";
 
     // Parse hosts into a list if provided
-    List<string> hostsList = new();
+    List<string> hostsList = [];
     if (!String.IsNullOrEmpty(hosts))
     {
         hostsList.AddRange(hosts.Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -172,19 +172,10 @@ static async Task RunPublisher(
         LoggerFactory = loggerFactory
     };
 
-    logger.LogInformation("Configuration:");
-    logger.LogInformation("  Connection String: {ConnectionString}", connectionString);
+    logger.LogInformation("Config: ConnectionString={ConnectionString}, Topic={Topic}, Durable={Durable}, AckStrategy={AckStrategy}, MessageSize={MessageSize}, Interval={Interval}ms, DelaySeconds={DelaySeconds}",
+        connectionString, topic, durable, ackStrategy, messageSize, interval, delaySeconds);
     if (hostsList.Count > 0)
-        logger.LogInformation("  Hosts: {Hosts}", String.Join(", ", hostsList));
-    logger.LogInformation("  Topic: {Topic}", topic);
-    logger.LogInformation("  Durable: {Durable}", durable);
-    logger.LogInformation("  Delayed Exchange: {Delayed}", delayed);
-    logger.LogInformation("  Acknowledgment Strategy: {AckStrategy}", ackStrategy);
-    logger.LogInformation("  Message Size: {MessageSize} bytes", messageSize);
-    logger.LogInformation("  Prefetch Count: {PrefetchCount}", prefetchCount);
-    logger.LogInformation("  Delivery Limit: {DeliveryLimit}", deliveryLimit);
-    logger.LogInformation("  Delay Seconds: {DelaySeconds}", delaySeconds);
-    logger.LogInformation("  Interval: {Interval}ms", interval);
+        logger.LogInformation("Hosts: {Hosts}", String.Join(", ", hostsList));
 
     using RabbitMQMessageBus messageBus = new(options);
 
@@ -192,26 +183,27 @@ static async Task RunPublisher(
     {
         // Auto-send mode
         logger.LogInformation("Auto-send mode enabled. Press Ctrl+C to stop.");
-        int messageCount = 0;
+        int orderCount = 0;
 
         try
         {
             while (true)
             {
-                var body = MyMessage.Create($"Message #{++messageCount} at {DateTimeOffset.UtcNow:O}", messageSize);
+                ++orderCount;
+                var order = OrderEvent.Create(orderCount, messageSize);
 
                 TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
                 if (delay.HasValue)
                 {
-                    await messageBus.PublishAsync(body, delay.Value);
-                    logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} at {Time}",
-                        messageCount, delaySeconds, body.Id, DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff"));
+                    await messageBus.PublishAsync(order, delay.Value);
+                    logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount} | {Delay}s delay",
+                        orderCount, order.OrderId, order.CustomerId, order.Amount, delaySeconds);
                 }
                 else
                 {
-                    await messageBus.PublishAsync(body);
-                    logger.LogInformation("Message {Count} sent: {MessageId} at {Time}",
-                        messageCount, body.Id, DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff"));
+                    await messageBus.PublishAsync(order);
+                    logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount}",
+                        orderCount, order.OrderId, order.CustomerId, order.Amount);
                 }
 
                 await Task.Delay(interval);
@@ -223,40 +215,39 @@ static async Task RunPublisher(
         }
         finally
         {
-            logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
+            logger.LogInformation("Exiting. Total orders sent: {Count}", orderCount);
         }
     }
     else
     {
         // Manual mode
-        logger.LogInformation("Enter the message and press enter to send (empty to exit):");
+        logger.LogInformation("Press enter to send an order (empty line to exit):");
 
-        int messageCount = 0;
+        int orderCount = 0;
         do
         {
-            string message = Console.ReadLine();
-            if (String.IsNullOrEmpty(message))
+            string input = Console.ReadLine();
+            if (String.IsNullOrEmpty(input))
                 break;
 
-            var body = MyMessage.Create(message, messageSize);
+            ++orderCount;
+            var order = OrderEvent.Create(orderCount, messageSize);
 
             TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
             if (delay.HasValue)
             {
-                await messageBus.PublishAsync(body, delay.Value);
-                logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} ({Size} bytes)",
-                    ++messageCount, delaySeconds, body.Id, messageSize > 0 ? messageSize : message.Length);
+                await messageBus.PublishAsync(order, delay.Value);
+                logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount} | {Delay}s delay",
+                    orderCount, order.OrderId, order.CustomerId, order.Amount, delaySeconds);
             }
             else
             {
-                await messageBus.PublishAsync(body);
-                logger.LogInformation("Message {Count} sent: {MessageId} ({Size} bytes)",
-                    ++messageCount, body.Id, messageSize > 0 ? messageSize : message.Length);
+                await messageBus.PublishAsync(order);
+                logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount}",
+                    orderCount, order.OrderId, order.CustomerId, order.Amount);
             }
-
-            logger.LogInformation("Enter new message or press enter to exit:");
         } while (true);
 
-        logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
+        logger.LogInformation("Exiting. Total orders sent: {Count}", orderCount);
     }
 }

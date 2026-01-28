@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.RabbitMQ;
@@ -70,7 +71,7 @@ Option<LogLevel> logLevelOption = new("--log-level")
     DefaultValueFactory = _ => LogLevel.Information
 };
 
-RootCommand rootCommand = new("RabbitMQ Message Subscriber Sample")
+RootCommand rootCommand = new("RabbitMQ Order Subscriber Sample")
 {
     connectionStringOption,
     hostsOption,
@@ -99,14 +100,14 @@ rootCommand.SetAction(parseResult =>
     string groupId = parseResult.GetValue(groupIdOption);
     LogLevel logLevel = parseResult.GetValue(logLevelOption);
 
-    RunSubscriber(
+    return RunSubscriberAsync(
         connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy,
         prefetchCount, deliveryLimit, subscriberCount, groupId, logLevel);
 });
 
 return await rootCommand.Parse(args).InvokeAsync();
 
-static void RunSubscriber(
+static async Task RunSubscriberAsync(
     string connectionString,
     string hosts,
     string topic,
@@ -123,7 +124,7 @@ static void RunSubscriber(
     {
         builder.AddConsole().SetMinimumLevel(logLevel);
     });
-    ILogger logger = loggerFactory.CreateLogger("Subscriber");
+    var logger = loggerFactory.CreateLogger("Subscriber");
 
     if (delayed)
     {
@@ -131,33 +132,26 @@ static void RunSubscriber(
         connectionString = new UriBuilder(uri) { Port = 5673 }.Uri.ToString();
     }
 
-    AcknowledgementStrategy ackStrategy = String.Equals("automatic", acknowledgmentStrategy, StringComparison.OrdinalIgnoreCase)
+    var ackStrategy = String.Equals("automatic", acknowledgmentStrategy, StringComparison.OrdinalIgnoreCase)
         ? AcknowledgementStrategy.Automatic
         : AcknowledgementStrategy.FireAndForget;
 
     // Parse hosts into a list if provided
-    List<string> hostsList = new();
+    List<string> hostsList = [];
     if (!String.IsNullOrEmpty(hosts))
     {
         hostsList.AddRange(hosts.Split(',', StringSplitOptions.RemoveEmptyEntries)
                                .Select(h => h.Trim()));
     }
 
-    logger.LogInformation("Configuration:");
-    logger.LogInformation("  Connection String: {ConnectionString}", connectionString);
+    logger.LogInformation("Config: ConnectionString={ConnectionString}, Topic={Topic}, Durable={Durable}, AckStrategy={AckStrategy}, PrefetchCount={PrefetchCount}, DeliveryLimit={DeliveryLimit}, SubscriberCount={SubscriberCount}, GroupId={GroupId}",
+        connectionString, topic, durable, ackStrategy, prefetchCount, deliveryLimit, subscriberCount, groupId);
     if (hostsList.Count > 0)
-        logger.LogInformation("  Hosts: {Hosts}", String.Join(", ", hostsList));
-    logger.LogInformation("  Topic: {Topic}", topic);
-    logger.LogInformation("  Durable: {Durable}", durable);
-    logger.LogInformation("  Delayed Exchange: {Delayed}", delayed);
-    logger.LogInformation("  Acknowledgment Strategy: {AckStrategy}", ackStrategy);
-    logger.LogInformation("  Prefetch Count: {PrefetchCount}", prefetchCount);
-    logger.LogInformation("  Delivery Limit: {DeliveryLimit}", deliveryLimit);
-    logger.LogInformation("  Subscriber Count: {SubscriberCount}", subscriberCount);
-    logger.LogInformation("  Group ID: {GroupId}", groupId);
+        logger.LogInformation("Hosts: {Hosts}", String.Join(", ", hostsList));
 
-    List<IMessageBus> messageBuses = new();
-    List<Task> subscriptions = new();
+    var messageBuses = new List<IMessageBus>(subscriberCount);
+    var subscriptions = new List<Task>(subscriberCount);
+    int totalProcessed = 0;
 
     try
     {
@@ -165,8 +159,8 @@ static void RunSubscriber(
         {
             int subscriberId = i + 1;
             string queueName = durable
-                ? $"{groupId}-{nameof(MyMessage).ToLower()}"
-                : $"{groupId}-{nameof(MyMessage).ToLower()}-{Guid.NewGuid():N}";
+                ? $"{groupId}-{nameof(OrderEvent).ToLower()}"
+                : $"{groupId}-{nameof(OrderEvent).ToLower()}-{Guid.NewGuid():N}";
 
             RabbitMQMessageBusOptions options = new()
             {
@@ -186,29 +180,27 @@ static void RunSubscriber(
             RabbitMQMessageBus messageBus = new(options);
             messageBuses.Add(messageBus);
 
-            int localSubscriberId = subscriberId;
-            var subscription = messageBus.SubscribeAsync<MyMessage>(msg =>
+            subscriptions.Add(messageBus.SubscribeAsync<OrderEvent>(order =>
             {
-                TimeSpan latency = DateTimeOffset.UtcNow - msg.Timestamp;
-                int payloadSize = msg.Payload?.Length ?? 0;
+                int processed = Interlocked.Increment(ref totalProcessed);
+                TimeSpan latency = DateTimeOffset.UtcNow - order.CreatedAt;
                 logger.LogInformation(
-                    "Subscriber {SubscriberId} received: {MessageId} | Content: {Content} | Latency: {Latency}ms | Payload: {PayloadSize} bytes",
-                    localSubscriberId, msg.Id, msg.Hey, latency.TotalMilliseconds, payloadSize);
-            });
+                    "Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount} | Processed: {Processed} | Latency: {Latency}ms",
+                    order.SequenceNumber, order.OrderId, order.CustomerId, order.Amount, processed, latency.TotalMilliseconds.ToString("F1"));
+            }));
 
-            subscriptions.Add(subscription);
             logger.LogInformation("Subscriber {SubscriberId} started with queue: {QueueName}", subscriberId, queueName);
         }
 
-        Task.WhenAll(subscriptions).GetAwaiter().GetResult();
+        await Task.WhenAll(subscriptions);
 
-        logger.LogInformation("Waiting to receive messages, press enter to quit...");
+        logger.LogInformation("Waiting for messages. Press enter to quit...");
         Console.ReadLine();
     }
     finally
     {
-        logger.LogInformation("Shutting down subscribers...");
-        foreach (IMessageBus messageBus in messageBuses)
+        logger.LogInformation("Shutting down. Total orders processed: {Count}", totalProcessed);
+        foreach (var messageBus in messageBuses)
             messageBus.Dispose();
 
         logger.LogInformation("All subscribers stopped.");
