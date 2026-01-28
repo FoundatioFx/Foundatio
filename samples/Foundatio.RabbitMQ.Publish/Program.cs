@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.Linq;
+using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.RabbitMQ;
 using Microsoft.Extensions.Logging;
@@ -63,6 +64,12 @@ Option<int> delaySecondsOption = new("--delay-seconds")
     DefaultValueFactory = _ => 0
 };
 
+Option<int> intervalOption = new("--interval")
+{
+    Description = "Auto-send interval in milliseconds (0 = manual mode, prompts for input)",
+    DefaultValueFactory = _ => 0
+};
+
 Option<LogLevel> logLevelOption = new("--log-level")
 {
     Description = "Minimum log level",
@@ -81,6 +88,7 @@ RootCommand rootCommand = new("RabbitMQ Message Publisher Sample")
     prefetchCountOption,
     deliveryLimitOption,
     delaySecondsOption,
+    intervalOption,
     logLevelOption
 };
 
@@ -96,16 +104,17 @@ rootCommand.SetAction(parseResult =>
     ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
     long deliveryLimit = parseResult.GetValue(deliveryLimitOption);
     int delaySeconds = parseResult.GetValue(delaySecondsOption);
+    int interval = parseResult.GetValue(intervalOption);
     LogLevel logLevel = parseResult.GetValue(logLevelOption);
 
-    RunPublisher(
+    return RunPublisher(
         connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy,
-        messageSize, prefetchCount, deliveryLimit, delaySeconds, logLevel);
+        messageSize, prefetchCount, deliveryLimit, delaySeconds, interval, logLevel);
 });
 
 return await rootCommand.Parse(args).InvokeAsync();
 
-static void RunPublisher(
+static async Task RunPublisher(
     string connectionString,
     string hosts,
     string topic,
@@ -116,6 +125,7 @@ static void RunPublisher(
     ushort prefetchCount,
     long deliveryLimit,
     int delaySeconds,
+    int interval,
     LogLevel logLevel)
 {
     using var loggerFactory = LoggerFactory.Create(builder =>
@@ -174,35 +184,79 @@ static void RunPublisher(
     logger.LogInformation("  Prefetch Count: {PrefetchCount}", prefetchCount);
     logger.LogInformation("  Delivery Limit: {DeliveryLimit}", deliveryLimit);
     logger.LogInformation("  Delay Seconds: {DelaySeconds}", delaySeconds);
+    logger.LogInformation("  Interval: {Interval}ms", interval);
 
     using RabbitMQMessageBus messageBus = new(options);
-    logger.LogInformation("Enter the message and press enter to send (empty to exit):");
 
-    int messageCount = 0;
-    do
+    if (interval > 0)
     {
-        string message = Console.ReadLine();
-        if (String.IsNullOrEmpty(message))
-            break;
+        // Auto-send mode
+        logger.LogInformation("Auto-send mode enabled. Press Ctrl+C to stop.");
+        int messageCount = 0;
 
-        var body = MyMessage.Create(message, messageSize);
-
-        TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
-        if (delay.HasValue)
+        try
         {
-            messageBus.PublishAsync(body, delay.Value).GetAwaiter().GetResult();
-            logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} ({Size} bytes)",
-                ++messageCount, delaySeconds, body.Id, messageSize > 0 ? messageSize : message.Length);
+            while (true)
+            {
+                var body = MyMessage.Create($"Message #{++messageCount} at {DateTimeOffset.UtcNow:O}", messageSize);
+
+                TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
+                if (delay.HasValue)
+                {
+                    await messageBus.PublishAsync(body, delay.Value);
+                    logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} at {Time}",
+                        messageCount, delaySeconds, body.Id, DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff"));
+                }
+                else
+                {
+                    await messageBus.PublishAsync(body);
+                    logger.LogInformation("Message {Count} sent: {MessageId} at {Time}",
+                        messageCount, body.Id, DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff"));
+                }
+
+                await Task.Delay(interval);
+            }
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            messageBus.PublishAsync(body).GetAwaiter().GetResult();
-            logger.LogInformation("Message {Count} sent: {MessageId} ({Size} bytes)",
-                ++messageCount, body.Id, messageSize > 0 ? messageSize : message.Length);
+            logger.LogError(ex, "Error in auto-send loop");
         }
+        finally
+        {
+            logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
+        }
+    }
+    else
+    {
+        // Manual mode
+        logger.LogInformation("Enter the message and press enter to send (empty to exit):");
 
-        logger.LogInformation("Enter new message or press enter to exit:");
-    } while (true);
+        int messageCount = 0;
+        do
+        {
+            string message = Console.ReadLine();
+            if (String.IsNullOrEmpty(message))
+                break;
 
-    logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
+            var body = MyMessage.Create(message, messageSize);
+
+            TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
+            if (delay.HasValue)
+            {
+                await messageBus.PublishAsync(body, delay.Value);
+                logger.LogInformation("Message {Count} sent with {Delay}s delay: {MessageId} ({Size} bytes)",
+                    ++messageCount, delaySeconds, body.Id, messageSize > 0 ? messageSize : message.Length);
+            }
+            else
+            {
+                await messageBus.PublishAsync(body);
+                logger.LogInformation("Message {Count} sent: {MessageId} ({Size} bytes)",
+                    ++messageCount, body.Id, messageSize > 0 ? messageSize : message.Length);
+            }
+
+            logger.LogInformation("Enter new message or press enter to exit:");
+        } while (true);
+
+        logger.LogInformation("Exiting. Total messages sent: {Count}", messageCount);
+    }
 }
