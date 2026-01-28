@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace Foundatio.Messaging;
@@ -7,8 +7,16 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
 {
     /// <summary>
     /// The connection string. See https://www.rabbitmq.com/uri-spec.html for more information.
+    /// Provides credentials and vhost. When Hosts is specified, the host in the connection string is ignored.
     /// </summary>
     public string ConnectionString { get; set; }
+
+    /// <summary>
+    /// List of hosts for failover. When specified, the client will try each host in order until one succeeds.
+    /// Format: "hostname" or "hostname:port" (default port is 5672, or 5671 for amqps).
+    /// If not specified, the host from ConnectionString is used.
+    /// </summary>
+    public IList<string> Hosts { get; set; }
 
     /// <summary>
     /// The default message time to live. The value of the expiration field describes the TTL period in milliseconds.
@@ -79,6 +87,26 @@ public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<R
     public RabbitMQMessageBusOptionsBuilder ConnectionString(string connectionString)
     {
         Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the list of hosts for failover support. Replaces the host from ConnectionString.
+    /// </summary>
+    /// <param name="hosts">Hostnames in format "hostname" or "hostname:port"</param>
+    public RabbitMQMessageBusOptionsBuilder Hosts(params string[] hosts)
+    {
+        Target.Hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the list of hosts for failover support. Replaces the host from ConnectionString.
+    /// </summary>
+    /// <param name="hosts">Hostnames in format "hostname" or "hostname:port"</param>
+    public RabbitMQMessageBusOptionsBuilder Hosts(IList<string> hosts)
+    {
+        Target.Hosts = hosts ?? throw new ArgumentNullException(nameof(hosts));
         return this;
     }
 

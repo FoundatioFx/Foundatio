@@ -21,6 +21,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private readonly AsyncLock _lock = new();
     private readonly ConnectionFactory _factory;
+    private readonly List<AmqpTcpEndpoint> _endpoints;
     private IConnection _publisherConnection;
     private IConnection _subscriberConnection;
     private IChannel _publisherChannel;
@@ -34,22 +35,52 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         if (String.IsNullOrEmpty(options.ConnectionString))
             throw new ArgumentException("ConnectionString is required.");
 
+        if (!Uri.TryCreate(options.ConnectionString, UriKind.Absolute, out var primaryUri))
+            throw new ArgumentException($"ConnectionString is not a valid URI: {options.ConnectionString}");
+
+        if (!primaryUri.Scheme.Equals("amqp", StringComparison.OrdinalIgnoreCase) &&
+            !primaryUri.Scheme.Equals("amqps", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException($"ConnectionString must use amqp:// or amqps:// scheme: {options.ConnectionString}");
+
         _isQuorumQueue = options.Arguments is not null && options.Arguments.TryGetValue("x-queue-type", out object queueType) && queueType is string type && String.Equals(type, "quorum", StringComparison.OrdinalIgnoreCase);
 
-        // Initialize the connection factory. Automatic recovery will allow the connections to be restored
-        // in case the server is restarted or there has been any network failures
-        // Topology (queues, exchanges, bindings and consumers) recovery "TopologyRecoveryEnabled" is already enabled
-        // by default, so no need to initialize it. NetworkRecoveryInterval is also by default set to 5 seconds.
-        // it can always be fine-tuned if needed.
+        // Parse the connection string for credentials and vhost
+        bool useSsl = primaryUri.Scheme.Equals("amqps", StringComparison.OrdinalIgnoreCase);
+        int defaultPort = useSsl ? 5671 : 5672;
+
+        // Build the list of endpoints for failover support
+        // If Hosts is provided, use it as the complete host list; otherwise use the host from connection string
+        _endpoints = [];
+        var seenEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (options.Hosts is { Count: > 0 })
+        {
+            foreach (string host in options.Hosts)
+            {
+                var endpoint = ParseHostEndpoint(host, defaultPort);
+                if (endpoint is not null && seenEndpoints.Add($"{endpoint.HostName}:{endpoint.Port}"))
+                    _endpoints.Add(endpoint);
+            }
+        }
+        else
+        {
+            _endpoints.Add(new AmqpTcpEndpoint(primaryUri.Host, primaryUri.Port > 0 ? primaryUri.Port : defaultPort));
+        }
+
+        // Initialize the connection factory with credentials/vhost from connection string
+        // Automatic recovery will allow the connections to be restored in case the server is
+        // restarted or there has been any network failures. TopologyRecoveryEnabled is already
+        // enabled by default. NetworkRecoveryInterval is also by default set to 5 seconds.
         _factory = new ConnectionFactory
         {
-            Uri = new Uri(options.ConnectionString),
+            Uri = primaryUri,
             AutomaticRecoveryEnabled = true
         };
     }
 
     public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
-        : this(config(new RabbitMQMessageBusOptionsBuilder()).Build()) { }
+        : this(config(new RabbitMQMessageBusOptionsBuilder()).Build())
+    {
+    }
 
     protected override Task RemoveTopicSubscriptionAsync()
     {
@@ -505,7 +536,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     /// <returns></returns>
     private Task<IConnection> CreateConnectionAsync()
     {
-        return _factory.CreateConnectionAsync();
+        // Use multiple endpoints for failover support
+        return _factory.CreateConnectionAsync(_endpoints);
     }
 
     /// <summary>
@@ -701,5 +733,24 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 _subscriberConnection = null;
             }
         }
+    }
+
+    /// <summary>
+    /// Parses a host string in format "hostname" or "hostname:port" into an AmqpTcpEndpoint.
+    /// </summary>
+    private static AmqpTcpEndpoint ParseHostEndpoint(string host, int defaultPort)
+    {
+        if (String.IsNullOrWhiteSpace(host))
+            return null;
+
+        string trimmed = host.Trim();
+        int colonIndex = trimmed.LastIndexOf(':');
+        if (colonIndex < 0)
+            return new AmqpTcpEndpoint(trimmed, defaultPort);
+
+        string hostname = trimmed[..colonIndex];
+        return Int32.TryParse(trimmed[(colonIndex + 1)..], out int port)
+            ? new AmqpTcpEndpoint(hostname, port)
+            : new AmqpTcpEndpoint(trimmed, defaultPort);
     }
 }

@@ -1,13 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.CommandLine;
+using System.Linq;
 using Foundatio.Messaging;
 using Foundatio.RabbitMQ;
 using Microsoft.Extensions.Logging;
 
 Option<string> connectionStringOption = new("--connection-string")
 {
-    Description = "RabbitMQ connection string",
+    Description = "RabbitMQ connection string (provides credentials and vhost)",
     DefaultValueFactory = _ => "amqp://localhost:5672"
+};
+
+Option<string> hostsOption = new("--hosts")
+{
+    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)"
 };
 
 Option<string> topicOption = new("--topic")
@@ -65,6 +72,7 @@ Option<LogLevel> logLevelOption = new("--log-level")
 RootCommand rootCommand = new("RabbitMQ Message Publisher Sample")
 {
     connectionStringOption,
+    hostsOption,
     topicOption,
     durableOption,
     delayedOption,
@@ -79,6 +87,7 @@ RootCommand rootCommand = new("RabbitMQ Message Publisher Sample")
 rootCommand.SetAction(parseResult =>
 {
     string connectionString = parseResult.GetValue(connectionStringOption);
+    string hosts = parseResult.GetValue(hostsOption);
     string topic = parseResult.GetValue(topicOption);
     bool durable = parseResult.GetValue(durableOption);
     bool delayed = parseResult.GetValue(delayedOption);
@@ -90,7 +99,7 @@ rootCommand.SetAction(parseResult =>
     LogLevel logLevel = parseResult.GetValue(logLevelOption);
 
     RunPublisher(
-        connectionString, topic, durable, delayed, acknowledgmentStrategy,
+        connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy,
         messageSize, prefetchCount, deliveryLimit, delaySeconds, logLevel);
 });
 
@@ -98,6 +107,7 @@ return await rootCommand.Parse(args).InvokeAsync();
 
 static void RunPublisher(
     string connectionString,
+    string hosts,
     string topic,
     bool durable,
     bool delayed,
@@ -129,9 +139,18 @@ static void RunPublisher(
         ? $"{processName}-{nameof(MyMessage).ToLower()}"
         : $"{processName}-{nameof(MyMessage).ToLower()}-{Guid.NewGuid():N}";
 
+    // Parse hosts into a list if provided
+    List<string> hostsList = new();
+    if (!String.IsNullOrEmpty(hosts))
+    {
+        hostsList.AddRange(hosts.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(h => h.Trim()));
+    }
+
     RabbitMQMessageBusOptions options = new()
     {
         ConnectionString = connectionString,
+        Hosts = hostsList,
         Topic = topic,
         AcknowledgementStrategy = ackStrategy,
         IsDurable = durable,
@@ -145,6 +164,8 @@ static void RunPublisher(
 
     logger.LogInformation("Configuration:");
     logger.LogInformation("  Connection String: {ConnectionString}", connectionString);
+    if (hostsList.Count > 0)
+        logger.LogInformation("  Hosts: {Hosts}", String.Join(", ", hostsList));
     logger.LogInformation("  Topic: {Topic}", topic);
     logger.LogInformation("  Durable: {Durable}", durable);
     logger.LogInformation("  Delayed Exchange: {Delayed}", delayed);
