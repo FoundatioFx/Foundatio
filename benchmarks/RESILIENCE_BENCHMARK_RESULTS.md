@@ -1,88 +1,141 @@
 # ResiliencePolicy vs Polly Performance Benchmarks
 
-This benchmark compares the performance overhead of using Foundatio's `IResiliencePolicy` vs Microsoft's Polly library when calling methods directly with no exceptions and no retries.
+This benchmark compares the performance overhead of Foundatio's `IResiliencePolicy` vs Polly's `ResiliencePipeline` when executing operations that always succeed (measuring pure framework overhead, not retry behavior).
 
 ## Results Summary
 
-| Benchmark | Mean | Overhead vs Direct Call | Allocated Memory |
-|-----------|------|------------------------|------------------|
-| **DirectCall_Async** | 465.5 ns | Baseline | 213 B |
-| **ResiliencePolicy_NoRetries_Async** | 598.4 ns | **+28.5% (+132.9 ns)** | 810 B (+3.8x) |
-| **ResiliencePolicy_StandardConfig_Async** | 598.8 ns | **+28.6% (+133.3 ns)** | 811 B (+3.8x) |
-| **Polly_NoRetries_Async** | 607.6 ns | **+30.5% (+142.1 ns)** | 686 B (+3.2x) |
-| **Polly_StandardConfig_Async** | 1,089.8 ns | **+134.0% (+624.3 ns)** | 1,403 B (+6.6x) |
-| **DirectCall_ComputeIntensive_Async** | 690.9 ns | Baseline | 96 B |
-| **ResiliencePolicy_ComputeIntensive_Async** | 817.2 ns | **+18.3% (+126.3 ns)** | 744 B (+7.8x) |
-| **Polly_ComputeIntensive_Async** | 794.9 ns | **+15.1% (+104.0 ns)** | 504 B (+5.3x) |
-| **DirectCall_Sync** | 2.97 ns | Baseline | 0 B |
-| **ResiliencePolicy_NoRetries_WithResult_Async** | 39.3 ns | **+1,225% (+36.4 ns)** | 136 B |
-| **ResiliencePolicy_StandardConfig_WithResult_Async** | 39.4 ns | **+1,227% (+36.4 ns)** | 136 B |
-| **Polly_NoRetries_WithResult_Async** | 39.0 ns | **+1,213% (+36.0 ns)** | 136 B |
-| **Polly_StandardConfig_WithResult_Async** | 133.3 ns | **+4,390% (+130.3 ns)** | 136 B |
+| Method | Category | Mean | Ratio | Allocated |
+|--------|----------|------|-------|-----------|
+| Direct_NoRetry_Async | 1_NoRetry_Async | 2.84 ns | 1.00 | - |
+| Foundatio_NoRetry_Async | 1_NoRetry_Async | 33.59 ns | 11.84x | 64 B |
+| Polly_NoRetry_Async | 1_NoRetry_Async | 32.57 ns | 11.48x | 64 B |
+| | | | | |
+| Direct_WithRetry_Async | 2_WithRetry_Async | 2.84 ns | 1.00 | - |
+| Foundatio_WithRetry_Async | 2_WithRetry_Async | 33.62 ns | 11.84x | 64 B |
+| Polly_WithRetry_Async | 2_WithRetry_Async | 137.44 ns | 48.41x | 64 B |
+| | | | | |
+| Direct_NoRetry_WithResult | 3_NoRetry_WithResult | 3.09 ns | 1.00 | - |
+| Foundatio_NoRetry_WithResult | 3_NoRetry_WithResult | 35.46 ns | 11.47x | 64 B |
+| Polly_NoRetry_WithResult | 3_NoRetry_WithResult | 32.79 ns | 10.61x | 64 B |
+| | | | | |
+| Direct_WithRetry_WithResult | 4_WithRetry_WithResult | 3.10 ns | 1.00 | - |
+| Foundatio_WithRetry_WithResult | 4_WithRetry_WithResult | 36.34 ns | 11.72x | 64 B |
+| Polly_WithRetry_WithResult | 4_WithRetry_WithResult | 104.98 ns | 33.87x | 64 B |
 
 ## Key Findings
 
-### Performance Comparison: Foundatio vs Polly
+### No Retry Configured (Base Framework Overhead)
 
-**For basic async operations (~466 ns baseline):**
+When no retry policy is configured, both libraries perform nearly identically:
 
-- **Foundatio ResiliencePolicy**: ~28.5% overhead (132-133 ns)
-- **Polly (no retries)**: ~30.5% overhead (142 ns) - **7% slower than Foundatio**
-- **Polly (with retries configured)**: ~134% overhead (624 ns) - **82% slower than Foundatio**
+| Scenario | Foundatio | Polly | Difference |
+|----------|-----------|-------|------------|
+| Async (void) | 33.6 ns | 32.6 ns | Polly ~3% faster |
+| With Result | 35.5 ns | 32.8 ns | Polly ~8% faster |
 
-**For compute-intensive operations (~691 ns baseline):**
+**Conclusion**: For pass-through scenarios with no retry logic, Polly's empty pipeline has a slight edge.
 
-- **Foundatio ResiliencePolicy**: ~18.3% overhead (126 ns)
-- **Polly**: ~15.1% overhead (104 ns) - **18% faster than Foundatio**
+### With Retry Configured (Real-World Scenario)
 
-**For sync-to-async wrapping (very fast operations):**
+When retry policies are configured (3 attempts, even though no retries occur), Foundatio is significantly faster:
 
-- **Foundatio**: ~39 ns overhead (consistent across configurations)
-- **Polly (no retries)**: ~39 ns overhead (equivalent to Foundatio)
-- **Polly (with retries configured)**: ~133 ns overhead - **241% slower than Foundatio**
+| Scenario | Foundatio | Polly | Foundatio Advantage |
+|----------|-----------|-------|---------------------|
+| Async (void) | 33.6 ns | 137.4 ns | **4.1x faster** |
+| With Result | 36.3 ns | 105.0 ns | **2.9x faster** |
 
-### Memory Allocation Comparison
+**Conclusion**: Foundatio maintains consistent ~34-36ns overhead regardless of configuration, while Polly's overhead increases 3-4x when retry strategies are added.
 
-- **Foundatio**: 3.8x more allocations for async operations (213 B → 810 B)
-- **Polly (no retries)**: 3.2x more allocations (213 B → 686 B) - **18% less memory than Foundatio**
-- **Polly (with retries)**: 6.6x more allocations (213 B → 1,403 B) - **73% more memory than Foundatio**
+### Memory Allocations
 
-### Configuration Impact
+Both libraries allocate **64 bytes** per operation when using resilience policies. The direct call allocates nothing.
 
-**Foundatio:**
+### Why Foundatio is Faster with Retry Configuration
 
-- **No significant difference** between minimal configuration (MaxAttempts=1) and standard configuration (MaxAttempts=3, Delay=100ms) when no retries are needed
-- Both configurations perform nearly identically for successful operations
+**Foundatio's architecture:**
+- Simple `do-while` loop with direct property checks
+- Null-conditional operators for optional features (`CircuitBreaker?.BeforeCall()`)
+- Direct field access with no indirection layers
+- When `Timeout <= 0`, no `CancellationTokenSource` allocations
+- On success path: calls action, checks circuit breaker (null), returns
 
-**Polly:**
+**Polly's architecture:**
+- Pipeline-based with strategy composition
+- Each strategy (retry, circuit breaker, timeout) is a separate component in a chain
+- `ResiliencePipeline.ExecuteAsync` iterates through the strategy stack
+- `RetryResilienceStrategy` has its own state machine for tracking attempts
+- Uses `ResilienceContext` pooling and complex continuation logic
 
-- **Significant performance impact** when retry policies are configured, even when not triggered
-- Standard configuration shows ~82% performance degradation compared to no-retry configuration
-- Memory allocations nearly double with retry configuration
+The flexibility of Polly's composable pipeline architecture comes at a performance cost when strategies are configured.
+
+## Benchmark Configuration
+
+### Foundatio Setup
+
+```csharp
+// No Retry: 1 attempt, no delay (measures base framework overhead)
+_foundatioNoRetry = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(1)
+    .WithDelay(TimeSpan.Zero)
+    .Build();
+
+// With Retry: 3 attempts total
+_foundatioWithRetry = new ResiliencePolicyBuilder()
+    .WithMaxAttempts(3)
+    .WithDelay(TimeSpan.Zero)
+    .Build();
+```
+
+### Polly Setup
+
+```csharp
+// No Retry: Empty pipeline (no retry strategy)
+_pollyNoRetry = new ResiliencePipelineBuilder()
+    .Build();
+
+// With Retry: 2 retries (3 total attempts)
+_pollyWithRetry = new ResiliencePipelineBuilder()
+    .AddRetry(new RetryStrategyOptions
+    {
+        MaxRetryAttempts = 2,
+        Delay = TimeSpan.Zero
+    })
+    .Build();
+```
+
+### Simulated Operations
+
+```csharp
+// Minimal work to measure framework overhead, not operation cost
+private ValueTask SimulateWorkAsync()
+{
+    Interlocked.Increment(ref _counter);
+    return ValueTask.CompletedTask;
+}
+
+private ValueTask<int> SimulateWorkWithResultAsync()
+{
+    return ValueTask.FromResult(Interlocked.Increment(ref _counter));
+}
+```
 
 ## Recommendations
 
 ### When to use Foundatio ResiliencePolicy
 
-1. **Consistent performance requirements**: When you need predictable overhead regardless of configuration complexity
-2. **Moderate retry scenarios**: For operations that occasionally need 2-3 retries with simple backoff
-3. **Memory-conscious applications**: When allocation overhead is acceptable for consistency
+1. **Production workloads with retry policies**: 3-4x faster than Polly when retries are configured
+2. **Consistent performance requirements**: Overhead is predictable (~34-36ns) regardless of configuration
+3. **High-frequency operations**: Lower overhead matters when called millions of times
 
 ### When to use Polly
 
-1. **High-performance, no-retry scenarios**: For simple circuit breaker patterns without retry logic
-2. **Compute-intensive operations**: When the base operation time is already significant (>500ns)
-3. **Complex resilience patterns**: When you need advanced features like bulkhead isolation, hedging, or complex retry strategies
-
-### General Guidelines
-
-1. **For high-frequency, fast operations**: Both libraries add significant relative overhead (~30-35%)
-2. **For compute-intensive operations**: Overhead becomes less significant relative to actual work
-3. **Configuration matters**: Polly shows significant performance degradation with complex policies, while Foundatio maintains consistent performance
+1. **Complex resilience patterns**: Bulkhead isolation, hedging, rate limiting, or advanced retry strategies
+2. **Pass-through scenarios**: Slightly faster when no retry logic is needed
+3. **Ecosystem integration**: Better tooling, documentation, and community support
 
 ## Test Environment
 
-- .NET 8.0.17 (8.0.1725.26602)
-- X64 RyuJIT AVX-512F+CD+BW+DQ+VL+VBMI
-- Windows 11 (10.0.26100.4484/24H2/2024Update/HudsonValley)
-- BenchmarkDotNet v0.15.2
+- .NET 10.0.2
+- AMD Ryzen 7 9800X3D, 1 CPU, 16 logical / 8 physical cores
+- Windows 11
+- BenchmarkDotNet v0.15.8

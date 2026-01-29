@@ -17,6 +17,9 @@
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
+  <Folder Name="/Benchmarks/">
+    <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+  </Folder>
   <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />

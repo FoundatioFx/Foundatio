@@ -1,4 +1,5 @@
 using BenchmarkDotNet.Running;
+using RhoMicro.BdnLogging;
 
 namespace Foundatio.Benchmarks;
 
@@ -12,6 +13,6 @@ public class Program
         //   dotnet run -c Release -- --filter *Caching*    # Run only caching benchmarks
         //   dotnet run -c Release -- --filter *Resilience* # Run only resilience benchmarks
         //   dotnet run -c Release -- --list tree           # List all benchmarks
-        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, SpotlightConfig.Instance);
     }
 }
