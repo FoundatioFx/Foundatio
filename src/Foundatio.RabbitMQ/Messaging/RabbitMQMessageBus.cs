@@ -195,6 +195,10 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private async Task OnMessageAsync(object sender, BasicDeliverEventArgs envelope)
     {
+        using var _ = _logger.BeginScope(s => s
+            .Property("MessageId", envelope.BasicProperties.MessageId)
+            .Property("DeliveryTag", envelope.DeliveryTag));
+
         _logger.LogTrace("OnMessageAsync({MessageId})", envelope.BasicProperties.MessageId);
 
         if (_subscribers.IsEmpty)
@@ -213,6 +217,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await _subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
+        }
+        catch (MessageBusException)
+        {
+            // SendMessageToSubscribersAsync already logged the error
+            if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                await HandleDeliveryLimitsAsync(envelope).AnyContext();
         }
         catch (Exception ex)
         {
@@ -355,7 +365,10 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     {
         using (await _lock.LockAsync().AnyContext())
         {
-            await _publisherChannel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken).AnyContext();
+            // Wrap only the transport call in resilience policy
+            await _resiliencePolicy.ExecuteAsync(async _ =>
+                await _publisherChannel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken),
+                cancellationToken).AnyContext();
         }
     }
 
@@ -489,7 +502,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             var mappedType = GetMappedMessageType(messageType);
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
 
-            await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
+            SendDelayedMessage(mappedType, message, options);
             return;
         }
 

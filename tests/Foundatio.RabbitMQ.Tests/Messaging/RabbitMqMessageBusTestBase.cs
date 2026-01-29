@@ -67,6 +67,24 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
     }
 
     [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
     public override Task CanSubscribeConcurrentlyAsync()
     {
         return base.CanSubscribeConcurrentlyAsync();
