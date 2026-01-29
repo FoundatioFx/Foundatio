@@ -6,13 +6,13 @@ This benchmark compares the performance overhead of Foundatio's `IResiliencePoli
 
 | Method | Category | Mean | Ratio | Allocated |
 |--------|----------|------|-------|-----------|
-| Direct_NoRetry_Async | 1_NoRetry_Async | 2.84 ns | 1.00 | - |
-| Foundatio_NoRetry_Async | 1_NoRetry_Async | 33.59 ns | 11.84x | 64 B |
-| Polly_NoRetry_Async | 1_NoRetry_Async | 32.57 ns | 11.48x | 64 B |
+| Direct_NoRetry | 1_NoRetry | 2.84 ns | 1.00 | - |
+| Foundatio_NoRetry | 1_NoRetry | 33.59 ns | 11.84x | 64 B |
+| Polly_NoRetry | 1_NoRetry | 32.57 ns | 11.48x | 64 B |
 | | | | | |
-| Direct_WithRetry_Async | 2_WithRetry_Async | 2.84 ns | 1.00 | - |
-| Foundatio_WithRetry_Async | 2_WithRetry_Async | 33.62 ns | 11.84x | 64 B |
-| Polly_WithRetry_Async | 2_WithRetry_Async | 137.44 ns | 48.41x | 64 B |
+| Direct_WithRetry | 2_WithRetry | 2.84 ns | 1.00 | - |
+| Foundatio_WithRetry | 2_WithRetry | 33.62 ns | 11.84x | 64 B |
+| Polly_WithRetry | 2_WithRetry | 137.44 ns | 48.41x | 64 B |
 | | | | | |
 | Direct_NoRetry_WithResult | 3_NoRetry_WithResult | 3.09 ns | 1.00 | - |
 | Foundatio_NoRetry_WithResult | 3_NoRetry_WithResult | 35.46 ns | 11.47x | 64 B |

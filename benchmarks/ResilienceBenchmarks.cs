@@ -82,53 +82,53 @@ public class ResilienceBenchmarks
     }
 
     // ============================================================
-    // SCENARIO 1: No Retries - Async Operation
+    // SCENARIO 1: No Retries
     // Measures pure framework overhead without retry configuration
     // ============================================================
 
-    [BenchmarkCategory("1_NoRetry_Async")]
+    [BenchmarkCategory("1_NoRetry")]
     [Benchmark(Baseline = true)]
-    public ValueTask Direct_NoRetry_Async()
+    public ValueTask Direct_NoRetry()
     {
         return SimulateWorkAsync();
     }
 
-    [BenchmarkCategory("1_NoRetry_Async")]
+    [BenchmarkCategory("1_NoRetry")]
     [Benchmark]
-    public ValueTask Foundatio_NoRetry_Async()
+    public ValueTask Foundatio_NoRetry()
     {
         return _foundatioNoRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
-    [BenchmarkCategory("1_NoRetry_Async")]
+    [BenchmarkCategory("1_NoRetry")]
     [Benchmark]
-    public ValueTask Polly_NoRetry_Async()
+    public ValueTask Polly_NoRetry()
     {
         return _pollyNoRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
     // ============================================================
-    // SCENARIO 2: With Retries - Async Operation
+    // SCENARIO 2: With Retries
     // Measures overhead when retry policy is configured (but not triggered)
     // ============================================================
 
-    [BenchmarkCategory("2_WithRetry_Async")]
+    [BenchmarkCategory("2_WithRetry")]
     [Benchmark(Baseline = true)]
-    public ValueTask Direct_WithRetry_Async()
+    public ValueTask Direct_WithRetry()
     {
         return SimulateWorkAsync();
     }
 
-    [BenchmarkCategory("2_WithRetry_Async")]
+    [BenchmarkCategory("2_WithRetry")]
     [Benchmark]
-    public ValueTask Foundatio_WithRetry_Async()
+    public ValueTask Foundatio_WithRetry()
     {
         return _foundatioWithRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
-    [BenchmarkCategory("2_WithRetry_Async")]
+    [BenchmarkCategory("2_WithRetry")]
     [Benchmark]
-    public ValueTask Polly_WithRetry_Async()
+    public ValueTask Polly_WithRetry()
     {
         return _pollyWithRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
