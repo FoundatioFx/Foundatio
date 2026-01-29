@@ -64,6 +64,24 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
     public override Task CanSubscribeConcurrentlyAsync()
     {
         return base.CanSubscribeConcurrentlyAsync();
@@ -148,7 +166,7 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
         await messageBus.PublishAsync(new SimpleMessageA
         {
             Data = "Hello"
-        });
+        }, cancellationToken: TestCancellationToken);
         Assert.Equal(1, messageBus.MessagesSent);
         Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
         Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());

@@ -153,8 +153,8 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             });
             _logger.LogInformation("Done enqueueing");
 
-            var cancellationTokenSource = new CancellationTokenSource();
-            await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), async (index, _) =>
+            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), TestCancellationToken, async (index, _) =>
             {
                 var queue = queues[index - 1];
                 var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null, null, Log);

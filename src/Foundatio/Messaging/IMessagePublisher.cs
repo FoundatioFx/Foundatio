@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,9 +11,9 @@ public interface IMessagePublisher
 
 public static class MessagePublisherExtensions
 {
-    public static Task PublishAsync<T>(this IMessagePublisher publisher, T message, MessageOptions options = null) where T : class
+    public static Task PublishAsync<T>(this IMessagePublisher publisher, T message, MessageOptions options = null, CancellationToken cancellationToken = default) where T : class
     {
-        return publisher.PublishAsync(typeof(T), message, options);
+        return publisher.PublishAsync(typeof(T), message, options, cancellationToken);
     }
 
     public static Task PublishAsync<T>(this IMessagePublisher publisher, T message, TimeSpan delay, CancellationToken cancellationToken = default) where T : class
