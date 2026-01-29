@@ -166,7 +166,7 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
         await messageBus.PublishAsync(new SimpleMessageA
         {
             Data = "Hello"
-        });
+        }, cancellationToken: TestCancellationToken);
         Assert.Equal(1, messageBus.MessagesSent);
         Assert.Equal(1, messageBus.GetMessagesSent<SimpleMessageA>());
         Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
