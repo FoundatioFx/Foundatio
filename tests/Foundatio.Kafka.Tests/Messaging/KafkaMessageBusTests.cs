@@ -45,6 +45,24 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     }
 
     [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
     public override Task WillReceiveDerivedMessageTypesAsync()
     {
         return base.WillReceiveDerivedMessageTypesAsync();
@@ -129,12 +147,12 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
             countdownEvent.Signal();
         }, cts.Token);
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" }, cancellationToken: TestCancellationToken);
         await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, countdownEvent.CurrentCount);
         await cts.CancelAsync();
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" }, cancellationToken: TestCancellationToken);
 
         cts = new CancellationTokenSource();
         countdownEvent.AddCount(1);
@@ -147,9 +165,9 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
         Assert.Equal(0, countdownEvent.CurrentCount);
         await cts.CancelAsync();
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" }, cancellationToken: TestCancellationToken);
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" }, cancellationToken: TestCancellationToken);
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" }, cancellationToken: TestCancellationToken);
 
         messageBus1.Dispose();
 
@@ -162,7 +180,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
             _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
             countdownEvent.Signal();
         }, cts.Token);
-        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
+        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" }, cancellationToken: TestCancellationToken);
         await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(0, countdownEvent.CurrentCount);
 

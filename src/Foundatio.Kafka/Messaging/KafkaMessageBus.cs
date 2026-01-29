@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -52,7 +52,8 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            return AddDelayedMessageAsync(GetMappedMessageType(messageType), message, options.DeliveryDelay.Value);
+            SendDelayedMessage(GetMappedMessageType(messageType), message, options);
+            return Task.CompletedTask;
         }
 
         var headers = new Headers {
@@ -79,7 +80,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         _producer.Produce(_options.Topic, publishMessage, deliveryReport =>
         {
             if (deliveryReport.Error.Code != ErrorCode.NoError)
-                _logger.LogWarning("Publish failure: {Reason}", deliveryReport.Error.Reason);
+                _logger.LogError("Publish failure: {Reason}", deliveryReport.Error.Reason);
             else
                 _logger.LogTrace("Published message to: {TopicPartitionOffset}", deliveryReport.TopicPartitionOffset);
         });
@@ -91,6 +92,10 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     {
         if (_subscribers.IsEmpty)
             return;
+
+        using var _ = _logger.BeginScope(s => s
+            .Property("TopicPartitionOffset", consumeResult.TopicPartitionOffset)
+            .Property("GroupId", _consumerConfig.GroupId));
 
         _logger.LogTrace("OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId})", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId);
 
@@ -110,6 +115,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
             if (!_subscribers.IsEmpty)
                 AcknowledgeMessage(consumer, consumeResult);
+        }
+        catch (MessageBusException)
+        {
+            // SendMessageToSubscribersAsync already logged the error
+            // Don't commit offset - message will be redelivered
         }
         catch (Exception ex)
         {
