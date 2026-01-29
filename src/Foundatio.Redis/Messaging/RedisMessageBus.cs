@@ -46,6 +46,9 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 
     private async Task OnMessage(ChannelMessage channelMessage)
     {
+        using var _ = _logger.BeginScope(s => s
+            .Property("Channel", channelMessage.Channel.ToString()));
+
         _logger.LogTrace("OnMessage({Channel})", channelMessage.Channel);
         if (_subscribers.IsEmpty || !channelMessage.Message.HasValue)
         {
@@ -70,11 +73,24 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
+            _logger.LogError(ex, "OnMessage({Channel}) Error deserializing message: {Message}", channelMessage.Channel, ex.Message);
             return;
         }
 
-        await SendMessageToSubscribersAsync(message).AnyContext();
+        try
+        {
+            await SendMessageToSubscribersAsync(message).AnyContext();
+        }
+        catch (MessageBusException)
+        {
+            // SendMessageToSubscribersAsync already logged the error
+            // Redis pub/sub has no acknowledgment mechanism - message is lost
+        }
+        catch (Exception ex)
+        {
+            // Catch any other unexpected exceptions for defensive purposes
+            _logger.LogError(ex, "OnMessage({Channel}) Error in subscriber: {Message}", channelMessage.Channel, ex.Message);
+        }
     }
 
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
@@ -83,7 +99,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            await AddDelayedMessageAsync(mappedType, message, options.DeliveryDelay.Value).AnyContext();
+            SendDelayedMessage(mappedType, message, options);
             return;
         }
 
@@ -99,7 +115,10 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         });
 
         // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
-        await _resiliencePolicy.ExecuteAsync(async _ => await _options.Subscriber.PublishAsync(RedisChannel.Literal(_options.Topic), data, CommandFlags.FireAndForget), cancellationToken).AnyContext();
+        // Wrap only the transport call in resilience policy
+        await _resiliencePolicy.ExecuteAsync(async _ =>
+            await _options.Subscriber.PublishAsync(RedisChannel.Literal(_options.Topic), data, CommandFlags.FireAndForget),
+            cancellationToken).AnyContext();
     }
 
     public override void Dispose()

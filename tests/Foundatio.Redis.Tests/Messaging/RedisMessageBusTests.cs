@@ -73,6 +73,24 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
     public override Task CanSubscribeConcurrentlyAsync()
     {
         return base.CanSubscribeConcurrentlyAsync();
@@ -182,14 +200,14 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
                         countdown.Signal();
                     }, TestCancellationToken);
 
-                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" });
+                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
                     await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(2)));
                     Assert.Equal(1, countdown.CurrentCount);
 
                     cache.Dispose();
                     queue.Dispose();
 
-                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" });
+                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
                     await countdown.WaitAsync(TimeSpan.FromSeconds(2));
                     Assert.Equal(0, countdown.CurrentCount);
                 }
