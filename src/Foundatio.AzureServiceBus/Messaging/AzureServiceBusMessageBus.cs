@@ -120,12 +120,15 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         }
     }
 
-    private Task OnMessageAsync(ProcessMessageEventArgs args)
+    private async Task OnMessageAsync(ProcessMessageEventArgs args)
     {
         if (_subscribers.IsEmpty)
-            return Task.CompletedTask;
+            return;
 
         var brokeredMessage = args.Message;
+        using var _ = _logger.BeginScope(s => s
+            .Property("MessageId", brokeredMessage.MessageId));
+
         _logger.LogTrace("OnMessageAsync({MessageId})", brokeredMessage.MessageId);
 
         var message = new Message(brokeredMessage.Body.ToArray(), DeserializeMessageBody)
@@ -145,7 +148,21 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             message.Properties[property.Key] = property.Value?.ToString();
         }
 
-        return SendMessageToSubscribersAsync(message);
+        try
+        {
+            await SendMessageToSubscribersAsync(message).AnyContext();
+        }
+        catch (MessageBusException)
+        {
+            // SendMessageToSubscribersAsync already logged the error
+            // Azure Service Bus SDK will handle retry/dead-letter based on MaxDeliveryCount
+        }
+        catch (Exception ex)
+        {
+            // Catch any other unexpected exceptions for defensive purposes
+            // Azure Service Bus SDK will handle retry/dead-letter based on MaxDeliveryCount
+            _logger.LogError(ex, "OnMessageAsync({MessageId}) Error in subscriber: {Message}", brokeredMessage.MessageId, ex.Message);
+        }
     }
 
     private Task OnErrorAsync(ProcessErrorEventArgs args)
@@ -198,7 +215,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         }
     }
 
-    protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+    protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
         var serviceBusMessage = new ServiceBusMessage(_serializer.SerializeToBytes(message))
         {
@@ -225,7 +242,10 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             _logger.LogTrace("Message Publish: {MessageType}", messageType);
         }
 
-        return _topicSender.SendMessageAsync(serviceBusMessage, cancellationToken);
+        // Wrap only the transport call in resilience policy
+        await _resiliencePolicy.ExecuteAsync(async _ =>
+            await _topicSender.SendMessageAsync(serviceBusMessage, cancellationToken),
+            cancellationToken).AnyContext();
     }
 
     private CreateTopicOptions CreateTopicOptions()
