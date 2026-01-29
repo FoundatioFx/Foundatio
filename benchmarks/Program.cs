@@ -11,6 +11,7 @@ public class Program
         //   dotnet run -c Release                          # Interactive selection
         //   dotnet run -c Release -- --filter *Caching*    # Run only caching benchmarks
         //   dotnet run -c Release -- --filter *Resilience* # Run only resilience benchmarks
+        //   dotnet run -c Release -- --filter *DeepClone*  # Run only deep clone benchmarks
         //   dotnet run -c Release -- --list tree           # List all benchmarks
         BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args);
     }
