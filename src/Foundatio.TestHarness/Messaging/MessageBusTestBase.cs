@@ -761,6 +761,24 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        var messageBus = GetMessageBus();
+        if (messageBus == null)
+            return;
+
+        try
+        {
+            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
     public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
     {
         // Arrange
@@ -799,7 +817,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
         var messageBus = GetMessageBus();
         if (messageBus == null)
@@ -807,12 +825,9 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
         try
         {
-            using var cts = new CancellationTokenSource();
-            cts.Cancel();
-
-            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            // Act & Assert - cancelled token should throw OperationCanceledException
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: cts.Token));
+                await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
         }
         finally
         {

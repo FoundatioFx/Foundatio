@@ -60,6 +60,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     {
         ArgumentNullException.ThrowIfNull(messageType);
         ArgumentNullException.ThrowIfNull(message);
+        cancellationToken.ThrowIfCancellationRequested();
 
         options ??= new MessageOptions();
 
@@ -176,6 +177,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
 
         await SubscribeImplAsync(handler, cancellationToken).AnyContext();
@@ -348,6 +350,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     /// This method calls <see cref="PublishAsync"/> (not <see cref="PublishImplAsync"/>) to ensure
     /// topic infrastructure is re-established if needed (e.g., after reconnection for external providers).
     /// The <see cref="MessageOptions.DeliveryDelay"/> is cleared via record copy to prevent infinite recursion.
+    /// The Properties dictionary is cloned to avoid shared mutable state between the caller and delayed delivery.
     /// </remarks>
     protected void SendDelayedMessage(Type messageType, object message, MessageOptions options)
     {
@@ -357,6 +360,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         var delay = options.DeliveryDelay.GetValueOrDefault();
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(delay, TimeSpan.Zero);
+
+        // Clone options to capture current state and avoid shared mutable state
+        var clonedOptions = options with
+        {
+            DeliveryDelay = null, // Clear to prevent infinite recursion
+            Properties = new Dictionary<string, string>(options.Properties)
+        };
 
         var sendTime = _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(delay);
         Task.Factory.StartNew(async () =>
@@ -374,8 +384,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             {
                 await _resiliencePolicy.ExecuteAsync(async ct =>
                 {
-                    // Clear DeliveryDelay to prevent infinite recursion
-                    await PublishAsync(messageType, message, options with { DeliveryDelay = null }, ct).AnyContext();
+                    await PublishAsync(messageType, message, clonedOptions, ct).AnyContext();
                 }, _disposedCancellationTokenSource.Token).AnyContext();
             }
             catch (Exception ex)
