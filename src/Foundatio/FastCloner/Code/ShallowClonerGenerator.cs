@@ -1,10 +1,18 @@
-﻿using System;
-
-namespace Foundatio.Force.DeepCloner.Helpers;
+#nullable enable
+using System;
+using System.Collections.Generic;
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Linq.Expressions;
+using System.Net.Http;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Threading;
+namespace Foundatio.FastCloner.Code;
 
 internal static class ShallowClonerGenerator
 {
-    public static T CloneObject<T>(T obj)
+    public static T? CloneObject<T>(T obj)
     {
         // this is faster than typeof(T).IsValueType
         if (obj is ValueType)
@@ -18,9 +26,9 @@ internal static class ShallowClonerGenerator
         }
 
         if (ReferenceEquals(obj, null))
-            return (T)(object)null;
+            return (T?)(object?)null;
 
-        if (DeepClonerSafeTypes.CanReturnSameObject(obj.GetType()))
+        if (FastClonerSafeTypes.CanReturnSameObject(obj.GetType()))
             return obj;
 
         return (T)ShallowObjectCloner.CloneObject(obj);
