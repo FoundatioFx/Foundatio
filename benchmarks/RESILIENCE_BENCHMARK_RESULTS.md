@@ -4,62 +4,96 @@ This benchmark compares the performance overhead of Foundatio's `IResiliencePoli
 
 ## Results Summary
 
-| Method | Category | Mean | Ratio | Allocated |
-|--------|----------|------|-------|-----------|
-| Direct_NoRetry | 1_NoRetry | 2.84 ns | 1.00 | - |
-| Foundatio_NoRetry | 1_NoRetry | 33.59 ns | 11.84x | 64 B |
-| Polly_NoRetry | 1_NoRetry | 32.57 ns | 11.48x | 64 B |
-| | | | | |
-| Direct_WithRetry | 2_WithRetry | 2.84 ns | 1.00 | - |
-| Foundatio_WithRetry | 2_WithRetry | 33.62 ns | 11.84x | 64 B |
-| Polly_WithRetry | 2_WithRetry | 137.44 ns | 48.41x | 64 B |
-| | | | | |
-| Direct_NoRetry_WithResult | 3_NoRetry_WithResult | 3.09 ns | 1.00 | - |
-| Foundatio_NoRetry_WithResult | 3_NoRetry_WithResult | 35.46 ns | 11.47x | 64 B |
-| Polly_NoRetry_WithResult | 3_NoRetry_WithResult | 32.79 ns | 10.61x | 64 B |
-| | | | | |
-| Direct_WithRetry_WithResult | 4_WithRetry_WithResult | 3.10 ns | 1.00 | - |
-| Foundatio_WithRetry_WithResult | 4_WithRetry_WithResult | 36.34 ns | 11.72x | 64 B |
-| Polly_WithRetry_WithResult | 4_WithRetry_WithResult | 104.98 ns | 33.87x | 64 B |
+### Synchronous Execution
+
+| Method                     | Category           | Mean      | Allocated |
+| -------------------------- | ------------------ | --------- | --------- |
+| Direct_Sync_NoRetry        | 1_Sync_NoRetry     | 0.28 ns   | -         |
+| Foundatio_Sync_NoRetry     | 1_Sync_NoRetry     | 23.29 ns  | -         |
+| Polly_Sync_NoRetry         | 1_Sync_NoRetry     | 19.92 ns  | -         |
+|                            |                    |           |           |
+| Direct_Sync_WithRetry      | 2_Sync_WithRetry   | 0.18 ns   | -         |
+| Foundatio_Sync_WithRetry   | 2_Sync_WithRetry   | 23.01 ns  | -         |
+| Polly_Sync_WithRetry       | 2_Sync_WithRetry   | 121.87 ns | -         |
+|                            |                    |           |           |
+| Direct_Sync_WithResult     | 3_Sync_WithResult  | 0.26 ns   | -         |
+| Foundatio_Sync_WithResult  | 3_Sync_WithResult  | 25.11 ns  | -         |
+| Polly_Sync_WithResult      | 3_Sync_WithResult  | 126.83 ns | 24 B      |
+
+### Asynchronous Execution
+
+| Method                     | Category           | Mean      | Allocated |
+| -------------------------- | ------------------ | --------- | --------- |
+| Direct_Async_NoRetry       | 4_Async_NoRetry    | 2.80 ns   | -         |
+| Foundatio_Async_NoRetry    | 4_Async_NoRetry    | 36.39 ns  | 64 B      |
+| Polly_Async_NoRetry        | 4_Async_NoRetry    | 36.61 ns  | 64 B      |
+|                            |                    |           |           |
+| Direct_Async_WithRetry     | 5_Async_WithRetry  | 2.83 ns   | -         |
+| Foundatio_Async_WithRetry  | 5_Async_WithRetry  | 36.86 ns  | 64 B      |
+| Polly_Async_WithRetry      | 5_Async_WithRetry  | 141.24 ns | 64 B      |
+|                            |                    |           |           |
+| Direct_Async_WithResult    | 6_Async_WithResult | 3.11 ns   | -         |
+| Foundatio_Async_WithResult | 6_Async_WithResult | 38.65 ns  | 64 B      |
+| Polly_Async_WithResult     | 6_Async_WithResult | 115.35 ns | 64 B      |
+
+### Zero-Allocation Patterns
+
+| Method                     | Category           | Mean      | Allocated |
+| -------------------------- | ------------------ | --------- | --------- |
+| Direct_ZeroAlloc_Static    | 7_ZeroAlloc_Static | 1.16 ns   | -         |
+| Foundatio_ZeroAlloc_Static | 7_ZeroAlloc_Static | 29.21 ns  | -         |
+| Polly_ZeroAlloc_Static     | 7_ZeroAlloc_Static | 133.70 ns | -         |
+|                            |                    |           |           |
+| Direct_ZeroAlloc_State     | 8_ZeroAlloc_State  | 1.04 ns   | -         |
+| Foundatio_ZeroAlloc_State  | 8_ZeroAlloc_State  | 30.71 ns  | -         |
+| Polly_ZeroAlloc_State      | 8_ZeroAlloc_State  | 130.71 ns | 88 B      |
 
 ## Key Findings
 
-### No Retry Configured (Base Framework Overhead)
+### Sync Performance
 
-When no retry policy is configured, both libraries perform nearly identically:
+| Scenario        | Foundatio | Polly     | Foundatio Advantage   |
+| --------------- | --------- | --------- | --------------------- |
+| No retry        | 23.3 ns   | 19.9 ns   | Polly ~17% faster     |
+| With retry      | 23.0 ns   | 121.9 ns  | **5.3x faster**       |
+| With result     | 25.1 ns   | 126.8 ns  | **5.1x faster**       |
 
-| Scenario | Foundatio | Polly | Difference |
-|----------|-----------|-------|------------|
-| Async (void) | 33.6 ns | 32.6 ns | Polly ~3% faster |
-| With Result | 35.5 ns | 32.8 ns | Polly ~8% faster |
+Sync execution in Foundatio allocates **0 bytes** across all scenarios. Polly allocates 24 bytes when returning results.
 
-**Conclusion**: For pass-through scenarios with no retry logic, Polly's empty pipeline has a slight edge.
+### Async Performance
 
-### With Retry Configured (Real-World Scenario)
+| Scenario        | Foundatio | Polly     | Foundatio Advantage   |
+| --------------- | --------- | --------- | --------------------- |
+| No retry        | 36.4 ns   | 36.6 ns   | ~equal                |
+| With retry      | 36.9 ns   | 141.2 ns  | **3.8x faster**       |
+| With result     | 38.7 ns   | 115.3 ns  | **3.0x faster**       |
 
-When retry policies are configured (3 attempts, even though no retries occur), Foundatio is significantly faster:
+Both libraries allocate 64 bytes for async execution (async state machine overhead).
 
-| Scenario | Foundatio | Polly | Foundatio Advantage |
-|----------|-----------|-------|---------------------|
-| Async (void) | 33.6 ns | 137.4 ns | **4.1x faster** |
-| With Result | 36.3 ns | 105.0 ns | **2.9x faster** |
+### Zero-Allocation Performance
 
-**Conclusion**: Foundatio maintains consistent ~34-36ns overhead regardless of configuration, while Polly's overhead increases 3-4x when retry strategies are added.
+For performance-critical paths, Foundatio's state-based overloads achieve **zero heap allocations**:
 
-### Memory Allocations
+| Pattern              | Foundatio        | Polly           | Foundatio Advantage               |
+| -------------------- | ---------------- | --------------- | --------------------------------- |
+| Static lambda        | 29.2 ns, **0 B** | 133.7 ns, 0 B   | **4.6x faster**                   |
+| State-based          | 30.7 ns, **0 B** | 130.7 ns, 88 B  | **4.3x faster, zero allocations** |
 
-Both libraries allocate **64 bytes** per operation when using resilience policies. The direct call allocates nothing.
+Polly still allocates 88 bytes even with the state-based pattern, while Foundatio achieves true zero-allocation execution.
 
-### Why Foundatio is Faster with Retry Configuration
+## Why Foundatio is Faster
 
 **Foundatio's architecture:**
+
 - Simple `do-while` loop with direct property checks
 - Null-conditional operators for optional features (`CircuitBreaker?.BeforeCall()`)
 - Direct field access with no indirection layers
 - When `Timeout <= 0`, no `CancellationTokenSource` allocations
-- On success path: calls action, checks circuit breaker (null), returns
+- Dedicated sync `Execute` methods (no async overhead)
+- State-based overloads avoid closure allocations entirely
 
 **Polly's architecture:**
+
 - Pipeline-based with strategy composition
 - Each strategy (retry, circuit breaker, timeout) is a separate component in a chain
 - `ResiliencePipeline.ExecuteAsync` iterates through the strategy stack
@@ -73,7 +107,7 @@ The flexibility of Polly's composable pipeline architecture comes at a performan
 ### Foundatio Setup
 
 ```csharp
-// No Retry: 1 attempt, no delay (measures base framework overhead)
+// No Retry: 1 attempt, no delay
 _foundatioNoRetry = new ResiliencePolicyBuilder()
     .WithMaxAttempts(1)
     .WithDelay(TimeSpan.Zero)
@@ -89,9 +123,8 @@ _foundatioWithRetry = new ResiliencePolicyBuilder()
 ### Polly Setup
 
 ```csharp
-// No Retry: Empty pipeline (no retry strategy)
-_pollyNoRetry = new ResiliencePipelineBuilder()
-    .Build();
+// No Retry: Empty pipeline
+_pollyNoRetry = new ResiliencePipelineBuilder().Build();
 
 // With Retry: 2 retries (3 total attempts)
 _pollyWithRetry = new ResiliencePipelineBuilder()
@@ -103,29 +136,30 @@ _pollyWithRetry = new ResiliencePipelineBuilder()
     .Build();
 ```
 
-### Simulated Operations
+### Zero-Allocation Examples
 
 ```csharp
-// Minimal work to measure framework overhead, not operation cost
-private ValueTask SimulateWorkAsync()
+// Foundatio state-based (0 B allocations)
+_foundatioWithRetry.ExecuteAsync(this, static (state, ct) =>
 {
-    Interlocked.Increment(ref _counter);
-    return ValueTask.CompletedTask;
-}
+    return state.SimulateWorkAsync();
+});
 
-private ValueTask<int> SimulateWorkWithResultAsync()
-{
-    return ValueTask.FromResult(Interlocked.Increment(ref _counter));
-}
+// Polly state-based (88 B allocations)
+_pollyWithRetry.ExecuteAsync(
+    static (state, ct) => state.SimulateWorkAsync(),
+    this);
 ```
 
 ## Recommendations
 
 ### When to use Foundatio ResiliencePolicy
 
-1. **Production workloads with retry policies**: 3-4x faster than Polly when retries are configured
-2. **Consistent performance requirements**: Overhead is predictable (~34-36ns) regardless of configuration
-3. **High-frequency operations**: Lower overhead matters when called millions of times
+1. **Production workloads with retry policies**: 3-5x faster than Polly when retries are configured
+2. **Zero-allocation requirements**: State-based overloads achieve true zero-allocation execution
+3. **Sync execution**: Native sync methods without async overhead
+4. **Consistent performance**: Overhead is predictable (~23-39ns) regardless of configuration
+5. **High-frequency operations**: Lower overhead matters when called millions of times
 
 ### When to use Polly
 

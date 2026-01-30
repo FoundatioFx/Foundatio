@@ -70,6 +70,28 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     private class PollyResiliencePolicy(ResiliencePipeline pipeline) : IResiliencePolicy
     {
+        // Synchronous methods
+        public void Execute(Action<CancellationToken> action, CancellationToken cancellationToken = default)
+        {
+            pipeline.Execute(action, cancellationToken);
+        }
+
+        public TResult Execute<TResult>(Func<CancellationToken, TResult> action, CancellationToken cancellationToken = default)
+        {
+            return pipeline.Execute(action, cancellationToken);
+        }
+
+        public void Execute<TState>(TState state, Action<TState, CancellationToken> action, CancellationToken cancellationToken = default)
+        {
+            pipeline.Execute(ct => action(state, ct), cancellationToken);
+        }
+
+        public TResult Execute<TState, TResult>(TState state, Func<TState, CancellationToken, TResult> action, CancellationToken cancellationToken = default)
+        {
+            return pipeline.Execute(ct => action(state, ct), cancellationToken);
+        }
+
+        // Asynchronous methods
         public ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
         {
             return pipeline.ExecuteAsync(action, cancellationToken);
@@ -78,6 +100,16 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         public ValueTask<T> ExecuteAsync<T>(Func<CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
         {
             return pipeline.ExecuteAsync(action, cancellationToken);
+        }
+
+        public ValueTask ExecuteAsync<TState>(TState state, Func<TState, CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
+        {
+            return pipeline.ExecuteAsync(ct => action(state, ct), cancellationToken);
+        }
+
+        public ValueTask<TResult> ExecuteAsync<TState, TResult>(TState state, Func<TState, CancellationToken, ValueTask<TResult>> action, CancellationToken cancellationToken = default)
+        {
+            return pipeline.ExecuteAsync(ct => action(state, ct), cancellationToken);
         }
     }
 }

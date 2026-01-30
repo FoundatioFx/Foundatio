@@ -7,10 +7,19 @@ Resilience policies provide a powerful way to handle transient failures and make
 ```csharp
 public interface IResiliencePolicy
 {
-    Task ExecuteAsync(Func<CancellationToken, Task> action,
-                      CancellationToken cancellationToken = default);
-    Task<T> ExecuteAsync<T>(Func<CancellationToken, Task<T>> action,
-                            CancellationToken cancellationToken = default);
+    // Synchronous methods
+    void Execute(Action<CancellationToken> action, CancellationToken cancellationToken = default);
+    TResult Execute<TResult>(Func<CancellationToken, TResult> action, CancellationToken cancellationToken = default);
+
+    // Asynchronous methods
+    ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default);
+    ValueTask<TResult> ExecuteAsync<TResult>(Func<CancellationToken, ValueTask<TResult>> action, CancellationToken cancellationToken = default);
+
+    // State-based overloads (zero allocations)
+    void Execute<TState>(TState state, Action<TState, CancellationToken> action, CancellationToken cancellationToken = default);
+    TResult Execute<TState, TResult>(TState state, Func<TState, CancellationToken, TResult> action, CancellationToken cancellationToken = default);
+    ValueTask ExecuteAsync<TState>(TState state, Func<TState, CancellationToken, ValueTask> action, CancellationToken cancellationToken = default);
+    ValueTask<TResult> ExecuteAsync<TState, TResult>(TState state, Func<TState, CancellationToken, ValueTask<TResult>> action, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -28,7 +37,7 @@ var policy = new ResiliencePolicyBuilder()
     .Build();
 ```
 
-### Executing with Retry
+### Executing with Retry (Async)
 
 ```csharp
 await policy.ExecuteAsync(async ct =>
@@ -37,12 +46,47 @@ await policy.ExecuteAsync(async ct =>
 });
 ```
 
+### Executing with Retry (Sync)
+
+```csharp
+policy.Execute(ct =>
+{
+    SomeUnreliableOperation();
+});
+```
+
 ### With Return Values
 
 ```csharp
+// Async
 var result = await policy.ExecuteAsync(async ct =>
 {
     return await GetDataFromApiAsync(ct);
+});
+
+// Sync
+var result = policy.Execute(ct =>
+{
+    return GetDataFromDatabase();
+});
+```
+
+### Zero-Allocation Execution (State-Based)
+
+For performance-critical paths, use state-based overloads to avoid closure allocations:
+
+```csharp
+// Pass state explicitly instead of capturing in a closure
+var userId = 42;
+var result = await policy.ExecuteAsync(userId, async (id, ct) =>
+{
+    return await GetUserAsync(id, ct);
+});
+
+// Sync version
+policy.Execute(userId, (id, ct) =>
+{
+    ProcessUser(id);
 });
 ```
 
@@ -547,6 +591,48 @@ var policy = new ResiliencePolicy
 };
 // Automatically logs each retry attempt
 ```
+
+## Performance
+
+Foundatio's resilience implementation is optimized for high performance with minimal allocations.
+
+### Allocation-Free Execution
+
+Use the state-based overloads to achieve zero heap allocations in hot paths:
+
+```csharp
+// Instead of capturing variables in a closure (allocates):
+var userId = GetUserId();
+await policy.ExecuteAsync(async ct => await GetUserAsync(userId, ct));
+
+// Pass state explicitly (zero allocations):
+var userId = GetUserId();
+await policy.ExecuteAsync(userId, async (id, ct) => await GetUserAsync(id, ct));
+```
+
+### Sync vs Async
+
+Choose the appropriate execution method:
+
+```csharp
+// Use sync for CPU-bound or already-completed operations
+var cachedValue = policy.Execute(_ => cache.Get(key));
+
+// Use async for I/O-bound operations
+var apiResult = await policy.ExecuteAsync(async ct => await api.CallAsync(ct));
+```
+
+### Benchmark Results
+
+Foundatio consistently outperforms alternatives when retry policies are configured:
+
+| Scenario                  | Foundatio      | Polly          | Foundatio Advantage                  |
+| ------------------------- | -------------- | -------------- | ------------------------------------ |
+| Sync with retries         | ~23 ns         | ~122 ns        | **5.3x faster**                      |
+| Async with retries        | ~37 ns         | ~141 ns        | **3.8x faster**                      |
+| State-based (zero-alloc)  | ~31 ns, 0 B    | ~131 ns, 88 B  | **4.2x faster, zero allocations**    |
+
+Benchmarks run on AMD Ryzen 7 9800X3D, .NET 10.0
 
 ## Next Steps
 

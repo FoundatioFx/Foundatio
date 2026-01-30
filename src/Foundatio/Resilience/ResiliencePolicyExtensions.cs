@@ -158,37 +158,4 @@ public static class ResiliencePolicyExtensions
         fallbackBuilder?.Invoke(new ResiliencePolicyBuilder(policy));
         return policy;
     }
-
-    /// <summary>
-    /// Executes the specified asynchronous action using the given resilience policy.
-    /// </summary>
-    /// <param name="policy">The resilience policy to use for execution.</param>
-    /// <param name="action">The asynchronous action to execute.</param>
-    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
-    public static ValueTask ExecuteAsync(this IResiliencePolicy policy, Func<ValueTask> action, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        ArgumentNullException.ThrowIfNull(action);
-
-        return policy.ExecuteAsync(_ => action(), cancellationToken);
-    }
-
-    /// <summary>
-    /// Executes the specified asynchronous action using the given resilience policy and returns a result.
-    /// </summary>
-    /// <typeparam name="T">The type of the result returned by the action.</typeparam>
-    /// <param name="policy">The resilience policy to use for execution.</param>
-    /// <param name="action">The asynchronous action to execute.</param>
-    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-    /// <returns>A <see cref="ValueTask{T}"/> representing the asynchronous operation and its result.</returns>
-    public static ValueTask<T> ExecuteAsync<T>(this IResiliencePolicy policy, Func<ValueTask<T>> action, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(policy);
-
-        ArgumentNullException.ThrowIfNull(action);
-
-        return policy.ExecuteAsync(_ => action(), cancellationToken);
-    }
 }

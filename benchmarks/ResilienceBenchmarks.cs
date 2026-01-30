@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using BenchmarkDotNet.Attributes;
@@ -82,113 +83,243 @@ public class ResilienceBenchmarks
     }
 
     // ============================================================
-    // SCENARIO 1: No Retries
+    // SCENARIO 1: Sync - No Retries
+    // Measures pure framework overhead for synchronous execution
+    // ============================================================
+
+    [BenchmarkCategory("1_Sync_NoRetry")]
+    [Benchmark(Baseline = true)]
+    public void Direct_Sync_NoRetry()
+    {
+        StaticSimulateWork();
+    }
+
+    [BenchmarkCategory("1_Sync_NoRetry")]
+    [Benchmark]
+    public void Foundatio_Sync_NoRetry()
+    {
+        _foundatioNoRetry.Execute(static _ => StaticSimulateWork(), CancellationToken.None);
+    }
+
+    [BenchmarkCategory("1_Sync_NoRetry")]
+    [Benchmark]
+    public void Polly_Sync_NoRetry()
+    {
+        _pollyNoRetry.Execute(static _ => StaticSimulateWork(), CancellationToken.None);
+    }
+
+    // ============================================================
+    // SCENARIO 2: Sync - With Retries
+    // Measures overhead when retry policy is configured (sync)
+    // ============================================================
+
+    [BenchmarkCategory("2_Sync_WithRetry")]
+    [Benchmark(Baseline = true)]
+    public void Direct_Sync_WithRetry()
+    {
+        StaticSimulateWork();
+    }
+
+    [BenchmarkCategory("2_Sync_WithRetry")]
+    [Benchmark]
+    public void Foundatio_Sync_WithRetry()
+    {
+        _foundatioWithRetry.Execute(static _ => StaticSimulateWork(), CancellationToken.None);
+    }
+
+    [BenchmarkCategory("2_Sync_WithRetry")]
+    [Benchmark]
+    public void Polly_Sync_WithRetry()
+    {
+        _pollyWithRetry.Execute(static _ => StaticSimulateWork(), CancellationToken.None);
+    }
+
+    // ============================================================
+    // SCENARIO 3: Sync - With Result
+    // Measures overhead for sync operations returning a result
+    // ============================================================
+
+    [BenchmarkCategory("3_Sync_WithResult")]
+    [Benchmark(Baseline = true)]
+    public int Direct_Sync_WithResult()
+    {
+        return StaticSimulateWorkWithResult();
+    }
+
+    [BenchmarkCategory("3_Sync_WithResult")]
+    [Benchmark]
+    public int Foundatio_Sync_WithResult()
+    {
+        return _foundatioWithRetry.Execute(static _ => StaticSimulateWorkWithResult(), CancellationToken.None);
+    }
+
+    [BenchmarkCategory("3_Sync_WithResult")]
+    [Benchmark]
+    public int Polly_Sync_WithResult()
+    {
+        return _pollyWithRetry.Execute(static _ => StaticSimulateWorkWithResult(), CancellationToken.None);
+    }
+
+    // ============================================================
+    // SCENARIO 4: Async - No Retries
     // Measures pure framework overhead without retry configuration
     // ============================================================
 
-    [BenchmarkCategory("1_NoRetry")]
+    [BenchmarkCategory("4_Async_NoRetry")]
     [Benchmark(Baseline = true)]
-    public ValueTask Direct_NoRetry()
+    public ValueTask Direct_Async_NoRetry()
     {
         return SimulateWorkAsync();
     }
 
-    [BenchmarkCategory("1_NoRetry")]
+    [BenchmarkCategory("4_Async_NoRetry")]
     [Benchmark]
-    public ValueTask Foundatio_NoRetry()
+    public ValueTask Foundatio_Async_NoRetry()
     {
         return _foundatioNoRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
-    [BenchmarkCategory("1_NoRetry")]
+    [BenchmarkCategory("4_Async_NoRetry")]
     [Benchmark]
-    public ValueTask Polly_NoRetry()
+    public ValueTask Polly_Async_NoRetry()
     {
         return _pollyNoRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
     // ============================================================
-    // SCENARIO 2: With Retries
+    // SCENARIO 5: Async - With Retries
     // Measures overhead when retry policy is configured (but not triggered)
     // ============================================================
 
-    [BenchmarkCategory("2_WithRetry")]
+    [BenchmarkCategory("5_Async_WithRetry")]
     [Benchmark(Baseline = true)]
-    public ValueTask Direct_WithRetry()
+    public ValueTask Direct_Async_WithRetry()
     {
         return SimulateWorkAsync();
     }
 
-    [BenchmarkCategory("2_WithRetry")]
+    [BenchmarkCategory("5_Async_WithRetry")]
     [Benchmark]
-    public ValueTask Foundatio_WithRetry()
+    public ValueTask Foundatio_Async_WithRetry()
     {
         return _foundatioWithRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
-    [BenchmarkCategory("2_WithRetry")]
+    [BenchmarkCategory("5_Async_WithRetry")]
     [Benchmark]
-    public ValueTask Polly_WithRetry()
+    public ValueTask Polly_Async_WithRetry()
     {
         return _pollyWithRetry.ExecuteAsync(_ => SimulateWorkAsync(), CancellationToken.None);
     }
 
     // ============================================================
-    // SCENARIO 3: No Retries - Operation Returns Result
+    // SCENARIO 6: Async - With Result
     // Measures framework overhead when returning values
     // ============================================================
 
-    [BenchmarkCategory("3_NoRetry_WithResult")]
+    [BenchmarkCategory("6_Async_WithResult")]
     [Benchmark(Baseline = true)]
-    public ValueTask<int> Direct_NoRetry_WithResult()
+    public ValueTask<int> Direct_Async_WithResult()
     {
         return SimulateWorkWithResultAsync();
     }
 
-    [BenchmarkCategory("3_NoRetry_WithResult")]
+    [BenchmarkCategory("6_Async_WithResult")]
     [Benchmark]
-    public ValueTask<int> Foundatio_NoRetry_WithResult()
-    {
-        return _foundatioNoRetry.ExecuteAsync(_ => SimulateWorkWithResultAsync(), CancellationToken.None);
-    }
-
-    [BenchmarkCategory("3_NoRetry_WithResult")]
-    [Benchmark]
-    public ValueTask<int> Polly_NoRetry_WithResult()
-    {
-        return _pollyNoRetryWithResult.ExecuteAsync(_ => SimulateWorkWithResultAsync(), CancellationToken.None);
-    }
-
-    // ============================================================
-    // SCENARIO 4: With Retries - Operation Returns Result
-    // Measures overhead with retry policy configured and returning values
-    // ============================================================
-
-    [BenchmarkCategory("4_WithRetry_WithResult")]
-    [Benchmark(Baseline = true)]
-    public ValueTask<int> Direct_WithRetry_WithResult()
-    {
-        return SimulateWorkWithResultAsync();
-    }
-
-    [BenchmarkCategory("4_WithRetry_WithResult")]
-    [Benchmark]
-    public ValueTask<int> Foundatio_WithRetry_WithResult()
+    public ValueTask<int> Foundatio_Async_WithResult()
     {
         return _foundatioWithRetry.ExecuteAsync(_ => SimulateWorkWithResultAsync(), CancellationToken.None);
     }
 
-    [BenchmarkCategory("4_WithRetry_WithResult")]
+    [BenchmarkCategory("6_Async_WithResult")]
     [Benchmark]
-    public ValueTask<int> Polly_WithRetry_WithResult()
+    public ValueTask<int> Polly_Async_WithResult()
     {
         return _pollyWithRetryWithResult.ExecuteAsync(_ => SimulateWorkWithResultAsync(), CancellationToken.None);
+    }
+
+    // ============================================================
+    // SCENARIO 7: Zero Allocation - Static Lambda (Async)
+    // Tests if static lambdas eliminate delegate allocations
+    // ============================================================
+
+    [BenchmarkCategory("7_ZeroAlloc_Static")]
+    [Benchmark(Baseline = true)]
+    public ValueTask Direct_ZeroAlloc_Static()
+    {
+        return StaticSimulateWorkAsync();
+    }
+
+    [BenchmarkCategory("7_ZeroAlloc_Static")]
+    [Benchmark]
+    public ValueTask Foundatio_ZeroAlloc_Static()
+    {
+        return _foundatioWithRetry.ExecuteAsync(static _ => StaticSimulateWorkAsync(), CancellationToken.None);
+    }
+
+    [BenchmarkCategory("7_ZeroAlloc_Static")]
+    [Benchmark]
+    public ValueTask Polly_ZeroAlloc_Static()
+    {
+        return _pollyWithRetry.ExecuteAsync(static _ => StaticSimulateWorkAsync(), CancellationToken.None);
+    }
+
+    // ============================================================
+    // SCENARIO 8: Zero Allocation - State-Based API (Async)
+    // Tests state-based overloads for zero allocation with instance data
+    // ============================================================
+
+    [BenchmarkCategory("8_ZeroAlloc_State")]
+    [Benchmark(Baseline = true)]
+    public ValueTask Direct_ZeroAlloc_State()
+    {
+        return StaticSimulateWorkWithStateAsync(_counter);
+    }
+
+    [BenchmarkCategory("8_ZeroAlloc_State")]
+    [Benchmark]
+    public ValueTask Foundatio_ZeroAlloc_State()
+    {
+        return _foundatioWithRetry.ExecuteAsync(_counter, static (state, _) => StaticSimulateWorkWithStateAsync(state), CancellationToken.None);
+    }
+
+    [BenchmarkCategory("8_ZeroAlloc_State")]
+    [Benchmark]
+    public ValueTask Polly_ZeroAlloc_State()
+    {
+        // Polly doesn't have a state-based overload, so this will allocate a closure
+        var counter = _counter;
+        return _pollyWithRetry.ExecuteAsync(_ => StaticSimulateWorkWithStateAsync(counter), CancellationToken.None);
     }
 
     // ============================================================
     // SIMULATED OPERATIONS
     // Minimal work to measure framework overhead, not operation cost
     // ============================================================
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void StaticSimulateWork()
+    {
+        // No-op for measuring pure overhead
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int StaticSimulateWorkWithResult()
+    {
+        return 42;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ValueTask StaticSimulateWorkAsync()
+    {
+        return ValueTask.CompletedTask;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static ValueTask StaticSimulateWorkWithStateAsync(int state)
+    {
+        return ValueTask.CompletedTask;
+    }
 
     private ValueTask SimulateWorkAsync()
     {
