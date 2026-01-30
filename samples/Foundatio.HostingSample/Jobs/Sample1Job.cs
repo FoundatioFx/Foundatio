@@ -23,7 +23,7 @@ public class Sample1Job : IJob
 
     public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        return await _policy.ExecuteAsync(async () =>
+        return await _policy.ExecuteAsync(async _ =>
         {
             int count = Interlocked.Increment(ref _iterationCount);
             _logger.LogTrace("Sample1Job Run #{IterationCount} Thread={ManagedThreadId}", _iterationCount, Thread.CurrentThread.ManagedThreadId);
@@ -37,6 +37,6 @@ public class Sample1Job : IJob
             await Task.Delay(5000, cancellationToken);
 
             return JobResult.Success;
-        }, cancellationToken: cancellationToken);
+        }, cancellationToken);
     }
 }

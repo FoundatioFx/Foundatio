@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -38,9 +38,9 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         await task;
         await task;
 
-        await _policy.ExecuteAsync(DoStuff, cancellationToken: CancellationToken.None);
+        await _policy.ExecuteAsync(_ => DoStuff(), cancellationToken: CancellationToken.None);
 
-        await _policy.ExecuteAsync(async () =>
+        await _policy.ExecuteAsync(async _ =>
         {
             await DoStuff();
         }, cancellationToken: CancellationToken.None);
@@ -49,11 +49,11 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunWithRetriesAndResult()
     {
-        var result = await _policy.ExecuteAsync(ReturnStuff, cancellationToken: CancellationToken.None);
+        var result = await _policy.ExecuteAsync(_ => ReturnStuff(), cancellationToken: CancellationToken.None);
 
         Assert.Equal(1, result);
 
-        result = await _policy.ExecuteAsync(async () => await ReturnStuff(), cancellationToken: CancellationToken.None);
+        result = await _policy.ExecuteAsync(async _ => await ReturnStuff(), cancellationToken: CancellationToken.None);
 
         Assert.Equal(1, result);
     }
@@ -63,13 +63,13 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     {
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await _policy.ExecuteAsync(() => DoBoom(), cancellationToken: CancellationToken.None);
+            await _policy.ExecuteAsync(_ => DoBoom(), cancellationToken: CancellationToken.None);
         });
         Assert.Equal("Hi", exception.Message);
 
         exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await _policy.ExecuteAsync(async () =>
+            await _policy.ExecuteAsync(async _ =>
             {
                 await DoBoom();
             }, cancellationToken: CancellationToken.None);
@@ -77,7 +77,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         Assert.Equal("Hi", exception.Message);
 
         int attempt = 0;
-        await _policy.ExecuteAsync(() =>
+        await _policy.ExecuteAsync(_ =>
         {
             attempt++;
             return DoBoom(attempt < 5);
@@ -85,7 +85,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         Assert.Equal(5, attempt);
 
         attempt = 0;
-        await _policy.ExecuteAsync(async () =>
+        await _policy.ExecuteAsync(async _ =>
         {
             attempt++;
             await DoBoom(attempt < 5);
@@ -98,7 +98,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
     {
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            var result = await _policy.ExecuteAsync(() => ReturnBoom(), cancellationToken: CancellationToken.None);
+            var result = await _policy.ExecuteAsync(_ => ReturnBoom(), cancellationToken: CancellationToken.None);
 
             Assert.Equal(1, result);
         });
@@ -106,14 +106,14 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            var result = await _policy.ExecuteAsync(async () => await ReturnBoom(), cancellationToken: CancellationToken.None);
+            var result = await _policy.ExecuteAsync(async _ => await ReturnBoom(), cancellationToken: CancellationToken.None);
 
             Assert.Equal(1, result);
         });
         Assert.Equal("Hi", exception.Message);
 
         int attempt = 0;
-        var result = await _policy.ExecuteAsync(() =>
+        var result = await _policy.ExecuteAsync(_ =>
         {
             attempt++;
             return ReturnBoom(attempt < 5);
@@ -122,7 +122,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         Assert.Equal(1, result);
 
         attempt = 0;
-        result = await _policy.ExecuteAsync(async () =>
+        result = await _policy.ExecuteAsync(async _ =>
         {
             attempt++;
             return await ReturnBoom(attempt < 5);
@@ -143,7 +143,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         int attempt = 0;
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await policy.ExecuteAsync(() =>
+            await policy.ExecuteAsync(_ =>
             {
                 attempt++;
                 throw new ApplicationException("Simulated failure");
@@ -156,7 +156,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         attempt = 0;
         var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
         {
-            await policy.ExecuteAsync(() =>
+            await policy.ExecuteAsync(_ =>
             {
                 attempt++;
                 throw new ArgumentException("Unhandled exception type");
@@ -180,7 +180,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         int attempt = 0;
         var exception = await Assert.ThrowsAsync<ApplicationException>(async () =>
         {
-            await policy.ExecuteAsync(() =>
+            await policy.ExecuteAsync(_ =>
             {
                 attempt++;
                 throw new ApplicationException("Simulated failure");
@@ -193,7 +193,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         attempt = 0;
         var argumentException = await Assert.ThrowsAsync<ArgumentException>(async () =>
         {
-            await policy.ExecuteAsync(() =>
+            await policy.ExecuteAsync(_ =>
             {
                 attempt++;
                 throw new ArgumentException("Unhandled exception type");
@@ -214,13 +214,13 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var sw = Stopwatch.StartNew();
         await Assert.ThrowsAsync<OperationCanceledException>(async () =>
         {
-            await policy.ExecuteAsync(() => DoBoom(), cts.Token);
+            await policy.ExecuteAsync(_ => DoBoom(), cts.Token);
         });
         sw.Stop();
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(1), "Cancellation should be quick");
 
         // shouldn't throw as the operation will get attempted once before cancellation
-        await policy.ExecuteAsync(async () => await DoStuff(), cts.Token);
+        await policy.ExecuteAsync(async _ => await DoStuff(), cts.Token);
     }
 
     [Fact]
@@ -289,19 +289,19 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // send 10 successful calls
         for (int i = 0; i < 10; i++)
-            await policy.ExecuteAsync(DoStuff, TestCancellationToken);
+            await policy.ExecuteAsync(_ => DoStuff(), TestCancellationToken);
 
         // send 1 error call before the circuit breaker is triggered
-        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
 
         // send 1 more error call to trigger the circuit breaker
-        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
+        await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
         Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
 
         // send 10 error calls and ensure they throw BrokenCircuitException
         for (int i = 0; i < 10; i++)
-            await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(() => DoBoom(), TestCancellationToken));
+            await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
 
         Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
 
@@ -310,7 +310,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // send 10 successful calls to close the circuit breaker
         for (int i = 0; i < 10; i++)
-            await policy.ExecuteAsync(DoStuff, TestCancellationToken);
+            await policy.ExecuteAsync(_ => DoStuff(), TestCancellationToken);
 
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
     }
@@ -342,7 +342,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             {
                 try
                 {
-                    await policy1.ExecuteAsync(DoStuff, TestCancellationToken);
+                    await policy1.ExecuteAsync(_ => DoStuff(), TestCancellationToken);
                 }
                 catch (BrokenCircuitException)
                 {
@@ -361,7 +361,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
             {
                 try
                 {
-                    await policy2.ExecuteAsync(async () => await DoBoom(), TestCancellationToken);
+                    await policy2.ExecuteAsync(async _ => await DoBoom(), TestCancellationToken);
                 }
                 catch (Exception)
                 {
@@ -402,7 +402,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         {
             try
             {
-                await policy1.ExecuteAsync(DoStuff, ct);
+                await policy1.ExecuteAsync(_ => DoStuff(), ct);
             }
             catch (BrokenCircuitException)
             {
@@ -414,7 +414,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         {
             try
             {
-                await policy1.ExecuteAsync(async () => await DoBoom(), ct);
+                await policy1.ExecuteAsync(async _ => await DoBoom(), ct);
             }
             catch (BrokenCircuitException)
             {

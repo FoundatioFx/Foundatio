@@ -15,7 +15,8 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8"/>
-    <PackageReference Include="Polly" Version="8.5.0" />
+    <PackageReference Include="RhoMicro.BdnLogging" Version="1.0.3" />
+    <PackageReference Include="Polly" Version="8.6.5" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\Foundatio\Foundatio.csproj" />

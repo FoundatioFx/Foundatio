@@ -78,13 +78,342 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// </summary>
     public ICircuitBreaker CircuitBreaker { get; set; }
 
+    // ============================================================
+    // SYNCHRONOUS METHODS
+    // ============================================================
+
+    public void Execute(Action<CancellationToken> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    action(linkedCancellationToken);
+                    CircuitBreaker?.RecordCallSuccess();
+                    return;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    Thread.Sleep(GetAttemptDelay(attempts));
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    public TResult Execute<TResult>(Func<CancellationToken, TResult> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    var result = action(linkedCancellationToken);
+                    CircuitBreaker?.RecordCallSuccess();
+                    return result;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    Thread.Sleep(GetAttemptDelay(attempts));
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    public void Execute<TState>(TState state, Action<TState, CancellationToken> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    action(state, linkedCancellationToken);
+                    CircuitBreaker?.RecordCallSuccess();
+                    return;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    Thread.Sleep(GetAttemptDelay(attempts));
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    public TResult Execute<TState, TResult>(TState state, Func<TState, CancellationToken, TResult> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    var result = action(state, linkedCancellationToken);
+                    CircuitBreaker?.RecordCallSuccess();
+                    return result;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    Thread.Sleep(GetAttemptDelay(attempts));
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    // ============================================================
+    // ASYNCHRONOUS METHODS
+    // ============================================================
+
     public async ValueTask ExecuteAsync(Func<CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
     {
-        _ = await ExecuteAsync(async ct =>
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
         {
-            await action(ct).AnyContext();
-            return (object)null;
-        }, cancellationToken);
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    await action(linkedCancellationToken).AnyContext();
+                    CircuitBreaker?.RecordCallSuccess();
+                    return;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    await _timeProvider.SafeDelay(GetAttemptDelay(attempts), linkedCancellationToken).AnyContext();
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
     }
 
     public async ValueTask<T> ExecuteAsync<T>(Func<CancellationToken, ValueTask<T>> action, CancellationToken cancellationToken = default)
@@ -117,6 +446,138 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
 
                     CircuitBreaker?.BeforeCall();
                     var result = await action(linkedCancellationToken).AnyContext();
+                    CircuitBreaker?.RecordCallSuccess();
+                    return result;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    await _timeProvider.SafeDelay(GetAttemptDelay(attempts), linkedCancellationToken).AnyContext();
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    public async ValueTask ExecuteAsync<TState>(TState state, Func<TState, CancellationToken, ValueTask> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    await action(state, linkedCancellationToken).AnyContext();
+                    CircuitBreaker?.RecordCallSuccess();
+                    return;
+                }
+                catch (BrokenCircuitException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    if (ex is TaskCanceledException && timeoutToken.IsCancellationRequested)
+                        throw new TimeoutException($"Operation timed out after {Timeout:g}.");
+
+                    CircuitBreaker?.RecordCallFailure(ex);
+
+                    if (attempts >= MaxAttempts || (ShouldRetry != null && !ShouldRetry(attempts, ex)) || UnhandledExceptions.Contains(ex.GetType()))
+                        throw;
+
+                    _logger?.LogError(ex, "Retry error: {Message}", ex.Message);
+
+                    await _timeProvider.SafeDelay(GetAttemptDelay(attempts), linkedCancellationToken).AnyContext();
+
+                    ThrowIfTimedOut(startTime);
+                }
+
+                attempts++;
+            } while (attempts <= MaxAttempts && !linkedCancellationToken.IsCancellationRequested);
+
+            throw new OperationCanceledException("Operation was canceled", linkedCancellationToken);
+        }
+        finally
+        {
+            linkedCts?.Dispose();
+            timeoutCts?.Dispose();
+        }
+    }
+
+    public async ValueTask<TResult> ExecuteAsync<TState, TResult>(TState state, Func<TState, CancellationToken, ValueTask<TResult>> action, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        int attempts = 1;
+        var startTime = _timeProvider.GetUtcNow();
+        var linkedCancellationToken = cancellationToken;
+        var timeoutToken = CancellationToken.None;
+        CancellationTokenSource timeoutCts = null;
+        CancellationTokenSource linkedCts = null;
+
+        if (Timeout > TimeSpan.Zero)
+        {
+            timeoutCts = new CancellationTokenSource(Timeout);
+            timeoutToken = timeoutCts.Token;
+            linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutToken);
+            linkedCancellationToken = linkedCts.Token;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    if (attempts > 1)
+                        _logger?.LogInformation("Retrying {Attempts} attempt after {Duration:g}...", attempts.ToOrdinal(), _timeProvider.GetUtcNow().Subtract(startTime));
+
+                    CircuitBreaker?.BeforeCall();
+                    var result = await action(state, linkedCancellationToken).AnyContext();
                     CircuitBreaker?.RecordCallSuccess();
                     return result;
                 }
