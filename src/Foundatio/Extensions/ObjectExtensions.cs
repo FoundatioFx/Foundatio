@@ -1,11 +1,12 @@
-﻿using Foundatio.Force.DeepCloner.Helpers;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Utility;
 
 public static class ObjectExtensions
 {
-    public static T DeepClone<T>(this T original)
+    [return: NotNullIfNotNull(nameof(original))]
+    public static T? DeepClone<T>(this T? original)
     {
-        return DeepClonerGenerator.CloneObject(original);
+        return Foundatio.FastCloner.Code.FastClonerGenerator.CloneObject(original);
     }
 }
