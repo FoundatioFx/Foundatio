@@ -35,7 +35,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
 
         _resiliencePolicyProvider = options.ResiliencePolicyProvider;
-        _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<MessageBusBase<TOptions>, IMessageBus>(_logger, _timeProvider);
+        _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<MessageBusBase<TOptions>, IMessageBus>(
+            builder => builder.WithUnhandledException<MessageBusException>(),
+            _logger, _timeProvider);
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         MessageBusId = _options.Topic + Guid.NewGuid().ToString("N").Substring(10);

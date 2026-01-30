@@ -151,12 +151,14 @@ var policy = new ResiliencePolicyBuilder()
 
 ### Unhandled Exceptions
 
+By default, `OperationCanceledException` and `BrokenCircuitException` are never retried. You can add additional exception types:
+
 ```csharp
 var policy = new ResiliencePolicyBuilder()
     .WithMaxAttempts(5)
     // These exceptions will be thrown immediately without retry
-    .WithUnhandledException<OperationCanceledException>()
     .WithUnhandledException<ArgumentException>()
+    .WithUnhandledException<InvalidOperationException>()
     .Build();
 ```
 
@@ -580,6 +582,12 @@ public class MyService
 .WithUnhandledException<OperationCanceledException>()
 .WithUnhandledException<ArgumentException>()
 ```
+
+> **Note:** By default, `OperationCanceledException` and `BrokenCircuitException` are never retried. Additionally, Foundatio's built-in components automatically exclude their feature-specific exceptions from retries:
+> - `MessageBusBase` excludes `MessageBusException`
+> - `CacheLockProvider` excludes `CacheException`
+>
+> This ensures that deliberate application-level failures (like a blocked RabbitMQ connection or a cache operation error) are not wastefully retried.
 
 ### 5. Log Retry Attempts
 

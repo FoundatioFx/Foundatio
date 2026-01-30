@@ -39,9 +39,9 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     public int MaxAttempts { get; set; } = 3;
 
     /// <summary>
-    /// A collection of exception types that will not be handled by the policy. These exceptions will be thrown immediately without retrying. Default includes OperationCanceledException.
+    /// A collection of exception types that will not be handled by the policy. These exceptions will be thrown immediately without retrying. Default includes OperationCanceledException and BrokenCircuitException.
     /// </summary>
-    public HashSet<Type> UnhandledExceptions { get; set; } = [typeof(OperationCanceledException)];
+    public HashSet<Type> UnhandledExceptions { get; set; } = [typeof(OperationCanceledException), typeof(BrokenCircuitException)];
 
     /// <summary>
     /// A function that determines whether to retry based on the attempt number and exception.
