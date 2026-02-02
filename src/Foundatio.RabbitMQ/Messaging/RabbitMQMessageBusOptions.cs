@@ -80,6 +80,15 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
     /// Setting this to -1 means there is no limit on the number of deliveries.
     /// </summary>
     public long DeliveryLimit { get; set; } = 2;
+
+    /// <summary>
+    /// When true, PublishAsync waits for broker confirmation before returning.
+    /// This guarantees the message reached the broker but adds latency per publish.
+    /// Performance impact varies by workload - use async/pipelining patterns for best results.
+    /// Default: false (fire-and-forget publishing for backward compatibility).
+    /// See: https://www.rabbitmq.com/docs/confirms#publisher-confirms
+    /// </summary>
+    public bool PublisherConfirmsEnabled { get; set; }
 }
 
 public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder>
@@ -177,6 +186,19 @@ public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<R
         Target.Arguments ??= new Dictionary<string, object>();
         Target.Arguments["x-delivery-limit"] = deliveryLimit;
 
+        return this;
+    }
+
+    /// <summary>
+    /// Enables publisher confirms, which guarantees the message reached the broker.
+    /// When enabled, PublishAsync waits for broker confirmation before returning.
+    /// See: https://www.rabbitmq.com/docs/confirms#publisher-confirms
+    /// </summary>
+    /// <param name="enabled">Whether to enable publisher confirms. Default: true.</param>
+    /// <returns>The builder instance for method chaining.</returns>
+    public RabbitMQMessageBusOptionsBuilder PublisherConfirmsEnabled(bool enabled = true)
+    {
+        Target.PublisherConfirmsEnabled = enabled;
         return this;
     }
 

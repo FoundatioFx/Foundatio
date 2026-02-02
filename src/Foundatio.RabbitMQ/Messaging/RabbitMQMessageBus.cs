@@ -26,9 +26,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     private IConnection _subscriberConnection;
     private IChannel _publisherChannel;
     private IChannel _subscriberChannel;
+    private AsyncEventingBasicConsumer _consumer;
     private bool? _delayedExchangePluginEnabled;
     private readonly bool _isQuorumQueue;
     private bool _isDisposed;
+    private volatile bool _isPublisherBlocked;
+    private volatile string _publisherBlockedReason;
 
     public RabbitMQMessageBus(RabbitMQMessageBusOptions options) : base(options)
     {
@@ -85,42 +88,39 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     protected override Task RemoveTopicSubscriptionAsync()
     {
         _logger.LogTrace("RemoveTopicSubscriptionAsync");
-        return CloseSubscriberConnectionAsync();
+        return CloseSubscriberConnectionAsync(DisposedCancellationToken);
     }
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
     {
-        if (_subscriberChannel != null)
+        if (_subscriberChannel is not null)
             return;
 
         await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
-            if (_subscriberChannel != null)
+            if (_subscriberChannel is not null)
                 return;
 
             _subscriberConnection = await CreateConnectionAsync().AnyContext();
+            RegisterSubscriberConnectionEventHandlers();
+
             _subscriberChannel = await _subscriberConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
 
             // If InitPublisher is called first, then we will never come in this if-clause.
             if (!await CreateDelayedExchangeAsync(_subscriberChannel).AnyContext())
             {
                 await _subscriberChannel.DisposeAsync().AnyContext();
+                UnregisterSubscriberConnectionEventHandlers();
                 await _subscriberConnection.DisposeAsync().AnyContext();
 
                 _subscriberConnection = await CreateConnectionAsync().AnyContext();
+                RegisterSubscriberConnectionEventHandlers();
+
                 _subscriberChannel = await _subscriberConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
                 await CreateRegularExchangeAsync(_subscriberChannel).AnyContext();
             }
-
-            _subscriberConnection.CallbackExceptionAsync += OnSubscriberConnectionOnCallbackExceptionAsync;
-            _subscriberConnection.ConnectionBlockedAsync += OnSubscriberConnectionOnConnectionBlockedAsync;
-            _subscriberConnection.ConnectionRecoveryErrorAsync += OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
-            _subscriberConnection.ConnectionShutdownAsync += OnSubscriberConnectionOnConnectionShutdownAsync;
-            _subscriberConnection.ConnectionUnblockedAsync += OnSubscriberConnectionOnConnectionUnblockedAsync;
-            _subscriberConnection.RecoveringConsumerAsync += OnSubscriberConnectionOnRecoveringConsumerAsync;
-            _subscriberConnection.RecoverySucceededAsync += OnSubscriberConnectionOnRecoverySucceededAsync;
 
             string queueName = await CreateQueueAsync(_subscriberChannel).AnyContext();
 
@@ -136,11 +136,10 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 _logger.LogDebug("Using unlimited prefetch for acknowledgment strategy {AcknowledgementStrategy}", _options.AcknowledgementStrategy);
             }
 
-            var consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
-            consumer.ReceivedAsync += OnMessageAsync;
-            consumer.ShutdownAsync += OnConsumerShutdownAsync;
+            _consumer = new AsyncEventingBasicConsumer(_subscriberChannel);
+            RegisterConsumerEventHandlers();
 
-            await _subscriberChannel.BasicConsumeAsync(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, consumer, cancellationToken: cancellationToken).AnyContext();
+            await _subscriberChannel.BasicConsumeAsync(queueName, _options.AcknowledgementStrategy == AcknowledgementStrategy.FireAndForget, _consumer, cancellationToken: cancellationToken).AnyContext();
             _logger.LogTrace("The unique channel number for the subscriber is : {ChannelNumber}", _subscriberChannel.ChannelNumber);
         }
     }
@@ -363,12 +362,17 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private async Task PublishMessageAsync(string exchange, string routingKey, byte[] body, BasicProperties properties, CancellationToken cancellationToken)
     {
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
-            // Wrap only the transport call in resilience policy
             await _resiliencePolicy.ExecuteAsync(async _ =>
-                await _publisherChannel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken),
-                cancellationToken).AnyContext();
+            {
+                // Check blocked state inside resilience policy - re-evaluated on each retry
+                // MessageBusException is excluded from retries in the base class policy
+                if (_isPublisherBlocked)
+                    throw new MessageBusException($"Cannot publish: publisher connection is blocked by broker ({_publisherBlockedReason ?? "resource alarm"})");
+
+                await _publisherChannel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken);
+            }, cancellationToken).AnyContext();
         }
     }
 
@@ -382,7 +386,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             UniqueId = envelope.BasicProperties.MessageId
         };
 
-        if (envelope.BasicProperties.Headers != null)
+        if (envelope.BasicProperties.Headers is not null)
             foreach (var header in envelope.BasicProperties.Headers)
             {
                 if (header.Value is byte[] byteData)
@@ -396,19 +400,35 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken)
     {
-        if (_publisherChannel != null)
+        if (_publisherChannel is not null)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
-            if (_publisherChannel != null)
+            if (_publisherChannel is not null)
                 return;
 
             // Create the client connection, channel, declares the exchange, queue and binds
             // the exchange with the publisher queue. It requires the name of our exchange, exchange type, durability and auto-delete.
             // For now, we are using same autoDelete for both exchange and queue (it will survive a server restart)
             _publisherConnection = await CreateConnectionAsync().AnyContext();
-            _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
+            RegisterPublisherConnectionEventHandlers();
+
+            // Reset blocked state after handlers are registered - new connections start unblocked
+            _isPublisherBlocked = false;
+            _publisherBlockedReason = null;
+
+            if (_options.PublisherConfirmsEnabled)
+            {
+                var channelOptions = new CreateChannelOptions(
+                    publisherConfirmationsEnabled: true,
+                    publisherConfirmationTrackingEnabled: true);
+                _publisherChannel = await _publisherConnection.CreateChannelAsync(channelOptions, cancellationToken).AnyContext();
+            }
+            else
+            {
+                _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
+            }
 
             // We first attempt to create "x-delayed-type". For this plugin should be installed.
             // However, we plug in is not installed this will throw an exception. In that case
@@ -420,20 +440,29 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 // and establish the new client connection and model; otherwise you will keep receiving failure in creation
                 // of the regular exchange too.
                 await _publisherChannel.DisposeAsync().AnyContext();
+                UnregisterPublisherConnectionEventHandlers();
                 await _publisherConnection.DisposeAsync().AnyContext();
 
                 _publisherConnection = await CreateConnectionAsync().AnyContext();
-                _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
+                RegisterPublisherConnectionEventHandlers();
+
+                // Reset blocked state after handlers are registered
+                _isPublisherBlocked = false;
+                _publisherBlockedReason = null;
+
+                if (_options.PublisherConfirmsEnabled)
+                {
+                    var channelOptions = new CreateChannelOptions(
+                        publisherConfirmationsEnabled: true,
+                        publisherConfirmationTrackingEnabled: true);
+                    _publisherChannel = await _publisherConnection.CreateChannelAsync(channelOptions, cancellationToken).AnyContext();
+                }
+                else
+                {
+                    _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
+                }
                 await CreateRegularExchangeAsync(_publisherChannel).AnyContext();
             }
-
-            _publisherConnection.CallbackExceptionAsync += OnPublisherConnectionOnCallbackExceptionAsync;
-            _publisherConnection.ConnectionBlockedAsync += OnPublisherConnectionOnConnectionBlockedAsync;
-            _publisherConnection.ConnectionRecoveryErrorAsync += OnPublisherConnectionOnConnectionRecoveryErrorAsync;
-            _publisherConnection.ConnectionShutdownAsync += OnPublisherConnectionOnConnectionShutdownAsync;
-            _publisherConnection.ConnectionUnblockedAsync += OnPublisherConnectionOnConnectionUnblockedAsync;
-            _publisherConnection.RecoveringConsumerAsync += OnPublisherConnectionOnRecoveringConsumerAsync;
-            _publisherConnection.RecoverySucceededAsync += OnPublisherConnectionOnRecoverySucceededAsync;
 
             _logger.LogTrace("The unique channel number for the publisher is : {ChannelNumber}", _publisherChannel.ChannelNumber);
         }
@@ -447,6 +476,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private Task OnPublisherConnectionOnConnectionBlockedAsync(object sender, ConnectionBlockedEventArgs e)
     {
+        _publisherBlockedReason = e.Reason;
+        _isPublisherBlocked = true;
         _logger.LogError("Publisher connection blocked: {Reason}", e.Reason);
         return Task.CompletedTask;
     }
@@ -465,6 +496,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private Task OnPublisherConnectionOnConnectionUnblockedAsync(object sender, AsyncEventArgs e)
     {
+        _isPublisherBlocked = false;
+        _publisherBlockedReason = null;
         _logger.LogInformation("Publisher connection unblocked");
         return Task.CompletedTask;
     }
@@ -477,6 +510,9 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private Task OnPublisherConnectionOnRecoverySucceededAsync(object sender, AsyncEventArgs e)
     {
+        // Reset blocked state on recovery - the new connection starts unblocked
+        _isPublisherBlocked = false;
+        _publisherBlockedReason = null;
         _logger.LogInformation("Publisher connection recovery succeeded");
         return Task.CompletedTask;
     }
@@ -494,6 +530,9 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     /// The same is a good idea for consumers.</remarks>
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
+        if (_isPublisherBlocked)
+            throw new MessageBusException($"Cannot publish: publisher connection is blocked by broker ({_publisherBlockedReason ?? "resource alarm"})");
+
         byte[] data = SerializeMessageBody(messageType, message);
 
         // if the RabbitMQ plugin is not available, then use the base class delay mechanism
@@ -531,7 +570,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             // It's necessary to typecast long to int because RabbitMQ on the consumer side is reading the
             // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
             // and the data will be delivered immediately.
-            basicProperties.Headers = new Dictionary<string, object> { { "x-delay", Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds) } };
+            basicProperties.Headers ??= new Dictionary<string, object>();
+            basicProperties.Headers["x-delay"] = Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds);
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
         }
         else
@@ -617,7 +657,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         _isDisposed = true;
 
-        if (_factory != null)
+        if (_factory is not null)
             _factory.AutomaticRecoveryEnabled = false;
 
         ClosePublisherConnection();
@@ -634,7 +674,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
         _isDisposed = true;
 
-        if (_factory != null)
+        if (_factory is not null)
             _factory.AutomaticRecoveryEnabled = false;
 
         await ClosePublisherConnectionAsync().AnyContext();
@@ -642,23 +682,24 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         GC.SuppressFinalize(this);
     }
 
-    private void ClosePublisherConnection()
+    private void ClosePublisherConnection(CancellationToken cancellationToken = default)
     {
-        if (_publisherConnection == null)
+        if (_publisherConnection is null)
             return;
 
-        using (_lock.Lock())
+        using (_lock.Lock(cancellationToken))
         {
             _logger.LogTrace("ClosePublisherConnection");
 
-            if (_publisherChannel != null)
+            if (_publisherChannel is not null)
             {
                 _publisherChannel.Dispose();
                 _publisherChannel = null;
             }
 
-            if (_publisherConnection != null)
+            if (_publisherConnection is not null)
             {
+                UnregisterPublisherConnectionEventHandlers();
                 _publisherConnection.Dispose();
                 _publisherConnection = null;
             }
@@ -667,81 +708,82 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
     private async Task ClosePublisherConnectionAsync()
     {
-        if (_publisherConnection == null)
+        if (_publisherConnection is null)
             return;
 
         using (await _lock.LockAsync().AnyContext())
         {
             _logger.LogTrace("ClosePublisherConnectionAsync");
 
-            if (_publisherChannel != null)
+            if (_publisherChannel is not null)
             {
                 await _publisherChannel.DisposeAsync().AnyContext();
                 _publisherChannel = null;
             }
 
-            if (_publisherConnection != null)
+            if (_publisherConnection is not null)
             {
-                _publisherConnection.CallbackExceptionAsync -= OnPublisherConnectionOnCallbackExceptionAsync;
-                _publisherConnection.ConnectionBlockedAsync -= OnPublisherConnectionOnConnectionBlockedAsync;
-                _publisherConnection.ConnectionRecoveryErrorAsync -= OnPublisherConnectionOnConnectionRecoveryErrorAsync;
-                _publisherConnection.ConnectionShutdownAsync -= OnPublisherConnectionOnConnectionShutdownAsync;
-                _publisherConnection.ConnectionUnblockedAsync -= OnPublisherConnectionOnConnectionUnblockedAsync;
-                _publisherConnection.RecoveringConsumerAsync -= OnPublisherConnectionOnRecoveringConsumerAsync;
-                _publisherConnection.RecoverySucceededAsync -= OnPublisherConnectionOnRecoverySucceededAsync;
+                UnregisterPublisherConnectionEventHandlers();
                 await _publisherConnection.DisposeAsync().AnyContext();
                 _publisherConnection = null;
             }
         }
     }
 
-    private void CloseSubscriberConnection()
+    private void CloseSubscriberConnection(CancellationToken cancellationToken = default)
     {
-        if (_subscriberConnection == null)
+        if (_subscriberConnection is null)
             return;
 
-        using (_lock.Lock())
+        using (_lock.Lock(cancellationToken))
         {
             _logger.LogTrace("CloseSubscriberConnection");
 
-            if (_subscriberChannel != null)
+            if (_consumer is not null)
+            {
+                UnregisterConsumerEventHandlers();
+                _consumer = null;
+            }
+
+            if (_subscriberChannel is not null)
             {
                 _subscriberChannel.Dispose();
                 _subscriberChannel = null;
             }
 
-            if (_subscriberConnection != null)
+            if (_subscriberConnection is not null)
             {
-                _subscriberConnection.CallbackExceptionAsync -= OnSubscriberConnectionOnCallbackExceptionAsync;
-                _subscriberConnection.ConnectionBlockedAsync -= OnSubscriberConnectionOnConnectionBlockedAsync;
-                _subscriberConnection.ConnectionRecoveryErrorAsync -= OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
-                _subscriberConnection.ConnectionShutdownAsync -= OnSubscriberConnectionOnConnectionShutdownAsync;
-                _subscriberConnection.ConnectionUnblockedAsync -= OnSubscriberConnectionOnConnectionUnblockedAsync;
-                _subscriberConnection.RecoveringConsumerAsync -= OnSubscriberConnectionOnRecoveringConsumerAsync;
-                _subscriberConnection.RecoverySucceededAsync -= OnSubscriberConnectionOnRecoverySucceededAsync;
+                UnregisterSubscriberConnectionEventHandlers();
                 _subscriberConnection.Dispose();
                 _subscriberConnection = null;
             }
         }
     }
 
-    private async Task CloseSubscriberConnectionAsync()
+    private async Task CloseSubscriberConnectionAsync(CancellationToken cancellationToken = default)
     {
-        if (_subscriberConnection == null)
+        if (_subscriberConnection is null)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
             _logger.LogTrace("CloseSubscriberConnectionAsync");
 
-            if (_subscriberChannel != null)
+            if (_consumer is not null)
+            {
+                UnregisterConsumerEventHandlers();
+                _consumer = null;
+            }
+
+            if (_subscriberChannel is not null)
             {
                 await _subscriberChannel.DisposeAsync().AnyContext();
                 _subscriberChannel = null;
             }
 
-            if (_subscriberConnection != null)
+            if (_subscriberConnection is not null)
             {
+                UnregisterSubscriberConnectionEventHandlers();
                 await _subscriberConnection.DisposeAsync().AnyContext();
                 _subscriberConnection = null;
             }
@@ -765,5 +807,61 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         return Int32.TryParse(trimmed[(colonIndex + 1)..], out int port)
             ? new AmqpTcpEndpoint(hostname, port)
             : new AmqpTcpEndpoint(trimmed, defaultPort);
+    }
+
+    private void RegisterPublisherConnectionEventHandlers()
+    {
+        _publisherConnection.CallbackExceptionAsync += OnPublisherConnectionOnCallbackExceptionAsync;
+        _publisherConnection.ConnectionBlockedAsync += OnPublisherConnectionOnConnectionBlockedAsync;
+        _publisherConnection.ConnectionRecoveryErrorAsync += OnPublisherConnectionOnConnectionRecoveryErrorAsync;
+        _publisherConnection.ConnectionShutdownAsync += OnPublisherConnectionOnConnectionShutdownAsync;
+        _publisherConnection.ConnectionUnblockedAsync += OnPublisherConnectionOnConnectionUnblockedAsync;
+        _publisherConnection.RecoveringConsumerAsync += OnPublisherConnectionOnRecoveringConsumerAsync;
+        _publisherConnection.RecoverySucceededAsync += OnPublisherConnectionOnRecoverySucceededAsync;
+    }
+
+    private void UnregisterPublisherConnectionEventHandlers()
+    {
+        _publisherConnection.CallbackExceptionAsync -= OnPublisherConnectionOnCallbackExceptionAsync;
+        _publisherConnection.ConnectionBlockedAsync -= OnPublisherConnectionOnConnectionBlockedAsync;
+        _publisherConnection.ConnectionRecoveryErrorAsync -= OnPublisherConnectionOnConnectionRecoveryErrorAsync;
+        _publisherConnection.ConnectionShutdownAsync -= OnPublisherConnectionOnConnectionShutdownAsync;
+        _publisherConnection.ConnectionUnblockedAsync -= OnPublisherConnectionOnConnectionUnblockedAsync;
+        _publisherConnection.RecoveringConsumerAsync -= OnPublisherConnectionOnRecoveringConsumerAsync;
+        _publisherConnection.RecoverySucceededAsync -= OnPublisherConnectionOnRecoverySucceededAsync;
+    }
+
+    private void RegisterSubscriberConnectionEventHandlers()
+    {
+        _subscriberConnection.CallbackExceptionAsync += OnSubscriberConnectionOnCallbackExceptionAsync;
+        _subscriberConnection.ConnectionBlockedAsync += OnSubscriberConnectionOnConnectionBlockedAsync;
+        _subscriberConnection.ConnectionRecoveryErrorAsync += OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
+        _subscriberConnection.ConnectionShutdownAsync += OnSubscriberConnectionOnConnectionShutdownAsync;
+        _subscriberConnection.ConnectionUnblockedAsync += OnSubscriberConnectionOnConnectionUnblockedAsync;
+        _subscriberConnection.RecoveringConsumerAsync += OnSubscriberConnectionOnRecoveringConsumerAsync;
+        _subscriberConnection.RecoverySucceededAsync += OnSubscriberConnectionOnRecoverySucceededAsync;
+    }
+
+    private void UnregisterSubscriberConnectionEventHandlers()
+    {
+        _subscriberConnection.CallbackExceptionAsync -= OnSubscriberConnectionOnCallbackExceptionAsync;
+        _subscriberConnection.ConnectionBlockedAsync -= OnSubscriberConnectionOnConnectionBlockedAsync;
+        _subscriberConnection.ConnectionRecoveryErrorAsync -= OnSubscriberConnectionOnConnectionRecoveryErrorAsync;
+        _subscriberConnection.ConnectionShutdownAsync -= OnSubscriberConnectionOnConnectionShutdownAsync;
+        _subscriberConnection.ConnectionUnblockedAsync -= OnSubscriberConnectionOnConnectionUnblockedAsync;
+        _subscriberConnection.RecoveringConsumerAsync -= OnSubscriberConnectionOnRecoveringConsumerAsync;
+        _subscriberConnection.RecoverySucceededAsync -= OnSubscriberConnectionOnRecoverySucceededAsync;
+    }
+
+    private void RegisterConsumerEventHandlers()
+    {
+        _consumer.ReceivedAsync += OnMessageAsync;
+        _consumer.ShutdownAsync += OnConsumerShutdownAsync;
+    }
+
+    private void UnregisterConsumerEventHandlers()
+    {
+        _consumer.ReceivedAsync -= OnMessageAsync;
+        _consumer.ShutdownAsync -= OnConsumerShutdownAsync;
     }
 }

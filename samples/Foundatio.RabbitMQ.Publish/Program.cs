@@ -40,6 +40,11 @@ Option<string> acknowledgmentStrategyOption = new("--acknowledgment-strategy")
     DefaultValueFactory = _ => "fireandforget"
 };
 
+Option<bool> publisherConfirmsOption = new("--publisher-confirms")
+{
+    Description = "Wait for broker confirmation before returning (guarantees delivery)"
+};
+
 Option<int> messageSizeOption = new("--message-size")
 {
     Description = "Target message size in bytes (pads Notes field to reach size)",
@@ -84,6 +89,7 @@ RootCommand rootCommand = new("RabbitMQ Order Publisher Sample")
     durableOption,
     delayedOption,
     acknowledgmentStrategyOption,
+    publisherConfirmsOption,
     messageSizeOption,
     prefetchCountOption,
     deliveryLimitOption,
@@ -100,6 +106,7 @@ rootCommand.SetAction(parseResult =>
     bool durable = parseResult.GetValue(durableOption);
     bool delayed = parseResult.GetValue(delayedOption);
     string acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
+    bool publisherConfirms = parseResult.GetValue(publisherConfirmsOption);
     int messageSize = parseResult.GetValue(messageSizeOption);
     ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
     long deliveryLimit = parseResult.GetValue(deliveryLimitOption);
@@ -108,7 +115,7 @@ rootCommand.SetAction(parseResult =>
     LogLevel logLevel = parseResult.GetValue(logLevelOption);
 
     return RunPublisher(
-        connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy,
+        connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy, publisherConfirms,
         messageSize, prefetchCount, deliveryLimit, delaySeconds, interval, logLevel);
 });
 
@@ -121,6 +128,7 @@ static async Task RunPublisher(
     bool durable,
     bool delayed,
     string acknowledgmentStrategy,
+    bool publisherConfirms,
     int messageSize,
     ushort prefetchCount,
     long deliveryLimit,
@@ -169,11 +177,12 @@ static async Task RunPublisher(
         SubscriptionQueueAutoDelete = !durable,
         PrefetchCount = prefetchCount,
         DeliveryLimit = deliveryLimit,
+        PublisherConfirmsEnabled = publisherConfirms,
         LoggerFactory = loggerFactory
     };
 
-    logger.LogInformation("Config: ConnectionString={ConnectionString}, Topic={Topic}, Durable={Durable}, AckStrategy={AckStrategy}, MessageSize={MessageSize}, Interval={Interval}ms, DelaySeconds={DelaySeconds}",
-        connectionString, topic, durable, ackStrategy, messageSize, interval, delaySeconds);
+    logger.LogInformation("Config: ConnectionString={ConnectionString}, Topic={Topic}, Durable={Durable}, AckStrategy={AckStrategy}, PublisherConfirms={PublisherConfirms}, MessageSize={MessageSize}, Interval={Interval}ms, DelaySeconds={DelaySeconds}",
+        connectionString, topic, durable, ackStrategy, publisherConfirms, messageSize, interval, delaySeconds);
     if (hostsList.Count > 0)
         logger.LogInformation("Hosts: {Hosts}", String.Join(", ", hostsList));
 
