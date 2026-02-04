@@ -2,7 +2,7 @@
 
 namespace Foundatio.AzureServiceBus.Queues;
 
-public class AzureServiceBusQueueEntryOptions : QueueEntryOptions
+public record AzureServiceBusQueueEntryOptions : QueueEntryOptions
 {
     public string SessionId { get; set; }
 }
