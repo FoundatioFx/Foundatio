@@ -107,7 +107,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             description: "Number of items in the deadletter queue");
     }
 
-    public string QueueId { get; protected set; }
+    public string QueueId { get; init; }
     public DateTimeOffset? LastEnqueueActivity { get; protected set; }
     public DateTimeOffset? LastDequeueActivity { get; protected set; }
     ISerializer IHaveSerializer.Serializer => _serializer;

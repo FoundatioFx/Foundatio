@@ -396,7 +396,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }, _disposedCancellationTokenSource.Token);
     }
 
-    public string MessageBusId { get; protected set; }
+    public string MessageBusId { get; init; }
 
     public virtual void Dispose()
     {
