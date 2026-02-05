@@ -1,11 +1,25 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Foundatio.Messaging;
 
+/// <summary>
+/// Subscribes to messages published on the message bus.
+/// Handlers receive messages of the subscribed type and any derived types.
+/// </summary>
 public interface IMessageSubscriber
 {
+    /// <summary>
+    /// Registers a handler to receive messages of the specified type.
+    /// The subscription remains active until the cancellation token is triggered.
+    /// </summary>
+    /// <typeparam name="T">The message type to subscribe to. Also receives messages of derived types.</typeparam>
+    /// <param name="handler">
+    /// The async function invoked for each received message.
+    /// Exceptions thrown by the handler are logged but do not affect other subscribers.
+    /// </param>
+    /// <param name="cancellationToken">Token to cancel the subscription.</param>
     Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class;
 }
 

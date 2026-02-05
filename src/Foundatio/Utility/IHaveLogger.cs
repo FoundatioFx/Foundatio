@@ -1,15 +1,27 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Utility;
 
+/// <summary>
+/// Indicates that a type exposes a logger for diagnostic output.
+/// </summary>
 public interface IHaveLogger
 {
+    /// <summary>
+    /// Gets the logger for this instance.
+    /// </summary>
     ILogger Logger { get; }
 }
 
+/// <summary>
+/// Indicates that a type exposes a logger factory for creating loggers.
+/// </summary>
 public interface IHaveLoggerFactory
 {
+    /// <summary>
+    /// Gets the logger factory for creating loggers.
+    /// </summary>
     ILoggerFactory LoggerFactory { get; }
 }
 

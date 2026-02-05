@@ -7,13 +7,25 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
+/// <summary>
+/// A job that processes items from a queue. Each invocation of <see cref="IJob.RunAsync"/>
+/// dequeues and processes a single item.
+/// </summary>
+/// <typeparam name="T">The type of message payload in the queue.</typeparam>
 public interface IQueueJob<T> : IJob where T : class
 {
     /// <summary>
-    /// Processes a queue entry and returns the result. This method is typically called from RunAsync()
-    /// but can also be called from a function passing in the queue entry.
+    /// Processes a single queue entry. Called by <see cref="IJob.RunAsync"/> after dequeuing an item.
+    /// Can also be called directly when the queue entry is obtained externally.
     /// </summary>
+    /// <param name="queueEntry">The queue entry to process.</param>
+    /// <param name="cancellationToken">Token to signal that processing should stop.</param>
+    /// <returns>A result indicating success or failure of processing.</returns>
     Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the queue this job processes items from.
+    /// </summary>
     IQueue<T> Queue { get; }
 }
 

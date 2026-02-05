@@ -1,11 +1,17 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Foundatio.Serializer;
 
 namespace Foundatio.Utility;
 
+/// <summary>
+/// Indicates that a type exposes a data dictionary for storing arbitrary metadata.
+/// </summary>
 public interface IHaveData
 {
+    /// <summary>
+    /// Gets the dictionary for storing arbitrary key-value data.
+    /// </summary>
     IDictionary<string, object> Data { get; }
 }
 

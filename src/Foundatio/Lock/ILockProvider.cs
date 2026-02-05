@@ -9,23 +9,93 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Lock;
 
+/// <summary>
+/// Provides distributed locking to coordinate access to shared resources across processes.
+/// </summary>
 public interface ILockProvider
 {
+    /// <summary>
+    /// Acquires a lock on the specified resource, waiting until available or cancellation.
+    /// </summary>
+    /// <param name="resource">The resource identifier to lock. Use consistent naming across processes.</param>
+    /// <param name="timeUntilExpires">
+    /// How long the lock is held before automatic release. Defaults to 20 minutes.
+    /// For long-running operations, call <see cref="ILock.RenewAsync"/> periodically.
+    /// </param>
+    /// <param name="releaseOnDispose">If true, the lock is released when disposed.</param>
+    /// <param name="cancellationToken">Token to cancel the acquisition attempt.</param>
+    /// <returns>An <see cref="ILock"/> representing the acquired lock, or null if acquisition was cancelled.</returns>
     Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks whether a resource is currently locked.
+    /// </summary>
+    /// <param name="resource">The resource identifier to check.</param>
+    /// <returns>True if the resource is locked; otherwise, false.</returns>
     Task<bool> IsLockedAsync(string resource);
+
+    /// <summary>
+    /// Releases a specific lock on a resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <param name="lockId">The unique identifier of the lock to release.</param>
     Task ReleaseAsync(string resource, string lockId);
+
+    /// <summary>
+    /// Releases any lock on a resource regardless of lock ID.
+    /// Use with caution as this may release locks held by other processes.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
     Task ReleaseAsync(string resource);
+
+    /// <summary>
+    /// Extends the expiration time of an existing lock.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <param name="lockId">The unique identifier of the lock to renew.</param>
+    /// <param name="timeUntilExpires">The new expiration duration from now.</param>
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
 
+/// <summary>
+/// Represents an acquired lock on a resource. Dispose to release the lock.
+/// </summary>
 public interface ILock : IAsyncDisposable
 {
+    /// <summary>
+    /// Extends the lock expiration to prevent automatic release during long-running operations.
+    /// </summary>
+    /// <param name="timeUntilExpires">The new expiration duration from now.</param>
     Task RenewAsync(TimeSpan? timeUntilExpires = null);
+
+    /// <summary>
+    /// Explicitly releases the lock, allowing other processes to acquire it.
+    /// </summary>
     Task ReleaseAsync();
+
+    /// <summary>
+    /// Gets the unique identifier for this lock instance.
+    /// </summary>
     string LockId { get; }
+
+    /// <summary>
+    /// Gets the resource identifier this lock is held on.
+    /// </summary>
     string Resource { get; }
+
+    /// <summary>
+    /// Gets the UTC time when this lock was acquired.
+    /// </summary>
     DateTime AcquiredTimeUtc { get; }
+
+    /// <summary>
+    /// Gets the duration spent waiting to acquire this lock.
+    /// </summary>
     TimeSpan TimeWaitedForLock { get; }
+
+    /// <summary>
+    /// Gets the number of times this lock has been renewed.
+    /// </summary>
     int RenewalCount { get; }
 }
 

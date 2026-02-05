@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,13 +7,28 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
+/// <summary>
+/// Represents a unit of background work that can be executed once or continuously.
+/// Implement this interface to create custom jobs for scheduled tasks, queue processing, or maintenance operations.
+/// </summary>
 public interface IJob
 {
+    /// <summary>
+    /// Executes the job's work.
+    /// </summary>
+    /// <param name="cancellationToken">Token to signal that the job should stop.</param>
+    /// <returns>A result indicating success, failure, or cancellation.</returns>
     Task<JobResult> RunAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// A job that exposes configurable options for execution behavior.
+/// </summary>
 public interface IJobWithOptions : IJob
 {
+    /// <summary>
+    /// Gets or sets the options controlling job execution (name, interval, iteration limit).
+    /// </summary>
     JobOptions Options { get; set; }
 }
 
