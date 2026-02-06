@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
@@ -45,7 +45,16 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
         {
             lockActivity?.AddTag("job.id", JobId);
 
-            lockValue = await GetLockAsync(cancellationToken).AnyContext();
+            try
+            {
+                lockValue = await GetLockAsync(cancellationToken).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                lockActivity?.SetErrorStatus(ex);
+                throw;
+            }
+
             if (lockValue is null)
             {
                 return JobResult.CancelledWithMessage("Unable to acquire job lock");

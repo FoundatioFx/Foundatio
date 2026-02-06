@@ -274,26 +274,34 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 _logger.LogTrace("Calling subscriber action: {SubscriberId}", subscriber.Id);
                 using var activity = StartHandleMessageActivity(message);
 
-                using (_logger.BeginScope(s => s
-                           .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
-                           .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId))))
+                try
                 {
-                    if (subscriber.Type == typeof(IMessage))
+                    using (_logger.BeginScope(s => s
+                               .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
+                               .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId))))
                     {
-                        await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        if (subscriber.Type == typeof(IMessage))
+                        {
+                            await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
+                        }
+                        else if (subscriber.GenericType != null)
+                        {
+                            object typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
+                        }
+                        else
+                        {
+                            await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
+                        }
                     }
-                    else if (subscriber.GenericType != null)
-                    {
-                        object typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
-                        await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
-                    }
-                    else
-                    {
-                        await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
-                    }
-                }
 
-                _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
+                    _logger.LogTrace("Finished calling subscriber action: {SubscriberId}", subscriber.Id);
+                }
+                catch (Exception ex)
+                {
+                    activity?.SetErrorStatus(ex);
+                    throw;
+                }
             }, DisposedCancellationToken);
         });
 

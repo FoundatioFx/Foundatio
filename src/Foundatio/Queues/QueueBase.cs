@@ -83,14 +83,15 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
             _nextQueueStatsUpdate = _timeProvider.GetUtcNow().Add(_options.MetricsPollingInterval);
             _logger.LogTrace("Getting metrics queue stats for {QueueName} ({QueueId}): Next update scheduled for {NextQueueStatsUpdate:O}", _options.Name, QueueId, _nextQueueStatsUpdate);
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
             try
             {
-                using var _ = FoundatioDiagnostics.ActivitySource.StartActivity("Queue Stats: " + _options.Name);
                 _queueStats = GetMetricsQueueStats();
                 return (_queueStats.Queued, _queueStats.Working, _queueStats.Deadletter);
             }
             catch (Exception ex)
             {
+                activity?.SetErrorStatus(ex);
                 _logger.LogError(ex, "Error getting queue metrics for {QueueName} ({QueueId}): {Message}", _options.Name, QueueId, ex.Message);
                 return (0, 0, 0);
             }

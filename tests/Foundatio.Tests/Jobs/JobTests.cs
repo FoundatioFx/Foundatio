@@ -204,4 +204,99 @@ public class JobTests : TestWithLoggingBase
         await job.RunContinuousAsync(null, iterations, TestCancellationToken);
         sw.Stop();
     }
+
+    [Fact]
+    public async Task RunContinuousAsync_FailingJob_SetsActivityErrorStatus()
+    {
+        // Arrange
+        Activity capturedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "Foundatio",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = a =>
+            {
+                if (a.OperationName.StartsWith("Job:"))
+                    capturedActivity = a;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var job = new FailingJob(null, Log);
+
+        // Act
+        await job.RunContinuousAsync(iterationLimit: 1, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(capturedActivity);
+        Assert.Equal(ActivityStatusCode.Error, capturedActivity.Status);
+        Assert.Equal("Test failure", capturedActivity.StatusDescription);
+    }
+
+    [Fact]
+    public async Task RunContinuousAsync_ThrowingJob_SetsActivityErrorStatusAndRecordsException()
+    {
+        // Arrange
+        Activity capturedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "Foundatio",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = a =>
+            {
+                if (a.OperationName.StartsWith("Job:"))
+                    capturedActivity = a;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var job = new ThrowingJob(null, Log);
+
+        // Act
+        await job.RunContinuousAsync(iterationLimit: 1, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(capturedActivity);
+        Assert.Equal(ActivityStatusCode.Error, capturedActivity.Status);
+        Assert.Contains("Test exception", capturedActivity.StatusDescription);
+
+        var exceptionEvent = capturedActivity.Events.FirstOrDefault(e => e.Name == "exception");
+        Assert.NotEqual(default, exceptionEvent);
+        Assert.Contains(exceptionEvent.Tags, t => t.Key == "exception.type" && t.Value?.ToString() == typeof(ApplicationException).FullName);
+        Assert.Contains(exceptionEvent.Tags, t => t.Key == "exception.message" && t.Value?.ToString() == "Test exception");
+
+        var stacktrace = exceptionEvent.Tags.FirstOrDefault(t => t.Key == "exception.stacktrace").Value?.ToString();
+        Assert.NotNull(stacktrace);
+        Assert.Contains("Inner exception", stacktrace);
+        Assert.Contains("Test exception", stacktrace);
+        Assert.Contains(nameof(InvalidOperationException), stacktrace);
+        Assert.Contains(nameof(ApplicationException), stacktrace);
+    }
+
+    [Fact]
+    public async Task RunContinuousAsync_SuccessfulJob_DoesNotSetActivityErrorStatus()
+    {
+        // Arrange
+        Activity capturedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "Foundatio",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = a =>
+            {
+                if (a.OperationName.StartsWith("Job:"))
+                    capturedActivity = a;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var job = new HelloWorldJob(null, Log);
+
+        // Act
+        await job.RunContinuousAsync(iterationLimit: 1, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(capturedActivity);
+        Assert.Equal(ActivityStatusCode.Unset, capturedActivity.Status);
+    }
 }

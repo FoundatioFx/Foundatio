@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -87,6 +88,9 @@ public static class JobExtensions
             using var _ = logger.BeginScope(s => s.Property("job.run_id", jobRunId));
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, options.Name);
+
+            if (!result.IsSuccess && !result.IsCancelled)
+                activity?.SetErrorStatus(result.Error, result.Message ?? result.Error?.Message);
 
             iterations++;
             if (isQueueJob && result.IsSuccess)
