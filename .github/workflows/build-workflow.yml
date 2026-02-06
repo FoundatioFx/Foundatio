@@ -72,6 +72,7 @@ jobs:
         fi
 
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
+        echo "Version: $version"
         echo "### Version: $version" >> $GITHUB_STEP_SUMMARY
     - name: Set Default Solution
       id: slnx
