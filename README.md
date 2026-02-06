@@ -62,7 +62,7 @@ await using var handle = await locker.AcquireAsync("resource-key");
 | [Redis](https://github.com/FoundatioFx/Foundatio.Redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) | | ✅ | | ✅ | |
 | [Azure Service Bus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) | | ✅ | ✅ | | |
-| [AWS (S3/SQS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | | ✅ | |
+| [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
 | [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
 | [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) | | | ✅ | | |
 | [Minio](https://github.com/FoundatioFx/Foundatio.Minio) | | | | ✅ | |

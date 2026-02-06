@@ -80,8 +80,8 @@ export default defineConfig({
             { text: 'Foundatio.CommandQuery', link: 'https://github.com/FoundatioFx/Foundatio.CommandQuery' },
             { text: 'Foundatio.Lucene', link: 'https://lucene.foundatio.dev' },
             { text: 'Foundatio.Mediator', link: 'https://mediator.foundatio.dev' },
-            { text: 'Foundatio.Parsers', link: 'https://github.com/FoundatioFx/Foundatio.Parsers' },
-            { text: 'Foundatio.Repositories', link: 'https://github.com/FoundatioFx/Foundatio.Repositories' }
+            { text: 'Foundatio.Parsers', link: 'https://parsers.foundatio.dev' },
+            { text: 'Foundatio.Repositories', link: 'https://repositories.foundatio.dev' }
           ]
         }
       ]

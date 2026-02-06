@@ -48,35 +48,20 @@ await messageBus.SubscribeAsync<OrderCreated>(async msg =>
 await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
 
-### RedisMessageBus
+### AzureServiceBusMessageBus
 
-Distributed messaging using Redis pub/sub (separate package):
+Messaging using Azure Service Bus (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
-
-```csharp
-// dotnet add package Foundatio.Redis
-
-using Foundatio.Redis.Messaging;
-using StackExchange.Redis;
-
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
-```
-
-### RabbitMQMessageBus
-
-Messaging using RabbitMQ (separate package):
-
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
 
 ```csharp
-// dotnet add package Foundatio.RabbitMQ
+// dotnet add package Foundatio.AzureServiceBus
 
-using Foundatio.RabbitMQ.Messaging;
+using Foundatio.AzureServiceBus.Messaging;
 
-var messageBus = new RabbitMQMessageBus(o => {
-    o.ConnectionString = "amqp://guest:guest@localhost:5672";
+var messageBus = new AzureServiceBusMessageBus(o => {
+    o.ConnectionString = "...";
+    o.Topic = "events";
 });
 ```
 
@@ -96,20 +81,54 @@ var messageBus = new KafkaMessageBus(o => {
 });
 ```
 
-### AzureServiceBusMessageBus
+### RabbitMQMessageBus
 
-Messaging using Azure Service Bus (separate package):
+Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
-// dotnet add package Foundatio.AzureServiceBus
+// dotnet add package Foundatio.RabbitMQ
 
-using Foundatio.AzureServiceBus.Messaging;
+using Foundatio.RabbitMQ.Messaging;
 
-var messageBus = new AzureServiceBusMessageBus(o => {
-    o.ConnectionString = "...";
+var messageBus = new RabbitMQMessageBus(o => {
+    o.ConnectionString = "amqp://guest:guest@localhost:5672";
+});
+```
+
+### RedisMessageBus
+
+Distributed messaging using Redis pub/sub (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
+
+```csharp
+// dotnet add package Foundatio.Redis
+
+using Foundatio.Redis.Messaging;
+using StackExchange.Redis;
+
+var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
+var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
+```
+
+### SQSMessageBus
+
+Messaging using AWS SNS/SQS (separate package):
+
+[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Messaging/SQSMessageBus.cs)
+
+```csharp
+// dotnet add package Foundatio.AWS
+
+using Foundatio.Messaging;
+
+var messageBus = new SQSMessageBus(o => {
+    o.ConnectionString = connectionString;
     o.Topic = "events";
+    // Optional: Specify queue name for durable subscriptions
+    // o.SubscriptionQueueName = "my-service-queue";
 });
 ```
 
@@ -461,10 +480,11 @@ Different providers handle delayed delivery differently:
 | Provider | Implementation | Persistence | Survives Restart |
 |----------|---------------|-------------|------------------|
 | **InMemoryMessageBus** | In-memory timer | None | No |
-| **RedisMessageBus** | In-memory timer | None | No |
-| **RabbitMQMessageBus** | Plugin or fallback | Plugin: Yes, Fallback: No | Plugin: Yes, Fallback: No |
-| **KafkaMessageBus** | In-memory timer | None | No |
 | **AzureServiceBusMessageBus** | Native `ScheduledEnqueueTime` | Azure | Yes |
+| **KafkaMessageBus** | In-memory timer | None | No |
+| **RabbitMQMessageBus** | Plugin or fallback | Plugin: Yes, Fallback: No | Plugin: Yes, Fallback: No |
+| **RedisMessageBus** | In-memory timer | None | No |
+| **SQSMessageBus** | In-memory timer | None | No |
 
 ### Native vs Fallback Implementation
 
@@ -690,10 +710,11 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 | Provider | Publish Errors | Subscriber Errors | Redelivery on Failure |
 |----------|---------------|-------------------|----------------------|
 | **InMemoryMessageBus** | Throws `MessageBusException` | Logged, swallowed | No |
-| **RedisMessageBus** | Throws `MessageBusException` | Logged, swallowed | No (pub/sub has no ack) |
-| **RabbitMQMessageBus** | Throws `MessageBusException` | Logged, nack/requeue | Yes (`DeliveryLimit`) |
-| **KafkaMessageBus** | Fire-and-forget with callback | Logged, offset not committed | Yes (redelivered) |
 | **AzureServiceBusMessageBus** | Throws `MessageBusException` | Logged, SDK handles | Yes (`MaxDeliveryCount`) |
+| **KafkaMessageBus** | Fire-and-forget with callback | Logged, offset not committed | Yes (redelivered) |
+| **RabbitMQMessageBus** | Throws `MessageBusException` | Logged, nack/requeue | Yes (`DeliveryLimit`) |
+| **RedisMessageBus** | Throws `MessageBusException` | Logged, swallowed | No (pub/sub has no ack) |
+| **SQSMessageBus** | Throws `MessageBusException` | Logged, message not deleted | Yes (redelivered) |
 
 ::: tip Logging
 All errors are logged at `Error` level. Subscriber errors are logged exactly once by the base class.
@@ -819,10 +840,11 @@ Different message bus implementations have different size limits. Understanding 
 | Provider | Max Message Size | Notes |
 |----------|------------------|-------|
 | InMemoryMessageBus | Limited by available memory | No practical limit |
-| RedisMessageBus | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
-| RabbitMQMessageBus | 128 MB (default) | Configurable, but keep small |
-| KafkaMessageBus | 1 MB (default) | Configurable via `message.max.bytes` |
 | AzureServiceBusMessageBus | 256 KB (Standard) / 100 MB (Premium) | Use claim check for large payloads |
+| KafkaMessageBus | 1 MB (default) | Configurable via `message.max.bytes` |
+| RabbitMQMessageBus | 128 MB (default) | Configurable, but keep small |
+| RedisMessageBus | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
+| SQSMessageBus | 256 KB | Use claim check for large payloads |
 
 ### Claim Check Pattern for Large Payloads
 

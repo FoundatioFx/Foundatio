@@ -163,7 +163,7 @@ When building several large cloud applications we found a lack of great solution
 | Provider | Caching | Queues | Messaging | Locks | Storage |
 |----------|---------|--------|-----------|-------|---------|
 | [Aliyun](./guide/implementations/aliyun) | | | | | ✅ |
-| [AWS](./guide/implementations/aws) | | ✅ | | | ✅ |
+| [AWS](./guide/implementations/aws) | | ✅ | ✅ | | ✅ |
 | [Azure ServiceBus](./guide/implementations/azure) | | ✅ | ✅ | | |
 | [Azure Storage](./guide/implementations/azure) | | ✅ | | | ✅ |
 | [In-Memory](./guide/implementations/in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -178,5 +178,5 @@ When building several large cloud applications we found a lack of great solution
 - [**Foundatio.CommandQuery**](https://github.com/FoundatioFx/Foundatio.CommandQuery) - CQRS framework with Entity Framework Core and MongoDB support, built on Foundatio.Mediator.
 - [**Foundatio.Lucene**](https://lucene.foundatio.dev) - Lucene-style query parser with AST, visitor pattern, Entity Framework Core integration, and Elasticsearch Query DSL generation.
 - [**Foundatio.Mediator**](https://mediator.foundatio.dev) - Blazingly fast, convention-based C# mediator powered by source generators and interceptors. Near-direct call performance with zero runtime reflection.
-- [**Foundatio.Parsers**](https://github.com/FoundatioFx/Foundatio.Parsers) - Extensible Lucene-style query syntax parser with Elasticsearch integration.
-- [**Foundatio.Repositories**](https://github.com/FoundatioFx/Foundatio.Repositories) - Generic repository pattern implementation with Elasticsearch support, caching, and message bus integration.
+- [**Foundatio.Parsers**](https://parsers.foundatio.dev) - Extensible Lucene-style query syntax parser with Elasticsearch integration, field aliases, query includes, and validation.
+- [**Foundatio.Repositories**](https://repositories.foundatio.dev) - Production-grade repository pattern implementation with Elasticsearch support, caching, messaging, soft deletes, and document versioning.
