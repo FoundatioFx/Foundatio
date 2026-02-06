@@ -76,9 +76,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         if (workItemDataType == null)
         {
             await queueEntry.AbandonAsync().AnyContext();
-            var result = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
-            Activity.Current?.SetErrorStatus(message: result.Message);
-            return result;
+            return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
         }
 
         using var activity = StartProcessWorkItemActivity(queueEntry, workItemDataType);
