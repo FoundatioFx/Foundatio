@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading;
@@ -93,6 +93,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         catch (Exception ex)
         {
+            activity?.SetErrorStatus(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
         }
@@ -101,7 +102,9 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         if (handler == null)
         {
             await queueEntry.CompleteAsync().AnyContext();
-            return JobResult.FailedWithMessage($"Completing {queueEntry.Value.Type} work item: {queueEntry.Id}: Handler for type {workItemDataType.Name} not registered");
+            var result = JobResult.FailedWithMessage($"Completing {queueEntry.Value.Type} work item: {queueEntry.Id}: Handler for type {workItemDataType.Name} not registered");
+            activity?.SetErrorStatus(message: result.Message);
+            return result;
         }
 
         if (queueEntry.Value.SendProgressReports)
@@ -165,6 +168,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
         catch (Exception ex)
         {
+            activity?.SetErrorStatus(ex);
+
             if (queueEntry.Value.SendProgressReports)
                 await ReportProgressAsync(handler, queueEntry, -1, $"Failed: {ex.Message}").AnyContext();
 

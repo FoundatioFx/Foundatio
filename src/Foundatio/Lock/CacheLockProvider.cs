@@ -183,7 +183,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
             _lockTimeoutCounter.Add(1);
 
             if (cancellationToken.IsCancellationRequested)
-                _logger.LogTrace("Cancellation requested for lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
+                _logger.LogDebug("Cancellation requested for lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
             else
                 _logger.LogWarning("Failed to acquire lock {Resource} ({LockId}) after {Duration:g}", resource, lockId, sw.Elapsed);
 

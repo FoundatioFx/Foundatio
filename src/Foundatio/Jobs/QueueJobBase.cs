@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,9 +55,9 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
 
+        using var dequeueActivity = StartDequeueActivity();
         try
         {
-            using var dequeueActivity = StartDequeueActivity();
             queueEntry = await _queue.Value.DequeueAsync(linkedCancellationTokenSource.Token).AnyContext();
             EnrichDequeueActivity(dequeueActivity, queueEntry);
         }
@@ -67,6 +67,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         }
         catch (Exception ex)
         {
+            dequeueActivity?.SetErrorStatus(ex, $"Error trying to dequeue message: {ex.Message}");
             return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
         }
 
@@ -132,6 +133,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         }
         catch (Exception ex)
         {
+            activity?.SetErrorStatus(ex);
             _logger.LogError(ex, "Error processing {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
 
             if (!queueEntry.IsCompleted && !queueEntry.IsAbandoned)

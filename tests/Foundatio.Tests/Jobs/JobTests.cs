@@ -204,4 +204,31 @@ public class JobTests : TestWithLoggingBase
         await job.RunContinuousAsync(null, iterations, TestCancellationToken);
         sw.Stop();
     }
+
+    [Fact]
+    public async Task RunContinuousAsync_SuccessfulJob_DoesNotSetActivityErrorStatus()
+    {
+        // Arrange
+        Activity capturedActivity = null;
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = s => s.Name == "Foundatio",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = a =>
+            {
+                if (a.OperationName.StartsWith("Job:"))
+                    capturedActivity = a;
+            }
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var job = new HelloWorldJob(null, Log);
+
+        // Act
+        await job.RunContinuousAsync(iterationLimit: 1, cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.NotNull(capturedActivity);
+        Assert.Equal(ActivityStatusCode.Unset, capturedActivity.Status);
+    }
 }
