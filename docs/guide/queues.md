@@ -15,6 +15,7 @@ public interface IQueue<T> : IQueue where T : class
     AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
     AsyncEvent<CompletedEventArgs<T>> Completed { get; }
     AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
+    AsyncEvent<QueueDeletedEventArgs<T>> QueueDeleted { get; }
 
     void AttachBehavior(IQueueBehavior<T> behavior);
     Task<string> EnqueueAsync(T data, QueueEntryOptions options = null);
@@ -414,6 +415,11 @@ queue.Abandoned.AddHandler(async (sender, args) =>
 {
     _logger.LogWarning("Abandoned: {Id}", args.Entry.Id);
 });
+
+queue.QueueDeleted.AddHandler(async (sender, args) =>
+{
+    _logger.LogInformation("Queue deleted");
+});
 ```
 
 ## Queue Behaviors
@@ -452,6 +458,12 @@ public class LoggingQueueBehavior<T> : QueueBehaviorBase<T> where T : class
     {
         _logger.LogWarning("Abandoned {Id}, attempt {Attempt}",
             args.Entry.Id, args.Entry.Attempts);
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnQueueDeleted(object sender, QueueDeletedEventArgs<T> args)
+    {
+        _logger.LogInformation("Queue deleted");
         return Task.CompletedTask;
     }
 }

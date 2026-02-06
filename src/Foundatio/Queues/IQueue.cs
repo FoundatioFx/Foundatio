@@ -47,6 +47,11 @@ public interface IQueue<T> : IQueue where T : class
     AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
     /// <summary>
+    /// Raised after the queue has been deleted.
+    /// </summary>
+    AsyncEvent<QueueDeletedEventArgs<T>> QueueDeleted { get; }
+
+    /// <summary>
     /// Attaches a behavior that can intercept and modify queue operations.
     /// </summary>
     /// <param name="behavior">The behavior to attach.</param>
@@ -325,4 +330,16 @@ public class AbandonedEventArgs<T> : EventArgs where T : class
     /// The queue entry that was abandoned.
     /// </summary>
     public IQueueEntry<T> Entry { get; set; }
+}
+
+/// <summary>
+/// Event arguments for the <see cref="IQueue{T}.QueueDeleted"/> event.
+/// </summary>
+/// <typeparam name="T">The type of message payload.</typeparam>
+public class QueueDeletedEventArgs<T> : EventArgs where T : class
+{
+    /// <summary>
+    /// The queue raising the event.
+    /// </summary>
+    public IQueue<T> Queue { get; set; }
 }
