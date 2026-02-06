@@ -121,8 +121,6 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             }
             else
             {
-                activity?.SetErrorStatus(result.Error, result.Message ?? result.Error?.Message);
-
                 if (result.Error != null || result.Message != null)
                     _logger.LogError(result.Error, "{QueueName} queue entry {QueueEntryId} returned an unsuccessful response: {Message}", _queueName, queueEntry.Id, result.Message ?? result.Error?.Message);
 
