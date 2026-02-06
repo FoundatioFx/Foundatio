@@ -148,8 +148,6 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
             if (!workItemContext.Result.IsSuccess)
             {
-                activity?.SetErrorStatus(workItemContext.Result.Error, workItemContext.Result.Message ?? workItemContext.Result.Error?.Message);
-
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                 {
                     await queueEntry.AbandonAsync().AnyContext();

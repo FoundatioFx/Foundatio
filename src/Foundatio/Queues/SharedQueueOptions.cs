@@ -65,8 +65,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     {
         ArgumentNullException.ThrowIfNull(behavior);
 
-        if (Target.Behaviors == null)
-            Target.Behaviors = new List<IQueueBehavior<T>>();
+        Target.Behaviors ??= new List<IQueueBehavior<T>>();
         Target.Behaviors.Add(behavior);
 
         return (TBuilder)this;

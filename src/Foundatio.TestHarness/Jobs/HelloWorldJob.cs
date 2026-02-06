@@ -77,31 +77,3 @@ public class LongRunningJob : JobBase
         return Task.FromResult(JobResult.Success);
     }
 }
-
-public class ThrowingJob : JobBase
-{
-    private readonly string _id;
-
-    public int RunCount { get; set; }
-
-    public ThrowingJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
-    {
-        _id = Guid.NewGuid().ToString("N").Substring(0, 10);
-    }
-
-    protected override Task<JobResult> RunInternalAsync(JobContext context)
-    {
-        RunCount++;
-
-        _logger.LogTrace("ThrowingJob Running: instance={Id} runs={RunCount}", _id, RunCount);
-
-        try
-        {
-            throw new InvalidOperationException("Inner exception");
-        }
-        catch (Exception ex)
-        {
-            throw new ApplicationException("Test exception", ex);
-        }
-    }
-}

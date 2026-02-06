@@ -89,9 +89,6 @@ public static class JobExtensions
             var result = await job.TryRunAsync(cancellationToken).AnyContext();
             logger.LogJobResult(result, options.Name);
 
-            if (!result.IsSuccess && !result.IsCancelled)
-                activity?.SetErrorStatus(result.Error, result.Message ?? result.Error?.Message);
-
             iterations++;
             if (isQueueJob && result.IsSuccess)
                 queueItemsProcessed++;
