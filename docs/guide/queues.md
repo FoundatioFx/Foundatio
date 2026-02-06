@@ -391,34 +391,40 @@ Subscribe to queue lifecycle events:
 ```csharp
 var queue = new InMemoryQueue<WorkItem>();
 
-queue.Enqueuing.AddHandler(async (sender, args) =>
+queue.Enqueuing.AddHandler((sender, args) =>
 {
-    _logger.LogInformation("Enqueuing: {Data}", args.Entry.Value);
+    _logger.LogInformation("Enqueuing: {Data}", args.Data);
+    return Task.CompletedTask;
 });
 
-queue.Enqueued.AddHandler(async (sender, args) =>
+queue.Enqueued.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Enqueued: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Dequeued.AddHandler(async (sender, args) =>
+queue.Dequeued.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Dequeued: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Completed.AddHandler(async (sender, args) =>
+queue.Completed.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Completed: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Abandoned.AddHandler(async (sender, args) =>
+queue.Abandoned.AddHandler((sender, args) =>
 {
     _logger.LogWarning("Abandoned: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.QueueDeleted.AddHandler(async (sender, args) =>
+queue.QueueDeleted.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Queue deleted");
+    return Task.CompletedTask;
 });
 ```
 
