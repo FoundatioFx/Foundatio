@@ -60,12 +60,15 @@ jobs:
         echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME actor: $GITHUB_ACTOR
     - name: Build Version
       run: |
-        dotnet tool install --global minver-cli --version 6.1.0
+        dotnet tool install --global minver-cli --version 7.0.0
         version=$(minver --tag-prefix v --default-pre-release-identifiers preview.${GIT_BRANCH_SUFFIX}0)
 
-        # If on a non-main branch, insert branch name into version
+        # If on a non-main branch, insert branch name before the height (last numeric segment)
         if [ -n "$GIT_BRANCH_SUFFIX" ]; then
-          version=$(echo "$version" | sed -E "s/^([0-9]+\.[0-9]+\.[0-9]+-[^.]+\.[^.]+)\./\1.${GIT_BRANCH_SUFFIX}/")
+          branch_name="${GIT_BRANCH_SUFFIX%.}"
+          if [[ "$version" != *"$branch_name"* ]]; then
+            version=$(echo "$version" | sed -E "s/\.([0-9]+)$/.${GIT_BRANCH_SUFFIX}\1/")
+          fi
         fi
 
         echo "MINVERVERSIONOVERRIDE=$version" >> $GITHUB_ENV
