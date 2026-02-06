@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -18,6 +18,20 @@ internal static class TaskExtensions
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ConfiguredTaskAwaitable AnyContext(this Task task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ConfiguredValueTaskAwaitable AnyContext(this ValueTask task)
+    {
+        return task.ConfigureAwait(continueOnCapturedContext: false);
+    }
+
+    [DebuggerStepThrough]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ConfiguredValueTaskAwaitable<TResult> AnyContext<TResult>(this ValueTask<TResult> task)
     {
         return task.ConfigureAwait(continueOnCapturedContext: false);
     }

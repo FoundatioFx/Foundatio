@@ -34,7 +34,7 @@ To summarize, if you want pain free development and testing while allowing your 
 - [Redis](https://github.com/FoundatioFx/Foundatio.Redis) - Caching, Storage, Queues, Messaging, Locks
 - [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) - Storage, Queues
 - [Azure ServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) - Queues, Messaging
-- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues
+- [AWS](https://github.com/FoundatioFx/Foundatio.AWS) - Storage, Queues, Messaging
 - [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) - Messaging
 - [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) - Messaging
 - [Minio](https://github.com/FoundatioFx/Foundatio.Minio) - Storage
@@ -133,6 +133,7 @@ Allows you to publish and subscribe to messages flowing through your application
 3. [RabbitMQMessageBus](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/master/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs): A RabbitMQ implementation.
 4. [KafkaMessageBus](https://github.com/FoundatioFx/Foundatio.Kafka/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs): A Kafka implementation.
 5. [AzureServiceBusMessageBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/master/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs): An Azure Service Bus implementation.
+6. [SQSMessageBus](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Messaging/SQSMessageBus.cs): An AWS SNS/SQS implementation using SNS for publishing and SQS for subscribing.
 
 #### Sample
 
