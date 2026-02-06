@@ -16,6 +16,11 @@ public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable wher
 
     public virtual void Attach(IQueue<T> queue)
     {
+        ArgumentNullException.ThrowIfNull(queue);
+
+        if (_queue is not null)
+            throw new QueueException("This behavior is already attached to a queue. Create a separate behavior instance for each queue.");
+
         _queue = queue;
 
         _disposables.Add(_queue.Enqueuing.AddHandler(OnEnqueuing));

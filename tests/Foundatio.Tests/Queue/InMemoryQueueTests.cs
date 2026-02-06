@@ -330,6 +330,30 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.True(behavior.QueueDeletedCalled);
     }
 
+    [Fact]
+    public void AttachBehavior_WhenAlreadyAttached_ThrowsQueueException()
+    {
+        // Arrange
+        using var q1 = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+        using var q2 = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+        var behavior = new QueueDeletedTestBehavior<SimpleWorkItem>();
+        q1.AttachBehavior(behavior);
+
+        // Act & Assert
+        var ex = Assert.Throws<QueueException>(() => q2.AttachBehavior(behavior));
+        Assert.Contains("already attached", ex.Message);
+    }
+
+    [Fact]
+    public void AttachBehavior_WithNullQueue_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var behavior = new QueueDeletedTestBehavior<SimpleWorkItem>();
+
+        // Act & Assert
+        Assert.Throws<ArgumentNullException>(() => behavior.Attach(null));
+    }
+
     private class QueueDeletedTestBehavior<T> : QueueBehaviorBase<T> where T : class
     {
         public bool QueueDeletedCalled { get; private set; }

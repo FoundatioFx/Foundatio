@@ -511,7 +511,24 @@ await queue.EnqueueAsync(new OrderWorkItem { OrderId = 456 }); // ✅ Enqueued
 3. If not found, the identifier is cached with the specified TTL
 4. On dequeue, the identifier is removed from the cache (allowing re-submission)
 
+### Behavior Attachment Rules
+
+Each behavior instance can only be attached to a single queue. Attempting to attach the same behavior instance to multiple queues or attaching it twice to the same queue throws a `QueueException`. This prevents subtle bugs where event handlers could fire against the wrong queue reference.
+
+```csharp
+// ✅ Correct: separate instances for each queue
+queue1.AttachBehavior(new LoggingQueueBehavior<WorkItem>(logger));
+queue2.AttachBehavior(new LoggingQueueBehavior<WorkItem>(logger));
+
+// ❌ Throws QueueException: same instance attached twice
+var behavior = new LoggingQueueBehavior<WorkItem>(logger);
+queue1.AttachBehavior(behavior);
+queue2.AttachBehavior(behavior); // throws QueueException
+```
+
 ### Attaching Multiple Behaviors
+
+You can attach multiple different behavior instances to a single queue:
 
 ```csharp
 var queue = new InMemoryQueue<WorkItem>(o => o
@@ -749,6 +766,26 @@ services.AddSingleton<IQueue<OrderWorkItem>>(sp =>
 
 services.AddSingleton<IQueue<EmailWorkItem>>(sp =>
     new InMemoryQueue<EmailWorkItem>(o => o.Name = "emails"));
+```
+
+## Queue Exceptions
+
+Queue operations throw `QueueException` for queue-specific error conditions. This provides a consistent, predictable exception type across all queue implementations (in-memory, Redis, Azure, AWS, etc.).
+
+```csharp
+using Foundatio.Queues;
+
+try
+{
+    // Attempting to reuse a behavior instance throws QueueException
+    var behavior = new LoggingQueueBehavior<WorkItem>(logger);
+    queue1.AttachBehavior(behavior);
+    queue2.AttachBehavior(behavior); // throws QueueException
+}
+catch (QueueException ex)
+{
+    logger.LogError(ex, "Queue operation failed: {Message}", ex.Message);
+}
 ```
 
 ## Best Practices
