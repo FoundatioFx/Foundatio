@@ -350,10 +350,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         return Task.FromResult(_deadletterQueue.Select(i => i.Value));
     }
 
-    public override Task DeleteQueueAsync()
+    protected override Task DeleteQueueImplAsync()
     {
-        _logger.LogTrace("Deleting queue: {QueueName} ({QueueId})", _options.Name, QueueId);
-
         _queue.Clear();
         _deadletterQueue.Clear();
         _dequeued.Clear();

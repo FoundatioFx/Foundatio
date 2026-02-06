@@ -178,7 +178,14 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         return GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult();
     }
 
-    public abstract Task DeleteQueueAsync();
+    protected abstract Task DeleteQueueImplAsync();
+
+    public async Task DeleteQueueAsync()
+    {
+        _logger.LogTrace("Deleting queue: {QueueName} ({QueueId})", _options.Name, QueueId);
+        await DeleteQueueImplAsync().AnyContext();
+        await OnQueueDeletedAsync().AnyContext();
+    }
 
     protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
     public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default)
@@ -335,6 +342,17 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
     }
 
+    public AsyncEvent<QueueDeletedEventArgs<T>> QueueDeleted { get; } = new AsyncEvent<QueueDeletedEventArgs<T>>(true);
+
+    protected virtual async Task OnQueueDeletedAsync()
+    {
+        if (QueueDeleted is not null)
+        {
+            var args = new QueueDeletedEventArgs<T> { Queue = this };
+            await QueueDeleted.InvokeAsync(this, args).AnyContext();
+        }
+    }
+
     protected string GetSubMetricName(T data)
     {
         var haveStatName = data as IHaveSubMetricName;
@@ -402,6 +420,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         Enqueued?.Dispose();
         Enqueuing?.Dispose();
         LockRenewed?.Dispose();
+        QueueDeleted?.Dispose();
 
         foreach (var behavior in _behaviors.OfType<IDisposable>())
             behavior.Dispose();

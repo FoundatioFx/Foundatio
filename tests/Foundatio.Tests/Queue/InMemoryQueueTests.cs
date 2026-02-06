@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -288,6 +288,57 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Empty(q.GetEntries());
         Assert.Empty(q.GetDequeuedEntries());
         Assert.Equal(10, q.GetCompletedEntries().Count);
+    }
+
+    [Fact]
+    public async Task DeleteQueueAsync_WithEventHandler_RaisesQueueDeletedEvent()
+    {
+        // Arrange
+        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+        bool eventFired = false;
+
+        using var handler = q.QueueDeleted.AddHandler((sender, args) =>
+        {
+            eventFired = true;
+            Assert.Same(q, args.Queue);
+            return Task.CompletedTask;
+        });
+
+        await q.EnqueueAsync(new SimpleWorkItem());
+
+        // Act
+        await q.DeleteQueueAsync();
+
+        // Assert
+        Assert.True(eventFired);
+    }
+
+    [Fact]
+    public async Task DeleteQueueAsync_WithAttachedBehavior_InvokesBehaviorOnQueueDeleted()
+    {
+        // Arrange
+        using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));
+        var behavior = new QueueDeletedTestBehavior<SimpleWorkItem>();
+        q.AttachBehavior(behavior);
+
+        await q.EnqueueAsync(new SimpleWorkItem());
+
+        // Act
+        await q.DeleteQueueAsync();
+
+        // Assert
+        Assert.True(behavior.QueueDeletedCalled);
+    }
+
+    private class QueueDeletedTestBehavior<T> : QueueBehaviorBase<T> where T : class
+    {
+        public bool QueueDeletedCalled { get; private set; }
+
+        protected override Task OnQueueDeleted(object sender, QueueDeletedEventArgs<T> queueDeletedEventArgs)
+        {
+            QueueDeletedCalled = true;
+            return Task.CompletedTask;
+        }
     }
 
     #region Issue239

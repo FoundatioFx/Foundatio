@@ -15,6 +15,7 @@ public interface IQueue<T> : IQueue where T : class
     AsyncEvent<LockRenewedEventArgs<T>> LockRenewed { get; }
     AsyncEvent<CompletedEventArgs<T>> Completed { get; }
     AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
+    AsyncEvent<QueueDeletedEventArgs<T>> QueueDeleted { get; }
 
     void AttachBehavior(IQueueBehavior<T> behavior);
     Task<string> EnqueueAsync(T data, QueueEntryOptions options = null);
@@ -390,29 +391,40 @@ Subscribe to queue lifecycle events:
 ```csharp
 var queue = new InMemoryQueue<WorkItem>();
 
-queue.Enqueuing.AddHandler(async (sender, args) =>
+queue.Enqueuing.AddHandler((sender, args) =>
 {
-    _logger.LogInformation("Enqueuing: {Data}", args.Entry.Value);
+    _logger.LogInformation("Enqueuing: {Data}", args.Data);
+    return Task.CompletedTask;
 });
 
-queue.Enqueued.AddHandler(async (sender, args) =>
+queue.Enqueued.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Enqueued: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Dequeued.AddHandler(async (sender, args) =>
+queue.Dequeued.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Dequeued: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Completed.AddHandler(async (sender, args) =>
+queue.Completed.AddHandler((sender, args) =>
 {
     _logger.LogInformation("Completed: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
 });
 
-queue.Abandoned.AddHandler(async (sender, args) =>
+queue.Abandoned.AddHandler((sender, args) =>
 {
     _logger.LogWarning("Abandoned: {Id}", args.Entry.Id);
+    return Task.CompletedTask;
+});
+
+queue.QueueDeleted.AddHandler((sender, args) =>
+{
+    _logger.LogInformation("Queue deleted");
+    return Task.CompletedTask;
 });
 ```
 
@@ -452,6 +464,12 @@ public class LoggingQueueBehavior<T> : QueueBehaviorBase<T> where T : class
     {
         _logger.LogWarning("Abandoned {Id}, attempt {Attempt}",
             args.Entry.Id, args.Entry.Attempts);
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnQueueDeleted(object sender, QueueDeletedEventArgs<T> args)
+    {
+        _logger.LogInformation("Queue deleted");
         return Task.CompletedTask;
     }
 }

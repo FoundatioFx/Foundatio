@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -24,6 +24,7 @@ public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable wher
         _disposables.Add(_queue.LockRenewed.AddHandler(OnLockRenewed));
         _disposables.Add(_queue.Completed.AddHandler(OnCompleted));
         _disposables.Add(_queue.Abandoned.AddHandler(OnAbandoned));
+        _disposables.Add(_queue.QueueDeleted.AddHandler(OnQueueDeleted));
     }
 
     protected virtual Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs)
@@ -52,6 +53,11 @@ public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable wher
     }
 
     protected virtual Task OnAbandoned(object sender, AbandonedEventArgs<T> abandonedEventArgs)
+    {
+        return Task.CompletedTask;
+    }
+
+    protected virtual Task OnQueueDeleted(object sender, QueueDeletedEventArgs<T> queueDeletedEventArgs)
     {
         return Task.CompletedTask;
     }
