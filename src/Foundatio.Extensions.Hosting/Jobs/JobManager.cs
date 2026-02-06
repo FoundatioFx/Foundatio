@@ -159,6 +159,7 @@ public class JobManager : IJobManager
             return Jobs.Where(j => j.Running).Select(j => new JobStatus
             {
                 Name = j.Options.Name,
+                Description = j.Options.Description,
                 Schedule = j.Options.CronSchedule,
                 Running = j.Running,
                 Enabled = j.Options.IsEnabled,
@@ -172,6 +173,7 @@ public class JobManager : IJobManager
         return Jobs.Select(j => new JobStatus
         {
             Name = j.Options.Name,
+            Description = j.Options.Description,
             Schedule = j.Options.CronSchedule,
             Running = j.Running,
             Enabled = j.Options.IsEnabled,
@@ -222,6 +224,7 @@ public class JobManager : IJobManager
 public class JobStatus
 {
     public string Name { get; set; }
+    public string Description { get; set;}
     public bool Running { get; set; }
     public bool Enabled { get; set; }
     public bool Distributed { get; set; }
