@@ -8,7 +8,7 @@
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="Exceptionless.RandomData" Version="1.2.2" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.2.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.1" />
   </ItemGroup>
   <ItemGroup>
