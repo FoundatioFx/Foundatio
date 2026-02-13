@@ -47,7 +47,7 @@ public abstract class RabbitMqMessageBusClassicTestBase : RabbitMqMessageBusTest
                 throw new Exception("Poisoned message");
             }, TestCancellationToken);
 
-            await messageBus.PublishAsync(new SimpleMessageA());
+            await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: TestCancellationToken);
             _logger.LogTrace("Published one...");
 
             await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);

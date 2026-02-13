@@ -185,7 +185,7 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
                 throw new Exception("Poisoned message");
             }, TestCancellationToken);
 
-            await messageBus.PublishAsync(new SimpleMessageA());
+            await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: TestCancellationToken);
             _logger.LogTrace("Published one...");
 
             await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
@@ -216,12 +216,12 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
             countdownEvent.Signal();
         }, cts.Token);
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 1" }, cancellationToken: TestCancellationToken);
         await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, countdownEvent.CurrentCount);
         await cts.CancelAsync();
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit message 2" }, cancellationToken: TestCancellationToken);
 
         cts = new CancellationTokenSource();
         countdownEvent.AddCount(1);
@@ -234,9 +234,9 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
         Assert.Equal(0, countdownEvent.CurrentCount);
         await cts.CancelAsync();
 
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" });
-        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" });
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 1" }, cancellationToken: TestCancellationToken);
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 2" }, cancellationToken: TestCancellationToken);
+        await messageBus1.PublishAsync(new SimpleMessageA { Data = "Audit offline message 3" }, cancellationToken: TestCancellationToken);
 
         await messageBus1.DisposeAsync();
 
@@ -255,7 +255,7 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
             _logger.LogInformation("[Subscriber3] Got message: {Message}", msg.Data);
             countdownEvent.Signal();
         }, cts.Token);
-        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" });
+        await messageBus2.PublishAsync(new SimpleMessageA { Data = "Another audit message 4" }, cancellationToken: TestCancellationToken);
         await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, countdownEvent.CurrentCount);
 
