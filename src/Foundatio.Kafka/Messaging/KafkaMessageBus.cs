@@ -201,7 +201,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (DisposedCancellationToken.IsCancellationRequested)
             return;
 
-        if (_listeningTask is { Status: TaskStatus.Running })
+        if (_listeningTask is { IsCompleted: false })
         {
             _logger.LogTrace("Already Listening: {Topic}", _options.Topic);
             return;
@@ -211,42 +211,68 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         _listeningTask = Task.Run(async () =>
         {
-            using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
-                .SetLogHandler(LogHandler)
-                .SetStatisticsHandler(LogStatisticsHandler)
-                .SetErrorHandler(LogErrorHandler)
-                .SetPartitionsAssignedHandler(LogPartitionAssignmentHandler)
-                .SetPartitionsLostHandler(LogPartitionsLostHandler)
-                .SetPartitionsRevokedHandler(LogPartitionsRevokedHandler)
-                .SetOffsetsCommittedHandler(LogOffsetsCommittedHandler)
-                .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
-                .Build();
-
-            try
+            while (!DisposedCancellationToken.IsCancellationRequested)
             {
-                consumer.Subscribe(_options.Topic);
-                _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+                using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
+                    .SetLogHandler(LogHandler)
+                    .SetStatisticsHandler(LogStatisticsHandler)
+                    .SetErrorHandler(LogErrorHandler)
+                    .SetPartitionsAssignedHandler(LogPartitionAssignmentHandler)
+                    .SetPartitionsLostHandler(LogPartitionsLostHandler)
+                    .SetPartitionsRevokedHandler(LogPartitionsRevokedHandler)
+                    .SetOffsetsCommittedHandler(LogOffsetsCommittedHandler)
+                    .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+                    .Build();
 
-                while (!DisposedCancellationToken.IsCancellationRequested)
+                try
                 {
-                    var consumeResult = consumer.Consume(DisposedCancellationToken);
-                    await OnMessageAsync(consumer, consumeResult).AnyContext();
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                // Don't log operation cancelled exceptions
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error consuming {Topic} GroupId={GroupId} message: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
-            }
-            finally
-            {
-                consumer.Unsubscribe();
-                consumer.Close();
+                    consumer.Subscribe(_options.Topic);
+                    _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
 
-                _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+                    while (!DisposedCancellationToken.IsCancellationRequested)
+                    {
+                        var consumeResult = consumer.Consume(DisposedCancellationToken);
+                        await OnMessageAsync(consumer, consumeResult).AnyContext();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Don't log operation cancelled exceptions
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    if (DisposedCancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogTrace(ex, "Error consuming {Topic} GroupId={GroupId} during shutdown: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
+                        break;
+                    }
+
+                    _logger.LogError(ex, "Error consuming {Topic} GroupId={GroupId}: {Message}. Retrying in 1s...", _options.Topic, _consumerConfig.GroupId, ex.Message);
+
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(1), _timeProvider, DisposedCancellationToken).AnyContext();
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
+                finally
+                {
+                    try
+                    {
+                        consumer.Unsubscribe();
+                        consumer.Close();
+
+                        _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogTrace(ex, "Error cleaning up consumer for {Topic} GroupId={GroupId}: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
+                    }
+                }
             }
         }, DisposedCancellationToken);
     }
