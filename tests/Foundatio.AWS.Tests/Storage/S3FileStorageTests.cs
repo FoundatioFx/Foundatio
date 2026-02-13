@@ -11,12 +11,13 @@ public class S3FileStorageTests : FileStorageTestsBase
 {
     private const string BUCKET_NAME = "foundatio-ci";
 
-    public S3FileStorageTests(ITestOutputHelper output) : base(output) { }
+    public S3FileStorageTests(ITestOutputHelper output) : base(output)
+    {
+    }
 
     protected override IFileStorage GetStorage()
     {
-        return new S3FileStorage(
-            o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
+        return new S3FileStorage(o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
                 .LoggerFactory(Log).AllowInMemoryStream());
     }
 
