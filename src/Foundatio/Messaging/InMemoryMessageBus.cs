@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -23,12 +24,12 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
 
     public long GetMessagesSent(Type messageType)
     {
-        return _messageCounts.TryGetValue(GetMappedMessageType(messageType), out long count) ? count : 0;
+        return _messageCounts.GetValueOrDefault(GetMappedMessageType(messageType), 0);
     }
 
     public long GetMessagesSent<T>()
     {
-        return _messageCounts.TryGetValue(GetMappedMessageType(typeof(T)), out long count) ? count : 0;
+        return _messageCounts.GetValueOrDefault(GetMappedMessageType(typeof(T)), 0);
     }
 
     public void ResetMessagesSent()

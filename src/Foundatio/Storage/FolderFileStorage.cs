@@ -151,7 +151,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
         try
         {
-            using (await _lock.LockAsync().AnyContext())
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
                 string directory = Path.GetDirectoryName(normalizedNewPath);
                 if (directory != null)
@@ -198,7 +198,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
         try
         {
-            using (await _lock.LockAsync().AnyContext())
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
                 string directory = Path.GetDirectoryName(normalizedTargetPath);
                 if (directory != null)

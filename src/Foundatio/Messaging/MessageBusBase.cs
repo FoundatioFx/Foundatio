@@ -49,6 +49,17 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     /// </summary>
     protected CancellationToken DisposedCancellationToken => _disposedCancellationTokenSource.Token;
 
+    /// <summary>
+    /// Creates a linked cancellation token source that combines the provided token with the disposal token.
+    /// This allows operations to be cancelled by either the caller or when this instance is disposed.
+    /// </summary>
+    /// <param name="cancellationToken">The caller's cancellation token to link.</param>
+    /// <returns>A new <see cref="CancellationTokenSource"/> that should be disposed by the caller.</returns>
+    protected CancellationTokenSource GetLinkedDisposableCancellationTokenSource(CancellationToken cancellationToken)
+    {
+        return CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, DisposedCancellationToken);
+    }
+
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
@@ -73,10 +84,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 options.Properties.Add("TraceState", Activity.Current.TraceStateString);
         }
 
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         try
         {
-            await EnsureTopicCreatedAsync(cancellationToken).AnyContext();
-            await PublishImplAsync(GetMappedMessageType(messageType), message, options, cancellationToken).AnyContext();
+            await EnsureTopicCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
+            await PublishImplAsync(GetMappedMessageType(messageType), message, options, linkedCancellationTokenSource.Token).AnyContext();
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not MessageBusException)
         {
@@ -105,8 +117,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         return _knownMessageTypesCache.GetOrAdd(messageType, type =>
         {
-            if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.ContainsKey(type))
-                return _options.MessageTypeMappings[type];
+            if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.TryGetValue(type, out Type typeMapping))
+                return typeMapping;
 
             try
             {
@@ -126,7 +138,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error getting message body type: {MessageType}", type);
-
                     return null;
                 }
             }
@@ -145,7 +156,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             Action = (message, token) =>
             {
                 if (message is T typedMessage)
-                    return handler(typedMessage, cancellationToken);
+                    return handler(typedMessage, token);
 
                 _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                 return Task.CompletedTask;
@@ -157,11 +168,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             cancellationToken.Register(() =>
             {
                 _subscribers.TryRemove(subscriber.Id, out _);
-                if (_subscribers.Count == 0)
-                {
-                    _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
-                    RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
-                }
+                if (_subscribers.Count > 0)
+                    return;
+
+                _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
+                RemoveTopicSubscriptionAsync().GetAwaiter().GetResult();
             });
         }
 
@@ -265,7 +276,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
             return Task.Run(async () =>
             {
-                if (subscriber.CancellationToken.IsCancellationRequested)
+                if (DisposedCancellationToken.IsCancellationRequested || subscriber.CancellationToken.IsCancellationRequested)
                 {
                     _logger.LogTrace("The cancelled subscriber action will not be called: {SubscriberId}", subscriber.Id);
                     return;
@@ -420,14 +431,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _subscribers?.Clear();
         _disposedCancellationTokenSource.Cancel();
         _disposedCancellationTokenSource.Dispose();
-    }
-
-    [DebuggerDisplay("MessageType: {MessageType} SendTime: {SendTime} Message: {Message}")]
-    protected class DelayedMessage
-    {
-        public DateTime SendTime { get; set; }
-        public Type MessageType { get; set; }
-        public object Message { get; set; }
     }
 
     [DebuggerDisplay("Id: {Id} Type: {Type} CancellationToken: {CancellationToken}")]

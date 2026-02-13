@@ -139,10 +139,10 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken)
     {
-        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
 
         LastDequeueActivity = _timeProvider.GetUtcNow();
-        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         return await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
@@ -161,8 +161,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
     public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
-        return await GetDeadletterItemsImplAsync(cancellationToken).AnyContext();
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
+        return await GetDeadletterItemsImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
     protected abstract Task<QueueStats> GetQueueStatsImplAsync();
@@ -191,7 +192,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
     public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default)
     {
-        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
+        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
         StartWorkingImpl(handler, autoComplete, cancellationToken);
     }
 
