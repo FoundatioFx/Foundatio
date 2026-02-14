@@ -112,18 +112,23 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             // What to do if message type is null?
             var message = ConvertToMessage(messageType, consumeResult.Message);
             await SendMessageToSubscribersAsync(message).AnyContext();
-
-            if (!_subscribers.IsEmpty)
-                AcknowledgeMessage(consumer, consumeResult);
         }
         catch (MessageBusException)
         {
-            // SendMessageToSubscribersAsync already logged the error
-            // Don't commit offset - message will be redelivered
+            // Subscriber handler failures are application-level errors. The base class
+            // already logged the error. We still commit the offset below to prevent
+            // infinite redelivery loops.
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId}) Error deserializing message: {Message}", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId, ex.Message);
+            // Deserialization or message type resolution failed. Log and commit the offset
+            // below to avoid a poison-pill message blocking the consumer indefinitely.
+            _logger.LogError(ex, "Error processing message at {TopicPartitionOffset} GroupId={GroupId}, skipping: {Message}", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId, ex.Message);
+        }
+        finally
+        {
+            if (!_subscribers.IsEmpty)
+                AcknowledgeMessage(consumer, consumeResult);
         }
     }
 
