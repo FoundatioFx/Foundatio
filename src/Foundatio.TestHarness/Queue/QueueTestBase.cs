@@ -671,6 +671,50 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         }
     }
 
+    public virtual async Task DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync()
+    {
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        if (queue == null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+
+            // Act: first dequeue, mutate, abandon
+            var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(workItem);
+            Assert.Equal("Hello", workItem.Value.Data);
+
+            workItem.Value.Data = "Mutated";
+            await workItem.AbandonAsync();
+
+            // Act: second dequeue (retry) should have pristine value
+            var retryItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(retryItem);
+            Assert.Equal("Hello", retryItem.Value.Data);
+
+            await retryItem.CompleteAsync();
+
+            // Assert
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(2, stats.Dequeued);
+                Assert.Equal(1, stats.Abandoned);
+                Assert.Equal(1, stats.Completed);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task DequeueWaitWillGetSignaledAsync()
     {
         using var queue = GetQueue();

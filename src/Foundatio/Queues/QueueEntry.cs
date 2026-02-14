@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -69,11 +69,13 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
             await AbandonAsync();
     }
 
-    internal void Reset()
+    internal QueueEntry<T> CreateRetryEntry()
     {
-        IsCompleted = false;
-        IsAbandoned = false;
-        Value = _original.DeepClone();
+        var entry = new QueueEntry<T>(Id, CorrelationId, _original, _queue, EnqueuedTimeUtc, Attempts);
+        foreach (var kvp in Properties)
+            entry.Properties[kvp.Key] = kvp.Value;
+
+        return entry;
     }
 }
 

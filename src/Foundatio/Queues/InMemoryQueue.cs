@@ -222,15 +222,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!_queue.TryDequeue(out var entry) || entry == null)
             return null;
 
-        if (entry.IsAbandoned || entry.IsCompleted)
-        {
-            // Reset must happen at dequeue time (not in AbandonAsync/RetryAsync) so that
-            // the caller of AbandonAsync still sees IsAbandoned=true after it returns.
-            // Resetting inline during abandon would clear the flag on the same object reference,
-            // breaking callers that check IsAbandoned (e.g., DisposeAsync, auto-complete logic).
-            entry.Reset();
-        }
-
         ScheduleNextMaintenance(_timeProvider.GetUtcNow().UtcDateTime.Add(_options.WorkItemTimeout));
 
         entry.Attempts++;
@@ -318,16 +309,16 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         {
             if (targetEntry.Attempts < _options.Retries + 1)
             {
+                var retryEntry = targetEntry.CreateRetryEntry();
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
                     _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId}", queueEntry.Id);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(targetEntry), _timeProvider, DisposedCancellationToken);
+                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () => RetryAsync(retryEntry), _timeProvider, DisposedCancellationToken);
                 }
                 else
                 {
                     _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId}", queueEntry.Id);
-                    _queue.Enqueue(targetEntry);
-                    _autoResetEvent.Set();
+                    _ = Task.Run(() => RetryAsync(retryEntry), DisposedCancellationToken);
                 }
             }
             else
