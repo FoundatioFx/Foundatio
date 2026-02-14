@@ -134,3 +134,80 @@ Apple M1 Max, 1 CPU, 10 logical and 10 physical cores
 - `DeepClone_StringArray_1000`: Array of 1000 strings
 - `DeepClone_ObjectList_100`: List of 100 medium nested objects
 - `DeepClone_ObjectDictionary_50`: Dictionary of 50 event documents
+
+---
+
+## FastCloner v3.4.4 Evaluation
+
+We evaluated [FastCloner](https://github.com/lofcz/FastCloner) as a potential replacement for Force.DeepCloner.
+
+### Results Summary (FastCloner v3.4.4)
+
+| Benchmark | Mean | Allocated | Use Case |
+|-----------|------|-----------|----------|
+| **DeepClone_SmallObject** | 132 ns | 144 B | Simple cache entries |
+| **DeepClone_FileSpec** | 402 ns | 1,072 B | File storage metadata |
+| **DeepClone_SmallObjectWithCollections** | 490 ns | 1,256 B | Config/metadata caching |
+| **DeepClone_StringArray_1000** | 501 ns | 8,057 B | String collections |
+| **DeepClone_DynamicWithDictionary** | 905 ns | 3,224 B | JSON-like dynamic data |
+| **DeepClone_MediumNestedObject** | 1,313 ns | 3,352 B | Typical queue messages |
+| **DeepClone_DynamicWithNestedObject** | 1,315 ns | 3,464 B | Nested dynamic objects |
+| **DeepClone_DynamicWithArray** | 3,343 ns | 8,984 B | Mixed-type arrays |
+| **DeepClone_LargeEventDocument_10MB** | 48,415 ns | 154,888 B | Error tracking events |
+| **DeepClone_ObjectList_100** | 120,509 ns | 374,672 B | Batch processing |
+| **DeepClone_ObjectDictionary_50** | 597,092 ns | 631,619 B | Keyed collections |
+| **DeepClone_LargeLogBatch_10MB** | 5,726,243 ns | 5,251,027 B | Bulk log ingestion |
+
+### Comparison: Force.DeepCloner vs FastCloner
+
+| Benchmark | DeepCloner | FastCloner | Change |
+|-----------|------------|------------|--------|
+| SmallObject | 52.93 ns | 132 ns | **+149% slower** |
+| FileSpec | 299.87 ns | 402 ns | **+34% slower** |
+| SmallObjectWithCollections | 384.61 ns | 490 ns | **+27% slower** |
+| StringArray_1000 | 470.19 ns | 501 ns | +7% slower |
+| DynamicWithDictionary | 797.00 ns | 905 ns | +14% slower |
+| MediumNestedObject | 1,020.19 ns | 1,313 ns | **+29% slower** |
+| DynamicWithNestedObject | 1,130.58 ns | 1,315 ns | +16% slower |
+| DynamicWithArray | 3,672.72 ns | 3,343 ns | **-9% faster** |
+| LargeEventDocument_10MB | 43,718.94 ns | 48,415 ns | +11% slower |
+| ObjectList_100 | 110,525.77 ns | 120,509 ns | +9% slower |
+| ObjectDictionary_50 | 555,214.24 ns | 597,092 ns | +8% slower |
+| LargeLogBatch_10MB | 3,662,330.45 ns | 5,726,243 ns | **+56% slower** |
+
+### Conclusion
+
+**FastCloner is consistently slower than DeepCloner** for our benchmark suite:
+
+- **Small objects**: 27-149% slower
+- **Medium objects**: 9-29% slower
+- **Large objects**: 8-56% slower
+- **Only exception**: DynamicWithArray is 9% faster
+
+This contradicts FastCloner's published benchmarks which show ~25x improvement over DeepCloner. The published benchmarks likely use the source generator (`FastDeepClone()`) rather than reflection-based cloning.
+
+### Raw Results (FastCloner v3.4.4)
+
+```
+BenchmarkDotNet v0.15.8, macOS Tahoe 26.2 (25C56) [Darwin 25.2.0]
+Apple M1 Max, 1 CPU, 10 logical and 10 physical cores
+.NET SDK 10.0.102
+  [Host]     : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+  DefaultJob : .NET 10.0.2 (10.0.2, 10.0.225.61305), Arm64 RyuJIT armv8.0-a
+
+
+| Method                               | Mean           | Error         | StdDev       | Ratio   | RatioSD | Gen0     | Gen1     | Gen2     | Allocated | Alloc Ratio |
+|------------------------------------- |---------------:|--------------:|-------------:|--------:|--------:|---------:|---------:|---------:|----------:|------------:|
+| DeepClone_StringArray_1000           |       501.2 ns |       9.63 ns |     10.71 ns |   0.010 |    0.00 |   1.2836 |        - |        - |    8057 B |       0.052 |
+| DeepClone_ObjectList_100             |   120,508.5 ns |   2,405.40 ns |  5,177.89 ns |   2.489 |    0.11 |  59.5703 |  19.7754 |        - |  374672 B |       2.419 |
+| DeepClone_ObjectDictionary_50        |   597,091.5 ns |  11,791.91 ns | 11,030.16 ns |  12.333 |    0.23 |  96.6797 |  44.9219 |  17.5781 |  631619 B |       4.078 |
+| DeepClone_DynamicWithDictionary      |       905.2 ns |      17.14 ns |     19.05 ns |   0.019 |    0.00 |   0.5131 |   0.0038 |        - |    3224 B |       0.021 |
+| DeepClone_DynamicWithNestedObject    |     1,314.5 ns |      26.25 ns |     64.89 ns |   0.027 |    0.00 |   0.5512 |   0.0038 |        - |    3464 B |       0.022 |
+| DeepClone_DynamicWithArray           |     3,342.6 ns |      21.09 ns |     16.47 ns |   0.069 |    0.00 |   1.4305 |   0.0229 |        - |    8984 B |       0.058 |
+| DeepClone_LargeEventDocument_10MB    |    48,415.0 ns |     385.12 ns |    300.68 ns |   1.000 |    0.01 |  24.5972 |   4.5166 |        - |  154888 B |       1.000 |
+| DeepClone_LargeLogBatch_10MB         | 5,726,242.8 ns | 109,699.46 ns | 85,646.12 ns | 118.278 |    1.84 | 562.5000 | 257.8125 | 101.5625 | 5251027 B |      33.902 |
+| DeepClone_MediumNestedObject         |     1,312.7 ns |      25.56 ns |     39.80 ns |   0.027 |    0.00 |   0.5341 |   0.0038 |        - |    3352 B |       0.022 |
+| DeepClone_FileSpec                   |       401.5 ns |       6.40 ns |      6.57 ns |   0.008 |    0.00 |   0.1707 |        - |        - |    1072 B |       0.007 |
+| DeepClone_SmallObject                |       132.1 ns |       2.60 ns |      3.56 ns |   0.003 |    0.00 |   0.0229 |        - |        - |     144 B |       0.001 |
+| DeepClone_SmallObjectWithCollections |       490.3 ns |       3.48 ns |      2.71 ns |   0.010 |    0.00 |   0.1993 |        - |        - |    1256 B |       0.008 |
+```
