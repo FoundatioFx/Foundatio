@@ -24,6 +24,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     private readonly ConsumerConfig _consumerConfig;
     private readonly IProducer<string, byte[]> _producer;
     private readonly AsyncLock _lock = new();
+    private readonly AsyncManualResetEvent _consumerReady = new();
     private bool _topicCreated;
     private bool _isDisposed;
 
@@ -45,7 +46,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     {
     }
 
-    protected override Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+    protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
         _logger.LogTrace("PublishImplAsync([{MessageType}])", messageType);
 
@@ -53,7 +54,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         {
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             SendDelayedMessage(GetMappedMessageType(messageType), message, options);
-            return Task.CompletedTask;
+            return;
         }
 
         var headers = new Headers {
@@ -77,15 +78,16 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             Headers = headers
         };
 
-        _producer.Produce(_options.Topic, publishMessage, deliveryReport =>
-        {
-            if (deliveryReport.Error.Code != ErrorCode.NoError)
-                _logger.LogError("Publish failure: {Reason}", deliveryReport.Error.Reason);
-            else
-                _logger.LogTrace("Published message to: {TopicPartitionOffset}", deliveryReport.TopicPartitionOffset);
-        });
+        // ProduceAsync throws ProduceException on hard failures (broker errors, serialization, etc.).
+        // On success it returns a DeliveryResult whose Status indicates persistence level:
+        //   Persisted        – broker acknowledged per the Acks setting
+        //   PossiblyPersisted – uncertain (e.g. Acks=0 or leader changed mid-write)
+        //   NotPersisted     – message was rejected by the broker
+        var deliveryResult = await _producer.ProduceAsync(_options.Topic, publishMessage, cancellationToken).AnyContext();
+        if (deliveryResult.Status == PersistenceStatus.NotPersisted)
+            throw new MessageBusException($"Message was not persisted to {deliveryResult.TopicPartitionOffset}");
 
-        return Task.CompletedTask;
+        _logger.LogTrace("Published message to: {TopicPartitionOffset} (Status={Status})", deliveryResult.TopicPartitionOffset, deliveryResult.Status);
     }
 
     private async Task OnMessageAsync(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult)
@@ -169,6 +171,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         await EnsureTopicCreatedAsync().AnyContext();
         EnsureListening();
+        await _consumerReady.WaitAsync(cancellationToken).AnyContext();
     }
 
     protected virtual IMessage ConvertToMessage(string messageType, Message<string, byte[]> message)
@@ -422,6 +425,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     private void LogPartitionAssignmentHandler(IConsumer<string, byte[]> consumer, List<TopicPartition> list)
     {
         _logger.LogTrace("Consumer partitions assigned: {@Partitions}", list);
+        _consumerReady.Set();
     }
 
     private void LogPartitionsLostHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list)
@@ -432,6 +436,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     private void LogPartitionsRevokedHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list)
     {
         _logger.LogTrace("Consumer partitions revoked: {@Partitions}", list);
+        _consumerReady.Reset();
     }
 
     private void LogOffsetsCommittedHandler(IConsumer<string, byte[]> consumer, CommittedOffsets offsets)
