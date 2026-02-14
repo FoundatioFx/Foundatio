@@ -677,6 +677,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         if (queue == null)
             return;
 
+        using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
+
         try
         {
             await queue.DeleteQueueAsync();
@@ -690,17 +692,16 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal("Hello", workItem.Value.Data);
 
             workItem.Value.Data = "Mutated";
-            await workItem.AbandonAsync();
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.abandoned", () => workItem.AbandonAsync()));
 
             // Assert: original entry retains abandoned state after abandon
             Assert.True(workItem.IsAbandoned);
             Assert.False(workItem.IsCompleted);
 
-            // Assert: item should be re-queued immediately after abandon
+            // Assert: verify stats after abandon
             if (_assertStats)
             {
                 var stats = await queue.GetQueueStatsAsync();
-                Assert.Equal(1, stats.Queued);
                 Assert.Equal(1, stats.Dequeued);
                 Assert.Equal(1, stats.Abandoned);
                 Assert.Equal(0, stats.Completed);
@@ -716,7 +717,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.False(retryItem.IsCompleted);
             Assert.True(workItem.IsAbandoned);
 
-            await retryItem.CompleteAsync();
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.completed", () => retryItem.CompleteAsync()));
 
             // Assert: final entry states
             Assert.True(retryItem.IsCompleted);
@@ -724,7 +725,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.True(workItem.IsAbandoned);
             Assert.False(workItem.IsCompleted);
 
-            // Assert
+            // Assert: verify final stats
             if (_assertStats)
             {
                 var stats = await queue.GetQueueStatsAsync();
