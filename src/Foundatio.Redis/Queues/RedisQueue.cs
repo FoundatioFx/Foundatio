@@ -556,9 +556,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         throw new NotImplementedException();
     }
 
-    public override async Task DeleteQueueAsync()
+    protected override async Task DeleteQueueImplAsync()
     {
-        _logger.LogTrace("Deleting queue: {QueueName}", _options.Name);
         await Task.WhenAll(
             DeleteListAsync(_queueListName),
             DeleteListAsync(_workListName),
