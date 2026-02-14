@@ -751,7 +751,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         if (_scriptsLoaded)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
         {
             if (_scriptsLoaded)
                 return;

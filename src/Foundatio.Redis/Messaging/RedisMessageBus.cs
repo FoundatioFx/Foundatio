@@ -51,7 +51,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         if (_isSubscribed)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
             if (_isSubscribed)
                 return;

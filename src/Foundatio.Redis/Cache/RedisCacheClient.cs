@@ -24,6 +24,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     private readonly bool _isCluster;
 
     private readonly AsyncLock _lock = new();
+    private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
+    private bool _isDisposed;
     private bool _scriptsLoaded;
     private bool? _supportsMsetEx;
 
@@ -946,7 +948,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (_scriptsLoaded)
             return;
 
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(_disposedCancellationTokenSource.Token).AnyContext())
         {
             if (_scriptsLoaded)
                 return;
@@ -992,6 +994,12 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     public void Dispose()
     {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _disposedCancellationTokenSource.Cancel();
+        _disposedCancellationTokenSource.Dispose();
         _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
         _options.ConnectionMultiplexer.ConnectionFailed -= ConnectionMultiplexerOnConnectionFailed;
     }
