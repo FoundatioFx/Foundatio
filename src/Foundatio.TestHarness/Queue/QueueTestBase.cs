@@ -671,6 +671,77 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         }
     }
 
+    public virtual async Task DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync()
+    {
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        if (queue == null)
+            return;
+
+        using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+
+            // Act: first dequeue, mutate, abandon
+            var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(workItem);
+            Assert.Equal("Hello", workItem.Value.Data);
+
+            workItem.Value.Data = "Mutated";
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.abandoned", () => workItem.AbandonAsync(), cancellationToken: TestCancellationToken));
+
+            // Assert: original entry retains abandoned state after abandon
+            Assert.True(workItem.IsAbandoned);
+            Assert.False(workItem.IsCompleted);
+
+            // Assert: verify stats after abandon
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Queued);
+                Assert.Equal(1, stats.Dequeued);
+                Assert.Equal(1, stats.Abandoned);
+                Assert.Equal(0, stats.Completed);
+            }
+
+            // Act: second dequeue (retry) should have pristine value
+            var retryItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(retryItem);
+            Assert.Equal("Hello", retryItem.Value.Data);
+
+            // Assert: retry entry has fresh state, original entry is still abandoned
+            Assert.False(retryItem.IsAbandoned);
+            Assert.False(retryItem.IsCompleted);
+            Assert.True(workItem.IsAbandoned);
+
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.completed", () => retryItem.CompleteAsync(), cancellationToken: TestCancellationToken));
+
+            // Assert: final entry states
+            Assert.True(retryItem.IsCompleted);
+            Assert.False(retryItem.IsAbandoned);
+            Assert.True(workItem.IsAbandoned);
+            Assert.False(workItem.IsCompleted);
+
+            // Assert: verify final stats
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(2, stats.Dequeued);
+                Assert.Equal(1, stats.Abandoned);
+                Assert.Equal(1, stats.Completed);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task DequeueWaitWillGetSignaledAsync()
     {
         using var queue = GetQueue();
