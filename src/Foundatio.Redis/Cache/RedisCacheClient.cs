@@ -21,6 +21,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     private readonly RedisCacheClientOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
+    private readonly bool _isCluster;
 
     private readonly AsyncLock _lock = new();
     private bool _scriptsLoaded;
@@ -43,6 +44,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         options.ConnectionMultiplexer.ConnectionFailed += ConnectionMultiplexerOnConnectionFailed;
+        _isCluster = options.ConnectionMultiplexer.IsCluster();
     }
 
     public RedisCacheClient(Builder<RedisCacheClientOptionsBuilder, RedisCacheClientOptions> config)
@@ -121,7 +123,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 }
             }
         }
-        else if (Database.Multiplexer.IsCluster())
+        else if (_isCluster)
         {
             var redisKeys = keys is ICollection<string> collection ? new List<RedisKey>(collection.Count) : [];
             foreach (string key in keys.Distinct())
@@ -191,7 +193,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             return 0;
 
         const int batchSize = 250;
-        bool isCluster = _options.ConnectionMultiplexer.IsCluster();
+        bool isCluster = _isCluster;
 
         long deleted = 0;
         foreach (var endpoint in endpoints)
@@ -298,7 +300,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (redisKeys.Count is 0)
             return ReadOnlyDictionary<string, CacheValue<T>>.Empty;
 
-        if (_options.ConnectionMultiplexer.IsCluster())
+        if (_isCluster)
         {
             var result = new Dictionary<string, CacheValue<T>>(redisKeys.Count);
             // NOTE: Consider parallel processing per hash slot for performance optimization
@@ -606,7 +608,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(kvp.Key, kvp.Value.ToRedisValue(_options.Serializer));
         }
 
-        if (_options.ConnectionMultiplexer.IsCluster())
+        if (_isCluster)
         {
             // For cluster/sentinel, group keys by hash slot since batch operations
             // require all keys to be in the same slot
@@ -834,7 +836,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         await LoadScriptsAsync().AnyContext();
 
-        if (_options.ConnectionMultiplexer.IsCluster())
+        if (_isCluster)
         {
             var result = new Dictionary<string, TimeSpan?>(keyList.Count);
             // NOTE: Consider parallel processing per hash slot for performance optimization
@@ -914,7 +916,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
         await LoadScriptsAsync().AnyContext();
 
-        if (_options.ConnectionMultiplexer.IsCluster())
+        if (_isCluster)
         {
             // NOTE: Consider parallel processing per hash slot for performance optimization
             foreach (var hashSlotGroup in expirations.GroupBy(kvp => _options.ConnectionMultiplexer.HashSlot(kvp.Key)))

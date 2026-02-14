@@ -34,6 +34,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private readonly TimeSpan _payloadTimeToLive;
     private bool _scriptsLoaded;
     private readonly string _listPrefix;
+    private readonly RedisChannel _topicChannel;
 
     private LoadedLuaScript _dequeueId;
 
@@ -49,11 +50,15 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         _payloadTimeToLive = GetPayloadTtl();
         _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
 
-        _listPrefix = _options.ConnectionMultiplexer.IsCluster() ? "{q:" + _options.Name + "}" : $"q:{_options.Name}";
+        bool isCluster = _options.ConnectionMultiplexer.IsCluster();
+        _listPrefix = isCluster ? "{q:" + _options.Name + "}" : $"q:{_options.Name}";
         _queueListName = $"{_listPrefix}:in";
         _workListName = $"{_listPrefix}:work";
         _waitListName = $"{_listPrefix}:wait";
         _deadListName = $"{_listPrefix}:dead";
+        _topicChannel = isCluster
+            ? RedisChannel.Sharded(_queueListName)
+            : RedisChannel.Literal(_queueListName);
 
         // min is 1 second, max is 1 minute
         var interval = _options.WorkItemTimeout > TimeSpan.FromSeconds(1) ? _options.WorkItemTimeout.Min(TimeSpan.FromMinutes(1)) : TimeSpan.FromSeconds(1);
@@ -98,7 +103,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 return;
 
             _logger.LogTrace("Subscribing to enqueue messages for {QueueName}", _options.Name);
-            await _subscriber.SubscribeAsync(RedisChannel.Literal(GetTopicName()), OnTopicMessage).AnyContext();
+            await _subscriber.SubscribeAsync(_topicChannel, OnTopicMessage).AnyContext();
             _isSubscribed = true;
             _logger.LogTrace("Subscribed to enqueue messages for {QueueName}", _options.Name);
         }
@@ -224,7 +229,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         try
         {
             _autoResetEvent.Set();
-            await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), id)).AnyContext();
+            await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(_topicChannel, id)).AnyContext();
         }
         catch (Exception ex)
         {
@@ -524,7 +529,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
                 // This should pulse the monitor.
-                _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), entry.Id)
+                _subscriber.PublishAsync(_topicChannel, entry.Id)
             )).AnyContext();
         }
 
@@ -704,7 +709,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
 
-                await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(RedisChannel.Literal(GetTopicName()), waitId), cancellationToken: DisposedCancellationToken).AnyContext();
+                await _resiliencePolicy.ExecuteAsync(async _ => await _subscriber.PublishAsync(_topicChannel, waitId), cancellationToken: DisposedCancellationToken).AnyContext();
             }
         }
         catch (Exception ex)
@@ -781,7 +786,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     _logger.LogTrace("Unsubscribing from topic {Topic}", GetTopicName());
                     try
                     {
-                        _subscriber.Unsubscribe(RedisChannel.Literal(GetTopicName()), OnTopicMessage, CommandFlags.FireAndForget);
+                        _subscriber.Unsubscribe(_topicChannel, OnTopicMessage, CommandFlags.FireAndForget);
                     }
                     catch (Exception ex)
                     {

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
