@@ -755,6 +755,39 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 });
 ```
 
+## Cancellation Token Behavior
+
+Understanding how cancellation tokens are handled internally is important for building reliable publishers and subscribers.
+
+### Resource Creation Uses Disposal Token
+
+When you call `PublishAsync` or `SubscribeAsync`, the message bus may need to create infrastructure (e.g., Azure Service Bus topics, RabbitMQ exchanges, SQS topics). These setup operations use an internal disposal token — **not** the caller's cancellation token. This means:
+
+- **Topic and subscription creation only abort when the message bus is disposed**, never because a single caller cancelled their operation.
+- A cancelled publish will not leave topic infrastructure in a half-created state.
+- Multiple concurrent publishers/subscribers cannot interfere with each other's setup.
+
+### Linked Cancellation for Publish
+
+The caller's cancellation token is combined with the disposal token into a linked token for the actual publish operation. This means:
+
+- Publish cancels when **either** the caller cancels **or** the message bus is disposed.
+- Graceful shutdown via `Dispose()` cancels all in-flight publishes promptly.
+
+```csharp
+// Topic creation always completes (unless disposed), even if the publish is cancelled
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, cancellationToken: cts.Token);
+```
+
+### For Implementation Authors
+
+If you are writing a custom `IMessageBus` implementation by extending `MessageBusBase<TOptions>`:
+
+- **`EnsureTopicCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.).
+- **`EnsureTopicSubscriptionAsync`** always receives `DisposedCancellationToken`. Use it for subscription infrastructure setup.
+- **`PublishImplAsync`** receives a linked token (caller + disposal). Respect it for the actual message send.
+
 ## Best Practices
 
 ### 1. Use Immutable Messages

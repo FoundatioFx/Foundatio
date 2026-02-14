@@ -788,6 +788,42 @@ catch (QueueException ex)
 }
 ```
 
+## Cancellation Token Behavior
+
+Understanding how cancellation tokens are handled internally is important for building reliable queue consumers.
+
+### Resource Creation Uses Disposal Token
+
+When you call `EnqueueAsync`, `DequeueAsync`, or `GetDeadletterItemsAsync`, the queue may need to create infrastructure (e.g., SQS queues, Azure Service Bus queues, Redis streams). These setup operations use an internal disposal token — **not** the caller's cancellation token. This means:
+
+- **Queue creation only aborts when the queue is disposed**, never because a single caller cancelled their operation.
+- A cancelled `DequeueAsync` call (e.g., from a zero timeout) will not prevent queue creation from completing.
+- Multiple concurrent callers cannot interfere with each other's setup.
+
+### Linked Cancellation for Operations
+
+The caller's cancellation token is combined with the disposal token into a linked token for the actual operation (dequeue, deadletter retrieval, etc.). This means:
+
+- Operations cancel when **either** the caller cancels **or** the queue is disposed.
+- Graceful shutdown via `Dispose()` cancels all in-flight operations promptly.
+
+```csharp
+// This will never prevent queue creation, even though it times out immediately
+var entry = await queue.DequeueAsync(TimeSpan.Zero);
+
+// The cancellation token only affects the dequeue wait, not infrastructure setup
+using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+var entry = await queue.DequeueAsync(cts.Token);
+```
+
+### For Implementation Authors
+
+If you are writing a custom `IQueue<T>` implementation by extending `QueueBase<T>`:
+
+- **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.).
+- **`DequeueImplAsync`** receives a linked token (caller + disposal). Respect it for the wait/poll operation.
+- **`EnqueueImplAsync`** does not receive a cancellation token — keep enqueue fast and non-blocking.
+
 ## Best Practices
 
 ### 1. Proper Resource Disposal

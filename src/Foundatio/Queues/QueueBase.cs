@@ -123,6 +123,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         behavior.Attach(this);
     }
 
+    /// <summary>
+    /// Called before queue operations to ensure the queue exists. The <paramref name="cancellationToken"/>
+    /// is always <see cref="MaintenanceBase.DisposedCancellationToken"/>; queue creation should only
+    /// abort when the queue is being disposed, never due to an individual caller's cancellation.
+    /// </summary>
     protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
     protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);

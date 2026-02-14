@@ -65,6 +65,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
+    /// <summary>
+    /// Called before publishing to ensure the topic exists. The <paramref name="cancellationToken"/>
+    /// is always <see cref="MaintenanceBase.DisposedCancellationToken"/>; topic creation should only
+    /// abort when the message bus is being disposed, never due to an individual caller's cancellation.
+    /// </summary>
     protected virtual Task EnsureTopicCreatedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
@@ -84,12 +89,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 options.Properties.Add("TraceState", Activity.Current.TraceStateString);
         }
 
-        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         try
         {
             // Use DisposedCancellationToken for setup: topic creation should only abort on disposal,
             // not due to an individual caller's cancellation token.
             await EnsureTopicCreatedAsync(DisposedCancellationToken).AnyContext();
+
+            using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
             await PublishImplAsync(GetMappedMessageType(messageType), message, options, linkedCancellationTokenSource.Token).AnyContext();
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not MessageBusException)
@@ -147,6 +153,12 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     }
 
     protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
+    /// <summary>
+    /// Called after subscribing to ensure the topic subscription infrastructure exists. The
+    /// <paramref name="cancellationToken"/> is always <see cref="MaintenanceBase.DisposedCancellationToken"/>;
+    /// subscription setup should only abort when the message bus is being disposed, never due to
+    /// an individual caller's cancellation.
+    /// </summary>
     protected virtual Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     protected virtual Task SubscribeImplAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
