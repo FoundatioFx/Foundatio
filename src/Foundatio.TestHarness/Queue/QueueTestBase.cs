@@ -692,12 +692,37 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             workItem.Value.Data = "Mutated";
             await workItem.AbandonAsync();
 
+            // Assert: original entry retains abandoned state after abandon
+            Assert.True(workItem.IsAbandoned);
+            Assert.False(workItem.IsCompleted);
+
+            // Assert: item should be re-queued immediately after abandon
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Queued);
+                Assert.Equal(1, stats.Dequeued);
+                Assert.Equal(1, stats.Abandoned);
+                Assert.Equal(0, stats.Completed);
+            }
+
             // Act: second dequeue (retry) should have pristine value
             var retryItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
             Assert.NotNull(retryItem);
             Assert.Equal("Hello", retryItem.Value.Data);
 
+            // Assert: retry entry has fresh state, original entry is still abandoned
+            Assert.False(retryItem.IsAbandoned);
+            Assert.False(retryItem.IsCompleted);
+            Assert.True(workItem.IsAbandoned);
+
             await retryItem.CompleteAsync();
+
+            // Assert: final entry states
+            Assert.True(retryItem.IsCompleted);
+            Assert.False(retryItem.IsAbandoned);
+            Assert.True(workItem.IsAbandoned);
+            Assert.False(workItem.IsCompleted);
 
             // Assert
             if (_assertStats)

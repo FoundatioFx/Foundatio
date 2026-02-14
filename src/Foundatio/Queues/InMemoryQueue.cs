@@ -318,7 +318,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 else
                 {
                     _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId}", queueEntry.Id);
-                    _ = Task.Run(() => RetryAsync(retryEntry), DisposedCancellationToken);
+                    _queue.Enqueue(retryEntry);
+                    _autoResetEvent.Set();
                 }
             }
             else
