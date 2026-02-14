@@ -251,7 +251,10 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await firstCache.ListAddAsync(cacheKey, [1, 2, 3]);
         Assert.Equal(1, firstCache.LocalCache.Count);
 
-        // Populate second cache's local cache
+        // Allow any pending invalidation messages from ListAddAsync to be delivered
+        await Task.Delay(250, TestCancellationToken);
+
+        // Populate second cache's local cache (after invalidation has drained)
         var values = await secondCache.GetListAsync<int>(cacheKey);
         Assert.Equal(3, values.Value.Count);
         Assert.Equal(1, secondCache.LocalCache.Count);
@@ -461,7 +464,10 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
         await firstCache.SetAsync(cacheKey, "actual-value");
         Assert.Equal(1, firstCache.LocalCache.Count);
 
-        // Populate second cache's local cache
+        // Allow any pending invalidation messages from SetAsync to be delivered
+        await Task.Delay(250, TestCancellationToken);
+
+        // Populate second cache's local cache (after invalidation has drained)
         var result = await secondCache.GetAsync<string>(cacheKey);
         Assert.True(result.HasValue);
         Assert.Equal("actual-value", result.Value);
