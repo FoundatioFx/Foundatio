@@ -380,7 +380,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         };
     }
 
-    public override async Task DeleteQueueAsync()
+    protected override async Task DeleteQueueImplAsync()
     {
         var sw = Stopwatch.StartNew();
         await Task.WhenAll(
