@@ -87,7 +87,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         try
         {
-            await EnsureTopicCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
+            // Use DisposedCancellationToken for setup: topic creation should only abort on disposal,
+            // not due to an individual caller's cancellation token.
+            await EnsureTopicCreatedAsync(DisposedCancellationToken).AnyContext();
             await PublishImplAsync(GetMappedMessageType(messageType), message, options, linkedCancellationTokenSource.Token).AnyContext();
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not MessageBusException)
@@ -194,7 +196,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
 
         await SubscribeImplAsync(handler, cancellationToken).AnyContext();
-        await EnsureTopicSubscriptionAsync(cancellationToken).AnyContext();
+        // Use DisposedCancellationToken for setup: subscription infrastructure should only abort on disposal,
+        // not due to the caller's cancellation token.
+        await EnsureTopicSubscriptionAsync(DisposedCancellationToken).AnyContext();
     }
 
     protected List<Subscriber> GetMessageSubscribers(IMessage message)
