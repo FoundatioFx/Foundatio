@@ -129,7 +129,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         }
     }
 
-    public override async Task DeleteQueueAsync()
+    protected override async Task DeleteQueueImplAsync()
     {
         _logger.LogDebug("Deleting queue {QueueName}", _options.Name);
 
