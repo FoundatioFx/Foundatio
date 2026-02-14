@@ -350,7 +350,7 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
         };
     }
 
-    public override async Task DeleteQueueAsync()
+    protected override async Task DeleteQueueImplAsync()
     {
         if (!String.IsNullOrEmpty(_queueUrl))
         {
