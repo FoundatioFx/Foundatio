@@ -139,9 +139,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken)
     {
-        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
+        // Use DisposedCancellationToken for setup: callers may pass an already-cancelled token
+        // (e.g. TimeSpan.Zero timeout) which should skip waiting, not prevent queue creation.
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
+        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
         LastDequeueActivity = _timeProvider.GetUtcNow();
         return await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
@@ -161,8 +163,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken);
     public async Task<IEnumerable<T>> GetDeadletterItemsAsync(CancellationToken cancellationToken = default)
     {
+        // Use DisposedCancellationToken for setup: queue creation should only abort on disposal,
+        // not due to the caller's cancellation token.
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
+
         using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
         return await GetDeadletterItemsImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
@@ -192,8 +197,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
     public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default)
     {
-        using var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        await EnsureQueueCreatedAsync(linkedCancellationTokenSource.Token).AnyContext();
+        // Use DisposedCancellationToken for setup: queue creation should only abort on disposal.
+        // StartWorkingImpl creates its own linked token for the long-running worker loop.
+        await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
         StartWorkingImpl(handler, autoComplete, cancellationToken);
     }
 
