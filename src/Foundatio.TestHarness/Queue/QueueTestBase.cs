@@ -692,7 +692,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal("Hello", workItem.Value.Data);
 
             workItem.Value.Data = "Mutated";
-            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.abandoned", () => workItem.AbandonAsync()));
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.abandoned", () => workItem.AbandonAsync(), cancellationToken: TestCancellationToken));
 
             // Assert: original entry retains abandoned state after abandon
             Assert.True(workItem.IsAbandoned);
@@ -702,6 +702,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             if (_assertStats)
             {
                 var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Queued);
                 Assert.Equal(1, stats.Dequeued);
                 Assert.Equal(1, stats.Abandoned);
                 Assert.Equal(0, stats.Completed);
@@ -717,7 +718,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.False(retryItem.IsCompleted);
             Assert.True(workItem.IsAbandoned);
 
-            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.completed", () => retryItem.CompleteAsync()));
+            Assert.True(await metrics.WaitForCounterAsync<long>("foundatio.simpleworkitem.completed", () => retryItem.CompleteAsync(), cancellationToken: TestCancellationToken));
 
             // Assert: final entry states
             Assert.True(retryItem.IsCompleted);
