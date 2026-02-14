@@ -111,6 +111,12 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync()
+    {
+        return base.DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync();
+    }
+
+    [Fact]
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
