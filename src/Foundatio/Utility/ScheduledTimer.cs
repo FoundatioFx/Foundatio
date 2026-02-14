@@ -128,23 +128,30 @@ public class ScheduledTimer : IDisposable
         DateTime? nextTimeOverride = null;
 
         _logger.LogTrace("Starting RunCallbackAsync");
-        using (await _lock.LockAsync().AnyContext())
+        try
         {
-            if (_isRunning)
+            using (await _lock.LockAsync(_disposedCancellationTokenSource.Token).AnyContext())
             {
-                _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
-                _shouldRunAgainImmediately = true;
-                return;
-            }
+                if (_isRunning)
+                {
+                    _logger.LogTrace("Exiting run callback because its already running, will run again immediately");
+                    _shouldRunAgainImmediately = true;
+                    return;
+                }
 
-            _last = _timeProvider.GetUtcNow().UtcDateTime;
-            if (_last < _next)
-            {
-                _logger.LogWarning("ScheduleNext RunCallbackAsync was called before next run time {NextRun:O}, setting next to current time and rescheduling", _next);
-                nextTimeOverride = _next;
-                _next = _timeProvider.GetUtcNow().UtcDateTime;
-                _shouldRunAgainImmediately = true;
+                _last = _timeProvider.GetUtcNow().UtcDateTime;
+                if (_last < _next)
+                {
+                    _logger.LogWarning("ScheduleNext RunCallbackAsync was called before next run time {NextRun:O}, setting next to current time and rescheduling", _next);
+                    nextTimeOverride = _next;
+                    _next = _timeProvider.GetUtcNow().UtcDateTime;
+                    _shouldRunAgainImmediately = true;
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
 
         try
