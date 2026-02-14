@@ -6,35 +6,55 @@ services:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - '6379:6379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   redis-slave:
     image: bitnamilegacy/redis:8.2.1
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     environment:
       - REDIS_REPLICATION_MODE=slave
       - REDIS_MASTER_HOST=redis
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - '6380:6379'
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping && redis-cli info replication | grep master_link_status:up"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   redis-sentinel-1:
     image: bitnamilegacy/redis-sentinel:8.2.1
     depends_on:
-      - redis
-      - redis-slave
+      redis:
+        condition: service_healthy
+      redis-slave:
+        condition: service_healthy
     environment:
       - REDIS_MASTER_HOST=127.0.0.1
       - REDIS_SENTINEL_ANNOUNCE_IP=127.0.0.1
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - '26379:26379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26379", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   redis-sentinel-2:
     image: bitnamilegacy/redis-sentinel:8.2.1
     depends_on:
-      - redis
-      - redis-slave
+      redis:
+        condition: service_healthy
+      redis-slave:
+        condition: service_healthy
     environment:
       - REDIS_MASTER_HOST=127.0.0.1
       - REDIS_SENTINEL_ANNOUNCE_IP=127.0.0.1
@@ -42,12 +62,19 @@ services:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - '26380:26380'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26380", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   redis-sentinel-3:
     image: bitnamilegacy/redis-sentinel:8.2.1
     depends_on:
-      - redis
-      - redis-slave
+      redis:
+        condition: service_healthy
+      redis-slave:
+        condition: service_healthy
     environment:
       - REDIS_MASTER_HOST=127.0.0.1
       - REDIS_SENTINEL_ANNOUNCE_IP=127.0.0.1
@@ -55,15 +82,21 @@ services:
       - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - '26381:26381'
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "26381", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   ready:
     image: andrewlock/wait-for-dependencies
     depends_on:
-      - redis
-      - redis-slave
-      - redis-sentinel-1
-      - redis-sentinel-2
-      - redis-sentinel-3
+      redis-sentinel-1:
+        condition: service_healthy
+      redis-sentinel-2:
+        condition: service_healthy
+      redis-sentinel-3:
+        condition: service_healthy
     command: >
       redis:6379
       redis-slave:6379

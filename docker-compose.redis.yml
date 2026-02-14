@@ -5,9 +5,15 @@ services:
       ALLOW_EMPTY_PASSWORD: yes
     ports:
       - '6379:6379'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
 
   ready:
     image: andrewlock/wait-for-dependencies
     command: redis:6379
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
