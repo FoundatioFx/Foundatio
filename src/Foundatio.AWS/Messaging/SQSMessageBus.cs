@@ -386,7 +386,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
     protected override async Task RemoveTopicSubscriptionAsync()
     {
-        using (await _lock.LockAsync().AnyContext())
+        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
         {
             // Cancel the subscriber first
             if (_subscriberCts is not null)
