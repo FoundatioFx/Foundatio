@@ -15,7 +15,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
         Id = id;
         CorrelationId = correlationId;
         _original = value;
-        Value = value.DeepClone();
+        Value = value?.DeepClone();
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
@@ -27,7 +27,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
-    public Type EntryType => Value.GetType();
+    public Type EntryType => Value?.GetType();
     public object GetValue() => Value;
     public T Value { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
