@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using StackExchange.Redis;
 
 namespace Foundatio.Caching;
@@ -19,6 +19,7 @@ public class RedisHybridCacheClientOptionsBuilder :
 
     public RedisHybridCacheClientOptionsBuilder RedisChannelName(string redisChannelName)
     {
+        ArgumentException.ThrowIfNullOrEmpty(redisChannelName);
         Target.RedisChannelName = redisChannelName;
         return this;
     }
