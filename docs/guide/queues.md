@@ -592,6 +592,23 @@ if (stats.Deadletter > 0)
 }
 ```
 
+### Poison Message Handling
+
+When a message cannot be deserialized during dequeue (e.g., corrupted data, schema changes, or serializer misconfiguration), all Foundatio queue implementations handle it gracefully:
+
+1. **The deserialization exception is caught** and logged as a warning with the message ID and current attempt count
+2. **The message is abandoned** through the normal `AbandonAsync` flow, which increments the attempt counter and applies retry delay/backoff
+3. **`null` is returned** from `DequeueAsync`, so the consumer never sees the undeserializable message
+4. **After exhausting retries**, the message is moved to the dead letter queue through the standard dead-lettering path
+
+This approach gives operators a window to fix transient issues (such as a missing `JsonConverter` or incorrect serializer configuration) before messages are permanently dead-lettered. If the serializer configuration is corrected and redeployed before retries are exhausted, the message will deserialize successfully on the next attempt.
+
+```text
+Dequeue → Deserialize fails → Abandon (attempt incremented)
+  → Still has retries? → Re-queued with backoff delay
+  → Retries exhausted? → Moved to dead letter queue
+```
+
 ## Retry Policies
 
 All Foundatio queue implementations share common retry behavior configured via `SharedQueueOptions`:

@@ -11,7 +11,9 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Foundatio.Tests.Extensions;
+using Foundatio.Tests.Serializer;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Foundatio.Xunit;
@@ -29,7 +31,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
         return null;
     }
@@ -949,6 +951,84 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 Assert.Equal(1, stats.Deadletter);
                 Assert.Equal(2, stats.Abandoned);
             }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        // Use retries > 0 to prove poison messages go through the normal abandon/retry
+        // cycle before being dead-lettered, allowing transient serializer misconfigurations
+        // to self-heal on redeploy.
+        const int retries = 2;
+        var faultInjectingSerializer = new FaultInjectingSerializer();
+        var queue = GetQueue(retries: retries, retryDelay: TimeSpan.FromMilliseconds(250), serializer: faultInjectingSerializer);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Arrange: enqueue a valid message (serializer works normally)
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "poison-test" });
+
+            // Flip the flag so deserialization throws on every dequeue
+            faultInjectingSerializer.ShouldFailOnDeserialize = true;
+
+            // Act: dequeue enough times to exhaust retries (initial attempt + retries)
+            for (int attempt = 0; attempt <= retries; attempt++)
+            {
+                var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+                Assert.Null(entry);
+
+                var intermediateStats = await queue.GetQueueStatsAsync();
+                _logger.LogInformation("Poison message attempt {Attempt}: Queued={Queued} Deadletter={Deadletter} Abandoned={Abandoned}",
+                    attempt + 1, intermediateStats.Queued, intermediateStats.Deadletter, intermediateStats.Abandoned);
+            }
+
+            // Assert: message should be dead-lettered after exhausting retries
+            var stats = await queue.GetQueueStatsAsync();
+            _logger.LogInformation("Poison message final stats: Queued={Queued} Deadletter={Deadletter} Abandoned={Abandoned}",
+                stats.Queued, stats.Deadletter, stats.Abandoned);
+            Assert.Equal(1, stats.Deadletter);
+            Assert.Equal(0, stats.Queued);
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        var faultInjectingSerializer = new FaultInjectingSerializer();
+        var queue = GetQueue(serializer: faultInjectingSerializer);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Arrange: enable serialization failure before enqueue
+            faultInjectingSerializer.ShouldFailOnSerialize = true;
+
+            // Act & Assert: enqueue should throw since the message can't be serialized
+            await Assert.ThrowsAnyAsync<Exception>(() =>
+                queue.EnqueueAsync(new SimpleWorkItem { Data = "should-fail" }));
+
+            // Assert: queue should remain empty — no corrupt data was persisted
+            var stats = await queue.GetQueueStatsAsync();
+            _logger.LogInformation("Enqueue serialization error stats: Queued={Queued} Deadletter={Deadletter}",
+                stats.Queued, stats.Deadletter);
+            Assert.Equal(0, stats.Queued);
+            Assert.Equal(0, stats.Deadletter);
         }
         finally
         {

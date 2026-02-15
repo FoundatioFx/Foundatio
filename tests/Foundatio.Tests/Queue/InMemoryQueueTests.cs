@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
@@ -15,9 +16,9 @@ public class InMemoryQueueTests : QueueTestBase
 
     public InMemoryQueueTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
-        if (_queue == null)
+        if (_queue is null)
             _queue = new InMemoryQueue<SimpleWorkItem>(o => o
                 .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
                 .Retries(retries)
@@ -32,7 +33,7 @@ public class InMemoryQueueTests : QueueTestBase
 
     protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue)
     {
-        if (queue == null)
+        if (queue is null)
             return;
 
         try
@@ -109,6 +110,18 @@ public class InMemoryQueueTests : QueueTestBase
     public override Task DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync()
     {
         return base.DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync();
+    }
+
+    [Fact(Skip = "InMemoryQueue does not use serialization")]
+    public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+    }
+
+    [Fact(Skip = "InMemoryQueue does not use serialization")]
+    public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
@@ -371,8 +384,6 @@ public class InMemoryQueueTests : QueueTestBase
         }
     }
 
-    #region Issue239
-
     class QueueEntry_Issue239<T> : IQueueEntry<T> where T : class
     {
         IQueueEntry<T> _queueEntry;
@@ -506,5 +517,4 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.False(timedout);
     }
 
-    #endregion
 }
