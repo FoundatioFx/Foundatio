@@ -19,6 +19,7 @@ public enum AzureStorageQueueCompatibilityMode
     /// Use this for backward compatibility with existing queues that have messages
     /// written with the v11 Microsoft.Azure.Storage.Queue SDK.
     /// </summary>
+    [Obsolete("Legacy mode is deprecated. Use Default mode instead. Default mode automatically falls back to legacy deserialization for old messages.")]
     Legacy = 1
 }
 

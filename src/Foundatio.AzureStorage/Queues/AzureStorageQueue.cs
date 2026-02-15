@@ -31,8 +31,10 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
             throw new ArgumentException("ConnectionString is required.");
 
         var clientOptions = new QueueClientOptions();
+#pragma warning disable CS0618 // Legacy mode is still supported internally for backward compatibility
         if (options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Legacy)
             clientOptions.MessageEncoding = QueueMessageEncoding.Base64;
+#pragma warning restore CS0618
 
         options.ConfigureRetry?.Invoke(clientOptions.Retry);
 
@@ -180,12 +182,21 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         IDictionary<string, string> properties = null;
 
         if (_options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Default)
+                try
         {
             // Unwrap envelope to extract metadata
             var envelope = _serializer.Deserialize<QueueMessageEnvelope<T>>(message.Body.ToArray());
             data = envelope.Data;
             correlationId = envelope.CorrelationId;
             properties = envelope.Properties;
+                }
+                catch (Exception ex)
+                {
+                    // Fallback: try legacy format (raw T) for messages written before the envelope format.
+                    // If this also fails, let the exception propagate to the outer catch which will dead-letter it.
+                    _logger.LogWarning(ex, "Failed to deserialize message {MessageId} as envelope format, attempting legacy format fallback", message.MessageId);
+                    data = _serializer.Deserialize<T>(message.Body.ToArray());
+                }
         }
         else
         {

@@ -26,7 +26,9 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
         return new AzureStorageQueue<SimpleWorkItem>(o => o
             .ConnectionString(connectionString)
             .Name(_queueName)
+#pragma warning disable CS0618 // Testing legacy mode intentionally
             .CompatibilityMode(AzureStorageQueueCompatibilityMode.Legacy)
+#pragma warning restore CS0618
             .Retries(retries)
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
             .DequeueInterval(TimeSpan.FromSeconds(1))
