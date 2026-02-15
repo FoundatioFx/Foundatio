@@ -171,6 +171,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         await EnsureTopicCreatedAsync().AnyContext();
         EnsureListening();
+        // Base class passes DisposedCancellationToken (not caller's token) per SubscribeAsync design
         await _consumerReady.WaitAsync(cancellationToken).AnyContext();
     }
 
