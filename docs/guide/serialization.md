@@ -266,6 +266,28 @@ var storage = new InMemoryFileStorage(o => o.Serializer = serializer);
 
 For DI configuration and shared options across implementations, see [Dependency Injection](/guide/dependency-injection).
 
+## Serialization Exceptions
+
+Foundatio provides `SerializerException` as a base exception type for serialization-specific error conditions. **Built-in serializers** (System.Text.Json, Newtonsoft.Json, MessagePack) throw their native exceptions (e.g., `JsonException`, `MessagePackSerializationException`). `SerializerException` is primarily used for:
+
+- **Testing**: The `FaultInjectingSerializer` in `Foundatio.TestHarness` throws `SerializerException` to simulate serialization failures in unit and integration tests
+- **Custom serializers**: Wrap implementation-specific exceptions when you want a unified exception type across your application
+
+### Component-Specific Exception Types
+
+Foundatio provides dedicated exception types for each infrastructure component:
+
+| Component | Exception Type | Namespace |
+|-----------|---------------|-----------|
+| Caching | `CacheException` | `Foundatio.Caching` |
+| Queues | `QueueException` | `Foundatio.Queues` |
+| Messaging | `MessageBusException` | `Foundatio.Messaging` |
+| Storage | `StorageException` | `Foundatio.Storage` |
+| Serialization | `SerializerException` | `Foundatio.Serializer` |
+| Resilience | `BrokenCircuitException` | `Foundatio.Resilience` |
+
+These ensure consumers get predictable exception types regardless of the underlying implementation (Redis, Azure, AWS, etc.).
+
 ## Serialization Considerations
 
 ### Binary vs Text Serializers
