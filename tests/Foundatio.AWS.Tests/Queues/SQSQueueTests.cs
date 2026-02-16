@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Foundatio.Tests.Queue;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -19,7 +20,7 @@ public class SQSQueueTests : QueueTestBase
 
     protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
         TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100,
-        bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+        bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
         var queue = new SQSQueue<SimpleWorkItem>(o => o
             .ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
@@ -36,6 +37,7 @@ public class SQSQueueTests : QueueTestBase
             .ReadQueueTimeout(TimeSpan.FromSeconds(1))
             .MetricsPollingInterval(TimeSpan.Zero)
             .TimeProvider(timeProvider)
+            .Serializer(serializer)
             .LoggerFactory(Log));
 
         _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
@@ -136,6 +138,18 @@ public class SQSQueueTests : QueueTestBase
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
+    }
+
+    [Fact]
+    public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
@@ -352,6 +366,12 @@ public class SQSQueueTests : QueueTestBase
         {
             await CleanupQueueAsync(queue);
         }
+    }
+
+    [Fact]
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
     }
 
     protected override async Task CleanupQueueAsync(IQueue<SimpleWorkItem> queue)

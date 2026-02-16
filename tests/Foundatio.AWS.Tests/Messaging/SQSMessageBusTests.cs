@@ -40,21 +40,18 @@ public class SQSMessageBusTests : MessageBusTestBase
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
     {
-        var options = new SQSMessageBusOptions
+        var messageBus = new SQSMessageBus(o =>
         {
-            Topic = _topic,
-            LoggerFactory = Log
-        };
+            o.ConnectionString(GetConnectionString());
+            o.Topic(_topic);
+            o.ReadQueueTimeout(TimeSpan.FromSeconds(1));
+            o.DequeueInterval(TimeSpan.FromMilliseconds(100));
+            o.LoggerFactory(Log);
 
-        if (config is not null)
-            config(options);
+            config?.Invoke(o.Target);
 
-        var messageBus = new SQSMessageBus(o => o
-            .ConnectionString(GetConnectionString())
-            .Topic(options.Topic)
-            .ReadQueueTimeout(TimeSpan.FromSeconds(1))
-            .DequeueInterval(TimeSpan.FromMilliseconds(100))
-            .LoggerFactory(Log));
+            return o;
+        });
 
         _logger.LogDebug("MessageBus Id: {MessageBusId}", messageBus.MessageBusId);
         return messageBus;
@@ -211,6 +208,24 @@ public class SQSMessageBusTests : MessageBusTestBase
     public override Task CanHandlePoisonedMessageAsync()
     {
         return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
     }
 
     [Fact] // 2 minute timeout for durable queue test

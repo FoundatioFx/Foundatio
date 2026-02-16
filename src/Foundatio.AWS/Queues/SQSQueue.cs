@@ -195,8 +195,30 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         var message = response.Messages[0];
         string body = message.Body;
-        var data = _serializer.Deserialize<T>(body);
+
+        T data;
+        try
+        {
+            data = _serializer.Deserialize<T>(body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error deserializing message {MessageId} (receive count {ReceiveCount}), abandoning for retry",
+                message.MessageId, message.ApproximateReceiveCount());
+
+            var poisonEntry = new SQSQueueEntry<T>(message, null, this);
+            await AbandonAsync(poisonEntry).AnyContext();
+            return null;
+        }
+
         var entry = new SQSQueueEntry<T>(message, data, this);
+
+        if (entry.Attempts > _options.Retries + 1)
+        {
+            await DeadLetterMessageAsync(entry).AnyContext();
+            Interlocked.Increment(ref _abandonedCount);
+            return null;
+        }
 
         await OnDequeuedAsync(entry).AnyContext();
 
@@ -251,18 +273,25 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
             throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
 
         var sqsQueueEntry = ToQueueEntry(entry);
-        int visibilityTimeout = (int)Math.Round(_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds, MidpointRounding.AwayFromZero);
 
-        // re-queue and wait for processing
-        var request = new ChangeMessageVisibilityRequest
+        if (sqsQueueEntry.Attempts > _options.Retries)
         {
-            QueueUrl = _queueUrl,
-            VisibilityTimeout = visibilityTimeout,
-            ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
-        };
+            await DeadLetterMessageAsync(sqsQueueEntry).AnyContext();
+        }
+        else
+        {
+            int visibilityTimeout = (int)Math.Round(_options.RetryDelay(sqsQueueEntry.Attempts).TotalSeconds, MidpointRounding.AwayFromZero);
 
-        await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
-        _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", sqsQueueEntry.Id, sqsQueueEntry.UnderlyingMessage.MessageId, visibilityTimeout);
+            var request = new ChangeMessageVisibilityRequest
+            {
+                QueueUrl = _queueUrl,
+                VisibilityTimeout = visibilityTimeout,
+                ReceiptHandle = sqsQueueEntry.UnderlyingMessage.ReceiptHandle,
+            };
+
+            await _client.Value.ChangeMessageVisibilityAsync(request).AnyContext();
+            _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} VisibilityTimeout={VisibilityTimeout}", sqsQueueEntry.Id, sqsQueueEntry.UnderlyingMessage.MessageId, visibilityTimeout);
+        }
 
         Interlocked.Increment(ref _abandonedCount);
         entry.MarkAbandoned();
@@ -471,6 +500,16 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
         var setAttributeRequest = new SetQueueAttributesRequest(_queueUrl, attributes);
         await _client.Value.SetQueueAttributesAsync(setAttributeRequest).AnyContext();
+    }
+
+    private async Task DeadLetterMessageAsync(SQSQueueEntry<T> entry)
+    {
+        _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", entry.Attempts, _options.Retries, entry.Id);
+
+        if (_options.SupportDeadLetter && !String.IsNullOrEmpty(_deadUrl))
+            await _client.Value.SendMessageAsync(_deadUrl, entry.UnderlyingMessage.Body).AnyContext();
+
+        await _client.Value.DeleteMessageAsync(_queueUrl, entry.UnderlyingMessage.ReceiptHandle).AnyContext();
     }
 
     private static SQSQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry)

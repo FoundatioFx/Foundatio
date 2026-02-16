@@ -472,7 +472,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
                     MessageAttributeNames = ["All"]
                 };
 
-                var response = await _sqsClient.Value.ReceiveMessageAsync(request, CancellationToken.None).AnyContext();
+                var response = await _sqsClient.Value.ReceiveMessageAsync(request, cancellationToken).AnyContext();
 
                 if (response?.Messages is null || response.Messages.Count == 0)
                 {
