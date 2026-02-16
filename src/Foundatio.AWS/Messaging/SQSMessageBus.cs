@@ -472,6 +472,9 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
                     MessageAttributeNames = ["All"]
                 };
 
+                // Pass cancellationToken to allow immediate cancellation on dispose. Unlike the Queue
+                // implementation (which uses CancellationToken.None to avoid orphaning in-flight messages),
+                // the MessageBus is pub/sub where missing a message during shutdown is acceptable.
                 var response = await _sqsClient.Value.ReceiveMessageAsync(request, cancellationToken).AnyContext();
 
                 if (response?.Messages is null || response.Messages.Count == 0)
