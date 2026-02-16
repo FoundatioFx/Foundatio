@@ -18,16 +18,21 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
 
     protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
     {
-        return new KafkaMessageBus(o => o
-            .BootstrapServers("127.0.0.1:9092")
-            .Topic(Topic)
-            .TopicReplicationFactor(1)
-            .TopicNumberOfPartitions(1)
-            .GroupId(GroupId)
-            .AllowAutoCreateTopics(true)
+        return new KafkaMessageBus(o =>
+        {
+            o.BootstrapServers("127.0.0.1:9092");
+            o.Topic(Topic);
+            o.TopicReplicationFactor(1);
+            o.TopicNumberOfPartitions(1);
+            o.GroupId(GroupId);
+            o.AllowAutoCreateTopics(true);
             //.Debug("consumer,cgrp,topic,fetch")
-            .LoggerFactory(Log)
-        );
+            o.LoggerFactory(Log);
+
+            config?.Invoke(o.Target);
+
+            return o;
+        });
     }
 
     protected override async Task CleanupMessageBusAsync(IMessageBus messageBus)
