@@ -169,6 +169,24 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
+    }
+
+    [Fact]
     public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
     {
         var muxer = SharedConnection.GetMuxer(Log);

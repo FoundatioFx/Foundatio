@@ -10,6 +10,7 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
+using Foundatio.Serializer;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
@@ -31,7 +32,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     {
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
         var queue = new RedisQueue<SimpleWorkItem>(o => o
             .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
@@ -43,6 +44,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
             .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
             .MetricsPollingInterval(TimeSpan.Zero)
             .RunMaintenanceTasks(runQueueMaintenance)
+            .Serializer(serializer)
             .LoggerFactory(Log)
         );
 
@@ -120,6 +122,18 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
+    }
+
+    [Fact]
+    public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
@@ -797,6 +811,12 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         }
     }
 
+    [Fact]
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+    }
+
     private record Command1(int Id);
     private record Command2(int Id);
 
@@ -806,4 +826,5 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         var muxer = SharedConnection.GetMuxer(Log);
         return new ValueTask(muxer.FlushAllAsync());
     }
+
 }

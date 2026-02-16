@@ -354,8 +354,15 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         try
         {
             var entry = await GetQueueEntryAsync(value).AnyContext();
-            if (entry == null)
+            if (entry is null)
                 return null;
+
+            if (entry.Attempts > _options.Retries + 1)
+            {
+                await DeadLetterMessageAsync(entry).AnyContext();
+                Interlocked.Increment(ref _abandonedCount);
+                return null;
+            }
 
             Interlocked.Increment(ref _dequeuedCount);
             await OnDequeuedAsync(entry).AnyContext();
@@ -365,8 +372,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error getting dequeued item payload: {Value}", value);
-            throw;
+            _logger.LogWarning(ex, "Error deserializing queue entry payload: {WorkId}, abandoning for retry", value);
+            var poisonEntry = new QueueEntry<T>(value, null, default, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+            await AbandonAsync(poisonEntry).AnyContext();
+            return null;
         }
     }
 
@@ -474,17 +483,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         if (attempts > _options.Retries)
         {
-            _logger.LogInformation("Exceeded retry limit moving to deadletter: {QueueEntryId}", entry.Id);
-
-            var tx = Database.CreateTransaction();
-            tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-            tx.ListRemoveAsync(_workListName, entry.Id);
-            tx.ListLeftPushAsync(_deadListName, entry.Id);
-            tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
-            tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
-            bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
-            if (!success)
-                throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+            await DeadLetterMessageAsync(entry, attempts).AnyContext();
 
             await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 _cache.IncrementAsync(attemptsCacheKey, 1, GetAttemptsTtl()),
@@ -537,6 +536,27 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         entry.MarkAbandoned();
         await OnAbandonedAsync(entry).AnyContext();
         _logger.LogInformation("Abandon complete: {QueueEntryId}", entry.Id);
+    }
+
+    private async Task DeadLetterMessageAsync(IQueueEntry<T> entry, int? attempts = null)
+    {
+        int effectiveAttempts = attempts ?? entry.Attempts;
+        _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", effectiveAttempts, _options.Retries, entry.Id);
+
+        var tx = Database.CreateTransaction();
+        tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
+        tx.ListRemoveAsync(_workListName, entry.Id);
+        tx.ListLeftPushAsync(_deadListName, entry.Id);
+        tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
+        tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
+        bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
+        if (!success)
+            throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+
+        await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
+            Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
+            Database.KeyDeleteAsync(GetWaitTimeKey(entry.Id))
+        )).AnyContext();
     }
 
     private TimeSpan GetRetryDelay(int attempts)
