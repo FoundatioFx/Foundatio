@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Foundatio.Tests.Queue;
+using Foundatio.Tests.Serializer;
 using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -43,7 +45,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
             _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
         string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         if (String.IsNullOrEmpty(connectionString))
@@ -59,6 +61,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
              .ReadQueueTimeout(TimeSpan.FromSeconds(2))
              .TimeProvider(timeProvider)
              .MetricsPollingInterval(TimeSpan.Zero)
+             .Serializer(serializer)
              .LoggerFactory(Log);
 
             // Configure retry delay if provided
@@ -139,6 +142,65 @@ public class AzureServiceBusQueueTests : QueueTestBase
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
+    }
+
+    [Fact]
+    public override async Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        // The emulator does not support the Management HTTP API for runtime queue stats
+        // (DeadLetterMessageCount is always 0), so verify the abandon cycle and empty queue instead.
+        if (!_isEmulator)
+        {
+            await base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+            return;
+        }
+
+        const int retries = 2;
+        var faultInjectingSerializer = new FaultInjectingSerializer();
+        using var queue = GetQueue(retries: retries, retryDelay: TimeSpan.FromMilliseconds(250), serializer: faultInjectingSerializer);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "poison-test" });
+            faultInjectingSerializer.ShouldFailOnDeserialize = true;
+
+            for (int attempt = 0; attempt <= retries; attempt++)
+            {
+                var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+                Assert.Null(entry);
+
+                var intermediateStats = await queue.GetQueueStatsAsync();
+                _logger.LogInformation("Poison message attempt {Attempt}: Queued={Queued} Deadletter={Deadletter} Abandoned={Abandoned}",
+                    attempt + 1, intermediateStats.Queued, intermediateStats.Deadletter, intermediateStats.Abandoned);
+            }
+
+            // On the emulator, DeadLetterMessageCount is not reported via management API.
+            // Verify the message went through the full abandon cycle and the queue is empty.
+            var stats = await queue.GetQueueStatsAsync();
+            _logger.LogInformation("Poison message final stats: Queued={Queued} Deadletter={Deadletter} Abandoned={Abandoned}",
+                stats.Queued, stats.Deadletter, stats.Abandoned);
+            Assert.Equal(retries + 1, stats.Abandoned);
+            Assert.Equal(0, stats.Queued);
+
+            // Verify no more messages are available (dead-lettered, not stuck in queue)
+            var finalEntry = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
+            Assert.Null(finalEntry);
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
@@ -272,4 +334,11 @@ public class AzureServiceBusQueueTests : QueueTestBase
     {
         return base.VerifyDelayedRetryAttemptsAsync();
     }
+
+    [Fact]
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+    }
+
 }

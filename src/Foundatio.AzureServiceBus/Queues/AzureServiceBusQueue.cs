@@ -219,7 +219,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
             // Wait a bit for scheduled messages to become available
             try
             {
-                await Task.Delay(500, DisposedCancellationToken).AnyContext();
+                await _timeProvider.Delay(TimeSpan.FromMilliseconds(500), DisposedCancellationToken).AnyContext();
             }
             catch (OperationCanceledException)
             {
@@ -388,8 +388,28 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         _logger.LogTrace("Received message {MessageId} from queue {QueueName} IsCancellationRequested={IsCancellationRequested}",
             message.MessageId, _options.Name, linkedCancellationToken.IsCancellationRequested);
 
-        var data = _serializer.Deserialize<T>(message.Body.ToArray());
+        T data;
+        try
+        {
+            data = _serializer.Deserialize<T>(message.Body.ToArray());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error deserializing message {MessageId} (delivery {DeliveryCount}), abandoning for retry", message.MessageId, message.DeliveryCount);
+
+            var poisonEntry = new AzureServiceBusQueueEntry<T>(message, null, this);
+            await AbandonAsync(poisonEntry).AnyContext();
+            return null;
+        }
+
         var entry = new AzureServiceBusQueueEntry<T>(message, data, this);
+
+        if (entry.Attempts > _options.Retries + 1)
+        {
+            await DeadLetterMessageAsync(entry).AnyContext();
+            Interlocked.Increment(ref _abandonedCount);
+            return null;
+        }
 
         await OnDequeuedAsync(entry).AnyContext();
         return entry;
@@ -422,7 +442,6 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         _logger.LogTrace("Complete done: {QueueEntryId} MessageId={MessageId}", queueEntry.Id, entry.UnderlyingMessage.MessageId);
     }
 
-    // TODO: See if we need to handle retries.
     public override async Task AbandonAsync(IQueueEntry<T> queueEntry)
     {
         _logger.LogDebug("Queue {QueueName} ({QueueId}) abandon item: {QueueEntryId}", _options.Name, QueueId, queueEntry.Id);
@@ -432,46 +451,53 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
         var entry = ToQueueEntry(queueEntry);
 
-        // Calculate retry delay based on attempt number
-        var retryDelay = _options.RetryDelay(entry.Attempts);
-
-        // Azure Service Bus doesn't support delayed retry on abandon natively.
-        // If retry delay is specified, we complete the message and re-enqueue with scheduled delivery.
-        if (retryDelay > TimeSpan.Zero)
+        if (entry.Attempts > _options.Retries)
         {
-            _logger.LogTrace("Scheduling retry for queue entry: {QueueEntryId} MessageId={MessageId} RetryDelay={RetryDelay} Attempts={Attempts}",
-                entry.Id, entry.UnderlyingMessage.MessageId, retryDelay, entry.Attempts);
-
-            // Create a new message with same content for scheduled retry
-            var retryMessage = new ServiceBusMessage(entry.UnderlyingMessage.Body)
-            {
-                MessageId = entry.UnderlyingMessage.MessageId,
-                CorrelationId = entry.UnderlyingMessage.CorrelationId,
-                ScheduledEnqueueTime = DateTimeOffset.UtcNow.Add(retryDelay)
-            };
-
-            // Copy application properties (excluding SDK diagnostic properties)
-            foreach (var prop in entry.UnderlyingMessage.ApplicationProperties)
-            {
-                if (!ServiceBusMessageHelper.IsSdkDiagnosticProperty(prop.Key))
-                    retryMessage.ApplicationProperties[prop.Key] = prop.Value;
-            }
-
-            // Store attempt count for next dequeue
-            retryMessage.ApplicationProperties["_attempts"] = entry.Attempts;
-
-            // Complete the original message and schedule the retry
-            await _queueReceiver.CompleteMessageAsync(entry.UnderlyingMessage).AnyContext();
-            await _queueSender.SendMessageAsync(retryMessage).AnyContext();
+            await DeadLetterMessageAsync(entry).AnyContext();
         }
         else
         {
-            // No retry delay - just abandon for immediate retry
-            await _queueReceiver.AbandonMessageAsync(entry.UnderlyingMessage).AnyContext();
+            // Calculate retry delay based on attempt number
+            var retryDelay = _options.RetryDelay(entry.Attempts);
+
+            // Azure Service Bus doesn't support delayed retry on abandon natively.
+            // If retry delay is specified, we complete the message and re-enqueue with scheduled delivery.
+            if (retryDelay > TimeSpan.Zero)
+            {
+                _logger.LogTrace("Scheduling retry for queue entry: {QueueEntryId} MessageId={MessageId} RetryDelay={RetryDelay} Attempts={Attempts}",
+                    entry.Id, entry.UnderlyingMessage.MessageId, retryDelay, entry.Attempts);
+
+                // Create a new message with same content for scheduled retry
+                var retryMessage = new ServiceBusMessage(entry.UnderlyingMessage.Body)
+                {
+                    MessageId = entry.UnderlyingMessage.MessageId,
+                    CorrelationId = entry.UnderlyingMessage.CorrelationId,
+                    ScheduledEnqueueTime = DateTimeOffset.UtcNow.Add(retryDelay)
+                };
+
+                // Copy application properties (excluding SDK diagnostic properties)
+                foreach (var prop in entry.UnderlyingMessage.ApplicationProperties)
+                {
+                    if (!ServiceBusMessageHelper.IsSdkDiagnosticProperty(prop.Key))
+                        retryMessage.ApplicationProperties[prop.Key] = prop.Value;
+                }
+
+                // Store attempt count for next dequeue
+                retryMessage.ApplicationProperties["_attempts"] = entry.Attempts;
+
+                // Complete the original message and schedule the retry
+                await _queueReceiver.CompleteMessageAsync(entry.UnderlyingMessage).AnyContext();
+                await _queueSender.SendMessageAsync(retryMessage).AnyContext();
+            }
+            else
+            {
+                // No retry delay - just abandon for immediate retry
+                await _queueReceiver.AbandonMessageAsync(entry.UnderlyingMessage).AnyContext();
+            }
         }
 
-        _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} RetryDelay={RetryDelay}",
-            entry.Id, entry.UnderlyingMessage.MessageId, retryDelay);
+        _logger.LogTrace("Abandoned queue entry: {QueueEntryId} MessageId={MessageId} Attempts={Attempts}",
+            entry.Id, entry.UnderlyingMessage.MessageId, entry.Attempts);
 
         Interlocked.Increment(ref _abandonedCount);
         queueEntry.MarkAbandoned();
@@ -597,6 +623,14 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         {
             _client.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
+    }
+
+    private async Task DeadLetterMessageAsync(AzureServiceBusQueueEntry<T> entry)
+    {
+        _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", entry.Attempts, _options.Retries, entry.Id);
+
+        await _queueReceiver.DeadLetterMessageAsync(entry.UnderlyingMessage, "MaxRetriesExceeded",
+            $"Exceeded retry limit ({entry.Attempts} attempts, {_options.Retries} retries)").AnyContext();
     }
 
     private static AzureServiceBusQueueEntry<T> ToQueueEntry(IQueueEntry<T> entry)
