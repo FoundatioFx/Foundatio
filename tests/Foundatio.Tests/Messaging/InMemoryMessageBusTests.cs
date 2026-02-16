@@ -160,6 +160,24 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
+    }
+
+    [Fact]
     public async Task CanCheckMessageCounts()
     {
         var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));

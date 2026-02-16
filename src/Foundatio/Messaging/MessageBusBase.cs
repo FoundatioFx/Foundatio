@@ -172,6 +172,12 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 if (message is T typedMessage)
                     return handler(typedMessage, token);
 
+                if (message is null)
+                {
+                    _logger.LogWarning("Subscriber action skipped: message body is null (likely a deserialization failure) for subscriber type {SubscriberType}", typeof(T));
+                    return Task.CompletedTask;
+                }
+
                 _logger.LogTrace("Unable to call subscriber action: {MessageType} cannot be safely casted to {SubscriberType}", message.GetType(), typeof(T));
                 return Task.CompletedTask;
             }
@@ -318,7 +324,14 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                         }
                         else
                         {
-                            await subscriber.Action(message.GetBody(), subscriber.CancellationToken).AnyContext();
+                            object body = message.GetBody();
+                            if (body is null)
+                            {
+                                _logger.LogWarning("Skipping subscriber {SubscriberId}: message body deserialization returned null for type {MessageType}", subscriber.Id, message.Type);
+                                return;
+                            }
+
+                            await subscriber.Action(body, subscriber.CancellationToken).AnyContext();
                         }
                     }
 

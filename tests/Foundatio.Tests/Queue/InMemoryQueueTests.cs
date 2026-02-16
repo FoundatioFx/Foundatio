@@ -155,6 +155,12 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+    }
+
+    [Fact]
     public override Task CanAutoCompleteWorkerAsync()
     {
         return base.CanAutoCompleteWorkerAsync();

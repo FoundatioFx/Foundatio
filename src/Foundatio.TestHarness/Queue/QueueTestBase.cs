@@ -958,14 +958,60 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         }
     }
 
+    public virtual async Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        // Arrange
+        const int retryCount = 1;
+        using var queue = GetQueue(retryCount, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+            Assert.Equal("Hello", workItem.Value.Data);
+            Assert.Equal(1, workItem.Attempts);
+            await workItem.AbandonAsync();
+
+            workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(workItem);
+            Assert.Equal("Hello", workItem.Value.Data);
+            Assert.Equal(2, workItem.Attempts);
+            await workItem.AbandonAsync();
+
+            // Assert
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                _logger.LogInformation("Stats after abandon: Queued={Queued} Working={Working} Deadletter={Deadletter} Abandoned={Abandoned} Dequeued={Dequeued}",
+                    stats.Queued, stats.Working, stats.Deadletter, stats.Abandoned, stats.Dequeued);
+
+                Assert.Equal(1, stats.Deadletter);
+                Assert.Equal(0, stats.Queued);
+                Assert.Equal(0, stats.Working);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
     {
         // Use retries > 0 to prove poison messages go through the normal abandon/retry
         // cycle before being dead-lettered, allowing transient serializer misconfigurations
         // to self-heal on redeploy.
         const int retries = 2;
-        var faultInjectingSerializer = new FaultInjectingSerializer();
-        var queue = GetQueue(retries: retries, retryDelay: TimeSpan.FromMilliseconds(250), serializer: faultInjectingSerializer);
+        var faultSerializer = new FaultInjectingSerializer();
+        var queue = GetQueue(retries: retries, retryDelay: TimeSpan.Zero, retryMultipliers: [1], serializer: faultSerializer);
         if (queue is null)
             return;
 
@@ -978,7 +1024,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "poison-test" });
 
             // Flip the flag so deserialization throws on every dequeue
-            faultInjectingSerializer.ShouldFailOnDeserialize = true;
+            faultSerializer.ShouldFailOnDeserialize = true;
 
             // Act: dequeue enough times to exhaust retries (initial attempt + retries)
             for (int attempt = 0; attempt <= retries; attempt++)
@@ -1006,8 +1052,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
     public virtual async Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
-        var faultInjectingSerializer = new FaultInjectingSerializer();
-        var queue = GetQueue(serializer: faultInjectingSerializer);
+        var faultSerializer = new FaultInjectingSerializer();
+        var queue = GetQueue(serializer: faultSerializer);
         if (queue is null)
             return;
 
@@ -1017,7 +1063,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await AssertEmptyQueueAsync(queue);
 
             // Arrange: enable serialization failure before enqueue
-            faultInjectingSerializer.ShouldFailOnSerialize = true;
+            faultSerializer.ShouldFailOnSerialize = true;
 
             // Act & Assert: enqueue should throw since the message can't be serialized
             await Assert.ThrowsAnyAsync<Exception>(() =>

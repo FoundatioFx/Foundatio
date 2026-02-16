@@ -224,7 +224,7 @@ public class JobManager : IJobManager
 public class JobStatus
 {
     public string Name { get; set; }
-    public string Description { get; set;}
+    public string Description { get; set; }
     public bool Running { get; set; }
     public bool Enabled { get; set; }
     public bool Distributed { get; set; }

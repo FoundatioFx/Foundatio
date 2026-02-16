@@ -197,46 +197,57 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     {
         _logger.LogTrace("Queue {QueueName} dequeuing item... Queue count: {Count}", _options.Name, _queue.Count);
 
-        while (_queue.Count == 0 && !linkedCancellationToken.IsCancellationRequested)
+        while (true)
         {
-            _logger.LogTrace("Waiting to dequeue item...");
-            var sw = Stopwatch.StartNew();
-
-            using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken);
-            dequeueCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(10));
-
-            try
+            while (_queue.Count is 0 && !linkedCancellationToken.IsCancellationRequested)
             {
-                await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
+                _logger.LogTrace("Waiting to dequeue item...");
+                var sw = Stopwatch.StartNew();
+
+                using var dequeueCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(linkedCancellationToken);
+                dequeueCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(10));
+
+                try
+                {
+                    await _autoResetEvent.WaitAsync(dequeueCancellationTokenSource.Token).AnyContext();
+                }
+                catch (OperationCanceledException) { }
+
+                sw.Stop();
+                _logger.LogTrace("Waited for dequeue: {Elapsed:g}", sw.Elapsed);
             }
-            catch (OperationCanceledException) { }
 
-            sw.Stop();
-            _logger.LogTrace("Waited for dequeue: {Elapsed:g}", sw.Elapsed);
+            if (_queue.Count is 0)
+                return null;
+
+            _logger.LogTrace("Dequeue: Attempt");
+            if (!_queue.TryDequeue(out var entry) || entry is null)
+                return null;
+
+            ScheduleNextMaintenance(_timeProvider.GetUtcNow().UtcDateTime.Add(_options.WorkItemTimeout));
+
+            entry.Attempts++;
+            entry.DequeuedTimeUtc = _timeProvider.GetUtcNow().UtcDateTime;
+
+            if (entry.Attempts > _options.Retries + 1)
+            {
+                _logger.LogInformation("Exceeded retry limit ({Attempts} attempts, {Retries} retries), auto dead lettering: {QueueEntryId}", entry.Attempts, _options.Retries, entry.Id);
+                _deadletterQueue.Enqueue(entry);
+                Interlocked.Increment(ref _abandonedCount);
+                continue;
+            }
+
+            if (!_dequeued.TryAdd(entry.Id, entry))
+                throw new Exception("Unable to add item to the dequeued list");
+
+            Interlocked.Increment(ref _dequeuedCount);
+            _logger.LogTrace("Dequeue: Got Item");
+
+            await entry.RenewLockAsync();
+            await OnDequeuedAsync(entry).AnyContext();
+
+            return entry;
         }
-
-        if (_queue.Count == 0)
-            return null;
-
-        _logger.LogTrace("Dequeue: Attempt");
-        if (!_queue.TryDequeue(out var entry) || entry == null)
-            return null;
-
-        ScheduleNextMaintenance(_timeProvider.GetUtcNow().UtcDateTime.Add(_options.WorkItemTimeout));
-
-        entry.Attempts++;
-        entry.DequeuedTimeUtc = _timeProvider.GetUtcNow().UtcDateTime;
-
-        if (!_dequeued.TryAdd(entry.Id, entry))
-            throw new Exception("Unable to add item to the dequeued list");
-
-        Interlocked.Increment(ref _dequeuedCount);
-        _logger.LogTrace("Dequeue: Got Item");
-
-        await entry.RenewLockAsync();
-        await OnDequeuedAsync(entry).AnyContext();
-
-        return entry;
     }
 
     public override async Task RenewLockAsync(IQueueEntry<T> queueEntry)

@@ -8,6 +8,7 @@ using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
+using Foundatio.Tests.Serializer;
 using Foundatio.Tests.Utility;
 using Foundatio.Utility;
 using Foundatio.Xunit;
@@ -763,10 +764,105 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer();
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        long handlerInvocations = 0;
+        var messageReceived = new AsyncAutoResetEvent(false);
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
+                messageReceived.Set();
+            });
+
+            // Publish a valid message first (serializer works normally)
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "valid" }, cancellationToken: TestCancellationToken);
+            await messageReceived.WaitAsync(TestCancellationToken);
+            Assert.Equal(1, handlerInvocations);
+
+            // Flip the flag so deserialization throws on the next message
+            faultSerializer.ShouldFailOnDeserialize = true;
+
+            // Act: publish a message that will fail deserialization on receive
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
+
+            // Wait a reasonable time for the message to be processed (or skipped)
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Assert: handler should still have been invoked only once (for the valid message)
+            Assert.Equal(1, handlerInvocations);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnSerialize = true };
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
+
+            // Act & Assert: publishing with a broken serializer should throw
+            await Assert.ThrowsAsync<MessageBusException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnDeserialize = true };
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        long handlerInvocations = 0;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                Interlocked.Increment(ref handlerInvocations);
+            });
+
+            // Act: publish a message that will fail deserialization on receive
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Assert: handler should never be invoked for a poisoned message
+            Assert.Equal(0, handlerInvocations);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
     public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
-        var messageBus = GetMessageBus();
-        if (messageBus == null)
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
             return;
 
         try
@@ -786,7 +882,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         // Arrange
         var messageReceived = new AsyncAutoResetEvent(false);
         var messageBus = GetMessageBus();
-        if (messageBus == null)
+        if (messageBus is null)
             return;
 
         try
@@ -814,15 +910,15 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
         finally
         {
-            if (messageBus != null)
+            if (messageBus is not null)
                 await CleanupMessageBusAsync(messageBus);
         }
     }
 
     public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
-        var messageBus = GetMessageBus();
-        if (messageBus == null)
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
             return;
 
         try
