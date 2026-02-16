@@ -181,14 +181,17 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         string correlationId = null;
         IDictionary<string, string> properties = null;
 
-        if (_options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Default)
-                try
+        try
         {
-            // Unwrap envelope to extract metadata
-            var envelope = _serializer.Deserialize<QueueMessageEnvelope<T>>(message.Body.ToArray());
-            data = envelope.Data;
-            correlationId = envelope.CorrelationId;
-            properties = envelope.Properties;
+            if (_options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Default)
+            {
+                try
+                {
+                    // Unwrap envelope to extract metadata
+                    var envelope = _serializer.Deserialize<QueueMessageEnvelope<T>>(message.Body.ToArray());
+                    data = envelope.Data;
+                    correlationId = envelope.CorrelationId;
+                    properties = envelope.Properties;
                 }
                 catch (Exception ex)
                 {
@@ -197,14 +200,30 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
                     _logger.LogWarning(ex, "Failed to deserialize message {MessageId} as envelope format, attempting legacy format fallback", message.MessageId);
                     data = _serializer.Deserialize<T>(message.Body.ToArray());
                 }
+            }
+            else
+            {
+                // Legacy mode: deserialize data directly (no envelope)
+                data = _serializer.Deserialize<T>(message.Body.ToArray());
+            }
         }
-        else
+        catch (Exception ex)
         {
-            // Legacy mode: deserialize data directly (no envelope)
-            data = _serializer.Deserialize<T>(message.Body.ToArray());
+            _logger.LogWarning(ex, "Error deserializing message {MessageId} (attempt {DequeueCount}), abandoning for retry", message.MessageId, message.DequeueCount);
+
+            var poisonEntry = new AzureStorageQueueEntry<T>(message, null, null, null, this);
+            await AbandonAsync(poisonEntry).AnyContext();
+            return null;
         }
 
         var entry = new AzureStorageQueueEntry<T>(message, correlationId, properties, data, this);
+
+        if (entry.Attempts > _options.Retries + 1)
+        {
+            await DeadLetterMessageAsync(entry).AnyContext();
+            Interlocked.Increment(ref _abandonedCount);
+            return null;
+        }
 
         await OnDequeuedAsync(entry).AnyContext();
         _logger.LogTrace("Dequeued message: {QueueEntryId}", message.MessageId);
@@ -264,31 +283,7 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         var azureQueueEntry = ToAzureEntryWithCheck(entry);
         if (azureQueueEntry.Attempts > _options.Retries)
         {
-            _logger.LogDebug("Moving message {QueueEntryId} to deadletter after {Attempts} attempts", entry.Id, azureQueueEntry.Attempts);
-
-            // Send to deadletter queue first, then delete from main queue (sequential for data integrity)
-            byte[] deadletterBytes;
-            if (_options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Default)
-            {
-                // Preserve envelope with metadata for Default mode
-                var envelope = new QueueMessageEnvelope<T>
-                {
-                    CorrelationId = entry.CorrelationId,
-                    Properties = entry.Properties,
-                    Data = entry.Value
-                };
-                deadletterBytes = _serializer.SerializeToBytes(envelope);
-            }
-            else
-            {
-                deadletterBytes = _serializer.SerializeToBytes(entry.Value);
-            }
-
-            var messageBody = new BinaryData(deadletterBytes);
-            await _deadletterQueueClient.Value.SendMessageAsync(messageBody).AnyContext();
-            await _queueClient.Value.DeleteMessageAsync(
-                azureQueueEntry.UnderlyingMessage.MessageId,
-                azureQueueEntry.PopReceipt).AnyContext();
+            await DeadLetterMessageAsync(azureQueueEntry).AnyContext();
         }
         else
         {
@@ -455,6 +450,34 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
 
             _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationToken.IsCancellationRequested);
         }, linkedCancellationToken.Token).ContinueWith(t => linkedCancellationToken.Dispose());
+    }
+
+    private async Task DeadLetterMessageAsync(AzureStorageQueueEntry<T> entry)
+    {
+        _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", entry.Attempts, _options.Retries, entry.Id);
+
+        BinaryData messageBody;
+        if (entry.Value is null)
+        {
+            messageBody = entry.UnderlyingMessage.Body;
+        }
+        else if (_options.CompatibilityMode == AzureStorageQueueCompatibilityMode.Default)
+        {
+            var envelope = new QueueMessageEnvelope<T>
+            {
+                CorrelationId = entry.CorrelationId,
+                Properties = entry.Properties,
+                Data = entry.Value
+            };
+            messageBody = new BinaryData(_serializer.SerializeToBytes(envelope));
+        }
+        else
+        {
+            messageBody = new BinaryData(_serializer.SerializeToBytes(entry.Value));
+        }
+
+        await _deadletterQueueClient.Value.SendMessageAsync(messageBody).AnyContext();
+        await _queueClient.Value.DeleteMessageAsync(entry.UnderlyingMessage.MessageId, entry.PopReceipt).AnyContext();
     }
 
     private static AzureStorageQueueEntry<T> ToAzureEntryWithCheck(IQueueEntry<T> queueEntry)

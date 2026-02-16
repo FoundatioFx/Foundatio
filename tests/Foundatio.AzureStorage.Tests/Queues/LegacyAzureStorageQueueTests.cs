@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.Queues;
+using Foundatio.Serializer;
 using Foundatio.Tests.Queue;
 using Foundatio.Tests.Utility;
 using Microsoft.Extensions.Logging;
@@ -16,7 +17,7 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
     {
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
     {
         string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
         if (String.IsNullOrEmpty(connectionString))
@@ -34,6 +35,7 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
             .DequeueInterval(TimeSpan.FromSeconds(1))
             .MetricsPollingInterval(TimeSpan.Zero)
             .TimeProvider(timeProvider)
+            .Serializer(serializer)
             .LoggerFactory(Log));
     }
 
@@ -108,6 +110,18 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
+    }
+
+    [Fact]
+    public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
+    {
+        return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
+    {
+        return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
@@ -210,5 +224,11 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
     public override Task CanHandleAutoAbandonInWorker()
     {
         return base.CanHandleAutoAbandonInWorker();
+    }
+
+    [Fact]
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    {
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
     }
 }
