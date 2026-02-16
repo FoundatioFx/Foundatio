@@ -231,7 +231,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
             if (entry.Attempts > _options.Retries + 1)
             {
-                _logger.LogInformation("Exceeded retry limit ({Attempts} attempts, {Retries} retries), auto dead lettering: {QueueEntryId}", entry.Attempts, _options.Retries, entry.Id);
+                _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", entry.Attempts, _options.Retries, entry.Id);
                 _deadletterQueue.Enqueue(entry);
                 Interlocked.Increment(ref _abandonedCount);
                 continue;
@@ -338,7 +338,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             }
             else
             {
-                _logger.LogTrace("Exceeded retry limit moving to deadletter: {QueueEntryId}", queueEntry.Id);
+                _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", targetEntry.Attempts, _options.Retries, queueEntry.Id);
                 _deadletterQueue.Enqueue(targetEntry);
             }
         }
