@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -386,71 +385,55 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
     protected override async Task RemoveTopicSubscriptionAsync()
     {
-        using (await _lock.LockAsync(DisposedCancellationToken).AnyContext())
+        if (_subscriberCts is not null)
         {
-            // Cancel the subscriber first
-            if (_subscriberCts is not null)
+            try
+            {
                 await _subscriberCts.CancelAsync().AnyContext();
-
-            // Wait for the subscriber task to complete before disposing the CTS
-            if (_subscriberTask is not null)
-            {
-                try
-                {
-                    await _subscriberTask.AnyContext();
-                }
-                catch (OperationCanceledException)
-                {
-                    // Expected when the subscriber is canceled during shutdown
-                }
-                _subscriberTask = null;
             }
-
-            // Now safe to dispose the CTS
-            if (_subscriberCts is not null)
+            catch (ObjectDisposedException)
             {
-                _subscriberCts.Dispose();
-                _subscriberCts = null;
             }
-
-            if (!String.IsNullOrEmpty(_subscriptionArn))
-            {
-                try
-                {
-                    await _snsClient.Value.UnsubscribeAsync(_subscriptionArn).AnyContext();
-                    _logger.LogDebug("Unsubscribed from SNS topic: {SubscriptionArn}", _subscriptionArn);
-                }
-                catch (SnsNotFoundException)
-                {
-                    _logger.LogDebug("SNS subscription {SubscriptionArn} not found during cleanup", _subscriptionArn);
-                }
-                catch (AmazonServiceException ex)
-                {
-                    _logger.LogWarning(ex, "Error unsubscribing from SNS topic: {Message}", ex.Message);
-                }
-                _subscriptionArn = null;
-            }
-
-            if (!String.IsNullOrEmpty(_queueUrl) && _options.SubscriptionQueueAutoDelete)
-            {
-                try
-                {
-                    await _sqsClient.Value.DeleteQueueAsync(_queueUrl).AnyContext();
-                    _logger.LogDebug("Deleted SQS queue: {QueueUrl}", _queueUrl);
-                }
-                catch (QueueDoesNotExistException)
-                {
-                    _logger.LogDebug("SQS queue {QueueUrl} not found during cleanup", _queueUrl);
-                }
-                catch (AmazonServiceException ex)
-                {
-                    _logger.LogWarning(ex, "Error deleting SQS queue: {Message}", ex.Message);
-                }
-            }
-
-            _queueUrl = null;
-            _queueArn = null;
         }
+
+        if (!String.IsNullOrEmpty(_subscriptionArn) && _snsClient.IsValueCreated)
+        {
+            try
+            {
+                await _snsClient.Value.UnsubscribeAsync(_subscriptionArn).AnyContext();
+                _logger.LogDebug("Unsubscribed from SNS topic: {SubscriptionArn}", _subscriptionArn);
+            }
+            catch (SnsNotFoundException)
+            {
+                _logger.LogDebug("SNS subscription {SubscriptionArn} not found during cleanup", _subscriptionArn);
+            }
+            catch (AmazonServiceException ex)
+            {
+                _logger.LogWarning(ex, "Error unsubscribing from SNS topic: {Message}", ex.Message);
+            }
+
+            _subscriptionArn = null;
+        }
+
+        if (!String.IsNullOrEmpty(_queueUrl) && _sqsClient.IsValueCreated && _options.SubscriptionQueueAutoDelete)
+        {
+            try
+            {
+                await _sqsClient.Value.DeleteQueueAsync(_queueUrl).AnyContext();
+                _logger.LogDebug("Deleted SQS queue: {QueueUrl}", _queueUrl);
+            }
+            catch (QueueDoesNotExistException)
+            {
+                _logger.LogDebug("SQS queue {QueueUrl} not found during cleanup", _queueUrl);
+            }
+            catch (AmazonServiceException ex)
+            {
+                _logger.LogWarning(ex, "Error deleting SQS queue: {Message}", ex.Message);
+            }
+        }
+
+        _queueUrl = null;
+        _queueArn = null;
     }
 
     private async Task SubscriberLoopAsync(CancellationToken cancellationToken)
@@ -575,11 +558,18 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             }
         }
 
-        byte[] messageData = Encoding.UTF8.GetBytes(sqsMessage.Body);
-        var message = new Message(messageData, DeserializeMessageBody)
+        string body = sqsMessage.Body;
+        Type clrType = GetMappedMessageType(messageType);
+        var message = new Message([], msg =>
+        {
+            if (String.IsNullOrEmpty(body))
+                return null;
+
+            return clrType != null ? _serializer.Deserialize(body, clrType) : body;
+        })
         {
             Type = messageType,
-            ClrType = GetMappedMessageType(messageType),
+            ClrType = clrType,
             CorrelationId = correlationId,
             UniqueId = uniqueId
         };
@@ -600,6 +590,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
                 SendDelayedMessage(clrType, message, options);
             else
                 _logger.LogWarning("Cannot schedule delayed message: unable to resolve CLR type for {MessageType}", messageType);
+
             return;
         }
 
@@ -697,52 +688,22 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
         _isDisposed = true;
 
-        _subscriberCts?.Cancel();
+        await RemoveTopicSubscriptionAsync().AnyContext();
+
         if (_subscriberTask is not null)
         {
             try
             {
-                await _subscriberTask.AnyContext();
+                await _subscriberTask.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) { }
+            catch (TimeoutException)
             {
-                // Expected when the subscriber is canceled during shutdown
+                _logger.LogWarning("Subscriber task did not complete within timeout during dispose");
             }
         }
 
         _subscriberCts?.Dispose();
-
-        if (!String.IsNullOrEmpty(_subscriptionArn) && _snsClient.IsValueCreated)
-        {
-            try
-            {
-                await _snsClient.Value.UnsubscribeAsync(_subscriptionArn).AnyContext();
-            }
-            catch (SnsNotFoundException)
-            {
-                // Subscription already deleted
-            }
-            catch (AmazonServiceException ex)
-            {
-                _logger.LogDebug(ex, "Error unsubscribing from SNS topic during dispose");
-            }
-        }
-
-        if (!String.IsNullOrEmpty(_queueUrl) && _sqsClient.IsValueCreated && _options.SubscriptionQueueAutoDelete)
-        {
-            try
-            {
-                await _sqsClient.Value.DeleteQueueAsync(_queueUrl).AnyContext();
-            }
-            catch (QueueDoesNotExistException)
-            {
-                // Queue already deleted
-            }
-            catch (AmazonServiceException ex)
-            {
-                _logger.LogDebug(ex, "Error deleting SQS queue during dispose");
-            }
-        }
 
         if (_snsClient.IsValueCreated)
             _snsClient.Value.Dispose();
