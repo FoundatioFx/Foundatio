@@ -931,6 +931,35 @@ await queue.EnqueueAsync(reminder, new QueueEntryOptions
 });
 ```
 
+## Queue Name vs Queue ID
+
+Every queue has two distinct identifiers that serve different purposes:
+
+| Property | Purpose | Stable across restarts? | Shared across processes? |
+|----------|---------|------------------------|--------------------------|
+| `Name` | Identifies the queue in the **backing store** (Redis key prefix, SQS queue name, etc.) | ✅ Yes | ✅ Yes — two processes with the same `Name` share the same data |
+| `QueueId` | Runtime **instance identifier** used only for logging and diagnostics | ❌ No (random suffix by default) | N/A — never used for data routing |
+
+**`Name`** is what controls which data is read and written. All distributed queue implementations (Redis, SQS, Azure Service Bus, Azure Storage) route messages based on `Name`, not `QueueId`. Two processes or application restarts using the same `Name` will naturally share queue data and continue from where the other left off.
+
+**`QueueId`** exists purely so that multiple queue instances within the same process (e.g., priority queues or keyed queues) produce distinguishable log output. It has no effect on the backing store.
+
+::: tip Sharing queues across processes
+If you want multiple processes (or application restarts) to share a queue, just ensure they all configure the same `Name` value. The default is `typeof(T).Name` (the message type name), so it is consistent by default as long as you use the same message type.
+
+```csharp
+// Both processes use the same Name → they share the same queue in Redis
+var queue = new RedisQueue<WorkItem>(o => {
+    o.ConnectionMultiplexer = redis;
+    o.Name = "work-items";  // This is the stable backing-store identifier
+});
+```
+:::
+
+::: info InMemoryQueue
+`InMemoryQueue` is an in-process implementation only. It cannot share data across processes regardless of `Name` or `QueueId`. Use a distributed implementation (Redis, SQS, Azure) for cross-process sharing.
+:::
+
 ## Next Steps
 
 - [Jobs](./jobs) - Queue processor jobs for automatic background processing with `QueueJobBase<T>`
