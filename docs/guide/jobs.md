@@ -32,11 +32,8 @@ using Foundatio.Jobs;
 
 public class CleanupJob : JobBase
 {
-    private readonly ILogger<CleanupJob> _logger;
-
-    public CleanupJob(ILogger<CleanupJob> logger)
+    public CleanupJob(ILoggerFactory loggerFactory = null) : base(loggerFactory)
     {
-        _logger = logger;
     }
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
@@ -56,7 +53,7 @@ public class CleanupJob : JobBase
 ### Running Jobs
 
 ```csharp
-var job = new CleanupJob(logger);
+var job = new CleanupJob(loggerFactory);
 
 // Run once
 await job.RunAsync();
@@ -87,9 +84,6 @@ protected override Task<JobResult> RunInternalAsync(JobContext context)
         // Success with message
         return Task.FromResult(JobResult.SuccessWithMessage("Processed 100 items"));
 
-        // Failed
-        return Task.FromResult(JobResult.Failed);
-
         // Failed with message
         return Task.FromResult(JobResult.FailedWithMessage("Database connection failed"));
 
@@ -115,15 +109,13 @@ using Foundatio.Queues;
 public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
 {
     private readonly IOrderService _orderService;
-    private readonly ILogger<OrderProcessorJob> _logger;
 
     public OrderProcessorJob(
         IQueue<OrderWorkItem> queue,
         IOrderService orderService,
-        ILogger<OrderProcessorJob> logger) : base(queue)
+        ILoggerFactory loggerFactory = null) : base(queue, loggerFactory: loggerFactory)
     {
         _orderService = orderService;
-        _logger = logger;
     }
 
     protected override async Task<JobResult> ProcessQueueEntryAsync(
@@ -157,7 +149,7 @@ public record OrderWorkItem
 ```csharp
 // Setup
 var queue = new InMemoryQueue<OrderWorkItem>();
-var job = new OrderProcessorJob(queue, orderService, logger);
+var job = new OrderProcessorJob(queue, orderService);
 
 // Enqueue work
 await queue.EnqueueAsync(new OrderWorkItem { OrderId = 123 });
@@ -182,14 +174,12 @@ using Foundatio.Jobs;
 public class DeleteEntityWorkItemHandler : WorkItemHandlerBase
 {
     private readonly IEntityService _entityService;
-    private readonly ILogger<DeleteEntityWorkItemHandler> _logger;
 
     public DeleteEntityWorkItemHandler(
         IEntityService entityService,
-        ILogger<DeleteEntityWorkItemHandler> logger)
+        ILogger<DeleteEntityWorkItemHandler> logger) : base(logger)
     {
         _entityService = entityService;
-        _logger = logger;
     }
 
     public override async Task HandleItemAsync(WorkItemContext ctx)
@@ -227,18 +217,21 @@ public record DeleteEntityWorkItem
 ### Register and Run Work Item Jobs
 
 ```csharp
-// Register handlers
-var handlers = new WorkItemHandlers();
-handlers.Register<DeleteEntityWorkItem, DeleteEntityWorkItemHandler>();
-
 // Register with DI
-services.AddSingleton(handlers);
 services.AddSingleton<IQueue<WorkItemData>>(sp => new InMemoryQueue<WorkItemData>());
+services.AddSingleton<IMessageBus>(sp => new InMemoryMessageBus());
+services.AddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
 services.AddScoped<DeleteEntityWorkItemHandler>();
+services.AddSingleton(sp =>
+{
+    var handlers = new WorkItemHandlers();
+    handlers.Register<DeleteEntityWorkItem>(() => sp.GetRequiredService<DeleteEntityWorkItemHandler>());
+    return handlers;
+});
 
 // Run the job pool
 var job = serviceProvider.GetRequiredService<WorkItemJob>();
-await new JobRunner(job, instanceCount: 2).RunAsync(stoppingToken);
+await new JobRunner(job, serviceProvider, instanceCount: 2).RunAsync(stoppingToken);
 ```
 
 ### Trigger Work Items
@@ -263,8 +256,8 @@ Run jobs with various configurations:
 ```csharp
 using Foundatio.Jobs;
 
-var job = new CleanupJob(logger);
-var runner = new JobRunner(job);
+var job = new CleanupJob(loggerFactory);
+var runner = new JobRunner(job, serviceProvider);
 
 // Run until cancelled
 await runner.RunAsync(stoppingToken);
@@ -273,25 +266,25 @@ await runner.RunAsync(stoppingToken);
 runner.RunInBackground();
 
 // Multiple instances
-var multiRunner = new JobRunner(job, instanceCount: 4);
+var multiRunner = new JobRunner(job, serviceProvider, instanceCount: 4);
 await multiRunner.RunAsync(stoppingToken);
 ```
 
 ## Job Options
 
-Configure job behavior:
+Configure job behavior using the `[Job]` attribute:
 
 ```csharp
+[Job(Name = "MyJob", Interval = "5m", IterationLimit = -1)]
 public class MyJob : JobBase
 {
-    protected override JobOptions GetDefaultOptions()
+    public MyJob(ILoggerFactory loggerFactory = null) : base(loggerFactory)
     {
-        return new JobOptions
-        {
-            Name = "MyJob",
-            Interval = TimeSpan.FromMinutes(5),
-            IterationLimit = -1  // No limit
-        };
+    }
+
+    protected override Task<JobResult> RunInternalAsync(JobContext context)
+    {
+        return Task.FromResult(JobResult.Success);
     }
 }
 ```
@@ -439,7 +432,7 @@ public class SingletonJob : JobBase
 {
     private readonly ILockProvider _locker;
 
-    public SingletonJob(ILockProvider locker)
+    public SingletonJob(ILockProvider locker, ILoggerFactory loggerFactory = null) : base(loggerFactory)
     {
         _locker = locker;
     }
@@ -466,6 +459,11 @@ public class SingletonJob : JobBase
 public class ImportJob : JobBase
 {
     private readonly IMessageBus _messageBus;
+
+    public ImportJob(IMessageBus messageBus, ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    {
+        _messageBus = messageBus;
+    }
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
     {
@@ -545,9 +543,7 @@ services.AddSingleton<IQueue<OrderWorkItem>>(sp =>
     new InMemoryQueue<OrderWorkItem>()
 );
 
-services.AddScoped<OrderProcessorJob>();
-
-services.AddHostedService<QueueJobHostedService<OrderWorkItem>>();
+services.AddJob<OrderProcessorJob>(o => o.InstanceCount(4));
 ```
 
 ## Best Practices
