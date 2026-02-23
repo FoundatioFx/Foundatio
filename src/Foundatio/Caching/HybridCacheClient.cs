@@ -237,7 +237,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return false;
@@ -255,7 +255,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return false;
@@ -285,7 +285,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         if (values.Count is 0)
             return 0;
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAllAsync(values.Keys).AnyContext();
             return 0;
@@ -312,7 +312,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return false;
@@ -337,7 +337,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return false;
@@ -364,7 +364,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -394,7 +394,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -512,7 +512,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -540,7 +540,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -568,7 +568,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -596,7 +596,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
