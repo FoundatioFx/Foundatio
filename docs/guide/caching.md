@@ -58,7 +58,7 @@ Many cache methods accept an optional `expiresIn` parameter that controls the TT
 |-------------------|----------|
 | `null` | Entry will not expire. **Removes any existing TTL** on the key. |
 | Positive `TimeSpan` ≥ 5ms | Entry expires after the specified duration from now. |
-| Between 0 and 5ms (exclusive) | **Treated as already expired.** Key is removed, operation returns failure value. See [Minimum Expiration](#minimum-expiration) below. |
+| Greater than 0 and less than 5ms | **Treated as already expired.** Key is removed, operation returns failure value. See [Minimum Expiration](#minimum-expiration) below. |
 | Zero or negative | **Treated as already expired.** Key is removed, operation returns failure value. |
 | `TimeSpan.MaxValue` | Entry will not expire (equivalent to `null`). |
 
