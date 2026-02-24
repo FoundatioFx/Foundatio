@@ -374,7 +374,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await ListRemoveAsync(key, values).AnyContext();
             return 0;
@@ -502,7 +502,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -520,7 +520,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -538,7 +538,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -556,7 +556,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
             return 0;
@@ -572,7 +572,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
 
     private async Task<bool> InternalSetAsync<T>(string key, T value, TimeSpan? expiresIn = null, When when = When.Always, CommandFlags flags = CommandFlags.None)
     {
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
@@ -592,7 +592,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (values.Count is 0)
             return 0;
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             _logger.LogTrace("Removing expired keys: {Keys}", values.Keys);
             await RemoveAllAsync(values.Keys).AnyContext();
@@ -736,7 +736,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
@@ -761,7 +761,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
@@ -781,7 +781,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             _logger.LogTrace("Removing expired key: {Key}", key);
             await RemoveAsync(key).AnyContext();
@@ -818,6 +818,9 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         // TimeSpan.MaxValue means "no expiration" - persist the key to remove any existing TTL
         if (expiresIn == TimeSpan.MaxValue)
             return Database.KeyPersistAsync(key);
+
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+            return Database.KeyDeleteAsync(key);
 
         return Database.KeyExpireAsync(key, expiresIn);
     }
@@ -926,7 +929,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
                 var hashSlotExpirations = hashSlotGroup.ToList();
                 var keys = hashSlotExpirations.Select(kvp => (RedisKey)kvp.Key).ToArray();
                 var values = hashSlotExpirations
-                    .Select(kvp => (RedisValue)(kvp.Value.HasValue ? (long)kvp.Value.Value.TotalMilliseconds : -1))
+                    .Select(kvp => (RedisValue)(GetExpirationMilliseconds(kvp.Value) ?? -1))
                     .ToArray();
 
                 await Database.ScriptEvaluateAsync(_setAllExpiration.Hash, keys, values).AnyContext();
@@ -936,7 +939,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         {
             var keys = expirations.Select(kvp => (RedisKey)kvp.Key).ToArray();
             var values = expirations
-                .Select(kvp => (RedisValue)(kvp.Value.HasValue ? (long)kvp.Value.Value.TotalMilliseconds : -1))
+                .Select(kvp => (RedisValue)(GetExpirationMilliseconds(kvp.Value) ?? -1))
                 .ToArray();
 
             await Database.ScriptEvaluateAsync(_setAllExpiration.Hash, keys, values).AnyContext();

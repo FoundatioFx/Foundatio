@@ -7,6 +7,7 @@ namespace Foundatio.Redis.Tests;
 
 public static class SharedConnection
 {
+    private static readonly object _lock = new();
     private static ConnectionMultiplexer _muxer;
 
     public static ConnectionMultiplexer GetMuxer(ILoggerFactory loggerFactory)
@@ -15,9 +16,16 @@ public static class SharedConnection
         if (String.IsNullOrEmpty(connectionString))
             return null;
 
-        if (_muxer == null)
-            _muxer = ConnectionMultiplexer.Connect(connectionString, o => o.LoggerFactory = loggerFactory);
+        if (_muxer is not null)
+            return _muxer;
 
-        return _muxer;
+        lock (_lock)
+        {
+            if (_muxer is not null)
+                return _muxer;
+
+            _muxer = ConnectionMultiplexer.Connect(connectionString, o => o.LoggerFactory = loggerFactory);
+            return _muxer;
+        }
     }
 }
