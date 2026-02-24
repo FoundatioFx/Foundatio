@@ -117,6 +117,18 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.ExistsAsync("add-zero-exp"));
             Assert.False((await cache.GetAsync<string>("add-zero-exp")).HasValue);
 
+            // Sub-millisecond expiration (1 tick): treated as expired by MinimumExpiration guard
+            Assert.False(await cache.AddAsync("add-sub-ms-exp", "value", TimeSpan.FromTicks(1)));
+            Assert.False(await cache.ExistsAsync("add-sub-ms-exp"));
+
+            // Below MinimumExpiration threshold (3ms < 5ms): treated as expired
+            Assert.False(await cache.AddAsync("add-below-min-exp", "value", TimeSpan.FromMilliseconds(3)));
+            Assert.False(await cache.ExistsAsync("add-below-min-exp"));
+
+            // At MinimumExpiration threshold (5ms): should succeed
+            Assert.True(await cache.AddAsync("add-at-min-exp", "value", TimeSpan.FromMilliseconds(5)));
+            Assert.True(await cache.ExistsAsync("add-at-min-exp"));
+
             // Max expiration: should return true, key should exist with no expiration (null)
             Assert.True(await cache.AddAsync("add-max-exp", "value", TimeSpan.MaxValue));
             Assert.True(await cache.ExistsAsync("add-max-exp"));
@@ -723,6 +735,16 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(0, longResult);
             Assert.False(await cache.ExistsAsync("increment-zero-exp"));
             Assert.False((await cache.GetAsync<long>("increment-zero-exp")).HasValue);
+
+            // Sub-millisecond expiration: treated as expired by MinimumExpiration guard
+            longResult = await cache.IncrementAsync("increment-sub-ms", 5L, TimeSpan.FromTicks(1));
+            Assert.Equal(0, longResult);
+            Assert.False(await cache.ExistsAsync("increment-sub-ms"));
+
+            // Below MinimumExpiration threshold (3ms < 5ms): treated as expired
+            longResult = await cache.IncrementAsync("increment-below-min", 5L, TimeSpan.FromMilliseconds(3));
+            Assert.Equal(0, longResult);
+            Assert.False(await cache.ExistsAsync("increment-below-min"));
 
             // Max expiration (long): should succeed and key should exist with no expiration
             longResult = await cache.IncrementAsync("increment-max-exp-long", 100L, TimeSpan.MaxValue);
@@ -2677,6 +2699,23 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.SetAsync("test9", 1, utcNow));
             Assert.False(await cache.ExistsAsync("test9"));
             Assert.Null(await cache.GetExpirationAsync("test9"));
+
+            // Sub-millisecond expiration (1 tick): treated as expired by MinimumExpiration guard
+            Assert.False(await cache.SetAsync("set-sub-ms", 1, TimeSpan.FromTicks(1)));
+            Assert.False(await cache.ExistsAsync("set-sub-ms"));
+
+            // Below MinimumExpiration threshold (3ms < 5ms): treated as expired
+            Assert.False(await cache.SetAsync("set-below-min", 1, TimeSpan.FromMilliseconds(3)));
+            Assert.False(await cache.ExistsAsync("set-below-min"));
+
+            // At MinimumExpiration threshold (5ms): should succeed
+            Assert.True(await cache.SetAsync("set-at-min", 1, TimeSpan.FromMilliseconds(5)));
+            Assert.True(await cache.ExistsAsync("set-at-min"));
+
+            // DateTime-based near-boundary: expiration sub-5ms in the future (via ToExpiresIn)
+            var nearFuture = cache.GetTimeProvider().GetUtcNow().UtcDateTime.AddTicks(100);
+            Assert.False(await cache.SetAsync("set-near-future", 1, nearFuture));
+            Assert.False(await cache.ExistsAsync("set-near-future"));
 
             // Null expiration: should succeed and remove expiration
             Assert.True(await cache.SetAsync("set-null-exp", "value", TimeSpan.FromHours(1)));

@@ -8,6 +8,15 @@ namespace Foundatio.Caching;
 
 public static class CacheClientExtensions
 {
+    /// <summary>
+    /// Minimum meaningful cache expiration. Values below this threshold are treated as already-expired
+    /// because sub-millisecond TTLs are truncated to zero by external providers (e.g., Redis PSETEX
+    /// converts TimeSpan to milliseconds via integer cast, so 0.9ms becomes 0ms and is rejected).
+    /// 5ms provides a safe margin above the 1ms integer-truncation boundary while remaining far
+    /// below any real-world cache TTL.
+    /// </summary>
+    public static readonly TimeSpan MinimumExpiration = TimeSpan.FromMilliseconds(5);
+    
     public static async Task<T> GetAsync<T>(this ICacheClient client, string key, T defaultValue)
     {
         var cacheValue = await client.GetAsync<T>(key).AnyContext();
@@ -153,12 +162,19 @@ public static class CacheClientExtensions
     /// <summary>
     /// Converts a DateTime expiration to a TimeSpan relative to now.
     /// DateTime.MaxValue is treated as null (no expiration).
+    /// Returns TimeSpan.Zero when the computed TTL is below <see cref="MinimumExpiration"/>,
+    /// so downstream guards treat it as already-expired.
     /// </summary>
     private static TimeSpan? ToExpiresIn(this ICacheClient client, DateTime? expiresAtUtc)
     {
         if (!expiresAtUtc.HasValue || expiresAtUtc.Value == DateTime.MaxValue)
             return null;
 
-        return expiresAtUtc.Value.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime);
+        var expiresIn = expiresAtUtc.Value.Subtract(client.GetTimeProvider().GetUtcNow().UtcDateTime);
+
+        if (expiresIn < MinimumExpiration)
+            return TimeSpan.Zero;
+
+        return expiresIn;
     }
 }

@@ -454,7 +454,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return Task.FromResult(false);
@@ -472,7 +472,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return Task.FromResult(false);
@@ -496,7 +496,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -559,7 +559,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -622,7 +622,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -685,7 +685,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -749,7 +749,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await ListRemoveAsync(key, values).AnyContext();
             return 0;
@@ -1063,7 +1063,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values.Count is 0)
             return 0;
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             foreach (string key in values.Keys)
                 RemoveExpiredKey(key);
@@ -1108,7 +1108,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn?.Ticks <= 0)
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return false;
@@ -1156,7 +1156,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -1213,7 +1213,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
-        if (expiresIn is { Ticks: <= 0 })
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return 0;
@@ -1353,6 +1353,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        {
+            RemoveExpiredKey(key);
+            return;
+        }
+
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = utcNow.SafeAdd(expiresIn);
         if (expiresAt < utcNow)
@@ -1397,16 +1403,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
             else
             {
-                var expiresAt = utcNow.SafeAdd(kvp.Value.Value);
-                if (expiresAt < utcNow)
+                if (kvp.Value.Value < CacheClientExtensions.MinimumExpiration)
                 {
                     RemoveExpiredKey(kvp.Key);
                 }
-                else if (existingEntry.ExpiresAt != expiresAt)
+                else
                 {
-                    Interlocked.Increment(ref _writes);
-                    existingEntry.ExpiresAt = expiresAt;
-                    updated++;
+                    var expiresAt = utcNow.SafeAdd(kvp.Value.Value);
+                    if (expiresAt < utcNow)
+                    {
+                        RemoveExpiredKey(kvp.Key);
+                    }
+                    else if (existingEntry.ExpiresAt != expiresAt)
+                    {
+                        Interlocked.Increment(ref _writes);
+                        existingEntry.ExpiresAt = expiresAt;
+                        updated++;
+                    }
                 }
             }
         }

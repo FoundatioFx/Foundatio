@@ -57,9 +57,49 @@ Many cache methods accept an optional `expiresIn` parameter that controls the TT
 | `expiresIn` Value | Behavior |
 |-------------------|----------|
 | `null` | Entry will not expire. **Removes any existing TTL** on the key. |
-| Positive `TimeSpan` | Entry expires after the specified duration from now. |
+| Positive `TimeSpan` ≥ 5ms | Entry expires after the specified duration from now. |
+| Greater than 0 and less than 5ms | **Treated as already expired.** Key is removed, operation returns failure value. See [Minimum Expiration](#minimum-expiration) below. |
 | Zero or negative | **Treated as already expired.** Key is removed, operation returns failure value. |
 | `TimeSpan.MaxValue` | Entry will not expire (equivalent to `null`). |
+
+### Minimum Expiration
+
+Foundatio enforces a **minimum expiration of 5 milliseconds** (`CacheClientExtensions.MinimumExpiration`) on all cache operations. Any `expiresIn` value greater than zero but less than 5ms is treated as already-expired: the key is removed and the operation returns its failure value.
+
+**Why 5ms?**
+
+External cache providers—most notably Redis—represent TTLs as integers. StackExchange.Redis converts a `TimeSpan` to milliseconds via `(long)timeSpan.TotalMilliseconds`, which **truncates** the fractional part. A TTL of 0.9ms becomes `0`, and Redis rejects `SET key PX 0` with:
+
+```
+ERR invalid expire time in 'setex'
+```
+
+This truncation-to-zero can happen legitimately in production when computing `expiresAtUtc - DateTime.UtcNow` on a time very close to "now"—a common race condition in high-throughput systems. The 5ms floor provides a safe margin above the 1ms truncation boundary while remaining far below any real-world cache TTL.
+
+**Behavior summary:**
+
+```csharp
+// Below threshold: treated as expired (key is removed, returns false/0)
+await cache.SetAsync("key", value, TimeSpan.FromTicks(1));          // 100ns < 5ms → expired
+await cache.SetAsync("key", value, TimeSpan.FromMilliseconds(3));   // 3ms < 5ms → expired
+
+// At threshold: accepted
+await cache.SetAsync("key", value, TimeSpan.FromMilliseconds(5));   // 5ms == 5ms → succeeds
+
+// Above threshold: accepted
+await cache.SetAsync("key", value, TimeSpan.FromMilliseconds(100)); // 100ms > 5ms → succeeds
+```
+
+The constant is accessible for consumers that need to validate TTLs before calling cache methods:
+
+```csharp
+using Foundatio.Extensions;
+
+if (myExpiration < CacheClientExtensions.MinimumExpiration)
+{
+    // TTL too short; skip the cache operation or use a longer TTL
+}
+```
 
 ### TTL Behavior by Method
 
