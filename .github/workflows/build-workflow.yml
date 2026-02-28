@@ -22,6 +22,11 @@ on:
         default: 'docker compose up -d && docker compose up ready || true'
         required: false
         type: string
+      minimum-major-minor:
+        description: 'Minimum major.minor version for MinVer (e.g. 8.0)'
+        default: ''
+        required: false
+        type: string
     secrets:
       NUGET_KEY:
         required: false
@@ -59,9 +64,15 @@ jobs:
         echo "GIT_BRANCH_SUFFIX=$branch" >> $GITHUB_ENV
         echo branch: $branch ref: $GITHUB_REF event: $GITHUB_EVENT_NAME actor: $GITHUB_ACTOR
     - name: Build Version
+      env:
+        MINIMUM_MAJOR_MINOR: ${{ inputs.minimum-major-minor }}
       run: |
         dotnet tool install --global minver-cli --version 7.0.0
-        version=$(minver --tag-prefix v --default-pre-release-identifiers preview.${GIT_BRANCH_SUFFIX}0)
+        minver_args="--tag-prefix v --default-pre-release-identifiers preview.${GIT_BRANCH_SUFFIX}0"
+        if [ -n "$MINIMUM_MAJOR_MINOR" ]; then
+          minver_args="$minver_args --minimum-major-minor $MINIMUM_MAJOR_MINOR"
+        fi
+        version=$(minver $minver_args)
 
         # If on a non-main branch, insert branch name before the height (last numeric segment)
         if [ -n "$GIT_BRANCH_SUFFIX" ]; then
