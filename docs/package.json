@@ -11,6 +11,6 @@
   "devDependencies": {
     "vitepress": "^2.0.0-alpha.15",
     "vitepress-plugin-llms": "^1.10.0",
-    "mermaid": "^11.12.2"
+    "mermaid": "^11.12.3"
   }
 }
