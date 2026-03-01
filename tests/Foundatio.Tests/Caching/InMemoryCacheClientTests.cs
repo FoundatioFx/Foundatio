@@ -1597,10 +1597,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
-    [Fact]
-    public async Task GetAsync_WithObjectType_ReturnsValueDirectly()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_WithObjectType_ReturnsValueDirectly(bool cloneValues)
     {
-        var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
         using (cache)
         {
             var data = new MyData("hello", 42);
