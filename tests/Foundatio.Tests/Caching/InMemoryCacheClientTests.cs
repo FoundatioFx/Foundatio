@@ -1596,6 +1596,23 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             Assert.Null(Log.LogEntries.SingleOrDefault(l => l.LogLevel == LogLevel.Error));
         }
     }
+
+    [Fact]
+    public async Task GetAsync_WithObjectType_ReturnsValueDirectly()
+    {
+        var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using (cache)
+        {
+            var data = new MyData("hello", 42);
+            await cache.SetAsync("key", data);
+
+            var result = await cache.GetAsync<object>("key");
+            Assert.True(result.HasValue);
+            Assert.Equal(data, result.Value);
+        }
+    }
+
+    private record MyData(string Name, int Value);
 }
 
 /// <summary>
