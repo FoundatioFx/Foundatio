@@ -16,7 +16,7 @@ public static class CacheClientExtensions
     /// below any real-world cache TTL.
     /// </summary>
     public static readonly TimeSpan MinimumExpiration = TimeSpan.FromMilliseconds(5);
-    
+
     public static async Task<T> GetAsync<T>(this ICacheClient client, string key, T defaultValue)
     {
         var cacheValue = await client.GetAsync<T>(key).AnyContext();

@@ -26,6 +26,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     private int _abandonedCount;
     private int _workerErrorCount;
     private int _workerItemTimeoutCount;
+    private int _pendingRetryCount;
 
     public InMemoryQueue() : this(o => o) { }
 
@@ -51,7 +52,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     {
         return new QueueStats
         {
-            Queued = _queue.Count,
+            Queued = _queue.Count + _pendingRetryCount,
             Working = _dequeued.Count,
             Deadletter = _deadletterQueue.Count,
             Enqueued = _enqueuedCount,
@@ -292,8 +293,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
+        Interlocked.Increment(ref _pendingRetryCount);
+
         if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry == null)
         {
+            Interlocked.Decrement(ref _pendingRetryCount);
+
             foreach (var kvp in _queue)
             {
                 if (kvp.Id == queueEntry.Id)
@@ -323,8 +328,9 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 var retryEntry = targetEntry.CreateRetryEntry();
                 if (_options.RetryDelay > TimeSpan.Zero)
                 {
+                    Interlocked.Decrement(ref _pendingRetryCount);
                     _logger.LogTrace("Adding item to wait list for future retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", queueEntry.Id, queueEntry.Attempts);
-                    var unawaited = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () =>
+                    _ = Run.DelayedAsync(GetRetryDelay(targetEntry.Attempts), () =>
                     {
                         Retry(retryEntry);
                         return Task.CompletedTask;
@@ -334,11 +340,13 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                 {
                     _logger.LogTrace("Adding item back to queue for retry: {QueueEntryId} Attempts: {QueueEntryAttempts}", queueEntry.Id, queueEntry.Attempts);
                     Retry(retryEntry);
+                    Interlocked.Decrement(ref _pendingRetryCount);
                 }
             }
             else
             {
                 _logger.LogInformation("Exceeded retry limit ({Attempts}/{Retries}), moving message {QueueEntryId} to dead letter", targetEntry.Attempts, _options.Retries, queueEntry.Id);
+                Interlocked.Decrement(ref _pendingRetryCount);
                 _deadletterQueue.Enqueue(targetEntry);
             }
         }
@@ -373,6 +381,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         _completedCount = 0;
         _abandonedCount = 0;
         _workerErrorCount = 0;
+        _pendingRetryCount = 0;
 
         return Task.CompletedTask;
     }
