@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
-    <PackageReference Include="Confluent.Kafka" Version="2.13.0" />
+    <PackageReference Include="Confluent.Kafka" Version="2.13.2" />
 
     <PackageReference Include="Foundatio" Version="13.0.0-beta3.8" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
