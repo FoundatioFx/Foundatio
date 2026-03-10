@@ -260,8 +260,10 @@ public class AzureStorageQueueTests : QueueTestBase
 
         // Inject a raw JSON message (no envelope wrapper) using QueueClient directly
         var rawClient = new QueueClient(connectionString, queueName);
-        var legacyJson = """{"Data":"legacy-item","Id":42}""";
-        await rawClient.SendMessageAsync(new BinaryData(Encoding.UTF8.GetBytes(legacyJson)));
+
+        /* language=json */
+        const string legacyJson = """{"Data":"legacy-item","Id":42}""";
+        await rawClient.SendMessageAsync(new BinaryData(Encoding.UTF8.GetBytes(legacyJson)), cancellationToken: TestCancellationToken);
 
         // Act - Dequeue using default mode (envelope format, with legacy fallback)
         using var dequeueCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
