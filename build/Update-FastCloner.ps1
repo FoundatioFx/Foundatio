@@ -2,7 +2,7 @@ $work_dir = Resolve-Path "$PSScriptRoot"
 $src_dir = Resolve-Path "$PSScriptRoot/../src/Foundatio"
 
 # Change this to update the FastCloner tag being imported.
-$version = "3.5.1"
+$version = "3.5.2"
 
 Function Invoke-CheckedCommand {
     param(

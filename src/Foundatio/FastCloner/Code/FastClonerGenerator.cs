@@ -206,15 +206,10 @@ internal static class FastClonerGenerator
         FastClonerCache.CyclePolicy cyclePolicy = !canHaveCycles ? FastClonerCache.CyclePolicy.None : hasDirectSelfReference ? FastClonerCache.CyclePolicy.Worklist : FastClonerCache.CyclePolicy.TrackReferences;
         return new FastClonerCache.TypeCloneMetadata
         {
-            Type = type,
             IsSafe = isSafe,
-            CanHaveCycles = canHaveCycles,
             CanSkipReferenceTracking = canSkipReferenceTracking,
-            HasDirectSelfReference = hasDirectSelfReference,
             HasBehaviorSensitiveMembers = hasBehaviorSensitiveMembers,
             RequiresSpecializedCloner = requiresSpecializedCloner,
-            CollectionStrategy = requiresSpecializedCloner ? FastClonerCache.CollectionCloneStrategy.SpecializedRebuild : FastClonerCache.CollectionCloneStrategy.MemberwiseFast,
-            ExecutionMode = isSafe ? FastClonerCache.CloneExecutionMode.SafeReturn : FastClonerCache.CloneExecutionMode.MemberwiseThenPatch,
             CyclePolicy = cyclePolicy,
             RecursiveCloner = recursive
         };
@@ -330,7 +325,6 @@ internal static class FastClonerGenerator
     {
         FastClonerCache.TypeCloneMetadata metadata = GetTypeMetadata(rootType);
         Func<object, FastCloneState, object>? cloner = metadata.RecursiveCloner;
-        // null -> should return same type
         if (cloner is null)
         {
             return obj;
@@ -529,18 +523,40 @@ internal static class FastClonerGenerator
         return false;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool HasActiveTypeBehaviorOverrides(FastCloneState state) => FastClonerCache.HasActiveTypeBehaviorOverrides;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool HasSafeTypeOverrides(FastCloneState state) => FastClonerCache.HasSafeTypeOverrides;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static CloneBehavior? GetTypeBehavior(Type type, FastCloneState state) => FastClonerCache.GetTypeBehavior(type);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsTypeIgnored(Type type, FastCloneState state) => FastClonerCache.IsTypeIgnored(type);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetMaxRecursionDepth(FastCloneState state) => state.MaxRecursionDepth;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool CanReturnSameObject(Type type, FastCloneState state) => FastClonerSafeTypes.CanReturnSameObject(type);
     internal static object? CloneClassInternal(object? obj, FastCloneState state)
+    {
+        return CloneClassInternalCore(obj, state);
+    }
+
+    private static object? CloneClassInternalCore(object? obj, FastCloneState state)
     {
         if (obj is null)
             return null;
         Type runtimeType = obj.GetType();
         FastClonerCache.TypeCloneMetadata metadata = GetTypeMetadata(runtimeType, state);
-        if (!FastClonerCache.HasActiveTypeBehaviorOverrides && metadata.IsSafe)
+        if (!HasActiveTypeBehaviorOverrides(state) && metadata.IsSafe)
             return obj;
         return CloneClassInternalTyped(obj, runtimeType, state, metadata);
     }
 
     internal static object? CloneClassInternalNoTracking(object? obj, FastCloneState state)
+    {
+        return CloneClassInternalNoTrackingCore(obj, state);
+    }
+
+    private static object? CloneClassInternalNoTrackingCore(object? obj, FastCloneState state)
     {
         if (obj is null)
             return null;
@@ -554,6 +570,11 @@ internal static class FastClonerGenerator
 
     internal static object? CloneClassInternalTyped(object obj, Type objType, FastCloneState state)
     {
+        return CloneClassInternalTypedCore(obj, objType, state);
+    }
+
+    private static object? CloneClassInternalTypedCore(object obj, Type objType, FastCloneState state)
+    {
         FastClonerCache.TypeCloneMetadata metadata = GetTypeMetadata(objType, state);
         return CloneClassInternalTyped(obj, objType, state, metadata);
     }
@@ -565,7 +586,7 @@ internal static class FastClonerGenerator
 
     private static object? CloneClassInternalResolved(object obj, FastCloneState state, Type objType, FastClonerCache.TypeCloneMetadata metadata, Func<object, FastCloneState, object>? recursiveCloner)
     {
-        if (TryGetNonCloningResult(obj, objType, metadata, recursiveCloner, out object? nonCloningResult))
+        if (TryGetNonCloningResult(obj, objType, metadata, recursiveCloner, state, out object? nonCloningResult))
         {
             return nonCloningResult;
         }
@@ -591,7 +612,7 @@ internal static class FastClonerGenerator
         {
             depthIncremented = true;
             int current = state.IncrementDepth();
-            if (current >= FastCloner.MaxRecursionDepth)
+            if (current >= GetMaxRecursionDepth(state))
             {
                 state.DecrementDepth();
                 depthIncremented = false;
@@ -617,9 +638,9 @@ internal static class FastClonerGenerator
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TryGetNonCloningResult(object obj, Type objType, FastClonerCache.TypeCloneMetadata metadata, Func<object, FastCloneState, object>? recursiveCloner, out object? result)
+    private static bool TryGetNonCloningResult(object obj, Type objType, FastClonerCache.TypeCloneMetadata metadata, Func<object, FastCloneState, object>? recursiveCloner, FastCloneState state, out object? result)
     {
-        if (!FastClonerCache.HasActiveTypeBehaviorOverrides)
+        if (!HasActiveTypeBehaviorOverrides(state))
         {
             if (metadata.IsSafe || recursiveCloner is null)
             {
@@ -629,7 +650,7 @@ internal static class FastClonerGenerator
         }
         else
         {
-            if (!FastClonerCache.HasSafeTypeOverrides)
+            if (!HasSafeTypeOverrides(state))
             {
                 if (FastClonerSafeTypes.DefaultKnownTypes.ContainsKey(objType))
                 {
@@ -637,7 +658,7 @@ internal static class FastClonerGenerator
                     return true;
                 }
 
-                if (FastClonerCache.IsTypeIgnored(objType))
+                if (IsTypeIgnored(objType, state))
                 {
                     result = null;
                     return true;
@@ -645,7 +666,7 @@ internal static class FastClonerGenerator
             }
             else
             {
-                if (FastClonerCache.IsTypeIgnored(objType))
+                if (IsTypeIgnored(objType, state))
                 {
                     result = null;
                     return true;
@@ -671,19 +692,24 @@ internal static class FastClonerGenerator
 
     internal static object? CloneClassShallowAndTrack(object? obj, FastCloneState state)
     {
+        return CloneClassShallowAndTrackCore(obj, state);
+    }
+
+    private static object? CloneClassShallowAndTrackCore(object? obj, FastCloneState state)
+    {
         if (obj is null)
         {
             return null;
         }
 
         Type objType = obj.GetType();
-        if (FastClonerCache.HasActiveTypeBehaviorOverrides && FastClonerCache.IsTypeIgnored(objType))
+        if (HasActiveTypeBehaviorOverrides(state) && IsTypeIgnored(objType, state))
         {
             return null;
         }
 
         // boxed structs can be mutated and must be deep-cloned
-        if (FastClonerSafeTypes.CanReturnSameObject(objType) && !objType.IsValueType())
+        if (CanReturnSameObject(objType, state) && !objType.IsValueType())
         {
             return obj;
         }
@@ -721,11 +747,11 @@ internal static class FastClonerGenerator
         Type? underlyingTypeT = Nullable.GetUnderlyingType(typeT);
         // Check for custom type behaviors
         CloneBehavior? behavior = null;
-        if (FastClonerCache.HasActiveTypeBehaviorOverrides)
+        if (HasActiveTypeBehaviorOverrides(state))
         {
-            behavior = FastClonerCache.GetTypeBehavior(typeT);
+            behavior = GetTypeBehavior(typeT, state);
             if (behavior is null && underlyingTypeT is not null)
-                behavior = FastClonerCache.GetTypeBehavior(underlyingTypeT);
+                behavior = GetTypeBehavior(underlyingTypeT, state);
         }
 
         switch (behavior)
@@ -801,13 +827,13 @@ internal static class FastClonerGenerator
             state.EnsureWorkQueueCapacity(l);
         state.AddKnownRef(obj, outArray);
         Type declaredType = typeof(T);
-        if (!declaredType.IsValueType && FastClonerSafeTypes.CanReturnSameObject(declaredType) && !FastClonerCache.HasActiveTypeBehaviorOverrides)
+        if (!declaredType.IsValueType && CanReturnSameObject(declaredType, state) && !HasActiveTypeBehaviorOverrides(state))
         {
             Array.Copy(obj, outArray, l);
             return outArray;
         }
 
-        bool hasOptionalTypeOverrides = FastClonerCache.HasActiveTypeBehaviorOverrides;
+        bool hasOptionalTypeOverrides = HasActiveTypeBehaviorOverrides(state);
         TypeCloneDispatchCache dispatch = default;
         Type? lastType = null;
         FastClonerCache.TypeCloneMetadata? lastMetadata = null;
@@ -822,7 +848,7 @@ internal static class FastClonerGenerator
             }
 
             Type runtimeType = item.GetType();
-            if (!hasOptionalTypeOverrides && ((!runtimeType.IsValueType && FastClonerSafeTypes.CanReturnSameObject(runtimeType)) || runtimeType.IsPrimitive || runtimeType.IsEnum))
+            if (!hasOptionalTypeOverrides && ((!runtimeType.IsValueType && CanReturnSameObject(runtimeType, state)) || runtimeType.IsPrimitive || runtimeType.IsEnum))
             {
                 outArray[i] = item;
                 continue;
@@ -958,7 +984,7 @@ internal static class FastClonerGenerator
             return null;
         Dictionary<TKey, TValue> result = new Dictionary<TKey, TValue>(obj.Count, obj.Comparer);
         state.AddKnownRef(obj, result);
-        bool ignoreValues = FastClonerCache.HasActiveTypeBehaviorOverrides && FastClonerCache.IsTypeIgnored(typeof(TValue));
+        bool ignoreValues = HasActiveTypeBehaviorOverrides(state) && IsTypeIgnored(typeof(TValue), state);
         foreach (KeyValuePair<TKey, TValue> kvp in obj)
         {
             ref TValue valueRef = ref CollectionsMarshal.GetValueRefOrAddDefault(result, kvp.Key, out _);
@@ -975,7 +1001,7 @@ internal static class FastClonerGenerator
             return null;
         Dictionary<TKey, TValue> result = new Dictionary<TKey, TValue>(obj.Count, obj.Comparer);
         state.AddKnownRef(obj, result);
-        bool ignoreValues = FastClonerCache.HasActiveTypeBehaviorOverrides && FastClonerCache.IsTypeIgnored(typeof(TValue));
+        bool ignoreValues = HasActiveTypeBehaviorOverrides(state) && IsTypeIgnored(typeof(TValue), state);
         if (ignoreValues)
         {
             foreach (KeyValuePair<TKey, TValue> kvp in obj)
@@ -1015,7 +1041,7 @@ internal static class FastClonerGenerator
             return null;
         state.EnsureKnownRefCapacity(obj.Count + 1);
         Type declaredType = typeof(TValue);
-        bool ignoreDeclaredValues = FastClonerCache.HasActiveTypeBehaviorOverrides && FastClonerCache.IsTypeIgnored(declaredType);
+        bool ignoreDeclaredValues = HasActiveTypeBehaviorOverrides(state) && IsTypeIgnored(declaredType, state);
         if (declaredType == typeof(object))
             return (Dictionary<TKey, TValue?>? )(object? )CloneDictionaryObjectValueInternal((Dictionary<TKey, object?>)(object)obj, state);
         Dictionary<TKey, TValue?> result = new Dictionary<TKey, TValue?>(obj.Count, obj.Comparer);
@@ -1057,14 +1083,14 @@ internal static class FastClonerGenerator
             }
 
             Type runtimeType = value.GetType();
-            if (FastClonerCache.HasActiveTypeBehaviorOverrides && FastClonerCache.IsTypeIgnored(runtimeType))
+            if (HasActiveTypeBehaviorOverrides(state) && IsTypeIgnored(runtimeType, state))
             {
                 ref TValue? ignoredRef = ref CollectionsMarshal.GetValueRefOrAddDefault(result, kvp.Key, out _);
                 ignoredRef = null;
                 continue;
             }
 
-            if (FastClonerSafeTypes.CanReturnSameObject(runtimeType))
+            if (CanReturnSameObject(runtimeType, state))
             {
                 ref TValue? valueRef = ref CollectionsMarshal.GetValueRefOrAddDefault(result, kvp.Key, out _);
                 valueRef = value;
@@ -1111,7 +1137,7 @@ internal static class FastClonerGenerator
             }
 
             Type runtimeType = value.GetType();
-            if (FastClonerSafeTypes.CanReturnSameObject(runtimeType))
+            if (CanReturnSameObject(runtimeType, state))
             {
                 ref object? safeRef = ref CollectionsMarshal.GetValueRefOrAddDefault(result, kvp.Key, out _);
                 safeRef = value;
@@ -1160,7 +1186,7 @@ internal static class FastClonerGenerator
         int l2 = obj.GetLength(1);
         T[, ] outArray = new T[l1, l2];
         state.AddKnownRef(obj, outArray);
-        if (FastClonerSafeTypes.CanReturnSameObject(typeof(T)))
+        if (CanReturnSameObject(typeof(T), state))
         {
             Array.Copy(obj, outArray, obj.Length);
             return outArray;
@@ -1213,7 +1239,7 @@ internal static class FastClonerGenerator
         // we're unable to set any value to this array, so, just return it
         if (hasZeroLength)
             return outArray;
-        if (FastClonerSafeTypes.CanReturnSameObject(elementType))
+        if (CanReturnSameObject(elementType, state))
         {
             Array.Copy(obj, outArray, obj.Length);
             return outArray;

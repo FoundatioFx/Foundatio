@@ -63,24 +63,27 @@ internal static class FastClonerSafeTypes
         [typeof(Range)] = true,
         [typeof(Index)] = true
     };
-    private static readonly ConcurrentDictionary<Type, bool> knownTypes = [];
+    private static ConcurrentDictionary<Type, bool> knownTypes = [];
     static FastClonerSafeTypes()
     {
-        InitializeKnownTypes();
+        knownTypes = BuildKnownTypes();
     }
 
-    private static void InitializeKnownTypes()
+    private static ConcurrentDictionary<Type, bool> BuildKnownTypes()
     {
+        ConcurrentDictionary<Type, bool> result = new();
         foreach (KeyValuePair<Type, bool> x in DefaultKnownTypes)
         {
-            knownTypes.TryAdd(x.Key, x.Value);
+            result.TryAdd(x.Key, x.Value);
         }
 
         List<Type?> safeTypes = [Type.GetType("System.RuntimeType"), Type.GetType("System.RuntimeTypeHandle")];
         foreach (Type x in safeTypes.OfType<Type>())
         {
-            knownTypes.TryAdd(x, true);
+            result.TryAdd(x, true);
         }
+
+        return result;
     }
 
     private static bool IsSpecialEqualityComparer(string fullName) => fullName switch
@@ -227,8 +230,7 @@ internal static class FastClonerSafeTypes
     public static bool CanReturnSameObject(Type type) => CanReturnSameType(type);
     internal static void ClearKnownTypesCache()
     {
-        knownTypes.Clear();
-        InitializeKnownTypes();
+        knownTypes = BuildKnownTypes();
     }
 
     /// <summary>
