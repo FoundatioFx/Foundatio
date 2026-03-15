@@ -1340,7 +1340,20 @@ internal static class FastClonerExprGenerator
             return Expression.Lambda<Func<object, FastCloneState, object>>(pFrom, pFrom, pState).Compile();
         }
 
-        Type elementType = type.GenericArguments()[0];
+        Type[] genericArguments = type.GenericArguments();
+        Type elementType;
+        if (genericArguments.Length > 0)
+        {
+            elementType = genericArguments[0];
+        }
+        else
+        {
+            Type? setInterface = type.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ISet<>));
+            if (setInterface is null)
+                return GenerateMemberwiseCloner(type, position);
+            elementType = setInterface.GetGenericArguments()[0];
+        }
+
         // Fast path check first - avoid creating expressions if we don't need them
         bool isImmutable = IsImmutableCollection(type);
         if (!isImmutable && FastClonerSafeTypes.HasStableHashSemantics(elementType) && !FastClonerCache.IsTypeIgnored(elementType))
