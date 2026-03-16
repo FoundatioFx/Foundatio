@@ -164,7 +164,8 @@ Before marking work complete, verify:
 5. **Documentation updated**: XML doc comments added/updated for public APIs
 6. **Interface documentation**: Update interface definitions and docs with any API changes
 7. **Feature documentation**: Add entries to [docs/](docs/) folder for new features or significant changes
-8. **Breaking changes flagged**: Clearly identify any breaking changes for review
+8. **Skill updated**: When changing core abstractions, interfaces, or docs, update [`.agents/skills/foundatio/SKILL.md`](.agents/skills/foundatio/SKILL.md) to keep patterns, gotchas, and the implementation matrix in sync. The skill delegates to context7 for full docs, so only compact patterns and non-obvious gotchas need maintenance.
+9. **Breaking changes flagged**: Clearly identify any breaking changes for review
 
 ### Error Handling
 
@@ -312,5 +313,6 @@ dotnet test --logger "console;verbosity=detailed"
 
 - [README.md](README.md) - Overview and provider links
 - [docs/](docs/) - Full documentation
+- [.agents/skills/foundatio/](.agents/skills/foundatio/) - Agent skill for consumers (uses context7 for live docs)
 - [samples/](samples/) - Usage examples
 - [benchmarks/](benchmarks/) - Performance testing
