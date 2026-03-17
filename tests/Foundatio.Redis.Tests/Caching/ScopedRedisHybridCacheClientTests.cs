@@ -3,18 +3,21 @@ using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Caching;
 
 public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLifetime
 {
+    protected virtual RedisProtocol? Protocol => null;
+
     public ScopedRedisHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
 
     protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
         return new ScopedCacheClient(new RedisHybridCacheClient(o => o
-                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
+                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log, Protocol))
                 .LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError),
             localConfig => localConfig
                 .CloneValues(true)
@@ -24,7 +27,7 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
     {
         return new RedisHybridCacheClient(o => o
-                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log))
+                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log, Protocol))
                 .LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError),
             localConfig => localConfig
                 .CloneValues(true)
@@ -697,7 +700,7 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log);
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
         return new ValueTask(muxer.FlushAllAsync());
     }
 
@@ -708,4 +711,10 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
 
         return ValueTask.CompletedTask;
     }
+}
+
+public class ScopedRedisHybridCacheClientResp3Tests : ScopedRedisHybridCacheClientTests
+{
+    public ScopedRedisHybridCacheClientResp3Tests(ITestOutputHelper output) : base(output) { }
+    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }

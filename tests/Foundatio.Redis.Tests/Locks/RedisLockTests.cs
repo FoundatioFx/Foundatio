@@ -6,6 +6,7 @@ using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Locks;
@@ -15,10 +16,16 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     private readonly string _topic = $"test-lock-{Guid.NewGuid().ToString("N")[..10]}";
     private readonly ICacheClient _cache;
     private readonly IMessageBus _messageBus;
+    private readonly RedisProtocol? _protocol;
 
-    public RedisLockTests(ITestOutputHelper output) : base(output)
+    protected virtual RedisProtocol? Protocol => _protocol;
+
+    public RedisLockTests(ITestOutputHelper output) : this(output, null) { }
+
+    protected RedisLockTests(ITestOutputHelper output, RedisProtocol? protocol) : base(output)
     {
-        var muxer = SharedConnection.GetMuxer(Log);
+        _protocol = protocol;
+        var muxer = SharedConnection.GetMuxer(Log, _protocol);
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
         _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic(_topic).LoggerFactory(Log));
     }
@@ -108,7 +115,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log);
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
         return new ValueTask(muxer.FlushAllAsync());
     }
 
@@ -119,4 +126,9 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 
         return ValueTask.CompletedTask;
     }
+}
+
+public class RedisLockResp3Tests : RedisLockTests
+{
+    public RedisLockResp3Tests(ITestOutputHelper output) : base(output, RedisProtocol.Resp3) { }
 }

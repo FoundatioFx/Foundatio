@@ -10,6 +10,7 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Queue;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Messaging;
@@ -17,6 +18,8 @@ namespace Foundatio.Redis.Tests.Messaging;
 public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
 {
     private readonly string _topic = $"test-messages-{Guid.NewGuid().ToString("N")[..10]}";
+
+    protected virtual RedisProtocol? Protocol => null;
 
     public RedisMessageBusTests(ITestOutputHelper output) : base(output)
     {
@@ -26,7 +29,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     {
         return new RedisMessageBus(o =>
         {
-            o.Subscriber(SharedConnection.GetMuxer(Log).GetSubscriber());
+            o.Subscriber(SharedConnection.GetMuxer(Log, Protocol).GetSubscriber());
             o.Topic(_topic);
             o.LoggerFactory(Log);
             if (config != null)
@@ -189,7 +192,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     [Fact]
     public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
     {
-        var muxer = SharedConnection.GetMuxer(Log);
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
         var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = _topic, LoggerFactory = Log });
 
         var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
@@ -236,7 +239,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     public ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log);
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
         return new ValueTask(muxer.FlushAllAsync());
     }
 
@@ -245,4 +248,10 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
         _logger.LogDebug("Disposing");
         return ValueTask.CompletedTask;
     }
+}
+
+public class RedisMessageBusResp3Tests : RedisMessageBusTests
+{
+    public RedisMessageBusResp3Tests(ITestOutputHelper output) : base(output) { }
+    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }
