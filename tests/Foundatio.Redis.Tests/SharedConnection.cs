@@ -22,7 +22,7 @@ public static class SharedConnection
             return null;
 
         bool useResp3 = protocol >= RedisProtocol.Resp3;
-        ref var muxer = ref useResp3 ? ref _muxerResp3 : ref _muxerResp2;
+        ref ConnectionMultiplexer muxer = ref useResp3 ? ref _muxerResp3 : ref _muxerResp2;
 
         if (muxer is not null)
             return muxer;
