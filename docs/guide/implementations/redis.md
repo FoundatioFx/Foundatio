@@ -83,6 +83,7 @@ var cache = new RedisCacheClient(options =>
     options.ConnectionMultiplexer = redis;
     options.LoggerFactory = loggerFactory;
     options.Serializer = new SystemTextJsonSerializer();
+    options.ReadMode = CommandFlags.PreferReplica; // Route reads to replicas
 });
 ```
 
@@ -249,6 +250,9 @@ var queue = new RedisQueue<WorkItem>(options =>
     // Run maintenance (cleanup dead letters)
     options.RunMaintenanceTasks = true;
 
+    // Route reads to replicas (see Read Routing section for caveats)
+    options.ReadMode = CommandFlags.PreferReplica;
+
     options.LoggerFactory = loggerFactory;
 });
 ```
@@ -344,6 +348,7 @@ var storage = new RedisFileStorage(options =>
     options.ConnectionMultiplexer = redis;
     options.LoggerFactory = loggerFactory;
     options.Serializer = serializer;
+    options.ReadMode = CommandFlags.PreferReplica; // Route reads to replicas
 });
 ```
 
@@ -568,6 +573,81 @@ await cache.SetAsync("data", value, TimeSpan.FromHours(1));
 await cache.SetAsync("session", data,
     expiresIn: TimeSpan.FromMinutes(30));
 ```
+
+## Read Routing (Replica Reads)
+
+All Redis providers support a `ReadMode` option that controls how read operations are routed in a master-replica topology. By default, reads go to the master node (`CommandFlags.None`). Set `ReadMode` to `CommandFlags.PreferReplica` to distribute reads to replica nodes, reducing load on the master and improving read throughput.
+
+### Configuration
+
+```csharp
+using StackExchange.Redis;
+
+// Enable replica reads on cache
+var cache = new RedisCacheClient(o => o
+    .ConnectionMultiplexer(redis)
+    .ReadMode(CommandFlags.PreferReplica));
+
+// Enable replica reads on queue
+var queue = new RedisQueue<WorkItem>(o => o
+    .ConnectionMultiplexer(redis)
+    .ReadMode(CommandFlags.PreferReplica));
+
+// Enable replica reads on file storage
+var storage = new RedisFileStorage(o => o
+    .ConnectionMultiplexer(redis)
+    .ReadMode(CommandFlags.PreferReplica));
+```
+
+`PreferReplica` is safe on single-node deployments -- it falls back to the master when no replica exists. Write operations always go to the master regardless of this setting. Distributed locks are not affected (all lock operations use writes or Lua scripts on the master).
+
+### ReadMode Values
+
+| Value | Behavior | Use case |
+|-------|----------|----------|
+| `CommandFlags.None` (default) | Read from master | Backward compatible; strict consistency |
+| `CommandFlags.PreferReplica` | Read from replica if available, fall back to master | Recommended for master-replica topologies |
+| `CommandFlags.DemandReplica` | Replica only; error if none available | Dedicated read-scaling scenarios |
+| `CommandFlags.DemandMaster` | Master only; error if unavailable | Critical path operations |
+
+### Operation Routing by Provider
+
+| Provider | Operation | Routing |
+|----------|-----------|---------|
+| **RedisCacheClient** | `GetAsync`, `GetAllAsync`, `GetListAsync` | Via ReadMode |
+| | `ExistsAsync`, `GetExpirationAsync` | Via ReadMode |
+| | `SetAsync`, `RemoveAsync`, `IncrementAsync` | Always master |
+| | `GetAllExpirationAsync` | Always master (Lua script) |
+| | Lua scripts (`SetIfHigher`, `ReplaceIfEqual`, etc.) | Always master |
+| **RedisQueue** | Internal payload/metadata reads | Via ReadMode |
+| | Enqueue, dequeue, complete, abandon | Always master |
+| | Maintenance (work list, wait list scans) | Always master |
+| **RedisFileStorage** | `GetFileStreamAsync`, `GetFileInfoAsync`, `ExistsAsync` | Via ReadMode |
+| | `GetFileListAsync` | Via ReadMode |
+| | `SaveFileAsync`, `DeleteFileAsync` | Always master |
+| **RedisMessageBus** | Pub/sub | N/A (not routable) |
+
+### Replication Lag Considerations
+
+::: warning
+Redis/Valkey replication is asynchronous. When using `PreferReplica`, reads may return stale data during the replication lag window (typically sub-millisecond on AWS ElastiCache, but variable under load). Review the scenarios below before enabling replica reads.
+:::
+
+| Scenario | Risk | Impact |
+|----------|------|--------|
+| **Queue: dequeue payload read** | **High** | After enqueue writes a payload, a dequeue on another process reads it back. If the replica hasn't replicated yet, the payload is `null`, the item is removed from the work list, and the message is silently lost. |
+| **Queue: abandon retry count** | Medium | The attempts counter is incremented on master, then read back during abandon. A stale replica read returns an old count, giving the item one extra retry before dead-lettering. |
+| **Queue: maintenance renewal check** | Medium | Lock renewal writes a timestamp to master. Maintenance reads it to check timeout. A stale read may auto-abandon an item that was just renewed, causing spurious re-processing. |
+| **Queue: maintenance wait time** | Low | Wait times for retry delays are read from cache. A stale read makes an item wait slightly longer before retry. |
+| **File storage: rename after save** | Low-Medium | `RenameFileAsync` reads file content immediately after save. A stale replica read could miss the just-written content. |
+| **Cache: sorted set expiration** | Low | Reads the highest score from a sorted set to determine TTL. A stale read sets a slightly inaccurate expiration. |
+| **Distributed locks** | **None** | Lock acquire, release, and renewal all use writes or Lua scripts that execute on master. |
+
+**Per-provider guidance:**
+
+- **RedisCacheClient**: `PreferReplica` is safe for most read-heavy workloads. Risk exists only if you read a key immediately after writing it from a different process.
+- **RedisQueue**: Use caution. Under very high throughput, dequeue can fail to read a just-enqueued payload, causing message loss. Consider keeping `CommandFlags.None` for queues processing critical work items.
+- **RedisFileStorage**: Generally safe. The rename-after-save edge case is unlikely in practice.
 
 ## Next Steps
 
