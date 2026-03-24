@@ -639,15 +639,15 @@ Redis/Valkey replication is asynchronous. When using `PreferReplica`, reads may 
 | **Queue: abandon retry count** | Medium | The attempts counter is incremented on master, then read back during abandon. A stale replica read returns an old count, giving the item one extra retry before dead-lettering. |
 | **Queue: maintenance renewal check** | Medium | Lock renewal writes a timestamp to master. Maintenance reads it to check timeout. A stale read may auto-abandon an item that was just renewed, causing spurious re-processing. |
 | **Queue: maintenance wait time** | Low | Wait times for retry delays are read from cache. A stale read makes an item wait slightly longer before retry. |
-| **File storage: rename after save** | Low-Medium | `RenameFileAsync` reads file content immediately after save. A stale replica read could miss the just-written content. |
-| **Cache: sorted set expiration** | Low | Reads the highest score from a sorted set to determine TTL. A stale read sets a slightly inaccurate expiration. |
+| **File storage: rename/copy** | **None** | `RenameFileAsync` and `CopyFileAsync` always read from master regardless of `ReadMode` to prevent data loss. |
+| **Cache: sorted set expiration** | **None** | `SetListExpirationAsync` always reads from master regardless of `ReadMode` since the result drives a subsequent write. |
 | **Distributed locks** | **None** | Lock acquire, release, and renewal all use writes or Lua scripts that execute on master. |
 
 **Per-provider guidance:**
 
 - **RedisCacheClient**: `PreferReplica` is safe for most read-heavy workloads. Risk exists only if you read a key immediately after writing it from a different process.
 - **RedisQueue**: Use caution. Under very high throughput, dequeue can fail to read a just-enqueued payload, causing message loss. Consider keeping `CommandFlags.None` for queues processing critical work items.
-- **RedisFileStorage**: Generally safe. The rename-after-save edge case is unlikely in practice.
+- **RedisFileStorage**: Generally safe. Read-before-write flows (`RenameFileAsync`, `CopyFileAsync`) always read from master to prevent data loss.
 
 ## Next Steps
 
