@@ -1,4 +1,5 @@
 using System;
+using Foundatio.Redis.Utility;
 using StackExchange.Redis;
 
 namespace Foundatio.Queues;
@@ -13,6 +14,19 @@ public class RedisQueueOptions<T> : SharedQueueOptions<T> where T : class
     public int DeadLetterMaxItems { get; set; } = 100;
     public bool RunMaintenanceTasks { get; set; } = true;
     public int Database { get; set; } = -1;
+
+    /// <summary>
+    /// Controls how read operations are routed in a master-replica topology.
+    /// Set to <see cref="CommandFlags.PreferReplica"/> to distribute reads to replica nodes.
+    /// Writes always go to the master regardless of this setting.
+    /// Default is <see cref="CommandFlags.None"/> (reads go to master).
+    /// <para>
+    /// <b>Caution:</b> Under very high throughput, a dequeue may fail to read a just-enqueued payload
+    /// if replication hasn't caught up, which can cause message loss. Consider keeping the default
+    /// for queues processing critical work items.
+    /// </para>
+    /// </summary>
+    public CommandFlags ReadMode { get; set; } = CommandFlags.None;
 }
 
 public class RedisQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, RedisQueueOptions<T>, RedisQueueOptionsBuilder<T>> where T : class
@@ -61,6 +75,13 @@ public class RedisQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, RedisQue
         }
 
         Target.Database = database;
+        return this;
+    }
+
+    public RedisQueueOptionsBuilder<T> ReadMode(CommandFlags commandFlags)
+    {
+        RedisOptionsValidation.ValidateReadMode(commandFlags);
+        Target.ReadMode = commandFlags;
         return this;
     }
 }

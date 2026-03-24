@@ -45,7 +45,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
 
-        _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer });
+        _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer, ReadMode = options.ReadMode, Database = options.Database });
 
         _payloadTimeToLive = GetPayloadTtl();
         _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
@@ -811,6 +811,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     {
                         _logger.LogError(ex, "Error unsubscribing from topic {Topic}: {Message}", GetTopicName(), ex.Message);
                     }
+
                     _isSubscribed = false;
                     _logger.LogTrace("Unsubscribed from topic {Topic}", GetTopicName());
                 }
@@ -823,12 +824,40 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             if (worker.IsCompleted)
                 continue;
 
-            _logger.LogTrace("Attempting to cleanup worker");
-            if (!worker.Wait(TimeSpan.FromSeconds(5)))
-                _logger.LogError("Failed waiting for worker to stop");
+            try
+            {
+                _logger.LogTrace("Attempting to cleanup worker");
+                if (!worker.Wait(TimeSpan.FromSeconds(5)))
+                    _logger.LogError("Failed waiting for worker to stop");
+            }
+            catch (AggregateException ex)
+            {
+                _logger.LogWarning(ex, "Worker task completed with an error during dispose: {Message}", ex.Message);
+            }
         }
 
+        WaitForMaintenanceTask();
         _cache.Dispose();
+    }
+
+    private void WaitForMaintenanceTask()
+    {
+        if (_maintenanceTask is null or { IsCompletedSuccessfully: true })
+            return;
+
+        try
+        {
+            _logger.LogTrace("Waiting for maintenance task to stop");
+            _maintenanceTask.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException))
+        {
+            _logger.LogTrace("Maintenance task was cancelled during dispose: {Message}", ex.Message);
+        }
+        catch (AggregateException ex)
+        {
+            _logger.LogWarning(ex, "Maintenance task completed with an error during dispose: {Message}", ex.Message);
+        }
     }
 
     private static readonly string DequeueIdScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.lua");
