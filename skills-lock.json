@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "analyzing-dotnet-performance": {
+      "source": "dotnet/skills",
+      "sourceType": "github",
+      "computedHash": "f8626732348d66f4ffeab6935fb1c1f2f9921cbc2a3901cfc87e4dfe34a3b912"
+    },
+    "dotnet-trace-collect": {
+      "source": "dotnet/skills",
+      "sourceType": "github",
+      "computedHash": "35a33f4ea359b333fab1059c936499c33617785e37fc434923fa4015d400bee6"
+    },
+    "dump-collect": {
+      "source": "dotnet/skills",
+      "sourceType": "github",
+      "computedHash": "2a5ad367a377fbd27deee3cedbb026c9ffc1df2ef50649dba497fdd029694445"
+    },
+    "microbenchmarking": {
+      "source": "dotnet/skills",
+      "sourceType": "github",
+      "computedHash": "d2d56b115d8880db0e555b5f36a75b56e709cee82385efc91e31077c7eb3dc04"
+    },
+    "migrate-nullable-references": {
+      "source": "dotnet/skills",
+      "sourceType": "github",
+      "computedHash": "89dfe3f4437e92789cd3a994fb101cc2d9a3478042c168b19b0411aa06a92276"
+    }
+  }
+}
