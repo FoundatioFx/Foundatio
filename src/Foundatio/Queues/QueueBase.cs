@@ -185,6 +185,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         return _queueStats;
     }
 
+    // TODO: sync-over-async — called from ObservableGauge callbacks (which must be synchronous),
+    // so this blocks a thread-pool thread on async I/O for external providers (Redis, Azure, etc.).
+    // The MetricsPollingInterval cache above mitigates frequency but doesn't eliminate the risk of
+    // thread-pool starvation under load. Blocked on async gauge callback support in .NET:
+    // https://github.com/dotnet/runtime/issues/96850
     protected virtual QueueStats GetMetricsQueueStats()
     {
         return GetQueueStatsAsync().AnyContext().GetAwaiter().GetResult();
