@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Resilience;
 using Foundatio.Utility;
@@ -27,6 +28,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
+    private readonly AsyncLazy<bool> _lazySubscription;
     private long _localCacheHits;
     private long _invalidateCacheCalls;
     private bool _isDisposed;
@@ -39,7 +41,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
-        _messageBus.SubscribeAsync<InvalidateCache>(OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext().GetAwaiter().GetResult();
+        _lazySubscription = new AsyncLazy<bool>(async () =>
+        {
+            await _messageBus.SubscribeAsync<InvalidateCache>(
+                OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext();
+            return true;
+        }, AsyncLazyFlags.RetryOnFailure | AsyncLazyFlags.ExecuteOnCallingThread);
         localCacheOptions ??= new InMemoryCacheClientOptions
         {
             TimeProvider = _timeProvider,
@@ -57,6 +64,11 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
+
+    private Task EnsureSubscribedAsync()
+    {
+        return _lazySubscription.Task;
+    }
 
     private Task OnRemoteCacheItemExpiredAsync(InvalidateCache message)
     {
@@ -99,6 +111,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         bool removed = await _distributedCache.RemoveAsync(key).AnyContext();
         await _localCache.RemoveAsync(key).AnyContext();
 
@@ -113,6 +127,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         bool removed = await _distributedCache.RemoveIfEqualAsync(key, expected).AnyContext();
 
@@ -130,6 +146,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
     {
+        await EnsureSubscribedAsync().AnyContext();
+
         string[] items = keys?.ToArray();
         bool flushAll = items == null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
@@ -144,6 +162,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public async Task<int> RemoveByPrefixAsync(string prefix)
     {
+        await EnsureSubscribedAsync().AnyContext();
+
         int removed = await _distributedCache.RemoveByPrefixAsync(prefix).AnyContext();
         await _localCache.RemoveByPrefixAsync(prefix).AnyContext();
 
@@ -157,6 +177,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<CacheValue<T>> GetAsync<T>(string key)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         var cacheValue = await _localCache.GetAsync<T>(key).AnyContext();
         if (cacheValue.HasValue)
@@ -183,6 +205,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         var keysCollection = keys as ICollection<string> ?? keys.ToList();
         if (keysCollection.Count is 0)
@@ -237,6 +261,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
@@ -254,6 +280,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
@@ -281,6 +309,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<int> SetAllAsync<T>(IDictionary<string, T> values, TimeSpan? expiresIn = null)
     {
         ArgumentNullException.ThrowIfNull(values);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (values.Count is 0)
             return 0;
@@ -312,6 +342,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
@@ -336,6 +368,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
@@ -363,6 +397,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
@@ -394,6 +430,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
@@ -424,6 +462,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         // Check local cache first
         bool localExists = await _localCache.ExistsAsync(key).AnyContext();
         if (localExists)
@@ -441,6 +481,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         // Check if key exists in local cache first
         bool localExists = await _localCache.ExistsAsync(key).AnyContext();
         if (localExists)
@@ -457,6 +499,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<IDictionary<string, TimeSpan?>> GetAllExpirationAsync(IEnumerable<string> keys)
     {
         ArgumentNullException.ThrowIfNull(keys);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         string[] keysArray = keys.ToArray();
         if (keysArray.Length is 0)
@@ -491,6 +535,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         await _distributedCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _localCache.SetExpirationAsync(key, expiresIn).AnyContext();
         await _messageBus.PublishAsync(new InvalidateCache { CacheId = _cacheId, Keys = [key] }).AnyContext();
@@ -499,6 +545,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
     {
         ArgumentNullException.ThrowIfNull(expirations);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expirations.Count is 0)
             return;
@@ -511,6 +559,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
@@ -540,6 +590,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
@@ -567,6 +619,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
@@ -596,6 +650,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        await EnsureSubscribedAsync().AnyContext();
+
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             await RemoveAsync(key).AnyContext();
@@ -624,6 +680,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         // Handle string specially to avoid treating it as IEnumerable<char>
         if (values is string stringValue)
@@ -665,6 +723,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
+
+        await EnsureSubscribedAsync().AnyContext();
 
         // Handle string specially to avoid treating it as IEnumerable<char>
         if (values is string stringValue)
@@ -714,6 +774,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        await EnsureSubscribedAsync().AnyContext();
 
         var cacheValue = await _localCache.GetListAsync<T>(key, page, pageSize).AnyContext();
         if (cacheValue.HasValue)
