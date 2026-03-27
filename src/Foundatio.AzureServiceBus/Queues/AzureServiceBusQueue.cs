@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Queues;
 
-public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<T>> where T : class
+public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<T>>, IAsyncDisposable where T : class
 {
     private readonly AsyncLock _lock = new();
     private readonly Lazy<ServiceBusClient> _client;
@@ -604,16 +604,15 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
     public override void Dispose()
     {
-        // TODO: Improve Async Cleanup
         base.Dispose();
 
-        if (_queueSender != null)
+        if (_queueSender is not null)
         {
             _queueSender.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _queueSender = null;
         }
 
-        if (_queueReceiver != null)
+        if (_queueReceiver is not null)
         {
             _queueReceiver.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _queueReceiver = null;
@@ -622,6 +621,28 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         if (_client.IsValueCreated)
         {
             _client.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        base.Dispose();
+
+        if (_queueSender is not null)
+        {
+            await _queueSender.DisposeAsync().AnyContext();
+            _queueSender = null;
+        }
+
+        if (_queueReceiver is not null)
+        {
+            await _queueReceiver.DisposeAsync().AnyContext();
+            _queueReceiver = null;
+        }
+
+        if (_client.IsValueCreated)
+        {
+            await _client.Value.DisposeAsync().AnyContext();
         }
     }
 

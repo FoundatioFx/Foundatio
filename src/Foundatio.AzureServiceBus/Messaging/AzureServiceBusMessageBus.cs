@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBusOptions>
+public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBusOptions>, IAsyncDisposable
 {
     private readonly AsyncLock _lock = new();
     private readonly Lazy<ServiceBusClient> _client;
@@ -330,10 +330,9 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
     public override void Dispose()
     {
-        // TODO: Improve Async Cleanup
         base.Dispose();
-        CloseTopicSender();
-        CloseSubscriptionProcessor();
+        CloseTopicSenderAsync().GetAwaiter().GetResult();
+        CloseSubscriptionProcessorAsync().GetAwaiter().GetResult();
 
         if (_client.IsValueCreated)
         {
@@ -341,35 +340,45 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         }
     }
 
-    private void CloseTopicSender()
+    public async ValueTask DisposeAsync()
     {
-        if (_topicSender == null)
+        base.Dispose();
+        await CloseTopicSenderAsync().AnyContext();
+        await CloseSubscriptionProcessorAsync().AnyContext();
+
+        if (_client.IsValueCreated)
+        {
+            await _client.Value.DisposeAsync().AnyContext();
+        }
+    }
+
+    private async Task CloseTopicSenderAsync()
+    {
+        if (_topicSender is null)
             return;
 
-        using (_lock.Lock())
+        using (await _lock.LockAsync().AnyContext())
         {
-            // Double-check after acquiring lock (another thread may have closed it)
-            if (_topicSender == null)
+            if (_topicSender is null)
                 return;
 
-            _topicSender.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await _topicSender.DisposeAsync().AnyContext();
             _topicSender = null;
         }
     }
 
-    private void CloseSubscriptionProcessor()
+    private async Task CloseSubscriptionProcessorAsync()
     {
-        if (_subscriptionProcessor == null)
+        if (_subscriptionProcessor is null)
             return;
 
-        using (_lock.Lock())
+        using (await _lock.LockAsync().AnyContext())
         {
-            // Double-check after acquiring lock (another thread may have closed it)
-            if (_subscriptionProcessor == null)
+            if (_subscriptionProcessor is null)
                 return;
 
-            _subscriptionProcessor.StopProcessingAsync().GetAwaiter().GetResult();
-            _subscriptionProcessor.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            await _subscriptionProcessor.StopProcessingAsync().AnyContext();
+            await _subscriptionProcessor.DisposeAsync().AnyContext();
             _subscriptionProcessor = null;
         }
     }
