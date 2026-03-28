@@ -8,7 +8,7 @@ public class NullMessageBus : IMessageBus
 {
     public static readonly NullMessageBus Instance = new();
 
-    public Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default)
+    public Task PublishAsync(Type messageType, object message, MessageOptions? options = null, CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;
     }

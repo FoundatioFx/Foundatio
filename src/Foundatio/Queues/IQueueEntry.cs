@@ -18,7 +18,7 @@ public interface IQueueEntry
     /// <summary>
     /// Gets the correlation identifier for distributed tracing.
     /// </summary>
-    string CorrelationId { get; }
+    string? CorrelationId { get; }
 
     /// <summary>
     /// Gets custom properties attached to this entry.
@@ -28,7 +28,7 @@ public interface IQueueEntry
     /// <summary>
     /// Gets the CLR type of the message payload.
     /// </summary>
-    Type EntryType { get; }
+    Type? EntryType { get; }
 
     /// <summary>
     /// Gets the message payload as an untyped object.

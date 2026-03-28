@@ -21,7 +21,7 @@ public interface IQueueJob<T> : IJob where T : class
     /// <param name="queueEntry">The queue entry to process.</param>
     /// <param name="cancellationToken">Token to signal that processing should stop.</param>
     /// <returns>A result indicating success or failure of processing.</returns>
-    Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken);
+    Task<JobResult> ProcessAsync(IQueueEntry<T>? queueEntry, CancellationToken cancellationToken);
 
     /// <summary>
     /// Gets the queue this job processes items from.

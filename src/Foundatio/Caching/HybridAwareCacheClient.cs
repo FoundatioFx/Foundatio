@@ -28,9 +28,9 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    private readonly IResiliencePolicyProvider? _resiliencePolicyProvider;
 
-    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory loggerFactory = null)
+    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridAwareCacheClient>();
@@ -43,7 +43,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
 
     public async Task<bool> RemoveAsync(string key)
     {
@@ -73,9 +73,9 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return removed;
     }
 
-    public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        string[] items = keys?.ToArray();
+        string[]? items = keys?.ToArray();
         bool flushAll = items == null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
 

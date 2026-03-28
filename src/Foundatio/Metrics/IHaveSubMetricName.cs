@@ -2,5 +2,5 @@
 
 public interface IHaveSubMetricName
 {
-    string SubMetricName { get; }
+    string? SubMetricName { get; }
 }

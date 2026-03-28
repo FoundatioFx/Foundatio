@@ -29,7 +29,7 @@ public interface IJobWithOptions : IJob
     /// <summary>
     /// Gets or sets the options controlling job execution (name, interval, iteration limit).
     /// </summary>
-    JobOptions Options { get; set; }
+    JobOptions? Options { get; set; }
 }
 
 public static class JobExtensions
@@ -55,7 +55,7 @@ public static class JobExtensions
     /// </summary>
     /// <returns>Returns the iteration count for normal jobs. For queue-based jobs this will be the number of items processed successfully.</returns>
     public static Task<int> RunContinuousAsync(this IJob job, TimeSpan? interval = null, int iterationLimit = -1,
-        CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
+        CancellationToken cancellationToken = default, Func<Task<bool>>? continuationCallback = null)
     {
         var options = JobOptions.GetDefaults(job);
         options.Interval = interval;
@@ -67,7 +67,7 @@ public static class JobExtensions
     /// Runs the job continuously until the cancellation token is set or the iteration limit is reached.
     /// </summary>
     /// <returns>Returns the iteration count for normal jobs. For queue based jobs this will be the amount of items processed successfully.</returns>
-    public static async Task<int> RunContinuousAsync(this IJob job, JobOptions options, CancellationToken cancellationToken = default, Func<Task<bool>> continuationCallback = null)
+    public static async Task<int> RunContinuousAsync(this IJob job, JobOptions options, CancellationToken cancellationToken = default, Func<Task<bool>>? continuationCallback = null)
     {
         int iterations = 0;
         var logger = job.GetLogger();
@@ -76,7 +76,7 @@ public static class JobExtensions
         bool isQueueJob = job.GetType().GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IQueueJob<>));
 
         string jobId = Guid.NewGuid().ToString("N").Substring(0, 10);
-        using var jobScope = logger.BeginScope(s => s.Property("job.name", options.Name).Property("job.id", jobId));
+        using var jobScope = logger.BeginScope(s => s.Property("job.name", options.Name!).Property("job.id", jobId));
         logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", options.Name, Environment.MachineName);
 
         while (!cancellationToken.IsCancellationRequested)

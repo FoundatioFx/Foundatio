@@ -26,10 +26,10 @@ public class TestLoggerOptions
 
     public void SetLogLevel<T>(LogLevel minLogLevel)
     {
-        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
+        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T))!, minLogLevel);
     }
 
-    public void UseOutputHelper(Func<ITestOutputHelper> getOutputHelper, Func<LogEntry, string> formatLogEntry = null)
+    public void UseOutputHelper(Func<ITestOutputHelper> getOutputHelper, Func<LogEntry, string>? formatLogEntry = null)
     {
         formatLogEntry ??= logEntry => logEntry.ToString(false);
         WriteLogEntryFunc = logEntry =>
@@ -38,9 +38,9 @@ public class TestLoggerOptions
         };
     }
 
-    public Action<LogEntry> WriteLogEntryFunc { get; set; }
+    public Action<LogEntry>? WriteLogEntryFunc { get; set; }
     internal void WriteLogEntry(LogEntry logEntry) => WriteLogEntryFunc?.Invoke(logEntry);
 
-    public Func<DateTimeOffset> NowFunc { get; set; }
+    public Func<DateTimeOffset>? NowFunc { get; set; }
     internal DateTimeOffset GetNow() => NowFunc?.Invoke() ?? TimeProvider.GetUtcNow();
 }

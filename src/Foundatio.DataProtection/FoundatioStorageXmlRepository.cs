@@ -28,14 +28,14 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory loggerFactory = null) : this(storage, null, loggerFactory)
+    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory? loggerFactory = null) : this(storage, null!, loggerFactory)
     {
     }
 
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
+    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         if (storage == null)
             throw new ArgumentNullException(nameof(storage));
@@ -68,7 +68,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
             _logger.LogTrace("Loading element: {File}", file.Path);
             using (var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext())
             {
-                elements.Add(XElement.Load(stream));
+                elements.Add(XElement.Load(stream!));
             }
 
             _logger.LogTrace("Loaded element: {File}", file.Path);

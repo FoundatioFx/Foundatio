@@ -18,8 +18,8 @@ namespace Foundatio.Extensions.Hosting.Startup;
 public class RunStartupActionsResult
 {
     public bool Success { get; set; }
-    public string FailedActionName { get; set; }
-    public string ErrorMessage { get; set; }
+    public string? FailedActionName { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 public static partial class StartupExtensions
@@ -38,8 +38,8 @@ public static partial class StartupExtensions
             int startupActionsCount = startupActionGroup.Count();
             string[] startupActionsNames = startupActionGroup.Select(a => a.Name).ToArray();
             var swGroup = Stopwatch.StartNew();
-            string failedActionName = null;
-            string errorMessage = null;
+            string? failedActionName = null;
+            string? errorMessage = null;
             try
             {
                 if (startupActionsCount == 1)
@@ -199,7 +199,7 @@ public static partial class StartupExtensions
         return services;
     }
 
-    public static IServiceCollection AddStartupActionToWaitForHealthChecks(this IServiceCollection services, Func<HealthCheckRegistration, bool> shouldWaitForHealthCheck = null)
+    public static IServiceCollection AddStartupActionToWaitForHealthChecks(this IServiceCollection services, Func<HealthCheckRegistration, bool>? shouldWaitForHealthCheck = null)
     {
         shouldWaitForHealthCheck ??= c => c.Tags.Contains("Critical", StringComparer.OrdinalIgnoreCase);
 
@@ -208,7 +208,7 @@ public static partial class StartupExtensions
             if (t.IsCancellationRequested)
                 return;
 
-            var healthCheckService = sp.GetService<HealthCheckService>();
+            var healthCheckService = sp.GetRequiredService<HealthCheckService>();
             var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("StartupActions") ?? NullLogger.Instance;
             var timeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System;
             var result = await healthCheckService.CheckHealthAsync(c => c.Name != CheckForStartupActionsName && shouldWaitForHealthCheck(c), t).AnyContext();

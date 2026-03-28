@@ -16,10 +16,10 @@ public static class JobHostExtensions
         if (jobOptions.JobFactory == null)
             throw new ArgumentNullException(nameof(jobOptions), "jobOptions.JobFactory is required");
 
-        return services.AddTransient<IHostedService>(s => new HostedJobService(s, jobOptions, s.GetService<ILoggerFactory>()));
+        return services.AddTransient<IHostedService>(s => new HostedJobService(s, jobOptions, s.GetRequiredService<ILoggerFactory>()));
     }
 
-    public static IServiceCollection AddJob<T>(this IServiceCollection services, HostedJobOptions jobOptions = null) where T : class, IJob
+    public static IServiceCollection AddJob<T>(this IServiceCollection services, HostedJobOptions? jobOptions = null) where T : class, IJob
     {
         services.AddTransient<T>();
         return services.AddTransient<IHostedService>(s =>
@@ -33,7 +33,7 @@ public static class JobHostExtensions
             jobOptions.Name ??= JobOptions.GetDefaultJobName(typeof(T));
             jobOptions.JobFactory ??= sp => sp.GetRequiredService<T>();
 
-            return new HostedJobService(s, jobOptions, s.GetService<ILoggerFactory>());
+            return new HostedJobService(s, jobOptions, s.GetRequiredService<ILoggerFactory>());
         });
     }
 
@@ -78,7 +78,7 @@ public static class JobHostExtensions
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
 
-    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder> configureJobOptions = null) where T : class, IJob
+    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null) where T : class, IJob
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
@@ -129,7 +129,7 @@ public static class JobHostExtensions
         })));
     }
 
-    public static IServiceCollection AddDistributedCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder> configureJobOptions = null) where T : class, IJob
+    public static IServiceCollection AddDistributedCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null) where T : class, IJob
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();

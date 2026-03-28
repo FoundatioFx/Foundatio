@@ -30,7 +30,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         using var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
         await queue.DeleteQueueAsync();
 
-        Activity parentActivity = null;
+        Activity? parentActivity = null;
         using var listener = new ActivityListener
         {
             ShouldListenTo = s => s.Name == nameof(JobQueueTestsBase) || s.Name == "Foundatio",
@@ -40,7 +40,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
                 if (a.OperationName != "ProcessQueueEntry")
                     return;
 
-                Assert.Equal(parentActivity.RootId, a.RootId);
+                Assert.Equal(parentActivity!.RootId, a.RootId);
                 Assert.Equal(parentActivity.SpanId, a.ParentSpanId);
             },
             ActivityStopped = a => { }
@@ -50,14 +50,14 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         parentActivity = _activitySource.StartActivity("Parent");
         Assert.NotNull(parentActivity);
 
-        string enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem
+        string? enqueueTask = await queue.EnqueueAsync(new SampleQueueWorkItem
         {
             Created = DateTime.UtcNow,
             Path = "somepath"
         });
 
         // clear activity and then verify that Activity.Current = null;
-        var job = new SampleQueueJob(queue, null, null, Log);
+        var job = new SampleQueueJob(queue, null!, null!, Log);
         await job.RunAsync();
 
         var stats = await queue.GetQueueStatsAsync();
@@ -78,7 +78,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             Path = "somepath" + index
         }));
 
-        var job = new SampleQueueJob(queue, null, null, Log);
+        var job = new SampleQueueJob(queue, null!, null!, Log);
         await Task.Delay(10);
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
 
@@ -110,7 +110,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
         });
 
         var lockProvider = new ThrottlingLockProvider(new InMemoryCacheClient(o => o.LoggerFactory(Log)), allowedLockCount, TimeSpan.FromDays(1), null, null, Log);
-        var job = new SampleQueueJobWithLocking(queue, lockProvider, null, null, Log);
+        var job = new SampleQueueJobWithLocking(queue, lockProvider, null!, null!, Log);
         await Task.Delay(10);
         _logger.LogInformation("Starting RunUntilEmptyAsync");
         await Task.WhenAll(job.RunUntilEmptyAsync(), enqueueTask);
@@ -157,7 +157,7 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, jobCount), TestCancellationToken, async (index, _) =>
             {
                 var queue = queues[index - 1];
-                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null, null, Log);
+                var job = new SampleQueueWithRandomErrorsAndAbandonsJob(queue, null!, null!, Log);
                 await job.RunUntilEmptyAsync(cancellationTokenSource.Token);
                 await cancellationTokenSource.CancelAsync();
             });

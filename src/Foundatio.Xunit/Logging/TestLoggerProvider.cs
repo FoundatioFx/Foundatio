@@ -6,7 +6,7 @@ namespace Foundatio.Xunit;
 [ProviderAlias("Test")]
 public class TestLoggerProvider : ILoggerProvider
 {
-    public TestLoggerProvider(TestLoggerOptions options)
+    public TestLoggerProvider(TestLoggerOptions? options)
     {
         Log = new TestLogger(options);
     }

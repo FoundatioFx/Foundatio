@@ -48,17 +48,22 @@ public class CloneTests : TestWithLoggingBase
         var serializer = new JsonNetSerializer();
         var result = serializer.SerializeToBytes(model);
         var deserialized = serializer.Deserialize<CloneModel>(result);
+        Assert.NotNull(deserialized);
         Assert.Equal(model.IntProperty, deserialized.IntProperty);
         Assert.Equal(model.StringProperty, deserialized.StringProperty);
         Assert.Equal(model.ListProperty, deserialized.ListProperty);
+        Assert.NotNull(deserialized.ObjectProperty);
         var dm = ((JToken)deserialized.ObjectProperty).ToObject<CloneModel>();
-        Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, dm.IntProperty);
+        Assert.NotNull(dm);
+        Assert.Equal(((CloneModel)model.ObjectProperty!).IntProperty, dm.IntProperty);
 
         var cloned = deserialized.DeepClone();
         Assert.Equal(model.IntProperty, cloned.IntProperty);
         Assert.Equal(model.StringProperty, cloned.StringProperty);
         Assert.Equal(model.ListProperty, cloned.ListProperty);
+        Assert.NotNull(cloned.ObjectProperty);
         var cdm = ((JToken)cloned.ObjectProperty).ToObject<CloneModel>();
+        Assert.NotNull(cdm);
         Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, cdm.IntProperty);
     }
 
@@ -76,16 +81,19 @@ public class CloneTests : TestWithLoggingBase
         var serializer = new MessagePackSerializer();
         var result = serializer.SerializeToBytes(model);
         var deserialized = serializer.Deserialize<CloneModel>(result);
+        Assert.NotNull(deserialized);
         Assert.Equal(model.IntProperty, deserialized.IntProperty);
         Assert.Equal(model.StringProperty, deserialized.StringProperty);
         Assert.Equal(model.ListProperty, deserialized.ListProperty);
+        Assert.NotNull(deserialized.ObjectProperty);
         var dm = (Dictionary<object, object>)deserialized.ObjectProperty;
-        Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, Convert.ToInt32(dm["IntProperty"]));
+        Assert.Equal(((CloneModel)model.ObjectProperty!).IntProperty, Convert.ToInt32(dm["IntProperty"]));
 
         var cloned = deserialized.DeepClone();
         Assert.Equal(model.IntProperty, cloned.IntProperty);
         Assert.Equal(model.StringProperty, cloned.StringProperty);
         Assert.Equal(model.ListProperty, cloned.ListProperty);
+        Assert.NotNull(cloned.ObjectProperty);
         var cdm = (Dictionary<object, object>)cloned.ObjectProperty;
         Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, Convert.ToInt32(cdm["IntProperty"]));
     }
@@ -94,10 +102,10 @@ public class CloneTests : TestWithLoggingBase
 public class CloneModel
 {
     public int IntProperty { get; set; }
-    public string StringProperty { get; set; }
-    public List<int> ListProperty { get; set; }
+    public string? StringProperty { get; set; }
+    public List<int>? ListProperty { get; set; }
     public IList<string> EmptyStringList { get; } = new List<string>();
     public ISet<string> EmptyHashSet { get; } = new HashSet<string>();
-    public ISet<string> HashSet { get; set; }
-    public object ObjectProperty { get; set; }
+    public ISet<string>? HashSet { get; set; }
+    public object? ObjectProperty { get; set; }
 }

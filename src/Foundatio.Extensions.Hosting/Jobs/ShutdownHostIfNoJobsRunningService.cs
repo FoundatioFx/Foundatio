@@ -14,7 +14,7 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
 {
-    private Timer _timer;
+    private Timer? _timer;
     private readonly List<IJobStatus> _jobs = new();
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IServiceProvider _serviceProvider;

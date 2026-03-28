@@ -25,13 +25,13 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
+    private readonly IResiliencePolicyProvider? _resiliencePolicyProvider;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private long _localCacheHits;
     private long _invalidateCacheCalls;
     private bool _isDisposed;
 
-    public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
+    public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions? localCacheOptions = null, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
@@ -43,8 +43,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         localCacheOptions ??= new InMemoryCacheClientOptions
         {
             TimeProvider = _timeProvider,
-            ResiliencePolicyProvider = _resiliencePolicyProvider,
-            LoggerFactory = loggerFactory
+            ResiliencePolicyProvider = _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance,
+            LoggerFactory = _loggerFactory
         };
         _localCache = new InMemoryCacheClient(localCacheOptions);
     }
@@ -56,7 +56,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
 
     private Task OnRemoteCacheItemExpiredAsync(InvalidateCache message)
     {
@@ -128,9 +128,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return removed;
     }
 
-    public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        string[] items = keys?.ToArray();
+        string[]? items = keys?.ToArray();
         bool flushAll = items == null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
         await _localCache.RemoveAllAsync(items).AnyContext();
@@ -749,8 +749,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public class InvalidateCache
     {
-        public string CacheId { get; set; }
-        public string[] Keys { get; set; }
+        public required string CacheId { get; set; }
+        public string[]? Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
     }

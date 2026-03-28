@@ -23,12 +23,12 @@ internal class ScheduledJobInstance
     private readonly ICacheClient _cacheClient;
     private readonly IMessageBus _messageBus;
     private readonly TimeProvider _timeProvider;
-    private CronExpression _cronExpression;
+    private CronExpression? _cronExpression;
     private readonly ILockProvider _lockProvider;
     private readonly ILogger _logger;
     private readonly DateTime _baseDate = new(2010, 1, 1);
 
-    public ScheduledJobInstance(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory loggerFactory = null)
+    public ScheduledJobInstance(ScheduledJobOptions jobOptions, IServiceProvider serviceProvider, ICacheClient cacheClient, ILoggerFactory? loggerFactory = null)
     {
         _jobOptions = jobOptions;
         _jobOptions.Name ??= Guid.NewGuid().ToString("N").Substring(0, 10);
@@ -101,7 +101,7 @@ internal class ScheduledJobInstance
 
     internal bool SkipUpdate { get; set; }
 
-    public Task RunTask { get; private set; }
+    public Task? RunTask { get; private set; }
 
     internal string CacheKey { get; }
 
@@ -183,8 +183,8 @@ internal class ScheduledJobInstance
 
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
-        ILock jobRunningLock = new EmptyLock();
-        ILock scheduledTimeLock = new EmptyLock();
+        ILock? jobRunningLock = new EmptyLock();
+        ILock? scheduledTimeLock = new EmptyLock();
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
@@ -244,14 +244,14 @@ internal class ScheduledJobInstance
                 try
                 {
                     string jobRunId = Guid.NewGuid().ToString("N").Substring(0, 10);
-                    using var _ = _logger.BeginScope(s => s.Property("job.name", Options.Name).Property("job.id", Id).Property("job.run_id", jobRunId));
+                    using var _ = _logger.BeginScope(s => s.Property("job.name", Options.Name!).Property("job.id", Id).Property("job.run_id", jobRunId));
 
                     _logger.LogDebug("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
                         Id, isManual ? "Manual" : NextRun!.Value.ToString("t"));
 
                     await using var scope = _serviceProvider.CreateAsyncScope();
 
-                    var job = Options.JobFactory(scope.ServiceProvider);
+                    var job = Options.JobFactory!(scope.ServiceProvider);
 
                     Running = true;
                     LastRun = isManual ? utcNow : NextRun;
@@ -321,7 +321,7 @@ internal class ScheduledJobInstance
             History.RemoveRange(maxCount, History.Count - maxCount);
     }
 
-    internal async Task UpdateDistributedStateAsync(bool setNextRun = false, string reason = null)
+    internal async Task UpdateDistributedStateAsync(bool setNextRun = false, string? reason = null)
     {
         if (!Options.IsDistributed || SkipUpdate)
             return;
@@ -390,7 +390,7 @@ internal class ScheduledJobInstance
         }
     }
 
-    internal void ApplyState(JobInstanceState state, string cronSchedule = null)
+    internal void ApplyState(JobInstanceState state, string? cronSchedule = null)
     {
         if (!Options.IsDistributed || state == null)
             return;
@@ -402,7 +402,7 @@ internal class ScheduledJobInstance
         Running = state.Running;
         LastRun = state.LastRun;
         LastSuccess = state.LastSuccess;
-        History = state.History;
+        History = state.History ?? [];
         NextRun = GetNextScheduledRun();
 
         LastStateSync = _timeProvider.GetUtcNowDateTime(false);
@@ -418,12 +418,12 @@ internal class ScheduledJobInstance
 
 public class JobInstanceState
 {
-    public string Schedule { get; set; }
+    public string? Schedule { get; set; }
     public bool Enabled { get; set; }
     public bool Running { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
-    public List<JobRunResult> History { get; set; }
+    public List<JobRunResult>? History { get; set; }
 }
 
 public class JobRunResult
@@ -436,12 +436,12 @@ public class JobRunResult
     public bool Success { get; set; }
     public TimeSpan? Duration { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public string Error { get; set; }
+    public string? Error { get; set; }
 }
 
 public class JobStateChangedMessage : JobInstanceState
 {
-    public string Id { get; set; }
-    public string JobName { get; set; }
-    public string Reason { get; set; }
+    public string? Id { get; set; }
+    public string? JobName { get; set; }
+    public string? Reason { get; set; }
 }

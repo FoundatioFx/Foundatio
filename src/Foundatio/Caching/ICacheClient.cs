@@ -58,7 +58,7 @@ public interface ICacheClient : IDisposable
     /// </param>
     /// <returns>The number of entries that were removed.</returns>
     /// <exception cref="ArgumentException">Thrown when any key in <paramref name="keys"/> is null or empty.</exception>
-    Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
+    Task<int> RemoveAllAsync(IEnumerable<string>? keys = null);
 
     /// <summary>
     /// Removes all cache entries whose keys start with the specified prefix.

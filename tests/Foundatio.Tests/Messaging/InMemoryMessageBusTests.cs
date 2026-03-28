@@ -7,11 +7,11 @@ namespace Foundatio.Tests.Messaging;
 
 public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
 {
-    private IMessageBus _messageBus;
+    private IMessageBus _messageBus = null!;
 
     public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         if (_messageBus != null)
             return _messageBus;
@@ -193,6 +193,6 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     public void Dispose()
     {
         _messageBus?.Dispose();
-        _messageBus = null;
+        _messageBus = null!;
     }
 }

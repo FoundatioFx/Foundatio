@@ -20,7 +20,7 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     private DateTime? _breakStartTime;
     private TimeSpan _currentBreakDuration;
 
-    public CircuitBreaker(ILogger logger = null, TimeProvider timeProvider = null)
+    public CircuitBreaker(ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         _logger = logger ?? NullLogger.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -66,7 +66,7 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     /// <summary>
     /// Gets or sets a function that determines whether to record an exception.
     /// </summary>
-    public Func<Exception, bool> ShouldRecord { get; set; }
+    public Func<Exception, bool>? ShouldRecord { get; set; }
 
     /// <summary>
     /// Gets the current state of the circuit breaker.

@@ -1,3 +1,5 @@
+#nullable disable
+
 ﻿using System.Threading;
 
 namespace Foundatio.AsyncEx;

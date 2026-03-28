@@ -7,7 +7,7 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class ScheduledJobOptionsBuilder
 {
-    public ScheduledJobOptionsBuilder(ScheduledJobOptions target = null)
+    public ScheduledJobOptionsBuilder(ScheduledJobOptions? target = null)
     {
         Target = target ?? new ScheduledJobOptions();
     }

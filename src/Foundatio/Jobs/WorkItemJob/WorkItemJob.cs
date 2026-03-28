@@ -21,7 +21,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
     protected readonly ILogger _logger;
     protected readonly ILoggerFactory _loggerFactory;
 
-    public WorkItemJob(IQueue<WorkItemData> queue, IMessagePublisher publisher, WorkItemHandlers handlers, ILoggerFactory loggerFactory = null)
+    public WorkItemJob(IQueue<WorkItemData> queue, IMessagePublisher publisher, WorkItemHandlers handlers, ILoggerFactory? loggerFactory = null)
     {
         _publisher = publisher;
         _handlers = handlers;
@@ -37,7 +37,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        IQueueEntry<WorkItemData> queueEntry;
+        IQueueEntry<WorkItemData>? queueEntry;
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
@@ -58,7 +58,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
     }
 
-    public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken)
+    public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData>? queueEntry, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested && queueEntry == null)
             return JobResult.Cancelled;
@@ -83,13 +83,13 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         using var _ = _logger.BeginScope(s => s
             .Property("JobId", JobId)
             .Property("QueueEntryId", queueEntry.Id)
-            .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId))
+            .PropertyIf("CorrelationId", queueEntry.CorrelationId!, !String.IsNullOrEmpty(queueEntry.CorrelationId))
             .Property("QueueEntryName", workItemDataType.Name));
 
         object workItemData;
         try
         {
-            workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
+            workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType)!;
         }
         catch (Exception ex)
         {
@@ -119,7 +119,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
-        var progressCallback = new Func<int, string, Task>(async (progress, message) =>
+        var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
         {
             if (handler.AutoRenewLockOnProgress)
             {
@@ -187,7 +187,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
     }
 
-    protected virtual Activity StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
+    protected virtual Activity? StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, entry.CorrelationId);
         if (activity is null)
@@ -222,8 +222,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
     }
 
-    private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new();
-    protected virtual Type GetWorkItemType(string workItemType)
+    private readonly ConcurrentDictionary<string, Type?> _knownTypesCache = new();
+    protected virtual Type? GetWorkItemType(string workItemType)
     {
         return _knownTypesCache.GetOrAdd(workItemType, type =>
         {
@@ -252,7 +252,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         });
     }
 
-    protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string message = null)
+    protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)
     {
         try
         {

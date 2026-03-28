@@ -16,12 +16,12 @@ public interface IMessagePublisher
     /// <param name="message">The message payload to publish.</param>
     /// <param name="options">Optional settings for delivery delay, correlation ID, and custom properties.</param>
     /// <param name="cancellationToken">Token to cancel the publish operation.</param>
-    Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default);
+    Task PublishAsync(Type messageType, object message, MessageOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 public static class MessagePublisherExtensions
 {
-    public static Task PublishAsync<T>(this IMessagePublisher publisher, T message, MessageOptions options = null, CancellationToken cancellationToken = default) where T : class
+    public static Task PublishAsync<T>(this IMessagePublisher publisher, T message, MessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         return publisher.PublishAsync(typeof(T), message, options, cancellationToken);
     }

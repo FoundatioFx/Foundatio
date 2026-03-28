@@ -9,13 +9,13 @@ public class SystemTextJsonSerializer : ITextSerializer
     private readonly JsonSerializerOptions _serializeOptions;
     private readonly JsonSerializerOptions _deserializeOptions;
 
-    public SystemTextJsonSerializer(JsonSerializerOptions serializeOptions = null, JsonSerializerOptions deserializeOptions = null)
+    public SystemTextJsonSerializer(JsonSerializerOptions? serializeOptions = null, JsonSerializerOptions? deserializeOptions = null)
     {
         _serializeOptions = serializeOptions ?? JsonSerializerOptions.Default;
         _deserializeOptions = deserializeOptions ?? serializeOptions ?? JsonSerializerOptions.Default;
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize(object? value, Stream output)
     {
         ArgumentNullException.ThrowIfNull(output);
 
@@ -24,13 +24,13 @@ public class SystemTextJsonSerializer : ITextSerializer
         JsonSerializer.Serialize(output, value, value?.GetType() ?? typeof(object), _serializeOptions);
     }
 
-    public object Deserialize(Stream data, Type objectType)
+    public object? Deserialize(Stream data, Type objectType)
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(objectType);
 
         // Use direct stream deserialization (avoids string allocation)
-        object result = JsonSerializer.Deserialize(data, objectType, _deserializeOptions);
+        object? result = JsonSerializer.Deserialize(data, objectType, _deserializeOptions);
 
         // Handle primitive types when deserializing to object
         if (result is JsonElement jsonElement)
@@ -39,7 +39,7 @@ public class SystemTextJsonSerializer : ITextSerializer
         return result;
     }
 
-    private static object ConvertJsonElement(JsonElement element)
+    private static object? ConvertJsonElement(JsonElement element)
     {
         return element.ValueKind switch
         {
@@ -68,7 +68,7 @@ public class SystemTextJsonSerializer : ITextSerializer
         return element.GetDouble();
     }
 
-    private static object GetStringOrDateTime(JsonElement element)
+    private static object? GetStringOrDateTime(JsonElement element)
     {
         // Try DateTimeOffset first (more specific, preserves timezone info)
         if (element.TryGetDateTimeOffset(out var dto))

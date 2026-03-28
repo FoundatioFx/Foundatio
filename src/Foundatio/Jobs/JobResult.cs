@@ -6,8 +6,8 @@ namespace Foundatio.Jobs;
 public class JobResult
 {
     public bool IsCancelled { get; set; }
-    public Exception Error { get; set; }
-    public string Message { get; set; }
+    public Exception? Error { get; set; }
+    public string? Message { get; set; }
     public bool IsSuccess { get; set; }
 
     public static readonly JobResult None = new()
@@ -26,7 +26,7 @@ public class JobResult
         IsSuccess = true
     };
 
-    public static JobResult FromException(Exception exception, string message = null)
+    public static JobResult FromException(Exception exception, string? message = null)
     {
         return new JobResult
         {
@@ -66,7 +66,7 @@ public class JobResult
 
 public static class JobResultExtensions
 {
-    public static void LogJobResult(this ILogger logger, JobResult result, string jobName)
+    public static void LogJobResult(this ILogger logger, JobResult result, string? jobName)
     {
         if (result == null)
         {

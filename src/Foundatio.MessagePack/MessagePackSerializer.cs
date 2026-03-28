@@ -9,19 +9,19 @@ public class MessagePackSerializer : ISerializer
 {
     private readonly MessagePackSerializerOptions _options;
 
-    public MessagePackSerializer(MessagePackSerializerOptions options = null)
+    public MessagePackSerializer(MessagePackSerializerOptions? options = null)
     {
         _options = options ?? MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolver.Instance);
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize(object? value, Stream output)
     {
         ArgumentNullException.ThrowIfNull(output);
 
         MessagePack.MessagePackSerializer.Serialize(value?.GetType() ?? typeof(object), output, value, _options);
     }
 
-    public object Deserialize(Stream data, Type objectType)
+    public object? Deserialize(Stream data, Type objectType)
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(objectType);

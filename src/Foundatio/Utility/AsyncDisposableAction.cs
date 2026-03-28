@@ -9,7 +9,7 @@ namespace Foundatio.Utility;
 /// </summary>
 public sealed class AsyncDisposableAction : IAsyncDisposable
 {
-    private Func<Task> _exitTask;
+    private Func<Task>? _exitTask;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisposableAction"/> class.

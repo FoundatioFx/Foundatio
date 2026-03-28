@@ -12,7 +12,8 @@
 
     <Copyright>Copyright © $([System.DateTime]::Now.ToString(yyyy)) Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
-    <NoWarn>$(NoWarn);CS1591;CS8632;</NoWarn>
+    <Nullable>enable</Nullable>
+    <NoWarn>$(NoWarn);CS1591;</NoWarn>
     <WarningsAsErrors>true</WarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

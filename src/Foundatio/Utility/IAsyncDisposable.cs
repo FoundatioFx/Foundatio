@@ -9,8 +9,8 @@ public static class Async
     public static async Task<TReturn> Using<TResource, TReturn>(TResource resource, Func<TResource, Task<TReturn>> body)
         where TResource : IAsyncDisposable
     {
-        Exception exception = null;
-        var result = default(TReturn);
+        Exception? exception = null;
+        var result = default(TReturn)!;
         try
         {
             result = await body(resource).AnyContext();

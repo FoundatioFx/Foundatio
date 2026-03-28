@@ -7,9 +7,9 @@ namespace Foundatio.Jobs;
 
 public class JobOptions
 {
-    public string Name { get; set; }
-    public string Description { get; set; }
-    public Func<IServiceProvider, IJob> JobFactory { get; set; }
+    public string? Name { get; set; }
+    public string? Description { get; set; }
+    public Func<IServiceProvider, IJob>? JobFactory { get; set; }
     public bool RunContinuous { get; set; } = true;
     public TimeSpan? Interval { get; set; }
     public TimeSpan? InitialDelay { get; set; }

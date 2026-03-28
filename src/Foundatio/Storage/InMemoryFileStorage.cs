@@ -56,10 +56,10 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
-    public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
+    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default) =>
         GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-    public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -71,10 +71,10 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         {
             case StreamMode.Read:
                 if (_storage.TryGetValue(normalizedPath, out var file))
-                    return Task.FromResult<Stream>(new MemoryStream(file.Data));
+                    return Task.FromResult<Stream?>(new MemoryStream(file.Data));
 
                 _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
-                return Task.FromResult<Stream>(null);
+                return Task.FromResult<Stream?>(null);
             case StreamMode.Write:
                 var stream = new MemoryStream();
                 var actionableStream = new ActionableStream(stream, () =>
@@ -87,13 +87,13 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
                     AddOrUpdate(normalizedPath, contents);
                 });
 
-                return Task.FromResult<Stream>(actionableStream);
+                return Task.FromResult<Stream?>(actionableStream);
             default:
                 throw new ArgumentException("Invalid stream mode", nameof(streamMode));
         }
     }
 
-    public async Task<FileSpec> GetFileInfoAsync(string path)
+    public async Task<FileSpec?> GetFileInfoAsync(string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -226,7 +226,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         return Task.FromResult(false);
     }
 
-    public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default)
+    public Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellation = default)
     {
         if (String.IsNullOrEmpty(searchPattern) || searchPattern == "*")
         {
@@ -258,7 +258,7 @@ public class InMemoryFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory
         return Task.FromResult(count);
     }
 
-    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         if (pageSize <= 0)
             return PagedFileListResult.Empty;

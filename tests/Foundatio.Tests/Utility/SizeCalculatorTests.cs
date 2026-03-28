@@ -20,7 +20,7 @@ public class SizeCalculatorTests : TestWithLoggingBase
     [Fact]
     public void CalculateSize_WithNull_ReturnsReferenceSize()
     {
-        long size = _sizer.CalculateSize(null);
+        long size = _sizer.CalculateSize(null!);
         Assert.Equal(8, size); // Reference size
     }
 
@@ -309,7 +309,7 @@ public class SizeCalculatorTests : TestWithLoggingBase
         int? value = null;
 
         // Act
-        long size = _sizer.CalculateSize(value);
+        long size = _sizer.CalculateSize(value!);
 
         // Assert - null reference size (8 bytes)
         Assert.Equal(8, size);
@@ -536,14 +536,14 @@ public class SizeCalculatorTests : TestWithLoggingBase
     private class SimpleTestObject
     {
         public int Id { get; set; }
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public double Value { get; set; }
     }
 
     private class NestedTestObject
     {
         public int Id { get; set; }
-        public SimpleTestObject Inner { get; set; }
+        public SimpleTestObject? Inner { get; set; }
     }
 
 }

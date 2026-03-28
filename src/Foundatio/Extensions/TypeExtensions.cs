@@ -1,5 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using Foundatio.Serializer;
@@ -54,14 +55,15 @@ internal static class TypeExtensions
         return t != null && t.IsNumeric();
     }
 
-    public static T ToType<T>(this object value, ISerializer serializer = null)
+    [return: MaybeNull]
+    public static T ToType<T>(this object value, ISerializer? serializer = null)
     {
         var targetType = typeof(T);
         if (value == null)
         {
             try
             {
-                return (T)Convert.ChangeType(value, targetType);
+                return (T)Convert.ChangeType(value, targetType)!;
             }
             catch
             {
@@ -79,9 +81,9 @@ internal static class TypeExtensions
         if (targetTypeInfo.IsEnum && (value is string || valueType.GetTypeInfo().IsEnum))
         {
             // attempt to match enum by name.
-            if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString()))
+            if (EnumExtensions.TryEnumIsDefined(targetType, value.ToString()!))
             {
-                object parsedValue = Enum.Parse(targetType, value.ToString(), false);
+                object parsedValue = Enum.Parse(targetType, value.ToString()!, false);
                 return (T)parsedValue;
             }
 
@@ -94,8 +96,8 @@ internal static class TypeExtensions
 
         if (converter.CanConvertFrom(valueType))
         {
-            object convertedValue = converter.ConvertFrom(value);
-            return (T)convertedValue;
+            object? convertedValue = converter.ConvertFrom(value);
+            return (T)convertedValue!;
         }
 
         if (serializer != null && value is byte[] data)
@@ -134,7 +136,7 @@ internal static class TypeExtensions
         if (!type.IsGenericType)
             return type.FullName!;
 
-        string genericTypeName = type.GetGenericTypeDefinition().FullName;
+        string? genericTypeName = type.GetGenericTypeDefinition().FullName;
         genericTypeName = genericTypeName?.Substring(0, genericTypeName.IndexOf('`'));
 
         string genericArgs = String.Join(",", type.GetGenericArguments().Select(GetFriendlyTypeName));

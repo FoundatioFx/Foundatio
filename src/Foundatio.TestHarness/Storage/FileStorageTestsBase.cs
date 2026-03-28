@@ -19,7 +19,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 {
     protected FileStorageTestsBase(ITestOutputHelper output) : base(output) { }
 
-    protected virtual IFileStorage GetStorage()
+    protected virtual IFileStorage? GetStorage()
     {
         return null;
     }
@@ -175,7 +175,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         using (storage)
         {
-            await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => storage.GetFileInfoAsync(null!));
             Assert.Null(await storage.GetFileInfoAsync(Guid.NewGuid().ToString()));
         }
     }
@@ -194,7 +194,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             var file = (await storage.GetFileListAsync()).Single();
             Assert.NotNull(file);
             Assert.Equal("test.txt", file.Path);
-            string content = await storage.GetFileContentsAsync("test.txt");
+            string? content = await storage.GetFileContentsAsync("test.txt");
+            Assert.NotNull(content);
             Assert.Equal("test", content);
             await storage.RenameFileAsync("test.txt", "new.txt");
             Assert.Contains(await storage.GetFileListAsync(), f => f.Path == "new.txt");
@@ -266,7 +267,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
             await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Read))
             {
-                string result = await new StreamReader(stream).ReadToEndAsync();
+                string result = await new StreamReader(stream!).ReadToEndAsync();
                 Assert.Equal(await File.ReadAllTextAsync(readmeFile), result);
             }
         }
@@ -473,7 +474,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             }
 
             await using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read);
-            var actual = XElement.Load(stream);
+            var actual = XElement.Load(stream!);
             Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
         }
     }
@@ -531,7 +532,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
                 await writer.WriteAsync(testContent);
             }
 
-            string content = await storage.GetFileContentsAsync(path);
+            string? content = await storage.GetFileContentsAsync(path);
+            Assert.NotNull(content);
             Assert.Equal(testContent, content);
 
             string newTestContent = testContent.Substring(0, testContent.Length - 1);
@@ -546,6 +548,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             }
 
             content = await storage.GetFileContentsAsync(path);
+            Assert.NotNull(content);
             Assert.Equal(newTestContent, content);
         }
     }
@@ -606,7 +609,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
                 if (RandomData.GetBool())
                 {
-                    await storage.CompleteEventPostAsync(path, eventPost.ProjectId, DateTime.UtcNow, true, _logger);
+                    await storage.CompleteEventPostAsync(path, eventPost.ProjectId ?? string.Empty, DateTime.UtcNow, true, _logger);
                 }
                 else
                     await storage.SetNotActiveAsync(path, _logger);
@@ -629,44 +632,51 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
     public virtual async Task CanSaveOverExistingStoredContent()
     {
-        using var storage = GetStorage();
+        var storage = GetStorage();
         if (storage == null)
             return;
 
-        await ResetAsync(storage);
+        using (storage)
+        {
+            await ResetAsync(storage);
 
-        var shortIdInfo = new PostInfo { ProjectId = "123" };
-        var longIdInfo = new PostInfo { ProjectId = "1234567890" };
+            var shortIdInfo = new PostInfo { ProjectId = "123" };
+            var longIdInfo = new PostInfo { ProjectId = "1234567890" };
 
-        string path = "test.json";
-        await storage.SaveObjectAsync(path, longIdInfo);
-        await storage.SaveObjectAsync(path, shortIdInfo);
+            string path = "test.json";
+            await storage.SaveObjectAsync(path, longIdInfo);
+            await storage.SaveObjectAsync(path, shortIdInfo);
 
-        var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
-        Assert.Equal(shortIdInfo, actualInfo);
+#pragma warning disable CS8602 // Dereference of a possibly null reference - storage is null-checked above
+            var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
+#pragma warning restore CS8602
+            Assert.Equal(shortIdInfo, actualInfo!);
+        }
     }
 }
 
 public record PostInfo
 {
     public int ApiVersion { get; set; }
-    public string CharSet { get; set; }
-    public string ContentEncoding { get; set; }
-    public byte[] Data { get; set; }
-    public string IpAddress { get; set; }
-    public string MediaType { get; set; }
-    public string ProjectId { get; set; }
-    public string UserAgent { get; set; }
+    public string? CharSet { get; set; }
+    public string? ContentEncoding { get; set; }
+    public byte[]? Data { get; set; }
+    public string? IpAddress { get; set; }
+    public string? MediaType { get; set; }
+    public string? ProjectId { get; set; }
+    public string? UserAgent { get; set; }
 }
 
 public static class StorageExtensions
 {
-    public static async Task<PostInfo> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path, ILogger logger = null)
+    public static async Task<PostInfo?> GetEventPostAndSetActiveAsync(this IFileStorage storage, string path, ILogger? logger = null)
     {
-        PostInfo eventPostInfo = null;
+        PostInfo? eventPostInfo = null;
         try
         {
+#pragma warning disable CS8602 // Dereference of a possibly null reference - storage parameter is non-nullable
             eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
+#pragma warning restore CS8602
             if (eventPostInfo == null)
                 return null;
 
@@ -684,7 +694,7 @@ public static class StorageExtensions
         return eventPostInfo;
     }
 
-    public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path, ILogger logger = null)
+    public static async Task<bool> SetNotActiveAsync(this IFileStorage storage, string path, ILogger? logger = null)
     {
         try
         {
@@ -699,7 +709,7 @@ public static class StorageExtensions
         return false;
     }
 
-    public static async Task<bool> CompleteEventPostAsync(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger logger = null)
+    public static async Task<bool> CompleteEventPostAsync(this IFileStorage storage, string path, string projectId, DateTime created, bool shouldArchive = true, ILogger? logger = null)
     {
         // don't move files that are already in the archive
         if (path.StartsWith("archive"))

@@ -31,7 +31,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+    protected virtual IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
         return null;
     }
@@ -542,9 +542,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             for (int index = 0; index < iterations; index++)
             {
                 _logger.LogTrace("[{Index}] Calling Dequeue", index);
-                var item = await secondQueue.DequeueAsync(TimeSpan.FromSeconds(3));
+                var item = await secondQueue!.DequeueAsync(TimeSpan.FromSeconds(3));
                 Assert.NotNull(item);
-                await item.CompleteAsync();
+                await item!.CompleteAsync();
             }
 
             metrics.RecordObservableInstruments();
@@ -1147,14 +1147,14 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 for (int i = 0; i < workerCount; i++)
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
-                    _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
+                    _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q!.QueueId, i);
                     await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
                 }
 
                 await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    string? id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
                         Data = "Hello",
                         Id = i
@@ -1278,15 +1278,15 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
             await Task.Delay(100);
-            await item.CompleteAsync();
+            await item!.CompleteAsync();
 
             item = await queue.DequeueAsync();
             await Task.Delay(100);
-            await item.CompleteAsync();
+            await item!.CompleteAsync();
 
             item = await queue.DequeueAsync();
             await Task.Delay(100);
-            await item.AbandonAsync();
+            await item!.AbandonAsync();
 
             _logger.LogTrace("Before asserts");
             Assert.Equal(2, completedCount);
@@ -1413,8 +1413,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
             workItem = await queue.DequeueAsync(TimeSpan.Zero);
 
-            await queue.AbandonAsync(workItem);
-            Assert.True(workItem.IsAbandoned);
+            await queue.AbandonAsync(workItem!);
+            Assert.True(workItem!.IsAbandoned);
             Assert.False(workItem.IsCompleted);
             await Assert.ThrowsAnyAsync<Exception>(() => workItem.CompleteAsync());
             await Assert.ThrowsAnyAsync<Exception>(() => workItem.AbandonAsync());
@@ -1560,7 +1560,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     int instanceCount = i;
-                    await q.StartWorkingAsync(async w =>
+                    await q!.StartWorkingAsync(async w =>
                     {
                         _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {QueueEntryId}", instanceCount, w.Id);
                         var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
@@ -1575,12 +1575,12 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                         countdown.Signal();
                         _logger.LogInformation("[{Instance}] Signaled countdown: {QueueEntryId}", instanceCount, w.Id);
                     }, cancellationToken: cancellationTokenSource.Token);
-                    workers.Add(q);
+                    workers.Add(q!);
                 }
 
                 await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    string? id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
                         Data = "Hello",
                         Id = i

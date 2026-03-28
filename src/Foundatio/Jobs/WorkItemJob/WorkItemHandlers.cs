@@ -29,12 +29,12 @@ public class WorkItemHandlers
         _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(handler));
     }
 
-    public void Register<T>(Func<WorkItemContext, Task> handler, ILogger logger = null, Action<IQueueEntry<WorkItemData>, Type, object> logProcessingWorkItem = null, Action<IQueueEntry<WorkItemData>, Type, object> logAutoCompletedWorkItem = null) where T : class
+    public void Register<T>(Func<WorkItemContext, Task> handler, ILogger? logger = null, Action<IQueueEntry<WorkItemData>, Type, object>? logProcessingWorkItem = null, Action<IQueueEntry<WorkItemData>, Type, object>? logAutoCompletedWorkItem = null) where T : class
     {
         _handlers.TryAdd(typeof(T), new Lazy<IWorkItemHandler>(() => new DelegateWorkItemHandler(handler, logger, logProcessingWorkItem, logAutoCompletedWorkItem)));
     }
 
-    public IWorkItemHandler GetHandler(Type jobDataType)
+    public IWorkItemHandler? GetHandler(Type jobDataType)
     {
         if (!_handlers.TryGetValue(jobDataType, out var handler))
             return null;
@@ -55,11 +55,11 @@ public interface IWorkItemHandler
 
 public abstract class WorkItemHandlerBase : IWorkItemHandler
 {
-    public WorkItemHandlerBase(ILoggerFactory loggerFactory = null)
+    public WorkItemHandlerBase(ILoggerFactory? loggerFactory = null)
     {
         Log = loggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
     }
-    public WorkItemHandlerBase(ILogger logger)
+    public WorkItemHandlerBase(ILogger? logger)
     {
         Log = logger ?? NullLogger.Instance;
     }
@@ -93,10 +93,10 @@ public abstract class WorkItemHandlerBase : IWorkItemHandler
 public class DelegateWorkItemHandler : WorkItemHandlerBase
 {
     private readonly Func<WorkItemContext, Task> _handler;
-    private readonly Action<IQueueEntry<WorkItemData>, Type, object> _logProcessingWorkItem;
-    private readonly Action<IQueueEntry<WorkItemData>, Type, object> _logAutoCompletedWorkItem;
+    private readonly Action<IQueueEntry<WorkItemData>, Type, object>? _logProcessingWorkItem;
+    private readonly Action<IQueueEntry<WorkItemData>, Type, object>? _logAutoCompletedWorkItem;
 
-    public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILogger logger = null, Action<IQueueEntry<WorkItemData>, Type, object> logProcessingWorkItem = null, Action<IQueueEntry<WorkItemData>, Type, object> logAutoCompletedWorkItem = null) : base(logger)
+    public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILogger? logger = null, Action<IQueueEntry<WorkItemData>, Type, object>? logProcessingWorkItem = null, Action<IQueueEntry<WorkItemData>, Type, object>? logAutoCompletedWorkItem = null) : base(logger)
     {
         _handler = handler;
         _logProcessingWorkItem = logProcessingWorkItem;

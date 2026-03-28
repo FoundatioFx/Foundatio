@@ -60,7 +60,7 @@ public class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     public IResiliencePolicy GetDefaultPolicy() => _defaultPolicy;
 
-    public IResiliencePolicy GetPolicy(string name, bool useDefault = true)
+    public IResiliencePolicy? GetPolicy(string name, bool useDefault = true)
     {
         if (String.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));

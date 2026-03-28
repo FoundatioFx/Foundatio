@@ -17,7 +17,7 @@ public static class DataProtectionBuilderExtensions
     /// <param name="storage">The storage account to use.</param>
     /// <param name="loggerFactory">The logger factory to use.</param>
     /// <returns>The value <paramref name="builder"/>.</returns>
-    public static IDataProtectionBuilder PersistKeysToFileStorage(this IDataProtectionBuilder builder, IFileStorage storage, ILoggerFactory loggerFactory = null)
+    public static IDataProtectionBuilder PersistKeysToFileStorage(this IDataProtectionBuilder builder, IFileStorage storage, ILoggerFactory? loggerFactory = null)
     {
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));

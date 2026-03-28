@@ -19,7 +19,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     [Fact]
     public void Constructor_ShouldThrowArgumentNullException_WhenFileStorageIsNull()
     {
-        Assert.Throws<ArgumentNullException>(() => new ScopedFileStorage(null, "scope"));
+        Assert.Throws<ArgumentNullException>(() => new ScopedFileStorage(null!, "scope"));
     }
 
     [InlineData("*")]
@@ -201,7 +201,7 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
             Assert.Empty(result.Files);
 
             const string directory = "EmptyDirectory/";
-            string folder = storage is ScopedFileStorage { UnscopedStorage: FolderFileStorage folderStorage } ? folderStorage.Folder : null;
+            string? folder = storage is ScopedFileStorage { UnscopedStorage: FolderFileStorage folderStorage } ? folderStorage.Folder : null;
             Assert.NotNull(folder);
             Directory.CreateDirectory(Path.Combine(folder, "scoped", directory));
 

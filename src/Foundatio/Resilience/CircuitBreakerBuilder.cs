@@ -8,7 +8,7 @@ public class CircuitBreakerBuilder
 {
     private readonly CircuitBreaker _circuitBreaker;
 
-    public CircuitBreakerBuilder(ILogger logger = null, TimeProvider timeProvider = null)
+    public CircuitBreakerBuilder(ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         _circuitBreaker = new CircuitBreaker(logger, timeProvider);
     }

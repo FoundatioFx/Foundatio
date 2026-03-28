@@ -46,7 +46,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(false);
     }
 
-    public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         Interlocked.Increment(ref _writes);
 

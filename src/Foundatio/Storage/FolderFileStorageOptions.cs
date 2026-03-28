@@ -4,7 +4,7 @@ namespace Foundatio.Storage;
 
 public class FolderFileStorageOptions : SharedOptions
 {
-    public string Folder { get; set; }
+    public string? Folder { get; set; }
 }
 
 public class FolderFileStorageOptionsBuilder : SharedOptionsBuilder<FolderFileStorageOptions, FolderFileStorageOptionsBuilder>

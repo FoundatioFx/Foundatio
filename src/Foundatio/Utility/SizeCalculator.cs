@@ -28,7 +28,7 @@ namespace Foundatio.Utility;
 /// </remarks>
 public class SizeCalculator : IDisposable
 {
-    private ConcurrentDictionary<Type, TypeSizeCacheEntry> _typeSizeCache;
+    private ConcurrentDictionary<Type, TypeSizeCacheEntry>? _typeSizeCache;
     private readonly int _maxTypeCacheSize;
     private long _cacheAccessCounter;
     private bool _disposed;
@@ -163,7 +163,7 @@ public class SizeCalculator : IDisposable
     /// </summary>
     /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for. Default is 1000.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public SizeCalculator(int maxTypeCacheSize = DefaultMaxTypeCacheSize, ILoggerFactory loggerFactory = null)
+    public SizeCalculator(int maxTypeCacheSize = DefaultMaxTypeCacheSize, ILoggerFactory? loggerFactory = null)
     {
         _maxTypeCacheSize = maxTypeCacheSize > 0 ? maxTypeCacheSize : DefaultMaxTypeCacheSize;
         // Pre-size dictionary to avoid resizing; -1 uses default concurrency level
@@ -264,7 +264,7 @@ public class SizeCalculator : IDisposable
                 return nullableSize;
 
             var underlyingType = Nullable.GetUnderlyingType(type);
-            return GetCachedTypeSize(underlyingType) + 1; // Add 1 for hasValue flag
+            return GetCachedTypeSize(underlyingType!) + 1; // Add 1 for hasValue flag
         }
 
         // Handle arrays efficiently

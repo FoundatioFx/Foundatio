@@ -26,6 +26,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     public FolderFileStorage(FolderFileStorageOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrEmpty(options.Folder);
 
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
@@ -58,10 +59,10 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
-    public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-    public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -71,10 +72,10 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         EnsureDirectory(fullPath);
 
         var stream = streamMode == StreamMode.Read ? File.OpenRead(fullPath) : new FileStream(fullPath, FileMode.Create, FileAccess.Write);
-        return Task.FromResult<Stream>(stream);
+        return Task.FromResult<Stream?>(stream);
     }
 
-    public Task<FileSpec> GetFileInfoAsync(string path)
+    public Task<FileSpec?> GetFileInfoAsync(string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -86,10 +87,10 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         if (!info.Exists)
         {
             _logger.LogError("Unable to get file info for {Path}: File Not Found", normalizedPath);
-            return Task.FromResult<FileSpec>(null);
+            return Task.FromResult<FileSpec?>(null);
         }
 
-        return Task.FromResult(new FileSpec
+        return Task.FromResult<FileSpec?>(new FileSpec
         {
             Path = normalizedPath.Replace(Folder, String.Empty),
             Created = info.CreationTimeUtc,
@@ -118,7 +119,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         try
         {
             using var fileStream = await GetFileStreamAsync(path, StreamMode.Write, cancellationToken);
-            await stream.CopyToAsync(fileStream).AnyContext();
+            await stream.CopyToAsync(fileStream!).AnyContext();
             return true;
         }
         catch (Exception ex)
@@ -130,7 +131,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
     private void EnsureDirectory(string normalizedPath)
     {
-        string directory = Path.GetDirectoryName(normalizedPath);
+        string? directory = Path.GetDirectoryName(normalizedPath);
         if (directory == null)
             return;
 
@@ -153,7 +154,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         {
             using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
-                string directory = Path.GetDirectoryName(normalizedNewPath);
+                string? directory = Path.GetDirectoryName(normalizedNewPath);
                 if (directory != null)
                 {
                     _logger.LogInformation("Creating {Directory} directory", directory);
@@ -200,7 +201,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         {
             using (await _lock.LockAsync(cancellationToken).AnyContext())
             {
-                string directory = Path.GetDirectoryName(normalizedTargetPath);
+                string? directory = Path.GetDirectoryName(normalizedTargetPath);
                 if (directory != null)
                 {
                     _logger.LogInformation("Creating {Directory} directory", directory);
@@ -240,7 +241,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         return Task.FromResult(true);
     }
 
-    public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default)
+    public Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellation = default)
     {
         int count = 0;
 
@@ -261,7 +262,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         string path = Path.Combine(Folder, searchPattern);
         if (path[path.Length - 1] == Path.DirectorySeparatorChar || path.EndsWith($"{Path.DirectorySeparatorChar}*"))
         {
-            string directory = Path.GetDirectoryName(path);
+            string? directory = Path.GetDirectoryName(path);
             if (Directory.Exists(directory))
             {
                 _logger.LogInformation("Deleting {Directory} directory", directory);
@@ -295,7 +296,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         return Task.FromResult(count);
     }
 
-    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         if (pageSize <= 0)
             return PagedFileListResult.Empty;

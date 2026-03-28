@@ -32,6 +32,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         handlerRegistry.Register<MyWorkItem>(async ctx =>
         {
             var jobData = ctx.GetData<MyWorkItem>();
+            Assert.NotNull(jobData);
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 0; i < 10; i++)
@@ -77,6 +78,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         handlerRegistry.Register<MyWorkItem>(async ctx =>
         {
             var jobData = ctx.GetData<MyWorkItem>();
+            Assert.NotNull(jobData);
             Assert.Equal("Test", jobData.SomeData);
 
             int jobWorkTotal = jobIds.AddOrUpdate(ctx.JobId, 1, (key, value) => value + 1);
@@ -111,7 +113,10 @@ public class WorkItemJobTests : TestWithLoggingBase
                 return;
 
             lock (completedItemsLock)
+            {
+                Assert.NotNull(status.WorkItemId);
                 completedItems.Add(status.WorkItemId);
+            }
         }, TestCancellationToken);
 
         using var cancellationTokenSource = new CancellationTokenSource(10000);
@@ -191,6 +196,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         handlerRegistry.Register<MyWorkItem>(async ctx =>
         {
             var jobData = ctx.GetData<MyWorkItem>();
+            Assert.NotNull(jobData);
             Assert.Equal("Test", jobData.SomeData);
 
             for (int i = 1; i < 10; i++)
@@ -306,6 +312,7 @@ public class WorkItemJobTests : TestWithLoggingBase
         handlerRegistry.Register<MyWorkItem>(ctx =>
         {
             var jobData = ctx.GetData<MyWorkItem>();
+            Assert.NotNull(jobData);
             Assert.Equal("Test", jobData.SomeData);
             throw new Exception();
         });
@@ -331,19 +338,20 @@ public class WorkItemJobTests : TestWithLoggingBase
 
 public class MyWorkItem
 {
-    public string SomeData { get; set; }
+    public required string SomeData { get; set; }
     public int Index { get; set; }
 }
 
 public class MyWorkItemHandler : WorkItemHandlerBase
 {
-    public MyWorkItemHandler(ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    public MyWorkItemHandler(ILoggerFactory? loggerFactory = null) : base(loggerFactory)
     {
     }
 
     public override async Task HandleItemAsync(WorkItemContext context)
     {
         var jobData = context.GetData<MyWorkItem>();
+        Assert.NotNull(jobData);
         Assert.Equal("Test", jobData.SomeData);
 
         for (int i = 1; i < 10; i++)

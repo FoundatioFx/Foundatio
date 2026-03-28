@@ -285,7 +285,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         var policy = resiliencePolicyProvider.GetPolicy("MyPolicy") as ResiliencePolicy;
         Assert.NotNull(policy);
 
-        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+        Assert.Equal(CircuitState.Closed, policy!.CircuitBreaker!.State);
 
         // send 10 successful calls
         for (int i = 0; i < 10; i++)
@@ -293,17 +293,17 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         // send 1 error call before the circuit breaker is triggered
         await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
-        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker!.State);
 
         // send 1 more error call to trigger the circuit breaker
         await Assert.ThrowsAsync<ApplicationException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
-        Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
+        Assert.Equal(CircuitState.Open, policy.CircuitBreaker!.State);
 
         // send 10 error calls and ensure they throw BrokenCircuitException
         for (int i = 0; i < 10; i++)
             await Assert.ThrowsAsync<BrokenCircuitException>(async () => await policy.ExecuteAsync(_ => DoBoom(), TestCancellationToken));
 
-        Assert.Equal(CircuitState.Open, policy.CircuitBreaker.State);
+        Assert.Equal(CircuitState.Open, policy.CircuitBreaker!.State);
 
         // advance past the circuit break duration
         timeProvider.Advance(TimeSpan.FromSeconds(10));
@@ -312,7 +312,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
         for (int i = 0; i < 10; i++)
             await policy.ExecuteAsync(_ => DoStuff(), TestCancellationToken);
 
-        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
+        Assert.Equal(CircuitState.Closed, policy.CircuitBreaker!.State);
     }
 
     [Fact(Skip = "Using this to test circuit breaker sharing in parallel, not a real test")]
