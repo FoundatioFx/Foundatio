@@ -185,6 +185,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         if (cancellationToken != CancellationToken.None)
         {
+            // TODO: sync-over-async — CancellationToken.Register only accepts synchronous callbacks,
+            // so RemoveTopicSubscriptionAsync is blocked here. This is low-risk since it only fires
+            // on unsubscription (not a hot path), but an async overload would be ideal.
+            // Tracked at https://github.com/dotnet/runtime/issues/31315
             cancellationToken.Register(() =>
             {
                 _subscribers.TryRemove(subscriber.Id, out _);
