@@ -29,10 +29,10 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly IResiliencePolicy _resiliencePolicy;
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, ILoggerFactory loggerFactory = null) : this(cacheClient, messageBus, timeProvider, null, loggerFactory) { }
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider? timeProvider, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, timeProvider, null, loggerFactory) { }
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
@@ -40,7 +40,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _cacheClient = new ScopedCacheClient(cacheClient, "lock");
         _messageBus = messageBus;
 
-        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<CacheLockProvider, ILockProvider>(
             builder => builder.WithUnhandledException<CacheException>(),
             _logger, _timeProvider);
@@ -81,7 +81,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         return Task.CompletedTask;
     }
 
-    protected virtual Activity StartLockActivity(string resource)
+    protected virtual Activity? StartLockActivity(string resource)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("AcquireLock");
         if (activity is null)
@@ -93,7 +93,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         return activity;
     }
 
-    public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    public async Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         bool shouldWait = !cancellationToken.IsCancellationRequested;
         string lockId = GenerateNewLockId();
@@ -238,7 +238,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private class ResetEventWithRefCount
     {
         public int RefCount { get; set; }
-        public AsyncAutoResetEvent Target { get; set; }
+        public required AsyncAutoResetEvent Target { get; set; }
     }
 
     private static string _allowedChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -257,6 +257,6 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
 public class CacheLockReleased
 {
-    public string Resource { get; set; }
-    public string LockId { get; set; }
+    public required string Resource { get; set; }
+    public string? LockId { get; set; }
 }

@@ -94,7 +94,7 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// </summary>
     /// <param name="builder"></param>
     /// <returns></returns>
-    public FoundatioBuilder AddResilience(Action<ResiliencePolicyProviderBuilder> builder = null)
+    public FoundatioBuilder AddResilience(Action<ResiliencePolicyProviderBuilder>? builder = null)
     {
         _services.AddSingleton<IResiliencePolicyProvider>(sp =>
         {
@@ -112,7 +112,7 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// <param name="textSerializerFactory">The serializer to use.</param>
     /// <param name="serializerFactory">The serializer to use. Defaults to the ITextSerializer instance</param>
     /// <returns></returns>
-    public FoundatioBuilder AddSerializer(Func<IServiceProvider, ITextSerializer> textSerializerFactory, Func<IServiceProvider, ISerializer> serializerFactory = null)
+    public FoundatioBuilder AddSerializer(Func<IServiceProvider, ITextSerializer> textSerializerFactory, Func<IServiceProvider, ISerializer>? serializerFactory = null)
     {
         _services.ReplaceSingleton(textSerializerFactory);
         _services.ReplaceSingleton(serializerFactory ?? (sp => sp.GetRequiredService<ITextSerializer>()));
@@ -125,7 +125,7 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// <param name="textSerializer">The serializer to use.</param>
     /// <param name="serializer">The serializer to use. Defaults to the ITextSerializer instance</param>
     /// <returns></returns>
-    public FoundatioBuilder AddSerializer(ITextSerializer textSerializer, ISerializer serializer = null)
+    public FoundatioBuilder AddSerializer(ITextSerializer textSerializer, ISerializer? serializer = null)
     {
         _services.ReplaceSingleton(_ => textSerializer);
 
@@ -163,9 +163,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemory(InMemoryCacheClientOptions options = null)
+        public FoundatioBuilder UseInMemory(InMemoryCacheClientOptions? options = null)
         {
-            _services.ReplaceSingleton<ICacheClient>(sp => new InMemoryCacheClient(options.UseServices(sp)));
+            _services.ReplaceSingleton<ICacheClient>(sp => new InMemoryCacheClient((options ?? new()).UseServices(sp)));
             return _builder;
         }
 
@@ -202,9 +202,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemory(InMemoryFileStorageOptions options = null)
+        public FoundatioBuilder UseInMemory(InMemoryFileStorageOptions? options = null)
         {
-            _services.ReplaceSingleton<IFileStorage>(sp => new InMemoryFileStorage(options.UseServices(sp)));
+            _services.ReplaceSingleton<IFileStorage>(sp => new InMemoryFileStorage((options ?? new()).UseServices(sp)));
             return _builder;
         }
 
@@ -220,9 +220,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseFolder(FolderFileStorageOptions options = null)
+        public FoundatioBuilder UseFolder(FolderFileStorageOptions? options = null)
         {
-            _services.ReplaceSingleton<IFileStorage>(sp => new FolderFileStorage(options.UseServices(sp)));
+            _services.ReplaceSingleton<IFileStorage>(sp => new FolderFileStorage((options ?? new()).UseServices(sp)));
             return _builder;
         }
 
@@ -263,9 +263,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions options = null)
+        public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
         {
-            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
+            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus((options ?? new()).UseServices(sp)));
             _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
             _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
             return _builder;
@@ -306,9 +306,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemory<T>(InMemoryQueueOptions<T> options = null) where T : class
+        public FoundatioBuilder UseInMemory<T>(InMemoryQueueOptions<T>? options = null) where T : class
         {
-            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>(options.UseServices(sp)));
+            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>((options ?? new()).UseServices(sp)));
             return _builder;
         }
 
@@ -350,7 +350,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<IMessageBus>(), // optional for more efficient lock release notifications
+                sp.GetRequiredService<IMessageBus>(),
                 sp.GetService<TimeProvider>(),
                 sp.GetService<IResiliencePolicyProvider>(),
                 sp.GetService<ILoggerFactory>()

@@ -48,14 +48,14 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
 
 public static class LoggerExtensions
 {
-    public static IDisposable BeginScope(this ILogger logger, Func<LogState, LogState> stateBuilder)
+    public static IDisposable? BeginScope(this ILogger logger, Func<LogState, LogState> stateBuilder)
     {
         var logState = new LogState();
         logState = stateBuilder(logState);
         return logger.BeginScope(logState);
     }
 
-    public static IDisposable BeginScope(this ILogger logger, string property, object value)
+    public static IDisposable? BeginScope(this ILogger logger, string property, object value)
     {
         return logger.BeginScope(b => b.Property(property, value));
     }
@@ -116,7 +116,7 @@ public static class LoggerExtensions
     {
         var tagList = new List<string>();
         if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string>)
-            tagList = builder["Tags"] as List<string>;
+            tagList = (builder["Tags"] as List<string>)!;
 
         foreach (string tag in tags)
         {

@@ -24,7 +24,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected virtual IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return null;
     }
@@ -143,7 +143,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         try
         {
             // Publishing null should throw ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null!));
         }
         finally
         {
@@ -328,19 +328,19 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
                 var bus = GetMessageBus();
-                await bus.SubscribeAsync<SimpleMessageA>(msg =>
+                await bus!.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 }, cancellationToken: ct);
 
-                messageBuses.Add(bus);
+                messageBuses.Add(bus!);
             });
 
             var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
             {
                 await Task.Delay(RandomData.GetInt(0, 10), ct);
-                await messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+                await messageBuses.Random()!.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
             });
 
             var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
@@ -696,7 +696,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             try
             {
                 var countdown2 = new AsyncCountdownEvent(1);
-                await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+                await messageBus2!.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown2.Signal();
@@ -714,7 +714,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             }
             finally
             {
-                await CleanupMessageBusAsync(messageBus2);
+                await CleanupMessageBusAsync(messageBus2!);
             }
         }
         finally

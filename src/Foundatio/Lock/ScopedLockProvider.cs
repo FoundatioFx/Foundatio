@@ -13,7 +13,7 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
     private bool _isLocked;
     private readonly object _lock = new();
 
-    public ScopedLockProvider(ILockProvider lockProvider, string scope = null)
+    public ScopedLockProvider(ILockProvider lockProvider, string? scope = null)
     {
         UnscopedLockProvider = lockProvider;
         _isLocked = scope != null;
@@ -23,14 +23,14 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
     }
 
     public ILockProvider UnscopedLockProvider { get; }
-    public string Scope { get; private set; }
+    public string? Scope { get; private set; }
 
     ILogger IHaveLogger.Logger => UnscopedLockProvider.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedLockProvider.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedLockProvider.GetTimeProvider();
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedLockProvider.GetResiliencePolicyProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedLockProvider.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
 
-    public void SetScope(string scope)
+    public void SetScope(string? scope)
     {
         if (_isLocked)
             throw new InvalidOperationException("Scope can't be changed after it has been set");
@@ -51,7 +51,7 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
         return String.Concat(_keyPrefix, key);
     }
 
-    public Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    public Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, releaseOnDispose, cancellationToken);
     }

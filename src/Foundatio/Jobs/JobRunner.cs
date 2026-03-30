@@ -18,7 +18,7 @@ public class JobRunner
     private readonly JobOptions _options;
     private readonly IServiceProvider _serviceProvider;
 
-    public JobRunner(JobOptions options, IServiceProvider serviceProvider, ILoggerFactory loggerFactory = null)
+    public JobRunner(JobOptions options, IServiceProvider serviceProvider, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _logger = loggerFactory?.CreateLogger<JobRunner>() ?? NullLogger<JobRunner>.Instance;
@@ -26,7 +26,7 @@ public class JobRunner
         _serviceProvider = serviceProvider;
     }
 
-    public JobRunner(IJob instance, IServiceProvider serviceProvider, ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
+    public JobRunner(IJob instance, IServiceProvider serviceProvider, ILoggerFactory? loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1, bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
         : this(new JobOptions
         {
             JobFactory = _ => instance,
@@ -40,7 +40,7 @@ public class JobRunner
     }
 
     public JobRunner(Func<IServiceProvider, IJob> jobFactory, IServiceProvider serviceProvider,
-        ILoggerFactory loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1,
+        ILoggerFactory? loggerFactory = null, TimeSpan? initialDelay = null, int instanceCount = 1,
         bool runContinuous = true, int iterationLimit = -1, TimeSpan? interval = null)
         : this(new JobOptions
         {
@@ -55,7 +55,7 @@ public class JobRunner
     }
 
     public string Id { get; } = Guid.NewGuid().ToString("N").Substring(0, 10);
-    public CancellationTokenSource CancellationTokenSource { get; private set; }
+    public CancellationTokenSource? CancellationTokenSource { get; private set; }
 
     public async Task<int> RunInConsoleAsync()
     {
@@ -148,7 +148,7 @@ public class JobRunner
             return false;
         }
 
-        using var _ = _logger.BeginScope(s => s.Property("job.name", _options.Name).Property("job.id", Id));
+        using var _ = _logger.BeginScope(s => s.Property("job.name", _options.Name ?? string.Empty).Property("job.id", Id));
 
         _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
 
@@ -228,9 +228,10 @@ public class JobRunner
         return true;
     }
 
-    private static CancellationTokenSource _jobShutdownCancellationTokenSource;
+    private static CancellationTokenSource? _jobShutdownCancellationTokenSource;
+    private static FileSystemWatcher? _shutdownFileWatcher;
     private static readonly object _lock = new();
-    public static CancellationToken GetShutdownCancellationToken(ILogger logger = null)
+    public static CancellationToken GetShutdownCancellationToken(ILogger? logger = null)
     {
         if (_jobShutdownCancellationTokenSource != null)
             return _jobShutdownCancellationTokenSource.Token;
@@ -248,25 +249,31 @@ public class JobRunner
                 args.Cancel = true;
             };
 
-            string webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
+            string? webJobsShutdownFile = Environment.GetEnvironmentVariable("WEBJOBS_SHUTDOWN_FILE");
             if (String.IsNullOrEmpty(webJobsShutdownFile))
                 return _jobShutdownCancellationTokenSource.Token;
 
             var handler = new FileSystemEventHandler((s, e) =>
             {
-                if (e.FullPath.IndexOf(Path.GetFileName(webJobsShutdownFile), StringComparison.OrdinalIgnoreCase) < 0)
+                if (e.FullPath.IndexOf(Path.GetFileName(webJobsShutdownFile)!, StringComparison.OrdinalIgnoreCase) < 0)
                     return;
 
                 _jobShutdownCancellationTokenSource.Cancel();
                 logger?.LogInformation("Job shutdown signaled");
             });
 
-            var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile));
-            watcher.Created += handler;
-            watcher.Changed += handler;
-            watcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
-            watcher.IncludeSubdirectories = false;
-            watcher.EnableRaisingEvents = true;
+            _shutdownFileWatcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile)!);
+            _shutdownFileWatcher.Created += handler;
+            _shutdownFileWatcher.Changed += handler;
+            _shutdownFileWatcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
+            _shutdownFileWatcher.IncludeSubdirectories = false;
+            _shutdownFileWatcher.EnableRaisingEvents = true;
+
+            _jobShutdownCancellationTokenSource.Token.Register(() =>
+            {
+                _shutdownFileWatcher?.Dispose();
+                _shutdownFileWatcher = null;
+            });
 
             return _jobShutdownCancellationTokenSource.Token;
         }

@@ -309,6 +309,19 @@ dotnet test --logger "console;verbosity=detailed"
 - **Idempotency**: Design operations to be safely retryable
 - **Resource limits**: Bound queues, caches, and buffers to prevent memory exhaustion
 
+## Available Skills
+
+The following skills are available in this repository under `.agents/skills/`:
+
+| Skill | Description |
+| ----- | ----------- |
+| [foundatio](.agents/skills/foundatio/SKILL.md) | Foundatio infrastructure abstractions — caching, queuing, messaging, file storage, locking, jobs, resilience |
+| [analyzing-dotnet-performance](.agents/skills/analyzing-dotnet-performance/SKILL.md) | Scans .NET code for ~50 performance anti-patterns across async, memory, strings, collections, LINQ, regex, serialization, and I/O |
+| [microbenchmarking](.agents/skills/microbenchmarking/SKILL.md) | Creating, running, configuring, or reviewing BenchmarkDotNet benchmarks |
+| [dotnet-trace-collect](.agents/skills/dotnet-trace-collect/SKILL.md) | Capturing diagnostic artifacts to diagnose production .NET performance issues |
+| [dump-collect](.agents/skills/dump-collect/SKILL.md) | Configure and collect crash dumps for modern .NET applications |
+| [migrate-nullable-references](.agents/skills/migrate-nullable-references/SKILL.md) | Enable nullable reference types in a C# project and systematically resolve all warnings |
+
 ## Resources
 
 - [README.md](README.md) - Overview and provider links

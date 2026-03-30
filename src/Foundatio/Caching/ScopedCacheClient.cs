@@ -64,12 +64,12 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public ICacheClient UnscopedCache { get; private set; }
 
-    public string Scope { get; private set; }
+    public string? Scope { get; private set; }
 
     ILogger IHaveLogger.Logger => UnscopedCache.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedCache.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedCache.GetTimeProvider();
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
 
     public void SetScope(string scope)
     {
@@ -106,7 +106,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return unscopedKeys;
     }
 
-    protected string GetScopedCacheKey(string unscopedKey)
+    protected string? GetScopedCacheKey(string unscopedKey)
     {
         return unscopedKey?.Substring(_keyPrefix.Length);
     }
@@ -125,7 +125,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.RemoveIfEqualAsync(GetUnscopedCacheKey(key), expected);
     }
 
-    public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         if (keys is null)
             return RemoveByPrefixAsync(String.Empty);
@@ -150,7 +150,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         ArgumentNullException.ThrowIfNull(keys);
 
         var scopedDictionary = await UnscopedCache.GetAllAsync<T>(GetUnscopedCacheKeys(keys)).AnyContext();
-        return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
+        return scopedDictionary.ToDictionary(kvp => GetScopedCacheKey(kvp.Key)!, kvp => kvp.Value);
     }
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -232,7 +232,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
         var unscopedKeys = GetUnscopedCacheKeys(keys);
         var unscopedExpirations = await UnscopedCache.GetAllExpirationAsync(unscopedKeys).AnyContext();
-        return unscopedExpirations.ToDictionary(kvp => GetScopedCacheKey(kvp.Key), kvp => kvp.Value);
+        return unscopedExpirations.ToDictionary(kvp => GetScopedCacheKey(kvp.Key)!, kvp => kvp.Value);
     }
 
     public Task SetExpirationAsync(string key, TimeSpan expiresIn)

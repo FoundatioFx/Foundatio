@@ -14,9 +14,9 @@ public class CacheValue<T>
 
     public T Value { get; }
 
-    public static CacheValue<T> Null { get; } = new CacheValue<T>(default, true);
+    public static CacheValue<T> Null { get; } = new CacheValue<T>(default!, true);
 
-    public static CacheValue<T> NoValue { get; } = new CacheValue<T>(default, false);
+    public static CacheValue<T> NoValue { get; } = new CacheValue<T>(default!, false);
 
     public override string ToString()
     {

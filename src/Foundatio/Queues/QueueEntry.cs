@@ -10,12 +10,12 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     private readonly IQueue<T> _queue;
     private readonly T _original;
 
-    public QueueEntry(string id, string correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
+    public QueueEntry(string id, string? correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
     {
         Id = id;
         CorrelationId = correlationId;
         _original = value;
-        Value = value?.DeepClone();
+        Value = value.DeepClone();
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
@@ -23,11 +23,11 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     }
 
     public string Id { get; }
-    public string CorrelationId { get; }
+    public string? CorrelationId { get; }
     public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
-    public Type EntryType => Value?.GetType();
+    public Type? EntryType => Value?.GetType();
     public object GetValue() => Value;
     public T Value { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
@@ -82,7 +82,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 public interface IQueueEntryMetadata
 {
     string Id { get; }
-    string CorrelationId { get; }
+    string? CorrelationId { get; }
     IDictionary<string, string> Properties { get; }
     DateTime EnqueuedTimeUtc { get; }
     DateTime RenewedTimeUtc { get; }

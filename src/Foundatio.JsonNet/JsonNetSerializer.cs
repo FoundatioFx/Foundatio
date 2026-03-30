@@ -8,12 +8,12 @@ public class JsonNetSerializer : ITextSerializer
 {
     private readonly JsonSerializer _serializer;
 
-    public JsonNetSerializer(JsonSerializerSettings settings = null)
+    public JsonNetSerializer(JsonSerializerSettings? settings = null)
     {
         _serializer = JsonSerializer.Create(settings ?? new JsonSerializerSettings());
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize(object? value, Stream output)
     {
         ArgumentNullException.ThrowIfNull(output);
 
@@ -23,7 +23,7 @@ public class JsonNetSerializer : ITextSerializer
         writer.Flush();
     }
 
-    public object Deserialize(Stream data, Type objectType)
+    public object? Deserialize(Stream data, Type objectType)
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(objectType);

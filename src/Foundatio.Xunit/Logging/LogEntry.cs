@@ -7,13 +7,13 @@ namespace Foundatio.Xunit;
 public class LogEntry
 {
     public DateTimeOffset Date { get; set; }
-    public string CategoryName { get; set; }
+    public string CategoryName { get; set; } = null!;
     public LogLevel LogLevel { get; set; }
-    public object[] Scopes { get; set; }
+    public object[] Scopes { get; set; } = null!;
     public EventId EventId { get; set; }
-    public object State { get; set; }
-    public Exception Exception { get; set; }
-    public Func<object, Exception, string> Formatter { get; set; }
+    public object? State { get; set; }
+    public Exception? Exception { get; set; }
+    public Func<object?, Exception?, string> Formatter { get; set; } = null!;
     public IDictionary<string, object> Properties { get; set; } = new Dictionary<string, object>();
 
     public string Message => Formatter(State, Exception);

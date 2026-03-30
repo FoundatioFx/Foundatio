@@ -10,7 +10,7 @@ namespace Foundatio.Tests.Jobs;
 
 public class ThrottledJob : JobWithLockBase
 {
-    public ThrottledJob(ICacheClient client, ILoggerFactory loggerFactory = null) : base(loggerFactory)
+    public ThrottledJob(ICacheClient client, ILoggerFactory? loggerFactory = null) : base(loggerFactory)
     {
         _locker = new ThrottlingLockProvider(client, 1, TimeSpan.FromMilliseconds(100), null, null, loggerFactory);
     }
@@ -18,7 +18,7 @@ public class ThrottledJob : JobWithLockBase
     private readonly ILockProvider _locker;
     public int RunCount { get; set; }
 
-    protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default)
+    protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken = default)
     {
         return _locker.AcquireAsync(nameof(ThrottledJob), acquireTimeout: TimeSpan.Zero);
     }

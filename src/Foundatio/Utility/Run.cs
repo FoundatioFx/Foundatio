@@ -9,7 +9,7 @@ namespace Foundatio.Utility;
 
 public static class Run
 {
-    public static Task DelayedAsync(TimeSpan delay, Func<Task> action, TimeProvider timeProvider = null, CancellationToken cancellationToken = default)
+    public static Task DelayedAsync(TimeSpan delay, Func<Task> action, TimeProvider? timeProvider = null, CancellationToken cancellationToken = default)
     {
         timeProvider ??= TimeProvider.System;
 
@@ -29,17 +29,17 @@ public static class Run
     }
 
     [Obsolete("Use ResiliencePolicy instead.")]
-    public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
+    public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider? timeProvider = null, CancellationToken cancellationToken = default, ILogger? logger = null)
     {
         return WithRetriesAsync<object>(async () =>
         {
             await action().AnyContext();
-            return null;
+            return null!;
         }, maxAttempts, retryInterval, timeProvider, cancellationToken, logger);
     }
 
     [Obsolete("Use ResiliencePolicy instead.")]
-    public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider timeProvider = null, CancellationToken cancellationToken = default, ILogger logger = null)
+    public static async Task<T> WithRetriesAsync<T>(Func<Task<T>> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider? timeProvider = null, CancellationToken cancellationToken = default, ILogger? logger = null)
     {
         var resiliencePolicy = new ResiliencePolicy(logger ?? NullLogger.Instance, timeProvider ?? TimeProvider.System) { MaxAttempts = maxAttempts, Delay = retryInterval };
         return await resiliencePolicy.ExecuteAsync(async _ => await action(), cancellationToken).AnyContext();

@@ -1,11 +1,13 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Foundatio.Utility;
 
 internal static class ExceptionExtensions
 {
-    public static Exception GetInnermostException(this Exception exception)
+    [return: NotNullIfNotNull(nameof(exception))]
+    public static Exception? GetInnermostException(this Exception? exception)
     {
         if (exception == null)
             return null;

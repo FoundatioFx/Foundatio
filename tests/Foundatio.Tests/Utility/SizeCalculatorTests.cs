@@ -536,14 +536,14 @@ public class SizeCalculatorTests : TestWithLoggingBase
     private class SimpleTestObject
     {
         public int Id { get; set; }
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public double Value { get; set; }
     }
 
     private class NestedTestObject
     {
         public int Id { get; set; }
-        public SimpleTestObject Inner { get; set; }
+        public SimpleTestObject? Inner { get; set; }
     }
 
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 
@@ -14,8 +15,8 @@ public interface ISerializer
     /// </summary>
     /// <param name="data">The stream containing the serialized data.</param>
     /// <param name="objectType">The type of object to deserialize.</param>
-    /// <returns>The deserialized object.</returns>
-    object Deserialize(Stream data, Type objectType);
+    /// <returns>The deserialized object, or null if the serialized data represents a null value.</returns>
+    object? Deserialize(Stream data, Type objectType);
 
     /// <summary>
     /// Serializes an object to the specified output stream.
@@ -23,7 +24,7 @@ public interface ISerializer
     /// <param name="value">The object to serialize. Null values are valid and will be serialized
     /// (e.g., as "null" for JSON serializers or nil markers for binary serializers).</param>
     /// <param name="output">The stream to write the serialized data to.</param>
-    void Serialize(object value, Stream output);
+    void Serialize(object? value, Stream output);
 }
 
 /// <summary>
@@ -41,14 +42,16 @@ public static class DefaultSerializer
 
 public static class SerializerExtensions
 {
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, Stream data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
 
-        return (T)serializer.Deserialize(data, typeof(T));
+        return (T)serializer.Deserialize(data, typeof(T))!;
     }
 
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, byte[] data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -57,10 +60,10 @@ public static class SerializerExtensions
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
         using var stream = new MemoryStream(data);
-        return (T)serializer.Deserialize(stream, typeof(T));
+        return (T)serializer.Deserialize(stream, typeof(T))!;
     }
 
-    public static object Deserialize(this ISerializer serializer, byte[] data, Type objectType)
+    public static object? Deserialize(this ISerializer serializer, byte[] data, Type objectType)
     {
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
@@ -72,6 +75,7 @@ public static class SerializerExtensions
         return serializer.Deserialize(stream, objectType);
     }
 
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, string data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -79,10 +83,10 @@ public static class SerializerExtensions
 
         var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
         using var stream = new MemoryStream(bytes);
-        return (T)serializer.Deserialize(stream, typeof(T));
+        return (T)serializer.Deserialize(stream, typeof(T))!;
     }
 
-    public static object Deserialize(this ISerializer serializer, string data, Type objectType)
+    public static object? Deserialize(this ISerializer serializer, string data, Type objectType)
     {
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentException.ThrowIfNullOrWhiteSpace(data);

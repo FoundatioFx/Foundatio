@@ -63,7 +63,7 @@ public interface IQueue<T> : IQueue where T : class
     /// <param name="data">The message payload to enqueue.</param>
     /// <param name="options">Optional settings for delivery delay, correlation ID, and custom properties.</param>
     /// <returns>The unique identifier assigned to the queued entry.</returns>
-    Task<string> EnqueueAsync(T data, QueueEntryOptions options = null);
+    Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null);
 
     /// <summary>
     /// Retrieves and locks the next available item from the queue.
@@ -71,14 +71,14 @@ public interface IQueue<T> : IQueue where T : class
     /// </summary>
     /// <param name="cancellationToken">Token to cancel the wait for an item.</param>
     /// <returns>The dequeued entry, or null if cancelled before an item became available.</returns>
-    Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
+    Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken);
 
     /// <summary>
     /// Retrieves and locks the next available item from the queue.
     /// </summary>
     /// <param name="timeout">Maximum time to wait for an item. Defaults to 30 seconds.</param>
     /// <returns>The dequeued entry, or null if no item was available within the timeout.</returns>
-    Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
+    Task<IQueueEntry<T>?> DequeueAsync(TimeSpan? timeout = null);
 
     /// <summary>
     /// Extends the processing lock on a queue entry to prevent it from being redelivered.
@@ -207,12 +207,12 @@ public record QueueEntryOptions
     /// A unique identifier for the message. If not specified, one will be generated.
     /// Can be used for deduplication or idempotency checks.
     /// </summary>
-    public string UniqueId { get; set; }
+    public string? UniqueId { get; set; }
 
     /// <summary>
     /// A correlation identifier for distributed tracing across services.
     /// </summary>
-    public string CorrelationId { get; set; }
+    public string? CorrelationId { get; set; }
 
     /// <summary>
     /// Delay before the message becomes visible for processing.
@@ -234,17 +234,17 @@ public class EnqueuingEventArgs<T> : CancelEventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The message payload being enqueued.
     /// </summary>
-    public T Data { get; set; }
+    public required T Data { get; set; }
 
     /// <summary>
     /// The options for the enqueue operation.
     /// </summary>
-    public QueueEntryOptions Options { get; set; }
+    public required QueueEntryOptions Options { get; set; }
 }
 
 /// <summary>
@@ -256,12 +256,12 @@ public class EnqueuedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The queue entry that was enqueued.
     /// </summary>
-    public IQueueEntry<T> Entry { get; set; }
+    public required IQueueEntry<T> Entry { get; set; }
 }
 
 /// <summary>
@@ -273,12 +273,12 @@ public class DequeuedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The queue entry that was dequeued.
     /// </summary>
-    public IQueueEntry<T> Entry { get; set; }
+    public required IQueueEntry<T> Entry { get; set; }
 }
 
 /// <summary>
@@ -290,12 +290,12 @@ public class LockRenewedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The queue entry whose lock was renewed.
     /// </summary>
-    public IQueueEntry<T> Entry { get; set; }
+    public required IQueueEntry<T> Entry { get; set; }
 }
 
 /// <summary>
@@ -307,12 +307,12 @@ public class CompletedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The queue entry that was completed.
     /// </summary>
-    public IQueueEntry<T> Entry { get; set; }
+    public required IQueueEntry<T> Entry { get; set; }
 }
 
 /// <summary>
@@ -324,12 +324,12 @@ public class AbandonedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 
     /// <summary>
     /// The queue entry that was abandoned.
     /// </summary>
-    public IQueueEntry<T> Entry { get; set; }
+    public required IQueueEntry<T> Entry { get; set; }
 }
 
 /// <summary>
@@ -341,5 +341,5 @@ public class QueueDeletedEventArgs<T> : EventArgs where T : class
     /// <summary>
     /// The queue raising the event.
     /// </summary>
-    public IQueue<T> Queue { get; set; }
+    public required IQueue<T> Queue { get; set; }
 }

@@ -17,11 +17,11 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
     protected readonly ILogger _logger;
     private readonly string _jobName;
 
-    public JobWithLockBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
+    public JobWithLockBase(ILoggerFactory? loggerFactory = null) : this(null, null, loggerFactory)
     {
     }
 
-    public JobWithLockBase(TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
+    public JobWithLockBase(TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         _jobName = GetType().Name;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -36,12 +36,12 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
-    public JobOptions Options { get; set; }
+    public JobOptions? Options { get; set; }
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        ILock lockValue;
-        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + Options?.Name ?? _jobName))
+        ILock? lockValue;
+        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + (Options?.Name ?? _jobName)))
         {
             lockActivity?.AddTag("job.id", JobId);
 
@@ -73,5 +73,5 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
 
     protected abstract Task<JobResult> RunInternalAsync(JobContext context);
 
-    protected abstract Task<ILock> GetLockAsync(CancellationToken cancellationToken = default);
+    protected abstract Task<ILock?> GetLockAsync(CancellationToken cancellationToken = default);
 }

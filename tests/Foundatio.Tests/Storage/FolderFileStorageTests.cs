@@ -159,7 +159,7 @@ public class FolderFileStorageTests : FileStorageTestsBase
             Assert.Empty(result.Files);
 
             const string directory = "EmptyDirectory/";
-            string folder = storage is FolderFileStorage folderStorage ? folderStorage.Folder : null;
+            string? folder = storage is FolderFileStorage folderStorage ? folderStorage.Folder : null;
             Assert.NotNull(folder);
             Directory.CreateDirectory(Path.Combine(folder, directory));
 

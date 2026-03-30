@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,7 +20,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
     {
     }
 
-    protected virtual ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+    protected virtual ICacheClient? GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
         return null;
     }
@@ -173,7 +174,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.False(await cache.ExistsAsync("ORDERID"));
 
             // Null stored value still exists
-            SimpleModel nullable = null;
+            SimpleModel? nullable = null;
             await cache.SetAsync("nullable", nullable);
             Assert.True(await cache.ExistsAsync("nullable"));
 
@@ -229,7 +230,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.ExistsAsync(null));
+                await cache.ExistsAsync(null!));
 
             await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.ExistsAsync(String.Empty));
@@ -320,11 +321,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             // Null keys collection throws ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllExpirationAsync(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllExpirationAsync(null!));
 
             // Keys containing null throws ArgumentNullException
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.GetAllExpirationAsync(["key1", null, "key2"]));
+                await cache.GetAllExpirationAsync(["key1", null!, "key2"]));
 
             // Keys containing empty string throws ArgumentException
             await Assert.ThrowsAsync<ArgumentException>(async () =>
@@ -346,11 +347,11 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             // Null keys collection throws ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllAsync<string>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAllAsync<string>(null!));
 
             // Keys containing null throws ArgumentNullException
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.GetAllAsync<string>(["key1", null, "key2"]));
+                await cache.GetAllAsync<string>(["key1", null!, "key2"]));
 
             // Keys containing empty string throws ArgumentException
             await Assert.ThrowsAsync<ArgumentException>(async () =>
@@ -388,7 +389,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Test with complex objects including null values
             await cache.SetAsync("obj1", new SimpleModel { Data1 = "data 1", Data2 = 1 });
             await cache.SetAsync("Obj1", new SimpleModel { Data1 = "data 2", Data2 = 2 });  // Mixed case
-            await cache.SetAsync("objNull", (SimpleModel)null);
+            await cache.SetAsync("objNull", (SimpleModel?)null);
             var objResult = await cache.GetAllAsync<SimpleModel>(["obj1", "Obj1", "objNull", "objMissing"]);
             Assert.NotNull(objResult);
             Assert.Equal(4, objResult.Count);
@@ -549,7 +550,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetAsync<string>(null!));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetAsync<string>(String.Empty));
         }
     }
@@ -601,7 +602,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetExpirationAsync(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.GetExpirationAsync(null!));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.GetExpirationAsync(String.Empty));
         }
     }
@@ -825,7 +826,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.IncrementAsync(null!, 1));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.IncrementAsync(String.Empty, 1));
         }
     }
@@ -1194,13 +1195,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Null key
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync(null!, 1));
 
             // Empty key
             await Assert.ThrowsAsync<ArgumentException>(() => cache.ListAddAsync(String.Empty, "value"));
 
             // Null collection
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync("list:validation", null as List<int>));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListAddAsync("list:validation", (null as List<int>)!));
 
             // Existing non-list key
             await Assert.ThrowsAnyAsync<Exception>(async () =>
@@ -1269,8 +1270,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Null items are ignored
-            Assert.Equal(0, await cache.ListAddAsync<string>(key, [null]));
-            Assert.Equal(1, await cache.ListAddAsync(key, ["1", null]));
+            Assert.Equal(0, await cache.ListAddAsync<string>(key, [null!]));
+            Assert.Equal(1, await cache.ListAddAsync(key, ["1", null!]));
             var stringResult = await cache.GetListAsync<string>(key);
             Assert.NotNull(stringResult);
             Assert.Single(stringResult.Value);
@@ -1288,13 +1289,13 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Null key throws ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null, 1));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync(null!, 1));
 
             // Empty key throws ArgumentException
             await Assert.ThrowsAsync<ArgumentException>(() => cache.ListRemoveAsync(String.Empty, "value"));
 
             // Null collection throws ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync("list:remove:test", null as List<int>));
+            await Assert.ThrowsAsync<ArgumentNullException>(() => cache.ListRemoveAsync("list:remove:test", (null as List<int>)!));
         }
     }
 
@@ -1326,8 +1327,8 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             // Null items in collection are ignored - use different key to avoid type conflict
             const string nullItemsKey = "list:remove:nullitems";
             await cache.ListAddAsync(nullItemsKey, ["1"]);
-            Assert.Equal(0, await cache.ListRemoveAsync<string>(nullItemsKey, [null]));
-            Assert.Equal(1, await cache.ListRemoveAsync(nullItemsKey, ["1", null]));
+            Assert.Equal(0, await cache.ListRemoveAsync<string>(nullItemsKey, [null!]));
+            Assert.Equal(1, await cache.ListRemoveAsync(nullItemsKey, ["1", null!]));
         }
     }
 
@@ -1501,7 +1502,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         {
             // Keys containing null throws ArgumentNullException
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.RemoveAllAsync(["key1", null, "key2"]));
+                await cache.RemoveAllAsync(["key1", null!, "key2"]));
 
             // Keys containing empty string throws ArgumentException
             await Assert.ThrowsAsync<ArgumentException>(async () =>
@@ -1531,7 +1532,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.RemoveAsync(null!));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.RemoveAsync(String.Empty));
         }
     }
@@ -1697,7 +1698,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("order:456", 2);
             await cache.SetAsync("Product:789", 3);
 
-            int removed = await cache.RemoveByPrefixAsync(null);
+            int removed = await cache.RemoveByPrefixAsync(null!);
             Assert.Equal(3, removed);
             Assert.False(await cache.ExistsAsync("user:123"));
             Assert.False(await cache.ExistsAsync("order:456"));
@@ -1949,7 +1950,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
+    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove,
         int expectedRemovedCount)
     {
         var cache = GetCacheClient();
@@ -1969,7 +1970,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, (await scopedCache.GetAsync<int>(key)).Value);
 
             // Remove by prefix from scoped cache
-            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove));
+            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove!));
 
             // Verify unscoped cache state
             Assert.True(await cache.ExistsAsync(key));
@@ -1979,7 +1980,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1995,7 +1996,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from scoped cache - should only remove within scope
-            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix));
+            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix!));
             Assert.True(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
 
@@ -2003,7 +2004,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from unscoped cache - should remove both unscoped and scoped
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix!));
             Assert.False(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
         }
@@ -2506,7 +2507,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             // Null items throws ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync<string>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAllAsync<string>(null!));
 
             // Items containing empty key throws ArgumentException
             var itemsWithEmptyKey = new Dictionary<string, string> { { "key1", "value1" }, { String.Empty, "value2" } };
@@ -2799,7 +2800,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
         using (cache)
         {
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(null, "value"));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await cache.SetAsync(null!, "value"));
             await Assert.ThrowsAsync<ArgumentException>(async () => await cache.SetAsync(String.Empty, "value"));
         }
     }
@@ -2850,7 +2851,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAllAsync();
 
             // Test null reference type
-            await cache.SetAsync<SimpleModel>("nullable", null);
+            await cache.SetAsync<SimpleModel?>("nullable", null);
             var nullCacheValue = await cache.GetAsync<SimpleModel>("nullable");
             Assert.True(nullCacheValue.HasValue);
             Assert.True(nullCacheValue.IsNull);
@@ -2953,7 +2954,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await Assert.ThrowsAsync<ArgumentNullException>(async () =>
-                await cache.SetExpirationAsync(null, TimeSpan.FromMinutes(1)));
+                await cache.SetExpirationAsync(null!, TimeSpan.FromMinutes(1)));
 
             await Assert.ThrowsAsync<ArgumentException>(async () =>
                 await cache.SetExpirationAsync(String.Empty, TimeSpan.FromMinutes(1)));
@@ -3538,31 +3539,31 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
 
 public class SimpleModel
 {
-    public string Data1 { get; set; }
+    public string? Data1 { get; set; }
     public int Data2 { get; set; }
 }
 
 public class ComplexModel
 {
-    public string Data1 { get; set; }
+    public string? Data1 { get; set; }
     public int Data2 { get; set; }
-    public SimpleModel Simple { get; set; }
-    public ICollection<SimpleModel> Simples { get; set; }
+    public SimpleModel? Simple { get; set; }
+    public ICollection<SimpleModel>? Simples { get; set; }
     public bool Data3 { get; set; }
-    public IDictionary<string, SimpleModel> DictionarySimples { get; set; }
-    public SampleDictionary<string, SimpleModel> DerivedDictionarySimples { get; set; }
+    public IDictionary<string, SimpleModel>? DictionarySimples { get; set; }
+    public SampleDictionary<string, SimpleModel>? DerivedDictionarySimples { get; set; }
 }
 
 public class MyData
 {
     private readonly string _blah = "blah";
     public string Blah => _blah;
-    public string Type { get; set; }
+    public string Type { get; set; } = null!;
     public DateTimeOffset Date { get; set; }
-    public string Message { get; set; }
+    public string Message { get; set; } = null!;
 }
 
-public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue>
+public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue> where TKey : notnull
 {
     private readonly IDictionary<TKey, TValue> _dictionary;
 
@@ -3621,7 +3622,7 @@ public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue>
         return _dictionary.Contains(item);
     }
 
-    public bool TryGetValue(TKey key, out TValue value)
+    public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value)
     {
         return _dictionary.TryGetValue(key, out value);
     }

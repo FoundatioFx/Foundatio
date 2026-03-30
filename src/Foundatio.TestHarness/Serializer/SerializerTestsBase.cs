@@ -15,7 +15,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
     {
     }
 
-    protected virtual ISerializer GetSerializer()
+    protected virtual ISerializer? GetSerializer()
     {
         return null;
     }
@@ -28,10 +28,10 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
             return;
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((Stream)null));
-        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((byte[])null));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((Stream)null!));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((byte[])null!));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>([]));
-        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((string)null));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((string)null!));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>(String.Empty));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>("   "));
     }
@@ -87,8 +87,8 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         using var stream = new MemoryStream([0x7B, 0x7D]); // "{}"
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(null, typeof(object)));
-        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(stream, null));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(null!, typeof(object)));
+        Assert.Throws<ArgumentNullException>(() => serializer.Deserialize(stream, null!));
     }
 
     public virtual void Deserialize_WithValidBytes_ReturnsDeserializedObject()
@@ -109,6 +109,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         // Act
         byte[] bytes = serializer.SerializeToBytes(model);
         var actual = serializer.Deserialize<SerializeModel>(bytes);
+        Assert.NotNull(actual);
 
         // Assert
         Assert.Equal(model.IntProperty, actual.IntProperty);
@@ -118,6 +119,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         // Act
         string text = serializer.SerializeToString(model);
         actual = serializer.Deserialize<SerializeModel>(text);
+        Assert.NotNull(actual);
 
         // Assert
         Assert.Equal(model.IntProperty, actual.IntProperty);
@@ -167,6 +169,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         string text = serializer.SerializeToString(model);
         _logger.LogInformation(text);
         var actual = serializer.Deserialize<SerializeModel>(text);
+        Assert.NotNull(actual);
 
         // Assert
         Assert.Equal(model.IntProperty, actual.IntProperty);
@@ -184,7 +187,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
             return;
 
         // Act & Assert - only stream is validated (null value is allowed)
-        Assert.Throws<ArgumentNullException>(() => serializer.Serialize(new object(), null));
+        Assert.Throws<ArgumentNullException>(() => serializer.Serialize(new object(), null!));
     }
 
     public virtual void Serialize_WithNullValue_RoundTripsCorrectly()
@@ -195,11 +198,11 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
             return;
 
         // Act & Assert - extension methods produce valid output (not null)
-        var bytes = serializer.SerializeToBytes<object>(null);
+        var bytes = serializer.SerializeToBytes<object>(null!);
         Assert.NotNull(bytes);
         Assert.True(bytes.Length > 0);
 
-        var str = serializer.SerializeToString<object>(null);
+        var str = serializer.SerializeToString<object>(null!);
         Assert.NotNull(str);
         Assert.NotEmpty(str);
 
@@ -408,7 +411,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         // Assert
         Assert.NotNull(boolResult);
         Assert.True(boolResult is bool, $"Expected bool, got {boolResult?.GetType().Name}");
-        Assert.Equal(boolValue, (bool)boolResult);
+        Assert.Equal(boolValue, (bool)boolResult!);
 
         // Test negative number
         int negativeValue = -42;
@@ -433,7 +436,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
 [ShortRunJob]
 public abstract class SerializerBenchmarkBase
 {
-    private ISerializer _serializer;
+    private ISerializer _serializer = null!;
     private readonly SerializeModel _data = new()
     {
         IntProperty = 1,
@@ -442,7 +445,7 @@ public abstract class SerializerBenchmarkBase
         ObjectProperty = new SerializeModel { IntProperty = 1 }
     };
 
-    private byte[] _serializedData;
+    private byte[] _serializedData = null!;
 
     protected abstract ISerializer GetSerializer();
 
@@ -460,13 +463,13 @@ public abstract class SerializerBenchmarkBase
     }
 
     [Benchmark]
-    public SerializeModel Deserialize()
+    public SerializeModel? Deserialize()
     {
         return _serializer.Deserialize<SerializeModel>(_serializedData);
     }
 
     [Benchmark]
-    public SerializeModel RoundTrip()
+    public SerializeModel? RoundTrip()
     {
         byte[] serializedData = _serializer.SerializeToBytes(_data);
         return _serializer.Deserialize<SerializeModel>(serializedData);
@@ -476,9 +479,9 @@ public abstract class SerializerBenchmarkBase
 public class SerializeModel
 {
     public int IntProperty { get; set; }
-    public string StringProperty { get; set; }
-    public List<int> ListProperty { get; set; }
-    public object ObjectProperty { get; set; }
+    public string? StringProperty { get; set; }
+    public List<int>? ListProperty { get; set; }
+    public object? ObjectProperty { get; set; }
 }
 
 public class SerializeModelWithDateTime

@@ -14,7 +14,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T)], null, logger, timeProvider);
     }
@@ -28,7 +28,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T)], fallbackBuilder, logger, timeProvider);
     }
@@ -42,7 +42,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T1), typeof(T2)], null, logger, timeProvider);
     }
@@ -57,7 +57,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T1, T2>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T1), typeof(T2)], fallbackBuilder, logger, timeProvider);
     }
@@ -72,7 +72,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T1), typeof(T2), typeof(T3)], null, logger, timeProvider);
     }
@@ -88,7 +88,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy<T1, T2, T3>(this IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [typeof(T1), typeof(T2), typeof(T3)], fallbackBuilder, logger, timeProvider);
     }
@@ -101,7 +101,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type targetType, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type targetType, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, [targetType], null, logger, timeProvider);
     }
@@ -114,7 +114,7 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type[] targetTypes, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type[] targetTypes, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         return GetPolicy(provider, targetTypes, null, logger, timeProvider);
     }
@@ -128,13 +128,13 @@ public static class ResiliencePolicyExtensions
     /// <param name="logger">Optional logger to use for the created policy if not found in the provider.</param>
     /// <param name="timeProvider">Optional time provider to use for the created policy if not found in the provider.</param>
     /// <returns>The resolved or newly created <see cref="IResiliencePolicy"/>.</returns>
-    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type[] targetTypes, Action<ResiliencePolicyBuilder> fallbackBuilder, ILogger logger = null, TimeProvider timeProvider = null)
+    public static IResiliencePolicy GetPolicy(this IResiliencePolicyProvider provider, Type[] targetTypes, Action<ResiliencePolicyBuilder>? fallbackBuilder, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         if (provider != null)
         {
             foreach (var targetType in targetTypes)
             {
-                IResiliencePolicy policy = provider.GetPolicy(targetType.GetFriendlyTypeName(), false);
+                IResiliencePolicy? policy = provider.GetPolicy(targetType.GetFriendlyTypeName(), false);
                 if (policy != null)
                     return policy;
             }
@@ -143,7 +143,7 @@ public static class ResiliencePolicyExtensions
         return GetDefaultPolicy(provider, fallbackBuilder, logger, timeProvider);
     }
 
-    private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider provider, Action<ResiliencePolicyBuilder> fallbackBuilder = null, ILogger logger = null, TimeProvider timeProvider = null)
+    private static IResiliencePolicy GetDefaultPolicy(IResiliencePolicyProvider? provider, Action<ResiliencePolicyBuilder>? fallbackBuilder = null, ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         if (provider != null && provider.GetType() != typeof(ResiliencePolicyProvider))
         {

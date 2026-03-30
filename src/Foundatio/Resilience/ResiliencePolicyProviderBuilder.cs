@@ -15,7 +15,7 @@ public class ResiliencePolicyProviderBuilder
     /// </summary>
     /// <param name="timeProvider">An optional <see cref="TimeProvider"/> instance for controlling time-related behavior.</param>
     /// <param name="loggerFactory">An optional <see cref="ILoggerFactory"/> instance for logging.</param>
-    public ResiliencePolicyProviderBuilder(TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public ResiliencePolicyProviderBuilder(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
         _provider = new ResiliencePolicyProvider(timeProvider, loggerFactory);
     }
@@ -46,7 +46,7 @@ public class ResiliencePolicyProviderBuilder
     /// <param name="name">The name of the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/> for the name.</param>
     /// <returns>The configured <see cref="ResiliencePolicyProvider"/>.</returns>
-    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder>? builder = null)
     {
         return _provider.WithPolicy(name, builder);
     }
@@ -68,7 +68,7 @@ public class ResiliencePolicyProviderBuilder
     /// <param name="targetType">The target type for the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/> for the type.</param>
     /// <returns>The configured <see cref="ResiliencePolicyProvider"/>.</returns>
-    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder>? builder = null)
     {
         return _provider.WithPolicy(targetType, builder);
     }
@@ -90,7 +90,7 @@ public class ResiliencePolicyProviderBuilder
     /// <typeparam name="T">The target type for the policy.</typeparam>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/> for the type.</param>
     /// <returns>The configured <see cref="ResiliencePolicyProvider"/>.</returns>
-    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder>? builder = null)
     {
         return _provider.WithPolicy<T>(builder);
     }
@@ -110,7 +110,7 @@ public class ResiliencePolicyProviderBuilder
     /// </summary>
     /// <param name="builder">An action to configure the default <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The configured <see cref="ResiliencePolicyProvider"/>.</returns>
-    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder>? builder = null)
     {
         return _provider.WithDefaultPolicy(builder);
     }

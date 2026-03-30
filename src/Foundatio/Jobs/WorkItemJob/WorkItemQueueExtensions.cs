@@ -18,7 +18,7 @@ public static class WorkItemQueueExtensions
         {
             Data = bytes,
             WorkItemId = jobId,
-            Type = typeof(T).AssemblyQualifiedName,
+            Type = typeof(T).AssemblyQualifiedName!,
             SendProgressReports = includeProgressReporting
         };
 
@@ -35,19 +35,19 @@ public static class WorkItemQueueExtensions
         return jobId;
     }
 
-    private static string GetDefaultSubMetricName(WorkItemData data)
+    private static string? GetDefaultSubMetricName(WorkItemData data)
     {
         if (String.IsNullOrEmpty(data.Type))
             return null;
 
-        string type = GetTypeName(data.Type);
+        string? type = GetTypeName(data.Type);
         if (type != null && type.EndsWith("WorkItem"))
             type = type.Substring(0, type.Length - 8);
 
         return type?.ToLowerInvariant();
     }
 
-    private static string GetTypeName(string assemblyQualifiedName)
+    private static string? GetTypeName(string assemblyQualifiedName)
     {
         if (String.IsNullOrEmpty(assemblyQualifiedName))
             return null;

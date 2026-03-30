@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Utility;
 
@@ -16,7 +17,7 @@ public static class TimeUnit
         throw new ArgumentException($"Unable to parse value '{value}' as a valid time value");
     }
 
-    public static bool TryParse(string value, out TimeSpan? time)
+    public static bool TryParse(string value, [NotNullWhen(true)] out TimeSpan? time)
     {
         time = null;
         if (String.IsNullOrEmpty(value))

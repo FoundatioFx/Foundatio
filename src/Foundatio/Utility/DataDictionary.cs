@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Foundatio.Serializer;
 
 namespace Foundatio.Utility;
@@ -21,7 +22,7 @@ public class DataDictionary : Dictionary<string, object>
 
     public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) { }
 
-    public DataDictionary(IEnumerable<KeyValuePair<string, object>> values) : base(StringComparer.OrdinalIgnoreCase)
+    public DataDictionary(IEnumerable<KeyValuePair<string, object>>? values) : base(StringComparer.OrdinalIgnoreCase)
     {
         if (values != null)
         {
@@ -33,21 +34,22 @@ public class DataDictionary : Dictionary<string, object>
 
 public static class DataDictionaryExtensions
 {
-    public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key)
+    public static object? GetValueOrDefault(this IDictionary<string, object> dictionary, string key)
     {
-        return dictionary.TryGetValue(key, out object value) ? value : null;
+        return dictionary.TryGetValue(key, out object? value) ? value : null;
     }
 
     public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, object defaultValue)
     {
-        return dictionary.TryGetValue(key, out object value) ? value : defaultValue;
+        return dictionary.TryGetValue(key, out object? value) ? value : defaultValue;
     }
 
     public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, Func<object> defaultValueProvider)
     {
-        return dictionary.TryGetValue(key, out object value) ? value : defaultValueProvider();
+        return dictionary.TryGetValue(key, out object? value) ? value : defaultValueProvider();
     }
 
+    [return: MaybeNull]
     public static T GetValue<T>(this IDictionary<string, object> dictionary, string key)
     {
         if (!dictionary.ContainsKey(key))
@@ -56,7 +58,8 @@ public static class DataDictionaryExtensions
         return dictionary.GetValueOrDefault<T>(key);
     }
 
-    public static T GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, T defaultValue = default)
+    [return: MaybeNull]
+    public static T GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, [AllowNull] T defaultValue = default)
     {
         if (!dictionary.ContainsKey(key))
             return defaultValue;
@@ -84,7 +87,7 @@ public static class DataDictionaryExtensions
 
     public static string GetString(this IDictionary<string, object> dictionary, string name, string @default)
     {
-        if (!dictionary.TryGetValue(name, out object value))
+        if (!dictionary.TryGetValue(name, out object? value))
             return @default;
 
         if (value is string s)
@@ -106,13 +109,14 @@ public static class HaveDataExtensions
     /// <param name="defaultValue">The default value to return if the value doesn't exist</param>
     /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>
     /// <returns>The value from the data dictionary converted to the desired type</returns>
-    public static T GetDataOrDefault<T>(this IHaveData target, string key, T defaultValue = default, ISerializer serializer = null)
+    [return: MaybeNull]
+    public static T GetDataOrDefault<T>(this IHaveData target, string key, [AllowNull] T defaultValue = default, ISerializer? serializer = null)
     {
         if (serializer == null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
         if (target.Data.TryGetValue(key, out var value))
-            return value.ToType<T>(serializer);
+            return value.ToType<T>(serializer!);
 
         return defaultValue;
     }
@@ -127,18 +131,18 @@ public static class HaveDataExtensions
     /// <param name="value">The value from the data dictionary converted to the desired type</param>
     /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>
     /// <returns>Whether or not we successfully got and converted the data</returns>
-    public static bool TryGetData<T>(this IHaveData target, string key, out T value, ISerializer serializer = null)
+    public static bool TryGetData<T>(this IHaveData target, string key, [MaybeNullWhen(false)] out T value, ISerializer? serializer = null)
     {
         if (serializer == null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
-        value = default;
+        value = default!;
 
-        if (!target.Data.TryGetValue(key, out object dataValue))
+        if (!target.Data.TryGetValue(key, out object? dataValue))
             return false;
 
         value = dataValue.ToType<T>(serializer);
 
-        return true;
+        return value is not null;
     }
 }

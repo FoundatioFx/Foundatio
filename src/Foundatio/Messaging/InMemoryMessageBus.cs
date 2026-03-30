@@ -50,7 +50,7 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            SendDelayedMessage(mappedType, message, options);
+            SendDelayedMessage(mappedType!, message, options);
             return;
         }
 

@@ -17,5 +17,5 @@ public interface IResiliencePolicyProvider
     /// <param name="name">The name of the policy to retrieve.</param>
     /// <param name="useDefault">If true, returns the default policy if the named policy is not found; otherwise, returns null.</param>
     /// <returns>The <see cref="IResiliencePolicy"/> instance, or null if not found and <paramref name="useDefault"/> is false.</returns>
-    IResiliencePolicy GetPolicy(string name, bool useDefault = true);
+    IResiliencePolicy? GetPolicy(string name, bool useDefault = true);
 }

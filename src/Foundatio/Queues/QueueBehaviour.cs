@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 
 namespace Foundatio.Queues;
@@ -11,9 +12,10 @@ public interface IQueueBehavior<T> where T : class
 
 public abstract class QueueBehaviorBase<T> : IQueueBehavior<T>, IDisposable where T : class
 {
-    protected IQueue<T> _queue;
+    protected IQueue<T> _queue = null!; // Set in Attach() before any other method is called
     private readonly List<IDisposable> _disposables = new();
 
+    [MemberNotNull(nameof(_queue))]
     public virtual void Attach(IQueue<T> queue)
     {
         ArgumentNullException.ThrowIfNull(queue);
