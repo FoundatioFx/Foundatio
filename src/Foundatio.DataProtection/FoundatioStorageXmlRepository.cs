@@ -28,21 +28,21 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory? loggerFactory = null) : this(storage, null!, loggerFactory)
+    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory? loggerFactory = null) : this(storage, null, loggerFactory)
     {
     }
 
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
+    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         if (storage == null)
             throw new ArgumentNullException(nameof(storage));
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
-        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
+        _resiliencePolicy = resiliencePolicyProvider?.GetPolicy<FoundatioStorageXmlRepository>(_logger) ?? new ResiliencePolicy(_logger);
     }
 
     /// <inheritdoc />
