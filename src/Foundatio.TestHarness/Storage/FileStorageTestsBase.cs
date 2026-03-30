@@ -267,7 +267,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
             await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Read))
             {
-                string result = await new StreamReader(stream!).ReadToEndAsync();
+                using var reader = new StreamReader(stream!);
+                string result = await reader.ReadToEndAsync();
                 Assert.Equal(await File.ReadAllTextAsync(readmeFile), result);
             }
         }

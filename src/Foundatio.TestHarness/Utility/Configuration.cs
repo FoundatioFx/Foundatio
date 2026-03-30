@@ -29,13 +29,15 @@ public static class Configuration
     private static string GetBasePath()
     {
         string? basePath = Path.GetDirectoryName(typeof(Configuration).GetTypeInfo().Assembly.Location);
+        if (basePath is null)
+            return Path.GetFullPath(".");
 
         for (int i = 0; i < 5; i++)
         {
-            if (File.Exists(Path.Combine(basePath!, "appsettings.json")))
-                return Path.GetFullPath(basePath!);
+            if (File.Exists(Path.Combine(basePath, "appsettings.json")))
+                return Path.GetFullPath(basePath);
 
-            basePath += "..\\";
+            basePath = Path.Combine(basePath, "..");
         }
 
         return Path.GetFullPath(".");

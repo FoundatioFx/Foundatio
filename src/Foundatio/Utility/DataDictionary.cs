@@ -141,8 +141,8 @@ public static class HaveDataExtensions
         if (!target.Data.TryGetValue(key, out object? dataValue))
             return false;
 
-        value = dataValue.ToType<T>(serializer!)!;
+        value = dataValue.ToType<T>(serializer);
 
-        return true;
+        return value is not null;
     }
 }

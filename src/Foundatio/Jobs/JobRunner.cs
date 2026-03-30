@@ -229,6 +229,7 @@ public class JobRunner
     }
 
     private static CancellationTokenSource? _jobShutdownCancellationTokenSource;
+    private static FileSystemWatcher? _shutdownFileWatcher;
     private static readonly object _lock = new();
     public static CancellationToken GetShutdownCancellationToken(ILogger? logger = null)
     {
@@ -261,12 +262,12 @@ public class JobRunner
                 logger?.LogInformation("Job shutdown signaled");
             });
 
-            var watcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile)!);
-            watcher.Created += handler;
-            watcher.Changed += handler;
-            watcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
-            watcher.IncludeSubdirectories = false;
-            watcher.EnableRaisingEvents = true;
+            _shutdownFileWatcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile)!);
+            _shutdownFileWatcher.Created += handler;
+            _shutdownFileWatcher.Changed += handler;
+            _shutdownFileWatcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;
+            _shutdownFileWatcher.IncludeSubdirectories = false;
+            _shutdownFileWatcher.EnableRaisingEvents = true;
 
             return _jobShutdownCancellationTokenSource.Token;
         }

@@ -170,7 +170,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         if (entry is null)
             return;
 
-        activity.AddTag("EntryType", entry.EntryType!.FullName);
+        activity.AddTag("EntryType", entry.EntryType?.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
     }
@@ -184,7 +184,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out string? traceState))
             activity.TraceStateString = traceState;
 
-        activity.DisplayName = $"Queue: {entry.EntryType!.Name}";
+        activity.DisplayName = $"Queue: {entry.EntryType?.Name}";
 
         EnrichProcessQueueEntryActivity(activity, entry);
 
@@ -196,7 +196,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         if (!activity.IsAllDataRequested)
             return;
 
-        activity.AddTag("EntryType", entry.EntryType!.FullName);
+        activity.AddTag("EntryType", entry.EntryType?.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
 

@@ -206,12 +206,12 @@ public class SizeCalculator : IDisposable
     /// </para>
     /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown if the calculator has been disposed.</exception>
-    public long CalculateSize(object value)
+    public long CalculateSize(object? value)
     {
         return CalculateSizeInternal(value, 0);
     }
 
-    private long CalculateSizeInternal(object value, int depth)
+    private long CalculateSizeInternal(object? value, int depth)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
