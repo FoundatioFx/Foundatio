@@ -76,7 +76,7 @@ public static class JobExtensions
         bool isQueueJob = job.GetType().GetInterfaces().Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(IQueueJob<>));
 
         string jobId = Guid.NewGuid().ToString("N").Substring(0, 10);
-        using var jobScope = logger.BeginScope(s => s.Property("job.name", options.Name!).Property("job.id", jobId));
+        using var jobScope = logger.BeginScope(s => s.Property("job.name", options.Name ?? string.Empty).Property("job.id", jobId));
         logger.LogInformation("Starting continuous job type {JobName} on machine {MachineName}...", options.Name, Environment.MachineName);
 
         while (!cancellationToken.IsCancellationRequested)

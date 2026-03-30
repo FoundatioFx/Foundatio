@@ -71,16 +71,17 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
         }
 
-        return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
-    }
-
-    public async Task<JobResult> ProcessAsync(IQueueEntry<T>? queueEntry, CancellationToken cancellationToken)
-    {
         if (cancellationToken.IsCancellationRequested && queueEntry == null)
             return JobResult.Cancelled;
 
         if (queueEntry == null)
             return JobResult.SuccessWithMessage("No queue entry to process.");
+
+        return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
+    }
+
+    public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken)
+    {
 
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s

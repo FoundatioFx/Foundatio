@@ -92,8 +92,8 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!await OnEnqueuingAsync(data, options).AnyContext())
             return null;
 
-        var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, _timeProvider.GetUtcNow().UtcDateTime, 0);
-        entry.Properties.AddRange((options?.Properties)!);
+        var entry = new QueueEntry<T>(id, options.CorrelationId, data.DeepClone(), this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+        entry.Properties.AddRange(options.Properties);
 
         Interlocked.Increment(ref _enqueuedCount);
 

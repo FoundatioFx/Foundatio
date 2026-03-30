@@ -55,16 +55,17 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
         }
 
-        return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
-    }
-
-    public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData>? queueEntry, CancellationToken cancellationToken)
-    {
         if (cancellationToken.IsCancellationRequested && queueEntry == null)
             return JobResult.Cancelled;
 
         if (queueEntry == null)
             return JobResult.SuccessWithMessage("No queue entry to process.");
+
+        return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
+    }
+
+    public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken)
+    {
 
         if (cancellationToken.IsCancellationRequested)
         {

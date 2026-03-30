@@ -15,7 +15,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
         Id = id;
         CorrelationId = correlationId;
         _original = value;
-        Value = value?.DeepClone()!;
+        Value = value.DeepClone();
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
