@@ -116,7 +116,7 @@ public static class HaveDataExtensions
             serializer = haveSerializer.Serializer;
 
         if (target.Data.TryGetValue(key, out var value))
-            return value.ToType<T>(serializer!);
+            return value.ToType<T>(serializer);
 
         return defaultValue;
     }

@@ -287,7 +287,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
-            if (currentValue!.Equals(expected))
+            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
             {
                 _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
                 existingEntry.ExpiresAt = DateTime.MinValue;
@@ -1127,7 +1127,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
-            if (currentValue!.Equals(expected))
+            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
             {
                 oldSize = existingEntry.Size;
                 existingEntry.Value = value;

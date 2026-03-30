@@ -69,10 +69,17 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
         string normalizedPath = path.NormalizePath();
         string fullPath = Path.Combine(Folder, normalizedPath);
-        EnsureDirectory(fullPath);
 
-        var stream = streamMode == StreamMode.Read ? File.OpenRead(fullPath) : new FileStream(fullPath, FileMode.Create, FileAccess.Write);
-        return Task.FromResult<Stream?>(stream);
+        if (streamMode == StreamMode.Read)
+        {
+            if (!File.Exists(fullPath))
+                return Task.FromResult<Stream?>(null);
+
+            return Task.FromResult<Stream?>(File.OpenRead(fullPath));
+        }
+
+        EnsureDirectory(fullPath);
+        return Task.FromResult<Stream?>(new FileStream(fullPath, FileMode.Create, FileAccess.Write));
     }
 
     public Task<FileSpec?> GetFileInfoAsync(string path)
@@ -119,7 +126,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         try
         {
             using var fileStream = await GetFileStreamAsync(path, StreamMode.Write, cancellationToken);
-            await stream.CopyToAsync(fileStream!).AnyContext();
+            await stream.CopyToAsync(fileStream!).AnyContext(); // Write mode always returns non-null
             return true;
         }
         catch (Exception ex)

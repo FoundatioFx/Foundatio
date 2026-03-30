@@ -30,9 +30,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     public MessageBusBase(TOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
-        _timeProvider = options!.TimeProvider ?? TimeProvider.System;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
 
         _resiliencePolicyProvider = options.ResiliencePolicyProvider;
         _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<MessageBusBase<TOptions>, IMessageBus>(

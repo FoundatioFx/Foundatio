@@ -45,7 +45,7 @@ public class WorkItemHandlers
 
 public interface IWorkItemHandler
 {
-    Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default);
+    Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default);
     Task HandleItemAsync(WorkItemContext context);
     bool AutoRenewLockOnProgress { get; set; }
     ILogger Log { get; set; }
@@ -64,9 +64,9 @@ public abstract class WorkItemHandlerBase : IWorkItemHandler
         Log = logger ?? NullLogger.Instance;
     }
 
-    public virtual Task<ILock> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
+    public virtual Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(Disposable.EmptyLock);
+        return Task.FromResult<ILock?>(Disposable.EmptyLock);
     }
 
     public bool AutoRenewLockOnProgress { get; set; }
@@ -105,9 +105,6 @@ public class DelegateWorkItemHandler : WorkItemHandlerBase
 
     public override Task HandleItemAsync(WorkItemContext context)
     {
-        if (_handler == null)
-            return Task.CompletedTask;
-
         return _handler(context);
     }
 
