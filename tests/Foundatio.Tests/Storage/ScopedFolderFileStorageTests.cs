@@ -41,13 +41,13 @@ public class ScopedFolderFileStorageTests : FileStorageTestsBase
     [InlineData("|DataDirectory|\\temp")]
     [InlineData("|DataDirectory|/temp")]
     [Theory]
-    public void Constructor_ShouldInitializeProperties_WhenArgumentsAreValid(string scope)
+    public void Constructor_ShouldInitializeProperties_WhenArgumentsAreValid(string? scope)
     {
         var storage = GetStorage();
         if (storage == null)
             return;
 
-        var scopedStorage = new ScopedFileStorage(storage, scope);
+        var scopedStorage = new ScopedFileStorage(storage, scope!);
         Assert.Equal(storage, scopedStorage.UnscopedStorage);
 
         if (String.IsNullOrWhiteSpace(scope))

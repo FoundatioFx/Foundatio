@@ -18,9 +18,9 @@ public class ThrottledJob : JobWithLockBase
     private readonly ILockProvider _locker;
     public int RunCount { get; set; }
 
-    protected override async Task<ILock?> GetLockAsync(CancellationToken cancellationToken = default)
+    protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken = default)
     {
-        return await _locker.AcquireAsync(nameof(ThrottledJob), acquireTimeout: TimeSpan.Zero);
+        return _locker.AcquireAsync(nameof(ThrottledJob), acquireTimeout: TimeSpan.Zero);
     }
 
     protected override Task<JobResult> RunInternalAsync(JobContext context)

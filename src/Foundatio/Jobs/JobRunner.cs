@@ -269,6 +269,12 @@ public class JobRunner
             _shutdownFileWatcher.IncludeSubdirectories = false;
             _shutdownFileWatcher.EnableRaisingEvents = true;
 
+            _jobShutdownCancellationTokenSource.Token.Register(() =>
+            {
+                _shutdownFileWatcher?.Dispose();
+                _shutdownFileWatcher = null;
+            });
+
             return _jobShutdownCancellationTokenSource.Token;
         }
     }

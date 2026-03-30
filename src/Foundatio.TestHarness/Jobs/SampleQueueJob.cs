@@ -55,12 +55,12 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
         _lockProvider = lockProvider;
     }
 
-    protected override async Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
+    protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
     {
         if (_lockProvider != null)
-            return await _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
+            return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
 
-        return await base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
+        return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
     }
 
     protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
