@@ -350,7 +350,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<IMessageBus>() ?? new InMemoryMessageBus(),
+                sp.GetService<IMessageBus>(),
                 sp.GetService<TimeProvider>(),
                 sp.GetService<IResiliencePolicyProvider>(),
                 sp.GetService<ILoggerFactory>()

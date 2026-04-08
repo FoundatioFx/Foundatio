@@ -17,7 +17,7 @@ namespace Foundatio.Lock;
 public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {
     private readonly ICacheClient _cacheClient;
-    private readonly IMessageBus _messageBus;
+    private readonly IMessageBus? _messageBus;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new();
     private readonly AsyncLock _lock = new();
@@ -29,16 +29,18 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly IResiliencePolicy _resiliencePolicy;
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider? timeProvider, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, timeProvider, null, loggerFactory) { }
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus? messageBus, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, null, null, loggerFactory) { }
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus? messageBus, TimeProvider? timeProvider, ILoggerFactory? loggerFactory = null) : this(cacheClient, messageBus, timeProvider, null, loggerFactory) { }
 
-    public CacheLockProvider(ICacheClient cacheClient, IMessageBus messageBus, TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
+    public CacheLockProvider(ICacheClient cacheClient, IMessageBus? messageBus, TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<CacheLockProvider>();
         _cacheClient = new ScopedCacheClient(cacheClient, "lock");
         _messageBus = messageBus;
+        if (_messageBus is null)
+            _logger.LogWarning("No IMessageBus registered; lock release notifications will not be distributed");
 
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _resiliencePolicy = _resiliencePolicyProvider.GetPolicy<CacheLockProvider, ILockProvider>(
