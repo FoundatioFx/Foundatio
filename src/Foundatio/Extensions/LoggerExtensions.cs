@@ -115,8 +115,8 @@ public static class LoggerExtensions
     public static LogState Tag(this LogState builder, IEnumerable<string> tags)
     {
         var tagList = new List<string>();
-        if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string>)
-            tagList = (builder["Tags"] as List<string>)!;
+        if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string> existingTags)
+            tagList = existingTags;
 
         foreach (string tag in tags)
         {
@@ -129,11 +129,11 @@ public static class LoggerExtensions
 
     public static LogState Properties(this LogState builder, ICollection<KeyValuePair<string, string>> collection)
     {
-        if (collection == null)
+        if (collection is null)
             return builder;
 
         foreach (var pair in collection)
-            if (pair.Key != null)
+            if (pair.Key is not null)
                 builder.Property(pair.Key, pair.Value);
 
         return builder;

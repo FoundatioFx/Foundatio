@@ -23,7 +23,7 @@ public static class PathHelper
         string? dataDirectory = GetDataDirectory();
         int length = DATA_DIRECTORY.Length;
         if (path.Length <= length)
-            return dataDirectory ?? string.Empty;
+            return dataDirectory ?? String.Empty;
 
         string relativePath = path.Substring(length);
         char c = relativePath[0];

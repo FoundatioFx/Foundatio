@@ -148,7 +148,7 @@ public class JobRunner
             return false;
         }
 
-        using var _ = _logger.BeginScope(s => s.Property("job.name", _options.Name ?? string.Empty).Property("job.id", Id));
+        using var _ = _logger.BeginScope(s => s.Property("job.name", _options.Name ?? String.Empty).Property("job.id", Id));
 
         _logger.LogInformation("Starting job type {JobName} on machine {MachineName}...", _options.Name, Environment.MachineName);
 
