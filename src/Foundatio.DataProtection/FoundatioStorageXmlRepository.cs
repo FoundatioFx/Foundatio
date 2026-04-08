@@ -66,16 +66,14 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.Path);
-            using (var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext())
+            using var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext();
+            if (stream is null)
             {
-                if (stream is null)
-                {
-                    _logger.LogWarning("Skipping element {File}: file stream was null (file may have been deleted)", file.Path);
-                    continue;
-                }
-
-                elements.Add(XElement.Load(stream));
+                _logger.LogWarning("Skipping element {File}: file stream was null (file may have been deleted)", file.Path);
+                continue;
             }
+
+            elements.Add(XElement.Load(stream));
 
             _logger.LogTrace("Loaded element: {File}", file.Path);
         }
