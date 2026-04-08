@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -1765,16 +1766,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
         }
 
+        [return: MaybeNull]
         public T GetValue<T>()
         {
-            var val = Value;
+            object val = Value;
             var t = typeof(T);
 
             if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t.IsNumeric())
                 return (T)Convert.ChangeType(val, t)!;
 
             if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
-                return val == null ? default! : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!)!;
+                return val is null ? default! : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!)!;
 
             return (T)val!;
         }
