@@ -24,7 +24,7 @@ public class InMemoryQueueTests : QueueTestBase
                 .Retries(retries)
                 .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-                .TimeProvider(timeProvider!)
+                .TimeProvider(timeProvider ?? TimeProvider.System)
                 .MetricsPollingInterval(TimeSpan.Zero)
                 .LoggerFactory(Log));
         _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
@@ -298,7 +298,8 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Single(q.GetDequeuedEntries());
         Assert.Empty(q.GetCompletedEntries());
 
-        await item!.CompleteAsync();
+        Assert.NotNull(item);
+        await item.CompleteAsync();
         Assert.Empty(q.GetEntries());
         Assert.Empty(q.GetDequeuedEntries());
         Assert.Single(q.GetCompletedEntries());
@@ -307,7 +308,8 @@ public class InMemoryQueueTests : QueueTestBase
         {
             await q.EnqueueAsync(new SimpleWorkItem());
             item = await q.DequeueAsync();
-            await item!.CompleteAsync();
+            Assert.NotNull(item);
+            await item.CompleteAsync();
         }
 
         Assert.Empty(q.GetEntries());

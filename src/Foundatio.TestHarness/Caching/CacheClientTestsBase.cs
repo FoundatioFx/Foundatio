@@ -1950,7 +1950,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove,
+    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
         int expectedRemovedCount)
     {
         var cache = GetCacheClient();
@@ -1970,7 +1970,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, (await scopedCache.GetAsync<int>(key)).Value);
 
             // Remove by prefix from scoped cache
-            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove!));
+            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove));
 
             // Verify unscoped cache state
             Assert.True(await cache.ExistsAsync(key));
@@ -1980,7 +1980,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
+    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1996,7 +1996,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from scoped cache - should only remove within scope
-            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix!));
+            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix));
             Assert.True(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
 
@@ -2004,7 +2004,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from unscoped cache - should remove both unscoped and scoped
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix!));
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
             Assert.False(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
         }

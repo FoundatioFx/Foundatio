@@ -40,7 +40,8 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
                 if (a.OperationName != "ProcessQueueEntry")
                     return;
 
-                Assert.Equal(parentActivity!.RootId, a.RootId);
+                Assert.NotNull(parentActivity);
+                Assert.Equal(parentActivity.RootId, a.RootId);
                 Assert.Equal(parentActivity.SpanId, a.ParentSpanId);
             },
             ActivityStopped = a => { }

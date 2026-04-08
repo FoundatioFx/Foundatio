@@ -267,7 +267,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
             await using (var stream = await storage.GetFileStreamAsync(path, StreamMode.Read))
             {
-                using var reader = new StreamReader(stream!);
+                Assert.NotNull(stream);
+                using var reader = new StreamReader(stream);
                 string result = await reader.ReadToEndAsync();
                 Assert.Equal(await File.ReadAllTextAsync(readmeFile), result);
             }
@@ -475,7 +476,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
             }
 
             await using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read);
-            var actual = XElement.Load(stream!);
+            Assert.NotNull(stream);
+            var actual = XElement.Load(stream);
             Assert.Equal(element.ToString(SaveOptions.DisableFormatting), actual.ToString(SaveOptions.DisableFormatting));
         }
     }
@@ -610,7 +612,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
                 if (RandomData.GetBool())
                 {
-                    await storage.CompleteEventPostAsync(path, eventPost.ProjectId ?? string.Empty, DateTime.UtcNow, true, _logger);
+                    await storage.CompleteEventPostAsync(path, eventPost.ProjectId ?? String.Empty, DateTime.UtcNow, true, _logger);
                 }
                 else
                     await storage.SetNotActiveAsync(path, _logger);
@@ -633,26 +635,22 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
     public virtual async Task CanSaveOverExistingStoredContent()
     {
-        var storage = GetStorage();
+        using var storage = GetStorage();
         if (storage == null)
             return;
 
-        using (storage)
-        {
-            await ResetAsync(storage);
+        await ResetAsync(storage);
 
-            var shortIdInfo = new PostInfo { ProjectId = "123" };
-            var longIdInfo = new PostInfo { ProjectId = "1234567890" };
+        var shortIdInfo = new PostInfo { ProjectId = "123" };
+        var longIdInfo = new PostInfo { ProjectId = "1234567890" };
 
-            string path = "test.json";
-            await storage.SaveObjectAsync(path, longIdInfo);
-            await storage.SaveObjectAsync(path, shortIdInfo);
+        string path = "test.json";
+        await storage.SaveObjectAsync(path, longIdInfo);
+        await storage.SaveObjectAsync(path, shortIdInfo);
 
-#pragma warning disable CS8602 // Dereference of a possibly null reference - storage is null-checked above
-            var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
-#pragma warning restore CS8602
-            Assert.Equal(shortIdInfo, actualInfo!);
-        }
+        var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
+        Assert.NotNull(actualInfo);
+        Assert.Equal(shortIdInfo, actualInfo);
     }
 }
 

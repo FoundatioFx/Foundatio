@@ -341,7 +341,9 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
             {
                 await Task.Delay(RandomData.GetInt(0, 10), ct);
-                await messageBuses.Random()!.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+                var randomBus = messageBuses.Random();
+                Assert.NotNull(randomBus);
+                await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
             });
 
             var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
@@ -694,10 +696,11 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             }, TestCancellationToken);
 
             using var messageBus2 = GetMessageBus();
+            Assert.NotNull(messageBus2);
             try
             {
                 var countdown2 = new AsyncCountdownEvent(1);
-                await messageBus2!.SubscribeAsync<SimpleMessageA>(msg =>
+                await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown2.Signal();
@@ -715,7 +718,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             }
             finally
             {
-                await CleanupMessageBusAsync(messageBus2!);
+                await CleanupMessageBusAsync(messageBus2);
             }
         }
         finally

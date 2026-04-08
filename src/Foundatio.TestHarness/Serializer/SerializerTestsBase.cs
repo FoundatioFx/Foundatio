@@ -410,8 +410,8 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
 
         // Assert
         Assert.NotNull(boolResult);
-        Assert.True(boolResult is bool, $"Expected bool, got {boolResult?.GetType().Name}");
-        Assert.Equal(boolValue, (bool)boolResult!);
+        var boolActual = Assert.IsType<bool>(boolResult);
+        Assert.Equal(boolValue, boolActual);
 
         // Test negative number
         int negativeValue = -42;

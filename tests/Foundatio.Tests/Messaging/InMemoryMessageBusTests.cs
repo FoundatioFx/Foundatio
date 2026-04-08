@@ -7,7 +7,7 @@ namespace Foundatio.Tests.Messaging;
 
 public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
 {
-    private IMessageBus _messageBus = null!;
+    private IMessageBus? _messageBus;
 
     public InMemoryMessageBusTests(ITestOutputHelper output) : base(output) { }
 
@@ -193,6 +193,6 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     public void Dispose()
     {
         _messageBus?.Dispose();
-        _messageBus = null!;
+        _messageBus = null;
     }
 }

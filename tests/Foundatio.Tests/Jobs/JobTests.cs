@@ -23,7 +23,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanCancelJob()
     {
-        var job = new HelloWorldJob(null!, Log);
+        var job = new HelloWorldJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         using var timeoutCancellationTokenSource = new CancellationTokenSource(1000);
         var resultTask = new JobRunner(job, sp, Log).RunAsync(timeoutCancellationTokenSource.Token);
@@ -58,7 +58,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunJobs()
     {
-        var job = new HelloWorldJob(null!, Log);
+        var job = new HelloWorldJob(null, Log);
         Assert.Equal(0, job.RunCount);
         await job.RunAsync(TestCancellationToken);
         Assert.Equal(1, job.RunCount);
@@ -74,7 +74,7 @@ public class JobTests : TestWithLoggingBase
         sw.Stop();
         Assert.InRange(sw.Elapsed, TimeSpan.FromMilliseconds(95), TimeSpan.FromMilliseconds(800));
 
-        var jobInstance = new HelloWorldJob(null!, Log);
+        var jobInstance = new HelloWorldJob(null, Log);
         Assert.NotNull(jobInstance);
         Assert.Equal(0, jobInstance.RunCount);
         Assert.Equal(JobResult.Success, await jobInstance.RunAsync(TestCancellationToken));
@@ -84,7 +84,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanRunMultipleInstances()
     {
-        var job = new HelloWorldJob(null!, Log);
+        var job = new HelloWorldJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
 
         HelloWorldJob.GlobalRunCount = 0;
@@ -222,7 +222,7 @@ public class JobTests : TestWithLoggingBase
         };
         ActivitySource.AddActivityListener(listener);
 
-        var job = new HelloWorldJob(null!, Log);
+        var job = new HelloWorldJob(null, Log);
 
         // Act
         await job.RunContinuousAsync(iterationLimit: 1, cancellationToken: TestCancellationToken);
