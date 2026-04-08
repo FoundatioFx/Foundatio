@@ -495,7 +495,7 @@ internal static class FastClonerGenerator
         return null;
     }
 
-    private static bool TryGetGenericInterfaceArgument(Type type, Type genericInterfaceDefinition, int argIndex, out Type? argument)
+    private static bool TryGetGenericInterfaceArgument(Type type, Type genericInterfaceDefinition, int argIndex, [NotNullWhen(true)] out Type? argument)
     {
         if (type.IsGenericType && type.GetGenericTypeDefinition() == genericInterfaceDefinition)
         {

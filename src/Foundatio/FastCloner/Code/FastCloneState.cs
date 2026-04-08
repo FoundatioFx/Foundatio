@@ -4,6 +4,7 @@
 FastCloner is licensed under the MIT licence. https://github.com/lofcz/FastCloner
 */
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System;
 
@@ -210,21 +211,21 @@ internal sealed class FastCloneState
         workItems = resized;
     }
 
-    public bool TryPop(out object from, out object to, out Type type)
+    public bool TryPop([NotNullWhen(true)] out object? from, [NotNullWhen(true)] out object? to, [NotNullWhen(true)] out Type? type)
     {
         if (!TrackReferences)
         {
-            from = null !;
-            to = null !;
-            type = null !;
+            from = null;
+            to = null;
+            type = null;
             return false;
         }
 
         if (workCount == 0)
         {
-            from = null !;
-            to = null !;
-            type = null !;
+            from = null;
+            to = null;
+            type = null;
             return false;
         }
 

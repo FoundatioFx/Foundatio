@@ -97,7 +97,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         Interlocked.Increment(ref _enqueuedCount);
 
-        if (options?.DeliveryDelay != null && options.DeliveryDelay.Value > TimeSpan.Zero)
+        if (options.DeliveryDelay != null && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _ = Run.DelayedAsync(options.DeliveryDelay.Value, async () =>
             {

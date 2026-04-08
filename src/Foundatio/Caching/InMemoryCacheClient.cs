@@ -171,7 +171,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </remarks>
     private long RecalculateMemorySize()
     {
-        if (!_shouldTrackMemory) return 0;
+        if (!_shouldTrackMemory)
+            return 0;
 
         // Take a snapshot of values to reduce (but not eliminate) race condition window
         var entries = _memory.Values.ToArray();

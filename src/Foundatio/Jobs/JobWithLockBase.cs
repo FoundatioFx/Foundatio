@@ -41,7 +41,7 @@ public abstract class JobWithLockBase : IJobWithOptions, IHaveLogger, IHaveLogge
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
         ILock? lockValue;
-        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity("Job Lock: " + (Options?.Name ?? _jobName)))
+        using (var lockActivity = FoundatioDiagnostics.ActivitySource.StartActivity($"Job Lock: {Options?.Name ?? _jobName}"))
         {
             lockActivity?.AddTag("job.id", JobId);
 

@@ -328,13 +328,14 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
                 var bus = GetMessageBus();
-                await bus!.SubscribeAsync<SimpleMessageA>(msg =>
+                Assert.NotNull(bus);
+                await bus.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
                     countdown.Signal();
                 }, cancellationToken: ct);
 
-                messageBuses.Add(bus!);
+                messageBuses.Add(bus);
             });
 
             var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>

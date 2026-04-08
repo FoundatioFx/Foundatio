@@ -19,7 +19,6 @@ public class StartupActionsContext
     public bool IsStartupComplete { get; private set; }
     public RunStartupActionsResult Result { get; private set; } = new();
 
-    [System.Diagnostics.CodeAnalysis.MemberNotNull(nameof(Result))]
     internal void MarkStartupComplete(RunStartupActionsResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

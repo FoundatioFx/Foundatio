@@ -26,7 +26,7 @@ public class TestLoggerOptions
 
     public void SetLogLevel<T>(LogLevel minLogLevel)
     {
-        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T))!, minLogLevel);
+        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
     }
 
     public void UseOutputHelper(Func<ITestOutputHelper> getOutputHelper, Func<LogEntry, string>? formatLogEntry = null)

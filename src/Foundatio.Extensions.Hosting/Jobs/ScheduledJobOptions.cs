@@ -66,7 +66,7 @@ public class ScheduledJobOptions : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = "")
+    private bool SetField<T>(ref T field, T value, [CallerMemberName] string propertyName = "")
     {
         if (Equals(field, value))
             return false;

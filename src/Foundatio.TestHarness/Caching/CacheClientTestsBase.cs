@@ -1698,7 +1698,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("order:456", 2);
             await cache.SetAsync("Product:789", 3);
 
-            int removed = await cache.RemoveByPrefixAsync(null!);
+            int removed = await cache.RemoveByPrefixAsync(String.Empty);
             Assert.Equal(3, removed);
             Assert.False(await cache.ExistsAsync("user:123"));
             Assert.False(await cache.ExistsAsync("order:456"));

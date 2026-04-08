@@ -206,7 +206,7 @@ public class TestLogger : ILoggerFactory
 
     public void SetLogLevel<T>(LogLevel minLogLevel)
     {
-        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T))!, minLogLevel);
+        SetLogLevel(TypeHelper.GetTypeDisplayName(typeof(T)), minLogLevel);
     }
 
     public void Dispose() { }

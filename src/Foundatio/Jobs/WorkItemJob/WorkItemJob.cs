@@ -84,19 +84,26 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         using var _ = _logger.BeginScope(s => s
             .Property("JobId", JobId)
             .Property("QueueEntryId", queueEntry.Id)
-            .PropertyIf("CorrelationId", queueEntry.CorrelationId!, !String.IsNullOrEmpty(queueEntry.CorrelationId))
+            .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId))
             .Property("QueueEntryName", workItemDataType.Name));
 
-        object workItemData;
+        object? workItemData;
         try
         {
-            workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType)!;
+            workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
         }
         catch (Exception ex)
         {
             activity?.SetErrorStatus(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
+        }
+
+        if (workItemData is null)
+        {
+            _logger.LogWarning("Abandoning {TypeName} work item: {Id}: Deserialization returned null for {WorkItemDataType}", queueEntry.Value.Type, queueEntry.Id, workItemDataType.Name);
+            await queueEntry.AbandonAsync().AnyContext();
+            return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Deserialization returned null for {workItemDataType.Name}");
         }
 
         var handler = _handlers.GetHandler(workItemDataType);

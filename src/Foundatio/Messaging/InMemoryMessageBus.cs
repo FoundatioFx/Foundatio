@@ -49,8 +49,11 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
 
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
+            if (mappedType is null)
+                throw new InvalidOperationException($"Unable to resolve CLR type for delayed message: {messageType}");
+
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            SendDelayedMessage(mappedType!, message, options);
+            SendDelayedMessage(mappedType, message, options);
             return;
         }
 

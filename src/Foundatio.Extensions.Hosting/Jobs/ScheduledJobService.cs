@@ -48,7 +48,10 @@ public class ScheduledJobService : BackgroundService
 
         await _messageBus.SubscribeAsync<JobStateChangedMessage>(s =>
         {
-            var job = _jobManager.GetJob(s.JobName!);
+            if (String.IsNullOrEmpty(s.JobName))
+                return Task.CompletedTask;
+
+            var job = _jobManager.GetJob(s.JobName);
             if (job == null || s.Id == job.Id)
                 return Task.CompletedTask;
 

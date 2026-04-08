@@ -73,15 +73,14 @@ public static class TypeHelper
         { UInt64Type, "ulong" }
     };
 
-    public static string? GetTypeDisplayName(Type type)
+    public static string GetTypeDisplayName(Type type)
     {
-        string? fullName = null;
         if (type.GetTypeInfo().IsGenericType)
         {
-            fullName = type.GetGenericTypeDefinition().FullName;
+            string fullName = type.GetGenericTypeDefinition().FullName ?? type.Name;
 
             // Nested types (public or private) have a '+' in their full name
-            var parts = fullName!.Split('+');
+            var parts = fullName.Split('+');
 
             // Handle nested generic types
             // Examples:
@@ -111,11 +110,11 @@ public static class TypeHelper
         if (_builtInTypeNames.ContainsKey(type))
             return _builtInTypeNames[type];
 
-        fullName = type.FullName;
+        string? name = type.FullName;
         if (type.IsNested)
-            fullName = fullName!.Replace('+', '.');
+            name = name?.Replace('+', '.');
 
-        return fullName;
+        return name ?? type.Name;
     }
 
     public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly>? assemblies = null)

@@ -88,7 +88,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             .Property("JobId", JobId)
             .Property("QueueName", _queueName)
             .Property("QueueEntryId", queueEntry.Id)
-            .PropertyIf("CorrelationId", queueEntry.CorrelationId!, !String.IsNullOrEmpty(queueEntry.CorrelationId)));
+            .PropertyIf("CorrelationId", queueEntry.CorrelationId, !String.IsNullOrEmpty(queueEntry.CorrelationId)));
 
         _logger.LogInformation("Processing queue entry: id={QueueEntryId} type={QueueName} attempt={QueueEntryAttempt}", queueEntry.Id, _queueName, queueEntry.Attempts);
 

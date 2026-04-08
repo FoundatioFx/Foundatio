@@ -23,9 +23,9 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
         return this;
     }
 
-    public LogState PropertyIf(string property, object value, bool condition)
+    public LogState PropertyIf(string property, object? value, bool condition)
     {
-        if (condition)
+        if (condition && value is not null)
             _state.Add(property, value);
         return this;
     }

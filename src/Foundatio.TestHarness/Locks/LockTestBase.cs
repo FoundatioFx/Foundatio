@@ -50,7 +50,8 @@ public abstract class LockTestBase : TestWithLoggingBase
         }
         finally
         {
-            await lock1!.ReleaseAsync();
+            if (lock1 is not null)
+                await lock1.ReleaseAsync();
         }
 
         Assert.False(await locker.IsLockedAsync(lockName));
@@ -78,20 +79,22 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         string lockName = Guid.NewGuid().ToString("N")[..10];
         var lock1 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
-        await lock1!.ReleaseAsync();
+        Assert.NotNull(lock1);
+        await lock1.ReleaseAsync();
         Assert.False(await locker.IsLockedAsync(lockName));
 
         await using var lock2 = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromMilliseconds(100), timeUntilExpires: TimeSpan.FromSeconds(1));
 
         // has already been released, should not release other people's lock
-        await lock1!.ReleaseAsync();
+        await lock1.ReleaseAsync();
         Assert.True(await locker.IsLockedAsync(lockName));
 
         // has already been released, should not release other people's lock
-        await lock1!.DisposeAsync();
+        await lock1.DisposeAsync();
         Assert.True(await locker.IsLockedAsync(lockName));
 
-        await lock2!.ReleaseAsync();
+        Assert.NotNull(lock2);
+        await lock2.ReleaseAsync();
         Assert.False(await locker.IsLockedAsync(lockName));
     }
 

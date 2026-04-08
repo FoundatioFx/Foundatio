@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
@@ -113,7 +114,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, ILoggerFactory? loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
-        var sizeCalculator = new Utility.SizeCalculator(loggerFactory!);
+        var sizeCalculator = new Utility.SizeCalculator(loggerFactory ?? NullLoggerFactory.Instance);
         Target.SizeCalculator = sizeCalculator.CalculateSize;
         return this;
     }

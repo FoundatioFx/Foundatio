@@ -186,7 +186,7 @@ public class JobManager : IJobManager
     }
 
     public JobStatus GetJobStatus(string jobName, bool includeHistory = true) =>
-        GetJobStatus(includeHistory: includeHistory).FirstOrDefault(j => j.Name != null && j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase))
+        GetJobStatus(includeHistory: includeHistory).FirstOrDefault(j => String.Equals(j.Name, jobName, StringComparison.OrdinalIgnoreCase))
         ?? throw new ArgumentException("Job not found.", nameof(jobName));
 
     public async Task RunJobAsync<TJob>(CancellationToken cancellationToken = default) where TJob : class, IJob
@@ -215,7 +215,7 @@ public class JobManager : IJobManager
 
     internal ScheduledJobInstance? GetJob(string jobName)
     {
-        return Jobs.FirstOrDefault(j => j.Options.Name != null && j.Options.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+        return Jobs.FirstOrDefault(j => String.Equals(j.Options.Name, jobName, StringComparison.OrdinalIgnoreCase));
     }
 
     internal ScheduledJobInstance[] Jobs => _jobsArray;

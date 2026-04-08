@@ -183,8 +183,8 @@ internal class ScheduledJobInstance
 
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
-        ILock? jobRunningLock = new EmptyLock();
-        ILock? scheduledTimeLock = new EmptyLock();
+        ILock? jobRunningLock = EmptyLock.Instance;
+        ILock? scheduledTimeLock = EmptyLock.Instance;
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
@@ -244,14 +244,17 @@ internal class ScheduledJobInstance
                 try
                 {
                     string jobRunId = Guid.NewGuid().ToString("N").Substring(0, 10);
-                    using var _ = _logger.BeginScope(s => s.Property("job.name", Options.Name!).Property("job.id", Id).Property("job.run_id", jobRunId));
+                    using var _ = _logger.BeginScope(s => s.Property("job.name", Options.Name ?? String.Empty).Property("job.id", Id).Property("job.run_id", jobRunId));
 
                     _logger.LogDebug("{JobType} {JobName} ({JobId}) starting for time: {ScheduledTime}", Options.IsDistributed ? "Distributed job" : "Job", Options.Name,
                         Id, isManual ? "Manual" : NextRun!.Value.ToString("t"));
 
                     await using var scope = _serviceProvider.CreateAsyncScope();
 
-                    var job = Options.JobFactory!(scope.ServiceProvider);
+                    if (Options.JobFactory is null)
+                        throw new InvalidOperationException($"JobFactory is not configured for job '{Options.Name}'.");
+
+                    var job = Options.JobFactory(scope.ServiceProvider);
 
                     Running = true;
                     LastRun = isManual ? utcNow : NextRun;

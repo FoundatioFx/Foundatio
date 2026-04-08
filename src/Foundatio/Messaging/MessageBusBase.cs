@@ -314,8 +314,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                 try
                 {
                     using (_logger.BeginScope(s => s
-                               .PropertyIf("UniqueId", message.UniqueId!, !String.IsNullOrEmpty(message.UniqueId))
-                               .PropertyIf("CorrelationId", message.CorrelationId!, !String.IsNullOrEmpty(message.CorrelationId))))
+                               .PropertyIf("UniqueId", message.UniqueId, !String.IsNullOrEmpty(message.UniqueId))
+                               .PropertyIf("CorrelationId", message.CorrelationId, !String.IsNullOrEmpty(message.CorrelationId))))
                     {
                         if (subscriber.Type == typeof(IMessage))
                         {

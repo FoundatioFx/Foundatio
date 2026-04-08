@@ -35,7 +35,7 @@ public class MaintenanceBase : IDisposable
 
     protected void ScheduleNextMaintenance(DateTime utcDate)
     {
-        _maintenanceTimer!.ScheduleNext(utcDate);
+        _maintenanceTimer?.ScheduleNext(utcDate);
     }
 
     protected virtual Task<DateTime?> DoMaintenanceAsync()
