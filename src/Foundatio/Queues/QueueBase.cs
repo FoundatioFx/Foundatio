@@ -43,6 +43,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
         ArgumentNullException.ThrowIfNull(options);
+
         _options = options;
         _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
         if (!String.IsNullOrWhiteSpace(options.MetricsPrefix))
@@ -135,6 +136,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     public async Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(data);
+
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();

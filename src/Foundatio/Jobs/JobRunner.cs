@@ -262,7 +262,7 @@ public class JobRunner
                 logger?.LogInformation("Job shutdown signaled");
             });
 
-            _shutdownFileWatcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile)!);
+            _shutdownFileWatcher = new FileSystemWatcher(Path.GetDirectoryName(webJobsShutdownFile) ?? ".");
             _shutdownFileWatcher.Created += handler;
             _shutdownFileWatcher.Changed += handler;
             _shutdownFileWatcher.NotifyFilter = NotifyFilters.CreationTime | NotifyFilters.FileName | NotifyFilters.LastWrite;

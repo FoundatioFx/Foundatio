@@ -5,13 +5,13 @@ using System.Linq;
 
 namespace Microsoft.Extensions.Logging;
 
-public class LogState : IEnumerable<KeyValuePair<string, object>>
+public class LogState : IEnumerable<KeyValuePair<string, object?>>
 {
-    private readonly Dictionary<string, object> _state = new();
+    private readonly Dictionary<string, object?> _state = new();
 
     public int Count => _state.Count;
 
-    public object this[string property]
+    public object? this[string property]
     {
         get { return _state[property]; }
         set { _state[property] = value; }
@@ -26,7 +26,7 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
     public LogState PropertyIf(string property, object? value, bool condition)
     {
         if (condition)
-            _state.Add(property, value!);
+            _state.Add(property, value);
 
         return this;
     }
@@ -36,7 +36,7 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
         return _state.ContainsKey(property);
     }
 
-    public IEnumerator<KeyValuePair<string, object>> GetEnumerator()
+    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
     {
         return _state.GetEnumerator();
     }

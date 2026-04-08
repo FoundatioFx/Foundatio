@@ -28,6 +28,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
     private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
+    private const long NullReferenceSize = 8;
     private long _writes;
     private long _hits;
     private long _misses;
@@ -1800,7 +1801,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         try
         {
             if (value is null)
-                return 8;
+                return NullReferenceSize;
 
             long size = _sizeCalculator!(value);
 
