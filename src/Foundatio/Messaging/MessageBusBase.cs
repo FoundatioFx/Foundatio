@@ -125,8 +125,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         return _knownMessageTypesCache.GetOrAdd(messageType, type =>
         {
-            if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.TryGetValue(type, out Type? typeMapping))
-                return typeMapping;
+            if (_options.MessageTypeMappings is not null && _options.MessageTypeMappings.TryGetValue(type, out Type? typeMapping))
+            {
+                if (typeMapping is not null)
+                    return typeMapping;
+
+                _logger.LogWarning("Message type mapping for {MessageType} resolved to null; falling back to Type.GetType", type);
+            }
 
             try
             {
@@ -368,7 +373,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         if (activity is null)
             return null;
 
-        if (message.Properties != null && message.Properties.TryGetValue("TraceState", out string? traceState))
+        if (message.Properties is not null && message.Properties.TryGetValue("TraceState", out string? traceState))
             activity.TraceStateString = traceState;
 
         activity.DisplayName = $"Message: {message.ClrType?.Name ?? message.Type}";
