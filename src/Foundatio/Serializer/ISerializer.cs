@@ -48,7 +48,7 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
 
-        return (T)serializer.Deserialize(data, typeof(T))!;
+        return (T)serializer.Deserialize(data, typeof(T));
     }
 
     [return: MaybeNull]
@@ -60,7 +60,7 @@ public static class SerializerExtensions
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
         using var stream = new MemoryStream(data);
-        return (T)serializer.Deserialize(stream, typeof(T))!;
+        return (T)serializer.Deserialize(stream, typeof(T));
     }
 
     public static object? Deserialize(this ISerializer serializer, byte[] data, Type objectType)
@@ -83,7 +83,7 @@ public static class SerializerExtensions
 
         var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
         using var stream = new MemoryStream(bytes);
-        return (T)serializer.Deserialize(stream, typeof(T))!;
+        return (T)serializer.Deserialize(stream, typeof(T));
     }
 
     public static object? Deserialize(this ISerializer serializer, string data, Type objectType)

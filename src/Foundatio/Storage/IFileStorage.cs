@@ -258,9 +258,9 @@ public static class FileStorageExtensions
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read, cancellationToken).AnyContext();
         if (stream != null)
-            return storage.Serializer.Deserialize<T>(stream)!;
+            return storage.Serializer.Deserialize<T>(stream);
 
-        return default!;
+        return default;
     }
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)
