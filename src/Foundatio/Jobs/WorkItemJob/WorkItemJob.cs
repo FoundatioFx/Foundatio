@@ -201,8 +201,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         if (activity is null)
             return null;
 
-        if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out var traceState))
-            activity.TraceStateString = traceState;
+        if (entry.Properties is not null && entry.Properties.TryGetValue("TraceState", out var traceState))
+            activity.TraceStateString = traceState?.ToString();
 
         activity.DisplayName = $"Work Item: {entry.Value.SubMetricName ?? workItemDataType.Name}";
 

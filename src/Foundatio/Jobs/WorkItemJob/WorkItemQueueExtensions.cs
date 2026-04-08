@@ -13,12 +13,14 @@ public static class WorkItemQueueExtensions
     {
         string jobId = Guid.NewGuid().ToString("N");
         var bytes = queue.Serializer.SerializeToBytes(workItemData);
+        string typeName = typeof(T).AssemblyQualifiedName
+            ?? throw new InvalidOperationException($"Type {typeof(T).Name} does not have an assembly-qualified name");
 
         var data = new WorkItemData
         {
             Data = bytes,
             WorkItemId = jobId,
-            Type = typeof(T).AssemblyQualifiedName!,
+            Type = typeName,
             SendProgressReports = includeProgressReporting
         };
 

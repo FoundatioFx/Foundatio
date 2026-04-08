@@ -47,12 +47,12 @@ public class StartupActionRegistration
         if (shutdownToken.IsCancellationRequested)
             return;
 
-        if (_actionType != null)
+        if (_actionType is not null)
         {
             if (serviceProvider.GetRequiredService(_actionType) is IStartupAction startup)
                 await startup.RunAsync(shutdownToken).AnyContext();
         }
-        else if (_action != null)
+        else if (_action is not null)
         {
             await _action(serviceProvider, shutdownToken).AnyContext();
         }

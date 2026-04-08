@@ -49,7 +49,10 @@ public class ScheduledJobService : BackgroundService
         await _messageBus.SubscribeAsync<JobStateChangedMessage>(s =>
         {
             if (String.IsNullOrEmpty(s.JobName))
+            {
+                _logger.LogWarning("Received job state change message with no job name, ignoring");
                 return Task.CompletedTask;
+            }
 
             var job = _jobManager.GetJob(s.JobName);
             if (job == null || s.Id == job.Id)

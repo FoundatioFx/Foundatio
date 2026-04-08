@@ -183,8 +183,8 @@ internal class ScheduledJobInstance
 
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
-        ILock? jobRunningLock = EmptyLock.Instance;
-        ILock? scheduledTimeLock = EmptyLock.Instance;
+        ILock? jobRunningLock = EmptyLock.Empty;
+        ILock? scheduledTimeLock = EmptyLock.Empty;
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
