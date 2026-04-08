@@ -131,7 +131,7 @@ public static class TypeHelper
             }
             catch (ReflectionTypeLoadException ex)
             {
-                string loaderMessages = String.Join(", ", (ex.LoaderExceptions ?? []).Where(le => le is not null).Select(le => le!.Message));
+                string loaderMessages = String.Join(", ", (ex.LoaderExceptions ?? []).OfType<Exception>().Select(le => le.Message));
                 Trace.TraceInformation("Unable to search types from assembly \"{0}\" for plugins of type \"{1}\": {2}", assembly.FullName, typeof(TAction).Name, loaderMessages);
             }
         }

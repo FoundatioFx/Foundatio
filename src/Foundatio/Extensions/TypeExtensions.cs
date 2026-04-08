@@ -59,17 +59,8 @@ internal static class TypeExtensions
     public static T ToType<T>(this object value, ISerializer? serializer = null)
     {
         var targetType = typeof(T);
-        if (value == null)
-        {
-            try
-            {
-                return (T)Convert.ChangeType(value, targetType)!;
-            }
-            catch
-            {
-                throw new ArgumentNullException(nameof(value));
-            }
-        }
+        if (value is null)
+            throw new ArgumentNullException(nameof(value));
 
         var converter = TypeDescriptor.GetConverter(targetType);
         var valueType = value.GetType();

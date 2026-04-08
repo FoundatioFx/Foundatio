@@ -183,42 +183,42 @@ internal class ScheduledJobInstance
 
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
-        ILock? jobRunningLock = EmptyLock.Empty;
-        ILock? scheduledTimeLock = EmptyLock.Empty;
+        ILock jobRunningLock = EmptyLock.Empty;
+        ILock scheduledTimeLock = EmptyLock.Empty;
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
             try
             {
                 // hold this lock for 1 hour to prevent duplicates
-                scheduledTimeLock = await _lockProvider.AcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext();
+                scheduledTimeLock = await _lockProvider.AcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext() ?? EmptyLock.Empty;
 
-                if (scheduledTimeLock != null)
+                if (scheduledTimeLock is not EmptyLock)
                 {
                     // hold this lock while the job is running to prevent multiple instances of the job running at the same time
-                    jobRunningLock = await _lockProvider.AcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext();
+                    jobRunningLock = await _lockProvider.AcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext() ?? EmptyLock.Empty;
 
-                    if (jobRunningLock == null)
+                    if (jobRunningLock is EmptyLock)
                         await scheduledTimeLock.ReleaseAsync().AnyContext();
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error acquiring locks for job ({JobName})", Options.Name);
-                if (scheduledTimeLock != null)
+                if (scheduledTimeLock is not EmptyLock)
                     await scheduledTimeLock.ReleaseAsync().AnyContext();
-                scheduledTimeLock = null;
-                if (jobRunningLock != null)
+                scheduledTimeLock = EmptyLock.Empty;
+                if (jobRunningLock is not EmptyLock)
                     await jobRunningLock.ReleaseAsync().AnyContext();
-                jobRunningLock = null;
+                jobRunningLock = EmptyLock.Empty;
             }
 
-            if (isManual && (scheduledTimeLock == null || jobRunningLock == null))
+            if (isManual && (scheduledTimeLock is EmptyLock || jobRunningLock is EmptyLock))
                 _logger.LogWarning("Job ({JobName}) is already running, skipping manual request", Options.Name);
-            else if (jobRunningLock == null || scheduledTimeLock == null)
+            else if (jobRunningLock is EmptyLock || scheduledTimeLock is EmptyLock)
                 _logger.LogDebug("Job ({JobName}) scheduled on another instance", Options.Name);
 
-            if (scheduledTimeLock == null || jobRunningLock == null)
+            if (scheduledTimeLock is EmptyLock || jobRunningLock is EmptyLock)
             {
                 // sync distributed state
                 await GetDistributedStateAsync();
@@ -290,10 +290,10 @@ internal class ScheduledJobInstance
                     jobRunResult.Success = false;
                     jobRunResult.Error = ex.Message;
 
-                    if (scheduledTimeLock != null)
+                    if (scheduledTimeLock is not EmptyLock)
                         await scheduledTimeLock.ReleaseAsync();
 
-                    if (jobRunningLock != null)
+                    if (jobRunningLock is not EmptyLock)
                         await jobRunningLock.ReleaseAsync();
 
                     // TODO set next run time to retry, but need max retry count
@@ -338,7 +338,7 @@ internal class ScheduledJobInstance
                 Running = Running,
                 LastRun = LastRun,
                 LastSuccess = LastSuccess,
-                History = History ?? []
+                History = History
             };
 
             _logger.LogDebug("Updating distributed state for {JobName} ({JobId}): {JobState}", Options.Name, Id, Options.CronSchedule);
@@ -405,7 +405,7 @@ internal class ScheduledJobInstance
         Running = state.Running;
         LastRun = state.LastRun;
         LastSuccess = state.LastSuccess;
-        History = state.History ?? [];
+        History = state.History;
         NextRun = GetNextScheduledRun();
 
         LastStateSync = _timeProvider.GetUtcNowDateTime(false);
@@ -426,7 +426,7 @@ public class JobInstanceState
     public bool Running { get; set; }
     public DateTime? LastRun { get; set; }
     public DateTime? LastSuccess { get; set; }
-    public List<JobRunResult>? History { get; set; }
+    public List<JobRunResult> History { get; set; } = [];
 }
 
 public class JobRunResult

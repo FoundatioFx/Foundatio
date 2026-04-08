@@ -9,7 +9,7 @@ public static class FoundatioDiagnostics
 {
     internal static readonly AssemblyName AssemblyName = typeof(FoundatioDiagnostics).Assembly.GetName();
     internal static readonly string AssemblyVersion = typeof(FoundatioDiagnostics).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? AssemblyName.Version?.ToString() ?? "0.0.0";
-    public static readonly ActivitySource ActivitySource = new(AssemblyName.Name!, AssemblyVersion);
+    public static readonly ActivitySource ActivitySource = new(AssemblyName.Name ?? "Foundatio", AssemblyVersion);
     public static readonly Meter Meter = new("Foundatio", AssemblyVersion);
 
     /// <summary>

@@ -26,7 +26,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePolicyProvider? _resiliencePolicyProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private readonly AsyncLazy<bool> _lazySubscription;
     private long _localCacheHits;
@@ -38,7 +38,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
         _lazySubscription = new AsyncLazy<bool>(async () =>
@@ -50,7 +50,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         localCacheOptions ??= new InMemoryCacheClientOptions
         {
             TimeProvider = _timeProvider,
-            ResiliencePolicyProvider = _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance,
+            ResiliencePolicyProvider = _resiliencePolicyProvider,
             LoggerFactory = _loggerFactory
         };
         _localCache = new InMemoryCacheClient(localCacheOptions);
@@ -63,7 +63,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     private Task EnsureSubscribedAsync()
     {

@@ -31,6 +31,7 @@ public class StartupActionRegistration
     public StartupActionRegistration(string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
     {
         Name = name;
+        ArgumentNullException.ThrowIfNull(action);
         _action = action;
         if (!priority.HasValue)
             priority = Interlocked.Increment(ref _currentAutoPriority);
@@ -52,9 +53,9 @@ public class StartupActionRegistration
             if (serviceProvider.GetRequiredService(_actionType) is IStartupAction startup)
                 await startup.RunAsync(shutdownToken).AnyContext();
         }
-        else if (_action is not null)
+        else
         {
-            await _action(serviceProvider, shutdownToken).AnyContext();
+            await _action!(serviceProvider, shutdownToken).AnyContext();
         }
     }
 }

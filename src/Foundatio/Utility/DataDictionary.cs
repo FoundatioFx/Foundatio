@@ -49,8 +49,7 @@ public static class DataDictionaryExtensions
         return dictionary.TryGetValue(key, out object? value) ? value : defaultValueProvider();
     }
 
-    [return: MaybeNull]
-    public static T GetValue<T>(this IDictionary<string, object> dictionary, string key)
+    public static T? GetValue<T>(this IDictionary<string, object> dictionary, string key)
     {
         if (!dictionary.ContainsKey(key))
             throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary");
@@ -58,8 +57,7 @@ public static class DataDictionaryExtensions
         return dictionary.GetValueOrDefault<T>(key);
     }
 
-    [return: MaybeNull]
-    public static T GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, [AllowNull] T defaultValue = default)
+    public static T? GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, T? defaultValue = default)
     {
         if (!dictionary.ContainsKey(key))
             return defaultValue;
@@ -109,8 +107,7 @@ public static class HaveDataExtensions
     /// <param name="defaultValue">The default value to return if the value doesn't exist</param>
     /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>
     /// <returns>The value from the data dictionary converted to the desired type</returns>
-    [return: MaybeNull]
-    public static T GetDataOrDefault<T>(this IHaveData target, string key, [AllowNull] T defaultValue = default, ISerializer? serializer = null)
+    public static T? GetDataOrDefault<T>(this IHaveData target, string key, T? defaultValue = default, ISerializer? serializer = null)
     {
         if (serializer == null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
@@ -136,10 +133,11 @@ public static class HaveDataExtensions
         if (serializer == null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
-        value = default!;
-
         if (!target.Data.TryGetValue(key, out object? dataValue))
+        {
+            value = default;
             return false;
+        }
 
         value = dataValue.ToType<T>(serializer);
 

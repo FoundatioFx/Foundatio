@@ -33,7 +33,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private long _misses;
     private long _currentMemorySize;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePolicyProvider? _resiliencePolicyProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
@@ -55,7 +55,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _maxEntrySize = options.MaxEntrySize;
         _shouldThrowOnMaxEntrySizeExceeded = options.ShouldThrowOnMaxEntrySizeExceeded;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = options.ResiliencePolicyProvider;
+        _resiliencePolicyProvider = options.ResiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<InMemoryCacheClient>();
 
@@ -198,7 +198,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public override string ToString()
     {
@@ -807,9 +807,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else
         {
-#pragma warning disable CS8714 // T filtered to non-null but type itself is unconstrained
-            var items = new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k!, _ => expiresAt);
-#pragma warning restore CS8714
+            var uniqueValues = new HashSet<T>(values.Where(v => v is not null));
+            var items = new Dictionary<T, DateTime?>(uniqueValues.Count);
+            foreach (var v in uniqueValues)
+                items[v] = expiresAt;
             if (items.Count == 0)
                 return 0;
 
@@ -1769,16 +1770,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         [return: MaybeNull]
         public T GetValue<T>()
         {
-            object val = Value;
+            object? val = Value;
             var t = typeof(T);
 
+            if (val is null)
+                return default;
+
             if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t.IsNumeric())
-                return (T)Convert.ChangeType(val, t)!;
+                return (T)Convert.ChangeType(val, t);
 
             if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
-                return val is null ? default! : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!)!;
+                return (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!);
 
-            return (T)val!;
+            return (T)val;
         }
     }
 
@@ -1798,7 +1802,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         try
         {
-            long size = _sizeCalculator!(value!);
+            if (value is null)
+                return 8;
+
+            long size = _sizeCalculator!(value);
 
             // Validate the size returned by the calculator
             if (size < 0)

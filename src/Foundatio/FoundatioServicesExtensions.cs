@@ -165,7 +165,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseInMemory(InMemoryCacheClientOptions? options = null)
         {
-            _services.ReplaceSingleton<ICacheClient>(sp => new InMemoryCacheClient((options ?? new()).UseServices(sp)));
+            _services.ReplaceSingleton<ICacheClient>(sp => new InMemoryCacheClient(options.UseServices(sp)));
             return _builder;
         }
 
@@ -204,7 +204,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseInMemory(InMemoryFileStorageOptions? options = null)
         {
-            _services.ReplaceSingleton<IFileStorage>(sp => new InMemoryFileStorage((options ?? new()).UseServices(sp)));
+            _services.ReplaceSingleton<IFileStorage>(sp => new InMemoryFileStorage(options.UseServices(sp)));
             return _builder;
         }
 
@@ -222,7 +222,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseFolder(FolderFileStorageOptions? options = null)
         {
-            _services.ReplaceSingleton<IFileStorage>(sp => new FolderFileStorage((options ?? new()).UseServices(sp)));
+            _services.ReplaceSingleton<IFileStorage>(sp => new FolderFileStorage(options.UseServices(sp)));
             return _builder;
         }
 
@@ -265,7 +265,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
         {
-            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus((options ?? new()).UseServices(sp)));
+            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
             _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
             _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
             return _builder;
@@ -308,7 +308,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseInMemory<T>(InMemoryQueueOptions<T>? options = null) where T : class
         {
-            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>((options ?? new()).UseServices(sp)));
+            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>(options.UseServices(sp)));
             return _builder;
         }
 

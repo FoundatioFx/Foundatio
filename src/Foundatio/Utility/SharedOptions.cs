@@ -86,7 +86,7 @@ public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
 
 public static class SharedOptionsExtensions
 {
-    public static TOption UseServices<TOption>(this TOption options, IServiceProvider serviceProvider, bool overrideExisting = false)
+    public static TOption UseServices<TOption>(this TOption? options, IServiceProvider serviceProvider, bool overrideExisting = false)
         where TOption : SharedOptions, new()
     {
         options ??= new TOption();

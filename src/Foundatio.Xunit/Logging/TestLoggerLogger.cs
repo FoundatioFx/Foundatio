@@ -32,7 +32,7 @@ internal class TestLoggerLogger : ILogger
             EventId = eventId,
             State = state,
             Exception = exception,
-            Formatter = (s, e) => formatter((TState)s!, e),
+            Formatter = (s, e) => s is TState typedState ? formatter(typedState, e) : string.Empty,
             CategoryName = _categoryName,
             Scopes = scopes
         };
@@ -72,12 +72,11 @@ internal class TestLoggerLogger : ILogger
         return Push(state);
     }
 
-    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
+    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) where TScope : notnull
     {
-        if (state == null)
-            throw new ArgumentNullException(nameof(state));
+        ArgumentNullException.ThrowIfNull(state);
 
-        return Push(scopeFactory(state)!);
+        return Push(scopeFactory(state));
     }
 
     private static readonly AsyncLocal<Wrapper> _currentScopeStack = new();

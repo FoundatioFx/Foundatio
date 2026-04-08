@@ -126,7 +126,10 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         try
         {
             using var fileStream = await GetFileStreamAsync(path, StreamMode.Write, cancellationToken);
-            await stream.CopyToAsync(fileStream ?? throw new StorageException("Failed to create write stream for: " + path)).AnyContext();
+            if (fileStream is null)
+                throw new StorageException($"Failed to create write stream for: {path}");
+
+            await stream.CopyToAsync(fileStream).AnyContext();
             return true;
         }
         catch (Exception ex)

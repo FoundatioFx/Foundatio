@@ -55,7 +55,7 @@ public class LongRunningJob : JobBase
     private readonly string _id;
     private int _iterationCount;
 
-    public LongRunningJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
+    public LongRunningJob(TimeProvider? timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
     {
         _id = Guid.NewGuid().ToString("N").Substring(0, 10);
     }

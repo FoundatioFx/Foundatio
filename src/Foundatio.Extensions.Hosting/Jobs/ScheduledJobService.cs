@@ -55,7 +55,13 @@ public class ScheduledJobService : BackgroundService
             }
 
             var job = _jobManager.GetJob(s.JobName);
-            if (job == null || s.Id == job.Id)
+            if (job is null)
+            {
+                _logger.LogWarning("Received job state change for unknown job {JobName}, ignoring", s.JobName);
+                return Task.CompletedTask;
+            }
+
+            if (String.Equals(s.Id, job.Id, StringComparison.Ordinal))
                 return Task.CompletedTask;
 
             if (!String.IsNullOrEmpty(s.Reason))

@@ -697,6 +697,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
             using var messageBus2 = GetMessageBus();
             Assert.NotNull(messageBus2);
+
             try
             {
                 var countdown2 = new AsyncCountdownEvent(1);

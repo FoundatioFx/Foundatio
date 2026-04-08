@@ -1149,6 +1149,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
                     Assert.NotNull(q);
+
                     _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
                     await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
@@ -1279,18 +1280,21 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
-            await Task.Delay(100);
             Assert.NotNull(item);
+
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
-            await Task.Delay(100);
             Assert.NotNull(item);
+
+            await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
-            await Task.Delay(100);
             Assert.NotNull(item);
+
+            await Task.Delay(100);
             await item.AbandonAsync();
 
             _logger.LogTrace("Before asserts");

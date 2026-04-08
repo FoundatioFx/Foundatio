@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -20,7 +19,6 @@ public class StartupActionsContext
     public bool IsStartupComplete { get; private set; }
     public RunStartupActionsResult Result { get; private set; } = new();
 
-    [MemberNotNull(nameof(Result))]
     internal void MarkStartupComplete(RunStartupActionsResult result)
     {
         ArgumentNullException.ThrowIfNull(result);

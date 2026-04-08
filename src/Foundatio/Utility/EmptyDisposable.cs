@@ -11,8 +11,7 @@ public class EmptyDisposable : IDisposable
 
 public class EmptyLock : ILock
 {
-    public static EmptyLock Instance { get; } = new();
-    public static EmptyLock Empty { get; } = Instance;
+    public static EmptyLock Empty { get; } = new();
 
     public string LockId => String.Empty;
 

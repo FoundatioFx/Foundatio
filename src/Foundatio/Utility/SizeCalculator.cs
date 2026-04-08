@@ -265,7 +265,10 @@ public class SizeCalculator : IDisposable
 
             var underlyingType = Nullable.GetUnderlyingType(type);
             if (underlyingType is null)
+            {
+                _logger.LogWarning("Unable to determine underlying type for nullable type {TypeName}", type.Name);
                 return DefaultObjectSize;
+            }
 
             return GetCachedTypeSize(underlyingType) + 1; // Add 1 for hasValue flag
         }

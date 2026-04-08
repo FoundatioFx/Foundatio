@@ -28,14 +28,14 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
-    private readonly IResiliencePolicyProvider? _resiliencePolicyProvider;
+    private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
     public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridAwareCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? TimeProvider.System;
-        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider();
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
         _messagePublisher = messagePublisher;
     }
@@ -43,7 +43,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     ILogger IHaveLogger.Logger => _logger;
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => _loggerFactory;
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
     public async Task<bool> RemoveAsync(string key)
     {

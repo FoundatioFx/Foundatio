@@ -1,8 +1,10 @@
-﻿namespace Foundatio.Caching;
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace Foundatio.Caching;
 
 public class CacheValue<T>
 {
-    public CacheValue(T value, bool hasValue)
+    public CacheValue([AllowNull] T value, bool hasValue)
     {
         Value = value;
         HasValue = hasValue;
@@ -10,13 +12,14 @@ public class CacheValue<T>
 
     public bool HasValue { get; }
 
-    public bool IsNull => Value == null;
+    public bool IsNull => Value is null;
 
+    [MaybeNull]
     public T Value { get; }
 
-    public static CacheValue<T> Null { get; } = new CacheValue<T>(default!, true);
+    public static CacheValue<T> Null { get; } = new(default, true);
 
-    public static CacheValue<T> NoValue { get; } = new CacheValue<T>(default!, false);
+    public static CacheValue<T> NoValue { get; } = new(default, false);
 
     public override string ToString()
     {

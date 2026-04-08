@@ -1698,7 +1698,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("order:456", 2);
             await cache.SetAsync("Product:789", 3);
 
-            int removed = await cache.RemoveByPrefixAsync(String.Empty);
+            int removed = await cache.RemoveByPrefixAsync(null!);
             Assert.Equal(3, removed);
             Assert.False(await cache.ExistsAsync("user:123"));
             Assert.False(await cache.ExistsAsync("order:456"));
@@ -1950,7 +1950,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove,
+    public virtual async Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove,
         int expectedRemovedCount)
     {
         var cache = GetCacheClient();
@@ -1970,7 +1970,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(1, (await scopedCache.GetAsync<int>(key)).Value);
 
             // Remove by prefix from scoped cache
-            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove));
+            Assert.Equal(expectedRemovedCount, await scopedCache.RemoveByPrefixAsync(prefixToRemove!));
 
             // Verify unscoped cache state
             Assert.True(await cache.ExistsAsync(key));
@@ -1980,7 +1980,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public virtual async Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         var cache = GetCacheClient();
         if (cache is null)
@@ -1996,7 +1996,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from scoped cache - should only remove within scope
-            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix));
+            Assert.Equal(1, await scopedCache.RemoveByPrefixAsync(prefix!));
             Assert.True(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
 
@@ -3558,9 +3558,9 @@ public class MyData
 {
     private readonly string _blah = "blah";
     public string Blah => _blah;
-    public string Type { get; set; } = null!;
+    public string Type { get; set; } = string.Empty;
     public DateTimeOffset Date { get; set; }
-    public string Message { get; set; } = null!;
+    public string Message { get; set; } = string.Empty;
 }
 
 public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue> where TKey : notnull

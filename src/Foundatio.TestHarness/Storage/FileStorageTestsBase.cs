@@ -673,9 +673,7 @@ public static class StorageExtensions
         PostInfo? eventPostInfo = null;
         try
         {
-#pragma warning disable CS8602 // Dereference of a possibly null reference - storage parameter is non-nullable
             eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
-#pragma warning restore CS8602
             if (eventPostInfo == null)
                 return null;
 

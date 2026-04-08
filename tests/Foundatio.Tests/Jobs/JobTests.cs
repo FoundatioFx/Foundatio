@@ -34,7 +34,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanStopLongRunningJob()
     {
-        var job = new LongRunningJob(null!, Log);
+        var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
         using var cts = new CancellationTokenSource(1000);
@@ -46,7 +46,7 @@ public class JobTests : TestWithLoggingBase
     [Fact]
     public async Task CanStopLongRunningCronJob()
     {
-        var job = new LongRunningJob(null!, Log);
+        var job = new LongRunningJob(null, Log);
         var sp = new ServiceCollection().BuildServiceProvider();
         var runner = new JobRunner(job, sp, Log);
         using var cts = new CancellationTokenSource(1000);
@@ -199,7 +199,7 @@ public class JobTests : TestWithLoggingBase
     {
         const int iterations = 10000;
 
-        var job = new SampleJob(null!, Log);
+        var job = new SampleJob(null, Log);
         var sw = Stopwatch.StartNew();
         await job.RunContinuousAsync(null, iterations, TestCancellationToken);
         sw.Stop();

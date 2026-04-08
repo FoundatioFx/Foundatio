@@ -257,10 +257,11 @@ public static class FileStorageExtensions
             throw new ArgumentNullException(nameof(path));
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read, cancellationToken).AnyContext();
-        if (stream != null)
-            return storage.Serializer.Deserialize<T>(stream);
+        if (stream is null)
+            return default!;
 
-        return default;
+        var result = storage.Serializer.Deserialize(stream, typeof(T));
+        return result is T typed ? typed : default!;
     }
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)

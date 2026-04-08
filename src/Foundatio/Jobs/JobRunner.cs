@@ -271,8 +271,13 @@ public class JobRunner
 
             _jobShutdownCancellationTokenSource.Token.Register(() =>
             {
-                _shutdownFileWatcher?.Dispose();
-                _shutdownFileWatcher = null;
+                if (_shutdownFileWatcher is not null)
+                {
+                    _shutdownFileWatcher.Created -= handler;
+                    _shutdownFileWatcher.Changed -= handler;
+                    _shutdownFileWatcher.Dispose();
+                    _shutdownFileWatcher = null;
+                }
             });
 
             return _jobShutdownCancellationTokenSource.Token;

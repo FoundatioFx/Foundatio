@@ -130,7 +130,7 @@ public class SizeCalculatorTests : TestWithLoggingBase
     public void CalculateSize_WithEmptyString_ReturnsStringOverhead()
     {
         // Act
-        long size = _sizer.CalculateSize(string.Empty);
+        long size = _sizer.CalculateSize(String.Empty);
 
         // Assert - string overhead (24 bytes) + 0 chars
         Assert.Equal(24, size);
