@@ -3558,9 +3558,9 @@ public class MyData
 {
     private readonly string _blah = "blah";
     public string Blah => _blah;
-    public string Type { get; set; } = string.Empty;
+    public string Type { get; set; } = String.Empty;
     public DateTimeOffset Date { get; set; }
-    public string Message { get; set; } = string.Empty;
+    public string Message { get; set; } = String.Empty;
 }
 
 public class SampleDictionary<TKey, TValue> : IDictionary<TKey, TValue> where TKey : notnull

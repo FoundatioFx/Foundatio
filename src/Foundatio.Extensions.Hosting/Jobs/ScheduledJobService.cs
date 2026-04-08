@@ -92,7 +92,7 @@ public class ScheduledJobService : BackgroundService
 
                 _logger.LogDebug("Applying distributed state for job {JobName} ({JobId})", distributedJob.Value.Options.Name, job.Id);
 
-                if (job.Options.CronSchedule != jobState.Value.Schedule)
+                if (!String.Equals(job.Options.CronSchedule, jobState.Value.Schedule, StringComparison.Ordinal))
                 {
                     _logger.LogInformation("Cron schedule changed for job {JobName} from {OldCronSchedule} to {NewCronSchedule} ({JobId})",
                         job.Options.Name, jobState.Value.Schedule, job.Options.CronSchedule, job.Id);
