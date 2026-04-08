@@ -264,7 +264,10 @@ public class SizeCalculator : IDisposable
                 return nullableSize;
 
             var underlyingType = Nullable.GetUnderlyingType(type);
-            return GetCachedTypeSize(underlyingType!) + 1; // Add 1 for hasValue flag
+            if (underlyingType is null)
+                return DefaultObjectSize;
+
+            return GetCachedTypeSize(underlyingType) + 1; // Add 1 for hasValue flag
         }
 
         // Handle arrays efficiently

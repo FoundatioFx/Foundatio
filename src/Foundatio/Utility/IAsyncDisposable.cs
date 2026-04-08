@@ -10,7 +10,7 @@ public static class Async
         where TResource : IAsyncDisposable
     {
         Exception? exception = null;
-        var result = default(TReturn)!;
+        TReturn result;
         try
         {
             result = await body(resource).AnyContext();
@@ -18,15 +18,12 @@ public static class Async
         catch (Exception ex)
         {
             exception = ex;
+            await resource.DisposeAsync().AnyContext();
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw; // Unreachable but satisfies compiler
         }
 
         await resource.DisposeAsync().AnyContext();
-        if (exception != null)
-        {
-            var info = ExceptionDispatchInfo.Capture(exception);
-            info.Throw();
-        }
-
         return result;
     }
 

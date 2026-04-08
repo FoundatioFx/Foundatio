@@ -76,7 +76,7 @@ public static class ConnectionStringParser
                 keyValue = null;
             }
 
-            string? realKeyName = synonyms != null ? (synonyms.TryGetValue(keyName, out string? synonym) ? synonym : null) : keyName;
+            string? realKeyName = synonyms is not null ? (synonyms.TryGetValue(keyName, out string? synonym) ? synonym : null) : keyName;
 
             if (!IsKeyNameValid(realKeyName))
                 throw new ArgumentException($"Keyword not supported: '{keyName}'");

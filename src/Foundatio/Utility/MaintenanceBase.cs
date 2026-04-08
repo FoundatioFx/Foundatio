@@ -35,7 +35,13 @@ public class MaintenanceBase : IDisposable
 
     protected void ScheduleNextMaintenance(DateTime utcDate)
     {
-        _maintenanceTimer?.ScheduleNext(utcDate);
+        if (_maintenanceTimer is null)
+        {
+            _logger.LogWarning("ScheduleNextMaintenance called before InitializeMaintenance");
+            return;
+        }
+
+        _maintenanceTimer.ScheduleNext(utcDate);
     }
 
     protected virtual Task<DateTime?> DoMaintenanceAsync()

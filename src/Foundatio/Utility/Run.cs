@@ -31,10 +31,10 @@ public static class Run
     [Obsolete("Use ResiliencePolicy instead.")]
     public static Task WithRetriesAsync(Func<Task> action, int maxAttempts = 5, TimeSpan? retryInterval = null, TimeProvider? timeProvider = null, CancellationToken cancellationToken = default, ILogger? logger = null)
     {
-        return WithRetriesAsync<object>(async () =>
+        return WithRetriesAsync<object?>(async () =>
         {
             await action().AnyContext();
-            return null!;
+            return null;
         }, maxAttempts, retryInterval, timeProvider, cancellationToken, logger);
     }
 
