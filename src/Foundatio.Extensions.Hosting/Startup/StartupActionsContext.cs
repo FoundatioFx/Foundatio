@@ -22,6 +22,7 @@ public class StartupActionsContext
     internal void MarkStartupComplete(RunStartupActionsResult result)
     {
         ArgumentNullException.ThrowIfNull(result);
+
         IsStartupComplete = true;
         Result = result;
     }

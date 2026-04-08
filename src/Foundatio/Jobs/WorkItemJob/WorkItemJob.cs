@@ -230,34 +230,39 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
     }
 
-    private readonly ConcurrentDictionary<string, Type?> _knownTypesCache = new();
+    private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new();
     protected virtual Type? GetWorkItemType(string workItemType)
     {
-        return _knownTypesCache.GetOrAdd(workItemType, type =>
+        if (_knownTypesCache.TryGetValue(workItemType, out var cachedType))
+            return cachedType;
+
+        Type? resolvedType = null;
+
+        try
+        {
+            resolvedType = Type.GetType(workItemType);
+        }
+        catch (Exception)
         {
             try
             {
-                return Type.GetType(type);
+                string[] typeParts = workItemType.Split(',');
+                string shortType = typeParts.Length >= 2
+                    ? String.Join(",", typeParts[0], typeParts[1])
+                    : workItemType;
+
+                resolvedType = Type.GetType(shortType);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                try
-                {
-                    string[] typeParts = type.Split(',');
-                    if (typeParts.Length >= 2)
-                        type = String.Join(",", typeParts[0], typeParts[1]);
-
-                    // try resolve type without version
-                    return Type.GetType(type);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error getting work item type: {WorkItemType}", type);
-
-                    return null;
-                }
+                _logger.LogWarning(ex, "Error getting work item type: {WorkItemType}", workItemType);
             }
-        });
+        }
+
+        if (resolvedType is not null)
+            _knownTypesCache.TryAdd(workItemType, resolvedType);
+
+        return resolvedType;
     }
 
     protected async Task ReportProgressAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, int progress = 0, string? message = null)

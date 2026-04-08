@@ -13,6 +13,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public QueueEntry(string id, string? correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
     {
         ArgumentNullException.ThrowIfNull(value);
+
         Id = id;
         CorrelationId = correlationId;
         _original = value;

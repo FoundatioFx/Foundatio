@@ -807,10 +807,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
         else
         {
-            var uniqueValues = new HashSet<T>(values.Where(v => v is not null));
-            var items = new Dictionary<T, DateTime?>(uniqueValues.Count);
-            foreach (var v in uniqueValues)
-                items[v] = expiresAt;
+            var items = values.Where(v => v is not null).Distinct().ToDictionary(k => k!, _ => expiresAt);
             if (items.Count == 0)
                 return 0;
 

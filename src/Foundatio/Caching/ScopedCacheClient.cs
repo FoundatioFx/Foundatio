@@ -69,7 +69,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     ILogger IHaveLogger.Logger => UnscopedCache.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedCache.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedCache.GetTimeProvider();
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
 
     public void SetScope(string scope)
     {

@@ -32,7 +32,7 @@ internal class TestLoggerLogger : ILogger
             EventId = eventId,
             State = state,
             Exception = exception,
-            Formatter = (s, e) => s is TState typedState ? formatter(typedState, e) : string.Empty,
+            Formatter = (s, e) => s is TState typedState ? formatter(typedState, e) : String.Empty,
             CategoryName = _categoryName,
             Scopes = scopes
         };

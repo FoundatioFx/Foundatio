@@ -183,42 +183,42 @@ internal class ScheduledJobInstance
 
         var scheduledTime = isManual ? _baseDate : NextRun!.Value;
 
-        ILock jobRunningLock = EmptyLock.Empty;
-        ILock scheduledTimeLock = EmptyLock.Empty;
+        ILock? jobRunningLock = null;
+        ILock? scheduledTimeLock = null;
         if (Options.IsDistributed)
         {
             // using lock provider in a cluster with a distributed cache implementation keeps cron jobs from running duplicates
             try
             {
                 // hold this lock for 1 hour to prevent duplicates
-                scheduledTimeLock = await _lockProvider.AcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext() ?? EmptyLock.Empty;
+                scheduledTimeLock = await _lockProvider.AcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext();
 
-                if (scheduledTimeLock is not EmptyLock)
+                if (scheduledTimeLock is not null)
                 {
                     // hold this lock while the job is running to prevent multiple instances of the job running at the same time
-                    jobRunningLock = await _lockProvider.AcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext() ?? EmptyLock.Empty;
+                    jobRunningLock = await _lockProvider.AcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext();
 
-                    if (jobRunningLock is EmptyLock)
+                    if (jobRunningLock is null)
                         await scheduledTimeLock.ReleaseAsync().AnyContext();
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error acquiring locks for job ({JobName})", Options.Name);
-                if (scheduledTimeLock is not EmptyLock)
+                if (scheduledTimeLock is not null)
                     await scheduledTimeLock.ReleaseAsync().AnyContext();
-                scheduledTimeLock = EmptyLock.Empty;
-                if (jobRunningLock is not EmptyLock)
+                scheduledTimeLock = null;
+                if (jobRunningLock is not null)
                     await jobRunningLock.ReleaseAsync().AnyContext();
-                jobRunningLock = EmptyLock.Empty;
+                jobRunningLock = null;
             }
 
-            if (isManual && (scheduledTimeLock is EmptyLock || jobRunningLock is EmptyLock))
+            if (isManual && (scheduledTimeLock is null || jobRunningLock is null))
                 _logger.LogWarning("Job ({JobName}) is already running, skipping manual request", Options.Name);
-            else if (jobRunningLock is EmptyLock || scheduledTimeLock is EmptyLock)
+            else if (jobRunningLock is null || scheduledTimeLock is null)
                 _logger.LogDebug("Job ({JobName}) scheduled on another instance", Options.Name);
 
-            if (scheduledTimeLock is EmptyLock || jobRunningLock is EmptyLock)
+            if (scheduledTimeLock is null || jobRunningLock is null)
             {
                 // sync distributed state
                 await GetDistributedStateAsync();
@@ -290,10 +290,10 @@ internal class ScheduledJobInstance
                     jobRunResult.Success = false;
                     jobRunResult.Error = ex.Message;
 
-                    if (scheduledTimeLock is not EmptyLock)
+                    if (scheduledTimeLock is not null)
                         await scheduledTimeLock.ReleaseAsync();
 
-                    if (jobRunningLock is not EmptyLock)
+                    if (jobRunningLock is not null)
                         await jobRunningLock.ReleaseAsync();
 
                     // TODO set next run time to retry, but need max retry count
@@ -305,7 +305,7 @@ internal class ScheduledJobInstance
 
                     await UpdateDistributedStateAsync();
 
-                    if (isManual)
+                    if (isManual && scheduledTimeLock is not null)
                         await scheduledTimeLock.ReleaseAsync();
                 }
             }

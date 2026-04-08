@@ -792,7 +792,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
             _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
-            await _localCache.ListAddAsync(key, cacheValue.Value, expiration).AnyContext();
+            await _localCache.ListAddAsync(key, cacheValue.Value!, expiration).AnyContext();
         }
 
         return cacheValue;

@@ -141,6 +141,6 @@ public static class HaveDataExtensions
 
         value = dataValue.ToType<T>(serializer);
 
-        return value is not null;
+        return true;
     }
 }

@@ -117,44 +117,53 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         });
     }
 
-    private readonly ConcurrentDictionary<string, Type?> _knownMessageTypesCache = new();
+    private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
     protected virtual Type? GetMappedMessageType(string messageType)
     {
         if (String.IsNullOrEmpty(messageType))
             return null;
 
-        return _knownMessageTypesCache.GetOrAdd(messageType, type =>
+        if (_knownMessageTypesCache.TryGetValue(messageType, out var cachedType))
+            return cachedType;
+
+        Type? resolvedType = null;
+
+        if (_options.MessageTypeMappings is not null && _options.MessageTypeMappings.TryGetValue(messageType, out Type? typeMapping))
         {
-            if (_options.MessageTypeMappings is not null && _options.MessageTypeMappings.TryGetValue(type, out Type? typeMapping))
-            {
-                if (typeMapping is not null)
-                    return typeMapping;
+            if (typeMapping is not null)
+                resolvedType = typeMapping;
+            else
+                _logger.LogWarning("Message type mapping for {MessageType} resolved to null; falling back to Type.GetType", messageType);
+        }
 
-                _logger.LogWarning("Message type mapping for {MessageType} resolved to null; falling back to Type.GetType", type);
-            }
-
+        if (resolvedType is null)
+        {
             try
             {
-                return Type.GetType(type);
+                resolvedType = Type.GetType(messageType);
             }
             catch (Exception)
             {
                 try
                 {
-                    string[] typeParts = type.Split(',');
-                    if (typeParts.Length >= 2)
-                        type = String.Join(",", typeParts[0], typeParts[1]);
+                    string[] typeParts = messageType.Split(',');
+                    string shortType = typeParts.Length >= 2
+                        ? String.Join(",", typeParts[0], typeParts[1])
+                        : messageType;
 
-                    // try resolve type without version
-                    return Type.GetType(type);
+                    resolvedType = Type.GetType(shortType);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting message body type: {MessageType}", type);
-                    return null;
+                    _logger.LogError(ex, "Error getting message body type: {MessageType}", messageType);
                 }
             }
-        });
+        }
+
+        if (resolvedType is not null)
+            _knownMessageTypesCache.TryAdd(messageType, resolvedType);
+
+        return resolvedType;
     }
 
     protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;

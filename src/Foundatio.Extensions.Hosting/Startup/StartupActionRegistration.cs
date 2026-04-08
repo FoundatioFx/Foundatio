@@ -30,8 +30,9 @@ public class StartupActionRegistration
 
     public StartupActionRegistration(string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
     {
-        Name = name;
         ArgumentNullException.ThrowIfNull(action);
+
+        Name = name;
         _action = action;
         if (!priority.HasValue)
             priority = Interlocked.Increment(ref _currentAutoPriority);
