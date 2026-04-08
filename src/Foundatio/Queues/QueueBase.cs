@@ -134,6 +134,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options);
     public async Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(data);
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();
