@@ -72,14 +72,6 @@ These parameter changes allow callers to pass `null` where it was already suppor
 | `string IHaveSubMetricName.SubMetricName` | `string? IHaveSubMetricName.SubMetricName` | Sub-metric is optional |
 | `string IHaveUniqueIdentifier.UniqueIdentifier` | `string? IHaveUniqueIdentifier.UniqueIdentifier` | Identifier is optional |
 
-### Queue Job Interface
-
-| Before | After | Reason |
-|--------|-------|--------|
-| `ProcessAsync(IQueueEntry<T> queueEntry, ...)` | `ProcessAsync(IQueueEntry<T>? queueEntry, ...)` | Dequeue can return `null`; implementations already handled this |
-
-This is a **breaking change** for implementors of `IQueueJob<T>` who must update their method signature.
-
 ## Migration Impact for Consumers
 
 ### What You Need to Change
@@ -96,24 +88,23 @@ This is a **breaking change** for implementors of `IQueueJob<T>` who must update
    await entry.CompleteAsync();
    ```
 
-2. **IQueueJob<T> implementations**: Update the `ProcessAsync` signature:
-   ```csharp
-   // Before
-   public Task<JobResult> ProcessAsync(IQueueEntry<MyData> queueEntry, CancellationToken ct)
+2. **Nullable property access**: Properties like `IMessage.CorrelationId`, `IMessage.ClrType`, and `IQueueEntry.CorrelationId` are now nullable.
 
-   // After
-   public Task<JobResult> ProcessAsync(IQueueEntry<MyData>? queueEntry, CancellationToken ct)
-   ```
-
-3. **Nullable property access**: Properties like `IMessage.CorrelationId`, `IMessage.ClrType`, and `IQueueEntry.CorrelationId` are now nullable.
+::: info Queue Job Null Safety
+`IQueueJob<T>.ProcessAsync` takes a **non-nullable** `IQueueEntry<T>` parameter. `QueueJobBase<T>.RunAsync()` already checks for `null` after dequeuing and returns early — `ProcessAsync` is never called with a `null` entry.
+:::
 
 ## Known `null!` Patterns (Bandaids)
 
 The following areas use `= null!` as a default value to suppress NRT warnings. These are functional but not ideal — the `required` keyword (C# 11+) would be more correct for properties that must always be set.
 
+## `required` Keyword Usage
+
+The following types use the C# 11 `required` keyword to enforce initialization at construction time. This replaces the previous `= null!` pattern and provides compile-time safety.
+
 ### Queue Event Args
 
-All queue event args classes use `= null!` for properties that are always populated by the queue infrastructure but lack constructor enforcement:
+All queue event args classes use `required` for properties that are always populated by the queue infrastructure:
 
 - `EnqueuingEventArgs<T>`: `Queue`, `Data`, `Options`
 - `EnqueuedEventArgs<T>`: `Queue`, `Entry`
@@ -125,22 +116,27 @@ All queue event args classes use `= null!` for properties that are always popula
 
 ### DTOs and Models
 
-| Class | Properties with `null!` |
-|-------|------------------------|
+| Class | Properties with `required` |
+|-------|--------------------------|
 | `FileSpec` | `Path` |
-| `Message` | `Type` |
 | `WorkItemData` | `WorkItemId`, `Type`, `Data` |
 | `InvalidateCache` | `CacheId` |
 | `ItemExpiredEventArgs` | `Client`, `Key` |
-| `CacheLockReleased` | `Resource`, `LockId` |
+| `CacheLockReleased` | `Resource` |
 | `NextPageResult` | `Files` |
+| `MessageBusBase.Subscriber` | `Type`, `Action` |
 
-### Internal Infrastructure
+::: warning
+`required` on serialized types enforces the property is present during `System.Text.Json` deserialization — a missing property throws `JsonException`. This is intentional: `WorkItemData`, `InvalidateCache`, and `CacheLockReleased` are all serialized over queues or message bus, and their required properties should always be present in the payload.
+:::
 
-| Class | Field/Property with `null!` |
-|-------|----------------------------|
-| `QueueBehaviorBase<T>` | `_queue` field (set via `Attach()`) |
-| `MessageBusBase.Subscriber` | `Type`, `Action` (always set during subscription) |
+### Remaining `null!` Patterns
+
+The following areas still use `= null!`:
+
+| Class | Field/Property | Reason |
+|-------|---------------|--------|
+| `QueueBehaviorBase<T>` | `_queue` field | Set via `Attach()` before any other method is called. Cannot use `required` on a `protected` field set by an interface method. |
 
 ### DI Service Resolution
 
@@ -184,36 +180,6 @@ All provider repositories follow the same pattern for options classes with conne
 | Kafka | Options properties |
 
 ## Recommendations for Future Improvement
-
-### Use `required` Keyword — Constraints and Tradeoffs
-
-The C# 11 `required` keyword seems like the natural replacement for `null!`, but has two significant constraints:
-
-**1. System.Text.Json enforces `required` during deserialization.** If a `required` property is missing from the JSON payload, `JsonSerializer.Deserialize` throws `JsonException`. This means any type that goes through serialization (queue messages, message bus payloads) would break if the property isn't present in the JSON.
-
-**Types affected (serialized — CANNOT use `required` without breaking wire compat):**
-
-- `WorkItemData` — serialized in queue payloads
-- `Message` — serialized for message bus
-- `InvalidateCache` — sent over message bus
-- `CacheLockReleased` — sent over message bus
-
-**2. `required` is incompatible with `new()` generic constraint.** Classes with `required` members produce CS9040 when used with `where T : new()`. This rules out all options classes that use `SharedOptions`'s `UseServices<TOption>()` extension (`where TOption : SharedOptions, new()`).
-
-**Types affected (generic construction — CANNOT use `required`):**
-
-- All `SharedOptions`-derived options classes
-- All provider options (connection strings, credentials, etc.)
-
-**Types safe for `required` (never serialized, never generic-constructed):**
-
-- All queue event args classes (`EnqueuingEventArgs<T>`, `EnqueuedEventArgs<T>`, etc.)
-- `ItemExpiredEventArgs`
-- `FileSpec` (constructed with object initializers, not deserialized)
-
-::: warning
-Adding `required` is a **source breaking change** — existing code that creates these types without setting the required property will fail to compile.
-:::
 
 ### Make DI Resolution Explicit
 
