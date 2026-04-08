@@ -37,9 +37,9 @@ public class TestLogger : ILoggerFactory
             SetLogLevel(logLevel.Key, logLevel.Value);
     }
 
-    public TestLogger(TestLoggerOptions? options)
+    public TestLogger(TestLoggerOptions options)
     {
-        Options = options ?? new TestLoggerOptions();
+        Options = options;
 
         foreach (var logLevel in Options.LogLevels)
             SetLogLevel(logLevel.Key, logLevel.Value);

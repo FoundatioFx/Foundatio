@@ -84,7 +84,7 @@ internal class TestLoggerLogger : ILogger
 
     private sealed class Wrapper
     {
-        public ImmutableStack<object> Value { get; set; } = null!;
+        public required ImmutableStack<object> Value { get; set; }
     }
 
     private static ImmutableStack<object> CurrentScopeStack
