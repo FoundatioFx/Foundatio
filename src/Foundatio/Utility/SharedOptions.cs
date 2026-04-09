@@ -67,21 +67,27 @@ public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
         return (TBuilder)this;
     }
 
-    public TBuilder TimeProvider(TimeProvider timeProvider)
+    public TBuilder TimeProvider(TimeProvider? timeProvider)
     {
-        Target.TimeProvider = timeProvider;
+        if (timeProvider is not null)
+            Target.TimeProvider = timeProvider;
+
         return (TBuilder)this;
     }
 
-    public TBuilder Serializer(ISerializer serializer)
+    public TBuilder Serializer(ISerializer? serializer)
     {
-        Target.Serializer = serializer;
+        if (serializer is not null)
+            Target.Serializer = serializer;
+
         return (TBuilder)this;
     }
 
-    public TBuilder LoggerFactory(ILoggerFactory loggerFactory)
+    public TBuilder LoggerFactory(ILoggerFactory? loggerFactory)
     {
-        Target.LoggerFactory = loggerFactory;
+        if (loggerFactory is not null)
+            Target.LoggerFactory = loggerFactory;
+
         return (TBuilder)this;
     }
 }
