@@ -46,7 +46,7 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
 
-        var result = serializer.Deserialize(data, typeof(T));
+        object? result = serializer.Deserialize(data, typeof(T));
         if (result is T typed)
             return typed;
 
