@@ -246,6 +246,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             try
             {
+                // try resolve type without version
                 string[] typeParts = workItemType.Split(',');
                 string shortType = typeParts.Length >= 2
                     ? String.Join(",", typeParts[0], typeParts[1])

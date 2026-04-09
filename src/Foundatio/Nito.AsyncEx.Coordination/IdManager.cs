@@ -1,6 +1,6 @@
 #nullable disable
 
-﻿using System.Threading;
+using System.Threading;
 
 namespace Foundatio.AsyncEx;
 

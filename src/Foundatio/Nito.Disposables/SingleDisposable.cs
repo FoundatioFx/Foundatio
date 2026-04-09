@@ -1,6 +1,6 @@
 #nullable disable
 
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Foundatio.Disposables.Internals;
 

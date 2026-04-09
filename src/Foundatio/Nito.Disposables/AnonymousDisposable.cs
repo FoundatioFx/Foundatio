@@ -1,6 +1,6 @@
 #nullable disable
 
-﻿using System;
+using System;
 
 namespace Foundatio.Disposables;
 

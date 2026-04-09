@@ -98,6 +98,8 @@ public class DelegateWorkItemHandler : WorkItemHandlerBase
 
     public DelegateWorkItemHandler(Func<WorkItemContext, Task> handler, ILogger? logger = null, Action<IQueueEntry<WorkItemData>, Type, object>? logProcessingWorkItem = null, Action<IQueueEntry<WorkItemData>, Type, object>? logAutoCompletedWorkItem = null) : base(logger)
     {
+        ArgumentNullException.ThrowIfNull(handler);
+
         _handler = handler;
         _logProcessingWorkItem = logProcessingWorkItem;
         _logAutoCompletedWorkItem = logAutoCompletedWorkItem;

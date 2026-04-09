@@ -648,7 +648,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         await storage.SaveObjectAsync(path, longIdInfo);
         await storage.SaveObjectAsync(path, shortIdInfo);
 
-        var actualInfo = await storage.GetObjectAsync<PostInfo>(path);
+        var actualInfo = await storage.GetObjectAsync<PostInfo?>(path);
         Assert.NotNull(actualInfo);
         Assert.Equal(shortIdInfo, actualInfo);
     }
@@ -673,7 +673,7 @@ public static class StorageExtensions
         PostInfo? eventPostInfo = null;
         try
         {
-            eventPostInfo = await storage.GetObjectAsync<PostInfo>(path);
+            eventPostInfo = await storage.GetObjectAsync<PostInfo?>(path);
             if (eventPostInfo == null)
                 return null;
 

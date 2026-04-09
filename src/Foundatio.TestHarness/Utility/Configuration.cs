@@ -37,7 +37,7 @@ public static class Configuration
             if (File.Exists(Path.Combine(basePath, "appsettings.json")))
                 return Path.GetFullPath(basePath);
 
-            basePath = Path.Combine(basePath, "..");
+            basePath = Directory.GetParent(basePath)?.FullName ?? basePath;
         }
 
         return Path.GetFullPath(".");

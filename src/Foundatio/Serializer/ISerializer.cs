@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 
@@ -42,21 +41,21 @@ public static class DefaultSerializer
 
 public static class SerializerExtensions
 {
-    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, Stream data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentNullException.ThrowIfNull(data);
 
         var result = serializer.Deserialize(data, typeof(T));
-        if (result is null)
-            return default;
         if (result is T typed)
             return typed;
-        throw new InvalidCastException($"Cannot cast deserialized object of type '{result.GetType().FullName}' to type '{typeof(T).FullName}'.");
+
+        if (result is not null)
+            throw new SerializerException($"Deserialized object is of type '{result.GetType().FullName}', expected '{typeof(T).FullName}'.");
+
+        return default!;
     }
 
-    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, byte[] data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -66,11 +65,13 @@ public static class SerializerExtensions
 
         using var stream = new MemoryStream(data);
         var result = serializer.Deserialize(stream, typeof(T));
-        if (result is null)
-            return default;
         if (result is T typed)
             return typed;
-        throw new InvalidCastException($"Cannot cast deserialized object of type '{result.GetType().FullName}' to type '{typeof(T).FullName}'.");
+
+        if (result is not null)
+            throw new SerializerException($"Deserialized object is of type '{result.GetType().FullName}', expected '{typeof(T).FullName}'.");
+
+        return default!;
     }
 
     public static object? Deserialize(this ISerializer serializer, byte[] data, Type objectType)
@@ -85,7 +86,6 @@ public static class SerializerExtensions
         return serializer.Deserialize(stream, objectType);
     }
 
-    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, string data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -94,11 +94,13 @@ public static class SerializerExtensions
         var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
         using var stream = new MemoryStream(bytes);
         var result = serializer.Deserialize(stream, typeof(T));
-        if (result is null)
-            return default;
         if (result is T typed)
             return typed;
-        throw new InvalidCastException($"Cannot cast deserialized object of type '{result.GetType().FullName}' to type '{typeof(T).FullName}'.");
+
+        if (result is not null)
+            throw new SerializerException($"Deserialized object is of type '{result.GetType().FullName}', expected '{typeof(T).FullName}'.");
+
+        return default!;
     }
 
     public static object? Deserialize(this ISerializer serializer, string data, Type objectType)
