@@ -39,6 +39,8 @@ public class TestLogger : ILoggerFactory
 
     public TestLogger(TestLoggerOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
         Options = options;
 
         foreach (var logLevel in Options.LogLevels)
