@@ -17,7 +17,7 @@ public class LogState : IEnumerable<KeyValuePair<string, object?>>
         set { _state[property] = value; }
     }
 
-    public LogState Property(string property, object value)
+    public LogState Property(string property, object? value)
     {
         _state.Add(property, value);
         return this;

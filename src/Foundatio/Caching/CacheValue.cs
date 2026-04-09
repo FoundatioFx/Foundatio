@@ -6,6 +6,9 @@ public class CacheValue<T>
 {
     public CacheValue([AllowNull] T value, bool hasValue)
     {
+        // null! is intentional: Value is typed as non-nullable T, but callers must check
+        // HasValue or IsNull before accessing it. This follows the TryGet pattern where
+        // the value is only meaningful when HasValue is true.
         Value = value!;
         HasValue = hasValue;
     }
