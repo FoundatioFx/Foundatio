@@ -6,7 +6,7 @@ public class CacheValue<T>
 {
     public CacheValue([AllowNull] T value, bool hasValue)
     {
-        Value = value;
+        Value = value!;
         HasValue = hasValue;
     }
 
@@ -14,7 +14,6 @@ public class CacheValue<T>
 
     public bool IsNull => Value is null;
 
-    [MaybeNull]
     public T Value { get; }
 
     public static CacheValue<T> Null { get; } = new(default, true);

@@ -676,7 +676,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return difference;
     }
 
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -719,7 +719,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return addedCount;
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -768,7 +768,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return removedCount;
     }
 
-    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -792,7 +792,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             var expiration = await _distributedCache.GetExpirationAsync(key).AnyContext();
             _logger.LogTrace("Setting Local cache key: {Key} with expiration: {Expiration}", key, expiration);
 
-            await _localCache.ListAddAsync(key, cacheValue.Value!, expiration).AnyContext();
+            await _localCache.ListAddAsync(key, cacheValue.Value, expiration).AnyContext();
         }
 
         return cacheValue;

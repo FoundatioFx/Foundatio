@@ -2004,7 +2004,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await scopedCache.SetAsync(key, 1);
 
             // Remove by null/empty from unscoped cache - should remove both unscoped and scoped
-            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix));
+            Assert.Equal(2, await cache.RemoveByPrefixAsync(prefix!));
             Assert.False(await cache.ExistsAsync(key));
             Assert.False(await scopedCache.ExistsAsync(key));
         }

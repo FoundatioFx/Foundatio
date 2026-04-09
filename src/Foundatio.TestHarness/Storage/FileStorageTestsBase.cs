@@ -636,7 +636,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
     public virtual async Task CanSaveOverExistingStoredContent()
     {
         using var storage = GetStorage();
-        if (storage == null)
+        if (storage is null)
             return;
 
         await ResetAsync(storage);

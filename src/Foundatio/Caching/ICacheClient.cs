@@ -430,7 +430,7 @@ public interface ICacheClient : IDisposable
     /// </remarks>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="values"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
-    Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
+    Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull;
 
     /// <summary>
     /// Removes values from a list stored at the specified key.
@@ -441,7 +441,7 @@ public interface ICacheClient : IDisposable
     /// <returns>The number of values that were removed from the list.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> or <paramref name="values"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
-    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values);
+    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull;
 
     /// <summary>
     /// Retrieves values from a list stored at the specified key.
@@ -460,5 +460,5 @@ public interface ICacheClient : IDisposable
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="page"/> is less than 1.</exception>
-    Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100);
+    Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull;
 }

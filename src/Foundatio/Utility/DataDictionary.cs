@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using Foundatio.Serializer;
 
 namespace Foundatio.Utility;
@@ -128,19 +127,25 @@ public static class HaveDataExtensions
     /// <param name="value">The value from the data dictionary converted to the desired type</param>
     /// <param name="serializer">The serializer to use to convert the type from <see cref="String"/> or <see cref="Byte"/> array</param>
     /// <returns>Whether or not we successfully got and converted the data</returns>
-    public static bool TryGetData<T>(this IHaveData target, string key, [MaybeNullWhen(false)] out T value, ISerializer? serializer = null)
+    public static bool TryGetData<T>(this IHaveData target, string key, out T value, ISerializer? serializer = null)
     {
-        if (serializer == null && target is IHaveSerializer haveSerializer)
+        if (serializer is null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
         if (!target.Data.TryGetValue(key, out object? dataValue))
         {
-            value = default;
+            value = default!;
             return false;
         }
 
-        value = dataValue.ToType<T>(serializer);
+        var converted = dataValue.ToType<T>(serializer);
+        if (converted is null)
+        {
+            value = default!;
+            return false;
+        }
 
+        value = converted;
         return true;
     }
 }

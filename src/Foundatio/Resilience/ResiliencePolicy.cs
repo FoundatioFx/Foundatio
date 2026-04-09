@@ -90,8 +90,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -156,8 +156,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -222,8 +222,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -288,8 +288,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -358,8 +358,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -424,8 +424,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -490,8 +490,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -556,8 +556,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {

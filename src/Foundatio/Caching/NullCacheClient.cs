@@ -225,7 +225,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(value);
     }
 
-    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -235,7 +235,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(0L);
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -245,7 +245,7 @@ public class NullCacheClient : ICacheClient
         return Task.FromResult(0L);
     }
 
-    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         if (page.HasValue)
