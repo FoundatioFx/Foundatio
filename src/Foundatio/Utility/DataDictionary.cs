@@ -20,7 +20,9 @@ public class DataDictionary : Dictionary<string, object>
 {
     public static readonly DataDictionary Empty = new();
 
-    public DataDictionary() : base(StringComparer.OrdinalIgnoreCase) { }
+    public DataDictionary() : base(StringComparer.OrdinalIgnoreCase)
+    {
+    }
 
     public DataDictionary(IEnumerable<KeyValuePair<string, object>>? values) : base(StringComparer.OrdinalIgnoreCase)
     {
@@ -59,31 +61,33 @@ public static class DataDictionaryExtensions
 
     public static T? GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, T? defaultValue = default)
     {
-        if (!dictionary.ContainsKey(key))
+        if (!dictionary.TryGetValue(key, out object? data))
             return defaultValue;
 
-        object data = dictionary[key];
-        if (data is T t)
-            return t;
-
-        if (data is null)
-            return defaultValue;
-
-        try
+        switch (data)
         {
-            return data.ToType<T>();
+            case T t:
+                return t;
+            case null:
+                return defaultValue;
+            default:
+                try
+                {
+                    return data.ToType<T>();
+                }
+                catch
+                {
+                    return defaultValue;
+                }
         }
-        catch { }
-
-        return defaultValue;
     }
 
-    public static string GetString(this IDictionary<string, object> dictionary, string name)
+    public static string? GetString(this IDictionary<string, object> dictionary, string name)
     {
-        return dictionary.GetString(name, String.Empty);
+        return dictionary.GetString(name, null);
     }
 
-    public static string GetString(this IDictionary<string, object> dictionary, string name, string @default)
+    public static string? GetString(this IDictionary<string, object> dictionary, string name, string? @default)
     {
         if (!dictionary.TryGetValue(name, out object? value))
             return @default;
@@ -91,7 +95,7 @@ public static class DataDictionaryExtensions
         if (value is string s)
             return s;
 
-        return String.Empty;
+        return null;
     }
 }
 
@@ -112,7 +116,7 @@ public static class HaveDataExtensions
         if (serializer is null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
-        if (target.Data.TryGetValue(key, out var value))
+        if (target.Data.TryGetValue(key, out object? value))
             return value.ToType<T>(serializer);
 
         return defaultValue;
