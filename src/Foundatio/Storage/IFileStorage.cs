@@ -253,17 +253,33 @@ public static class FileStorageExtensions
     /// Deserializes an object of type <typeparamref name="T"/> from the file at <paramref name="path"/>.
     /// Returns <c>default</c> if the file does not exist.
     /// </summary>
-    [return: MaybeNull]
+    /// <remarks>
+    /// <para>
+    /// This method can return <c>null</c>/<c>default</c> when the file is not found, but the return type
+    /// is <c>Task&lt;T&gt;</c> rather than <c>Task&lt;T?&gt;</c> for two reasons:
+    /// </para>
+    /// <list type="number">
+    /// <item><description>
+    /// <c>[return: MaybeNull]</c> is not honored by Roslyn inside <c>async</c> methods
+    /// (<see href="https://github.com/dotnet/roslyn/issues/30953">dotnet/roslyn#30953</see>),
+    /// so applying it causes spurious CS8602 warnings at every call site.
+    /// </description></item>
+    /// <item><description>
+    /// Using <c>Task&lt;T?&gt;</c> would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// </description></item>
+    /// </list>
+    /// <para>Callers that need null safety should use a nullable type argument, e.g.
+    /// <c>GetObjectAsync&lt;PostInfo?&gt;(path)</c>.</para>
+    /// </remarks>
     public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read, cancellationToken).AnyContext();
         if (stream is null)
-            // Roslyn does not honor [return: MaybeNull] inside async methods (https://github.com/dotnet/roslyn/issues/30953).
             return default!;
 
-        return storage.Serializer.Deserialize<T>(stream);
+        return storage.Serializer.Deserialize<T>(stream)!;
     }
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)

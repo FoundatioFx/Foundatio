@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 
@@ -41,6 +42,16 @@ public static class DefaultSerializer
 
 public static class SerializerExtensions
 {
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from <paramref name="data"/>.
+    /// </summary>
+    /// <returns>The deserialized value, or <c>default</c> if the underlying serializer returns <c>null</c>.</returns>
+    /// <remarks>
+    /// The return type is <c>T</c> annotated with <c>[return: MaybeNull]</c> rather than <c>T?</c>
+    /// because <c>T?</c> on an unconstrained generic would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// Callers that expect <c>null</c> should use a nullable type argument, e.g. <c>Deserialize&lt;MyType?&gt;</c>.
+    /// </remarks>
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, Stream data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -56,6 +67,16 @@ public static class SerializerExtensions
         return default!;
     }
 
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from <paramref name="data"/>.
+    /// </summary>
+    /// <returns>The deserialized value, or <c>default</c> if the underlying serializer returns <c>null</c>.</returns>
+    /// <remarks>
+    /// The return type is <c>T</c> annotated with <c>[return: MaybeNull]</c> rather than <c>T?</c>
+    /// because <c>T?</c> on an unconstrained generic would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// Callers that expect <c>null</c> should use a nullable type argument, e.g. <c>Deserialize&lt;MyType?&gt;</c>.
+    /// </remarks>
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, byte[] data)
     {
         ArgumentNullException.ThrowIfNull(serializer);
@@ -86,6 +107,16 @@ public static class SerializerExtensions
         return serializer.Deserialize(stream, objectType);
     }
 
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from <paramref name="data"/>.
+    /// </summary>
+    /// <returns>The deserialized value, or <c>default</c> if the underlying serializer returns <c>null</c>.</returns>
+    /// <remarks>
+    /// The return type is <c>T</c> annotated with <c>[return: MaybeNull]</c> rather than <c>T?</c>
+    /// because <c>T?</c> on an unconstrained generic would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// Callers that expect <c>null</c> should use a nullable type argument, e.g. <c>Deserialize&lt;MyType?&gt;</c>.
+    /// </remarks>
+    [return: MaybeNull]
     public static T Deserialize<T>(this ISerializer serializer, string data)
     {
         ArgumentNullException.ThrowIfNull(serializer);

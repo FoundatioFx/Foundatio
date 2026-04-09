@@ -14,7 +14,7 @@
     <Authors>FoundatioFx</Authors>
     <Nullable>enable</Nullable>
     <NoWarn>$(NoWarn);CS1591;</NoWarn>
-    <WarningsAsErrors>true</WarningsAsErrors>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageOutputPath>$(SolutionDir)artifacts</PackageOutputPath>

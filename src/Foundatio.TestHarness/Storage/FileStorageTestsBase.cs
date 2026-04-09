@@ -650,7 +650,7 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
 
         var actualInfo = await storage.GetObjectAsync<PostInfo?>(path);
         Assert.NotNull(actualInfo);
-        Assert.Equal(shortIdInfo, actualInfo);
+        Assert.Equal(shortIdInfo, actualInfo!);
     }
 }
 

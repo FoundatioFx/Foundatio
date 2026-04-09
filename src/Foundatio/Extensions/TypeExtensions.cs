@@ -56,9 +56,15 @@ internal static class TypeExtensions
     }
 
     [return: MaybeNull]
-    public static T ToType<T>(this object value, ISerializer? serializer = null)
+    public static T ToType<T>(this object? value, ISerializer? serializer = null)
     {
-        ArgumentNullException.ThrowIfNull(value);
+        if (value is null)
+        {
+            if (!typeof(T).IsValueType || Nullable.GetUnderlyingType(typeof(T)) is not null)
+                return default!;
+
+            throw new ArgumentNullException(nameof(value));
+        }
 
         var targetType = typeof(T);
         var converter = TypeDescriptor.GetConverter(targetType);
