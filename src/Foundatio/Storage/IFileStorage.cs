@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -242,20 +243,24 @@ public static class FileStorageExtensions
 {
     public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         var bytes = storage.Serializer.SerializeToBytes(data);
         return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
     }
 
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from the file at <paramref name="path"/>.
+    /// Returns <c>default</c> if the file does not exist.
+    /// </summary>
+    [return: MaybeNull]
     public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read, cancellationToken).AnyContext();
         if (stream is null)
+            // Roslyn does not honor [return: MaybeNull] inside async methods (https://github.com/dotnet/roslyn/issues/30953).
             return default!;
 
         return storage.Serializer.Deserialize<T>(stream);
