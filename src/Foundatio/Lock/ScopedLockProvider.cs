@@ -15,6 +15,8 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
 
     public ScopedLockProvider(ILockProvider lockProvider, string? scope = null)
     {
+        ArgumentNullException.ThrowIfNull(lockProvider);
+
         UnscopedLockProvider = lockProvider;
         _isLocked = scope != null;
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim() : null;

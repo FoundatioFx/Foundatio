@@ -259,8 +259,7 @@ public static class FileStorageExtensions
         if (stream is null)
             return default!;
 
-        var result = storage.Serializer.Deserialize<T>(stream);
-        return result is T typed ? typed : default!;
+        return storage.Serializer.Deserialize<T>(stream);
     }
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)

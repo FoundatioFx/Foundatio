@@ -1797,11 +1797,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (!_hasSizeCalculator)
             return 0;
 
+        if (value is null)
+            return 0;
+
         try
         {
-            if (value is null)
-                return 0;
-
             long size = _sizeCalculator!(value);
 
             // Validate the size returned by the calculator
