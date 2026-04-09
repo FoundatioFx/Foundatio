@@ -34,6 +34,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     public CacheLockProvider(ICacheClient cacheClient, IMessageBus? messageBus, TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
+        ArgumentNullException.ThrowIfNull(cacheClient);
+
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<CacheLockProvider>();
