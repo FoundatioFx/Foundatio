@@ -1,17 +1,19 @@
 ﻿using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 
 namespace Foundatio.Utility;
 
 internal static class ExceptionExtensions
 {
-    public static Exception GetInnermostException(this Exception exception)
+    [return: NotNullIfNotNull(nameof(exception))]
+    public static Exception? GetInnermostException(this Exception? exception)
     {
-        if (exception == null)
+        if (exception is null)
             return null;
 
         Exception current = exception;
-        while (current.InnerException != null)
+        while (current.InnerException is not null)
             current = current.InnerException;
 
         return current;
@@ -19,7 +21,7 @@ internal static class ExceptionExtensions
 
     public static string GetMessage(this Exception exception)
     {
-        if (exception == null)
+        if (exception is null)
             return String.Empty;
 
         if (exception is AggregateException aggregateException)

@@ -12,11 +12,11 @@ namespace Foundatio.Tests.Queue;
 
 public class InMemoryQueueTests : QueueTestBase
 {
-    private IQueue<SimpleWorkItem> _queue;
+    private IQueue<SimpleWorkItem>? _queue;
 
     public InMemoryQueueTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
         if (_queue is null)
             _queue = new InMemoryQueue<SimpleWorkItem>(o => o
@@ -24,7 +24,7 @@ public class InMemoryQueueTests : QueueTestBase
                 .Retries(retries)
                 .RetryMultipliers(retryMultipliers ?? new[] { 1, 3, 5, 10 })
                 .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-                .TimeProvider(timeProvider)
+                .TimeProvider(timeProvider ?? TimeProvider.System)
                 .MetricsPollingInterval(TimeSpan.Zero)
                 .LoggerFactory(Log));
         _logger.LogDebug("Queue Id: {QueueId}", _queue.QueueId);
@@ -298,6 +298,7 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Single(q.GetDequeuedEntries());
         Assert.Empty(q.GetCompletedEntries());
 
+        Assert.NotNull(item);
         await item.CompleteAsync();
         Assert.Empty(q.GetEntries());
         Assert.Empty(q.GetDequeuedEntries());
@@ -307,6 +308,7 @@ public class InMemoryQueueTests : QueueTestBase
         {
             await q.EnqueueAsync(new SimpleWorkItem());
             item = await q.DequeueAsync();
+            Assert.NotNull(item);
             await item.CompleteAsync();
         }
 
@@ -376,7 +378,7 @@ public class InMemoryQueueTests : QueueTestBase
         var behavior = new QueueDeletedTestBehavior<SimpleWorkItem>();
 
         // Act & Assert
-        Assert.Throws<ArgumentNullException>(() => behavior.Attach(null));
+        Assert.Throws<ArgumentNullException>(() => behavior.Attach(null!));
     }
 
     private class QueueDeletedTestBehavior<T> : QueueBehaviorBase<T> where T : class
@@ -403,11 +405,11 @@ public class InMemoryQueueTests : QueueTestBase
 
         public string Id => _queueEntry.Id;
 
-        public string CorrelationId => _queueEntry.CorrelationId;
+        public string? CorrelationId => _queueEntry.CorrelationId;
 
         public IDictionary<string, string> Properties => _queueEntry.Properties;
 
-        public Type EntryType => _queueEntry.EntryType;
+        public Type? EntryType => _queueEntry.EntryType;
 
         public bool IsCompleted => _queueEntry.IsCompleted;
 

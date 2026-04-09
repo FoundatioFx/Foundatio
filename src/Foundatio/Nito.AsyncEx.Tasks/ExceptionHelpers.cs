@@ -1,4 +1,6 @@
-﻿using System;
+#nullable disable
+
+using System;
 using System.Runtime.ExceptionServices;
 
 internal static class ExceptionHelpers

@@ -29,8 +29,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public MessageBusBase(TOptions options)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-        _loggerFactory = options?.LoggerFactory ?? NullLoggerFactory.Instance;
+        ArgumentNullException.ThrowIfNull(options);
+
+        _options = options;
+        _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
 
@@ -74,7 +76,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected abstract Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken);
 
-    public async Task PublishAsync(Type messageType, object message, MessageOptions options = null, CancellationToken cancellationToken = default)
+    public async Task PublishAsync(Type messageType, object message, MessageOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messageType);
         ArgumentNullException.ThrowIfNull(message);
@@ -118,38 +120,53 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     }
 
     private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-    protected virtual Type GetMappedMessageType(string messageType)
+    protected virtual Type? GetMappedMessageType(string messageType)
     {
         if (String.IsNullOrEmpty(messageType))
             return null;
 
-        return _knownMessageTypesCache.GetOrAdd(messageType, type =>
-        {
-            if (_options.MessageTypeMappings != null && _options.MessageTypeMappings.TryGetValue(type, out Type typeMapping))
-                return typeMapping;
+        if (_knownMessageTypesCache.TryGetValue(messageType, out var cachedType))
+            return cachedType;
 
+        Type? resolvedType = null;
+
+        if (_options.MessageTypeMappings is not null && _options.MessageTypeMappings.TryGetValue(messageType, out Type? typeMapping))
+        {
+            if (typeMapping is not null)
+                resolvedType = typeMapping;
+            else
+                _logger.LogWarning("Message type mapping for {MessageType} resolved to null; falling back to Type.GetType", messageType);
+        }
+
+        if (resolvedType is null)
+        {
             try
             {
-                return Type.GetType(type);
+                resolvedType = Type.GetType(messageType);
             }
             catch (Exception)
             {
                 try
                 {
-                    string[] typeParts = type.Split(',');
-                    if (typeParts.Length >= 2)
-                        type = String.Join(",", typeParts[0], typeParts[1]);
-
                     // try resolve type without version
-                    return Type.GetType(type);
+                    string[] typeParts = messageType.Split(',');
+                    string shortType = typeParts.Length >= 2
+                        ? String.Join(",", typeParts[0], typeParts[1])
+                        : messageType;
+
+                    resolvedType = Type.GetType(shortType);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error getting message body type: {MessageType}", type);
-                    return null;
+                    _logger.LogError(ex, "Error getting message body type: {MessageType}", messageType);
                 }
             }
-        });
+        }
+
+        if (resolvedType is not null)
+            _knownMessageTypesCache.TryAdd(messageType, resolvedType);
+
+        return resolvedType;
     }
 
     protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
@@ -248,18 +265,18 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected virtual byte[] SerializeMessageBody(string messageType, object body)
     {
-        if (body == null)
+        if (body is null)
             return [];
 
         return _serializer.SerializeToBytes(body);
     }
 
-    protected virtual object DeserializeMessageBody(IMessage message)
+    protected virtual object? DeserializeMessageBody(IMessage message)
     {
         if (message.Data is null || message.Data.Length == 0)
             return null;
 
-        object body;
+        object? body;
         try
         {
             var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
@@ -321,14 +338,20 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                         {
                             await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                         }
-                        else if (subscriber.GenericType != null)
+                        else if (subscriber.GenericType is not null)
                         {
-                            object typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            object? typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            if (typedMessage is null)
+                            {
+                                _logger.LogError("Skipping subscriber {SubscriberId}: failed to create typed message wrapper for type {MessageType}", subscriber.Id, message.Type);
+                                return;
+                            }
+
                             await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
                         }
                         else
                         {
-                            object body = message.GetBody();
+                            object? body = message.GetBody();
                             if (body is null)
                             {
                                 _logger.LogWarning("Skipping subscriber {SubscriberId}: message body deserialization returned null for type {MessageType}", subscriber.Id, message.Type);
@@ -362,13 +385,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _logger.LogTrace("Done enqueueing message to {SubscriberCount} subscribers for message type {MessageType}", subscribers.Count, message.Type);
     }
 
-    protected virtual Activity StartHandleMessageActivity(IMessage message)
+    protected virtual Activity? StartHandleMessageActivity(IMessage message)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("HandleMessage", ActivityKind.Internal, message.CorrelationId);
         if (activity is null)
             return null;
 
-        if (message.Properties != null && message.Properties.TryGetValue("TraceState", out string traceState))
+        if (message.Properties is not null && message.Properties.TryGetValue("TraceState", out string? traceState))
             activity.TraceStateString = traceState;
 
         activity.DisplayName = $"Message: {message.ClrType?.Name ?? message.Type}";
@@ -473,9 +496,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         public string Id { get; private set; } = Guid.NewGuid().ToString("N");
         public CancellationToken CancellationToken { get; set; }
-        public Type Type { get; set; }
-        public Type GenericType { get; set; }
-        public Func<object, CancellationToken, Task> Action { get; set; }
+        public required Type Type { get; set; }
+        public Type? GenericType { get; set; }
+        public required Func<object, CancellationToken, Task> Action { get; set; }
 
         public bool IsAssignableFrom(Type type)
         {

@@ -24,7 +24,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected virtual IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return null;
     }
@@ -143,7 +143,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         try
         {
             // Publishing null should throw ArgumentNullException
-            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null));
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null!));
         }
         finally
         {
@@ -328,6 +328,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
                 var bus = GetMessageBus();
+                Assert.NotNull(bus);
                 await bus.SubscribeAsync<SimpleMessageA>(msg =>
                 {
                     Assert.Equal("Hello", msg.Data);
@@ -340,7 +341,9 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
             {
                 await Task.Delay(RandomData.GetInt(0, 10), ct);
-                await messageBuses.Random().SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+                var randomBus = messageBuses.Random();
+                Assert.NotNull(randomBus);
+                await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
             });
 
             var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
@@ -693,6 +696,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             }, TestCancellationToken);
 
             using var messageBus2 = GetMessageBus();
+            Assert.NotNull(messageBus2);
+
             try
             {
                 var countdown2 = new AsyncCountdownEvent(1);

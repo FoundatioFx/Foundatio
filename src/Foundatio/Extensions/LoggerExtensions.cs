@@ -5,28 +5,29 @@ using System.Linq;
 
 namespace Microsoft.Extensions.Logging;
 
-public class LogState : IEnumerable<KeyValuePair<string, object>>
+public class LogState : IEnumerable<KeyValuePair<string, object?>>
 {
-    private readonly Dictionary<string, object> _state = new();
+    private readonly Dictionary<string, object?> _state = new();
 
     public int Count => _state.Count;
 
-    public object this[string property]
+    public object? this[string property]
     {
         get { return _state[property]; }
         set { _state[property] = value; }
     }
 
-    public LogState Property(string property, object value)
+    public LogState Property(string property, object? value)
     {
         _state.Add(property, value);
         return this;
     }
 
-    public LogState PropertyIf(string property, object value, bool condition)
+    public LogState PropertyIf(string property, object? value, bool condition)
     {
         if (condition)
             _state.Add(property, value);
+
         return this;
     }
 
@@ -35,7 +36,7 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
         return _state.ContainsKey(property);
     }
 
-    public IEnumerator<KeyValuePair<string, object>> GetEnumerator()
+    public IEnumerator<KeyValuePair<string, object?>> GetEnumerator()
     {
         return _state.GetEnumerator();
     }
@@ -48,14 +49,14 @@ public class LogState : IEnumerable<KeyValuePair<string, object>>
 
 public static class LoggerExtensions
 {
-    public static IDisposable BeginScope(this ILogger logger, Func<LogState, LogState> stateBuilder)
+    public static IDisposable? BeginScope(this ILogger logger, Func<LogState, LogState> stateBuilder)
     {
         var logState = new LogState();
         logState = stateBuilder(logState);
         return logger.BeginScope(logState);
     }
 
-    public static IDisposable BeginScope(this ILogger logger, string property, object value)
+    public static IDisposable? BeginScope(this ILogger logger, string property, object value)
     {
         return logger.BeginScope(b => b.Property(property, value));
     }
@@ -115,8 +116,8 @@ public static class LoggerExtensions
     public static LogState Tag(this LogState builder, IEnumerable<string> tags)
     {
         var tagList = new List<string>();
-        if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string>)
-            tagList = builder["Tags"] as List<string>;
+        if (builder.ContainsProperty("Tags") && builder["Tags"] is List<string> existingTags)
+            tagList = existingTags;
 
         foreach (string tag in tags)
         {
@@ -129,11 +130,11 @@ public static class LoggerExtensions
 
     public static LogState Properties(this LogState builder, ICollection<KeyValuePair<string, string>> collection)
     {
-        if (collection == null)
+        if (collection is null)
             return builder;
 
         foreach (var pair in collection)
-            if (pair.Key != null)
+            if (pair.Key is not null)
                 builder.Property(pair.Key, pair.Value);
 
         return builder;

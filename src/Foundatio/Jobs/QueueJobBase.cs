@@ -22,15 +22,15 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
     public QueueJobBase(
         IQueue<T> queue,
-        TimeProvider timeProvider = null,
-        IResiliencePolicyProvider resiliencePolicyProvider = null,
-        ILoggerFactory loggerFactory = null
+        TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null,
+        ILoggerFactory? loggerFactory = null
     ) : this(
         new Lazy<IQueue<T>>(() => queue), timeProvider, resiliencePolicyProvider, loggerFactory)
     {
     }
 
-    public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
+    public QueueJobBase(Lazy<IQueue<T>> queue, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null)
     {
         _queue = queue;
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -50,7 +50,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
     public virtual async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
     {
-        IQueueEntry<T> queueEntry;
+        IQueueEntry<T>? queueEntry;
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         linkedCancellationTokenSource.CancelAfter(TimeSpan.FromSeconds(30));
@@ -71,16 +71,17 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
         }
 
+        if (cancellationToken.IsCancellationRequested && queueEntry is null)
+            return JobResult.Cancelled;
+
+        if (queueEntry is null)
+            return JobResult.SuccessWithMessage("No queue entry to process.");
+
         return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
     }
 
     public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested && queueEntry == null)
-            return JobResult.Cancelled;
-
-        if (queueEntry == null)
-            return JobResult.SuccessWithMessage("No queue entry to process.");
 
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s
@@ -149,7 +150,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         }
     }
 
-    protected virtual Activity StartDequeueActivity()
+    protected virtual Activity? StartDequeueActivity()
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("DequeueQueueEntry");
         if (activity is null)
@@ -162,7 +163,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         return activity;
     }
 
-    protected virtual void EnrichDequeueActivity(Activity activity, IQueueEntry<T> entry)
+    protected virtual void EnrichDequeueActivity(Activity? activity, IQueueEntry<T>? entry)
     {
         if (activity is null || !activity.IsAllDataRequested)
             return;
@@ -170,21 +171,21 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         if (entry is null)
             return;
 
-        activity.AddTag("EntryType", entry.EntryType.FullName);
+        activity.AddTag("EntryType", entry.EntryType?.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
     }
 
-    protected virtual Activity StartProcessQueueEntryActivity(IQueueEntry<T> entry)
+    protected virtual Activity? StartProcessQueueEntryActivity(IQueueEntry<T> entry)
     {
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessQueueEntry", ActivityKind.Internal, entry.CorrelationId);
         if (activity is null)
             return null;
 
-        if (entry.Properties != null && entry.Properties.TryGetValue("TraceState", out string traceState))
+        if (entry.Properties is not null && entry.Properties.TryGetValue("TraceState", out string? traceState))
             activity.TraceStateString = traceState;
 
-        activity.DisplayName = $"Queue: {entry.EntryType.Name}";
+        activity.DisplayName = $"Queue: {entry.EntryType?.Name}";
 
         EnrichProcessQueueEntryActivity(activity, entry);
 
@@ -196,7 +197,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
         if (!activity.IsAllDataRequested)
             return;
 
-        activity.AddTag("EntryType", entry.EntryType.FullName);
+        activity.AddTag("EntryType", entry.EntryType?.FullName);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
 
@@ -222,10 +223,10 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
     protected abstract Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context);
 
-    protected virtual Task<ILock> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default)
+    protected virtual Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Returning Empty Lock for {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
 
-        return Task.FromResult(Disposable.EmptyLock);
+        return Task.FromResult<ILock?>(Disposable.EmptyLock);
     }
 }

@@ -93,18 +93,18 @@ public static class CacheClientExtensions
         return client.SetExpirationAsync(key, client.ToExpiresIn(expiresAtUtc) ?? TimeSpan.MaxValue);
     }
 
-    public static async Task<bool> ListAddAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null)
+    public static async Task<bool> ListAddAsync<T>(this ICacheClient client, string key, T value, TimeSpan? expiresIn = null) where T : notnull
     {
         return await client.ListAddAsync(key, [value], expiresIn).AnyContext() > 0;
     }
 
-    public static async Task<bool> ListRemoveAsync<T>(this ICacheClient client, string key, T value)
+    public static async Task<bool> ListRemoveAsync<T>(this ICacheClient client, string key, T value) where T : notnull
     {
         return await client.ListRemoveAsync(key, [value]).AnyContext() > 0;
     }
 
     [Obsolete("Use ListRemoveAsync without expiresIn parameter")]
-    public static async Task<long> ListRemoveAsync<T>(this ICacheClient client, string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public static async Task<long> ListRemoveAsync<T>(this ICacheClient client, string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         return await client.ListRemoveAsync(key, values).AnyContext();
     }

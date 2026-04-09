@@ -9,8 +9,8 @@ namespace Foundatio.Extensions.Hosting.Startup;
 
 public class StartupActionRegistration
 {
-    private readonly Func<IServiceProvider, CancellationToken, Task> _action;
-    private readonly Type _actionType;
+    private readonly Func<IServiceProvider, CancellationToken, Task>? _action;
+    private readonly Type? _actionType;
     private static int _currentAutoPriority;
 
     public StartupActionRegistration(string name, Type startupType, int? priority = null)
@@ -30,6 +30,8 @@ public class StartupActionRegistration
 
     public StartupActionRegistration(string name, Func<IServiceProvider, CancellationToken, Task> action, int? priority = null)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         Name = name;
         _action = action;
         if (!priority.HasValue)
@@ -47,14 +49,14 @@ public class StartupActionRegistration
         if (shutdownToken.IsCancellationRequested)
             return;
 
-        if (_actionType != null)
+        if (_actionType is not null)
         {
             if (serviceProvider.GetRequiredService(_actionType) is IStartupAction startup)
                 await startup.RunAsync(shutdownToken).AnyContext();
         }
         else
         {
-            await _action(serviceProvider, shutdownToken).AnyContext();
+            await _action!(serviceProvider, shutdownToken).AnyContext();
         }
     }
 }

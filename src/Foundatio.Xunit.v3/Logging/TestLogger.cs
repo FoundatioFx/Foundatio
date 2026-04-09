@@ -12,7 +12,7 @@ public class TestLogger : ILoggerFactory
     private readonly Queue<LogEntry> _logEntries = new();
     private int _logEntriesWritten;
 
-    public TestLogger(Action<TestLoggerOptions> configure = null)
+    public TestLogger(Action<TestLoggerOptions>? configure = null)
     {
         Options = new TestLoggerOptions();
         configure?.Invoke(Options);
@@ -21,7 +21,7 @@ public class TestLogger : ILoggerFactory
             SetLogLevel(logLevel.Key, logLevel.Value);
     }
 
-    public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions> configure = null)
+    public TestLogger(ITestOutputHelper output, Action<TestLoggerOptions>? configure = null)
     {
         Options = new TestLoggerOptions
         {
@@ -39,7 +39,9 @@ public class TestLogger : ILoggerFactory
 
     public TestLogger(TestLoggerOptions options)
     {
-        Options = options ?? new TestLoggerOptions();
+        ArgumentNullException.ThrowIfNull(options);
+
+        Options = options;
 
         foreach (var logLevel in Options.LogLevels)
             SetLogLevel(logLevel.Key, logLevel.Value);

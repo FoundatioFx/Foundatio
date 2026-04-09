@@ -130,7 +130,7 @@ public class SizeCalculatorTests : TestWithLoggingBase
     public void CalculateSize_WithEmptyString_ReturnsStringOverhead()
     {
         // Act
-        long size = _sizer.CalculateSize(string.Empty);
+        long size = _sizer.CalculateSize(String.Empty);
 
         // Assert - string overhead (24 bytes) + 0 chars
         Assert.Equal(24, size);
@@ -536,14 +536,14 @@ public class SizeCalculatorTests : TestWithLoggingBase
     private class SimpleTestObject
     {
         public int Id { get; set; }
-        public string Name { get; set; }
+        public string? Name { get; set; }
         public double Value { get; set; }
     }
 
     private class NestedTestObject
     {
         public int Id { get; set; }
-        public SimpleTestObject Inner { get; set; }
+        public SimpleTestObject? Inner { get; set; }
     }
 
 }

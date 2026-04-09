@@ -110,7 +110,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
 
             SkipWhiteSpaces(ref pointer);
 
-            CronExpression cronExpression;
+            CronExpression? cronExpression;
 
             if (Accept(ref pointer, '@'))
             {
@@ -119,7 +119,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
 
                 if (cronExpression == null || !IsEndOfString(*pointer)) ThrowFormatException("Macro: Unexpected character '{0}' on position {1}.", *pointer, pointer - value);
 
-                return cronExpression;
+                return cronExpression!;
             }
 
             cronExpression = new CronExpression();
@@ -304,7 +304,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
     /// <returns>
     /// <c>true</c> if the specified <see cref="Object"/> is equal to the current <see cref="Object"/>; otherwise, <c>false</c>.
     /// </returns>
-    public bool Equals(CronExpression other)
+    public bool Equals(CronExpression? other)
     {
         if (other == null) return false;
 
@@ -327,7 +327,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
     /// <c>true</c> if the specified <see cref="System.Object" /> is equal to this instance;
     /// otherwise, <c>false</c>.
     /// </returns>
-    public override bool Equals(object obj) => Equals(obj as CronExpression);
+    public override bool Equals(object? obj) => Equals(obj as CronExpression);
 
     /// <summary>
     /// Returns a hash code for this instance.
@@ -358,12 +358,12 @@ public sealed class CronExpression : IEquatable<CronExpression>
     /// <summary>
     /// Implements the operator ==.
     /// </summary>
-    public static bool operator ==(CronExpression left, CronExpression right) => Equals(left, right);
+    public static bool operator ==(CronExpression? left, CronExpression? right) => Equals(left, right);
 
     /// <summary>
     /// Implements the operator !=.
     /// </summary>
-    public static bool operator !=(CronExpression left, CronExpression right) => !Equals(left, right);
+    public static bool operator !=(CronExpression? left, CronExpression? right) => !Equals(left, right);
 
     private DateTimeOffset? GetOccurenceByZonedTimes(DateTimeOffset from, TimeZoneInfo zone, bool inclusive)
     {
@@ -573,7 +573,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
         if (!IsEndOfString(*pointer)) ThrowFormatException("Unexpected character '{0}'.", *pointer);
     }
 
-    private static unsafe CronExpression ParseMacro(ref char* pointer)
+    private static unsafe CronExpression? ParseMacro(ref char* pointer)
     {
         switch (ToUpper(*pointer++))
         {
@@ -962,7 +962,7 @@ public sealed class CronExpression : IEquatable<CronExpression>
         return 1L << num1;
     }
 
-    private static unsafe int GetNumber(ref char* pointer, int[] names)
+    private static unsafe int GetNumber(ref char* pointer, int[]? names)
     {
         if (IsDigit(*pointer))
         {

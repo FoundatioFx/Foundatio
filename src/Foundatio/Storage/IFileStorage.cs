@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -17,7 +18,7 @@ namespace Foundatio.Storage;
 public interface IFileStorage : IHaveSerializer, IDisposable
 {
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
-    Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
+    Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets a stream for reading from or writing to a file.
@@ -26,14 +27,14 @@ public interface IFileStorage : IHaveSerializer, IDisposable
     /// <param name="streamMode">Whether to open the stream for reading or writing.</param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A stream for the file, or null if the file does not exist (read mode only).</returns>
-    Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default);
+    Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets metadata about a file without retrieving its contents.
     /// </summary>
     /// <param name="path">The path to the file.</param>
     /// <returns>File metadata, or null if the file does not exist.</returns>
-    Task<FileSpec> GetFileInfoAsync(string path);
+    Task<FileSpec?> GetFileInfoAsync(string path);
 
     /// <summary>
     /// Checks whether a file exists at the specified path.
@@ -86,7 +87,7 @@ public interface IFileStorage : IHaveSerializer, IDisposable
     /// </param>
     /// <param name="cancellation">Token to cancel the operation.</param>
     /// <returns>The number of files deleted.</returns>
-    Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default);
+    Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellation = default);
 
     /// <summary>
     /// Lists files with pagination support for large directories.
@@ -98,7 +99,7 @@ public interface IFileStorage : IHaveSerializer, IDisposable
     /// </param>
     /// <param name="cancellationToken">Token to cancel the operation.</param>
     /// <returns>A paginated result that can be iterated to retrieve additional pages.</returns>
-    Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default);
+    Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -106,7 +107,7 @@ public interface IFileStorage : IHaveSerializer, IDisposable
 /// </summary>
 public interface IHasNextPageFunc
 {
-    Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
+    Func<PagedFileListResult, Task<NextPageResult>>? NextPageFunc { get; set; }
 }
 
 /// <summary>
@@ -127,12 +128,12 @@ public class NextPageResult
     /// <summary>
     /// The files in this page.
     /// </summary>
-    public IReadOnlyCollection<FileSpec> Files { get; set; }
+    public required IReadOnlyCollection<FileSpec> Files { get; set; }
 
     /// <summary>
     /// Function to fetch the next page, or null if no more pages.
     /// </summary>
-    public Func<PagedFileListResult, Task<NextPageResult>> NextPageFunc { get; set; }
+    public Func<PagedFileListResult, Task<NextPageResult>>? NextPageFunc { get; set; }
 }
 
 /// <summary>
@@ -154,7 +155,7 @@ public class PagedFileListResult : IHasNextPageFunc
         ((IHasNextPageFunc)this).NextPageFunc = null;
     }
 
-    public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>> nextPageFunc)
+    public PagedFileListResult(IReadOnlyCollection<FileSpec> files, bool hasMore, Func<PagedFileListResult, Task<NextPageResult>>? nextPageFunc)
     {
         Files = files;
         HasMore = hasMore;
@@ -169,7 +170,7 @@ public class PagedFileListResult : IHasNextPageFunc
     /// <summary>
     /// The files in the current page.
     /// </summary>
-    public IReadOnlyCollection<FileSpec> Files { get; private set; }
+    public IReadOnlyCollection<FileSpec> Files { get; private set; } = _empty;
 
     /// <summary>
     /// Whether more pages are available.
@@ -177,7 +178,7 @@ public class PagedFileListResult : IHasNextPageFunc
     public bool HasMore { get; private set; }
 
     protected IDictionary<string, object> Data { get; } = new DataDictionary();
-    Func<PagedFileListResult, Task<NextPageResult>> IHasNextPageFunc.NextPageFunc { get; set; }
+    Func<PagedFileListResult, Task<NextPageResult>>? IHasNextPageFunc.NextPageFunc { get; set; }
 
     /// <summary>
     /// Fetches the next page of files, updating <see cref="Files"/> and <see cref="HasMore"/>.
@@ -185,7 +186,7 @@ public class PagedFileListResult : IHasNextPageFunc
     /// <returns>True if the next page was fetched successfully; false if no more pages or an error occurred.</returns>
     public async Task<bool> NextPageAsync()
     {
-        if (((IHasNextPageFunc)this).NextPageFunc == null)
+        if (((IHasNextPageFunc)this).NextPageFunc is null)
             return false;
 
         var result = await ((IHasNextPageFunc)this).NextPageFunc(this).AnyContext();
@@ -215,7 +216,7 @@ public class FileSpec : IHaveData
     /// <summary>
     /// The full path to the file.
     /// </summary>
-    public string Path { get; set; }
+    public required string Path { get; set; }
 
     /// <summary>
     /// When the file was created.
@@ -242,23 +243,43 @@ public static class FileStorageExtensions
 {
     public static Task<bool> SaveObjectAsync<T>(this IFileStorage storage, string path, T data, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         var bytes = storage.Serializer.SerializeToBytes(data);
         return storage.SaveFileAsync(path, new MemoryStream(bytes), cancellationToken);
     }
 
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from the file at <paramref name="path"/>.
+    /// Returns <c>default</c> if the file does not exist.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method can return <c>null</c>/<c>default</c> when the file is not found, but the return type
+    /// is <c>Task&lt;T&gt;</c> rather than <c>Task&lt;T?&gt;</c> for two reasons:
+    /// </para>
+    /// <list type="number">
+    /// <item><description>
+    /// <c>[return: MaybeNull]</c> is not honored by Roslyn inside <c>async</c> methods
+    /// (<see href="https://github.com/dotnet/roslyn/issues/30953">dotnet/roslyn#30953</see>),
+    /// so applying it causes spurious CS8602 warnings at every call site.
+    /// </description></item>
+    /// <item><description>
+    /// Using <c>Task&lt;T?&gt;</c> would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// </description></item>
+    /// </list>
+    /// <para>Callers that need null safety should use a nullable type argument, e.g.
+    /// <c>GetObjectAsync&lt;PostInfo?&gt;(path)</c>.</para>
+    /// </remarks>
     public static async Task<T> GetObjectAsync<T>(this IFileStorage storage, string path, CancellationToken cancellationToken = default)
     {
-        if (String.IsNullOrEmpty(path))
-            throw new ArgumentNullException(nameof(path));
+        ArgumentException.ThrowIfNullOrEmpty(path);
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read, cancellationToken).AnyContext();
-        if (stream != null)
-            return storage.Serializer.Deserialize<T>(stream);
+        if (stream is null)
+            return default!;
 
-        return default;
+        return storage.Serializer.Deserialize<T>(stream)!;
     }
 
     public static async Task DeleteFilesAsync(this IFileStorage storage, IEnumerable<FileSpec> files)
@@ -269,7 +290,7 @@ public static class FileStorageExtensions
             await storage.DeleteFileAsync(file.Path).AnyContext();
     }
 
-    public static async Task<string> GetFileContentsAsync(this IFileStorage storage, string path)
+    public static async Task<string?> GetFileContentsAsync(this IFileStorage storage, string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -281,13 +302,13 @@ public static class FileStorageExtensions
         return null;
     }
 
-    public static async Task<byte[]> GetFileContentsRawAsync(this IFileStorage storage, string path)
+    public static async Task<byte[]?> GetFileContentsRawAsync(this IFileStorage storage, string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read).AnyContext();
-        if (stream == null)
+        if (stream is null)
             return null;
 
         var buffer = new byte[16 * 1024];
@@ -309,7 +330,7 @@ public static class FileStorageExtensions
         return storage.SaveFileAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(contents ?? String.Empty)));
     }
 
-    public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string searchPattern = null, int? limit = null, CancellationToken cancellationToken = default)
+    public static async Task<IReadOnlyCollection<FileSpec>> GetFileListAsync(this IFileStorage storage, string? searchPattern = null, int? limit = null, CancellationToken cancellationToken = default)
     {
         var files = new List<FileSpec>();
         limit ??= Int32.MaxValue;

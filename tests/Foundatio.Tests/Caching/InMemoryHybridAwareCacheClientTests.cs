@@ -347,7 +347,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     [InlineData("s", 1)] // Partial prefix match
     [InlineData(null, 1)] // Null prefix (all keys in scope)
     [InlineData("", 1)] // Empty prefix (all keys in scope)
-    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove, int expectedRemovedCount)
+    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove, int expectedRemovedCount)
     {
         return base.RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(prefixToRemove, expectedRemovedCount);
     }
@@ -355,7 +355,7 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         return base.RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(prefix);
     }

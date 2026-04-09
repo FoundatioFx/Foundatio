@@ -9,10 +9,10 @@ namespace Foundatio;
 
 public class SharedOptions
 {
-    private IResiliencePolicyProvider _policyProvider;
-    private TimeProvider _timeProvider;
-    private ISerializer _serializer;
-    private ILoggerFactory _loggerFactory;
+    private IResiliencePolicyProvider? _policyProvider;
+    private TimeProvider? _timeProvider;
+    private ISerializer? _serializer;
+    private ILoggerFactory? _loggerFactory;
 
     internal bool HasResiliencePolicyProvider => _policyProvider != null;
     public IResiliencePolicyProvider ResiliencePolicyProvider
@@ -49,7 +49,9 @@ public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
 {
     public TBuilder ResiliencePolicyProvider(IResiliencePolicyProvider resiliencePolicyProvider)
     {
-        Target.ResiliencePolicyProvider = resiliencePolicyProvider ?? throw new ArgumentNullException(nameof(resiliencePolicyProvider));
+        ArgumentNullException.ThrowIfNull(resiliencePolicyProvider);
+
+        Target.ResiliencePolicyProvider = resiliencePolicyProvider;
         return (TBuilder)this;
     }
 
@@ -86,28 +88,58 @@ public class SharedOptionsBuilder<TOption, TBuilder> : OptionsBuilder<TOption>
 
 public static class SharedOptionsExtensions
 {
-    public static TOption UseServices<TOption>(this TOption options, IServiceProvider serviceProvider, bool overrideExisting = false)
+    public static TOption UseServices<TOption>(this TOption? options, IServiceProvider serviceProvider, bool overrideExisting = false)
         where TOption : SharedOptions, new()
     {
         options ??= new TOption();
 
         if (overrideExisting)
         {
-            options.ResiliencePolicyProvider = serviceProvider.GetService<IResiliencePolicyProvider>();
-            options.TimeProvider = serviceProvider.GetService<TimeProvider>();
-            options.Serializer = serviceProvider.GetService<ISerializer>();
-            options.LoggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            var resiliencePolicyProvider = serviceProvider.GetService<IResiliencePolicyProvider>();
+            if (resiliencePolicyProvider is not null)
+                options.ResiliencePolicyProvider = resiliencePolicyProvider;
+
+            var timeProvider = serviceProvider.GetService<TimeProvider>();
+            if (timeProvider is not null)
+                options.TimeProvider = timeProvider;
+
+            var serializer = serviceProvider.GetService<ISerializer>();
+            if (serializer is not null)
+                options.Serializer = serializer;
+
+            var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            if (loggerFactory is not null)
+                options.LoggerFactory = loggerFactory;
         }
         else
         {
             if (!options.HasResiliencePolicyProvider)
-                options.ResiliencePolicyProvider = serviceProvider.GetService<IResiliencePolicyProvider>();
+            {
+                var resiliencePolicyProvider = serviceProvider.GetService<IResiliencePolicyProvider>();
+                if (resiliencePolicyProvider is not null)
+                    options.ResiliencePolicyProvider = resiliencePolicyProvider;
+            }
+
             if (!options.HasTimeProvider)
-                options.TimeProvider = serviceProvider.GetService<TimeProvider>();
+            {
+                var timeProvider = serviceProvider.GetService<TimeProvider>();
+                if (timeProvider is not null)
+                    options.TimeProvider = timeProvider;
+            }
+
             if (!options.HasSerializer)
-                options.Serializer = serviceProvider.GetService<ISerializer>();
+            {
+                var serializer = serviceProvider.GetService<ISerializer>();
+                if (serializer is not null)
+                    options.Serializer = serializer;
+            }
+
             if (!options.HasLoggerFactory)
-                options.LoggerFactory = serviceProvider.GetService<ILoggerFactory>();
+            {
+                var loggerFactory = serviceProvider.GetService<ILoggerFactory>();
+                if (loggerFactory is not null)
+                    options.LoggerFactory = loggerFactory;
+            }
         }
 
         return options;

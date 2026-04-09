@@ -326,7 +326,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData("s", 1)] // Partial prefix match
     [InlineData(null, 1)] // Null prefix (all keys in scope)
     [InlineData("", 1)] // Empty prefix (all keys in scope)
-    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove, int expectedRemovedCount)
+    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove, int expectedRemovedCount)
     {
         return base.RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(prefixToRemove, expectedRemovedCount);
     }
@@ -334,7 +334,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         return base.RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(prefix);
     }
@@ -738,6 +738,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             _logger.LogInformation($"After time advance: CurrentMemorySize={cache.CurrentMemorySize}");
 
             // Assert - The cache should respect the memory limit
+            Assert.NotNull(cache.MaxMemorySize);
             Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
                 $"Memory size {cache.CurrentMemorySize} should be close to or below limit {cache.MaxMemorySize} (allowing up to 50% above limit for async cleanup)");
 
@@ -1093,6 +1094,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 smallUsedExists, largeUnusedExists);
 
             // At minimum, verify the cache respects its memory limit
+            Assert.NotNull(cache.MaxMemorySize);
             Assert.True(cache.CurrentMemorySize <= cache.MaxMemorySize.Value * 1.5,
                 $"Memory {cache.CurrentMemorySize} should be close to limit {cache.MaxMemorySize}");
         }

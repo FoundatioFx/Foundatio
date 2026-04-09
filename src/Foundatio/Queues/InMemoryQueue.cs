@@ -84,7 +84,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         return new ReadOnlyCollection<QueueEntry<T>>(_deadletterQueue.ToList());
     }
 
-    protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options)
+    protected override async Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
         string id = Guid.NewGuid().ToString("N");
         _logger.LogTrace("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
@@ -92,12 +92,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (!await OnEnqueuingAsync(data, options).AnyContext())
             return null;
 
-        var entry = new QueueEntry<T>(id, options?.CorrelationId, data.DeepClone(), this, _timeProvider.GetUtcNow().UtcDateTime, 0);
-        entry.Properties.AddRange(options?.Properties);
+        var entry = new QueueEntry<T>(id, options.CorrelationId, data.DeepClone(), this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+        entry.Properties.AddRange(options.Properties);
 
         Interlocked.Increment(ref _enqueuedCount);
 
-        if (options?.DeliveryDelay != null && options.DeliveryDelay.Value > TimeSpan.Zero)
+        if (options.DeliveryDelay is not null && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _ = Run.DelayedAsync(options.DeliveryDelay.Value, async () =>
             {
@@ -141,7 +141,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             {
                 _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
-                IQueueEntry<T> queueEntry = null;
+                IQueueEntry<T>? queueEntry = null;
                 try
                 {
                     queueEntry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
@@ -151,7 +151,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                 }
 
-                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry == null)
+                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry is null)
                     return;
 
                 try
@@ -194,7 +194,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         }, linkedCancellationTokenSource.Token).ContinueWith(_ => linkedCancellationTokenSource.Dispose()));
     }
 
-    protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
+    protected override async Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken)
     {
         _logger.LogTrace("Queue {QueueName} dequeuing item... Queue count: {Count}", _options.Name, _queue.Count);
 
@@ -270,7 +270,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
-        if (!_dequeued.TryRemove(queueEntry.Id, out var info) || info == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var info) || info is null)
             throw new Exception("Unable to remove item from the dequeued list");
 
         if (_options.CompletedEntryRetentionLimit > 0)
@@ -295,7 +295,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         Interlocked.Increment(ref _pendingRetryCount);
 
-        if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry is null)
         {
             Interlocked.Decrement(ref _pendingRetryCount);
 

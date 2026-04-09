@@ -1,5 +1,6 @@
 using System;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Caching;
 
@@ -37,7 +38,7 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// </list>
     /// </para>
     /// </remarks>
-    public Func<object, long> SizeCalculator { get; set; }
+    public Func<object, long>? SizeCalculator { get; set; }
 
     /// <summary>
     /// The maximum size in bytes for individual cache entries. Entries larger than this will be skipped (not cached) and a warning will be logged.
@@ -110,10 +111,10 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, ILoggerFactory loggerFactory = null)
+    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, ILoggerFactory? loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
-        var sizeCalculator = new Utility.SizeCalculator(loggerFactory);
+        var sizeCalculator = new Utility.SizeCalculator(loggerFactory ?? NullLoggerFactory.Instance);
         Target.SizeCalculator = sizeCalculator.CalculateSize;
         return this;
     }
@@ -125,7 +126,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
     /// <param name="maxTypeCacheSize">Maximum number of types to cache size calculations for.</param>
     /// <param name="loggerFactory">Optional logger factory for diagnostic logging.</param>
-    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, int maxTypeCacheSize, ILoggerFactory loggerFactory = null)
+    public InMemoryCacheClientOptionsBuilder WithDynamicSizing(long maxMemorySize, int maxTypeCacheSize, ILoggerFactory? loggerFactory = null)
     {
         Target.MaxMemorySize = maxMemorySize;
         var sizeCalculator = new Utility.SizeCalculator(maxTypeCacheSize, loggerFactory);

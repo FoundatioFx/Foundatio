@@ -17,10 +17,12 @@ public class StartupActionsContext
     }
 
     public bool IsStartupComplete { get; private set; }
-    public RunStartupActionsResult Result { get; private set; }
+    public RunStartupActionsResult Result { get; private set; } = new();
 
     internal void MarkStartupComplete(RunStartupActionsResult result)
     {
+        ArgumentNullException.ThrowIfNull(result);
+
         IsStartupComplete = true;
         Result = result;
     }

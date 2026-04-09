@@ -22,7 +22,7 @@ public class TestLoggerFixture : IAsyncLifetime
         _log = new Lazy<ILogger>(() => Services.GetRequiredService<ILoggerFactory>().CreateLogger(GetType()));
     }
 
-    public ITestOutputHelper Output { get; set; }
+    public required ITestOutputHelper Output { get; set; }
 
     public void ConfigureServices(Action<IServiceCollection> registerServices)
     {

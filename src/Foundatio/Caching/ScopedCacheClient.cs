@@ -40,7 +40,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     /// </summary>
     /// <param name="client">The underlying cache client to use.</param>
     /// <param name="scope">The scope for cache keys. When specified, all operations will be prefixed with this scope.</param>
-    public ScopedCacheClient(ICacheClient client, string scope) : this(client, scope, false)
+    public ScopedCacheClient(ICacheClient client, string? scope) : this(client, scope, false)
     {
     }
 
@@ -52,7 +52,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
     /// <param name="shouldDispose">Whether to dispose the underlying cache client when this instance is disposed.
     /// Defaults to false, meaning the underlying cache client will not be disposed when this instance is disposed.
     /// Set to true to have the underlying cache client automatically disposed when this instance is disposed, enabling use with 'using' statements.</param>
-    public ScopedCacheClient(ICacheClient client, string scope, bool shouldDispose)
+    public ScopedCacheClient(ICacheClient client, string? scope, bool shouldDispose)
     {
         UnscopedCache = client ?? new NullCacheClient();
         _isLocked = scope != null;
@@ -64,12 +64,12 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     public ICacheClient UnscopedCache { get; private set; }
 
-    public string Scope { get; private set; }
+    public string? Scope { get; private set; }
 
     ILogger IHaveLogger.Logger => UnscopedCache.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedCache.GetLoggerFactory();
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedCache.GetTimeProvider();
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedCache.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
 
     public void SetScope(string scope)
     {
@@ -108,7 +108,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
 
     protected string GetScopedCacheKey(string unscopedKey)
     {
-        return unscopedKey?.Substring(_keyPrefix.Length);
+        return unscopedKey.Substring(_keyPrefix.Length);
     }
 
     public Task<bool> RemoveAsync(string key)
@@ -125,7 +125,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.RemoveIfEqualAsync(GetUnscopedCacheKey(key), expected);
     }
 
-    public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         if (keys is null)
             return RemoveByPrefixAsync(String.Empty);
@@ -284,14 +284,14 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.SetIfLowerAsync(GetUnscopedCacheKey(key), value, expiresIn);
     }
 
-    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         return UnscopedCache.ListAddAsync(GetUnscopedCacheKey(key), values, expiresIn);
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -299,7 +299,7 @@ public class ScopedCacheClient : ICacheClient, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedCache.ListRemoveAsync(GetUnscopedCacheKey(key), values);
     }
 
-    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         if (page is < 1)

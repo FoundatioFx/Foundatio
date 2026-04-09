@@ -31,7 +31,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Debug);
     }
 
-    protected virtual IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+    protected virtual IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
         return null;
     }
@@ -537,6 +537,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
 
             using var secondQueue = GetQueue(runQueueMaintenance: false);
+            Assert.NotNull(secondQueue);
 
             _logger.LogTrace("Starting dequeue loop");
             for (int index = 0; index < iterations; index++)
@@ -1147,6 +1148,8 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 for (int i = 0; i < workerCount; i++)
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                    Assert.NotNull(q);
+
                     _logger.LogTrace("Queue Id: {QueueId}, I: {Instance}", q.QueueId, i);
                     await q.StartWorkingAsync(w => DoWorkAsync(w, countdown, info), cancellationToken: cancellationTokenSource.Token);
                     workers.Add(q);
@@ -1154,7 +1157,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
                 await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    string? id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
                         Data = "Hello",
                         Id = i
@@ -1277,14 +1280,20 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
+            Assert.NotNull(item);
+
             await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            Assert.NotNull(item);
+
             await Task.Delay(100);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
+            Assert.NotNull(item);
+
             await Task.Delay(100);
             await item.AbandonAsync();
 
@@ -1413,6 +1422,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
             workItem = await queue.DequeueAsync(TimeSpan.Zero);
 
+            Assert.NotNull(workItem);
             await queue.AbandonAsync(workItem);
             Assert.True(workItem.IsAbandoned);
             Assert.False(workItem.IsCompleted);
@@ -1559,6 +1569,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 for (int i = 0; i < workerCount; i++)
                 {
                     var q = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+                    Assert.NotNull(q);
                     int instanceCount = i;
                     await q.StartWorkingAsync(async w =>
                     {
@@ -1580,7 +1591,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
                 await Parallel.ForEachAsync(Enumerable.Range(1, workItemCount), cancellationTokenSource.Token, async (i, _) =>
                 {
-                    string id = await queue.EnqueueAsync(new SimpleWorkItem
+                    string? id = await queue.EnqueueAsync(new SimpleWorkItem
                     {
                         Data = "Hello",
                         Id = i

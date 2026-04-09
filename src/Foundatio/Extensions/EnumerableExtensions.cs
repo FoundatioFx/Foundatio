@@ -7,7 +7,7 @@ internal static class EnumerableExtensions
 {
     public static void ForEach<T>(this IEnumerable<T> collection, Action<T> action)
     {
-        if (collection == null || action == null)
+        if (collection is null || action is null)
             return;
 
         foreach (var item in collection)
@@ -16,7 +16,7 @@ internal static class EnumerableExtensions
 
     public static void AddRange<T>(this ICollection<T> list, IEnumerable<T> range)
     {
-        if (list == null || range == null)
+        if (list is null || range is null)
             return;
 
         foreach (var r in range)

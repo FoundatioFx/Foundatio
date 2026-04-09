@@ -15,11 +15,11 @@ public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTime
     protected readonly ILoggerFactory _loggerFactory;
     protected readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public JobBase(ILoggerFactory loggerFactory = null) : this(null, null, loggerFactory)
+    public JobBase(ILoggerFactory? loggerFactory = null) : this(null, null, loggerFactory)
     {
     }
 
-    public JobBase(TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
+    public JobBase(TimeProvider? timeProvider, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _resiliencePolicyProvider = resiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;

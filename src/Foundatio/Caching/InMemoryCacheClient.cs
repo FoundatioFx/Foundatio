@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -24,7 +25,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
     private readonly bool _shouldTrackMemory;
-    private Func<object, long> _sizeCalculator;
+    private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
     private readonly bool _shouldThrowOnMaxEntrySizeExceeded;
     private long _writes;
@@ -43,7 +44,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
     }
 
-    public InMemoryCacheClient(InMemoryCacheClientOptions options = null)
+    public InMemoryCacheClient(InMemoryCacheClientOptions? options = null)
     {
         if (options is null)
             options = new InMemoryCacheClientOptions();
@@ -54,7 +55,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _maxEntrySize = options.MaxEntrySize;
         _shouldThrowOnMaxEntrySizeExceeded = options.ShouldThrowOnMaxEntrySizeExceeded;
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = options.ResiliencePolicyProvider;
+        _resiliencePolicyProvider = options.ResiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<InMemoryCacheClient>();
 
@@ -171,7 +172,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </remarks>
     private long RecalculateMemorySize()
     {
-        if (!_shouldTrackMemory) return 0;
+        if (!_shouldTrackMemory)
+            return 0;
 
         // Take a snapshot of values to reduce (but not eliminate) race condition window
         var entries = _memory.Values.ToArray();
@@ -218,7 +220,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private void OnItemExpired(string key, bool sendNotification = true)
     {
-        if (ItemExpired == null)
+        if (ItemExpired is null)
             return;
 
         Task.Factory.StartNew(_ =>
@@ -287,7 +289,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
-            if (currentValue.Equals(expected))
+            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
             {
                 _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
                 existingEntry.ExpiresAt = DateTime.MinValue;
@@ -305,9 +307,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return success;
     }
 
-    public Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        if (keys == null)
+        if (keys is null)
         {
             int count = _memory.Count;
             _memory.Clear();
@@ -744,7 +746,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return difference;
     }
 
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -858,7 +860,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return expiredValues;
     }
 
-    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -963,7 +965,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -1125,7 +1127,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
             var currentValue = existingEntry.GetValue<T>();
-            if (currentValue.Equals(expected))
+            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
             {
                 oldSize = existingEntry.Size;
                 existingEntry.Value = value;
@@ -1497,7 +1499,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 // For memory compaction, prefer size-aware eviction
                 // For item compaction, prefer traditional LRU
-                string keyToRemove = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
+                string? keyToRemove = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
 
                 if (keyToRemove == null)
                     break;
@@ -1539,9 +1541,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             OnItemExpired(expiredKey);
     }
 
-    private string FindLeastRecentlyUsed()
+    private string? FindLeastRecentlyUsed()
     {
-        (string Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
+        (string? Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
 
         foreach (var kvp in _memory)
         {
@@ -1592,9 +1594,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </para>
     /// </remarks>
     /// <returns>The key of the entry to evict, or null if no suitable candidate found.</returns>
-    private string FindWorstSizeToUsageRatio()
+    private string? FindWorstSizeToUsageRatio()
     {
-        string candidateKey = null;
+        string? candidateKey = null;
         double worstRatio = Double.MinValue; // Start with minimum value so any score can win
         long currentTime = _timeProvider.GetUtcNow().Ticks;
 
@@ -1695,7 +1697,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <summary>
     /// Creates a CacheEntry with pre-calculated size. Returns null if the entry should be skipped (exceeds size limits).
     /// </summary>
-    private CacheEntry CreateEntry<T>(T value, DateTime? expiresAt)
+    private CacheEntry? CreateEntry<T>(T value, DateTime? expiresAt)
     {
         long size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
         if (size < 0)
@@ -1706,7 +1708,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private sealed record CacheEntry
     {
-        private object _cacheValue;
+        private object? _cacheValue;
         private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly TimeProvider _timeProvider;
@@ -1715,7 +1717,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private long _usageCount;
 #endif
 
-        public CacheEntry(object value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true, long size = 0)
+        public CacheEntry(object? value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true, long size = 0)
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
@@ -1743,7 +1745,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal long UsageCount => _usageCount;
 #endif
 
-        internal object Value
+        internal object? Value
         {
             get
             {
@@ -1762,16 +1764,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
         }
 
+        [return: MaybeNull]
         public T GetValue<T>()
         {
-            object val = Value;
+            object? val = Value;
             var t = typeof(T);
+
+            if (val is null)
+                return default;
 
             if (t == TypeHelper.BoolType || t == TypeHelper.StringType || t == TypeHelper.CharType || t == TypeHelper.DateTimeType || t.IsNumeric())
                 return (T)Convert.ChangeType(val, t);
 
             if (t == TypeHelper.NullableBoolType || t == TypeHelper.NullableCharType || t == TypeHelper.NullableDateTimeType || t.IsNullableNumeric())
-                return val == null ? default : (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t));
+                return (T)Convert.ChangeType(val, Nullable.GetUnderlyingType(t)!);
 
             return (T)val;
         }
@@ -1785,15 +1791,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <param name="value">The value to calculate size for.</param>
     /// <returns>The calculated size in bytes, or -1 if the entry should be skipped.</returns>
     /// <exception cref="MaxEntrySizeExceededCacheException">Thrown when entry exceeds MaxEntrySize and ShouldThrowOnMaxEntrySizeExceeded is true.</exception>
-    private long CalculateEntrySize(object value)
+    private long CalculateEntrySize(object? value)
     {
         // Fast bail-out: no size calculator configured
         if (!_hasSizeCalculator)
             return 0;
 
+        if (value is null)
+            return 0;
+
         try
         {
-            long size = _sizeCalculator(value);
+            long size = _sizeCalculator!(value);
 
             // Validate the size returned by the calculator
             if (size < 0)
@@ -1839,7 +1848,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    private static bool TypeRequiresCloning(Type t)
+    private static bool TypeRequiresCloning(Type? t)
     {
         if (t == null)
             return true;
@@ -1859,8 +1868,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
 public class ItemExpiredEventArgs : EventArgs
 {
-    public InMemoryCacheClient Client { get; set; }
-    public string Key { get; set; }
+    public required InMemoryCacheClient Client { get; set; }
+    public required string Key { get; set; }
     public bool SendNotification { get; set; }
 }
 

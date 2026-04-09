@@ -14,7 +14,10 @@ public class ActionableStream : Stream, IAsyncDisposable
 
     public ActionableStream(Stream stream, Action disposeAction)
     {
-        _stream = stream ?? throw new ArgumentNullException();
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(disposeAction);
+
+        _stream = stream;
         _disposeAction = () =>
         {
             disposeAction();
@@ -24,7 +27,10 @@ public class ActionableStream : Stream, IAsyncDisposable
 
     public ActionableStream(Stream stream, Func<Task> disposeAction)
     {
-        _stream = stream ?? throw new ArgumentNullException();
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(disposeAction);
+
+        _stream = stream;
         _disposeAction = disposeAction;
     }
 

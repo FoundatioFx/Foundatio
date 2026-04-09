@@ -35,25 +35,30 @@ public class DataDictionaryTests : TestWithLoggingBase
         Assert.Throws<ArgumentException>(() => model.GetDataOrDefault<MyDataModel>("OldJson"));
 
         var jsonDataOld = model.GetDataOrDefault<MyDataModel>("OldJson", serializer: serializer);
+        Assert.NotNull(jsonDataOld);
         Assert.Equal(12, jsonDataOld.IntProperty);
         Assert.Equal("Kelly", jsonDataOld.StringProperty);
 
         var bytesDataOld = model.GetDataOrDefault<MyDataModel>("OldBytes", serializer: serializer);
+        Assert.NotNull(bytesDataOld);
         Assert.Equal(12, bytesDataOld.IntProperty);
         Assert.Equal("Kelly", bytesDataOld.StringProperty);
 
         model.Serializer = serializer;
 
         jsonDataOld = model.GetDataOrDefault<MyDataModel>("OldJson");
+        Assert.NotNull(jsonDataOld);
         Assert.Equal(12, jsonDataOld.IntProperty);
         Assert.Equal("Kelly", jsonDataOld.StringProperty);
 
         Assert.True(model.TryGetData("OldJson", out jsonDataOld));
+        Assert.NotNull(jsonDataOld);
         Assert.Equal(12, jsonDataOld.IntProperty);
         Assert.Equal("Kelly", jsonDataOld.StringProperty);
         Assert.False(model.TryGetData("OldJson2", out jsonDataOld));
 
         bytesDataOld = model.GetDataOrDefault<MyDataModel>("OldBytes");
+        Assert.NotNull(bytesDataOld);
         Assert.Equal(12, bytesDataOld.IntProperty);
         Assert.Equal("Kelly", bytesDataOld.StringProperty);
 
@@ -76,14 +81,14 @@ public class DataDictionaryTests : TestWithLoggingBase
 public class MyModel : IHaveData, IHaveSerializer
 {
     public int IntProperty { get; set; }
-    public string StringProperty { get; set; }
+    public string? StringProperty { get; set; }
     public IDictionary<string, object> Data { get; } = new DataDictionary();
 
-    public ISerializer Serializer { get; set; }
+    public ISerializer Serializer { get; set; } = null!;
 }
 
 public class MyDataModel
 {
     public int IntProperty { get; set; }
-    public string StringProperty { get; set; }
+    public string? StringProperty { get; set; }
 }

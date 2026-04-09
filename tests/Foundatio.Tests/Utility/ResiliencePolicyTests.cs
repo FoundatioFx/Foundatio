@@ -284,6 +284,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         var policy = resiliencePolicyProvider.GetPolicy("MyPolicy") as ResiliencePolicy;
         Assert.NotNull(policy);
+        Assert.NotNull(policy.CircuitBreaker);
 
         Assert.Equal(CircuitState.Closed, policy.CircuitBreaker.State);
 

@@ -20,10 +20,12 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly TimeProvider _timeProvider;
 
-    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider timeProvider = null, IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProvider(ICacheClient cacheClient, int maxHitsPerPeriod = 100, TimeSpan? throttlingPeriod = null, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null)
     {
+        ArgumentNullException.ThrowIfNull(cacheClient);
+
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
-        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<ThrottlingLockProvider>();
         _cacheClient = new ScopedCacheClient(cacheClient, "lock:throttled");
@@ -41,7 +43,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
-    public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    public async Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 
@@ -161,12 +163,14 @@ public class ThrottlingLockProviderFactory : IThrottlingLockProviderFactory
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly ILoggerFactory _loggerFactory;
 
-    public ThrottlingLockProviderFactory(ICacheClient cacheClient, TimeProvider timeProvider = null,
-        IResiliencePolicyProvider resiliencePolicyProvider = null, ILoggerFactory loggerFactory = null)
+    public ThrottlingLockProviderFactory(ICacheClient cacheClient, TimeProvider? timeProvider = null,
+        IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null)
     {
-        _cacheClient = cacheClient ?? throw new ArgumentNullException(nameof(cacheClient));
+        ArgumentNullException.ThrowIfNull(cacheClient);
+
+        _cacheClient = cacheClient;
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
-        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider();
+        _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
     }
 

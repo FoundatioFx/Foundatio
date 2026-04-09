@@ -19,7 +19,7 @@ internal class TestLoggerLogger : ILogger
         _categoryName = categoryName;
     }
 
-    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {
         if (!_logger.IsEnabled(_categoryName, logLevel))
             return;
@@ -32,7 +32,7 @@ internal class TestLoggerLogger : ILogger
             EventId = eventId,
             State = state,
             Exception = exception,
-            Formatter = (s, e) => formatter((TState)s, e),
+            Formatter = (s, e) => s is TState typedState ? formatter(typedState, e) : String.Empty,
             CategoryName = _categoryName,
             Scopes = scopes
         };
@@ -67,18 +67,14 @@ internal class TestLoggerLogger : ILogger
         return _logger.IsEnabled(_categoryName, logLevel);
     }
 
-    public IDisposable BeginScope<TState>(TState state)
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull
     {
-        if (state == null)
-            throw new ArgumentNullException(nameof(state));
-
         return Push(state);
     }
 
-    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state)
+    public IDisposable BeginScope<TState, TScope>(Func<TState, TScope> scopeFactory, TState state) where TScope : notnull
     {
-        if (state == null)
-            throw new ArgumentNullException(nameof(state));
+        ArgumentNullException.ThrowIfNull(state);
 
         return Push(scopeFactory(state));
     }
@@ -87,7 +83,7 @@ internal class TestLoggerLogger : ILogger
 
     private sealed class Wrapper
     {
-        public ImmutableStack<object> Value { get; set; }
+        public required ImmutableStack<object> Value { get; set; }
     }
 
     private static ImmutableStack<object> CurrentScopeStack

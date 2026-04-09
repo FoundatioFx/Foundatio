@@ -33,12 +33,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private long _invalidateCacheCalls;
     private bool _isDisposed;
 
-    public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions localCacheOptions = null, ILoggerFactory loggerFactory = null)
+    public HybridCacheClient(ICacheClient distributedCacheClient, IMessageBus messageBus, InMemoryCacheClientOptions? localCacheOptions = null, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? localCacheOptions?.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? localCacheOptions?.TimeProvider ?? TimeProvider.System;
-        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider;
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
         _lazySubscription = new AsyncLazy<bool>(async () =>
@@ -51,7 +51,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         {
             TimeProvider = _timeProvider,
             ResiliencePolicyProvider = _resiliencePolicyProvider,
-            LoggerFactory = loggerFactory
+            LoggerFactory = _loggerFactory
         };
         _localCache = new InMemoryCacheClient(localCacheOptions);
     }
@@ -144,12 +144,12 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return removed;
     }
 
-    public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         await EnsureSubscribedAsync().AnyContext();
 
-        string[] items = keys?.ToArray();
-        bool flushAll = items == null || items.Length == 0;
+        string[]? items = keys?.ToArray();
+        bool flushAll = items is null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
         await _localCache.RemoveAllAsync(items).AnyContext();
 
@@ -676,7 +676,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return difference;
     }
 
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -719,7 +719,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return addedCount;
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -768,7 +768,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         return removedCount;
     }
 
-    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -811,8 +811,8 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
 
     public class InvalidateCache
     {
-        public string CacheId { get; set; }
-        public string[] Keys { get; set; }
+        public required string CacheId { get; set; }
+        public string[]? Keys { get; set; }
         public bool FlushAll { get; set; }
         public bool Expired { get; set; }
     }

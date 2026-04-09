@@ -13,7 +13,7 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 public class HostedJobService : IHostedService, IJobStatus, IDisposable
 {
     private readonly CancellationTokenSource _stoppingCts = new();
-    private Task _executingTask;
+    private Task? _executingTask;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;

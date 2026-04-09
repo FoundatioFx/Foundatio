@@ -14,7 +14,7 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
 {
-    private Timer _timer;
+    private Timer? _timer;
     private readonly List<IJobStatus> _jobs = new();
     private readonly IHostApplicationLifetime _lifetime;
     private readonly IServiceProvider _serviceProvider;
@@ -23,7 +23,9 @@ public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
 
     public ShutdownHostIfNoJobsRunningService(IHostApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger)
     {
-        _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+        ArgumentNullException.ThrowIfNull(applicationLifetime);
+
+        _lifetime = applicationLifetime;
         _serviceProvider = serviceProvider;
         _logger = logger ?? NullLogger<ShutdownHostIfNoJobsRunningService>.Instance;
 

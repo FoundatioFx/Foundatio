@@ -8,14 +8,16 @@ public class CircuitBreakerBuilder
 {
     private readonly CircuitBreaker _circuitBreaker;
 
-    public CircuitBreakerBuilder(ILogger logger = null, TimeProvider timeProvider = null)
+    public CircuitBreakerBuilder(ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         _circuitBreaker = new CircuitBreaker(logger, timeProvider);
     }
 
     public CircuitBreakerBuilder(CircuitBreaker circuitBreaker)
     {
-        _circuitBreaker = circuitBreaker ?? throw new ArgumentNullException(nameof(circuitBreaker));
+        ArgumentNullException.ThrowIfNull(circuitBreaker);
+
+        _circuitBreaker = circuitBreaker;
     }
 
     /// <summary>
@@ -26,7 +28,9 @@ public class CircuitBreakerBuilder
     /// <exception cref="ArgumentNullException"></exception>
     public CircuitBreakerBuilder WithLogger(ILogger logger)
     {
-        _circuitBreaker.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _circuitBreaker.Logger = logger;
         return this;
     }
 

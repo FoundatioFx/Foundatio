@@ -14,7 +14,7 @@ public static class LoggingExtensions
     }
 
     public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, ITestOutputHelper outputHelper,
-        Action<TestLoggerOptions> configure = null)
+        Action<TestLoggerOptions>? configure = null)
     {
 
         var options = new TestLoggerOptions
@@ -31,7 +31,7 @@ public static class LoggingExtensions
     }
 
     public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, Func<ITestOutputHelper> getOutputHelper,
-        Action<TestLoggerOptions> configure = null)
+        Action<TestLoggerOptions>? configure = null)
     {
 
         var options = new TestLoggerOptions
@@ -54,7 +54,7 @@ public static class LoggingExtensions
         return builder.AddTestLogger(options);
     }
 
-    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, TestLoggerOptions options = null)
+    public static ILoggingBuilder AddTestLogger(this ILoggingBuilder builder, TestLoggerOptions? options = null)
     {
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
@@ -67,7 +67,7 @@ public static class LoggingExtensions
         return builder;
     }
 
-    public static ILoggerFactory AddTestLogger(this ILoggerFactory factory, Action<TestLoggerOptions> configure = null)
+    public static ILoggerFactory AddTestLogger(this ILoggerFactory factory, Action<TestLoggerOptions>? configure = null)
     {
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
@@ -80,7 +80,7 @@ public static class LoggingExtensions
         return factory;
     }
 
-    public static TestLogger ToTestLogger(this ITestOutputHelper outputHelper, Action<TestLoggerOptions> configure = null)
+    public static TestLogger ToTestLogger(this ITestOutputHelper outputHelper, Action<TestLoggerOptions>? configure = null)
     {
         if (outputHelper == null)
             throw new ArgumentNullException(nameof(outputHelper));
@@ -98,6 +98,6 @@ public static class LoggingExtensions
         return testLogger;
     }
 
-    public static ILogger<T> ToTestLogger<T>(this ITestOutputHelper outputHelper, Action<TestLoggerOptions> configure = null)
+    public static ILogger<T> ToTestLogger<T>(this ITestOutputHelper outputHelper, Action<TestLoggerOptions>? configure = null)
         => outputHelper.ToTestLogger(configure).CreateLogger<T>();
 }

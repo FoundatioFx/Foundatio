@@ -17,7 +17,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     private readonly TimeProvider _timeProvider;
     private readonly ILoggerFactory _loggerFactory;
 
-    public ResiliencePolicyProvider(TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public ResiliencePolicyProvider(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
@@ -31,7 +31,9 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
     public ResiliencePolicyProvider WithDefaultPolicy(IResiliencePolicy policy)
     {
-        _defaultPolicy = policy ?? throw new ArgumentNullException(nameof(policy));
+        ArgumentNullException.ThrowIfNull(policy);
+
+        _defaultPolicy = policy;
         return this;
     }
 
@@ -40,7 +42,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// </summary>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithDefaultPolicy(Action<ResiliencePolicyBuilder>? builder = null)
     {
         var policy = new ResiliencePolicy(_loggerFactory.CreateLogger<ResiliencePolicy>(), _timeProvider);
         var policyBuilder = new ResiliencePolicyBuilder(policy);
@@ -59,8 +61,9 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     public ResiliencePolicyProvider WithPolicy(string name, IResiliencePolicy policy)
     {
         ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(policy);
 
-        _policies[name] = policy ?? throw new ArgumentNullException(nameof(policy));
+        _policies[name] = policy;
         return this;
     }
 
@@ -70,7 +73,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="name">The name of the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy(string name, Action<ResiliencePolicyBuilder>? builder = null)
     {
         ArgumentNullException.ThrowIfNull(name);
 
@@ -100,7 +103,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <typeparam name="T">The target type for the policy.</typeparam>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy<T>(Action<ResiliencePolicyBuilder>? builder = null)
     {
         string name = typeof(T).GetFriendlyTypeName();
         return WithPolicy(name, builder);
@@ -124,7 +127,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="targetType">The target type for the policy.</param>
     /// <param name="builder">An action to configure the <see cref="IResiliencePolicy"/>.</param>
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
-    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder> builder = null)
+    public ResiliencePolicyProvider WithPolicy(Type targetType, Action<ResiliencePolicyBuilder>? builder = null)
     {
         string name = targetType.GetFriendlyTypeName();
         return WithPolicy(name, builder);
@@ -136,7 +139,7 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <param name="name">The name of the policy.</param>
     /// <param name="useDefault">Whether to return the default policy if the named policy is not found.</param>
     /// <returns>The <see cref="IResiliencePolicy"/> instance, or null if not found and <paramref name="useDefault"/> is false.</returns>
-    public IResiliencePolicy GetPolicy(string name, bool useDefault = true)
+    public IResiliencePolicy? GetPolicy(string name, bool useDefault = true)
     {
         if (String.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));

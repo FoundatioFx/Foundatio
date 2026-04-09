@@ -15,12 +15,12 @@ public class FaultInjectingSerializer : ISerializer
     {
     }
 
-    public FaultInjectingSerializer(ISerializer inner)
+    public FaultInjectingSerializer(ISerializer? inner)
     {
         _inner = inner ?? DefaultSerializer.Instance;
     }
 
-    public object Deserialize(Stream data, Type objectType)
+    public object? Deserialize(Stream data, Type objectType)
     {
         if (ShouldFailOnDeserialize)
             throw new SerializerException("Simulated deserialization failure.");
@@ -28,7 +28,7 @@ public class FaultInjectingSerializer : ISerializer
         return _inner.Deserialize(data, objectType);
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize(object? value, Stream output)
     {
         if (ShouldFailOnSerialize)
             throw new SerializerException("Simulated serialization failure.");

@@ -31,7 +31,9 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     /// <exception cref="ArgumentException">Thrown when <paramref name="scope"/> contains a wildcard character.</exception>
     public ScopedFileStorage(IFileStorage storage, string scope, bool shouldDispose = false)
     {
-        UnscopedStorage = storage ?? throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(storage);
+
+        UnscopedStorage = storage;
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim().NormalizePath() : null;
         _pathPrefix = Scope != null ? String.Concat(Scope, "/") : String.Empty;
         _shouldDispose = shouldDispose;
@@ -43,19 +45,19 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
 
     public IFileStorage UnscopedStorage { get; private set; }
 
-    public string Scope { get; private set; }
+    public string? Scope { get; private set; }
 
     ISerializer IHaveSerializer.Serializer => UnscopedStorage.Serializer;
     ILogger IHaveLogger.Logger => UnscopedStorage.GetLogger();
     ILoggerFactory IHaveLoggerFactory.LoggerFactory => UnscopedStorage.GetLoggerFactory();
-    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedStorage.GetResiliencePolicyProvider();
+    IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedStorage.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedStorage.GetTimeProvider();
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
-    public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-    public Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -63,7 +65,7 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedStorage.GetFileStreamAsync(String.Concat(_pathPrefix, path), streamMode, cancellationToken);
     }
 
-    public async Task<FileSpec> GetFileInfoAsync(string path)
+    public async Task<FileSpec?> GetFileInfoAsync(string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -121,13 +123,13 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
         return UnscopedStorage.DeleteFileAsync(String.Concat(_pathPrefix, path), cancellationToken);
     }
 
-    public Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellation = default)
+    public Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellation = default)
     {
         searchPattern = !String.IsNullOrEmpty(searchPattern) ? String.Concat(_pathPrefix, searchPattern) : String.Concat(_pathPrefix, "*");
         return UnscopedStorage.DeleteFilesAsync(searchPattern, cancellation);
     }
 
-    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         if (pageSize <= 0)
             return PagedFileListResult.Empty;

@@ -209,7 +209,7 @@ public class JobTests : TestWithLoggingBase
     public async Task RunContinuousAsync_SuccessfulJob_DoesNotSetActivityErrorStatus()
     {
         // Arrange
-        Activity capturedActivity = null;
+        Activity? capturedActivity = null;
         using var listener = new ActivityListener
         {
             ShouldListenTo = s => s.Name == "Foundatio",

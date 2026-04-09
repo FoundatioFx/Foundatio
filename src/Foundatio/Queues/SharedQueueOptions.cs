@@ -13,7 +13,7 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     /// <summary>
     /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
     /// </summary>
-    public string MetricsPrefix { get; set; }
+    public string? MetricsPrefix { get; set; }
 
     /// <summary>
     /// How often to poll queue metrics. These metrics are more expensive to calculate. Defaults to 5 seconds.
@@ -65,7 +65,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     {
         ArgumentNullException.ThrowIfNull(behavior);
 
-        if (Target.Behaviors == null)
+        if (Target.Behaviors is null)
             Target.Behaviors = new List<IQueueBehavior<T>>();
         Target.Behaviors.Add(behavior);
 

@@ -14,7 +14,7 @@ namespace Foundatio.Tests.Jobs;
 
 public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueueWorkItem>
 {
-    public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
+    public SampleQueueWithRandomErrorsAndAbandonsJob(IQueue<SampleQueueWorkItem> queue, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
     }
 
@@ -36,7 +36,7 @@ public class SampleQueueWithRandomErrorsAndAbandonsJob : QueueJobBase<SampleQueu
 
 public class SampleQueueJob : QueueJobBase<SampleQueueWorkItem>
 {
-    public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
+    public SampleQueueJob(IQueue<SampleQueueWorkItem> queue, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
     }
 
@@ -50,12 +50,12 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
 {
     private readonly ILockProvider _lockProvider;
 
-    public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, ILockProvider lockProvider, TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
+    public SampleQueueJobWithLocking(IQueue<SampleQueueWorkItem> queue, ILockProvider lockProvider, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
     {
         _lockProvider = lockProvider;
     }
 
-    protected override Task<ILock> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
+    protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
     {
         if (_lockProvider != null)
             return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
@@ -71,13 +71,13 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
 
 public class SampleQueueWorkItem
 {
-    public string Path { get; set; }
+    public string? Path { get; set; }
     public DateTime Created { get; set; }
 }
 
 public class SampleJob : JobBase
 {
-    public SampleJob(TimeProvider timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
+    public SampleJob(TimeProvider? timeProvider, ILoggerFactory loggerFactory) : base(timeProvider, null, loggerFactory)
     {
     }
 

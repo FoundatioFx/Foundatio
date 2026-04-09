@@ -29,20 +29,22 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly Histogram<double> _totalTimeHistogram;
     private readonly Counter<long> _abandonedCounter;
 #pragma warning disable IDE0052 // Remove unread private members
-    private readonly ObservableGauge<long> _countGauge;
-    private readonly ObservableGauge<long> _workingGauge;
-    private readonly ObservableGauge<long> _deadletterGauge;
+    private readonly ObservableGauge<long>? _countGauge;
+    private readonly ObservableGauge<long>? _workingGauge;
+    private readonly ObservableGauge<long>? _deadletterGauge;
 #pragma warning restore IDE0052 // Remove unread private members
     private readonly TagList _emptyTags = default;
 
     private readonly List<IQueueBehavior<T>> _behaviors = new();
     private bool _isDisposed;
-    private QueueStats _queueStats;
+    private QueueStats? _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
+
+        _options = options;
         _metricsPrefix = $"foundatio.{typeof(T).Name.ToLowerInvariant()}";
         if (!String.IsNullOrWhiteSpace(options.MetricsPrefix))
             _metricsPrefix = $"{_metricsPrefix}.{options.MetricsPrefix.Trim()}";
@@ -116,7 +118,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public void AttachBehavior(IQueueBehavior<T> behavior)
     {
-        if (behavior == null)
+        if (behavior is null)
             return;
 
         _behaviors.Add(behavior);
@@ -130,9 +132,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     /// </summary>
     protected abstract Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default);
 
-    protected abstract Task<string> EnqueueImplAsync(T data, QueueEntryOptions options);
-    public async Task<string> EnqueueAsync(T data, QueueEntryOptions options = null)
+    protected abstract Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options);
+    public async Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null)
     {
+        ArgumentNullException.ThrowIfNull(data);
+
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();
@@ -141,8 +145,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         return await EnqueueImplAsync(data, options).AnyContext();
     }
 
-    protected abstract Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken);
-    public async Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken)
+    protected abstract Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken);
+    public async Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken)
     {
         // Use DisposedCancellationToken for setup: callers may pass an already-cancelled token
         // (e.g. TimeSpan.Zero timeout) which should skip waiting, not prevent queue creation.
@@ -153,7 +157,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         return await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
     }
 
-    public virtual async Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null)
+    public virtual async Task<IQueueEntry<T>?> DequeueAsync(TimeSpan? timeout = null)
     {
         using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
         return await DequeueAsync(timeoutCancellationTokenSource.Token).AnyContext();
@@ -227,7 +231,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
 
         var enqueueing = Enqueuing;
-        if (enqueueing == null)
+        if (enqueueing is null)
             return false;
 
         var args = new EnqueuingEventArgs<T> { Queue = this, Data = data, Options = options };
@@ -247,7 +251,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         IncrementSubCounter(entry.Value, "enqueued", tags);
 
         var enqueued = Enqueued;
-        if (enqueued == null)
+        if (enqueued is null)
             return Task.CompletedTask;
 
         var args = new EnqueuedEventArgs<T> { Queue = this, Entry = entry };
@@ -276,7 +280,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
 
         var dequeued = Dequeued;
-        if (dequeued == null)
+        if (dequeued is null)
             return Task.CompletedTask;
 
         var args = new DequeuedEventArgs<T> { Queue = this, Entry = entry };
@@ -295,7 +299,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var lockRenewed = LockRenewed;
-        if (lockRenewed == null)
+        if (lockRenewed is null)
             return Task.CompletedTask;
 
         var args = new LockRenewedEventArgs<T> { Queue = this, Entry = entry };
@@ -372,7 +376,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
     }
 
-    protected string GetSubMetricName(T data)
+    protected string? GetSubMetricName(T data)
     {
         var haveStatName = data as IHaveSubMetricName;
         return haveStatName?.SubMetricName;
@@ -384,7 +388,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         if (data is not IHaveSubMetricName)
             return;
 
-        string subMetricName = GetSubMetricName(data);
+        string? subMetricName = GetSubMetricName(data);
         if (String.IsNullOrEmpty(subMetricName))
             return;
 
@@ -398,7 +402,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         if (data is not IHaveSubMetricName)
             return;
 
-        string subMetricName = GetSubMetricName(data);
+        string? subMetricName = GetSubMetricName(data);
         if (String.IsNullOrEmpty(subMetricName))
             return;
 

@@ -193,6 +193,7 @@ end_of_line = lf
 end_of_line = crlf
 
 # Vendored third-party code - exclude from formatting
-# DeepCloner is vendored from https://github.com/force-net/DeepCloner
-[src/Foundatio/DeepCloner/**.cs]
+
+# FastCloner is vendored from https://github.com/lofcz/FastCloner
+[src/Foundatio/FastCloner/**.cs]
 generated_code = true

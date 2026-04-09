@@ -15,7 +15,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     private readonly TimeProvider _timeProvider;
     private ILogger _logger;
 
-    public ResiliencePolicy(ILogger logger = null, TimeProvider timeProvider = null)
+    public ResiliencePolicy(ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
@@ -46,7 +46,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// A function that determines whether to retry based on the attempt number and exception.
     /// </summary>
-    public Func<int, Exception, bool> ShouldRetry { get; set; }
+    public Func<int, Exception, bool>? ShouldRetry { get; set; }
 
     /// <summary>
     /// Sets a fixed retry delay for all retries.
@@ -56,7 +56,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// Gets or sets a function that returns the retry delay based on the number of attempts. Default is an exponential delay starting at 1 second.
     /// </summary>
-    public Func<int, TimeSpan> GetDelay { get; set; } = ExponentialDelay(TimeSpan.FromSeconds(1));
+    public Func<int, TimeSpan>? GetDelay { get; set; } = ExponentialDelay(TimeSpan.FromSeconds(1));
 
     /// <summary>
     /// Sets the max retry delay for all retries. Default is null, meaning no maximum delay.
@@ -76,7 +76,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// Gets or sets the circuit breaker for this policy.
     /// </summary>
-    public ICircuitBreaker CircuitBreaker { get; set; }
+    public ICircuitBreaker? CircuitBreaker { get; set; }
 
     // ============================================================
     // SYNCHRONOUS METHODS
@@ -90,8 +90,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -156,8 +156,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -222,8 +222,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -288,8 +288,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -358,8 +358,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -424,8 +424,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -490,8 +490,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -556,8 +556,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         var startTime = _timeProvider.GetUtcNow();
         var linkedCancellationToken = cancellationToken;
         var timeoutToken = CancellationToken.None;
-        CancellationTokenSource timeoutCts = null;
-        CancellationTokenSource linkedCts = null;
+        CancellationTokenSource? timeoutCts = null;
+        CancellationTokenSource? linkedCts = null;
 
         if (Timeout > TimeSpan.Zero)
         {
@@ -614,7 +614,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         }
     }
 
-    public ResiliencePolicy Clone(int? maxAttempts = null, TimeSpan? timeout = null, TimeSpan? delay = null, Func<int, TimeSpan> getDelay = null)
+    public ResiliencePolicy Clone(int? maxAttempts = null, TimeSpan? timeout = null, TimeSpan? delay = null, Func<int, TimeSpan>? getDelay = null)
     {
         var clone = new ResiliencePolicy(_logger, _timeProvider)
         {

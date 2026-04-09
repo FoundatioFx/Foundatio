@@ -20,7 +20,7 @@ public class MaxEntrySizeExceededCacheException : CacheException
     /// <summary>
     /// Gets the type name of the entry that exceeded the limit.
     /// </summary>
-    public string EntryType { get; }
+    public string? EntryType { get; }
 
     /// <summary>
     /// Creates a new instance of <see cref="MaxEntrySizeExceededCacheException"/>.

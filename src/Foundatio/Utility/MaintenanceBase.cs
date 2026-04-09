@@ -8,14 +8,14 @@ namespace Foundatio.Utility;
 
 public class MaintenanceBase : IDisposable
 {
-    private ScheduledTimer _maintenanceTimer;
+    private ScheduledTimer? _maintenanceTimer;
     protected readonly ILoggerFactory _loggerFactory;
     protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private bool _isDisposed;
 
-    public MaintenanceBase(TimeProvider timeProvider, ILoggerFactory loggerFactory)
+    public MaintenanceBase(TimeProvider? timeProvider, ILoggerFactory? loggerFactory)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
         _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
@@ -35,6 +35,12 @@ public class MaintenanceBase : IDisposable
 
     protected void ScheduleNextMaintenance(DateTime utcDate)
     {
+        if (_maintenanceTimer is null)
+        {
+            _logger.LogWarning("ScheduleNextMaintenance called before InitializeMaintenance");
+            return;
+        }
+
         _maintenanceTimer.ScheduleNext(utcDate);
     }
 

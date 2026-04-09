@@ -23,7 +23,7 @@ public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T :
 
     protected override async Task OnEnqueuing(object sender, EnqueuingEventArgs<T> enqueuingEventArgs)
     {
-        string uniqueIdentifier = GetUniqueIdentifier(enqueuingEventArgs.Data);
+        string? uniqueIdentifier = GetUniqueIdentifier(enqueuingEventArgs.Data);
         if (String.IsNullOrEmpty(uniqueIdentifier))
             return;
 
@@ -38,14 +38,14 @@ public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T :
 
     protected override async Task OnDequeued(object sender, DequeuedEventArgs<T> dequeuedEventArgs)
     {
-        string uniqueIdentifier = GetUniqueIdentifier(dequeuedEventArgs.Entry.Value);
+        string? uniqueIdentifier = GetUniqueIdentifier(dequeuedEventArgs.Entry.Value);
         if (String.IsNullOrEmpty(uniqueIdentifier))
             return;
 
         await _cacheClient.RemoveAsync(uniqueIdentifier);
     }
 
-    private string GetUniqueIdentifier(T data)
+    private string? GetUniqueIdentifier(T data)
     {
         var haveUniqueIdentifier = data as IHaveUniqueIdentifier;
         return haveUniqueIdentifier?.UniqueIdentifier;
@@ -54,5 +54,5 @@ public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T :
 
 public interface IHaveUniqueIdentifier
 {
-    string UniqueIdentifier { get; }
+    string? UniqueIdentifier { get; }
 }

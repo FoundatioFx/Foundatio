@@ -30,13 +30,13 @@ public static class TypeHelper
     public static readonly Type UInt64Type = typeof(ulong);
     public static readonly Type DoubleType = typeof(double);
 
-    public static Type ResolveType(string fullTypeName, Type expectedBase = null, ILogger logger = null)
+    public static Type? ResolveType(string fullTypeName, Type? expectedBase = null, ILogger? logger = null)
     {
         if (String.IsNullOrEmpty(fullTypeName))
             return null;
 
         var type = Type.GetType(fullTypeName);
-        if (type == null)
+        if (type is null)
         {
             if (logger != null)
                 logger.LogError("Unable to resolve type: {TypeFullName}.", fullTypeName);
@@ -75,10 +75,9 @@ public static class TypeHelper
 
     public static string GetTypeDisplayName(Type type)
     {
-        string fullName = null;
         if (type.GetTypeInfo().IsGenericType)
         {
-            fullName = type.GetGenericTypeDefinition().FullName;
+            string fullName = type.GetGenericTypeDefinition().FullName ?? type.Name;
 
             // Nested types (public or private) have a '+' in their full name
             var parts = fullName.Split('+');
@@ -111,16 +110,16 @@ public static class TypeHelper
         if (_builtInTypeNames.ContainsKey(type))
             return _builtInTypeNames[type];
 
-        fullName = type.FullName;
+        string? name = type.FullName;
         if (type.IsNested)
-            fullName = fullName.Replace('+', '.');
+            name = name?.Replace('+', '.');
 
-        return fullName;
+        return name ?? type.Name;
     }
 
-    public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly> assemblies = null)
+    public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly>? assemblies = null)
     {
-        if (assemblies == null)
+        if (assemblies is null)
             assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
         var types = new List<Type>();
@@ -132,7 +131,7 @@ public static class TypeHelper
             }
             catch (ReflectionTypeLoadException ex)
             {
-                string loaderMessages = String.Join(", ", ex.LoaderExceptions.ToList().Select(le => le.Message));
+                string loaderMessages = String.Join(", ", (ex.LoaderExceptions ?? []).OfType<Exception>().Select(le => le.Message));
                 Trace.TraceInformation("Unable to search types from assembly \"{0}\" for plugins of type \"{1}\": {2}", assembly.FullName, typeof(TAction).Name, loaderMessages);
             }
         }

@@ -8,7 +8,7 @@ public class ResiliencePolicyBuilder
 {
     private readonly ResiliencePolicy _policy;
 
-    public ResiliencePolicyBuilder(ILogger logger = null, TimeProvider timeProvider = null)
+    public ResiliencePolicyBuilder(ILogger? logger = null, TimeProvider? timeProvider = null)
     {
         _policy = new ResiliencePolicy(logger, timeProvider);
     }
@@ -26,7 +26,9 @@ public class ResiliencePolicyBuilder
     /// <exception cref="ArgumentNullException"></exception>
     public ResiliencePolicyBuilder WithLogger(ILogger logger)
     {
-        _policy.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _policy.Logger = logger;
         return this;
     }
 

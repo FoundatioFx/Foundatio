@@ -15,7 +15,7 @@ public interface IHaveResiliencePolicyProvider
 
 public static class HaveResiliencePolicyExtensions
 {
-    public static IResiliencePolicyProvider GetResiliencePolicyProvider(this object target)
+    public static IResiliencePolicyProvider? GetResiliencePolicyProvider(this object target)
     {
         return target is IHaveResiliencePolicyProvider accessor ? accessor.ResiliencePolicyProvider : null;
     }

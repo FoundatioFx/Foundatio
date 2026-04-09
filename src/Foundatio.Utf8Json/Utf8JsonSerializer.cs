@@ -9,12 +9,12 @@ public class Utf8JsonSerializer : ITextSerializer
 {
     private readonly IJsonFormatterResolver _formatterResolver;
 
-    public Utf8JsonSerializer(IJsonFormatterResolver resolver = null)
+    public Utf8JsonSerializer(IJsonFormatterResolver? resolver = null)
     {
         _formatterResolver = resolver ?? StandardResolver.Default;
     }
 
-    public void Serialize(object value, Stream output)
+    public void Serialize(object? value, Stream output)
     {
         ArgumentNullException.ThrowIfNull(output);
 

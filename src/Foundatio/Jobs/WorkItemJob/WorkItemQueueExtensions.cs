@@ -13,12 +13,14 @@ public static class WorkItemQueueExtensions
     {
         string jobId = Guid.NewGuid().ToString("N");
         var bytes = queue.Serializer.SerializeToBytes(workItemData);
+        string typeName = typeof(T).AssemblyQualifiedName
+            ?? throw new InvalidOperationException($"Type {typeof(T).Name} does not have an assembly-qualified name");
 
         var data = new WorkItemData
         {
             Data = bytes,
             WorkItemId = jobId,
-            Type = typeof(T).AssemblyQualifiedName,
+            Type = typeName,
             SendProgressReports = includeProgressReporting
         };
 
@@ -35,19 +37,19 @@ public static class WorkItemQueueExtensions
         return jobId;
     }
 
-    private static string GetDefaultSubMetricName(WorkItemData data)
+    private static string? GetDefaultSubMetricName(WorkItemData data)
     {
         if (String.IsNullOrEmpty(data.Type))
             return null;
 
-        string type = GetTypeName(data.Type);
+        string? type = GetTypeName(data.Type);
         if (type != null && type.EndsWith("WorkItem"))
             type = type.Substring(0, type.Length - 8);
 
         return type?.ToLowerInvariant();
     }
 
-    private static string GetTypeName(string assemblyQualifiedName)
+    private static string? GetTypeName(string assemblyQualifiedName)
     {
         if (String.IsNullOrEmpty(assemblyQualifiedName))
             return null;

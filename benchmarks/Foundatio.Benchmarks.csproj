@@ -11,6 +11,7 @@
     <Optimize>true</Optimize>
     <Configuration>Release</Configuration>
     <IsPackable>false</IsPackable>
+    <NoWarn>$(NoWarn);CS8002</NoWarn>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\build\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>

@@ -30,12 +30,12 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory loggerFactory = null)
+    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridAwareCacheClient>();
         _timeProvider = distributedCacheClient.GetTimeProvider() ?? TimeProvider.System;
-        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider();
+        _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
         _messagePublisher = messagePublisher;
     }
@@ -73,10 +73,10 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return removed;
     }
 
-    public async Task<int> RemoveAllAsync(IEnumerable<string> keys = null)
+    public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        string[] items = keys?.ToArray();
-        bool flushAll = items == null || items.Length == 0;
+        string[]? items = keys?.ToArray();
+        bool flushAll = items is null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
 
         // Only notify other nodes if keys were actually removed from distributed cache.
@@ -252,7 +252,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         return difference;
     }
 
-    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null)
+    public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -271,7 +271,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values)
+    public async Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         ArgumentNullException.ThrowIfNull(values);
@@ -298,7 +298,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
         }
     }
 
-    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100)
+    public Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
         if (page.HasValue)

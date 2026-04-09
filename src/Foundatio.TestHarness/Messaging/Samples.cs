@@ -10,7 +10,7 @@ namespace Foundatio.Tests.Messaging
         {
             Items = new DataDictionary();
         }
-        public string Data { get; set; }
+        public string? Data { get; set; }
         public int Count { get; set; }
 
         public IDictionary<string, object> Items { get; set; }
@@ -30,17 +30,17 @@ namespace Foundatio.Tests.Messaging
 
     public class SimpleMessageB : ISimpleMessage
     {
-        public string Data { get; set; }
+        public string? Data { get; set; }
     }
 
     public class SimpleMessageC
     {
-        public string Data { get; set; }
+        public string? Data { get; set; }
     }
 
     public interface ISimpleMessage
     {
-        string Data { get; set; }
+        string? Data { get; set; }
     }
 }
 
@@ -52,7 +52,7 @@ namespace Foundatio.Tests.MessagingAlt
         {
             Items = new DataDictionary();
         }
-        public string Data { get; set; }
+        public string? Data { get; set; }
         public int Count { get; set; }
 
         public IDictionary<string, object> Items { get; set; }

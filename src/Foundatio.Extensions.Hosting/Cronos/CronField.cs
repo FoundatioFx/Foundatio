@@ -24,7 +24,7 @@ namespace Foundatio.Extensions.Hosting.Cronos;
 
 internal sealed class CronField
 {
-    private static readonly string[] MonthNames =
+    private static readonly string?[] MonthNames =
     {
         null, "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"
     };
@@ -50,7 +50,7 @@ internal sealed class CronField
     {
         for (var i = 1; i < MonthNames.Length; i++)
         {
-            var name = MonthNames[i].ToUpperInvariant();
+            var name = MonthNames[i]!.ToUpperInvariant();
             var array = new char[3];
             array[0] = name[0];
             array[1] = name[1];
@@ -78,11 +78,11 @@ internal sealed class CronField
     public readonly string Name;
     public readonly int First;
     public readonly int Last;
-    public readonly int[] Names;
+    public readonly int[]? Names;
     public readonly bool CanDefineInterval;
     public readonly long AllBits;
 
-    private CronField(string name, int first, int last, int[] names, bool canDefineInterval)
+    private CronField(string name, int first, int last, int[]? names, bool canDefineInterval)
     {
         Name = name;
         First = first;

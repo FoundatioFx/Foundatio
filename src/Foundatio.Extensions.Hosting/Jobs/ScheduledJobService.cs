@@ -48,8 +48,20 @@ public class ScheduledJobService : BackgroundService
 
         await _messageBus.SubscribeAsync<JobStateChangedMessage>(s =>
         {
+            if (String.IsNullOrEmpty(s.JobName))
+            {
+                _logger.LogWarning("Received job state change message with no job name, ignoring");
+                return Task.CompletedTask;
+            }
+
             var job = _jobManager.GetJob(s.JobName);
-            if (job == null || s.Id == job.Id)
+            if (job is null)
+            {
+                _logger.LogWarning("Received job state change for unknown job {JobName}, ignoring", s.JobName);
+                return Task.CompletedTask;
+            }
+
+            if (String.Equals(s.Id, job.Id, StringComparison.Ordinal))
                 return Task.CompletedTask;
 
             if (!String.IsNullOrEmpty(s.Reason))
@@ -80,7 +92,7 @@ public class ScheduledJobService : BackgroundService
 
                 _logger.LogDebug("Applying distributed state for job {JobName} ({JobId})", distributedJob.Value.Options.Name, job.Id);
 
-                if (job.Options.CronSchedule != jobState.Value.Schedule)
+                if (!String.Equals(job.Options.CronSchedule, jobState.Value.Schedule, StringComparison.Ordinal))
                 {
                     _logger.LogInformation("Cron schedule changed for job {JobName} from {OldCronSchedule} to {NewCronSchedule} ({JobId})",
                         job.Options.Name, jobState.Value.Schedule, job.Options.CronSchedule, job.Id);

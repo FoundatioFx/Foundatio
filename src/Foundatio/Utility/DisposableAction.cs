@@ -8,7 +8,7 @@ namespace Foundatio.Utility;
 /// </summary>
 public sealed class DisposableAction : IDisposable
 {
-    private Action _exitAction;
+    private Action? _exitAction;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DisposableAction"/> class.

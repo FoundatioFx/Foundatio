@@ -23,10 +23,12 @@ public class ScheduledTimer : IDisposable
     private bool _shouldRunAgainImmediately = false;
     private bool _isDisposed;
 
-    public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, TimeProvider timeProvider = null, ILoggerFactory loggerFactory = null)
+    public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
+        ArgumentNullException.ThrowIfNull(timerCallback);
+
         _logger = loggerFactory?.CreateLogger<ScheduledTimer>() ?? NullLogger<ScheduledTimer>.Instance;
-        _timerCallback = timerCallback ?? throw new ArgumentNullException(nameof(timerCallback));
+        _timerCallback = timerCallback;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 

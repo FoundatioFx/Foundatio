@@ -19,14 +19,14 @@ public record MessageOptions
     /// Gets or sets a unique identifier for the message.
     /// Can be used for message deduplication and idempotency checks.
     /// </summary>
-    public string UniqueId { get; set; }
+    public string? UniqueId { get; set; }
 
     /// <summary>
     /// Gets or sets the correlation identifier for distributed tracing.
     /// If not set, this is automatically populated from <see cref="System.Diagnostics.Activity.Current"/>
     /// when the message is published, enabling end-to-end request tracing across services.
     /// </summary>
-    public string CorrelationId { get; set; }
+    public string? CorrelationId { get; set; }
 
     /// <summary>
     /// Gets or sets the delay before the message is delivered to subscribers.

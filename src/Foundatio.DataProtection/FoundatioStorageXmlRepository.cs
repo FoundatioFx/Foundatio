@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,21 +28,22 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory loggerFactory = null) : this(storage, null, loggerFactory)
+    public FoundatioStorageXmlRepository(IFileStorage storage, ILoggerFactory? loggerFactory = null) : this(storage, null, loggerFactory)
     {
     }
 
     /// <summary>
     /// Creates a new instance of the <see cref="FoundatioStorageXmlRepository"/>.
     /// </summary>
-    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider resiliencePolicyProvider, ILoggerFactory loggerFactory = null)
+    public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
-        if (storage == null)
-            throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(storage);
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
-        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
+
+        var policyProvider = resiliencePolicyProvider ?? storage.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
+        _resiliencePolicy = policyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
     }
 
     /// <inheritdoc />
@@ -58,7 +59,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         if (files.Count == 0)
         {
             _logger.LogTrace("No elements were found");
-            return new XElement[0];
+            return [];
         }
 
         _logger.LogTrace("Found {FileCount} elements", files.Count);
@@ -66,10 +67,14 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.Path);
-            using (var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext())
+            await using var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext();
+            if (stream is null)
             {
-                elements.Add(XElement.Load(stream));
+                _logger.LogWarning("Skipping element {File}: file stream was null (file may have been deleted)", file.Path);
+                continue;
             }
+
+            elements.Add(XElement.Load(stream));
 
             _logger.LogTrace("Loaded element: {File}", file.Path);
         }
@@ -80,8 +85,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <inheritdoc />
     public void StoreElement(XElement element, string friendlyName)
     {
-        if (element == null)
-            throw new ArgumentNullException(nameof(element));
+        ArgumentNullException.ThrowIfNull(element);
 
         StoreElementAsync(element, friendlyName).GetAwaiter().GetResult();
     }

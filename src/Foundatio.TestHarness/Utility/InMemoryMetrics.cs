@@ -109,7 +109,7 @@ public class InMemoryMetrics : IDisposable
         _meterListener.RecordObservableInstruments();
     }
 
-    public IReadOnlyCollection<RecordedMeasurement<T>> GetMeasurements<T>(string name = null) where T : struct
+    public IReadOnlyCollection<RecordedMeasurement<T>> GetMeasurements<T>(string? name = null) where T : struct
     {
         if (typeof(T) == typeof(byte))
         {
@@ -385,15 +385,15 @@ public class InMemoryMetrics : IDisposable
 [DebuggerDisplay("{Name}={Value}")]
 public struct RecordedMeasurement<T> where T : struct
 {
-    public RecordedMeasurement(Instrument instrument, T value, ref ReadOnlySpan<KeyValuePair<string, object>> tags,
-        object state)
+    public RecordedMeasurement(Instrument instrument, T value, ref ReadOnlySpan<KeyValuePair<string, object?>> tags,
+        object? state)
     {
         Instrument = instrument;
         Name = Instrument.Name;
         Value = value;
         Tags = tags.Length > 0
             ? ImmutableDictionary.CreateRange(tags.ToArray())
-            : ImmutableDictionary<string, object>.Empty;
+            : ImmutableDictionary<string, object?>.Empty;
         State = state;
         Timestamp = DateTime.UtcNow;
     }
@@ -401,7 +401,7 @@ public struct RecordedMeasurement<T> where T : struct
     public Instrument Instrument { get; }
     public string Name { get; }
     public T Value { get; }
-    public IReadOnlyDictionary<string, object> Tags { get; }
-    public object State { get; }
+    public IReadOnlyDictionary<string, object?> Tags { get; }
+    public object? State { get; }
     public DateTime Timestamp { get; }
 }

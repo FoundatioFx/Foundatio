@@ -5,7 +5,7 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 
 public class HostedJobOptionsBuilder
 {
-    public HostedJobOptionsBuilder(HostedJobOptions target = null)
+    public HostedJobOptionsBuilder(HostedJobOptions? target = null)
     {
         Target = target ?? new HostedJobOptions();
     }
