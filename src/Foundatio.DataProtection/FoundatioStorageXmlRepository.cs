@@ -37,12 +37,13 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// </summary>
     public FoundatioStorageXmlRepository(IFileStorage storage, IResiliencePolicyProvider? resiliencePolicyProvider, ILoggerFactory? loggerFactory = null)
     {
-        if (storage == null)
-            throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(storage);
 
         _storage = new ScopedFileStorage(storage, "DataProtection");
         _logger = loggerFactory?.CreateLogger<FoundatioStorageXmlRepository>() ?? NullLogger<FoundatioStorageXmlRepository>.Instance;
-        _resiliencePolicy = resiliencePolicyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
+
+        var policyProvider = resiliencePolicyProvider ?? storage.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
+        _resiliencePolicy = policyProvider.GetPolicy<FoundatioStorageXmlRepository>(_logger);
     }
 
     /// <inheritdoc />
@@ -58,7 +59,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         if (files.Count == 0)
         {
             _logger.LogTrace("No elements were found");
-            return new XElement[0];
+            return [];
         }
 
         _logger.LogTrace("Found {FileCount} elements", files.Count);
@@ -66,7 +67,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
         foreach (var file in files)
         {
             _logger.LogTrace("Loading element: {File}", file.Path);
-            using var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext();
+            await using var stream = await _storage.GetFileStreamAsync(file.Path, StreamMode.Read).AnyContext();
             if (stream is null)
             {
                 _logger.LogWarning("Skipping element {File}: file stream was null (file may have been deleted)", file.Path);
@@ -84,8 +85,7 @@ public sealed class FoundatioStorageXmlRepository : IXmlRepository
     /// <inheritdoc />
     public void StoreElement(XElement element, string friendlyName)
     {
-        if (element == null)
-            throw new ArgumentNullException(nameof(element));
+        ArgumentNullException.ThrowIfNull(element);
 
         StoreElementAsync(element, friendlyName).GetAwaiter().GetResult();
     }
