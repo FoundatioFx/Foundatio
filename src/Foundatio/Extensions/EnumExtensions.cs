@@ -13,7 +13,7 @@ internal static class EnumExtensions
     /// <returns>True if the enum value is defined.</returns>
     public static bool TryEnumIsDefined(Type type, object value)
     {
-        if (type == null || value == null || !type.GetTypeInfo().IsEnum)
+        if (type is null || value is null || !type.GetTypeInfo().IsEnum)
             return false;
 
         // Return true if the value is an enum and is a matching type.

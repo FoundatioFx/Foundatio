@@ -220,7 +220,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private void OnItemExpired(string key, bool sendNotification = true)
     {
-        if (ItemExpired == null)
+        if (ItemExpired is null)
             return;
 
         Task.Factory.StartNew(_ =>
@@ -309,7 +309,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
-        if (keys == null)
+        if (keys is null)
         {
             int count = _memory.Count;
             _memory.Clear();

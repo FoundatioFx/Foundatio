@@ -20,7 +20,7 @@ public class AsyncEvent<TEventArgs> : IObservable<TEventArgs>, IDisposable where
 
     public IDisposable AddHandler(Func<object, TEventArgs, Task> callback)
     {
-        if (callback == null)
+        if (callback is null)
             throw new NullReferenceException("callback is null");
 
         lock (_lockObject)
@@ -40,7 +40,7 @@ public class AsyncEvent<TEventArgs> : IObservable<TEventArgs>, IDisposable where
 
     public void RemoveHandler(Func<object, TEventArgs, Task> callback)
     {
-        if (callback == null)
+        if (callback is null)
             throw new NullReferenceException("callback is null");
 
         lock (_lockObject)

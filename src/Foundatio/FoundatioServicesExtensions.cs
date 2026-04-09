@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Lock;
@@ -350,7 +350,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<IMessageBus>(),
+                sp.GetService<IMessageBus>(), // optional for more efficient lock release notifications
                 sp.GetService<TimeProvider>(),
                 sp.GetService<IResiliencePolicyProvider>(),
                 sp.GetService<ILoggerFactory>()

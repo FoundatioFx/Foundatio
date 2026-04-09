@@ -118,7 +118,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public void AttachBehavior(IQueueBehavior<T> behavior)
     {
-        if (behavior == null)
+        if (behavior is null)
             return;
 
         _behaviors.Add(behavior);
@@ -231,7 +231,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
 
         var enqueueing = Enqueuing;
-        if (enqueueing == null)
+        if (enqueueing is null)
             return false;
 
         var args = new EnqueuingEventArgs<T> { Queue = this, Data = data, Options = options };
@@ -251,7 +251,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         IncrementSubCounter(entry.Value, "enqueued", tags);
 
         var enqueued = Enqueued;
-        if (enqueued == null)
+        if (enqueued is null)
             return Task.CompletedTask;
 
         var args = new EnqueuedEventArgs<T> { Queue = this, Entry = entry };
@@ -280,7 +280,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
 
         var dequeued = Dequeued;
-        if (dequeued == null)
+        if (dequeued is null)
             return Task.CompletedTask;
 
         var args = new DequeuedEventArgs<T> { Queue = this, Entry = entry };
@@ -299,7 +299,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         LastDequeueActivity = _timeProvider.GetUtcNow();
 
         var lockRenewed = LockRenewed;
-        if (lockRenewed == null)
+        if (lockRenewed is null)
             return Task.CompletedTask;
 
         var args = new LockRenewedEventArgs<T> { Queue = this, Entry = entry };

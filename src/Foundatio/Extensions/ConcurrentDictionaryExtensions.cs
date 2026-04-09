@@ -7,9 +7,7 @@ internal static class ConcurrentDictionaryExtensions
 {
     public static bool TryUpdate<TKey, TValue>(this ConcurrentDictionary<TKey, TValue> concurrentDictionary, TKey key, Func<TKey, TValue, TValue> updateValueFactory) where TKey : notnull
     {
-        if (key == null)
-            throw new ArgumentNullException(nameof(key));
-
+        ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(updateValueFactory);
 
         TValue? comparisonValue;

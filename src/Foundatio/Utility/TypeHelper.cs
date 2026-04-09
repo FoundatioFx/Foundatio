@@ -36,7 +36,7 @@ public static class TypeHelper
             return null;
 
         var type = Type.GetType(fullTypeName);
-        if (type == null)
+        if (type is null)
         {
             if (logger != null)
                 logger.LogError("Unable to resolve type: {TypeFullName}.", fullTypeName);
@@ -119,7 +119,7 @@ public static class TypeHelper
 
     public static IEnumerable<Type> GetDerivedTypes<TAction>(IEnumerable<Assembly>? assemblies = null)
     {
-        if (assemblies == null)
+        if (assemblies is null)
             assemblies = AppDomain.CurrentDomain.GetAssemblies();
 
         var types = new List<Type>();

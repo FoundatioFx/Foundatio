@@ -23,7 +23,9 @@ public class ShutdownHostIfNoJobsRunningService : IHostedService, IDisposable
 
     public ShutdownHostIfNoJobsRunningService(IHostApplicationLifetime applicationLifetime, IServiceProvider serviceProvider, ILogger<ShutdownHostIfNoJobsRunningService> logger)
     {
-        _lifetime = applicationLifetime ?? throw new ArgumentNullException(nameof(applicationLifetime));
+        ArgumentNullException.ThrowIfNull(applicationLifetime);
+
+        _lifetime = applicationLifetime;
         _serviceProvider = serviceProvider;
         _logger = logger ?? NullLogger<ShutdownHostIfNoJobsRunningService>.Instance;
 

@@ -29,7 +29,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public MessageBusBase(TOptions options)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
+
+        _options = options;
         _loggerFactory = options.LoggerFactory ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger(GetType());
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
@@ -146,6 +148,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             {
                 try
                 {
+                    // try resolve type without version
                     string[] typeParts = messageType.Split(',');
                     string shortType = typeParts.Length >= 2
                         ? String.Join(",", typeParts[0], typeParts[1])
@@ -262,7 +265,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected virtual byte[] SerializeMessageBody(string messageType, object body)
     {
-        if (body == null)
+        if (body is null)
             return [];
 
         return _serializer.SerializeToBytes(body);
@@ -335,9 +338,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                         {
                             await subscriber.Action(message, subscriber.CancellationToken).AnyContext();
                         }
-                        else if (subscriber.GenericType != null)
+                        else if (subscriber.GenericType is not null)
                         {
-                            object typedMessage = Activator.CreateInstance(subscriber.GenericType, message)!;
+                            object? typedMessage = Activator.CreateInstance(subscriber.GenericType, message);
+                            if (typedMessage is null)
+                            {
+                                _logger.LogError("Skipping subscriber {SubscriberId}: failed to create typed message wrapper for type {MessageType}", subscriber.Id, message.Type);
+                                return;
+                            }
+
                             await subscriber.Action(typedMessage, subscriber.CancellationToken).AnyContext();
                         }
                         else

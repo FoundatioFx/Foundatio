@@ -71,10 +71,10 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return JobResult.FromException(ex, $"Error trying to dequeue message: {ex.Message}");
         }
 
-        if (cancellationToken.IsCancellationRequested && queueEntry == null)
+        if (cancellationToken.IsCancellationRequested && queueEntry is null)
             return JobResult.Cancelled;
 
-        if (queueEntry == null)
+        if (queueEntry is null)
             return JobResult.SuccessWithMessage("No queue entry to process.");
 
         return await ProcessAsync(queueEntry, cancellationToken).AnyContext();

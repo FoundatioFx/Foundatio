@@ -110,7 +110,7 @@ public static class JobExtensions
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            if (continuationCallback == null)
+            if (continuationCallback is null)
                 continue;
 
             try

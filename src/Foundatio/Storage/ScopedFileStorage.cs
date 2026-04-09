@@ -31,7 +31,9 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     /// <exception cref="ArgumentException">Thrown when <paramref name="scope"/> contains a wildcard character.</exception>
     public ScopedFileStorage(IFileStorage storage, string scope, bool shouldDispose = false)
     {
-        UnscopedStorage = storage ?? throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(storage);
+
+        UnscopedStorage = storage;
         Scope = !String.IsNullOrWhiteSpace(scope) ? scope.Trim().NormalizePath() : null;
         _pathPrefix = Scope != null ? String.Concat(Scope, "/") : String.Empty;
         _shouldDispose = shouldDispose;

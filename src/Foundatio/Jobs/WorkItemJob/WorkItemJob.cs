@@ -55,10 +55,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.FromException(ex, $"Error trying to dequeue work item: {ex.Message}");
         }
 
-        if (cancellationToken.IsCancellationRequested && queueEntry == null)
+        if (cancellationToken.IsCancellationRequested && queueEntry is null)
             return JobResult.Cancelled;
 
-        if (queueEntry == null)
+        if (queueEntry is null)
             return JobResult.SuccessWithMessage("No queue entry to process.");
 
         return await ProcessAsync(queueEntry, cancellationToken).AnyContext();
@@ -74,7 +74,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
 
         var workItemDataType = GetWorkItemType(queueEntry.Value.Type);
-        if (workItemDataType == null)
+        if (workItemDataType is null)
         {
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
@@ -107,7 +107,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
 
         var handler = _handlers.GetHandler(workItemDataType);
-        if (handler == null)
+        if (handler is null)
         {
             await queueEntry.CompleteAsync().AnyContext();
             var result = JobResult.FailedWithMessage($"Completing {queueEntry.Value.Type} work item: {queueEntry.Id}: Handler for type {workItemDataType.Name} not registered");
@@ -220,7 +220,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
 
-        if (entry.Properties == null || entry.Properties.Count <= 0)
+        if (entry.Properties is null || entry.Properties.Count <= 0)
             return;
 
         foreach (var p in entry.Properties)

@@ -149,7 +149,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         await EnsureSubscribedAsync().AnyContext();
 
         string[]? items = keys?.ToArray();
-        bool flushAll = items == null || items.Length == 0;
+        bool flushAll = items is null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
         await _localCache.RemoveAllAsync(items).AnyContext();
 

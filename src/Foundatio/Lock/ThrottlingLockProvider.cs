@@ -164,7 +164,9 @@ public class ThrottlingLockProviderFactory : IThrottlingLockProviderFactory
     public ThrottlingLockProviderFactory(ICacheClient cacheClient, TimeProvider? timeProvider = null,
         IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null)
     {
-        _cacheClient = cacheClient ?? throw new ArgumentNullException(nameof(cacheClient));
+        ArgumentNullException.ThrowIfNull(cacheClient);
+
+        _cacheClient = cacheClient;
         _timeProvider = timeProvider ?? cacheClient.GetTimeProvider() ?? TimeProvider.System;
         _resiliencePolicyProvider = resiliencePolicyProvider ?? cacheClient.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
         _loggerFactory = loggerFactory ?? cacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;

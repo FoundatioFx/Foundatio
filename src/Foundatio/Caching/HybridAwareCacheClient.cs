@@ -76,7 +76,7 @@ public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider
     public async Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         string[]? items = keys?.ToArray();
-        bool flushAll = items == null || items.Length == 0;
+        bool flushAll = items is null || items.Length == 0;
         int removed = await _distributedCache.RemoveAllAsync(items).AnyContext();
 
         // Only notify other nodes if keys were actually removed from distributed cache.

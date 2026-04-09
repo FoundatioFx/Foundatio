@@ -31,7 +31,9 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     /// <returns>The current <see cref="ResiliencePolicyProvider"/> instance.</returns>
     public ResiliencePolicyProvider WithDefaultPolicy(IResiliencePolicy policy)
     {
-        _defaultPolicy = policy ?? throw new ArgumentNullException(nameof(policy));
+        ArgumentNullException.ThrowIfNull(policy);
+
+        _defaultPolicy = policy;
         return this;
     }
 
@@ -59,8 +61,9 @@ public class ResiliencePolicyProvider : IResiliencePolicyProvider
     public ResiliencePolicyProvider WithPolicy(string name, IResiliencePolicy policy)
     {
         ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(policy);
 
-        _policies[name] = policy ?? throw new ArgumentNullException(nameof(policy));
+        _policies[name] = policy;
         return this;
     }
 

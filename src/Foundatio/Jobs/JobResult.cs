@@ -68,7 +68,7 @@ public static class JobResultExtensions
 {
     public static void LogJobResult(this ILogger logger, JobResult result, string? jobName)
     {
-        if (result == null)
+        if (result is null)
         {
             logger.LogError("Null job run result for {JobName}", jobName);
             return;

@@ -186,7 +186,7 @@ public class PagedFileListResult : IHasNextPageFunc
     /// <returns>True if the next page was fetched successfully; false if no more pages or an error occurred.</returns>
     public async Task<bool> NextPageAsync()
     {
-        if (((IHasNextPageFunc)this).NextPageFunc == null)
+        if (((IHasNextPageFunc)this).NextPageFunc is null)
             return false;
 
         var result = await ((IHasNextPageFunc)this).NextPageFunc(this).AnyContext();
@@ -259,7 +259,7 @@ public static class FileStorageExtensions
         if (stream is null)
             return default!;
 
-        var result = storage.Serializer.Deserialize(stream, typeof(T));
+        var result = storage.Serializer.Deserialize<T>(stream);
         return result is T typed ? typed : default!;
     }
 
@@ -289,7 +289,7 @@ public static class FileStorageExtensions
             throw new ArgumentNullException(nameof(path));
 
         using var stream = await storage.GetFileStreamAsync(path, StreamMode.Read).AnyContext();
-        if (stream == null)
+        if (stream is null)
             return null;
 
         var buffer = new byte[16 * 1024];

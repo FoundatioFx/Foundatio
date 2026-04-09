@@ -151,7 +151,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
                     _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
                 }
 
-                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry == null)
+                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry is null)
                     return;
 
                 try
@@ -270,7 +270,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         if (queueEntry.IsAbandoned || queueEntry.IsCompleted)
             throw new InvalidOperationException("Queue entry has already been completed or abandoned");
 
-        if (!_dequeued.TryRemove(queueEntry.Id, out var info) || info == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var info) || info is null)
             throw new Exception("Unable to remove item from the dequeued list");
 
         if (_options.CompletedEntryRetentionLimit > 0)
@@ -295,7 +295,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
         Interlocked.Increment(ref _pendingRetryCount);
 
-        if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry == null)
+        if (!_dequeued.TryRemove(queueEntry.Id, out var targetEntry) || targetEntry is null)
         {
             Interlocked.Decrement(ref _pendingRetryCount);
 

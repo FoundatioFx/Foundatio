@@ -65,7 +65,7 @@ public static class DataDictionaryExtensions
         if (data is T t)
             return t;
 
-        if (data == null)
+        if (data is null)
             return defaultValue;
 
         try
@@ -108,7 +108,7 @@ public static class HaveDataExtensions
     /// <returns>The value from the data dictionary converted to the desired type</returns>
     public static T? GetDataOrDefault<T>(this IHaveData target, string key, T? defaultValue = default, ISerializer? serializer = null)
     {
-        if (serializer == null && target is IHaveSerializer haveSerializer)
+        if (serializer is null && target is IHaveSerializer haveSerializer)
             serializer = haveSerializer.Serializer;
 
         if (target.Data.TryGetValue(key, out var value))

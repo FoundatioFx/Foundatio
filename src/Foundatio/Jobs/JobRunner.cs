@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -123,7 +123,7 @@ public class JobRunner
 
     public async Task<bool> RunAsync(CancellationToken cancellationToken = default)
     {
-        if (_options.JobFactory == null)
+        if (_options.JobFactory is null)
         {
             _logger.LogError("JobFactory must be specified");
             return false;
@@ -142,7 +142,7 @@ public class JobRunner
             return false;
         }
 
-        if (job == null)
+        if (job is null)
         {
             _logger.LogError("JobFactory returned null job instance");
             return false;

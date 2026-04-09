@@ -89,7 +89,7 @@ public class Message<T> : IMessage<T> where T : class
 
     public byte[] Data => _message.Data;
 
-    public T Body => (T)GetBody()!;
+    public T Body => GetBody() as T ?? throw new MessageBusException("Message body is null or not of expected type");
 
     public string? UniqueId => _message.UniqueId;
 

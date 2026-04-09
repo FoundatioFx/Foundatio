@@ -103,7 +103,7 @@ public static class ConnectionStringParser
 
     public static string? BuildConnectionString(this IDictionary<string, string?> options, IEnumerable<string>? excludedKeys = null)
     {
-        if (options == null || options.Count == 0)
+        if (options is null || options.Count == 0)
             return null;
 
         var excludes = new HashSet<string>(excludedKeys ?? new string[] { }, StringComparer.OrdinalIgnoreCase);

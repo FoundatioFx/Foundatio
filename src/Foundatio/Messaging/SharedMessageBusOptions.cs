@@ -30,7 +30,7 @@ public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsB
 
     public TBuilder MapMessageType<T>(string name)
     {
-        if (Target.MessageTypeMappings == null)
+        if (Target.MessageTypeMappings is null)
             Target.MessageTypeMappings = new Dictionary<string, Type>();
 
         Target.MessageTypeMappings[name] = typeof(T);
@@ -39,7 +39,7 @@ public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsB
 
     public TBuilder MapMessageTypeToClassName<T>()
     {
-        if (Target.MessageTypeMappings == null)
+        if (Target.MessageTypeMappings is null)
             Target.MessageTypeMappings = new Dictionary<string, Type>();
 
         Target.MessageTypeMappings[typeof(T).Name] = typeof(T);

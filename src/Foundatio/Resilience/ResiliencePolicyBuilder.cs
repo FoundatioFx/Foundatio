@@ -26,7 +26,9 @@ public class ResiliencePolicyBuilder
     /// <exception cref="ArgumentNullException"></exception>
     public ResiliencePolicyBuilder WithLogger(ILogger logger)
     {
-        _policy.Logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _policy.Logger = logger;
         return this;
     }
 

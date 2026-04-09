@@ -142,7 +142,7 @@ public class FolderFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     private void EnsureDirectory(string normalizedPath)
     {
         string? directory = Path.GetDirectoryName(normalizedPath);
-        if (directory == null)
+        if (directory is null)
             return;
 
         _logger.LogTrace("Ensuring director: {Directory}", directory);

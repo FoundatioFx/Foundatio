@@ -25,8 +25,10 @@ public class ScheduledTimer : IDisposable
 
     public ScheduledTimer(Func<Task<DateTime?>> timerCallback, TimeSpan? dueTime = null, TimeSpan? minimumIntervalTime = null, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
+        ArgumentNullException.ThrowIfNull(timerCallback);
+
         _logger = loggerFactory?.CreateLogger<ScheduledTimer>() ?? NullLogger<ScheduledTimer>.Instance;
-        _timerCallback = timerCallback ?? throw new ArgumentNullException(nameof(timerCallback));
+        _timerCallback = timerCallback;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _minimumInterval = minimumIntervalTime ?? TimeSpan.Zero;
 
