@@ -176,7 +176,7 @@ public class InMemoryMetrics : IDisposable
     {
         var measurement = GetMeasurements<T>(name)
             .Where(m => m.Name == name)
-            .OrderByDescending(m => m.Timestamp)
+            .OrderByDescending(m => m.Sequence)
             .FirstOrDefault();
 
         return Convert.ToDouble(measurement.Value);
@@ -385,6 +385,10 @@ public class InMemoryMetrics : IDisposable
 [DebuggerDisplay("{Name}={Value}")]
 public struct RecordedMeasurement<T> where T : struct
 {
+    private static long _sequenceCounter;
+
+    private static long GetNextSequence() => Interlocked.Increment(ref _sequenceCounter);
+
     public RecordedMeasurement(Instrument instrument, T value, ref ReadOnlySpan<KeyValuePair<string, object?>> tags,
         object? state)
     {
@@ -395,7 +399,7 @@ public struct RecordedMeasurement<T> where T : struct
             ? ImmutableDictionary.CreateRange(tags.ToArray())
             : ImmutableDictionary<string, object?>.Empty;
         State = state;
-        Timestamp = DateTime.UtcNow;
+        Sequence = GetNextSequence();
     }
 
     public Instrument Instrument { get; }
@@ -403,5 +407,5 @@ public struct RecordedMeasurement<T> where T : struct
     public T Value { get; }
     public IReadOnlyDictionary<string, object?> Tags { get; }
     public object? State { get; }
-    public DateTime Timestamp { get; }
+    public long Sequence { get; }
 }
