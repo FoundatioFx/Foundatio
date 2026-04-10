@@ -82,7 +82,6 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
     public async Task<JobResult> ProcessAsync(IQueueEntry<T> queueEntry, CancellationToken cancellationToken)
     {
-
         using var activity = StartProcessQueueEntryActivity(queueEntry);
         using var _ = _logger.BeginScope(s => s
             .Property("JobId", JobId)
@@ -98,6 +97,13 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
 
             await queueEntry.AbandonAsync().AnyContext();
             return JobResult.CancelledWithMessage($"Abandoning {_queueName} queue entry: {queueEntry.Id}");
+        }
+
+        if (queueEntry.Value is null)
+        {
+            _logger.LogWarning("Null queue entry value (poison message) in {QueueName}: {EntryId}. Abandoning.", _queueName, queueEntry.Id);
+            await queueEntry.AbandonAsync().AnyContext();
+            return JobResult.SuccessWithMessage($"Abandoned poison message in {_queueName}: {queueEntry.Id}");
         }
 
         var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();

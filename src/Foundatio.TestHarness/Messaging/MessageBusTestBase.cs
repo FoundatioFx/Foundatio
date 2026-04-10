@@ -117,7 +117,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             }, TestCancellationToken);
 
-           await Task.Delay(100, TestCancellationToken);
+            await Task.Delay(100, TestCancellationToken);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello",
@@ -168,7 +168,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             }, TestCancellationToken);
 
-           await Task.Delay(100, TestCancellationToken);
+            await Task.Delay(100, TestCancellationToken);
             await messageBus.PublishAsync(new DerivedSimpleMessageA
             {
                 Data = "Hello"
@@ -204,7 +204,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 _logger.LogTrace("Set event");
             }, TestCancellationToken);
 
-           await Task.Delay(100, TestCancellationToken);
+            await Task.Delay(100, TestCancellationToken);
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "Hello"
@@ -618,7 +618,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 Data = "Hello"
             }, cancellationToken: TestCancellationToken);
 
-           await Task.Delay(100, TestCancellationToken);
+            await Task.Delay(100, TestCancellationToken);
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
                 Assert.Equal("Hello", msg.Data);

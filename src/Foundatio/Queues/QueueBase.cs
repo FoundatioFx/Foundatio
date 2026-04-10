@@ -36,7 +36,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly TagList _emptyTags = default;
 
     private readonly List<IQueueBehavior<T>> _behaviors = new();
-    private bool _isDisposed;
     private QueueStats? _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
 
@@ -71,7 +70,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         var queueMetricValues = new InstrumentsValues<long, long, long>(() =>
         {
-            if (_isDisposed || (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow()))
+            if (IsDisposed || (options.MetricsPollingInterval > TimeSpan.Zero && _nextQueueStatsUpdate >= _timeProvider.GetUtcNow()))
             {
                 if (_queueStats is not null)
                 {
@@ -100,13 +99,13 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }, _logger);
 
         _countGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("count"),
-            () => _isDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue1())],
+            () => IsDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue1())],
             description: "Number of items in the queue");
         _workingGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("working"),
-            () => _isDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue2())],
+            () => IsDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue2())],
             description: "Number of items currently being processed");
         _deadletterGauge = FoundatioDiagnostics.Meter.CreateObservableGauge(GetFullMetricName("deadletter"),
-            () => _isDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue3())],
+            () => IsDisposed ? Array.Empty<Measurement<long>>() : [new Measurement<long>(queueMetricValues.GetValue3())],
             description: "Number of items in the deadletter queue");
     }
 
@@ -135,6 +134,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options);
     public async Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         ArgumentNullException.ThrowIfNull(data);
 
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
@@ -148,6 +148,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         // Use DisposedCancellationToken for setup: callers may pass an already-cancelled token
         // (e.g. TimeSpan.Zero timeout) which should skip waiting, not prevent queue creation.
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
@@ -159,6 +160,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public virtual async Task<IQueueEntry<T>?> DequeueAsync(TimeSpan? timeout = null)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         using var timeoutCancellationTokenSource = timeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
         return await DequeueAsync(timeoutCancellationTokenSource.Token).AnyContext();
     }
@@ -211,6 +213,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected abstract void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken);
     public async Task StartWorkingAsync(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete = false, CancellationToken cancellationToken = default)
     {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
         // Use DisposedCancellationToken for setup: queue creation should only abort on disposal.
         // StartWorkingImpl creates its own linked token for the long-running worker loop.
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
@@ -427,13 +430,12 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public override void Dispose()
     {
-        if (_isDisposed)
+        if (IsDisposed)
         {
             _logger.LogTrace("Queue {QueueName} ({QueueId})  dispose was already called", _options.Name, QueueId);
             return;
         }
 
-        _isDisposed = true;
         _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose", _options.Name, QueueId);
         base.Dispose();
 

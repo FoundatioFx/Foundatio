@@ -13,7 +13,8 @@ public class MaintenanceBase : IDisposable
     protected readonly TimeProvider _timeProvider;
     protected readonly ILogger _logger;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
-    private bool _isDisposed;
+    private bool _disposed;
+    protected bool IsDisposed => _disposed;
 
     public MaintenanceBase(TimeProvider? timeProvider, ILoggerFactory? loggerFactory)
     {
@@ -51,10 +52,10 @@ public class MaintenanceBase : IDisposable
 
     public virtual void Dispose()
     {
-        if (_isDisposed)
+        if (_disposed)
             return;
 
-        _isDisposed = true;
+        _disposed = true;
         _disposedCancellationTokenSource.Cancel();
         _disposedCancellationTokenSource.Dispose();
         _maintenanceTimer?.Dispose();

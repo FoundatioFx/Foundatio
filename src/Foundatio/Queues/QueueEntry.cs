@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -15,7 +16,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
         Id = id;
         CorrelationId = correlationId;
         _original = value;
-        Value = value is not null ? value.DeepClone() : default;
+        Value = value?.DeepClone();
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
@@ -27,6 +28,8 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
+
+    [NotNullIfNotNull(nameof(Value))]
     public Type? EntryType => Value?.GetType();
     public object? GetValue() => Value;
     public T? Value { get; set; }

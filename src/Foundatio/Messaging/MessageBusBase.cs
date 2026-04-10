@@ -25,7 +25,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly IResiliencePolicy _resiliencePolicy;
     protected readonly ISerializer _serializer;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
-    private bool _isDisposed;
+    private bool _disposed;
+    protected bool IsDisposed => _disposed;
 
     public MessageBusBase(TOptions options)
     {
@@ -80,6 +81,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     {
         ArgumentNullException.ThrowIfNull(messageType);
         ArgumentNullException.ThrowIfNull(message);
+        if (IsDisposed)
+            throw new MessageBusException($"Cannot publish: message bus has been disposed (MessageBusId: {MessageBusId}).");
         cancellationToken.ThrowIfCancellationRequested();
 
         options ??= new MessageOptions();
@@ -231,6 +234,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public async Task SubscribeAsync<T>(Func<T, CancellationToken, Task> handler, CancellationToken cancellationToken = default) where T : class
     {
+        if (IsDisposed)
+            throw new MessageBusException($"Cannot subscribe: message bus has been disposed (MessageBusId: {MessageBusId}).");
         cancellationToken.ThrowIfCancellationRequested();
         _logger.LogTrace("Adding subscriber for {MessageType}", typeof(T).FullName);
 
@@ -474,13 +479,13 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public virtual void Dispose()
     {
-        if (_isDisposed)
+        if (_disposed)
         {
             _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
             return;
         }
 
-        _isDisposed = true;
+        _disposed = true;
 
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
         _subscribers?.Clear();

@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
-using Foundatio.Utility;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
