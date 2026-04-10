@@ -401,7 +401,7 @@ public class InMemoryQueueTests : QueueTestBase
             _queueEntry = queueEntry;
         }
 
-        public T Value => _queueEntry.Value;
+        public T? Value => _queueEntry.Value;
 
         public string Id => _queueEntry.Id;
 
@@ -432,7 +432,7 @@ public class InMemoryQueueTests : QueueTestBase
             return _queueEntry.DisposeAsync();
         }
 
-        public object GetValue()
+        public object? GetValue()
         {
             return _queueEntry.GetValue();
         }
@@ -488,12 +488,12 @@ public class InMemoryQueueTests : QueueTestBase
         var taskCompletionSource = new TaskCompletionSource<bool>();
 
         // start handling items
-        await queue.StartWorkingAsync(async (item) =>
+        await queue.StartWorkingAsync(async (item, ct) =>
         {
             // we want to wait for maintenance to be performed and auto abandon our item, we don't have any way for waiting in IQueue so we'll settle for a delay
-            if (item.Value.Data == "Delay")
+            if (item.Value is { Data: "Delay" })
             {
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                await Task.Delay(TimeSpan.FromSeconds(1), ct);
             }
 
             try
@@ -510,7 +510,7 @@ public class InMemoryQueueTests : QueueTestBase
         }, cancellationToken: cancellationTokenSource.Token);
 
         // enqueue item which will be processed after it's auto abandoned
-        await queue.EnqueueAsync(new SimpleWorkItem() { Data = "Delay" });
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "Delay" });
 
         // wait for taskCompletionSource.SetResult to be called or timeout after 1 second
         bool timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken))) != taskCompletionSource.Task;
@@ -518,7 +518,7 @@ public class InMemoryQueueTests : QueueTestBase
 
         // enqueue another item and make sure it was handled (worker loop didn't crash)
         taskCompletionSource = new TaskCompletionSource<bool>();
-        await queue.EnqueueAsync(new SimpleWorkItem() { Data = "No Delay" });
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "No Delay" });
 
         // one option to fix this issue is surrounding the AbandonAsync call in StartWorkingImpl exception handler in inner try/catch block
         timedout = (await Task.WhenAny(taskCompletionSource.Task, Task.Delay(TimeSpan.FromSeconds(30), TestCancellationToken))) != taskCompletionSource.Task;

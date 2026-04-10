@@ -78,7 +78,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             if (_assertStats)
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
@@ -136,7 +136,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Null(workItem);
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             if (_assertStats)
                 Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
@@ -205,7 +205,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal("123+456", workItem.CorrelationId);
             Assert.Single(workItem.Properties);
@@ -235,7 +235,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             }
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(10));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal("123+456", workItem.CorrelationId);
             Assert.Equal(2, workItem.Attempts);
@@ -287,7 +287,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             }
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             if (_assertStats)
             {
@@ -380,6 +380,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             {
                 Interlocked.Increment(ref attempts);
                 _logger.LogInformation("Starting Attempt {Attempt} to work on queue item", attempts);
+                Assert.NotNull(w.Value);
                 Assert.Equal("Hello", w.Value.Data);
 
                 var queueEntryMetadata = (IQueueEntryMetadata)w;
@@ -452,7 +453,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             }
 
             var workItem = await queue.DequeueAsync(new CancellationToken(true));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -586,7 +587,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             for (int i = 0; i < workItemCount; i++)
             {
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-                Assert.NotNull(workItem);
+                Assert.NotNull(workItem?.Value);
                 Assert.Equal("Hello", workItem.Value.Data);
                 await workItem.CompleteAsync();
             }
@@ -691,7 +692,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             // Act: first dequeue, mutate, abandon
             var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
 
             workItem.Value.Data = "Mutated";
@@ -713,7 +714,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             // Act: second dequeue (retry) should have pristine value
             var retryItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-            Assert.NotNull(retryItem);
+            Assert.NotNull(retryItem?.Value);
             Assert.Equal("Hello", retryItem.Value.Data);
 
             // Assert: retry entry has fresh state, original entry is still abandoned
@@ -793,6 +794,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             var resetEvent = new AsyncManualResetEvent(false);
             await queue.StartWorkingAsync(async w =>
             {
+                Assert.NotNull(w.Value);
                 Assert.Equal("Hello", w.Value.Data);
                 await w.CompleteAsync();
                 resetEvent.Set();
@@ -834,6 +836,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.StartWorkingAsync(w =>
             {
                 _logger.LogDebug("WorkAction");
+                Assert.NotNull(w.Value);
                 Assert.Equal("Hello", w.Value.Data);
                 throw new Exception();
             }, cancellationToken: cancellationTokenSource.Token);
@@ -879,7 +882,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 Data = "Hello"
             });
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
 
             var sw = Stopwatch.StartNew();
@@ -930,7 +933,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 Data = "Hello"
             });
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -939,7 +942,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             // work item should be retried 1 time.
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(2, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -976,13 +979,13 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             // Act
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, workItem.Attempts);
             await workItem.AbandonAsync();
 
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(2, workItem.Attempts);
             await workItem.AbandonAsync();
@@ -1098,6 +1101,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             var resetEvent = new AsyncManualResetEvent(false);
             await queue.StartWorkingAsync(w =>
             {
+                Assert.NotNull(w.Value);
                 Assert.Equal("Hello", w.Value.Data);
                 return Task.CompletedTask;
             }, true, cancellationTokenSource.Token);
@@ -1232,7 +1236,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             });
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
 
             var startTime = DateTime.UtcNow;
@@ -1351,7 +1355,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 Data = "Hello"
             });
             var entry = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(entry);
+            Assert.NotNull(entry?.Value);
             Assert.Equal("Hello", entry.Value.Data);
 
             _logger.LogTrace("Waiting for {RenewWait:g} before renewing lock", renewWait);
@@ -1391,7 +1395,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -1451,7 +1455,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Enqueued);
 
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem);
+            Assert.NotNull(workItem?.Value);
             Assert.Equal("Hello", workItem.Value.Data);
             Assert.Equal(1, (await queue.GetQueueStatsAsync()).Dequeued);
 
@@ -1640,6 +1644,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
     protected async Task DoWorkAsync(IQueueEntry<SimpleWorkItem> w, AsyncCountdownEvent countdown, WorkInfo info)
     {
+        Assert.NotNull(w.Value);
         _logger.LogTrace("Starting: {Id}", w.Value.Id);
         Assert.Equal("Hello", w.Value.Data);
 
@@ -1758,8 +1763,9 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
 
             await queue.StartWorkingAsync(async item =>
             {
+                Assert.NotNull(item.Value);
                 _logger.LogDebug("Processing item: {QueueEntryId} Value={Value}", item.Id, item.Value.Data);
-                if (item.Value.Data == "Delay")
+                if (item.Value is { Data: "Delay" })
                 {
                     // wait for queue item to get auto abandoned
                     var stats = await queue.GetQueueStatsAsync();

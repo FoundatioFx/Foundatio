@@ -13,7 +13,7 @@ public class SharedMessageBusOptions : SharedOptions
     /// <summary>
     /// Controls which types messages are mapped to.
     /// </summary>
-    public Dictionary<string, Type> MessageTypeMappings { get; set; } = new Dictionary<string, Type>();
+    public Dictionary<string, Type> MessageTypeMappings { get; set; } = new();
 }
 
 public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -22,26 +22,20 @@ public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsB
 {
     public TBuilder Topic(string topic)
     {
-        if (string.IsNullOrEmpty(topic))
-            throw new ArgumentNullException(nameof(topic));
+        ArgumentException.ThrowIfNullOrEmpty(topic);
+
         Target.Topic = topic;
         return (TBuilder)this;
     }
 
     public TBuilder MapMessageType<T>(string name)
     {
-        if (Target.MessageTypeMappings is null)
-            Target.MessageTypeMappings = new Dictionary<string, Type>();
-
         Target.MessageTypeMappings[name] = typeof(T);
         return (TBuilder)this;
     }
 
     public TBuilder MapMessageTypeToClassName<T>()
     {
-        if (Target.MessageTypeMappings is null)
-            Target.MessageTypeMappings = new Dictionary<string, Type>();
-
         Target.MessageTypeMappings[typeof(T).Name] = typeof(T);
         return (TBuilder)this;
     }

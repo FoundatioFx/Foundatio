@@ -120,7 +120,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     }
 
     private readonly ConcurrentDictionary<string, Type> _knownMessageTypesCache = new();
-    protected virtual Type? GetMappedMessageType(string messageType)
+    protected virtual Type? GetMappedMessageType(string? messageType)
     {
         if (String.IsNullOrEmpty(messageType))
             return null;
@@ -130,7 +130,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         Type? resolvedType = null;
 
-        if (_options.MessageTypeMappings is not null && _options.MessageTypeMappings.TryGetValue(messageType, out Type? typeMapping))
+        if (_options.MessageTypeMappings.TryGetValue(messageType, out Type? typeMapping))
         {
             if (typeMapping is not null)
                 resolvedType = typeMapping;
@@ -285,7 +285,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deserializing message body: {Message}", ex.Message);
-
             return null;
         }
 

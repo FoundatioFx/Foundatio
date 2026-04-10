@@ -368,7 +368,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     protected override Task<IEnumerable<T>> GetDeadletterItemsImplAsync(CancellationToken cancellationToken)
     {
-        return Task.FromResult(_deadletterQueue.Select(i => i.Value));
+        return Task.FromResult(_deadletterQueue.Select(i => i.Value).Where(v => v is not null).Cast<T>());
     }
 
     protected override Task DeleteQueueImplAsync()

@@ -376,14 +376,14 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         }
     }
 
-    protected string? GetSubMetricName(T data)
+    protected string? GetSubMetricName(T? data)
     {
         var haveStatName = data as IHaveSubMetricName;
         return haveStatName?.SubMetricName;
     }
 
     protected readonly ConcurrentDictionary<string, Counter<long>> _counters = new();
-    private void IncrementSubCounter(T data, string name, in TagList tags)
+    private void IncrementSubCounter(T? data, string name, in TagList tags)
     {
         if (data is not IHaveSubMetricName)
             return;
@@ -397,7 +397,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     }
 
     protected readonly ConcurrentDictionary<string, Histogram<double>> _histograms = new();
-    private void RecordSubHistogram(T data, string name, double value, in TagList tags)
+    private void RecordSubHistogram(T? data, string name, double value, in TagList tags)
     {
         if (data is not IHaveSubMetricName)
             return;

@@ -32,8 +32,9 @@ public interface IQueueEntry
 
     /// <summary>
     /// Gets the message payload as an untyped object.
+    /// Returns <c>null</c> when the message could not be deserialized (poison message).
     /// </summary>
-    object GetValue();
+    object? GetValue();
 
     /// <summary>
     /// Gets whether this entry has been marked as completed.
@@ -95,6 +96,7 @@ public interface IQueueEntry<T> : IQueueEntry where T : class
 {
     /// <summary>
     /// Gets the deserialized message payload.
+    /// Returns <c>null</c> when the message could not be deserialized (poison message).
     /// </summary>
-    T Value { get; }
+    T? Value { get; }
 }

@@ -122,9 +122,9 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(serializer);
         ArgumentException.ThrowIfNullOrWhiteSpace(data);
 
-        var bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
+        byte[] bytes = serializer is ITextSerializer ? Encoding.UTF8.GetBytes(data) : Convert.FromBase64String(data);
         using var stream = new MemoryStream(bytes);
-        var result = serializer.Deserialize(stream, typeof(T));
+        object? result = serializer.Deserialize(stream, typeof(T));
         if (result is T typed)
             return typed;
 

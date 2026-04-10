@@ -66,18 +66,17 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
     public async Task<JobResult> ProcessAsync(IQueueEntry<WorkItemData> queueEntry, CancellationToken cancellationToken)
     {
-
         if (cancellationToken.IsCancellationRequested)
         {
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}");
+            return JobResult.CancelledWithMessage($"Abandoning {queueEntry.Value?.Type} work item: {queueEntry.Id}");
         }
 
-        var workItemDataType = GetWorkItemType(queueEntry.Value.Type);
+        var workItemDataType = GetWorkItemType(queueEntry.Value?.Type);
         if (workItemDataType is null)
         {
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
+            return JobResult.FailedWithMessage($"Abandoning {queueEntry.Value?.Type} work item: {queueEntry.Id}: Could not resolve work item data type");
         }
 
         using var activity = StartProcessWorkItemActivity(queueEntry, workItemDataType);
@@ -90,13 +89,13 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         object? workItemData;
         try
         {
-            workItemData = _queue.Serializer.Deserialize(queueEntry.Value.Data, workItemDataType);
+            workItemData = _queue.Serializer.Deserialize(queueEntry.Value!.Data, workItemDataType);
         }
         catch (Exception ex)
         {
-            activity?.SetErrorStatus(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
+            activity?.SetErrorStatus(ex, $"Abandoning {queueEntry.Value!.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
             await queueEntry.AbandonAsync().AnyContext();
-            return JobResult.FromException(ex, $"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
+            return JobResult.FromException(ex, $"Abandoning {queueEntry.Value!.Type} work item: {queueEntry.Id}: Failed to parse {workItemDataType.Name} work item data");
         }
 
         if (workItemData is null)
@@ -204,7 +203,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         if (entry.Properties is not null && entry.Properties.TryGetValue("TraceState", out string? traceState))
             activity.TraceStateString = traceState;
 
-        activity.DisplayName = $"Work Item: {entry.Value.SubMetricName ?? workItemDataType.Name}";
+        activity.DisplayName = $"Work Item: {entry.Value?.SubMetricName ?? workItemDataType.Name}";
 
         EnrichProcessWorkItemActivity(activity, entry, workItemDataType);
 
@@ -216,7 +215,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         if (!activity.IsAllDataRequested)
             return;
 
-        activity.AddTag("WorkItemType", entry.Value.Type);
+        activity.AddTag("WorkItemType", entry.Value?.Type);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
 
@@ -231,8 +230,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
     }
 
     private readonly ConcurrentDictionary<string, Type> _knownTypesCache = new();
-    protected virtual Type? GetWorkItemType(string workItemType)
+    protected virtual Type? GetWorkItemType(string? workItemType)
     {
+        if (String.IsNullOrWhiteSpace(workItemType))
+            return null;
+
         if (_knownTypesCache.TryGetValue(workItemType, out var cachedType))
             return cachedType;
 
@@ -272,8 +274,8 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             await _publisher.PublishAsync(new WorkItemStatus
             {
-                WorkItemId = queueEntry.Value.WorkItemId,
-                Type = queueEntry.Value.Type,
+                WorkItemId = queueEntry.Value?.WorkItemId,
+                Type = queueEntry.Value?.Type,
                 Progress = progress,
                 Message = message
             }).AnyContext();
