@@ -61,43 +61,43 @@ public static class LoggerExtensions
         return logger.BeginScope(b => b.Property(property, value));
     }
 
-    public static void LogDebug(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogDebug(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogDebug(message, args);
     }
 
-    public static void LogTrace(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogTrace(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogTrace(message, args);
     }
 
-    public static void LogInformation(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogInformation(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogInformation(message, args);
     }
 
-    public static void LogWarning(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogWarning(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogWarning(message, args);
     }
 
-    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogError(message, args);
     }
 
-    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, Exception exception, string message, params object[] args)
+    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, Exception exception, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogError(exception, message, args);
     }
 
-    public static void LogCritical(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object[] args)
+    public static void LogCritical(this ILogger logger, Func<LogState, LogState> stateBuilder, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogCritical(message, args);
