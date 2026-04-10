@@ -1,6 +1,9 @@
 using System;
 using System.Threading.Tasks;
+using Foundatio.AsyncEx;
 using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
+using Foundatio.Utility;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -190,9 +193,57 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
         Assert.Equal(0, messageBus.GetMessagesSent<SimpleMessageB>());
     }
 
+    [Fact]
+    public async Task SendMessageToSubscribersAsync_WithNullMessageType_DeliversToRawSubscribersOnly()
+    {
+        // Arrange
+        var messageBus = new TestableInMemoryMessageBus(o => o.LoggerFactory(Log));
+
+        var rawReceived = new AsyncCountdownEvent(1);
+        var typedReceived = new AsyncCountdownEvent(1);
+
+        await messageBus.SubscribeAsync(msg =>
+        {
+            Assert.Null(msg.Type);
+            Assert.Null(msg.ClrType);
+            Assert.NotEmpty(msg.Data);
+            rawReceived.Signal();
+        }, TestCancellationToken);
+
+        await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+        {
+            typedReceived.Signal();
+        }, TestCancellationToken);
+
+        var message = new Message("test payload"u8.ToArray(), _ => "test payload")
+        {
+            Type = null,
+            ClrType = null
+        };
+
+        // Act
+        await messageBus.TestSendMessageToSubscribersAsync(message);
+
+        // Assert
+        await rawReceived.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, rawReceived.CurrentCount);
+
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Equal(1, typedReceived.CurrentCount);
+    }
+
     public void Dispose()
     {
         _messageBus?.Dispose();
         _messageBus = null;
     }
+}
+
+internal class TestableInMemoryMessageBus : InMemoryMessageBus
+{
+    public TestableInMemoryMessageBus(Builder<InMemoryMessageBusOptionsBuilder, InMemoryMessageBusOptions> config)
+        : base(config) { }
+
+    public Task TestSendMessageToSubscribersAsync(IMessage message)
+        => SendMessageToSubscribersAsync(message);
 }

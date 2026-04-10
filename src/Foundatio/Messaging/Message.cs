@@ -21,9 +21,10 @@ public interface IMessage
     string? CorrelationId { get; }
 
     /// <summary>
-    /// Gets the message type name used for routing.
+    /// Gets the message type name used for routing, or null if the message was received from
+    /// an external publisher that did not provide type metadata.
     /// </summary>
-    string Type { get; }
+    string? Type { get; }
 
     /// <summary>
     /// Gets the CLR type of the message payload, or null if the type cannot be resolved.
@@ -71,7 +72,7 @@ public class Message : IMessage
 
     public string? UniqueId { get; set; }
     public string? CorrelationId { get; set; }
-    public required string Type { get; set; }
+    public string? Type { get; set; }
     public Type? ClrType { get; set; }
     public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
     public byte[] Data { get; set; }
@@ -95,7 +96,7 @@ public class Message<T> : IMessage<T> where T : class
 
     public string? CorrelationId => _message.CorrelationId;
 
-    public string Type => _message.Type;
+    public string? Type => _message.Type;
 
     public Type? ClrType => _message.ClrType;
 

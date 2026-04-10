@@ -41,7 +41,7 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
         Interlocked.Increment(ref _messagesSent);
-        _messageCounts.AddOrUpdate(messageType, t => 1, (t, c) => c + 1);
+        _messageCounts.AddOrUpdate(messageType, _ => 1, (_, c) => c + 1);
         var mappedType = GetMappedMessageType(messageType);
 
         if (_subscribers.IsEmpty)

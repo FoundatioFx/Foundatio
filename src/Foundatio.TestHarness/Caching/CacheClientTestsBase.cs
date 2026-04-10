@@ -195,7 +195,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("test", "value", TimeSpan.FromMilliseconds(50));
             Assert.True(await cache.ExistsAsync("test"));
 
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
 
             Assert.False(await cache.ExistsAsync("test"));
         }
@@ -258,7 +258,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.SetAsync("no-expiration-key", 3);
 
             // Wait for expired-key to expire
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
 
             // Act
             var expirations = await cache.GetAllExpirationAsync(["expired-key", "valid-key", "no-expiration-key", "nonexistent-key"]);
@@ -587,7 +587,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             await cache.RemoveAsync(cacheKey);
             await cache.SetAsync(cacheKey, 1, DateTime.UtcNow.AddMilliseconds(50));
 
-            await Task.Delay(100);
+            await Task.Delay(100, TestCancellationToken);
 
             expiration = await cache.GetExpirationAsync(cacheKey);
             Assert.Null(expiration);
@@ -785,7 +785,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.True(await cache.SetAsync("increment-expiration-test", 0));
             double newVal = await cache.IncrementAsync("increment-expiration-test", 1, TimeSpan.FromMilliseconds(50));
             Assert.Equal(1, newVal);
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
             Assert.False((await cache.GetAsync<int>("increment-expiration-test")).HasValue);
 
             // Null expiration (long): calling with null should remove existing expiration
@@ -1162,7 +1162,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.DoesNotContain(2, cacheValue.Value); // Explicit verification item 2 expired
 
             // Wait for second item to expire
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
             Assert.False(await cache.ExistsAsync(key));
 
             // Null expiration: should succeed and remove expiration
@@ -1559,7 +1559,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         using (cache)
         {
             await cache.SetAsync("session:expired", "value", TimeSpan.FromMilliseconds(50));
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
 
             Assert.False(await cache.RemoveAsync("session:expired"));
             Assert.False(await cache.ExistsAsync("session:expired"));

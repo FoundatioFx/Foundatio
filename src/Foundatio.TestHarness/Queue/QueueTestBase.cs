@@ -219,7 +219,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await workItem.AbandonAsync();
             Assert.True(workItem.IsAbandoned);
             Assert.False(workItem.IsCompleted);
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
 
             if (_assertStats)
             {
@@ -847,7 +847,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
                 await resetEvent.WaitAsync(TimeSpan.FromSeconds(200));
 
-                await Task.Delay(100); // give time for the stats to reflect the changes.
+               await Task.Delay(100, TestCancellationToken); // give time for the stats to reflect the changes.
 
                 if (_assertStats)
                 {
@@ -1280,25 +1280,25 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 2, Data = "Testing" });
             await queue.EnqueueAsync(new SimpleWorkItem { Id = 3, Data = "Testing" });
 
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
 
             _logger.LogTrace("Before dequeue");
             var item = await queue.DequeueAsync();
             Assert.NotNull(item);
 
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
             Assert.NotNull(item);
 
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
             await item.CompleteAsync();
 
             item = await queue.DequeueAsync();
             Assert.NotNull(item);
 
-            await Task.Delay(100);
+           await Task.Delay(100, TestCancellationToken);
             await item.AbandonAsync();
 
             _logger.LogTrace("Before asserts");
