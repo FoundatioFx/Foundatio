@@ -57,6 +57,11 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     public TBuilder Behaviors(params IQueueBehavior<T>[] behaviors)
     {
+        ArgumentNullException.ThrowIfNull(behaviors);
+
+        for (int index = 0; index < behaviors.Length; index++)
+            ArgumentNullException.ThrowIfNull(behaviors[index], $"behaviors[{index}]");
+
         Target.Behaviors = behaviors;
         return (TBuilder)this;
     }
@@ -65,10 +70,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     {
         ArgumentNullException.ThrowIfNull(behavior);
 
-        if (Target.Behaviors is null)
-            Target.Behaviors = new List<IQueueBehavior<T>>();
         Target.Behaviors.Add(behavior);
-
         return (TBuilder)this;
     }
 
@@ -79,6 +81,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     {
         if (!String.IsNullOrWhiteSpace(prefix))
             Target.MetricsPrefix = prefix.Trim();
+
         return (TBuilder)this;
     }
 

@@ -50,7 +50,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
         QueueId = $"{options.Name.Trim()}{Guid.NewGuid().ToString("N").Substring(10)}";
 
-        _serializer = options.Serializer ?? DefaultSerializer.Instance;
+        _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
         var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
@@ -117,8 +117,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public void AttachBehavior(IQueueBehavior<T> behavior)
     {
-        if (behavior is null)
-            return;
+        ArgumentNullException.ThrowIfNull(behavior);
 
         _behaviors.Add(behavior);
         behavior.Attach(this);
