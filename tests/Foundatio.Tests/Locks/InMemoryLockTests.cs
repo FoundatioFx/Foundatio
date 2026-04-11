@@ -89,6 +89,12 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task WillThrottleCallsAndRecoverNearPeriodBoundaryAsync()
+    {
+        return base.WillThrottleCallsAndRecoverNearPeriodBoundaryAsync();
+    }
+
+    [Fact]
     public override Task CanReleaseLockMultipleTimes()
     {
         return base.CanReleaseLockMultipleTimes();

@@ -64,11 +64,9 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
                 _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
-                    // keep the cache key around for a bit longer than the throttling period
                     var expirationDate = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMinutes(5);
                     hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, expirationDate).AnyContext();
 
-                    // make sure someone didn't beat us to it.
                     if (hitCount <= _maxHitsPerPeriod)
                     {
                         allowLock = true;
@@ -85,6 +83,12 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
+                // Capture the current period's cache key before sleeping. After the delay we
+                // spin-check that the key has actually changed, because Task.Delay (via SafeDelay)
+                // can wake up to ~4ms early on Linux due to OS timer resolution (CONFIG_HZ).
+                // Without this check, GetCacheKey still returns the old period's key, the outer
+                // loop sees the exhausted hit count, and sleeps for another full period — doubling
+                // the total wait and exceeding the caller's acquireTimeout.
                 string previousCacheKey = cacheKey;
                 var sleepUntil = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                 if (sleepUntil > _timeProvider.GetUtcNow())
@@ -92,13 +96,17 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
                     _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
                     await _timeProvider.SafeDelay(sleepUntil - _timeProvider.GetUtcNow(), cancellationToken).AnyContext();
 
-                    // SafeDelay may wake slightly early due to OS timer resolution; spin briefly
-                    // to ensure we've crossed into the next throttling period.
-                    while (!cancellationToken.IsCancellationRequested &&
-                           GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime) == previousCacheKey)
+                    int spins = 0;
+                    while (!cancellationToken.IsCancellationRequested
+                           && spins < 100
+                           && String.Equals(GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime), previousCacheKey, StringComparison.Ordinal))
                     {
+                        spins++;
                         await _timeProvider.SafeDelay(TimeSpan.FromMilliseconds(1), cancellationToken).AnyContext();
                     }
+
+                    if (spins >= 100)
+                        _logger.LogWarning("Period boundary spin exceeded 100 iterations for {Resource}; clock may be frozen", resource);
                 }
                 else
                 {

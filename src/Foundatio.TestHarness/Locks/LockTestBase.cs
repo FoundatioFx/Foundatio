@@ -479,4 +479,36 @@ public abstract class LockTestBase : TestWithLoggingBase
         // Cleanup
         await result.DisposeAsync();
     }
+
+    public virtual async Task WillThrottleCallsAndRecoverNearPeriodBoundaryAsync()
+    {
+        Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
+
+        const int allowedLocks = 1;
+        var period = TimeSpan.FromSeconds(1);
+        var locker = GetThrottlingLockProvider(allowedLocks, period);
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        for (int iteration = 0; iteration < 5; iteration++)
+        {
+            _logger.LogInformation("=== Iteration {Iteration} ===", iteration);
+
+            var l = await locker.AcquireAsync(lockName);
+            Assert.NotNull(l);
+            _logger.LogInformation("First lock acquired, period is exhausted");
+
+            var sw = Stopwatch.StartNew();
+            var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2));
+            sw.Stop();
+
+            _logger.LogInformation("Second lock acquired in {Elapsed:g}", sw.Elapsed);
+            Assert.NotNull(result);
+            Assert.True(sw.Elapsed.TotalSeconds < 2, $"Took {sw.Elapsed.TotalSeconds:F3}s, expected < 2s");
+
+            await result.DisposeAsync();
+        }
+    }
 }
