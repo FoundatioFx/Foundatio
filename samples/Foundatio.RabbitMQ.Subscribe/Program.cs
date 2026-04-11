@@ -88,16 +88,16 @@ RootCommand rootCommand = new("RabbitMQ Order Subscriber Sample")
 
 rootCommand.SetAction(parseResult =>
 {
-    string connectionString = parseResult.GetValue(connectionStringOption);
-    string hosts = parseResult.GetValue(hostsOption);
-    string topic = parseResult.GetValue(topicOption);
+    string? connectionString = parseResult.GetValue(connectionStringOption);
+    string? hosts = parseResult.GetValue(hostsOption);
+    string? topic = parseResult.GetValue(topicOption);
     bool durable = parseResult.GetValue(durableOption);
     bool delayed = parseResult.GetValue(delayedOption);
-    string acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
+    string? acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
     ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
     long deliveryLimit = parseResult.GetValue(deliveryLimitOption);
     int subscriberCount = parseResult.GetValue(subscriberCountOption);
-    string groupId = parseResult.GetValue(groupIdOption);
+    string? groupId = parseResult.GetValue(groupIdOption);
     LogLevel logLevel = parseResult.GetValue(logLevelOption);
 
     return RunSubscriberAsync(
@@ -108,18 +108,22 @@ rootCommand.SetAction(parseResult =>
 return await rootCommand.Parse(args).InvokeAsync();
 
 static async Task RunSubscriberAsync(
-    string connectionString,
-    string hosts,
-    string topic,
+    string? connectionString,
+    string? hosts,
+    string? topic,
     bool durable,
     bool delayed,
-    string acknowledgmentStrategy,
+    string? acknowledgmentStrategy,
     ushort prefetchCount,
     long deliveryLimit,
     int subscriberCount,
-    string groupId,
+    string? groupId,
     LogLevel logLevel)
 {
+    ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+    ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+    ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+
     using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
     {
         builder.AddConsole().SetMinimumLevel(logLevel);

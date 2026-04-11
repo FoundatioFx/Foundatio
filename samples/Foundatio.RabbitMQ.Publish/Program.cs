@@ -100,12 +100,12 @@ RootCommand rootCommand = new("RabbitMQ Order Publisher Sample")
 
 rootCommand.SetAction(parseResult =>
 {
-    string connectionString = parseResult.GetValue(connectionStringOption);
-    string hosts = parseResult.GetValue(hostsOption);
-    string topic = parseResult.GetValue(topicOption);
+    string? connectionString = parseResult.GetValue(connectionStringOption);
+    string? hosts = parseResult.GetValue(hostsOption);
+    string? topic = parseResult.GetValue(topicOption);
     bool durable = parseResult.GetValue(durableOption);
     bool delayed = parseResult.GetValue(delayedOption);
-    string acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
+    string? acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
     bool publisherConfirms = parseResult.GetValue(publisherConfirmsOption);
     int messageSize = parseResult.GetValue(messageSizeOption);
     ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
@@ -122,12 +122,12 @@ rootCommand.SetAction(parseResult =>
 return await rootCommand.Parse(args).InvokeAsync();
 
 static async Task RunPublisher(
-    string connectionString,
-    string hosts,
-    string topic,
+    string? connectionString,
+    string? hosts,
+    string? topic,
     bool durable,
     bool delayed,
-    string acknowledgmentStrategy,
+    string? acknowledgmentStrategy,
     bool publisherConfirms,
     int messageSize,
     ushort prefetchCount,
@@ -136,6 +136,9 @@ static async Task RunPublisher(
     int interval,
     LogLevel logLevel)
 {
+    ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+    ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+
     using var loggerFactory = LoggerFactory.Create(builder =>
     {
         builder.AddConsole().SetMinimumLevel(logLevel);
@@ -235,7 +238,7 @@ static async Task RunPublisher(
         int orderCount = 0;
         do
         {
-            string input = Console.ReadLine();
+            string? input = Console.ReadLine();
             if (String.IsNullOrEmpty(input))
                 break;
 

@@ -7,10 +7,10 @@ public record OrderEvent
     public string OrderId { get; init; } = Guid.NewGuid().ToString("N");
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public int SequenceNumber { get; init; }
-    public string CustomerId { get; init; }
+    public required string CustomerId { get; init; }
     public decimal Amount { get; init; }
-    public string Status { get; init; }
-    public string Notes { get; init; }
+    public required string Status { get; init; }
+    public string? Notes { get; init; }
 
     public static OrderEvent Create(int sequenceNumber, int targetSizeBytes = 0)
     {
