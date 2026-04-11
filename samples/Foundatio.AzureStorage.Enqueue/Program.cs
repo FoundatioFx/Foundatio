@@ -71,9 +71,27 @@ rootCommand.SetAction(async parseResult =>
     var queueName = parseResult.GetValue(queueOption);
     var message = parseResult.GetValue(messageOption);
     var correlationId = parseResult.GetValue(correlationIdOption);
-    var properties = parseResult.GetValue(propertiesOption);
+    var properties = parseResult.GetValue(propertiesOption) ?? [];
     var mode = parseResult.GetValue(modeOption);
     var count = parseResult.GetValue(countOption);
+
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        Console.Error.WriteLine("Error: Connection string is required. Use --connection-string or set AZURE_STORAGE_CONNECTION_STRING.");
+        return 1;
+    }
+
+    if (string.IsNullOrWhiteSpace(queueName))
+    {
+        Console.Error.WriteLine("Error: Queue name is required. Use --queue.");
+        return 1;
+    }
+
+    if (string.IsNullOrWhiteSpace(message))
+    {
+        Console.Error.WriteLine("Error: Message is required. Use --message.");
+        return 1;
+    }
 
     Console.WriteLine($"Using connection: {(connectionString == EmulatorConnectionString ? "Azure Storage Emulator" : "Custom connection string")}");
     Console.WriteLine($"Mode: {mode}");
@@ -86,7 +104,7 @@ rootCommand.SetAction(async parseResult =>
 // Parse and invoke
 return await rootCommand.Parse(args).InvokeAsync();
 
-static async Task EnqueueMessages(string connectionString, string queueName, string message, string correlationId, string[] properties, AzureStorageQueueCompatibilityMode mode, int count)
+static async Task EnqueueMessages(string connectionString, string queueName, string message, string? correlationId, string[] properties, AzureStorageQueueCompatibilityMode mode, int count)
 {
     using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
     var logger = loggerFactory.CreateLogger("Enqueue");
@@ -100,15 +118,12 @@ static async Task EnqueueMessages(string connectionString, string queueName, str
         .LoggerFactory(loggerFactory));
 
     var queueProperties = new Dictionary<string, string>();
-    if (properties != null)
+    foreach (var prop in properties)
     {
-        foreach (var prop in properties)
+        var parts = prop.Split('=', 2);
+        if (parts.Length == 2)
         {
-            var parts = prop.Split('=', 2);
-            if (parts.Length == 2)
-            {
-                queueProperties[parts[0]] = parts[1];
-            }
+            queueProperties[parts[0]] = parts[1];
         }
     }
 
@@ -122,15 +137,17 @@ static async Task EnqueueMessages(string connectionString, string queueName, str
 
         var entryOptions = new QueueEntryOptions
         {
-            CorrelationId = correlationId,
-            Properties = queueProperties.Count > 0 ? queueProperties : null
+            CorrelationId = correlationId
         };
+
+        if (queueProperties.Count > 0)
+            entryOptions.Properties = queueProperties;
 
         var messageId = await queue.EnqueueAsync(sampleMessage, entryOptions);
 
         logger.LogInformation("Enqueued message {MessageId}: '{Message}' with CorrelationId: '{CorrelationId}' Properties: [{Properties}]",
             messageId, sampleMessage.Message, correlationId ?? "<none>",
-            string.Join(", ", queueProperties.Select(p => $"{p.Key}={p.Value}")));
+            String.Join(", ", queueProperties.Select(p => $"{p.Key}={p.Value}")));
     }
 
     logger.LogInformation("Successfully enqueued {Count} message(s)", count);

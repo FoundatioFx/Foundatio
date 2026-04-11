@@ -52,6 +52,18 @@ rootCommand.SetAction(async parseResult =>
     var mode = parseResult.GetValue(modeOption);
     var count = parseResult.GetValue(countOption);
 
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        Console.Error.WriteLine("Error: Connection string is required. Use --connection-string or set AZURE_STORAGE_CONNECTION_STRING.");
+        return 1;
+    }
+
+    if (string.IsNullOrWhiteSpace(queueName))
+    {
+        Console.Error.WriteLine("Error: Queue name is required. Use --queue.");
+        return 1;
+    }
+
     Console.WriteLine($"Using connection: {(connectionString == EmulatorConnectionString ? "Azure Storage Emulator" : "Custom connection string")}");
     Console.WriteLine($"Mode: {mode}");
     Console.WriteLine($"Queue: {queueName}");
@@ -120,14 +132,14 @@ static async Task DequeueMessages(string connectionString, string queueName, Azu
                 processed++;
 
                 logger.LogInformation("Dequeued message {MessageId}: '{Message}' from '{Source}' at {Timestamp}",
-                    entry.Id, entry.Value.Message, entry.Value.Source, entry.Value.Timestamp);
+                    entry.Id, entry.Value?.Message, entry.Value?.Source, entry.Value?.Timestamp);
 
                 logger.LogInformation("  CorrelationId: '{CorrelationId}'", entry.CorrelationId ?? "<none>");
 
                 if (entry.Properties != null && entry.Properties.Count > 0)
                 {
                     logger.LogInformation("  Properties: [{Properties}]",
-                        string.Join(", ", entry.Properties.Select(p => $"{p.Key}={p.Value}")));
+                        String.Join(", ", entry.Properties.Select(p => $"{p.Key}={p.Value}")));
                 }
                 else
                 {

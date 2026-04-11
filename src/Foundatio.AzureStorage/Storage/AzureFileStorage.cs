@@ -27,6 +27,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
     public AzureFileStorage(AzureFileStorageOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.ConnectionString, nameof(options.ConnectionString));
 
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
@@ -58,10 +59,10 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
     public BlobContainerClient Container => _container;
 
     [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behavior of stream")]
-    public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-    public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    public async Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
@@ -91,7 +92,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         }
     }
 
-    public async Task<FileSpec> GetFileInfoAsync(string path)
+    public async Task<FileSpec?> GetFileInfoAsync(string path)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
 
@@ -255,7 +256,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         }
     }
 
-    public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
         int count = 0;
@@ -273,7 +274,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         return count;
     }
 
-    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         if (pageSize <= 0)
             return PagedFileListResult.Empty;
@@ -283,7 +284,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         return result;
     }
 
-    private async Task<NextPageResult> GetFiles(string searchPattern, int page, int pageSize, CancellationToken cancellationToken)
+    private async Task<NextPageResult> GetFiles(string? searchPattern, int page, int pageSize, CancellationToken cancellationToken)
     {
         int pagingLimit = pageSize;
         int skip = (page - 1) * pagingLimit;
@@ -307,7 +308,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         };
     }
 
-    private async Task<List<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default)
+    private async Task<List<FileSpec>> GetFileListAsync(string? searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default)
     {
         if (limit is <= 0)
             return new List<FileSpec>();
@@ -368,16 +369,16 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
 
     private static string NormalizePath(string path)
     {
-        return path?.Replace('\\', '/');
+        return path.Replace('\\', '/');
     }
 
     private record SearchCriteria
     {
-        public string Prefix { get; set; }
-        public Regex Pattern { get; set; }
+        public required string Prefix { get; set; }
+        public Regex? Pattern { get; set; }
     }
 
-    private SearchCriteria GetRequestCriteria(string searchPattern)
+    private SearchCriteria GetRequestCriteria(string? searchPattern)
     {
         if (String.IsNullOrEmpty(searchPattern))
             return new SearchCriteria { Prefix = String.Empty };
@@ -387,7 +388,7 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
         bool hasWildcard = wildcardPos >= 0;
 
         string prefix = normalizedSearchPattern;
-        Regex patternRegex = null;
+        Regex? patternRegex = null;
 
         if (hasWildcard)
         {

@@ -20,9 +20,9 @@ public class AzureStorageQueueTests : QueueTestBase
     {
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
-        string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return null;
 
@@ -236,7 +236,7 @@ public class AzureStorageQueueTests : QueueTestBase
     public async Task DequeueAsync_WithLegacyFormatMessage_DeserializesWithFallbackAsync()
     {
         // Arrange - Inject a raw (non-envelope) message simulating legacy format
-        string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return;
 
@@ -256,6 +256,7 @@ public class AzureStorageQueueTests : QueueTestBase
         await defaultQueue.EnqueueAsync(new SimpleWorkItem { Data = "setup" });
         using var setupCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var setupEntry = await defaultQueue.DequeueAsync(setupCts.Token);
+        Assert.NotNull(setupEntry);
         await setupEntry.CompleteAsync();
 
         // Inject a raw JSON message (no envelope wrapper) using QueueClient directly
@@ -270,7 +271,7 @@ public class AzureStorageQueueTests : QueueTestBase
         var entry = await defaultQueue.DequeueAsync(dequeueCts.Token);
 
         // Assert
-        Assert.NotNull(entry);
+        Assert.NotNull(entry?.Value);
         Assert.Equal("legacy-item", entry.Value.Data);
         Assert.Equal(42, entry.Value.Id);
         Assert.Null(entry.CorrelationId);
@@ -295,7 +296,7 @@ public class AzureStorageQueueTests : QueueTestBase
     [Fact]
     public async Task DequeueAsync_WithCorruptMessage_MovesToDeadletterAsync()
     {
-        string connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureStorageConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return;
 
@@ -315,6 +316,7 @@ public class AzureStorageQueueTests : QueueTestBase
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "setup" });
         using var setupCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var setupEntry = await queue.DequeueAsync(setupCts.Token);
+        Assert.NotNull(setupEntry);
         await setupEntry.CompleteAsync();
 
         // Inject a completely invalid message (not valid JSON at all)

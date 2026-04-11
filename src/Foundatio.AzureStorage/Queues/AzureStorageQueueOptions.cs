@@ -25,7 +25,7 @@ public enum AzureStorageQueueCompatibilityMode
 
 public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class
 {
-    public string ConnectionString { get; set; }
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// The interval to wait between polling for new messages when the queue is empty.
@@ -71,14 +71,14 @@ public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class
     /// };
     /// </code>
     /// </example>
-    public Action<RetryOptions> ConfigureRetry { get; set; }
+    public Action<RetryOptions>? ConfigureRetry { get; set; }
 }
 
 public class AzureStorageQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureStorageQueueOptions<T>, AzureStorageQueueOptionsBuilder<T>> where T : class
 {
     public AzureStorageQueueOptionsBuilder<T> ConnectionString(string connectionString)
     {
-        ArgumentException.ThrowIfNullOrEmpty(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         Target.ConnectionString = connectionString;
         return this;
