@@ -85,11 +85,20 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
                 if (cancellationToken.IsCancellationRequested)
                     break;
 
+                string previousCacheKey = cacheKey;
                 var sleepUntil = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMilliseconds(1);
                 if (sleepUntil > _timeProvider.GetUtcNow())
                 {
                     _logger.LogTrace("Sleeping until key expires: {SleepUntil}", sleepUntil - _timeProvider.GetUtcNow());
                     await _timeProvider.SafeDelay(sleepUntil - _timeProvider.GetUtcNow(), cancellationToken).AnyContext();
+
+                    // SafeDelay may wake slightly early due to OS timer resolution; spin briefly
+                    // to ensure we've crossed into the next throttling period.
+                    while (!cancellationToken.IsCancellationRequested &&
+                           GetCacheKey(resource, _timeProvider.GetUtcNow().UtcDateTime) == previousCacheKey)
+                    {
+                        await _timeProvider.SafeDelay(TimeSpan.FromMilliseconds(1), cancellationToken).AnyContext();
+                    }
                 }
                 else
                 {
