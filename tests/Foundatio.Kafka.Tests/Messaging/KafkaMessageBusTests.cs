@@ -156,6 +156,8 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     public async Task CanPersistAndNotLoseMessages()
     {
         var messageBus1 = GetMessageBus();
+        if (messageBus1 is null)
+            return;
 
         var countdownEvent = new AsyncCountdownEvent(1);
         var cts = new CancellationTokenSource();
@@ -190,6 +192,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
         messageBus1.Dispose();
 
         using var messageBus2 = GetMessageBus();
+        Assert.NotNull(messageBus2);
 
         cts = new CancellationTokenSource();
         countdownEvent.AddCount(4);
