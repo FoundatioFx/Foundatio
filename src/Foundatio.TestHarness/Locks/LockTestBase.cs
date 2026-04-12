@@ -480,10 +480,11 @@ public abstract class LockTestBase : TestWithLoggingBase
         await result.DisposeAsync();
     }
 
-    public virtual async Task WillThrottleCallsAndRecoverNearPeriodBoundaryAsync()
+    public virtual async Task AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync()
     {
         Log.SetLogLevel<ThrottlingLockProvider>(LogLevel.Trace);
 
+        // Arrange: configure a throttle that allows 1 lock per 1-second period
         const int allowedLocks = 1;
         var period = TimeSpan.FromSeconds(1);
         var locker = GetThrottlingLockProvider(allowedLocks, period);
@@ -492,23 +493,28 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         string lockName = Guid.NewGuid().ToString("N")[..10];
 
+        // Run 5 iterations to exercise the period boundary transition repeatedly,
+        // catching timing regressions that only manifest near the boundary.
         for (int iteration = 0; iteration < 5; iteration++)
         {
-            _logger.LogInformation("=== Iteration {Iteration} ===", iteration);
+            _logger.LogInformation("--- Iteration {Iteration}/5: exhausting period then acquiring across boundary ---", iteration + 1);
 
-            var l = await locker.AcquireAsync(lockName);
-            Assert.NotNull(l);
-            _logger.LogInformation("First lock acquired, period is exhausted");
+            // Act: acquire the one allowed lock to exhaust this period's quota
+            var firstLock = await locker.AcquireAsync(lockName);
+            Assert.NotNull(firstLock);
+            _logger.LogInformation("Iteration {Iteration}: first lock acquired, period quota exhausted", iteration + 1);
 
+            // Act: attempt a second acquire — must wait for the next period
             var sw = Stopwatch.StartNew();
-            var result = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2));
+            var secondLock = await locker.AcquireAsync(lockName, acquireTimeout: TimeSpan.FromSeconds(2));
             sw.Stop();
 
-            _logger.LogInformation("Second lock acquired in {Elapsed:g}", sw.Elapsed);
-            Assert.NotNull(result);
-            Assert.True(sw.Elapsed.TotalSeconds < 2, $"Took {sw.Elapsed.TotalSeconds:F3}s, expected < 2s");
+            // Assert: lock acquired successfully within the period + small margin (< 2s)
+            _logger.LogInformation("Iteration {Iteration}: second lock acquired in {ElapsedMs:F0}ms (limit 2000ms)", iteration + 1, sw.Elapsed.TotalMilliseconds);
+            Assert.NotNull(secondLock);
+            Assert.True(sw.Elapsed.TotalSeconds < 2, $"Iteration {iteration + 1}: took {sw.Elapsed.TotalSeconds:F3}s to acquire across period boundary, expected < 2s");
 
-            await result.DisposeAsync();
+            await secondLock.DisposeAsync();
         }
     }
 }

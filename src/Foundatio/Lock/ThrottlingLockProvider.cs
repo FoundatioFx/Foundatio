@@ -64,9 +64,11 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
                 _logger.LogTrace("Current hit count: {HitCount} max: {MaxHitsPerPeriod}", hitCount, _maxHitsPerPeriod);
                 if (hitCount <= _maxHitsPerPeriod - 1)
                 {
+                    // keep the cache key around for a bit longer than the throttling period
                     var expirationDate = _timeProvider.GetUtcNow().UtcDateTime.Ceiling(_throttlingPeriod).AddMinutes(5);
                     hitCount = await _cacheClient.IncrementAsync(cacheKey, 1, expirationDate).AnyContext();
 
+                    // make sure someone didn't beat us to it
                     if (hitCount <= _maxHitsPerPeriod)
                     {
                         allowLock = true;
@@ -107,6 +109,8 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
 
                     if (spins >= 100)
                         _logger.LogWarning("Period boundary spin exceeded 100 iterations for {Resource}; clock may be frozen", resource);
+                    else if (spins > 0)
+                        _logger.LogTrace("Period boundary spin completed after {Spins} iteration(s) for {Resource}", spins, resource);
                 }
                 else
                 {
