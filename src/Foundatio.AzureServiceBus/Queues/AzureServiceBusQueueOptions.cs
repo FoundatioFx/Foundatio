@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Azure.Core;
 using Azure.Messaging.ServiceBus.Administration;
 
@@ -9,18 +9,18 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     /// <summary>
     /// The connection string to the Azure Service Bus namespace.
     /// </summary>
-    public string ConnectionString { get; set; }
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// The fully qualified Service Bus namespace to use for Azure Identity authentication.
     /// Example: "yournamespace.servicebus.windows.net"
     /// </summary>
-    public string FullyQualifiedNamespace { get; set; }
+    public string? FullyQualifiedNamespace { get; set; }
 
     /// <summary>
     /// The token credential to use for Azure Identity authentication.
     /// </summary>
-    public TokenCredential Credential { get; set; }
+    public TokenCredential? Credential { get; set; }
 
     /// <summary>
     /// Whether the queue can be created if it doesn't exist.
@@ -85,12 +85,12 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     /// <summary>
     /// Returns the path to the recipient to which the message is forwarded.
     /// </summary>
-    public string ForwardTo { get; set; }
+    public string? ForwardTo { get; set; }
 
     /// <summary>
     /// Returns the path to the recipient to which the dead lettered message is forwarded.
     /// </summary>
-    public string ForwardDeadLetteredMessagesTo { get; set; }
+    public string? ForwardDeadLetteredMessagesTo { get; set; }
 
     /// <summary>
     /// Returns true if the queue is to be partitioned across multiple message brokers.
@@ -100,7 +100,7 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     /// <summary>
     /// Returns user metadata.
     /// </summary>
-    public string UserMetadata { get; set; }
+    public string? UserMetadata { get; set; }
 
     /// <summary>
     /// The function to calculate retry delay based on the attempt number.
@@ -112,21 +112,22 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
 {
     public AzureServiceBusQueueOptionsBuilder<T> ConnectionString(string connectionString)
     {
-        ArgumentException.ThrowIfNullOrEmpty(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         Target.ConnectionString = connectionString;
         return this;
     }
 
     public AzureServiceBusQueueOptionsBuilder<T> FullyQualifiedNamespace(string fullyQualifiedNamespace)
     {
-        ArgumentException.ThrowIfNullOrEmpty(fullyQualifiedNamespace);
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullyQualifiedNamespace);
         Target.FullyQualifiedNamespace = fullyQualifiedNamespace;
         return this;
     }
 
     public AzureServiceBusQueueOptionsBuilder<T> Credential(TokenCredential credential)
     {
-        Target.Credential = credential ?? throw new ArgumentNullException(nameof(credential));
+        ArgumentNullException.ThrowIfNull(credential);
+        Target.Credential = credential;
         return this;
     }
 
@@ -158,7 +159,8 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
 
     public AzureServiceBusQueueOptionsBuilder<T> RetryDelay(Func<int, TimeSpan> retryDelay)
     {
-        Target.RetryDelay = retryDelay ?? throw new ArgumentNullException(nameof(retryDelay));
+        ArgumentNullException.ThrowIfNull(retryDelay);
+        Target.RetryDelay = retryDelay;
         return this;
     }
 
@@ -218,13 +220,15 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
 
     public AzureServiceBusQueueOptionsBuilder<T> ForwardTo(string forwardTo)
     {
-        Target.ForwardTo = forwardTo ?? throw new ArgumentNullException(nameof(forwardTo));
+        ArgumentNullException.ThrowIfNull(forwardTo);
+        Target.ForwardTo = forwardTo;
         return this;
     }
 
     public AzureServiceBusQueueOptionsBuilder<T> ForwardDeadLetteredMessagesTo(string forwardDeadLetteredMessagesTo)
     {
-        Target.ForwardDeadLetteredMessagesTo = forwardDeadLetteredMessagesTo ?? throw new ArgumentNullException(nameof(forwardDeadLetteredMessagesTo));
+        ArgumentNullException.ThrowIfNull(forwardDeadLetteredMessagesTo);
+        Target.ForwardDeadLetteredMessagesTo = forwardDeadLetteredMessagesTo;
         return this;
     }
 
@@ -236,7 +240,8 @@ public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T
 
     public AzureServiceBusQueueOptionsBuilder<T> UserMetadata(string userMetadata)
     {
-        Target.UserMetadata = userMetadata ?? throw new ArgumentNullException(nameof(userMetadata));
+        ArgumentNullException.ThrowIfNull(userMetadata);
+        Target.UserMetadata = userMetadata;
         return this;
     }
 }

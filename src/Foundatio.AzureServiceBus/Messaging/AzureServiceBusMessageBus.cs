@@ -17,8 +17,8 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
     private readonly Lazy<ServiceBusClient> _client;
     private readonly Lazy<ServiceBusAdministrationClient> _adminClient;
     private readonly bool _isEmulator;
-    private ServiceBusSender _topicSender;
-    private ServiceBusProcessor _subscriptionProcessor;
+    private ServiceBusSender? _topicSender;
+    private ServiceBusProcessor? _subscriptionProcessor;
     private readonly string _subscriptionName;
 
     public AzureServiceBusMessageBus(AzureServiceBusMessageBusOptions options) : base(options)
@@ -63,7 +63,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
     {
-        if (_subscriptionProcessor != null)
+        if (_subscriptionProcessor is not null)
             return;
 
         if (!TopicIsCreated)
@@ -71,7 +71,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
         using (await _lock.LockAsync(cancellationToken).AnyContext())
         {
-            if (_subscriptionProcessor != null)
+            if (_subscriptionProcessor is not null)
                 return;
 
             _logger.LogTrace("Ensuring subscription {SubscriptionName} exists on topic {Topic}", _subscriptionName, _options.Topic);
@@ -85,7 +85,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
                     if (!subscriptionExists)
                     {
                         if (!_options.CanCreateTopic)
-                            throw new InvalidOperationException($"Subscription {_subscriptionName} does not exist on topic {_options.Topic} and CanCreateTopic is false.");
+                            throw new MessageBusException($"Subscription {_subscriptionName} does not exist on topic {_options.Topic} and CanCreateTopic is false.");
 
                         await _adminClient.Value.CreateSubscriptionAsync(CreateSubscriptionOptions(), cancellationToken).AnyContext();
                         _logger.LogDebug("Created subscription {SubscriptionName} on topic {Topic}", _subscriptionName, _options.Topic);
@@ -145,7 +145,8 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             if (ServiceBusMessageHelper.IsSdkDiagnosticProperty(property.Key))
                 continue;
 
-            message.Properties[property.Key] = property.Value?.ToString();
+            if (property.Value?.ToString() is { } value)
+                message.Properties[property.Key] = value;
         }
 
         try
@@ -171,7 +172,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
         return Task.CompletedTask;
     }
 
-    private bool TopicIsCreated => _topicSender != null;
+    private bool TopicIsCreated => _topicSender is not null;
 
     protected override async Task EnsureTopicCreatedAsync(CancellationToken cancellationToken)
     {
@@ -194,7 +195,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
                     if (!topicExists)
                     {
                         if (!_options.CanCreateTopic)
-                            throw new InvalidOperationException($"Topic {_options.Topic} does not exist and CanCreateTopic is false.");
+                            throw new MessageBusException($"Topic {_options.Topic} does not exist and CanCreateTopic is false.");
 
                         await _adminClient.Value.CreateTopicAsync(CreateTopicOptions(), cancellationToken).AnyContext();
                         _logger.LogDebug("Created topic {Topic}", _options.Topic);
@@ -244,7 +245,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
 
         // Wrap only the transport call in resilience policy
         await _resiliencePolicy.ExecuteAsync(async _ =>
-            await _topicSender.SendMessageAsync(serviceBusMessage, cancellationToken),
+            await _topicSender!.SendMessageAsync(serviceBusMessage, cancellationToken),
             cancellationToken).AnyContext();
     }
 

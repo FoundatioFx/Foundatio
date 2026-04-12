@@ -19,16 +19,16 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
 
     private static bool IsEmulator()
     {
-        string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         return !String.IsNullOrEmpty(connectionString) &&
             connectionString.Contains("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase);
     }
 
     public AzureServiceBusMessageBusTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
-        string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return null;
 

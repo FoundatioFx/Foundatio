@@ -57,10 +57,14 @@ rootCommand.SetAction(async parseResult =>
                               Environment.GetEnvironmentVariable("AZURE_SERVICEBUS_CONNECTION_STRING") ??
                               EmulatorConnectionString;
 
-    string queueName = parseResult.GetValue(queueOption);
-    string message = parseResult.GetValue(messageOption);
-    string correlationId = parseResult.GetValue(correlationIdOption);
-    string[] properties = parseResult.GetValue(propertiesOption);
+    string? queueName = parseResult.GetValue(queueOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
+
+    string? message = parseResult.GetValue(messageOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+    string? correlationId = parseResult.GetValue(correlationIdOption);
+    string[] properties = parseResult.GetValue(propertiesOption) ?? [];
     int count = parseResult.GetValue(countOption);
 
     Console.WriteLine($"Using connection: {(connectionString == EmulatorConnectionString ? "Azure Service Bus Emulator" : "Custom connection string")}");
@@ -72,7 +76,7 @@ rootCommand.SetAction(async parseResult =>
 
 return await rootCommand.Parse(args).InvokeAsync();
 
-static async Task EnqueueMessages(string connectionString, string queueName, string message, string correlationId, string[] properties, int count)
+static async Task EnqueueMessages(string connectionString, string queueName, string message, string? correlationId, string[] properties, int count)
 {
     using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
     var logger = loggerFactory.CreateLogger("Enqueue");
@@ -105,11 +109,13 @@ static async Task EnqueueMessages(string connectionString, string queueName, str
 
         var entryOptions = new QueueEntryOptions
         {
-            CorrelationId = correlationId,
-            Properties = queueProperties.Count > 0 ? queueProperties : null
+            CorrelationId = correlationId
         };
 
-        string messageId = await queue.EnqueueAsync(sampleMessage, entryOptions);
+        if (queueProperties.Count > 0)
+            entryOptions.Properties = queueProperties;
+
+        string? messageId = await queue.EnqueueAsync(sampleMessage, entryOptions);
 
         logger.LogInformation("Enqueued message {MessageId}: '{Message}' with CorrelationId: '{CorrelationId}' Properties: [{Properties}]",
             messageId, sampleMessage.Message, correlationId ?? "<none>",

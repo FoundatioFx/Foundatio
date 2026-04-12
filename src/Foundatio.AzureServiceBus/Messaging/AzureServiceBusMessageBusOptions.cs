@@ -10,18 +10,18 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// The connection string to the Azure Service Bus namespace.
     /// </summary>
-    public string ConnectionString { get; set; }
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// The fully qualified Service Bus namespace to use for Azure Identity authentication.
     /// Example: "yournamespace.servicebus.windows.net"
     /// </summary>
-    public string FullyQualifiedNamespace { get; set; }
+    public string? FullyQualifiedNamespace { get; set; }
 
     /// <summary>
     /// The token credential to use for Azure Identity authentication.
     /// </summary>
-    public TokenCredential Credential { get; set; }
+    public TokenCredential? Credential { get; set; }
 
     /// <summary>
     /// Whether the topic can be created if it doesn't exist.
@@ -87,12 +87,12 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// Returns user metadata.
     /// </summary>
-    public string TopicUserMetadata { get; set; }
+    public string? TopicUserMetadata { get; set; }
 
     /// <summary>
     /// If no subscription name is specified, then a fanout type message bus will be created.
     /// </summary>
-    public string SubscriptionName { get; set; }
+    public string? SubscriptionName { get; set; }
 
     /// <summary>
     /// The idle interval after which the subscription is automatically deleted. The minimum duration is 5 minutes.
@@ -142,17 +142,17 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// Returns the path to the recipient to which the message is forwarded.
     /// </summary>
-    public string SubscriptionForwardTo { get; set; }
+    public string? SubscriptionForwardTo { get; set; }
 
     /// <summary>
     /// Returns the path to the recipient to which the dead lettered message is forwarded.
     /// </summary>
-    public string SubscriptionForwardDeadLetteredMessagesTo { get; set; }
+    public string? SubscriptionForwardDeadLetteredMessagesTo { get; set; }
 
     /// <summary>
     /// Returns user metadata.
     /// </summary>
-    public string SubscriptionUserMetadata { get; set; }
+    public string? SubscriptionUserMetadata { get; set; }
 
     /// <summary>
     /// The receive mode for the subscription processor.
@@ -166,23 +166,22 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
 {
     public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString)
     {
-        if (String.IsNullOrEmpty(connectionString))
-            throw new ArgumentNullException(nameof(connectionString));
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         Target.ConnectionString = connectionString;
         return this;
     }
 
     public AzureServiceBusMessageBusOptionsBuilder FullyQualifiedNamespace(string fullyQualifiedNamespace)
     {
-        if (String.IsNullOrEmpty(fullyQualifiedNamespace))
-            throw new ArgumentNullException(nameof(fullyQualifiedNamespace));
+        ArgumentException.ThrowIfNullOrWhiteSpace(fullyQualifiedNamespace);
         Target.FullyQualifiedNamespace = fullyQualifiedNamespace;
         return this;
     }
 
     public AzureServiceBusMessageBusOptionsBuilder Credential(TokenCredential credential)
     {
-        Target.Credential = credential ?? throw new ArgumentNullException(nameof(credential));
+        ArgumentNullException.ThrowIfNull(credential);
+        Target.Credential = credential;
         return this;
     }
 
@@ -264,13 +263,15 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
 
     public AzureServiceBusMessageBusOptionsBuilder TopicUserMetadata(string topicUserMetadata)
     {
-        Target.TopicUserMetadata = topicUserMetadata ?? throw new ArgumentNullException(nameof(topicUserMetadata));
+        ArgumentNullException.ThrowIfNull(topicUserMetadata);
+        Target.TopicUserMetadata = topicUserMetadata;
         return this;
     }
 
     public AzureServiceBusMessageBusOptionsBuilder SubscriptionName(string subscriptionName)
     {
-        Target.SubscriptionName = subscriptionName ?? throw new ArgumentNullException(nameof(subscriptionName));
+        ArgumentNullException.ThrowIfNull(subscriptionName);
+        Target.SubscriptionName = subscriptionName;
         return this;
     }
 
@@ -330,19 +331,22 @@ public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBu
 
     public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardTo(string subscriptionForwardTo)
     {
-        Target.SubscriptionForwardTo = subscriptionForwardTo ?? throw new ArgumentNullException(nameof(subscriptionForwardTo));
+        ArgumentNullException.ThrowIfNull(subscriptionForwardTo);
+        Target.SubscriptionForwardTo = subscriptionForwardTo;
         return this;
     }
 
     public AzureServiceBusMessageBusOptionsBuilder SubscriptionForwardDeadLetteredMessagesTo(string subscriptionForwardDeadLetteredMessagesTo)
     {
-        Target.SubscriptionForwardDeadLetteredMessagesTo = subscriptionForwardDeadLetteredMessagesTo ?? throw new ArgumentNullException(nameof(subscriptionForwardDeadLetteredMessagesTo));
+        ArgumentNullException.ThrowIfNull(subscriptionForwardDeadLetteredMessagesTo);
+        Target.SubscriptionForwardDeadLetteredMessagesTo = subscriptionForwardDeadLetteredMessagesTo;
         return this;
     }
 
     public AzureServiceBusMessageBusOptionsBuilder SubscriptionUserMetadata(string subscriptionUserMetadata)
     {
-        Target.SubscriptionUserMetadata = subscriptionUserMetadata ?? throw new ArgumentNullException(nameof(subscriptionUserMetadata));
+        ArgumentNullException.ThrowIfNull(subscriptionUserMetadata);
+        Target.SubscriptionUserMetadata = subscriptionUserMetadata;
         return this;
     }
 

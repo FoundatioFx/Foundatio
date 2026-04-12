@@ -55,10 +55,16 @@ rootCommand.SetAction(async parseResult =>
                               Environment.GetEnvironmentVariable("AZURE_SERVICEBUS_CONNECTION_STRING") ??
                               EmulatorConnectionString;
 
-    string topic = parseResult.GetValue(topicOption);
-    string eventType = parseResult.GetValue(eventTypeOption);
-    string data = parseResult.GetValue(dataOption);
-    string correlationId = parseResult.GetValue(correlationIdOption);
+    string? topic = parseResult.GetValue(topicOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+
+    string? eventType = parseResult.GetValue(eventTypeOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(eventType);
+
+    string? data = parseResult.GetValue(dataOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(data);
+
+    string? correlationId = parseResult.GetValue(correlationIdOption);
     int count = parseResult.GetValue(countOption);
 
     Console.WriteLine($"Using connection: {(connectionString == EmulatorConnectionString ? "Azure Service Bus Emulator" : "Custom connection string")}");
@@ -70,7 +76,7 @@ rootCommand.SetAction(async parseResult =>
 
 return await rootCommand.Parse(args).InvokeAsync();
 
-static async Task PublishMessages(string connectionString, string topic, string eventType, string data, string correlationId, int count)
+static async Task PublishMessages(string connectionString, string topic, string eventType, string data, string? correlationId, int count)
 {
     using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole().SetMinimumLevel(LogLevel.Information));
     var logger = loggerFactory.CreateLogger("Publish");

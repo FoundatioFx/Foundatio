@@ -23,7 +23,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
 
     private static bool IsEmulator()
     {
-        string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         return !String.IsNullOrEmpty(connectionString) &&
             connectionString.Contains("UseDevelopmentEmulator=true", StringComparison.OrdinalIgnoreCase);
     }
@@ -45,9 +45,9 @@ public class AzureServiceBusQueueTests : QueueTestBase
             _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
-        string connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
+        string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return null;
 

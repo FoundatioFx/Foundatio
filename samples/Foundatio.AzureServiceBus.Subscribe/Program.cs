@@ -36,8 +36,11 @@ rootCommand.SetAction(async parseResult =>
                               Environment.GetEnvironmentVariable("AZURE_SERVICEBUS_CONNECTION_STRING") ??
                               EmulatorConnectionString;
 
-    string topic = parseResult.GetValue(topicOption);
-    string subscription = parseResult.GetValue(subscriptionOption);
+    string? topic = parseResult.GetValue(topicOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+
+    string? subscription = parseResult.GetValue(subscriptionOption);
+    ArgumentException.ThrowIfNullOrWhiteSpace(subscription);
 
     Console.WriteLine($"Using connection: {(connectionString == EmulatorConnectionString ? "Azure Service Bus Emulator" : "Custom connection string")}");
     Console.WriteLine($"Topic: {topic}");

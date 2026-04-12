@@ -8,13 +8,16 @@ public class AzureServiceBusQueueEntry<T> : QueueEntry<T> where T : class
 {
     public ServiceBusReceivedMessage UnderlyingMessage { get; }
 
-    public AzureServiceBusQueueEntry(ServiceBusReceivedMessage message, T value, IQueue<T> queue)
+    public AzureServiceBusQueueEntry(ServiceBusReceivedMessage message, T? value, IQueue<T> queue)
         : base(message.MessageId, message.CorrelationId, value, queue, message.EnqueuedTime.UtcDateTime, GetAttemptCount(message))
     {
         if (message.ApplicationProperties is not null)
         {
             foreach (var property in message.ApplicationProperties.Where(a => !ServiceBusMessageHelper.IsSdkDiagnosticProperty(a.Key) && a.Key != "CorrelationId" && a.Key != "_attempts"))
-                Properties.Add(property.Key, property.Value?.ToString());
+            {
+                if (property.Value?.ToString() is { } propValue)
+                    Properties.Add(property.Key, propValue);
+            }
         }
 
         UnderlyingMessage = message;
@@ -27,7 +30,7 @@ public class AzureServiceBusQueueEntry<T> : QueueEntry<T> where T : class
     private static int GetAttemptCount(ServiceBusReceivedMessage message)
     {
         // Check if we have a stored attempt count from a scheduled retry
-        if (message.ApplicationProperties.TryGetValue("_attempts", out object attemptsValue) && attemptsValue is int storedAttempts)
+        if (message.ApplicationProperties.TryGetValue("_attempts", out object? attemptsValue) && attemptsValue is int storedAttempts)
             return storedAttempts + 1; // Add 1 because this is a new delivery of that retry
 
         // Fall back to delivery count for normal abandon/retry
