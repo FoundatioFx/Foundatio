@@ -38,7 +38,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             ?? "serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx";
     }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
+    protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         var messageBus = new SQSMessageBus(o =>
         {

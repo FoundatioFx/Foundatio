@@ -13,7 +13,7 @@ public class ScopedS3StorageTests : FileStorageTestsBase
 
     public ScopedS3StorageTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IFileStorage GetStorage()
+    protected override IFileStorage? GetStorage()
     {
         return new ScopedFileStorage(new S3FileStorage(
             o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")

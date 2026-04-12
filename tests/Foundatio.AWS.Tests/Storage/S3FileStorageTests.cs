@@ -15,7 +15,7 @@ public class S3FileStorageTests : FileStorageTestsBase
     {
     }
 
-    protected override IFileStorage GetStorage()
+    protected override IFileStorage? GetStorage()
     {
         return new S3FileStorage(o => o.ConnectionString($"serviceurl=http://localhost:4566;bucket={BUCKET_NAME};AccessKey=xxx;SecretKey=xxx")
                 .LoggerFactory(Log).AllowInMemoryStream());

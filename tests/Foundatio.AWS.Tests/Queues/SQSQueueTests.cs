@@ -18,7 +18,7 @@ public class SQSQueueTests : QueueTestBase
         _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
+    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
         TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100,
         bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
