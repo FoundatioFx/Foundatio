@@ -11,7 +11,7 @@ public static class RedisPattern
     /// See https://redis.io/docs/latest/commands/keys/ and
     /// https://redis.io/docs/latest/commands/scan/ for details.
     /// </summary>
-    public static string Escape(string value)
+    public static string? Escape(string? value)
     {
         if (String.IsNullOrEmpty(value))
             return value;

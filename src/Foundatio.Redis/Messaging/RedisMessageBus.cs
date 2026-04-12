@@ -15,14 +15,17 @@ namespace Foundatio.Messaging;
 public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 {
     private readonly AsyncLock _lock = new();
+    private readonly ISubscriber _subscriber;
     private bool _isSubscribed;
-    private ChannelMessageQueue _channelMessageQueue;
+    private ChannelMessageQueue? _channelMessageQueue;
     private readonly RedisChannel _channel;
 
     public RedisMessageBus(RedisMessageBusOptions options) : base(options)
     {
         ArgumentNullException.ThrowIfNull(options.Subscriber);
         ArgumentException.ThrowIfNullOrEmpty(options.Topic);
+
+        _subscriber = options.Subscriber;
 
         // In Redis Cluster mode, use sharded pub/sub (SPUBLISH/SSUBSCRIBE) to avoid duplicate
         // message delivery caused by cluster-wide broadcast. Regular PUBLISH in a cluster
@@ -36,7 +39,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         // Falls back to standard PUBLISH/SUBSCRIBE for standalone, sentinel, and proxy deployments.
         // See: https://redis.io/docs/latest/commands/spublish/
         // See: https://redis.io/docs/latest/commands/ssubscribe/
-        _channel = options.Subscriber.Multiplexer.IsCluster()
+        _channel = _subscriber.Multiplexer.IsCluster()
             ? RedisChannel.Sharded(options.Topic)
             : RedisChannel.Literal(options.Topic);
     }
@@ -57,7 +60,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
                 return;
 
             _logger.LogTrace("Subscribing to topic: {Topic}", _options.Topic);
-            _channelMessageQueue = await _options.Subscriber.SubscribeAsync(_channel).AnyContext();
+            _channelMessageQueue = await _subscriber.SubscribeAsync(_channel).AnyContext();
             _channelMessageQueue.OnMessage(OnMessage);
             _isSubscribed = true;
             _logger.LogTrace("Subscribed to topic: {Topic}", _options.Topic);
@@ -79,8 +82,18 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         IMessage message;
         try
         {
-            var envelope = _serializer.Deserialize<RedisMessageEnvelope>((byte[])channelMessage.Message);
-            message = new Message(envelope.Data, DeserializeMessageBody)
+            byte[] messageBytes = (byte[]?)channelMessage.Message ?? [];
+            var envelope = _serializer.Deserialize<RedisMessageEnvelope>(messageBytes);
+            if (envelope is null)
+            {
+                _logger.LogError("OnMessage({Channel}) Deserialized envelope was null", channelMessage.Channel);
+                return;
+            }
+
+            if (envelope.Data is null || envelope.Type is null)
+                _logger.LogWarning("OnMessage({Channel}) Envelope has null {Field}, treating as empty", channelMessage.Channel, envelope.Data is null ? "Data" : "Type");
+
+            message = new Message(envelope.Data ?? [], DeserializeMessageBody)
             {
                 Type = envelope.Type,
                 ClrType = GetMappedMessageType(envelope.Type),
@@ -88,8 +101,11 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
                 UniqueId = envelope.UniqueId
             };
 
-            foreach (var property in envelope.Properties)
-                message.Properties.Add(property.Key, property.Value);
+            if (envelope.Properties is not null)
+            {
+                foreach (var property in envelope.Properties)
+                    message.Properties.Add(property.Key, property.Value);
+            }
         }
         catch (Exception ex)
         {
@@ -115,9 +131,12 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
-        var mappedType = GetMappedMessageType(messageType);
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
+            var mappedType = GetMappedMessageType(messageType);
+            if (mappedType is null)
+                throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
+
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             SendDelayedMessage(mappedType, message, options);
             return;
@@ -137,7 +156,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         // TODO: Use ILockProvider to lock on UniqueId to ensure it doesn't get duplicated
         // Wrap only the transport call in resilience policy
         await _resiliencePolicy.ExecuteAsync(async _ =>
-            await _options.Subscriber.PublishAsync(_channel, data, CommandFlags.FireAndForget),
+            await _subscriber.PublishAsync(_channel, data, CommandFlags.FireAndForget),
             cancellationToken).AnyContext();
     }
 
@@ -171,9 +190,9 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 
 public class RedisMessageEnvelope
 {
-    public string UniqueId { get; set; }
-    public string CorrelationId { get; set; }
-    public string Type { get; set; }
-    public byte[] Data { get; set; }
-    public Dictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
+    public string? UniqueId { get; set; }
+    public string? CorrelationId { get; set; }
+    public string? Type { get; set; }
+    public byte[]? Data { get; set; }
+    public Dictionary<string, string>? Properties { get; set; } = new Dictionary<string, string>();
 }

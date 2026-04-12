@@ -17,6 +17,7 @@ namespace Foundatio.Storage;
 public class RedisFileStorage : IFileStorage
 {
     private readonly RedisFileStorageOptions _options;
+    private readonly IConnectionMultiplexer _connectionMultiplexer;
     private readonly ISerializer _serializer;
     private readonly IResiliencePolicy _resiliencePolicy;
     private readonly ILogger _logger;
@@ -24,17 +25,18 @@ public class RedisFileStorage : IFileStorage
 
     public RedisFileStorage(RedisFileStorageOptions options)
     {
-        if (options.ConnectionMultiplexer == null)
-            throw new ArgumentException("ConnectionMultiplexer is required.");
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
 
+        _options = options;
+        _connectionMultiplexer = options.ConnectionMultiplexer;
         _serializer = options.Serializer ?? DefaultSerializer.Instance;
         _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
 
         _resiliencePolicy = options.ResiliencePolicyProvider.GetPolicy<RedisFileStorage, IFileStorage>(_logger, options.TimeProvider);
 
-        options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         _fileSpecContainer = $"{options.ContainerName}-filespecs";
-        _options = options;
     }
 
     public RedisFileStorage(Builder<RedisFileStorageOptionsBuilder, RedisFileStorageOptions> config)
@@ -43,18 +45,18 @@ public class RedisFileStorage : IFileStorage
     }
 
     ISerializer IHaveSerializer.Serializer => _serializer;
-    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+    public IDatabase Database => _connectionMultiplexer.GetDatabase();
 
     public void Dispose()
     {
-        _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
     }
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
-    public Task<Stream> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
+    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
+    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
         => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
 
-    public async Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    public async Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -65,7 +67,7 @@ public class RedisFileStorage : IFileStorage
         return await GetFileContentStreamAsync(NormalizePath(path), _options.ReadMode, cancellationToken).AnyContext();
     }
 
-    private async Task<MemoryStream> GetFileContentStreamAsync(string normalizedPath, CommandFlags flags, CancellationToken cancellationToken = default)
+    private async Task<MemoryStream?> GetFileContentStreamAsync(string normalizedPath, CommandFlags flags, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
 
@@ -76,10 +78,10 @@ public class RedisFileStorage : IFileStorage
             return null;
         }
 
-        return new MemoryStream(fileContent);
+        return new MemoryStream((byte[])fileContent!);
     }
 
-    public async Task<FileSpec> GetFileInfoAsync(string path)
+    public async Task<FileSpec?> GetFileInfoAsync(string path)
     {
         if (String.IsNullOrEmpty(path))
             throw new ArgumentNullException(nameof(path));
@@ -94,7 +96,7 @@ public class RedisFileStorage : IFileStorage
             return null;
         }
 
-        return _serializer.Deserialize<FileSpec>((byte[])fileSpec);
+        return _serializer.Deserialize<FileSpec>((byte[])fileSpec!);
     }
 
     public async Task<bool> ExistsAsync(string path)
@@ -225,7 +227,7 @@ public class RedisFileStorage : IFileStorage
         return true;
     }
 
-    public async Task<int> DeleteFilesAsync(string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
         int count = 0;
@@ -241,14 +243,15 @@ public class RedisFileStorage : IFileStorage
         return count;
     }
 
-    private Task<List<FileSpec>> GetFileListAsync(string searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default)
+    private Task<List<FileSpec>> GetFileListAsync(string? searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default)
     {
         if (limit is <= 0)
             return Task.FromResult(new List<FileSpec>());
 
-        searchPattern = NormalizePath(searchPattern);
-        string prefix = searchPattern;
-        Regex patternRegex = null;
+        if (searchPattern is not null)
+            searchPattern = NormalizePath(searchPattern);
+        string? prefix = searchPattern;
+        Regex? patternRegex = null;
         int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
         if (searchPattern != null && wildcardPos >= 0)
         {
@@ -266,14 +269,16 @@ public class RedisFileStorage : IFileStorage
         );
 
         return Task.FromResult(Database.HashScan(_fileSpecContainer, $"{prefix}*", flags: _options.ReadMode)
-            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value))
-            .Where(fileSpec => patternRegex == null || patternRegex.IsMatch(fileSpec.Path))
+            .Where(entry => entry.Value.HasValue)
+            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value!))
+            .Where(fileSpec => fileSpec is not null && (patternRegex is null || patternRegex.IsMatch(fileSpec.Path)))
+            .Cast<FileSpec>()
             .Take(pageSize)
             .ToList()
         );
     }
 
-    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string searchPattern = null, CancellationToken cancellationToken = default)
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
     {
         if (pageSize <= 0)
             return PagedFileListResult.Empty;
@@ -297,8 +302,10 @@ public class RedisFileStorage : IFileStorage
         );
 
         var list = Database.HashScan(_fileSpecContainer, $"{criteria.Prefix}*", flags: _options.ReadMode)
-            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value))
-            .Where(fileSpec => criteria.Pattern == null || criteria.Pattern.IsMatch(fileSpec.Path))
+            .Where(entry => entry.Value.HasValue)
+            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value!))
+            .Where(fileSpec => fileSpec is not null && (criteria.Pattern is null || criteria.Pattern.IsMatch(fileSpec.Path)))
+            .Cast<FileSpec>()
             .Skip(skip)
             .Take(pagingLimit)
             .ToList();
@@ -321,26 +328,27 @@ public class RedisFileStorage : IFileStorage
 
     private string NormalizePath(string path)
     {
-        return path?.Replace('\\', '/');
+        return path.Replace('\\', '/');
     }
 
-    private class SearchCriteria
+    private record SearchCriteria
     {
-        public string Prefix { get; set; }
-        public Regex Pattern { get; set; }
+        public required string Prefix { get; init; }
+        public Regex? Pattern { get; init; }
     }
 
-    private SearchCriteria GetRequestCriteria(string searchPattern)
+    private SearchCriteria GetRequestCriteria(string? searchPattern)
     {
         if (String.IsNullOrEmpty(searchPattern))
             return new SearchCriteria { Prefix = String.Empty };
 
         string normalizedSearchPattern = NormalizePath(searchPattern);
+
         int wildcardPos = normalizedSearchPattern.IndexOf('*');
         bool hasWildcard = wildcardPos >= 0;
 
         string prefix = normalizedSearchPattern;
-        Regex patternRegex = null;
+        Regex? patternRegex = null;
 
         if (hasWildcard)
         {
@@ -356,7 +364,7 @@ public class RedisFileStorage : IFileStorage
         };
     }
 
-    private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
+    private void ConnectionMultiplexerOnConnectionRestored(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
         _logger.LogInformation("Redis connection restored");
     }

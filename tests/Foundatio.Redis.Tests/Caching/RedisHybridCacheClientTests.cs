@@ -16,10 +16,14 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     {
     }
 
-    protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+    protected override ICacheClient? GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return null;
+
         return new RedisHybridCacheClient(o => o
-                .ConnectionMultiplexer(SharedConnection.GetMuxer(Log, Protocol))
+                .ConnectionMultiplexer(muxer)
                 .LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError),
             localConfig => localConfig
                 .CloneValues(true)
@@ -380,7 +384,7 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     [InlineData("s", 1)] // Partial prefix match
     [InlineData(null, 1)] // Null prefix (all keys in scope)
     [InlineData("", 1)] // Empty prefix (all keys in scope)
-    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove, int expectedRemovedCount)
+    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove, int expectedRemovedCount)
     {
         return base.RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(prefixToRemove, expectedRemovedCount);
     }
@@ -388,7 +392,7 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         return base.RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(prefix);
     }
@@ -725,6 +729,9 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return ValueTask.CompletedTask;
+
         return new ValueTask(muxer.FlushAllAsync());
     }
 

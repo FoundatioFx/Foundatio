@@ -8,21 +8,22 @@ namespace Foundatio.Redis.Tests;
 public static class SharedConnection
 {
     private static readonly object _lock = new();
-    private static ConnectionMultiplexer _muxerResp2;
-    private static ConnectionMultiplexer _muxerResp3;
+    private static ConnectionMultiplexer? _muxerResp2;
+    private static ConnectionMultiplexer? _muxerResp3;
 
     /// <summary>
     /// Returns a shared ConnectionMultiplexer for the given protocol. Two instances are cached (RESP2 and RESP3)
     /// so the test suite can run the same tests under both protocols without reconnecting.
+    /// Returns <c>null</c> when RedisConnectionString is not configured.
     /// </summary>
-    public static ConnectionMultiplexer GetMuxer(ILoggerFactory loggerFactory, RedisProtocol? protocol = null)
+    public static ConnectionMultiplexer? GetMuxer(ILoggerFactory loggerFactory, RedisProtocol? protocol = null)
     {
-        string connectionString = Configuration.GetConnectionString("RedisConnectionString");
+        string? connectionString = Configuration.GetConnectionString("RedisConnectionString");
         if (String.IsNullOrEmpty(connectionString))
             return null;
 
         bool useResp3 = protocol >= RedisProtocol.Resp3;
-        ref ConnectionMultiplexer muxer = ref useResp3 ? ref _muxerResp3 : ref _muxerResp2;
+        ref ConnectionMultiplexer? muxer = ref useResp3 ? ref _muxerResp3 : ref _muxerResp2;
 
         if (muxer is not null)
             return muxer;

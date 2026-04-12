@@ -7,7 +7,7 @@ namespace Foundatio.SampleJob;
 
 public class Program
 {
-    private static ILogger _logger;
+    private static ILogger _logger = null!;
 
     public static int Main()
     {
@@ -27,7 +27,7 @@ public class Program
     }
 }
 
-public class EchoMessage
+public record EchoMessage
 {
-    public string Message { get; set; }
+    public required string Message { get; set; }
 }

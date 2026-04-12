@@ -19,8 +19,12 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
 
     protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay)
     {
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return null!;
+
         return new RedisQueue<SampleQueueWorkItem>(o => o
-            .ConnectionMultiplexer(SharedConnection.GetMuxer(Log, Protocol))
+            .ConnectionMultiplexer(muxer)
             .Retries(retries)
             .RetryDelay(retryDelay)
             .LoggerFactory(Log)
@@ -55,6 +59,9 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return ValueTask.CompletedTask;
+
         return new ValueTask(muxer.FlushAllAsync());
     }
 

@@ -11,7 +11,7 @@ namespace Foundatio.SampleJob;
 
 public class SampleServiceProvider
 {
-    public static IServiceProvider Create(ILoggerFactory loggerFactory)
+    public static IServiceProvider Create(ILoggerFactory? loggerFactory)
     {
         var container = new ServiceCollection();
 

@@ -18,9 +18,13 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     {
     }
 
-    protected override ICacheClient GetCacheClient(bool shouldThrowOnSerializationError = true)
+    protected override ICacheClient? GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        return new RedisCacheClient(o => o.ConnectionMultiplexer(SharedConnection.GetMuxer(Log, Protocol)).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return null;
+
+        return new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
     }
 
     [Fact]
@@ -334,7 +338,7 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     [InlineData("s", 1)] // Partial prefix match
     [InlineData(null, 1)] // Null prefix (all keys in scope)
     [InlineData("", 1)] // Empty prefix (all keys in scope)
-    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string prefixToRemove, int expectedRemovedCount)
+    public override Task RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(string? prefixToRemove, int expectedRemovedCount)
     {
         return base.RemoveByPrefixAsync_FromScopedCache_RemovesOnlyScopedKeys(prefixToRemove, expectedRemovedCount);
     }
@@ -342,7 +346,7 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string prefix)
+    public override Task RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(string? prefix)
     {
         return base.RemoveByPrefixAsync_NullOrEmptyPrefixWithScopedCache_RemovesCorrectKeys(prefix);
     }
@@ -636,9 +640,13 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     [Fact]
     public async Task GetListAsync_WithExistingFormat_UpgradeListType()
     {
-        var db = SharedConnection.GetMuxer(Log, Protocol).GetDatabase();
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return;
+
+        var db = muxer.GetDatabase();
         var cache = GetCacheClient();
-        if (cache == null)
+        if (cache is null)
             return;
 
         using (cache)
@@ -669,7 +677,9 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
             await cache.RemoveAllAsync();
 
             await db.SetAddAsync(key, items.ToArray());
-            await cache.ListRemoveAsync(key, (string)items[10]);
+            string? itemToRemove = (string?)items[10];
+            Assert.NotNull(itemToRemove);
+            await cache.ListRemoveAsync(key, itemToRemove);
 
             listItems = await cache.GetListAsync<string>(key);
             Assert.Equal(items.Count - 1, listItems.Value.Count);
@@ -680,12 +690,16 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return ValueTask.CompletedTask;
+
         return new ValueTask(muxer.FlushAllAsync());
     }
 
     public ValueTask DisposeAsync()
     {
         _logger.LogDebug("Disposing");
+
         return ValueTask.CompletedTask;
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using Foundatio.Extensions;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -10,6 +11,13 @@ internal static class RedisValueExtensions
 {
     private static readonly RedisValue _nullValue = "@@NULL";
 
+    /// <summary>
+    /// Converts a <see cref="RedisValue"/> to the specified type <typeparamref name="T"/>.
+    /// Handles null Redis values, primitive types (bool, string, numeric), nullable
+    /// numeric types, and falls back to the <paramref name="serializer"/> for complex types.
+    /// Follows the same conversion strategy as <c>TypeExtensions.ToType&lt;T&gt;</c> in Foundatio core.
+    /// </summary>
+    [return: MaybeNull]
     public static T ToValueOfType<T>(this RedisValue redisValue, ISerializer serializer)
     {
         T value;
@@ -18,13 +26,18 @@ internal static class RedisValueExtensions
         if (type == TypeHelper.BoolType || type == TypeHelper.StringType || type.IsNumeric())
             value = (T)Convert.ChangeType(redisValue, type);
         else if (type == TypeHelper.NullableBoolType || type.IsNullableNumeric())
-            value = redisValue.IsNull ? default : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type));
+            value = redisValue.IsNull ? default! : (T)Convert.ChangeType(redisValue, Nullable.GetUnderlyingType(type)!);
         else
-            return serializer.Deserialize<T>((byte[])redisValue);
+            return serializer.Deserialize<T>((byte[])redisValue!);
 
         return value;
     }
 
+    /// <summary>
+    /// Converts a value of type <typeparamref name="T"/> to a <see cref="RedisValue"/>.
+    /// Null values are stored as a sentinel string ("@@NULL") to distinguish from missing keys.
+    /// Handles primitive types directly and falls back to the serializer for complex types.
+    /// </summary>
     public static RedisValue ToRedisValue<T>(this T value, ISerializer serializer)
     {
         var redisValue = _nullValue;

@@ -25,18 +25,28 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     protected RedisLockTests(ITestOutputHelper output, RedisProtocol? protocol) : base(output)
     {
         _protocol = protocol;
-        var muxer = SharedConnection.GetMuxer(Log, _protocol);
+        var muxer = SharedConnection.GetMuxer(Log, _protocol)
+            ?? throw new InvalidOperationException("Redis connection is not configured. Set the RedisConnectionString environment variable.");
+
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
         _messageBus = new RedisMessageBus(o => o.Subscriber(muxer.GetSubscriber()).Topic(_topic).LoggerFactory(Log));
     }
 
-    protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)
+    protected override ILockProvider? GetThrottlingLockProvider(int maxHits, TimeSpan period)
     {
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return null;
+
         return new ThrottlingLockProvider(_cache, maxHits, period, null, null, Log);
     }
 
-    protected override ILockProvider GetLockProvider()
+    protected override ILockProvider? GetLockProvider()
     {
+        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return null;
+
         return new CacheLockProvider(_cache, _messageBus, null, null, Log);
     }
 
@@ -116,6 +126,9 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        if (muxer is null)
+            return ValueTask.CompletedTask;
+
         return new ValueTask(muxer.FlushAllAsync());
     }
 

@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Reflection;
 
@@ -9,7 +10,8 @@ internal static class EmbeddedResourceLoader
     {
         var assembly = typeof(EmbeddedResourceLoader).GetTypeInfo().Assembly;
 
-        using var stream = assembly.GetManifestResourceStream(name);
+        using var stream = assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"Embedded resource '{name}' not found in assembly '{assembly.FullName}'");
         using var streamReader = new StreamReader(stream);
         return streamReader.ReadToEnd();
     }

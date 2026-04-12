@@ -67,11 +67,11 @@ public class JobQueueBenchmarks
 
 public class BenchmarkJobQueue : QueueJobBase<QueueItem>
 {
-    public BenchmarkJobQueue(Lazy<IQueue<QueueItem>> queue, ILoggerFactory loggerFactory = null) : base(queue, null, null, loggerFactory)
+    public BenchmarkJobQueue(Lazy<IQueue<QueueItem>> queue, ILoggerFactory? loggerFactory = null) : base(queue, null, null, loggerFactory)
     {
     }
 
-    public BenchmarkJobQueue(IQueue<QueueItem> queue, ILoggerFactory loggerFactory = null) : base(queue, null, null, loggerFactory)
+    public BenchmarkJobQueue(IQueue<QueueItem> queue, ILoggerFactory? loggerFactory = null) : base(queue, null, null, loggerFactory)
     {
     }
 

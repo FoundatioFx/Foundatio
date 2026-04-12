@@ -21,6 +21,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private readonly AsyncLock _lock = new();
     private readonly AsyncAutoResetEvent _autoResetEvent = new();
     private readonly ISubscriber _subscriber;
+    private readonly IConnectionMultiplexer _connectionMultiplexer;
     private readonly RedisCacheClient _cache;
     private long _enqueuedCount;
     private long _dequeuedCount;
@@ -29,28 +30,28 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private long _workerErrorCount;
     private long _workItemTimeoutCount;
     private readonly ILockProvider _maintenanceLockProvider;
-    private Task _maintenanceTask;
+    private Task? _maintenanceTask;
     private bool _isSubscribed;
     private readonly TimeSpan _payloadTimeToLive;
     private bool _scriptsLoaded;
     private readonly string _listPrefix;
     private readonly RedisChannel _topicChannel;
 
-    private LoadedLuaScript _dequeueId;
+    private LoadedLuaScript? _dequeueId;
 
     public RedisQueue(RedisQueueOptions<T> options) : base(options)
     {
-        if (options.ConnectionMultiplexer == null)
-            throw new ArgumentException("ConnectionMultiplexer is required.");
+        ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
+        _connectionMultiplexer = options.ConnectionMultiplexer;
 
-        options.ConnectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
 
-        _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = options.ConnectionMultiplexer, Serializer = _serializer, ReadMode = options.ReadMode, Database = options.Database });
+        _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = _connectionMultiplexer, Serializer = _serializer, ReadMode = options.ReadMode, Database = options.Database });
 
         _payloadTimeToLive = GetPayloadTtl();
-        _subscriber = _options.ConnectionMultiplexer.GetSubscriber();
+        _subscriber = _connectionMultiplexer.GetSubscriber();
 
-        bool isCluster = _options.ConnectionMultiplexer.IsCluster();
+        bool isCluster = _connectionMultiplexer.IsCluster();
         _listPrefix = isCluster ? "{q:" + _options.Name + "}" : $"q:{_options.Name}";
         _queueListName = $"{_listPrefix}:in";
         _workListName = $"{_listPrefix}:work";
@@ -72,7 +73,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     {
     }
 
-    public IDatabase Database => _options.ConnectionMultiplexer.GetDatabase(_options.Database);
+    public IDatabase Database => _connectionMultiplexer.GetDatabase(_options.Database);
 
     protected override Task EnsureQueueCreatedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -196,7 +197,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         return String.Concat(_listPrefix, ":in");
     }
 
-    protected override async Task<string> EnqueueImplAsync(T data, QueueEntryOptions options)
+    protected override async Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
         string id = Guid.NewGuid().ToString("N");
         _logger.LogDebug("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
@@ -219,7 +220,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         };
         bool success = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.AddAsync(GetPayloadKey(id), envelope, _payloadTimeToLive)).AnyContext();
         if (!success)
-            throw new InvalidOperationException("Attempt to set payload failed.");
+            throw new QueueException("Attempt to set payload failed.");
 
         await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
             _cache.SetAsync(GetEnqueuedTimeKey(id), now.Ticks, _payloadTimeToLive),
@@ -262,7 +263,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             {
                 _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
 
-                IQueueEntry<T> queueEntry = null;
+                IQueueEntry<T>? queueEntry = null;
                 try
                 {
                     queueEntry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
@@ -314,7 +315,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }, linkedCancellationTokenSource.Token).ContinueWith(_ => linkedCancellationTokenSource.Dispose()));
     }
 
-    protected override async Task<IQueueEntry<T>> DequeueImplAsync(CancellationToken linkedCancellationToken)
+    protected override async Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken)
     {
         _logger.LogTrace("Queue {QueueName} dequeuing item...", _options.Name);
 
@@ -351,9 +352,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         if (value.IsNullOrEmpty)
             return null;
 
+        string workId = value.ToString();
         try
         {
-            var entry = await GetQueueEntryAsync(value).AnyContext();
+            var entry = await GetQueueEntryAsync(workId).AnyContext();
             if (entry is null)
                 return null;
 
@@ -373,7 +375,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error deserializing queue entry payload: {WorkId}, abandoning for retry", value);
-            var poisonEntry = new QueueEntry<T>(value, null, default, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+            var poisonEntry = new QueueEntry<T>(workId, null, null, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
             await AbandonAsync(poisonEntry).AnyContext();
             return null;
         }
@@ -387,7 +389,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         _logger.LogTrace("Renew lock done: {QueueEntryId}", entry.Id);
     }
 
-    private async Task<QueueEntry<T>> GetQueueEntryAsync(string workId)
+    private async Task<QueueEntry<T>?> GetQueueEntryAsync(string workId)
     {
         var payload = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync<RedisPayloadEnvelope<T>>(GetPayloadKey(workId))).AnyContext();
         if (payload.IsNull)
@@ -422,7 +424,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 long now = _timeProvider.GetUtcNow().Ticks;
 
                 await LoadScriptsAsync().AnyContext();
-                var result = await Database.ScriptEvaluateAsync(_dequeueId, new
+                var result = await Database.ScriptEvaluateAsync(GetScript(_dequeueId), new
                 {
                     queueListName = (RedisKey)_queueListName,
                     workListName = (RedisKey)_workListName,
@@ -430,7 +432,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     now,
                     timeout = timeout.TotalMilliseconds
                 }).AnyContext();
-                return result.ToString();
+                return (RedisValue)result;
             }, linkedCancellationToken).AnyContext();
         }
         catch (Exception ex)
@@ -446,14 +448,14 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         if (entry.IsAbandoned || entry.IsCompleted)
         {
             //_logger.LogDebug("Queue {QueueName} item already abandoned or completed: {QueueEntryId}", _options.Name, entry.Id);
-            throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+            throw new QueueException("Queue entry has already been completed or abandoned.");
         }
 
         long result = await _resiliencePolicy.ExecuteAsync(async _ => await Database.ListRemoveAsync(_workListName, entry.Id)).AnyContext();
         if (result == 0)
         {
             _logger.LogDebug("Queue {QueueName} item not in work list: {QueueEntryId}", _options.Name, entry.Id);
-            throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+            throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
         }
 
         await _resiliencePolicy.ExecuteAsync(async _ => await DeleteIdKeysAsync(entry.Id)).AnyContext();
@@ -469,7 +471,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         if (entry.IsAbandoned || entry.IsCompleted)
         {
             _logger.LogError("Queue {QueueName}:{QueueId} unable to abandon item because already abandoned or completed: {QueueEntryId}", _options.Name, QueueId, entry.Id);
-            throw new InvalidOperationException("Queue entry has already been completed or abandoned.");
+            throw new QueueException("Queue entry has already been completed or abandoned.");
         }
 
         string attemptsCacheKey = GetAttemptsKey(entry.Id);
@@ -506,7 +508,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
             bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
-                throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+                throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
 
             await _resiliencePolicy.ExecuteAsync(async _ => await Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id))).AnyContext();
         }
@@ -523,7 +525,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
             bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
-                throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+                throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
 
             await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
                 Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
@@ -551,7 +553,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
         bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
         if (!success)
-            throw new InvalidOperationException("Queue entry not in work list, it may have been auto abandoned.");
+            throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
 
         await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(
             Database.KeyDeleteAsync(GetDequeuedTimeKey(entry.Id)),
@@ -598,7 +600,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         var tasks = new List<Task>(itemIds.Length + 1);
         foreach (var id in itemIds)
-            tasks.Add(DeleteIdKeysAsync(id));
+            tasks.Add(DeleteIdKeysAsync(id.ToString()));
 
         tasks.Add(Database.KeyDeleteAsync(name));
         await Task.WhenAll(tasks).AnyContext();
@@ -629,7 +631,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         foreach (var id in itemIds)
         {
             tasks.AddRange([
-                DeleteIdKeysAsync(id),
+                DeleteIdKeysAsync(id.ToString()),
                 Database.ListRemoveAsync(_queueListName, id),
                 Database.ListRemoveAsync(_workListName, id),
                 Database.ListRemoveAsync(_waitListName, id),
@@ -646,7 +648,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         _autoResetEvent.Set();
     }
 
-    private void ConnectionMultiplexerOnConnectionRestored(object sender, ConnectionFailedEventArgs connectionFailedEventArgs)
+    private void ConnectionMultiplexerOnConnectionRestored(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)
     {
         _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
@@ -669,7 +671,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 if (DisposedCancellationToken.IsCancellationRequested)
                     return;
 
-                var renewedTimeTicks = await _cache.GetAsync<long>(GetRenewedTimeKey(workId)).AnyContext();
+                var renewedTimeTicks = await _cache.GetAsync<long>(GetRenewedTimeKey(workId.ToString())).AnyContext();
                 if (!renewedTimeTicks.HasValue)
                 {
                     _logger.LogTrace("Skipping {WorkId}: no renewed time", workId);
@@ -683,7 +685,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                     continue;
 
                 _logger.LogInformation("{WorkId} Auto abandon item. Renewed: {RenewedTime:o} Current: {UtcNow:o} Timeout: {WorkItemTimeout:g} QueueId: {QueueId}", workId, renewedTime, utcNow, _options.WorkItemTimeout, QueueId);
-                var entry = await GetQueueEntryAsync(workId).AnyContext();
+                var entry = await GetQueueEntryAsync(workId.ToString()).AnyContext();
                 if (entry == null)
                 {
                     _logger.LogError("{WorkId} Error getting queue entry for work item timeout", workId);
@@ -711,7 +713,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 if (DisposedCancellationToken.IsCancellationRequested)
                     return;
 
-                var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId)).AnyContext();
+                var waitTimeTicks = await _cache.GetAsync<long>(GetWaitTimeKey(waitId.ToString())).AnyContext();
                 _logger.LogTrace("{WaitId}: Wait time {WaitTime}", waitId, waitTimeTicks);
 
                 if (waitTimeTicks.HasValue && waitTimeTicks.Value > utcNow.Ticks)
@@ -723,7 +725,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 var tx = Database.CreateTransaction();
                 tx.ListRemoveAsync(_waitListName, waitId);
                 tx.ListLeftPushAsync(_queueListName, waitId);
-                tx.KeyDeleteAsync(GetWaitTimeKey(waitId));
+                tx.KeyDeleteAsync(GetWaitTimeKey(waitId.ToString()));
                 bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
@@ -778,23 +780,31 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
             var dequeueId = LuaScript.Prepare(DequeueIdScript);
 
-            foreach (var endpoint in _options.ConnectionMultiplexer.GetEndPoints())
+            foreach (var endpoint in _connectionMultiplexer.GetEndPoints())
             {
-                var server = _options.ConnectionMultiplexer.GetServer(endpoint);
+                var server = _connectionMultiplexer.GetServer(endpoint);
                 if (server.IsReplica)
                     continue;
 
                 _dequeueId = await dequeueId.LoadAsync(server).AnyContext();
             }
 
+            if (_dequeueId is null)
+                throw new QueueException("Lua scripts could not be loaded: no connected primary Redis server found.");
+
             _scriptsLoaded = true;
         }
+    }
+
+    private LoadedLuaScript GetScript(LoadedLuaScript? script)
+    {
+        return script ?? throw new QueueException("Lua scripts not loaded. Call LoadScriptsAsync first.");
     }
 
     public override void Dispose()
     {
         base.Dispose();
-        _options.ConnectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+        _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
 
         if (_isSubscribed)
         {
@@ -863,9 +873,9 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private static readonly string DequeueIdScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.lua");
 }
 
-public class RedisPayloadEnvelope<T>
+public record RedisPayloadEnvelope<T>
 {
-    public string CorrelationId { get; set; }
-    public IDictionary<string, string> Properties { get; set; }
-    public T Value { get; set; }
+    public string? CorrelationId { get; init; }
+    public IDictionary<string, string>? Properties { get; init; }
+    public required T Value { get; init; }
 }
