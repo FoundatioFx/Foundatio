@@ -1,6 +1,6 @@
 ﻿namespace Foundatio.Kafka;
 
-public class MyMessage
+public record MyMessage
 {
-    public string Hey { get; set; }
+    public required string Hey { get; init; }
 }

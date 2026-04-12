@@ -16,7 +16,7 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
         EnableTopicDeletion = true;
     }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return new KafkaMessageBus(o =>
         {

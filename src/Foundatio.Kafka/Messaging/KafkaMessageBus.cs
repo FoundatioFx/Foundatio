@@ -19,7 +19,7 @@ public interface IKafkaMessageBus : IMessageBus
 
 public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMessageBus
 {
-    private Task _listeningTask;
+    private Task? _listeningTask;
     private readonly AdminClientConfig _adminClientConfig;
     private readonly ConsumerConfig _consumerConfig;
     private readonly IProducer<string, byte[]> _producer;
@@ -52,8 +52,12 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
+            var mappedType = GetMappedMessageType(messageType);
+            if (mappedType is null)
+                throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
+
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            SendDelayedMessage(GetMappedMessageType(messageType), message, options);
+            SendDelayedMessage(mappedType, message, options);
             return;
         }
 
@@ -62,10 +66,10 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             new Header(KafkaHeaders.ContentType, Encoding.UTF8.GetBytes(_options.ContentType))
         };
 
-        if (options?.CorrelationId is not null)
+        if (options.CorrelationId is not null)
             headers.Add(new Header(KafkaHeaders.CorrelationId, Encoding.UTF8.GetBytes(options.CorrelationId)));
 
-        if (options?.UniqueId is not null)
+        if (options.UniqueId is not null)
             headers.Add(new Header(KafkaHeaders.UniqueId, Encoding.UTF8.GetBytes(options.UniqueId)));
 
         foreach (var property in options.Properties)
@@ -73,7 +77,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         var publishMessage = new Message<string, byte[]>
         {
-            Key = _options.PublishKey,
+            Key = _options.PublishKey!, // Kafka keys can be null (round-robin partitioning); library lacks NRT annotations
             Value = SerializeMessageBody(messageType, message),
             Headers = headers
         };
@@ -103,15 +107,20 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         try
         {
-            string messageType = _options.ResolveMessageType?.Invoke(consumeResult);
+            string? messageType = _options.ResolveMessageType?.Invoke(consumeResult);
             if (String.IsNullOrEmpty(messageType))
             {
-                var messageTypeHeader = consumeResult.Message.Headers.SingleOrDefault(x => x.Key.Equals(KafkaHeaders.MessageType));
-                if (messageTypeHeader != null)
+                var messageTypeHeader = consumeResult.Message.Headers.FirstOrDefault(x => String.Equals(x.Key, KafkaHeaders.MessageType));
+                if (messageTypeHeader is not null)
                     messageType = Encoding.UTF8.GetString(messageTypeHeader.GetValueBytes());
             }
 
-            // What to do if message type is null?
+            if (String.IsNullOrEmpty(messageType))
+            {
+                _logger.LogWarning("Unable to resolve message type for message at {TopicPartitionOffset}, skipping", consumeResult.TopicPartitionOffset);
+                return;
+            }
+
             var message = ConvertToMessage(messageType, consumeResult.Message);
             await SendMessageToSubscribersAsync(message).AnyContext();
         }

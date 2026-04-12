@@ -10,24 +10,24 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.BootstrapServers"/>
     /// </summary>
-    public string BootstrapServers { get; set; }
+    public string? BootstrapServers { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.GroupId"/>
     /// </summary>
-    public string GroupId { get; set; }
+    public string? GroupId { get; set; }
 
     /// <summary>
     /// Resolve a message type from a custom source.
     /// </summary>
-    public Func<ConsumeResult<string, byte[]>, string> ResolveMessageType { get; set; }
+    public Func<ConsumeResult<string, byte[]>, string?>? ResolveMessageType { get; set; }
 
     public string ContentType { get; set; } = "application/json";
 
     /// <summary>
     /// <inheritdoc cref="Message{TKey,TValue}.Key"/>
     /// </summary>
-    public string PublishKey { get; set; }
+    public string? PublishKey { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.AutoCommitIntervalMs"/>
@@ -37,7 +37,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCertificateLocation"/>
     /// </summary>
-    public string SslCertificateLocation { get; set; }
+    public string? SslCertificateLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslMechanism"/>
@@ -47,17 +47,17 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslUsername"/>
     /// </summary>
-    public string SaslUsername { get; set; }
+    public string? SaslUsername { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslPassword"/>
     /// </summary>
-    public string SaslPassword { get; set; }
+    public string? SaslPassword { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCaLocation"/>
     /// </summary>
-    public string SslCaLocation { get; set; }
+    public string? SslCaLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SecurityProtocol"/>
@@ -77,12 +77,12 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="TopicSpecification.Configs"/>
     /// </summary>
-    public Dictionary<string, string> TopicConfigs { get; set; }
+    public Dictionary<string, string>? TopicConfigs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="TopicSpecification.ReplicasAssignments"/>
     /// </summary>
-    public Dictionary<int, List<int>> TopicReplicasAssignments { get; set; }
+    public Dictionary<int, List<int>>? TopicReplicasAssignments { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.Acks"/>
@@ -92,7 +92,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.ClientId"/>
     /// </summary>
-    public string ClientId { get; set; }
+    public string? ClientId { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.MessageMaxBytes"/>
@@ -142,12 +142,12 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.TopicBlacklist"/>
     /// </summary>
-    public string TopicBlacklist { get; set; }
+    public string? TopicBlacklist { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.Debug"/>
     /// </summary>
-    public string Debug { get; set; }
+    public string? Debug { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SocketTimeoutMs"/>
@@ -252,77 +252,77 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.BrokerVersionFallback"/>
     /// </summary>
-    public string BrokerVersionFallback { get; set; }
+    public string? BrokerVersionFallback { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCipherSuites"/>
     /// </summary>
-    public string SslCipherSuites { get; set; }
+    public string? SslCipherSuites { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCurvesList"/>
     /// </summary>
-    public string SslCurvesList { get; set; }
+    public string? SslCurvesList { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslSigalgsList"/>
     /// </summary>
-    public string SslSigalgsList { get; set; }
+    public string? SslSigalgsList { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeyLocation"/>
     /// </summary>
-    public string SslKeyLocation { get; set; }
+    public string? SslKeyLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeyPassword"/>
     /// </summary>
-    public string SslKeyPassword { get; set; }
+    public string? SslKeyPassword { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeyPem"/>
     /// </summary>
-    public string SslKeyPem { get; set; }
+    public string? SslKeyPem { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCertificatePem"/>
     /// </summary>
-    public string SslCertificatePem { get; set; }
+    public string? SslCertificatePem { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCaPem"/>
     /// </summary>
-    public string SslCaPem { get; set; }
+    public string? SslCaPem { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCaCertificateStores"/>
     /// </summary>
-    public string SslCaCertificateStores { get; set; }
+    public string? SslCaCertificateStores { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCrlLocation"/>
     /// </summary>
-    public string SslCrlLocation { get; set; }
+    public string? SslCrlLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeystoreLocation"/>
     /// </summary>
-    public string SslKeystoreLocation { get; set; }
+    public string? SslKeystoreLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeystorePassword"/>
     /// </summary>
-    public string SslKeystorePassword { get; set; }
+    public string? SslKeystorePassword { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslEngineLocation"/>
     /// </summary>
-    public string SslEngineLocation { get; set; }
+    public string? SslEngineLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslEngineId"/>
     /// </summary>
-    public string SslEngineId { get; set; }
+    public string? SslEngineId { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.EnableSslCertificateVerification"/>
@@ -337,22 +337,22 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslKerberosServiceName"/>
     /// </summary>
-    public string SaslKerberosServiceName { get; set; }
+    public string? SaslKerberosServiceName { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslKerberosPrincipal"/>
     /// </summary>
-    public string SaslKerberosPrincipal { get; set; }
+    public string? SaslKerberosPrincipal { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslKerberosKinitCmd"/>
     /// </summary>
-    public string SaslKerberosKinitCmd { get; set; }
+    public string? SaslKerberosKinitCmd { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslKerberosKeytab"/>
     /// </summary>
-    public string SaslKerberosKeytab { get; set; }
+    public string? SaslKerberosKeytab { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslKerberosMinTimeBeforeRelogin"/>
@@ -362,7 +362,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SaslOauthbearerConfig"/>
     /// </summary>
-    public string SaslOauthbearerConfig { get; set; }
+    public string? SaslOauthbearerConfig { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.EnableSaslOauthbearerUnsecureJwt"/>
@@ -372,12 +372,12 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ClientConfig.PluginLibraryPaths"/>
     /// </summary>
-    public string PluginLibraryPaths { get; set; }
+    public string? PluginLibraryPaths { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.ClientRack"/>
     /// </summary>
-    public string ClientRack { get; set; }
+    public string? ClientRack { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.EnableBackgroundPoll"/>
@@ -392,7 +392,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.DeliveryReportFields"/>
     /// </summary>
-    public string DeliveryReportFields { get; set; }
+    public string? DeliveryReportFields { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.RequestTimeoutMs"/>
@@ -417,7 +417,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.TransactionalId"/>
     /// </summary>
-    public string TransactionalId { get; set; }
+    public string? TransactionalId { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.TransactionTimeoutMs"/>
@@ -487,7 +487,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.ConsumeResultFields"/>
     /// </summary>
-    public string ConsumeResultFields { get; set; }
+    public string? ConsumeResultFields { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.AutoOffsetReset"/>
@@ -497,7 +497,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.GroupInstanceId"/>
     /// </summary>
-    public string GroupInstanceId { get; set; }
+    public string? GroupInstanceId { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.PartitionAssignmentStrategy"/>
@@ -517,7 +517,7 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.GroupProtocolType"/>
     /// </summary>
-    public string GroupProtocolType { get; set; }
+    public string? GroupProtocolType { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.CoordinatorQueryIntervalMs"/>
@@ -609,7 +609,7 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.ResolveMessageType"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder ResolveMessageType(Func<ConsumeResult<string, byte[]>, string> resolveMessageType)
+    public KafkaMessageBusOptionsBuilder ResolveMessageType(Func<ConsumeResult<string, byte[]>, string?> resolveMessageType)
     {
         Target.ResolveMessageType = resolveMessageType ?? throw new ArgumentNullException(nameof(resolveMessageType));
         return this;
