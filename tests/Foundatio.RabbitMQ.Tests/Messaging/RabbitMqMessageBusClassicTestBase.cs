@@ -15,7 +15,7 @@ public abstract class RabbitMqMessageBusClassicTestBase : RabbitMqMessageBusTest
     }
 
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
+    protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return new RabbitMQMessageBus(o =>
         {

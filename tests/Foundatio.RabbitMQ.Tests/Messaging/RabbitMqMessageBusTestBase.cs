@@ -15,7 +15,7 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
     private readonly string _topic = $"test_topic_{DateTime.UtcNow.Ticks}";
     protected readonly string ConnectionString = connectionString;
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
+    protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         return new RabbitMQMessageBus(o =>
         {
