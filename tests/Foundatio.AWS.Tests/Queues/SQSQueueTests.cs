@@ -19,8 +19,8 @@ public class SQSQueueTests : QueueTestBase
     }
 
     protected override IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
-        TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100,
-        bool runQueueMaintenance = true, TimeProvider timeProvider = null, ISerializer serializer = null)
+        TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100,
+        bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
         var queue = new SQSQueue<SimpleWorkItem>(o => o
             .ConnectionString("serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx")
@@ -45,7 +45,7 @@ public class SQSQueueTests : QueueTestBase
     }
 
     protected IQueue<SimpleWorkItem> GetQueue(int retries = 1, TimeSpan? workItemTimeout = null,
-        TimeSpan? retryDelay = null, int[] retryMultipliers = null, int deadLetterMaxItems = 100,
+        TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100,
         bool runQueueMaintenance = true, TimeSpan? dequeueInterval = null, TimeSpan? readQueueTimeout = null)
     {
         var queue = new SQSQueue<SimpleWorkItem>(o => o
@@ -319,7 +319,8 @@ public class SQSQueueTests : QueueTestBase
             _logger.LogInformation("Second Dequeue Attempt");
             workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
             Assert.NotNull(workItem);
-            Assert.Equal("Hello", workItem.Value.Data);
+            Assert.NotNull(workItem?.Value);
+            Assert.Equal("Hello", workItem!.Value!.Data);
 
             if (_assertStats)
             {
@@ -351,7 +352,8 @@ public class SQSQueueTests : QueueTestBase
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" }, new QueueEntryOptions { DeliveryDelay = TimeSpan.FromSeconds(3) });
             var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(3));
             Assert.NotNull(workItem);
-            Assert.Equal("Hello", workItem.Value.Data);
+            Assert.NotNull(workItem?.Value);
+            Assert.Equal("Hello", workItem!.Value!.Data);
 
             if (_assertStats)
             {

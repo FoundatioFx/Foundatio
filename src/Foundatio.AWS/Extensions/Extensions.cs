@@ -15,7 +15,7 @@ internal static class Extensions
         return (int)code < 400;
     }
 
-    internal static FileSpec ToFileInfo(this S3Object blob)
+    internal static FileSpec? ToFileInfo(this S3Object blob)
     {
         if (blob == null)
             return null;
@@ -29,7 +29,7 @@ internal static class Extensions
         };
     }
 
-    internal static IEnumerable<S3Object> MatchesPattern(this IEnumerable<S3Object> blobs, Regex patternRegex)
+    internal static IEnumerable<S3Object> MatchesPattern(this IEnumerable<S3Object> blobs, Regex? patternRegex)
     {
         return blobs.Where(blob =>
         {

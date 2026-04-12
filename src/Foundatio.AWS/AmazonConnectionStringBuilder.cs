@@ -7,13 +7,13 @@ namespace Foundatio;
 
 public abstract class AmazonConnectionStringBuilder
 {
-    public string AccessKey { get; set; }
+    public string? AccessKey { get; set; }
 
-    public string SecretKey { get; set; }
+    public string? SecretKey { get; set; }
 
-    public string Region { get; set; }
+    public string? Region { get; set; }
 
-    public string ServiceUrl { get; set; }
+    public string? ServiceUrl { get; set; }
 
     protected AmazonConnectionStringBuilder() { }
 
@@ -39,14 +39,14 @@ public abstract class AmazonConnectionStringBuilder
         }
     }
 
-    public AWSCredentials GetCredentials()
+    public AWSCredentials? GetCredentials()
     {
         return !String.IsNullOrEmpty(AccessKey)
             ? new BasicAWSCredentials(AccessKey, SecretKey)
             : null;
     }
 
-    public RegionEndpoint GetRegion()
+    public RegionEndpoint? GetRegion()
     {
         return !String.IsNullOrEmpty(Region)
             ? RegionEndpoint.GetBySystemName(Region)

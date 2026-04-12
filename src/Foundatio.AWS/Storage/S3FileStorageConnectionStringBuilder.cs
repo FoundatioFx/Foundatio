@@ -5,9 +5,9 @@ namespace Foundatio.Storage;
 
 public class S3FileStorageConnectionStringBuilder : AmazonConnectionStringBuilder
 {
-    private string _bucket;
-    private string _useChunkEncoding;
-    private string _cannedAcl;
+    private string? _bucket;
+    private string? _useChunkEncoding;
+    private string? _cannedAcl;
 
     public S3FileStorageConnectionStringBuilder()
     {
@@ -26,13 +26,13 @@ public class S3FileStorageConnectionStringBuilder : AmazonConnectionStringBuilde
     public bool? UseChunkEncoding
     {
         get => String.IsNullOrEmpty(_useChunkEncoding) ? null : (bool?)Convert.ToBoolean(_useChunkEncoding);
-        set => _useChunkEncoding = value.ToString();
+        set => _useChunkEncoding = value.HasValue ? value.Value.ToString() : null;
     }
 
-    public S3CannedACL CannedACL
+    public S3CannedACL? CannedACL
     {
         get => String.IsNullOrEmpty(_cannedAcl) ? null : S3CannedACL.FindValue(_cannedAcl);
-        set => _cannedAcl = value.Value;
+        set => _cannedAcl = value?.Value;
     }
 
     protected override bool ParseItem(string key, string value)
@@ -59,16 +59,16 @@ public class S3FileStorageConnectionStringBuilder : AmazonConnectionStringBuilde
 
     public override string ToString()
     {
-        string connectionString = base.ToString();
+        var sb = new System.Text.StringBuilder(base.ToString());
         if (!String.IsNullOrEmpty(_bucket))
-            connectionString += "Bucket=" + Bucket + ";";
+            sb.Append("Bucket=").Append(Bucket).Append(';');
         if (!String.IsNullOrEmpty(_useChunkEncoding))
-            connectionString += "UseChunkEncoding=" + UseChunkEncoding + ";";
+            sb.Append("UseChunkEncoding=").Append(UseChunkEncoding).Append(';');
         if (!String.IsNullOrEmpty(ServiceUrl))
-            connectionString += "ServiceUrl=" + ServiceUrl + ";";
-        if (!String.IsNullOrEmpty(CannedACL))
-            connectionString += "CannedACL=" + CannedACL + ";";
+            sb.Append("ServiceUrl=").Append(ServiceUrl).Append(';');
+        if (!String.IsNullOrEmpty(_cannedAcl))
+            sb.Append("CannedACL=").Append(_cannedAcl).Append(';');
 
-        return connectionString;
+        return sb.ToString();
     }
 }

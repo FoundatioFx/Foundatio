@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Amazon;
 using Amazon.Runtime;
 
@@ -6,15 +6,15 @@ namespace Foundatio.Queues;
 
 public class SQSQueueOptions<T> : SharedQueueOptions<T> where T : class
 {
-    public string ConnectionString { get; set; }
-    public AWSCredentials Credentials { get; set; }
-    public RegionEndpoint Region { get; set; }
-    public string ServiceUrl { get; set; }
+    public string? ConnectionString { get; set; }
+    public AWSCredentials? Credentials { get; set; }
+    public RegionEndpoint? Region { get; set; }
+    public string? ServiceUrl { get; set; }
     public bool CanCreateQueue { get; set; } = true;
     public bool SupportDeadLetter { get; set; } = true;
     public TimeSpan ReadQueueTimeout { get; set; } = TimeSpan.FromSeconds(20);
     public TimeSpan DequeueInterval { get; set; } = TimeSpan.FromSeconds(1);
-    public string KmsMasterKeyId { get; set; }
+    public string? KmsMasterKeyId { get; set; }
     public int KmsDataKeyReusePeriodSeconds { get; set; }
     public bool SqsManagedSseEnabled { get; set; } = false;
 

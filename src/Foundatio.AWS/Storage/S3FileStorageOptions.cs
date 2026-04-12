@@ -7,14 +7,14 @@ namespace Foundatio.Storage;
 
 public class S3FileStorageOptions : SharedOptions
 {
-    public string ConnectionString { get; set; }
-    public string Bucket { get; set; }
-    public AWSCredentials Credentials { get; set; }
-    public RegionEndpoint Region { get; set; }
+    public string? ConnectionString { get; set; }
+    public string? Bucket { get; set; }
+    public AWSCredentials? Credentials { get; set; }
+    public RegionEndpoint? Region { get; set; }
     public bool? UseChunkEncoding { get; set; }
-    public string ServiceUrl { get; set; }
-    public S3CannedACL CannedACL { get; set; }
-    public HttpClientFactory HttpClientFactory { get; set; }
+    public string? ServiceUrl { get; set; }
+    public S3CannedACL? CannedACL { get; set; }
+    public HttpClientFactory? HttpClientFactory { get; set; }
     public bool AllowInMemoryStream { get; set; }
 }
 

@@ -21,7 +21,7 @@ public static class MessageExtensions
         return message.Attributes.SentTimestamp();
     }
 
-    public static string CorrelationId(this Message message)
+    public static string? CorrelationId(this Message message)
     {
         if (message?.Attributes is null)
             return null;

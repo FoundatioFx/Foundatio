@@ -10,24 +10,24 @@ public class SQSMessageBusOptions : SharedMessageBusOptions
     /// The connection string containing AWS credentials and configuration.
     /// Format: "AccessKey=xxx;SecretKey=xxx;Region=us-east-1" or "ServiceUrl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx"
     /// </summary>
-    public string ConnectionString { get; set; }
+    public string? ConnectionString { get; set; }
 
     /// <summary>
     /// The AWS credentials to use for authentication. If not specified, uses default credential resolution.
     /// </summary>
     /// <seealso cref="Amazon.Runtime.AWSCredentials"/>
-    public AWSCredentials Credentials { get; set; }
+    public AWSCredentials? Credentials { get; set; }
 
     /// <summary>
     /// The AWS region endpoint. If not specified, uses default region resolution.
     /// </summary>
     /// <seealso cref="Amazon.RegionEndpoint"/>
-    public RegionEndpoint Region { get; set; }
+    public RegionEndpoint? Region { get; set; }
 
     /// <summary>
     /// The service URL for LocalStack or custom endpoints. When set, overrides the region endpoint.
     /// </summary>
-    public string ServiceUrl { get; set; }
+    public string? ServiceUrl { get; set; }
 
     /// <summary>
     /// Whether the SNS topic can be created if it doesn't exist. Default is true.
@@ -38,7 +38,7 @@ public class SQSMessageBusOptions : SharedMessageBusOptions
     /// The name of the SQS subscription queue. If not specified, a unique queue name will be generated.
     /// Use this for durable subscriptions that persist across restarts.
     /// </summary>
-    public string SubscriptionQueueName { get; set; }
+    public string? SubscriptionQueueName { get; set; }
 
     /// <summary>
     /// Whether the subscription queue should be automatically deleted when the message bus is disposed.
@@ -70,7 +70,7 @@ public class SQSMessageBusOptions : SharedMessageBusOptions
     /// <summary>
     /// The KMS master key ID for server-side encryption (SSE-KMS).
     /// </summary>
-    public string KmsMasterKeyId { get; set; }
+    public string? KmsMasterKeyId { get; set; }
 
     /// <summary>
     /// The KMS data key reuse period in seconds. Default is 300 seconds (5 minutes).
@@ -82,7 +82,7 @@ public class SQSMessageBusOptions : SharedMessageBusOptions
     /// If not set or returns null, falls back to the default <see cref="SharedMessageBusOptions.Topic"/>.
     /// This enables routing different message types to different SNS topics.
     /// </summary>
-    public Func<Type, string> TopicResolver { get; set; }
+    public Func<Type, string?>? TopicResolver { get; set; }
 }
 
 public class SQSMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<SQSMessageBusOptions, SQSMessageBusOptionsBuilder>
@@ -92,7 +92,7 @@ public class SQSMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<SQSMes
     /// </summary>
     public SQSMessageBusOptionsBuilder ConnectionString(string connectionString)
     {
-        ArgumentException.ThrowIfNullOrEmpty(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         Target.ConnectionString = connectionString;
         return this;
     }
@@ -261,7 +261,7 @@ public class SQSMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<SQSMes
     /// A function that takes a message type and returns the topic name.
     /// Return null to use the default topic.
     /// </param>
-    public SQSMessageBusOptionsBuilder TopicResolver(Func<Type, string> resolver)
+    public SQSMessageBusOptionsBuilder TopicResolver(Func<Type, string?> resolver)
     {
         Target.TopicResolver = resolver;
         return this;

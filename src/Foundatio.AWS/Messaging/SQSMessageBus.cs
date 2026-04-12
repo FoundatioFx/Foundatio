@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,11 +67,11 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
     private readonly Lazy<AmazonSimpleNotificationServiceClient> _snsClient;
     private readonly Lazy<AmazonSQSClient> _sqsClient;
     private readonly ConcurrentDictionary<string, string> _topicArns = new();
-    private string _queueUrl;
-    private string _queueArn;
-    private string _subscriptionArn;
-    private CancellationTokenSource _subscriberCts;
-    private Task _subscriberTask;
+    private string? _queueUrl;
+    private string? _queueArn;
+    private string? _subscriptionArn;
+    private CancellationTokenSource? _subscriberCts;
+    private Task? _subscriberTask;
     private bool _isDisposed;
 
     /// <summary>
@@ -178,7 +179,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
     {
         ArgumentException.ThrowIfNullOrEmpty(topicName, nameof(topicName));
 
-        if (_topicArns.TryGetValue(topicName, out string arn))
+        if (_topicArns.TryGetValue(topicName, out string? arn))
             return arn;
 
         arn = await CreateTopicImplAsync(topicName, cancellationToken).AnyContext();
@@ -538,8 +539,8 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
         _logger.LogTrace("Processing message {MessageId}", sqsMessage.MessageId);
 
-        string messageType = null;
-        string correlationId = null;
+        string? messageType = null;
+        string? correlationId = null;
         string uniqueId = sqsMessage.MessageId;
         var properties = new Dictionary<string, string>();
 
@@ -558,15 +559,13 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             }
         }
 
-        string body = sqsMessage.Body;
-        Type clrType = GetMappedMessageType(messageType);
-        var message = new Message([], msg =>
-        {
-            if (String.IsNullOrEmpty(body))
-                return null;
+        if (String.IsNullOrEmpty(messageType))
+            throw new MessageBusException($"Message {sqsMessage.MessageId} is missing the required MessageType attribute.");
 
-            return clrType != null ? _serializer.Deserialize(body, clrType) : body;
-        })
+        string body = sqsMessage.Body;
+        Type? clrType = GetMappedMessageType(messageType);
+        byte[] bodyData = String.IsNullOrEmpty(body) ? [] : Encoding.UTF8.GetBytes(body);
+        var message = new Message(bodyData, DeserializeMessageBody)
         {
             Type = messageType,
             ClrType = clrType,
@@ -582,20 +581,18 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
+        Type? clrMessageType = GetMappedMessageType(messageType);
         if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
             _logger.LogTrace("Scheduling delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
-            var clrType = GetMappedMessageType(messageType);
-            if (clrType is not null)
-                SendDelayedMessage(clrType, message, options);
-            else
-                _logger.LogWarning("Cannot schedule delayed message: unable to resolve CLR type for {MessageType}", messageType);
+            if (clrMessageType is null)
+                throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
 
+            SendDelayedMessage(clrMessageType, message, options);
             return;
         }
 
         // Resolve the topic name based on message type
-        Type clrMessageType = GetMappedMessageType(messageType);
         string topicName = clrMessageType is not null ? GetTopicName(clrMessageType) : _options.Topic;
         string topicArn = await GetOrCreateTopicArnAsync(topicName, cancellationToken).AnyContext();
 
@@ -870,7 +867,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
         }
 
         // Check if a statement for this topic already exists
-        string newSid = newStatement["Sid"]?.GetValue<string>();
+        string? newSid = newStatement["Sid"]?.GetValue<string>();
         bool found = false;
         for (int i = 0; i < statements.Count; i++)
         {
@@ -878,7 +875,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             if (stmt is null)
                 continue;
 
-            string sid = stmt["Sid"]?.GetValue<string>();
+            string? sid = stmt["Sid"]?.GetValue<string>();
             if (sid == newSid)
             {
                 // Replace existing statement for this topic

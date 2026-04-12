@@ -13,7 +13,7 @@ public static class AttributeExtensions
         if (attributes == null)
             return 0;
 
-        if (!attributes.TryGetValue("ApproximateReceiveCount", out string v))
+        if (!attributes.TryGetValue("ApproximateReceiveCount", out string? v))
             return 0;
 
         Int32.TryParse(v, out int value);
@@ -26,7 +26,7 @@ public static class AttributeExtensions
         if (attributes == null)
             return DateTime.MinValue;
 
-        if (!attributes.TryGetValue("SentTimestamp", out string v))
+        if (!attributes.TryGetValue("SentTimestamp", out string? v))
             return DateTime.MinValue;
 
         if (!Int64.TryParse(v, out long value))
@@ -35,7 +35,7 @@ public static class AttributeExtensions
         return DateTimeOffset.FromUnixTimeMilliseconds(value).DateTime;
     }
 
-    public static string CorrelationId(this IDictionary<string, MessageAttributeValue> attributes)
+    public static string? CorrelationId(this IDictionary<string, MessageAttributeValue> attributes)
     {
         if (attributes == null)
             return null;
@@ -46,23 +46,23 @@ public static class AttributeExtensions
         return v.StringValue;
     }
 
-    public static string RedrivePolicy(this IDictionary<string, string> attributes)
+    public static string? RedrivePolicy(this IDictionary<string, string> attributes)
     {
         if (attributes == null)
             return null;
 
-        if (!attributes.TryGetValue("RedrivePolicy", out string v))
+        if (!attributes.TryGetValue("RedrivePolicy", out string? v))
             return null;
 
         return v;
     }
 
-    public static string DeadLetterQueue(this IDictionary<string, string> attributes)
+    public static string? DeadLetterQueue(this IDictionary<string, string> attributes)
     {
         if (attributes == null)
             return null;
 
-        if (!attributes.TryGetValue("RedrivePolicy", out string v))
+        if (!attributes.TryGetValue("RedrivePolicy", out string? v))
             return null;
 
         if (String.IsNullOrEmpty(v))
@@ -72,7 +72,7 @@ public static class AttributeExtensions
         if (!redrivePolicy.RootElement.TryGetProperty("deadLetterTargetArn", out var arnElement))
             return null;
 
-        string arn = arnElement.GetString();
+        string? arn = arnElement.GetString();
         if (String.IsNullOrEmpty(arn))
             return null;
 

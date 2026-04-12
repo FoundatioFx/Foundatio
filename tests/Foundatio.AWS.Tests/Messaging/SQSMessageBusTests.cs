@@ -38,7 +38,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             ?? "serviceurl=http://localhost:4566;AccessKey=xxx;SecretKey=xxx";
     }
 
-    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions> config = null)
+    protected override IMessageBus GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
         var messageBus = new SQSMessageBus(o =>
         {
@@ -104,7 +104,7 @@ public class SQSMessageBusTests : MessageBusTestBase
         try
         {
             var countdown = new AsyncCountdownEvent(1);
-            string receivedData = null;
+            string? receivedData = null;
 
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
@@ -244,7 +244,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             .LoggerFactory(Log)))
         {
             var countdownEvent1 = new AsyncCountdownEvent(1);
-            string receivedData1 = null;
+            string? receivedData1 = null;
 
             await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
             {
@@ -269,7 +269,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             .LoggerFactory(Log)))
         {
             var countdownEvent2 = new AsyncCountdownEvent(1);
-            string receivedData2 = null;
+            string? receivedData2 = null;
 
             await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
             {
@@ -297,7 +297,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             .LoggerFactory(Log));
 
         var countdownEvent = new AsyncCountdownEvent(1);
-        string receivedData = null;
+        string? receivedData = null;
 
         await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
         {
@@ -327,7 +327,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             .LoggerFactory(Log));
 
         var countdown = new AsyncCountdownEvent(1);
-        string receivedData = null;
+        string? receivedData = null;
 
         await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
         {
@@ -381,8 +381,8 @@ public class SQSMessageBusTests : MessageBusTestBase
 
         var countdownA = new AsyncCountdownEvent(1);
         var countdownB = new AsyncCountdownEvent(1);
-        string receivedA = null;
-        string receivedB = null;
+        string? receivedA = null;
+        string? receivedB = null;
 
         await subscriberA.SubscribeAsync<TopicAMessage>(msg =>
         {
@@ -424,7 +424,7 @@ public class SQSMessageBusTests : MessageBusTestBase
             .LoggerFactory(Log));
 
         var countdown = new AsyncCountdownEvent(1);
-        string receivedData = null;
+        string? receivedData = null;
 
         await messageBus.SubscribeAsync<UnroutedMessage>(msg =>
         {

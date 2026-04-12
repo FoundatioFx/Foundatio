@@ -36,7 +36,7 @@ public static class SQSMessageBusServiceCollectionExtensions
     public static IServiceCollection AddSQSMessageBus(
         this IServiceCollection services,
         string connectionString,
-        Action<SQSMessageBusOptionsBuilder> configure = null)
+        Action<SQSMessageBusOptionsBuilder>? configure = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(connectionString);
 
