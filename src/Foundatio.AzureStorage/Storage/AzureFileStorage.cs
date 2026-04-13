@@ -58,10 +58,6 @@ public class AzureFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, I
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     public BlobContainerClient Container => _container;
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behavior of stream")]
-    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
-        => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
-
     public async Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
