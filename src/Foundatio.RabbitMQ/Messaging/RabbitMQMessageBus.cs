@@ -18,6 +18,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 {
     private const string XDeliveryCountHeader = "x-delivery-count";
     private const string XOriginalMessageIdHeader = "x-original-message-id";
+    private static readonly Version _delayedExchangePluginIncompatibleVersion = new(4, 3);
 
     private readonly AsyncLock _lock = new();
     private readonly ConnectionFactory _factory;
@@ -28,6 +29,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     private IChannel? _subscriberChannel;
     private AsyncEventingBasicConsumer? _consumer;
     private bool? _delayedExchangePluginEnabled;
+    private Version? _serverVersion;
     private readonly bool _isQuorumQueue;
     private bool _isDisposed;
     private volatile bool _isPublisherBlocked;
@@ -103,18 +105,25 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 return;
 
             _subscriberConnection = await CreateConnectionAsync().AnyContext();
+            DetectServerVersion(_subscriberConnection);
             RegisterSubscriberConnectionEventHandlers();
 
             _subscriberChannel = await _subscriberConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
 
             // If InitPublisher is called first, then we will never come in this if-clause.
-            if (!await CreateDelayedExchangeAsync(_subscriberChannel).AnyContext())
+            var delayedExchangeResult = await CreateDelayedExchangeAsync(_subscriberChannel).AnyContext();
+            if (delayedExchangeResult is null)
+            {
+                await CreateRegularExchangeAsync(_subscriberChannel).AnyContext();
+            }
+            else if (delayedExchangeResult is false)
             {
                 await _subscriberChannel.DisposeAsync().AnyContext();
                 UnregisterSubscriberConnectionEventHandlers();
                 await _subscriberConnection.DisposeAsync().AnyContext();
 
                 _subscriberConnection = await CreateConnectionAsync().AnyContext();
+                DetectServerVersion(_subscriberConnection);
                 RegisterSubscriberConnectionEventHandlers();
 
                 _subscriberChannel = await _subscriberConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
@@ -435,6 +444,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
             // the exchange with the publisher queue. It requires the name of our exchange, exchange type, durability and auto-delete.
             // For now, we are using same autoDelete for both exchange and queue (it will survive a server restart)
             _publisherConnection = await CreateConnectionAsync().AnyContext();
+            DetectServerVersion(_publisherConnection);
             RegisterPublisherConnectionEventHandlers();
 
             // Reset blocked state after handlers are registered - new connections start unblocked
@@ -453,11 +463,16 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
             }
 
-            // We first attempt to create "x-delayed-type". For this plugin should be installed.
-            // However, we plug in is not installed this will throw an exception. In that case
-            // we attempt to create regular exchange. If regular exchange also throws and exception
+            // We first attempt to create "x-delayed-type". For this the rabbitmq_delayed_message_exchange plugin should be installed.
+            // However, if the plugin is not installed this will throw an exception. In that case
+            // we attempt to create a regular exchange. If the regular exchange also throws an exception
             // then troubleshoot the problem.
-            if (!await CreateDelayedExchangeAsync(_publisherChannel).AnyContext())
+            var delayedExchangeResult = await CreateDelayedExchangeAsync(_publisherChannel).AnyContext();
+            if (delayedExchangeResult is null)
+            {
+                await CreateRegularExchangeAsync(_publisherChannel).AnyContext();
+            }
+            else if (delayedExchangeResult is false)
             {
                 // if the initial exchange creation was not successful, then we must close the previous connection
                 // and establish the new client connection and model; otherwise you will keep receiving failure in creation
@@ -467,6 +482,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 await _publisherConnection.DisposeAsync().AnyContext();
 
                 _publisherConnection = await CreateConnectionAsync().AnyContext();
+                DetectServerVersion(_publisherConnection);
                 RegisterPublisherConnectionEventHandlers();
 
                 // Reset blocked state after handlers are registered
@@ -618,33 +634,84 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         return _factory.CreateConnectionAsync(_endpoints);
     }
 
-    /// <summary>
-    /// Attempts to create the delayed exchange.
-    /// </summary>
-    /// <param name="channel"></param>
-    /// <returns>true if the delayed exchange was successfully declared. Which means plugin was installed.</returns>
-    private async Task<bool> CreateDelayedExchangeAsync(IChannel channel)
+    private void DetectServerVersion(IConnection connection)
     {
-        bool success = true;
-        if (_delayedExchangePluginEnabled.HasValue)
-            return _delayedExchangePluginEnabled.Value;
+        if (_serverVersion is not null)
+            return;
 
+        var version = ParseServerVersion(connection.ServerProperties);
+        if (version is null)
+            return;
+
+        _serverVersion = version;
+        _logger.LogDebug("Connected to RabbitMQ server version {ServerVersion}", version);
+    }
+
+    /// <summary>
+    /// Parses the RabbitMQ broker version from AMQP server properties (the <c>version</c> field is UTF-8 bytes).
+    /// </summary>
+    public static Version? ParseServerVersion(IDictionary<string, object?>? serverProperties)
+    {
+        if (serverProperties?.TryGetValue("version", out var versionObj) is not true
+            || versionObj is not byte[] bytes)
+            return null;
+
+        return Version.TryParse(Encoding.UTF8.GetString(bytes), out var version) ? version : null;
+    }
+
+    /// <summary>
+    /// Attempts to create the delayed exchange. On RabbitMQ 4.3+ the probe is skipped because the
+    /// rabbitmq_delayed_message_exchange plugin depends on Mnesia which was removed. When the server
+    /// version could not be determined, the probe is still attempted so the plugin is used if available.
+    /// </summary>
+    /// <returns>
+    /// <c>true</c> if the delayed exchange was successfully declared (plugin is installed);
+    /// <c>null</c> if the probe was skipped or the result was already cached as disabled (the channel is still healthy);
+    /// <c>false</c> if the probe threw and the channel is likely closed.
+    /// </returns>
+    private async Task<bool?> CreateDelayedExchangeAsync(IChannel channel)
+    {
+        if (_delayedExchangePluginEnabled.HasValue)
+            return _delayedExchangePluginEnabled.Value ? true : null;
+
+        if (_serverVersion is not null && _serverVersion >= _delayedExchangePluginIncompatibleVersion)
+        {
+            _logger.LogInformation(
+                "Skipping delayed exchange plugin probe: RabbitMQ {ServerVersion} removed Mnesia, plugin is incompatible",
+                _serverVersion);
+            _delayedExchangePluginEnabled = false;
+            return null;
+        }
+
+        bool success = true;
         try
         {
-            // This exchange is a delayed exchange (fanout). You need rabbitmq_delayed_message_exchange plugin to RabbitMQ
+            // This exchange is a delayed exchange (fanout). You need the rabbitmq_delayed_message_exchange plugin on RabbitMQ.
             // Disclaimer: https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/
             // Please read the *Performance Impact* of the delayed exchange type.
+            // On RabbitMQ 4.3+ this probe is skipped (see method summary); the plugin is incompatible.
             var args = new Dictionary<string, object?> { { "x-delayed-type", ExchangeType.Fanout } };
             await channel.ExchangeDeclareAsync(_options.Topic, "x-delayed-message", _options.IsDurable, false, args).AnyContext();
         }
         catch (OperationInterruptedException ex)
         {
-            _logger.LogInformation(ex, "Unable to create x-delayed-type exchange: {Message}", ex.Message);
+            _logger.LogInformation(
+                ex,
+                "Unable to declare delayed exchange. ReplyCode: {ReplyCode}, ReplyText: {ReplyText}, Message: {Message}",
+                ex.ShutdownReason?.ReplyCode,
+                ex.ShutdownReason?.ReplyText,
+                ex.Message);
             success = false;
         }
 
+        if (success)
+        {
+            _logger.LogWarning(
+                "The rabbitmq_delayed_message_exchange plugin is deprecated and incompatible with RabbitMQ 4.3+. See https://github.com/rabbitmq/rabbitmq-delayed-message-exchange for details. Plan migration before upgrading to RabbitMQ 4.3");
+        }
+
         _delayedExchangePluginEnabled = success;
-        return _delayedExchangePluginEnabled.Value;
+        return success;
     }
 
     private Task CreateRegularExchangeAsync(IChannel channel)
