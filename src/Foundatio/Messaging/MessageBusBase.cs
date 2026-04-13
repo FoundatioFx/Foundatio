@@ -224,7 +224,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Error removing topic subscription for {MessageBusId}", MessageBusId);
+                        _logger.LogWarning(ex, "Error removing topic subscription for {MessageBusId}: {Message}", MessageBusId, ex.Message);
                     }
                 });
             });
