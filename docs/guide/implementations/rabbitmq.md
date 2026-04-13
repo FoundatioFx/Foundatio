@@ -45,6 +45,18 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 
 For additional options, see [RabbitMQMessageBusOptions source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs).
 
+## Delayed message delivery
+
+You can schedule delivery using `DeliveryDelay` on publish options (see the [messaging guide](/guide/messaging)).
+
+**Behavior depends on the broker and the deprecated plugin:**
+
+1. **RabbitMQ before 4.3 with the plugin installed** — If [`rabbitmq_delayed_message_exchange`](https://github.com/rabbitmq/rabbitmq-delayed-message-exchange/) is present, Foundatio uses it and logs a deprecation warning at startup. The plugin is archived and will not work on RabbitMQ 4.3 and later.
+2. **RabbitMQ before 4.3 without the plugin** — Delayed sends fall back to the in-memory scheduler in `MessageBusBase`. **Not durable** across process restarts.
+3. **RabbitMQ 4.3 and later** — The delayed-exchange probe is skipped (the plugin is incompatible). The same in-memory fallback applies automatically.
+
+For durable delayed delivery on newer brokers, plan a migration (for example TTL + dead-letter exchanges or an external scheduler). See the [Foundatio.RabbitMQ README](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/README.md) for the full note.
+
 ## Next Steps
 
 - [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
