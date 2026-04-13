@@ -9,7 +9,7 @@
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.26" />
     <PackageReference Include="AWSSDK.SQS" Version="4.0.2.24" />
 
-    <PackageReference Include="Foundatio" Version="13.0.0-beta3.43" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
+    <PackageReference Include="Foundatio" Version="13.0.0-beta3.45" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
   </ItemGroup>
 </Project>
