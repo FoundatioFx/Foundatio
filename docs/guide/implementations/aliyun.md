@@ -23,7 +23,7 @@ var storage = new AliyunFileStorage(o =>
     o.ConnectionString = connectionString);
 
 await storage.SaveFileAsync("documents/report.pdf", pdfStream);
-var stream = await storage.GetFileStreamAsync("documents/report.pdf");
+var stream = await storage.GetFileStreamAsync("documents/report.pdf", StreamMode.Read);
 ```
 
 ## Configuration

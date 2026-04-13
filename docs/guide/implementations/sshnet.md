@@ -23,7 +23,7 @@ var storage = new SshNetFileStorage(o =>
     o.ConnectionString = "host=sftp.example.com;username=user;password=pass;path=/uploads");
 
 await storage.SaveFileAsync("documents/report.pdf", pdfStream);
-var stream = await storage.GetFileStreamAsync("documents/report.pdf");
+var stream = await storage.GetFileStreamAsync("documents/report.pdf", StreamMode.Read);
 ```
 
 ## Configuration

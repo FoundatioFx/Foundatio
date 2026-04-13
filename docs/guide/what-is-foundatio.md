@@ -116,7 +116,7 @@ Abstracted file operations:
 ```csharp
 IFileStorage storage = new FolderFileStorage("/data");
 await storage.SaveFileAsync("reports/2024/report.pdf", fileStream);
-var file = await storage.GetFileStreamAsync("reports/2024/report.pdf");
+var file = await storage.GetFileStreamAsync("reports/2024/report.pdf", StreamMode.Read);
 ```
 
 [Learn more about Storage →](./storage)

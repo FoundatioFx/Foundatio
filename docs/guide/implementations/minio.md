@@ -23,7 +23,7 @@ var storage = new MinioFileStorage(o =>
     o.ConnectionString = "endpoint=play.min.io;accessKey=minioadmin;secretKey=minioadmin;bucket=my-bucket");
 
 await storage.SaveFileAsync("documents/report.pdf", pdfStream);
-var stream = await storage.GetFileStreamAsync("documents/report.pdf");
+var stream = await storage.GetFileStreamAsync("documents/report.pdf", StreamMode.Read);
 ```
 
 ## Configuration

@@ -53,10 +53,6 @@ public class ScopedFileStorage : IFileStorage, IHaveLogger, IHaveLoggerFactory, 
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => UnscopedStorage.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
     TimeProvider IHaveTimeProvider.TimeProvider => UnscopedStorage.GetTimeProvider();
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(StreamMode)} instead to define read or write behaviour of stream")]
-    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
-        => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
-
     public Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
