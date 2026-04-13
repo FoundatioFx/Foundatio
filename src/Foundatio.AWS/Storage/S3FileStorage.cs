@@ -71,10 +71,6 @@ public class S3FileStorage : IFileStorage
     public string Bucket => _bucket;
     public S3CannedACL? CannedACL => _cannedAcl;
 
-    [Obsolete($"Use {nameof(GetFileStreamAsync)} with {nameof(FileAccess)} instead to define read or write behaviour of stream")]
-    public Task<Stream?> GetFileStreamAsync(string path, CancellationToken cancellationToken = default)
-        => GetFileStreamAsync(path, StreamMode.Read, cancellationToken);
-
     public async Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
     {
         if (String.IsNullOrEmpty(path))
