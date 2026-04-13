@@ -684,9 +684,31 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             return;
 
         _isDisposed = true;
+        BeginDispose();
+        await CleanupAsync().AnyContext();
+    }
 
-        await RemoveTopicSubscriptionAsync().AnyContext();
+    /// <inheritdoc />
+    public override void Dispose()
+    {
+        if (_isDisposed)
+            return;
 
+        _isDisposed = true;
+        BeginDispose();
+        Task.Run(() => CleanupAsync()).GetAwaiter().GetResult();
+    }
+
+    private void BeginDispose()
+    {
+        try { _subscriberCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
+
+        base.Dispose();
+    }
+
+    private async Task CleanupAsync()
+    {
         if (_subscriberTask is not null)
         {
             try
@@ -698,23 +720,21 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             {
                 _logger.LogWarning("Subscriber task did not complete within timeout during dispose");
             }
+            catch (AggregateException ex)
+            {
+                _logger.LogWarning(ex, "Error waiting for subscriber task to complete during dispose");
+            }
         }
 
         _subscriberCts?.Dispose();
+
+        await RemoveTopicSubscriptionAsync().AnyContext();
 
         if (_snsClient.IsValueCreated)
             _snsClient.Value.Dispose();
 
         if (_sqsClient.IsValueCreated)
             _sqsClient.Value.Dispose();
-
-        base.Dispose();
-    }
-
-    /// <inheritdoc />
-    public override void Dispose()
-    {
-        DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 
     /// <summary>
