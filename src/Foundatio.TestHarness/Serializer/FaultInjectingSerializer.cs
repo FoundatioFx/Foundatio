@@ -4,7 +4,7 @@ using Foundatio.Serializer;
 
 namespace Foundatio.Tests.Serializer;
 
-public class FaultInjectingSerializer : ISerializer
+public class FaultInjectingSerializer : ITextSerializer
 {
     private readonly ISerializer _inner;
 
