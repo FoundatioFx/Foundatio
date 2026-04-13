@@ -212,13 +212,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
                     return;
 
                 _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
-                // Fire-and-forget: CancellationToken.Register only accepts synchronous callbacks,
-                // so we must avoid blocking on the async method to prevent deadlocks during disposal.
+                // CancellationToken.Register only accepts synchronous callbacks, so we fire-and-forget
+                // to avoid blocking on the async method which causes deadlocks during disposal.
+                // Tracked at https://github.com/dotnet/runtime/issues/31315
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         await RemoveTopicSubscriptionAsync().AnyContext();
+                        _logger.LogDebug("Topic subscription removed for {MessageBusId}", MessageBusId);
                     }
                     catch (Exception ex)
                     {
