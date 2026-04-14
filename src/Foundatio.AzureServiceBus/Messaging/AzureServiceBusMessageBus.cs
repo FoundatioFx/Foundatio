@@ -332,18 +332,17 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
     public override void Dispose()
     {
         base.Dispose();
-        CloseTopicSenderAsync().GetAwaiter().GetResult();
-        CloseSubscriptionProcessorAsync().GetAwaiter().GetResult();
-
-        if (_client.IsValueCreated)
-        {
-            _client.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        }
+        Task.Run(() => CleanupAsync()).GetAwaiter().GetResult();
     }
 
     public async ValueTask DisposeAsync()
     {
         base.Dispose();
+        await CleanupAsync().AnyContext();
+    }
+
+    private async Task CleanupAsync()
+    {
         await CloseTopicSenderAsync().AnyContext();
         await CloseSubscriptionProcessorAsync().AnyContext();
 
