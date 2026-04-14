@@ -1027,20 +1027,20 @@ If you are extending `MessageBusBase<TOptions>` with a custom provider, override
 ```csharp
 public class MyMessageBus : MessageBusBase<MyOptions>
 {
-    protected override async Task ShutdownAsync()
-    {
-        // Phase 1: Stop accepting new messages, drain in-flight work
-        await _processor.StopAsync();
-    }
+    // Phase 1: Stop accepting new messages, drain in-flight work.
+    // When the body is a single call, return the Task directly (no extra async state machine).
+    protected override Task ShutdownAsync() => _processor.StopAsync();
 
     protected override async Task CleanupAsync()
     {
-        // Phase 2: Close connections, dispose clients
-        await _connection.CloseAsync();
+        // Phase 2: Close connections, dispose clients — ConfigureAwait(false) in library overrides
+        await _connection.CloseAsync().ConfigureAwait(false);
         _client.Dispose();
     }
 }
 ```
+
+If `ShutdownAsync` needs multiple steps, use `async`/`await` and apply `.ConfigureAwait(false)` to each await (within Foundatio provider projects, the same pattern uses the internal `AnyContext()` helper).
 
 ## Next Steps
 

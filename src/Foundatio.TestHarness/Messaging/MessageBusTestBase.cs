@@ -271,61 +271,53 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         if (messageBus == null)
             return;
 
-        var messageBuses = new List<IMessageBus>(10);
-        try
+        await using var extraBuses = new MessageBusCollectionDisposable(CleanupMessageBusAsync);
+        var countdown = new AsyncCountdownEvent(iterations * 10);
+        await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
         {
-            var countdown = new AsyncCountdownEvent(iterations * 10);
-            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
+            var bus = GetMessageBus();
+            Assert.NotNull(bus);
+            await bus.SubscribeAsync<SimpleMessageA>(msg =>
             {
-                var bus = GetMessageBus();
-                Assert.NotNull(bus);
-                await bus.SubscribeAsync<SimpleMessageA>(msg =>
-                {
-                    Assert.Equal("Hello", msg.Data);
-                    countdown.Signal();
-                }, cancellationToken: ct);
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, cancellationToken: ct);
 
-                messageBuses.Add(bus);
-            });
+            extraBuses.Add(bus);
+        });
 
-            var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
-            {
-                await Task.Delay(RandomData.GetInt(0, 10), ct);
-                var randomBus = messageBuses.Random();
-                Assert.NotNull(randomBus);
-                await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
-            });
-
-            var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
-            {
-                await (i switch
-                {
-                    1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    4 => messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    5 => messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    6 => messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    7 => messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    8 => messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    9 => messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    10 => messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    iterations + 1 => messageBus.PublishAsync(new { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                    _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken)
-                });
-            });
-
-            await Task.WhenAll(subscribe, publish);
-            await countdown.WaitAsync(TimeSpan.FromSeconds(4));
-            Assert.Equal(0, countdown.CurrentCount);
-        }
-        finally
+        var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
         {
-            foreach (var mb in messageBuses)
-                await mb.DisposeAsync();
-        }
+            await Task.Delay(RandomData.GetInt(0, 10), ct);
+            var randomBus = extraBuses.GetRandomBus();
+            Assert.NotNull(randomBus);
+            await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+        });
+
+        var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
+        {
+            await (i switch
+            {
+                1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                4 => messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                5 => messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                6 => messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                7 => messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                8 => messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                9 => messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                10 => messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                iterations + 1 => messageBus.PublishAsync(new { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken)
+            });
+        });
+
+        await Task.WhenAll(subscribe, publish);
+        await countdown.WaitAsync(TimeSpan.FromSeconds(4));
+        Assert.Equal(0, countdown.CurrentCount);
     }
 
     public virtual async Task CanSendMessageToMultipleSubscribersAsync()
@@ -721,9 +713,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
     {
-        // Arrange
         var messageReceived = new AsyncAutoResetEvent(false);
-        var messageBus = GetMessageBus();
+        IMessageBus? messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
@@ -735,7 +726,6 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 messageReceived.Set();
             }, TestCancellationToken);
 
-            // Act - publish with short delay, then dispose immediately before delay expires
             await messageBus.PublishAsync(new SimpleMessageA
             {
                 Data = "ShouldBeDiscarded"
@@ -743,9 +733,8 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
             _logger.LogTrace("Published delayed message, disposing immediately...");
             messageBus.Dispose();
-            messageBus = null; // Mark as disposed to skip cleanup
+            messageBus = null;
 
-            // Assert - wait slightly longer than the delay; message should NOT be delivered
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
             cts.CancelAfter(TimeSpan.FromMilliseconds(250));
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
@@ -768,17 +757,6 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
     }
 
-    public virtual async Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
-    {
-        // Arrange
-        var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        // Act & Assert
-        await messageBus.DisposeAsync();
-    }
-
     public virtual async Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
     {
         // Arrange
@@ -792,6 +770,68 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         await messageBus.DisposeAsync();
 
         // Assert - no exception thrown
+    }
+
+    public virtual async Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        var subscriberStarted = new AsyncAutoResetEvent(false);
+
+        await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+        {
+            subscriberStarted.Set();
+            await Task.Delay(500, TestCancellationToken);
+        });
+
+        // Act - publish a message, then dispose while the subscriber is still processing
+        _ = messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+        await subscriberStarted.WaitAsync(TestCancellationToken);
+
+        // Assert - dispose completes without deadlock (the test itself will timeout if it deadlocks)
+        await messageBus.DisposeAsync();
+    }
+
+    public virtual async Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        // Act & Assert
+        await messageBus.DisposeAsync();
+    }
+
+    public virtual async Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        await messageBus.DisposeAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
+    }
+
+    public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        await messageBus.DisposeAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
     }
 
     public virtual async Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
@@ -827,55 +867,35 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, countdown2.CurrentCount);
     }
+}
 
-    public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+/// <summary>
+/// Owns additional <see cref="IMessageBus"/> instances created during a test (e.g. concurrent scenarios).
+/// Disposal order is the reverse of <see cref="IAsyncDisposable"/> / <c>await using</c> — this type is
+/// typically declared after the primary bus so extra instances are disposed first.
+/// </summary>
+public sealed class MessageBusCollectionDisposable : IAsyncDisposable
+{
+    private readonly List<IMessageBus> _buses = new();
+    private readonly Func<IMessageBus, Task>? _cleanupAsync;
+
+    public MessageBusCollectionDisposable(Func<IMessageBus, Task>? cleanupAsync = null)
     {
-        // Arrange
-        var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        await messageBus.DisposeAsync();
-
-        // Act & Assert
-        await Assert.ThrowsAsync<MessageBusException>(async () =>
-            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
+        _cleanupAsync = cleanupAsync;
     }
 
-    public virtual async Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    public void Add(IMessageBus bus) => _buses.Add(bus);
+
+    public IMessageBus GetRandomBus() => _buses[RandomData.GetInt(0, _buses.Count - 1)];
+
+    public async ValueTask DisposeAsync()
     {
-        // Arrange
-        var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        await messageBus.DisposeAsync();
-
-        // Act & Assert
-        await Assert.ThrowsAsync<MessageBusException>(async () =>
-            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
-    }
-
-    public virtual async Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
-    {
-        // Arrange
-        var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        var subscriberStarted = new AsyncAutoResetEvent(false);
-
-        await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+        foreach (var mb in _buses)
         {
-            subscriberStarted.Set();
-            await Task.Delay(500, TestCancellationToken);
-        });
-
-        // Act - publish a message, then dispose while the subscriber is still processing
-        _ = messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
-        await subscriberStarted.WaitAsync(TestCancellationToken);
-
-        // Assert - dispose completes without deadlock (the test itself will timeout if it deadlocks)
-        await messageBus.DisposeAsync();
+            if (_cleanupAsync is not null)
+                await _cleanupAsync(mb);
+            else
+                await mb.DisposeAsync();
+        }
     }
 }
