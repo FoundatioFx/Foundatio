@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
-public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable where TOptions : SharedMessageBusOptions
+public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable, IAsyncDisposable where TOptions : SharedMessageBusOptions
 {
     protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     protected readonly TOptions _options;
@@ -172,7 +172,20 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         return resolvedType;
     }
 
-    protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
+    /// <summary>
+    /// Called during the first phase of disposal, BEFORE DisposedCancellationToken is cancelled
+    /// and BEFORE subscribers are cleared. Override to gracefully drain in-flight work
+    /// (e.g., StopProcessingAsync for Azure SB). Subscribers and token are still active here.
+    /// </summary>
+    protected virtual Task ShutdownAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Called during the second phase of disposal, AFTER DisposedCancellationToken is cancelled
+    /// and AFTER subscribers are cleared. Override to tear down transport infrastructure
+    /// (close connections, await background tasks, dispose clients).
+    /// </summary>
+    protected virtual Task CleanupAsync() => Task.CompletedTask;
+
     /// <summary>
     /// Called after subscribing to ensure the topic subscription infrastructure exists. The
     /// <paramref name="cancellationToken"/> is always <see cref="MaintenanceBase.DisposedCancellationToken"/>;
@@ -208,25 +221,6 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
             cancellationToken.Register(() =>
             {
                 _subscribers.TryRemove(subscriber.Id, out _);
-                if (_subscribers.Count > 0)
-                    return;
-
-                _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
-                // CancellationToken.Register only accepts synchronous callbacks, so we fire-and-forget
-                // to avoid blocking on the async method which causes deadlocks during disposal.
-                // Tracked at https://github.com/dotnet/runtime/issues/31315
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await RemoveTopicSubscriptionAsync().AnyContext();
-                        _logger.LogDebug("Topic subscription removed for {MessageBusId}", MessageBusId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error removing topic subscription for {MessageBusId}: {Message}", MessageBusId, ex.Message);
-                    }
-                });
             });
         }
 
@@ -308,6 +302,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected async Task SendMessageToSubscribersAsync(IMessage message)
     {
+        if (_isDisposed)
+            throw new OperationCanceledException("Message bus is disposing.");
+
         var subscribers = GetMessageSubscribers(message);
 
         _logger.LogTrace("Found {SubscriberCount} subscribers for message type: ClrType={MessageClrType} Type={MessageType}", subscribers.Count, message.ClrType, message.Type);
@@ -487,6 +484,32 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public string MessageBusId { get; init; }
 
+    public virtual async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+            return;
+
+        _isDisposed = true;
+        _logger.LogTrace("MessageBus {MessageBusId} async dispose", MessageBusId);
+
+        try { await ShutdownAsync().AnyContext(); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
+        _subscribers?.Clear();
+        _disposedCancellationTokenSource.Cancel();
+
+        try { await CleanupAsync().AnyContext(); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
+        _disposedCancellationTokenSource.Dispose();
+    }
+
     public virtual void Dispose()
     {
         if (_isDisposed)
@@ -496,10 +519,23 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }
 
         _isDisposed = true;
-
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
+
+        try { ShutdownAsync().GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
         _subscribers?.Clear();
         _disposedCancellationTokenSource.Cancel();
+
+        try { CleanupAsync().GetAwaiter().GetResult(); }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
         _disposedCancellationTokenSource.Dispose();
     }
 

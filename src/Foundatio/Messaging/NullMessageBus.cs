@@ -19,4 +19,6 @@ public class NullMessageBus : IMessageBus
     }
 
     public void Dispose() { }
+
+    public ValueTask DisposeAsync() => default;
 }

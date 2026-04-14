@@ -6,7 +6,7 @@ namespace Foundatio.Messaging;
 /// <summary>
 /// Represents a message bus that supports both publishing and subscribing to messages.
 /// </summary>
-public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable
+public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable, IAsyncDisposable
 {
 }
 

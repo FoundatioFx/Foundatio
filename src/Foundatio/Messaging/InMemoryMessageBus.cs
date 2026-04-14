@@ -92,4 +92,10 @@ public class InMemoryMessageBus : MessageBusBase<InMemoryMessageBusOptions>
         _messageCounts.Clear();
         base.Dispose();
     }
+
+    public override ValueTask DisposeAsync()
+    {
+        _messageCounts.Clear();
+        return base.DisposeAsync();
+    }
 }

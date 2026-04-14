@@ -939,4 +939,121 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        // Act & Assert
+        await messageBus.DisposeAsync();
+    }
+
+    public virtual async Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        // Act
+        await messageBus.DisposeAsync();
+        await messageBus.DisposeAsync();
+        await messageBus.DisposeAsync();
+
+        // Assert - no exception thrown
+    }
+
+    public virtual async Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, cts.Token);
+
+            // Act - cancel the subscription
+            await cts.CancelAsync();
+            await Task.Delay(100, TestCancellationToken);
+
+            // Subscribe again with a fresh token
+            var countdown2 = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown2.Signal();
+            }, TestCancellationToken);
+
+            // Assert - new subscriber receives messages (infrastructure was not torn down)
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+            await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown2.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        await messageBus.DisposeAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
+    }
+
+    public virtual async Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        await messageBus.DisposeAsync();
+
+        // Act & Assert
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
+    }
+
+    public virtual async Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        var subscriberStarted = new AsyncAutoResetEvent(false);
+
+        await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+        {
+            subscriberStarted.Set();
+            await Task.Delay(500, TestCancellationToken);
+        });
+
+        // Act - publish a message, then dispose while the subscriber is still processing
+        _ = messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+        await subscriberStarted.WaitAsync(TestCancellationToken);
+
+        // Assert - dispose completes without deadlock (the test itself will timeout if it deadlocks)
+        await messageBus.DisposeAsync();
+    }
 }
