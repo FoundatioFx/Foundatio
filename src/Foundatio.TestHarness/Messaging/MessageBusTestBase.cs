@@ -869,11 +869,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
     }
 }
 
-/// <summary>
-/// Owns additional <see cref="IMessageBus"/> instances created during a test (e.g. concurrent scenarios).
-/// Disposal order is the reverse of <see cref="IAsyncDisposable"/> / <c>await using</c> — this type is
-/// typically declared after the primary bus so extra instances are disposed first.
-/// </summary>
+/// <summary>Disposes a set of message buses created during a test; optional cleanup matches <see cref="MessageBusTestBase.CleanupMessageBusAsync"/>.</summary>
 public sealed class MessageBusCollectionDisposable : IAsyncDisposable
 {
     private readonly List<IMessageBus> _buses = new();
