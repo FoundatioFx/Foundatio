@@ -37,126 +37,155 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanUseMessageOptionsAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
         using var metrics = new InMemoryMetrics(FoundatioDiagnostics.Meter.Name, _logger);
 
-        using var listener = new ActivityListener
+        try
         {
-            ShouldListenTo = s => s.Name == FoundatioDiagnostics.ActivitySource.Name,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStarted = activity => _logger.LogInformation("Start: {ActivityDisplayName}", activity.DisplayName),
-            ActivityStopped = activity => _logger.LogInformation("Stop: {ActivityDisplayName}", activity.DisplayName),
-        };
-
-        ActivitySource.AddActivityListener(listener);
-
-        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent");
-        Assert.NotNull(activity);
-        Assert.NotNull(Activity.Current);
-        Assert.Equal(Activity.Current, activity);
-
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
-        {
-            _logger.LogTrace("Got message");
-
-            Assert.Equal("Hello", msg.Body.Data);
-            Assert.True(msg.Body.Items.ContainsKey("Test"));
-
-            Assert.Equal(activity.Id, msg.CorrelationId);
-            Assert.Equal(Activity.Current.ParentId, activity.Id);
-            Assert.Single(msg.Properties);
-            Assert.Contains(msg.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
-            countdown.Signal();
-            _logger.LogTrace("Set event");
-        });
-
-        await Task.Delay(1000);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello",
-            Items = { { "Test", "Test" } }
-        }, new MessageOptions
-        {
-            Properties = new Dictionary<string, string>
+            using var listener = new ActivityListener
             {
-                { "hey", "now" }
-            }
-        }, TestCancellationToken);
-        _logger.LogTrace("Published one...");
+                ShouldListenTo = s => s.Name == FoundatioDiagnostics.ActivitySource.Name,
+                Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+                ActivityStarted = activity => _logger.LogInformation("Start: {ActivityDisplayName}", activity.DisplayName),
+                ActivityStopped = activity => _logger.LogInformation("Stop: {ActivityDisplayName}", activity.DisplayName),
+            };
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            ActivitySource.AddActivityListener(listener);
+
+            using var activity = FoundatioDiagnostics.ActivitySource.StartActivity("Parent");
+            Assert.NotNull(activity);
+            Assert.NotNull(Activity.Current);
+            Assert.Equal(Activity.Current, activity);
+
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
+            {
+                _logger.LogTrace("Got message");
+
+                Assert.Equal("Hello", msg.Body.Data);
+                Assert.True(msg.Body.Items.ContainsKey("Test"));
+
+                Assert.Equal(activity.Id, msg.CorrelationId);
+                Assert.Equal(Activity.Current.ParentId, activity.Id);
+                Assert.Single(msg.Properties);
+                Assert.Contains(msg.Properties, i => i.Key == "hey" && i.Value.ToString() == "now");
+                countdown.Signal();
+                _logger.LogTrace("Set event");
+            });
+
+            await Task.Delay(1000);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello",
+                Items = { { "Test", "Test" } }
+            }, new MessageOptions
+            {
+                Properties = new Dictionary<string, string>
+                {
+                    { "hey", "now" }
+                }
+            }, TestCancellationToken);
+            _logger.LogTrace("Published one...");
+
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSendMessageAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            _logger.LogTrace("Got message");
-            Assert.Equal("Hello", msg.Data);
-            Assert.True(msg.Items.ContainsKey("Test"));
-            countdown.Signal();
-            _logger.LogTrace("Set event");
-        }, TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message");
+                Assert.Equal("Hello", msg.Data);
+                Assert.True(msg.Items.ContainsKey("Test"));
+                countdown.Signal();
+                _logger.LogTrace("Set event");
+            }, TestCancellationToken);
 
-        await Task.Delay(100, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
+            await Task.Delay(100, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello",
+                Items = { { "Test", "Test" } }
+            }, cancellationToken: TestCancellationToken);
+            _logger.LogTrace("Published one...");
+
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
         {
-            Data = "Hello",
-            Items = { { "Test", "Test" } }
-        }, cancellationToken: TestCancellationToken);
-        _logger.LogTrace("Published one...");
-
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanHandleNullMessageAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null!));
+        try
+        {
+            // Publishing null should throw ArgumentNullException
+            await Assert.ThrowsAsync<ArgumentNullException>(async () => await messageBus.PublishAsync<object>(null!));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSendDerivedMessageAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            _logger.LogTrace("Got message");
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-            _logger.LogTrace("Set event");
-        }, TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message");
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+                _logger.LogTrace("Set event");
+            }, TestCancellationToken);
 
-        await Task.Delay(100, TestCancellationToken);
-        await messageBus.PublishAsync(new DerivedSimpleMessageA
+            await Task.Delay(100, TestCancellationToken);
+            await messageBus.PublishAsync(new DerivedSimpleMessageA
+            {
+                Data = "Hello"
+            });
+            _logger.LogTrace("Published one...");
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
         {
-            Data = "Hello"
-        });
-        _logger.LogTrace("Published one...");
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSendMappedMessageAsync()
     {
-        await using var messageBus = GetMessageBus(b =>
+        using var messageBus = GetMessageBus(b =>
         {
             b.MessageTypeMappings.Add(nameof(SimpleMessageA), typeof(SimpleMessageA));
             return b;
@@ -164,617 +193,591 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            _logger.LogTrace("Got message");
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-            _logger.LogTrace("Set event");
-        }, TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message");
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+                _logger.LogTrace("Set event");
+            }, TestCancellationToken);
 
-        await Task.Delay(100, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
+            await Task.Delay(100, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            _logger.LogTrace("Published one...");
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
         {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        _logger.LogTrace("Published one...");
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSendDelayedMessageAsync()
     {
         const int numConcurrentMessages = 1000;
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        // Arrange
-        var countdown = new AsyncCountdownEvent(numConcurrentMessages);
-        int messages = 0;
-        int optionsVerifiedCount = 0;
-
-        await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
+        try
         {
-            Assert.Equal("Hello", msg.Body.Data);
+            // Arrange
+            var countdown = new AsyncCountdownEvent(numConcurrentMessages);
+            int messages = 0;
+            int optionsVerifiedCount = 0;
 
-            // Verify options are preserved through delayed delivery
-            if (!String.IsNullOrEmpty(msg.CorrelationId) && msg.CorrelationId.StartsWith("correlation-"))
+            await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
             {
-                Assert.True(msg.Properties.TryGetValue("TestKey", out var value));
-                Assert.Equal("TestValue", value);
-                Interlocked.Increment(ref optionsVerifiedCount);
-            }
+                Assert.Equal("Hello", msg.Body.Data);
 
-            if (Interlocked.Increment(ref messages) % 50 == 0)
-                _logger.LogTrace("Total Processed {Messages} messages", messages);
+                // Verify options are preserved through delayed delivery
+                if (!String.IsNullOrEmpty(msg.CorrelationId) && msg.CorrelationId.StartsWith("correlation-"))
+                {
+                    Assert.True(msg.Properties.TryGetValue("TestKey", out var value));
+                    Assert.Equal("TestValue", value);
+                    Interlocked.Increment(ref optionsVerifiedCount);
+                }
 
-            countdown.Signal();
-        });
+                if (Interlocked.Increment(ref messages) % 50 == 0)
+                    _logger.LogTrace("Total Processed {Messages} messages", messages);
 
-        // Act
-        var sw = Stopwatch.StartNew();
-        await Parallel.ForEachAsync(Enumerable.Range(1, numConcurrentMessages), async (i, _) =>
+                countdown.Signal();
+            });
+
+            // Act
+            var sw = Stopwatch.StartNew();
+            await Parallel.ForEachAsync(Enumerable.Range(1, numConcurrentMessages), async (i, _) =>
+            {
+                await messageBus.PublishAsync(new SimpleMessageA
+                {
+                    Data = "Hello",
+                    Count = i
+                }, new MessageOptions
+                {
+                    DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)),
+                    CorrelationId = $"correlation-{i}",
+                    Properties = new Dictionary<string, string> { { "TestKey", "TestValue" } }
+                }, TestCancellationToken);
+
+                if (i % 500 == 0)
+                    _logger.LogTrace("Published 500 messages...");
+            });
+
+            await countdown.WaitAsync(TimeSpan.FromSeconds(30));
+            sw.Stop();
+
+            // Assert
+            _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
+            Assert.Equal(numConcurrentMessages, optionsVerifiedCount);
+        }
+        finally
         {
-            await messageBus.PublishAsync(new SimpleMessageA
-            {
-                Data = "Hello",
-                Count = i
-            }, new MessageOptions
-            {
-                DeliveryDelay = TimeSpan.FromMilliseconds(RandomData.GetInt(0, 100)),
-                CorrelationId = $"correlation-{i}",
-                Properties = new Dictionary<string, string> { { "TestKey", "TestValue" } }
-            }, TestCancellationToken);
-
-            if (i % 500 == 0)
-                _logger.LogTrace("Published 500 messages...");
-        });
-
-        await countdown.WaitAsync(TimeSpan.FromSeconds(30));
-        sw.Stop();
-
-        // Assert
-        _logger.LogTrace("Processed {Processed} in {Duration:g}", numConcurrentMessages - countdown.CurrentCount, sw.Elapsed);
-        Assert.Equal(0, countdown.CurrentCount);
-        Assert.InRange(sw.Elapsed.TotalMilliseconds, 50, 30000);
-        Assert.Equal(numConcurrentMessages, optionsVerifiedCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSubscribeConcurrentlyAsync()
     {
         const int iterations = 100;
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(iterations * 10);
-        await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
+        try
         {
-            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            var countdown = new AsyncCountdownEvent(iterations * 10);
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
-                Assert.Equal("Hello", msg.Data);
-                countdown.Signal();
-            }, cancellationToken: ct);
-        });
+                await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                }, cancellationToken: ct);
+            });
 
-        await Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (_, _) => await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken));
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (_, _) => await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken));
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanReceiveMessagesConcurrentlyAsync()
     {
         const int iterations = 100;
-        await using var messageBus = GetMessageBus();
+        var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        await using var extraBuses = new MessageBusCollectionDisposable(CleanupMessageBusAsync);
-        var countdown = new AsyncCountdownEvent(iterations * 10);
-        await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
+        var messageBuses = new List<IMessageBus>(10);
+        try
         {
-            var bus = GetMessageBus();
-            Assert.NotNull(bus);
-            await bus.SubscribeAsync<SimpleMessageA>(msg =>
+            var countdown = new AsyncCountdownEvent(iterations * 10);
+            await Parallel.ForEachAsync(Enumerable.Range(1, 10), async (_, ct) =>
             {
-                Assert.Equal("Hello", msg.Data);
-                countdown.Signal();
-            }, cancellationToken: ct);
+                var bus = GetMessageBus();
+                Assert.NotNull(bus);
+                await bus.SubscribeAsync<SimpleMessageA>(msg =>
+                {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown.Signal();
+                }, cancellationToken: ct);
 
-            extraBuses.Add(bus);
-        });
-
-        var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
-        {
-            await Task.Delay(RandomData.GetInt(0, 10), ct);
-            var randomBus = extraBuses.GetRandomBus();
-            Assert.NotNull(randomBus);
-            await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
-        });
-
-        var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
-        {
-            await (i switch
-            {
-                1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                4 => messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                5 => messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                6 => messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                7 => messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                8 => messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                9 => messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                10 => messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                iterations + 1 => messageBus.PublishAsync(new { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }, cancellationToken: TestCancellationToken),
-                _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken)
+                messageBuses.Add(bus);
             });
-        });
 
-        await Task.WhenAll(subscribe, publish);
-        await countdown.WaitAsync(TimeSpan.FromSeconds(4));
-        Assert.Equal(0, countdown.CurrentCount);
+            var subscribe = Parallel.ForEachAsync(Enumerable.Range(1, iterations), async (i, ct) =>
+            {
+                await Task.Delay(RandomData.GetInt(0, 10), ct);
+                var randomBus = messageBuses.Random();
+                Assert.NotNull(randomBus);
+                await randomBus.SubscribeAsync<NeverPublishedMessage>(msg => Task.CompletedTask, cancellationToken: ct);
+            });
+
+            var publish = Parallel.ForEachAsync(Enumerable.Range(1, iterations + 3), async (i, _) =>
+            {
+                await (i switch
+                {
+                    1 => messageBus.PublishAsync(new DerivedSimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    2 => messageBus.PublishAsync(new Derived2SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    3 => messageBus.PublishAsync(new Derived3SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    4 => messageBus.PublishAsync(new Derived4SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    5 => messageBus.PublishAsync(new Derived5SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    6 => messageBus.PublishAsync(new Derived6SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    7 => messageBus.PublishAsync(new Derived7SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    8 => messageBus.PublishAsync(new Derived8SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    9 => messageBus.PublishAsync(new Derived9SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    10 => messageBus.PublishAsync(new Derived10SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    iterations + 1 => messageBus.PublishAsync(new { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    iterations + 2 => messageBus.PublishAsync(new SimpleMessageC { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    iterations + 3 => messageBus.PublishAsync(new SimpleMessageB { Data = "Hello" }, cancellationToken: TestCancellationToken),
+                    _ => messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken)
+                });
+            });
+
+            await Task.WhenAll(subscribe, publish);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(4));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            foreach (var mb in messageBuses)
+                await CleanupMessageBusAsync(mb);
+
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSendMessageToMultipleSubscribersAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(3);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(3);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanTolerateSubscriberFailureAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(4);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg => throw new Exception());
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(4);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg => throw new Exception());
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task WillOnlyReceiveSubscribedMessageTypeAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.SubscribeAsync<SimpleMessageB>(msg =>
+        try
         {
-            Assert.Fail("Received wrong message type");
-        }, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
-        {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageB>(msg =>
+            {
+                Assert.Fail("Received wrong message type");
+            }, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task WillReceiveDerivedMessageTypesAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(2);
-        await messageBus.SubscribeAsync<ISimpleMessage>(msg =>
+        try
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        });
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageB
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageC
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(2);
+            await messageBus.SubscribeAsync<ISimpleMessage>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            });
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageB
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageC
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSubscribeToRawMessagesAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(3);
-        await messageBus.SubscribeAsync(msg =>
+        try
         {
-            Assert.NotNull(msg.Type);
-            Assert.True(msg.Type.Contains(nameof(SimpleMessageA))
-                        || msg.Type.Contains(nameof(SimpleMessageB))
-                        || msg.Type.Contains(nameof(SimpleMessageC)));
-            countdown.Signal();
-        });
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageB
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageC
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(3);
+            await messageBus.SubscribeAsync(msg =>
+            {
+                Assert.NotNull(msg.Type);
+                Assert.True(msg.Type.Contains(nameof(SimpleMessageA))
+                            || msg.Type.Contains(nameof(SimpleMessageB))
+                            || msg.Type.Contains(nameof(SimpleMessageC)));
+                countdown.Signal();
+            });
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageB
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageC
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanSubscribeToAllMessageTypesAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(3);
-        await messageBus.SubscribeAsync<object>(msg =>
+        try
         {
-            countdown.Signal();
-        }, TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageB
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageC
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(3);
+            await messageBus.SubscribeAsync<object>(msg =>
+            {
+                countdown.Signal();
+            }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageB
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageC
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task WontKeepMessagesWithNoSubscribersAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(1);
-        await messageBus.PublishAsync(new SimpleMessageA
+        try
         {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
 
-        await Task.Delay(100, TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            await Task.Delay(100, TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken);
+
+            await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromMilliseconds(100)));
+            Assert.Equal(1, countdown.CurrentCount);
+        }
+        finally
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown.Signal();
-        }, TestCancellationToken);
-
-        await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromMilliseconds(100)));
-        Assert.Equal(1, countdown.CurrentCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanCancelSubscriptionAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus == null)
             return;
 
-        var countdown = new AsyncCountdownEvent(2);
-
-        long messageCount = 0;
-        using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
-        await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+        try
         {
-            _logger.LogTrace("SimpleAMessage received");
-            Interlocked.Increment(ref messageCount);
-            await cancellationTokenSource.CancelAsync();
-            countdown.Signal();
-        }, cancellationTokenSource.Token);
+            var countdown = new AsyncCountdownEvent(2);
 
-        // NOTE: This subscriber will not be canceled.
-        await messageBus.SubscribeAsync<object>(_ => countdown.Signal(), TestCancellationToken);
-        await messageBus.PublishAsync(new SimpleMessageA
+            long messageCount = 0;
+            using var cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+            {
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref messageCount);
+                await cancellationTokenSource.CancelAsync();
+                countdown.Signal();
+            }, cancellationTokenSource.Token);
+
+            // NOTE: This subscriber will not be canceled.
+            await messageBus.SubscribeAsync<object>(_ => countdown.Signal(), TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.Equal(1, messageCount);
+
+            countdown.AddCount(1);
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "Hello"
+            }, cancellationToken: TestCancellationToken);
+
+            await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.Equal(1, messageCount);
+        }
+        finally
         {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
-        Assert.Equal(1, messageCount);
-
-        countdown.AddCount(1);
-        await messageBus.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-
-        await countdown.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(0, countdown.CurrentCount);
-        Assert.Equal(1, messageCount);
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanReceiveFromMultipleSubscribersAsync()
     {
-        await using var messageBus1 = GetMessageBus();
+        using var messageBus1 = GetMessageBus();
         if (messageBus1 == null)
             return;
 
-        var countdown1 = new AsyncCountdownEvent(1);
-        await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+        try
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown1.Signal();
-        }, TestCancellationToken);
+            var countdown1 = new AsyncCountdownEvent(1);
+            await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                countdown1.Signal();
+            }, TestCancellationToken);
 
-        await using var messageBus2 = GetMessageBus();
-        Assert.NotNull(messageBus2);
+            using var messageBus2 = GetMessageBus();
+            Assert.NotNull(messageBus2);
 
-        var countdown2 = new AsyncCountdownEvent(1);
-        await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+            try
+            {
+                var countdown2 = new AsyncCountdownEvent(1);
+                await messageBus2.SubscribeAsync<SimpleMessageA>(msg =>
+                {
+                    Assert.Equal("Hello", msg.Data);
+                    countdown2.Signal();
+                }, TestCancellationToken);
+
+                await messageBus1.PublishAsync(new SimpleMessageA
+                {
+                    Data = "Hello"
+                }, cancellationToken: TestCancellationToken);
+
+                await countdown1.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown1.CurrentCount);
+                await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.Equal(0, countdown2.CurrentCount);
+            }
+            finally
+            {
+                await CleanupMessageBusAsync(messageBus2);
+            }
+        }
+        finally
         {
-            Assert.Equal("Hello", msg.Data);
-            countdown2.Signal();
-        }, TestCancellationToken);
-
-        await messageBus1.PublishAsync(new SimpleMessageA
-        {
-            Data = "Hello"
-        }, cancellationToken: TestCancellationToken);
-
-        await countdown1.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown1.CurrentCount);
-        await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
-        Assert.Equal(0, countdown2.CurrentCount);
+            await CleanupMessageBusAsync(messageBus1);
+        }
     }
 
     public virtual async Task CanDisposeWithNoSubscribersOrPublishersAsync()
     {
         await using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
     }
 
     public virtual async Task CanHandlePoisonedMessageAsync()
     {
-        await using var messageBus = GetMessageBus();
+        using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         long handlerInvocations = 0;
-
-        await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
-        {
-            _logger.LogTrace("SimpleAMessage received");
-            Interlocked.Increment(ref handlerInvocations);
-            throw new Exception("Poisoned message");
-        });
-
-        await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: TestCancellationToken);
-        _logger.LogTrace("Published one...");
-
-        await Task.Delay(TimeSpan.FromSeconds(3));
-        Assert.InRange(handlerInvocations, 1, 5);
-    }
-
-    public virtual async Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
-    {
-        // Arrange
-        var faultSerializer = new FaultInjectingSerializer();
-        await using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
-        if (messageBus is null)
-            return;
-
-        long handlerInvocations = 0;
-        var messageReceived = new AsyncAutoResetEvent(false);
-
-        await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
-        {
-            _logger.LogTrace("SimpleAMessage received");
-            Interlocked.Increment(ref handlerInvocations);
-            messageReceived.Set();
-        });
-
-        // Publish a valid message first (serializer works normally)
-        await messageBus.PublishAsync(new SimpleMessageA { Data = "valid" }, cancellationToken: TestCancellationToken);
-        await messageReceived.WaitAsync(TestCancellationToken);
-        Assert.Equal(1, handlerInvocations);
-
-        // Flip the flag so deserialization throws on the next message
-        faultSerializer.ShouldFailOnDeserialize = true;
-
-        // Act: publish a message that will fail deserialization on receive
-        await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
-
-        // Wait a reasonable time for the message to be processed (or skipped)
-        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
-
-        // Assert: handler should still have been invoked only once (for the valid message)
-        Assert.Equal(1, handlerInvocations);
-    }
-
-    public virtual async Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
-    {
-        // Arrange
-        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnSerialize = true };
-        await using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
-        if (messageBus is null)
-            return;
-
-        await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
-
-        // Act & Assert: publishing with a broken serializer should throw
-        await Assert.ThrowsAsync<MessageBusException>(async () =>
-            await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
-    }
-
-    public virtual async Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
-    {
-        // Arrange
-        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnDeserialize = true };
-        await using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
-        if (messageBus is null)
-            return;
-
-        long handlerInvocations = 0;
-
-        await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
-        {
-            Interlocked.Increment(ref handlerInvocations);
-        });
-
-        // Act: publish a message that will fail deserialization on receive
-        await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
-
-        // Assert: handler should never be invoked for a poisoned message
-        Assert.Equal(0, handlerInvocations);
-    }
-
-    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
-    {
-        await using var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
-    }
-
-    public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
-    {
-        var messageReceived = new AsyncAutoResetEvent(false);
-        IMessageBus? messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
 
         try
         {
-            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
             {
-                _logger.LogTrace("Got message - this should NOT happen");
-                messageReceived.Set();
-            }, TestCancellationToken);
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
+                throw new Exception("Poisoned message");
+            });
 
-            await messageBus.PublishAsync(new SimpleMessageA
-            {
-                Data = "ShouldBeDiscarded"
-            }, new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: TestCancellationToken);
+            _logger.LogTrace("Published one...");
 
-            _logger.LogTrace("Published delayed message, disposing immediately...");
-            messageBus.Dispose();
-            messageBus = null;
-
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
-            cts.CancelAfter(TimeSpan.FromMilliseconds(250));
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            Assert.InRange(handlerInvocations, 1, 5);
         }
         finally
         {
-            if (messageBus is not null)
-                await CleanupMessageBusAsync(messageBus);
+            await CleanupMessageBusAsync(messageBus);
         }
-    }
-
-    public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
-    {
-        await using var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        // Act & Assert - cancelled token should throw OperationCanceledException
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
     }
 
     public virtual async Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
     {
-        // Arrange
         var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
-        // Act
         await messageBus.DisposeAsync();
         await messageBus.DisposeAsync();
         await messageBus.DisposeAsync();
-
-        // Assert - no exception thrown
     }
 
     public virtual async Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
     {
-        // Arrange
         var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
@@ -787,56 +790,47 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await Task.Delay(500, TestCancellationToken);
         });
 
-        // Act - publish a message, then dispose while the subscriber is still processing
         _ = messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
         await subscriberStarted.WaitAsync(TestCancellationToken);
 
-        // Assert - dispose completes without deadlock (the test itself will timeout if it deadlocks)
         await messageBus.DisposeAsync();
     }
 
     public virtual async Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
     {
-        // Arrange
         var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
-        // Act & Assert
         await messageBus.DisposeAsync();
     }
 
     public virtual async Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
     {
-        // Arrange
         var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         await messageBus.DisposeAsync();
 
-        // Act & Assert
         await Assert.ThrowsAsync<MessageBusException>(async () =>
             await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
     }
 
     public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
     {
-        // Arrange
         var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         await messageBus.DisposeAsync();
 
-        // Act & Assert
         await Assert.ThrowsAsync<MessageBusException>(async () =>
             await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
     }
 
     public virtual async Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
     {
-        // Arrange
         await using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
@@ -850,11 +844,9 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             countdown.Signal();
         }, cts.Token);
 
-        // Act - cancel the subscription
         await cts.CancelAsync();
         await Task.Delay(100, TestCancellationToken);
 
-        // Subscribe again with a fresh token
         var countdown2 = new AsyncCountdownEvent(1);
         await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
         {
@@ -862,36 +854,178 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             countdown2.Signal();
         }, TestCancellationToken);
 
-        // Assert - new subscriber receives messages (infrastructure was not torn down)
         await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
         await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(0, countdown2.CurrentCount);
     }
-}
 
-/// <summary>Disposes a set of message buses created during a test; optional cleanup matches <see cref="MessageBusTestBase.CleanupMessageBusAsync"/>.</summary>
-public sealed class MessageBusCollectionDisposable : IAsyncDisposable
-{
-    private readonly List<IMessageBus> _buses = new();
-    private readonly Func<IMessageBus, Task>? _cleanupAsync;
-
-    public MessageBusCollectionDisposable(Func<IMessageBus, Task>? cleanupAsync = null)
+    public virtual async Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
     {
-        _cleanupAsync = cleanupAsync;
-    }
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer();
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
 
-    public void Add(IMessageBus bus) => _buses.Add(bus);
+        long handlerInvocations = 0;
+        var messageReceived = new AsyncAutoResetEvent(false);
 
-    public IMessageBus GetRandomBus() => _buses[RandomData.GetInt(0, _buses.Count - 1)];
-
-    public async ValueTask DisposeAsync()
-    {
-        foreach (var mb in _buses)
+        try
         {
-            if (_cleanupAsync is not null)
-                await _cleanupAsync(mb);
-            else
-                await mb.DisposeAsync();
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
+                messageReceived.Set();
+            });
+
+            // Publish a valid message first (serializer works normally)
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "valid" }, cancellationToken: TestCancellationToken);
+            await messageReceived.WaitAsync(TestCancellationToken);
+            Assert.Equal(1, handlerInvocations);
+
+            // Flip the flag so deserialization throws on the next message
+            faultSerializer.ShouldFailOnDeserialize = true;
+
+            // Act: publish a message that will fail deserialization on receive
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
+
+            // Wait a reasonable time for the message to be processed (or skipped)
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Assert: handler should still have been invoked only once (for the valid message)
+            Assert.Equal(1, handlerInvocations);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
         }
     }
+
+    public virtual async Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnSerialize = true };
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
+
+            // Act & Assert: publishing with a broken serializer should throw
+            await Assert.ThrowsAsync<MessageBusException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnDeserialize = true };
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        long handlerInvocations = 0;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
+            {
+                Interlocked.Increment(ref handlerInvocations);
+            });
+
+            // Act: publish a message that will fail deserialization on receive
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Assert: handler should never be invoked for a poisoned message
+            Assert.Equal(0, handlerInvocations);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        // Arrange
+        var messageReceived = new AsyncAutoResetEvent(false);
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message - this should NOT happen");
+                messageReceived.Set();
+            }, TestCancellationToken);
+
+            // Act - publish with short delay, then dispose immediately before delay expires
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "ShouldBeDiscarded"
+            }, new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+
+            _logger.LogTrace("Published delayed message, disposing immediately...");
+            messageBus.Dispose();
+            messageBus = null; // Mark as disposed to skip cleanup
+
+            // Assert - wait slightly longer than the delay; message should NOT be delivered
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(250));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
+        }
+        finally
+        {
+            if (messageBus is not null)
+                await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            // Act & Assert - cancelled token should throw OperationCanceledException
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
 }

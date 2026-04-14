@@ -78,6 +78,18 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
+    public override Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        return base.SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    {
+        return base.SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync();
+    }
+
+    [Fact]
     public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
         return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
@@ -162,24 +174,6 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
-    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
-    {
-        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
-    }
-
-    [Fact]
-    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
-    {
-        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
-    }
-
-    [Fact]
-    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
-    {
-        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
-    }
-
-    [Fact]
     public override Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
     {
         return base.DisposeAsync_CalledMultipleTimes_IsIdempotentAsync();
@@ -204,15 +198,21 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
-    public override Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
     {
-        return base.SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
     }
 
     [Fact]
-    public override Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
     {
-        return base.SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync();
+        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
     }
 
     [Fact]
