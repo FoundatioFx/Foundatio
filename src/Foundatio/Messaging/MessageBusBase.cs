@@ -518,7 +518,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _isDisposed = true;
         _logger.LogTrace("MessageBus {MessageBusId} async dispose", MessageBusId);
 
-        try { await ShutdownAsync().AnyContext(); }
+        try
+        {
+            await ShutdownAsync().AnyContext();
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
@@ -527,7 +530,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _subscribers?.Clear();
         _disposedCancellationTokenSource.Cancel();
 
-        try { await CleanupAsync().AnyContext(); }
+        try
+        {
+            await CleanupAsync().AnyContext();
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
@@ -547,7 +553,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _isDisposed = true;
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
 
-        try { ShutdownAsync().GetAwaiter().GetResult(); }
+        try
+        {
+            ShutdownAsync().AnyContext().GetAwaiter().GetResult();
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
@@ -556,7 +565,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         _subscribers?.Clear();
         _disposedCancellationTokenSource.Cancel();
 
-        try { CleanupAsync().GetAwaiter().GetResult(); }
+        try
+        {
+            CleanupAsync().AnyContext().GetAwaiter().GetResult();
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
