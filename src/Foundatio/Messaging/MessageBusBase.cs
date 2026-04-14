@@ -173,18 +173,39 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     }
 
     /// <summary>
-    /// Called during the first phase of disposal, BEFORE DisposedCancellationToken is cancelled
-    /// and BEFORE subscribers are cleared. Override to gracefully drain in-flight work
-    /// (e.g., StopProcessingAsync for Azure SB). Subscribers and token are still active here.
+    /// Called during the first phase of disposal, <b>before</b> <see cref="DisposedCancellationToken"/>
+    /// is cancelled and <b>before</b> subscribers are cleared.
     /// </summary>
-    protected virtual Task ShutdownAsync() => Task.CompletedTask;
+    /// <remarks>
+    /// <para>
+    /// Override this method to gracefully drain in-flight work (stop processors, close consumer
+    /// groups, flush buffers). Subscribers are still registered and the cancellation token is
+    /// still active, so handlers can finish processing normally.
+    /// </para>
+    /// <para>
+    /// The base implementation delegates to <see cref="RemoveTopicSubscriptionAsync"/> so that
+    /// existing provider overrides continue to work without changes.
+    /// </para>
+    /// </remarks>
+    protected virtual Task ShutdownAsync() => RemoveTopicSubscriptionAsync();
 
     /// <summary>
-    /// Called during the second phase of disposal, AFTER DisposedCancellationToken is cancelled
-    /// and AFTER subscribers are cleared. Override to tear down transport infrastructure
-    /// (close connections, await background tasks, dispose clients).
+    /// Called during the second phase of disposal, <b>after</b> <see cref="DisposedCancellationToken"/>
+    /// is cancelled and <b>after</b> subscribers are cleared.
     /// </summary>
+    /// <remarks>
+    /// Override this method to tear down transport infrastructure — close connections,
+    /// dispose clients, await background listener tasks. No subscribers remain at this point
+    /// and the cancellation token has been signaled, so background loops should have exited.
+    /// </remarks>
     protected virtual Task CleanupAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Called during the first phase of disposal to remove transport-level topic subscriptions.
+    /// New providers should prefer overriding <see cref="ShutdownAsync"/> instead, which calls
+    /// this method by default.
+    /// </summary>
+    protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
 
     /// <summary>
     /// Called after subscribing to ensure the topic subscription infrastructure exists. The
@@ -218,6 +239,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         if (cancellationToken != CancellationToken.None)
         {
+            // CancellationToken.Register only accepts synchronous callbacks, so we cannot safely
+            // call RemoveTopicSubscriptionAsync here. The async-capable CancelAsync was added in
+            // .NET 8 but still does not support async callbacks — see:
+            // https://github.com/dotnet/runtime/issues/31315
+            // Topic subscription teardown is handled during DisposeAsync via ShutdownAsync/CleanupAsync.
             cancellationToken.Register(() =>
             {
                 _subscribers.TryRemove(subscriber.Id, out _);

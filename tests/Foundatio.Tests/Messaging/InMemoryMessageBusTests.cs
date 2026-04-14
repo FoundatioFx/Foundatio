@@ -150,9 +150,9 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
     }
 
     [Fact]
-    public override void CanDisposeWithNoSubscribersOrPublishers()
+    public override Task CanDisposeWithNoSubscribersOrPublishersAsync()
     {
-        base.CanDisposeWithNoSubscribersOrPublishers();
+        return base.CanDisposeWithNoSubscribersOrPublishersAsync();
     }
 
     [Fact]
