@@ -30,7 +30,7 @@ public static class ConnectionStringParser
 
     private static readonly Regex _connectionStringRegex = new(ConnectionStringPattern, RegexOptions.ExplicitCapture | RegexOptions.Compiled | RegexOptions.IgnorePatternWhitespace);
 
-    private static Dictionary<string, string?> Parse(string connectionString, IDictionary<string, string>? synonyms, string? defaultKey = null)
+    private static Dictionary<string, string?> Parse(string? connectionString, IDictionary<string, string>? synonyms, string? defaultKey = null)
     {
         var parseTable = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
@@ -38,7 +38,7 @@ public static class ConnectionStringParser
         Debug.Assert(keyIndex == _connectionStringRegex.GroupNumberFromName("key"), "wrong key index");
         Debug.Assert(valueIndex == _connectionStringRegex.GroupNumberFromName("value"), "wrong value index");
 
-        if (null == connectionString)
+        if (String.IsNullOrEmpty(connectionString))
             return parseTable;
 
         var match = _connectionStringRegex.Match(connectionString);
@@ -96,7 +96,7 @@ public static class ConnectionStringParser
         return keyName[0] != ';' && !Char.IsWhiteSpace(keyName[0]) && keyName.IndexOf('\u0000') == -1;
     }
 
-    public static Dictionary<string, string?> ParseConnectionString(this string connectionString, IDictionary<string, string>? synonyms = null, string? defaultKey = null)
+    public static Dictionary<string, string?> ParseConnectionString(this string? connectionString, IDictionary<string, string>? synonyms = null, string? defaultKey = null)
     {
         return Parse(connectionString, synonyms, defaultKey);
     }
