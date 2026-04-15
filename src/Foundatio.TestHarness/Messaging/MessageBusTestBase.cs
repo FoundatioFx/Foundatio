@@ -880,27 +880,27 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
-            var countdown = new AsyncCountdownEvent(1);
+            var cancelledHandlerCount = new AsyncCountdownEvent(1);
 
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
-                Assert.Equal("Hello", msg.Data);
-                countdown.Signal();
+                cancelledHandlerCount.Signal();
             }, cts.Token);
 
             await cts.CancelAsync();
-            await Task.Delay(100, TestCancellationToken);
 
-            var countdown2 = new AsyncCountdownEvent(1);
+            var activeHandlerReceived = new AsyncCountdownEvent(1);
             await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
             {
                 Assert.Equal("Hello", msg.Data);
-                countdown2.Signal();
+                activeHandlerReceived.Signal();
             }, TestCancellationToken);
 
             await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
-            await countdown2.WaitAsync(TimeSpan.FromSeconds(5));
-            Assert.Equal(0, countdown2.CurrentCount);
+            await activeHandlerReceived.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(0, activeHandlerReceived.CurrentCount);
+            Assert.Equal(1, cancelledHandlerCount.CurrentCount);
         }
         finally
         {
