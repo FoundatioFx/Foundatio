@@ -38,7 +38,15 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
     protected override async Task CleanupMessageBusAsync(IMessageBus messageBus)
     {
         if (EnableTopicDeletion && messageBus is IKafkaMessageBus kafkaMessageBus)
-            await kafkaMessageBus.DeleteTopicAsync();
+        {
+            try
+            {
+                await kafkaMessageBus.DeleteTopicAsync();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
 
         await base.CleanupMessageBusAsync(messageBus);
     }

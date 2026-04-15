@@ -14,7 +14,7 @@ namespace Foundatio.Messaging;
 
 public interface IKafkaMessageBus : IMessageBus
 {
-    Task DeleteTopicAsync();
+    Task DeleteTopicAsync(CancellationToken cancellationToken = default);
 }
 
 public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMessageBus
@@ -26,7 +26,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
     private readonly AsyncLock _lock = new();
     private readonly AsyncManualResetEvent _consumerReady = new();
     private bool _topicCreated;
-    private bool _isDisposed;
 
     public KafkaMessageBus(KafkaMessageBusOptions options) : base(options)
     {
@@ -96,6 +95,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
     private async Task OnMessageAsync(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult)
     {
+        // No subscribers registered — skip processing but do NOT commit the offset.
+        // Kafka retains uncommitted messages so they are redelivered once a subscriber
+        // reconnects, which is the expected persistence-guarantee behavior.
         if (_subscribers.IsEmpty)
             return;
 
@@ -105,6 +107,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
 
         _logger.LogTrace("OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId})", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId);
 
+        bool shouldAcknowledge = true;
         try
         {
             string? messageType = _options.ResolveMessageType?.Invoke(consumeResult);
@@ -124,6 +127,11 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
             var message = ConvertToMessage(messageType, consumeResult.Message);
             await SendMessageToSubscribersAsync(message).AnyContext();
         }
+        catch (OperationCanceledException) when (IsDisposed)
+        {
+            // Bus is disposing — skip offset commit so the message is redelivered to other consumers
+            shouldAcknowledge = false;
+        }
         catch (MessageBusException)
         {
             // Subscriber handler failures are application-level errors. The base class
@@ -138,7 +146,9 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         }
         finally
         {
-            if (!_subscribers.IsEmpty)
+            // Commit the offset unless the bus is disposing, in which case we skip so
+            // the message is redelivered to other consumers in the group.
+            if (shouldAcknowledge && !IsDisposed)
                 AcknowledgeMessage(consumer, consumeResult);
         }
     }
@@ -295,23 +305,33 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         }, DisposedCancellationToken);
     }
 
-    public override void Dispose()
+    protected override async Task CleanupAsync()
     {
-        if (_isDisposed)
+        if (_listeningTask is not null)
         {
-            _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
-            return;
+            try
+            {
+                await _listeningTask.WaitAsync(TimeSpan.FromSeconds(15)).AnyContext();
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogTrace(ex, "Listening task cancelled during cleanup");
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Listening task did not complete within timeout during dispose");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error waiting for listening task to complete during cleanup");
+            }
         }
-
-        _isDisposed = true;
-        _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
 
         int? queueSize = _producer?.Flush(TimeSpan.FromSeconds(15));
         if (queueSize > 0)
             _logger.LogTrace("Flushed producer {queueSize}", queueSize);
 
         _producer?.Dispose();
-        base.Dispose();
     }
 
     private async Task EnsureTopicCreatedAsync()
@@ -384,9 +404,13 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         }
     }
 
-    async Task IKafkaMessageBus.DeleteTopicAsync()
+    async Task IKafkaMessageBus.DeleteTopicAsync(CancellationToken cancellationToken)
     {
-        using var topicLock = await _lock.LockAsync(DisposedCancellationToken).AnyContext();
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, DisposedCancellationToken);
+        using var topicLock = await _lock.LockAsync(linkedCts.Token).AnyContext();
         using var adminClient = new AdminClientBuilder(_adminClientConfig)
             .SetLogHandler(LogHandler)
             .SetStatisticsHandler(LogStatisticsHandler)
