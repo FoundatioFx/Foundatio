@@ -2,7 +2,7 @@
   <Import Project="..\..\build\common.props" />
   <ItemGroup>
     <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.20.1" />
-    <PackageReference Include="Azure.Identity" Version="1.20.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
 
     <PackageReference Include="Foundatio" Version="13.0.0-beta5.2" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
