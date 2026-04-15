@@ -731,9 +731,18 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task CanDisposeWithNoSubscribersOrPublishersAsync()
     {
-        await using var messageBus = GetMessageBus();
+        var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
+
+        try
+        {
+            await messageBus.DisposeAsync();
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     public virtual async Task CanHandlePoisonedMessageAsync()
