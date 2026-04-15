@@ -14,7 +14,7 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Foundatio.Messaging;
 
-public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAsyncDisposable
+public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 {
     private const string XDeliveryCountHeader = "x-delivery-count";
     private const string XOriginalMessageIdHeader = "x-original-message-id";
@@ -31,7 +31,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     private bool? _delayedExchangePluginEnabled;
     private Version? _serverVersion;
     private readonly bool _isQuorumQueue;
-    private bool _isDisposed;
     private volatile bool _isPublisherBlocked;
     private volatile string? _publisherBlockedReason;
 
@@ -86,10 +85,17 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
     {
     }
 
-    protected override Task RemoveTopicSubscriptionAsync()
+    protected override async Task RemoveTopicSubscriptionAsync()
     {
-        _logger.LogTrace("RemoveTopicSubscriptionAsync");
-        return CloseSubscriberConnectionAsync(DisposedCancellationToken);
+        await CloseSubscriberConnectionAsync().AnyContext();
+    }
+
+    protected override async Task CleanupAsync()
+    {
+        _factory.AutomaticRecoveryEnabled = false;
+
+        await ClosePublisherConnectionAsync().AnyContext();
+        await CloseSubscriberConnectionAsync().AnyContext();
     }
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
@@ -231,6 +237,11 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
 
             if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
                 await subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
+        }
+        catch (OperationCanceledException)
+        {
+            if (_options.AcknowledgementStrategy == AcknowledgementStrategy.Automatic)
+                await subscriberChannel.BasicRejectAsync(envelope.DeliveryTag, true).AnyContext();
         }
         catch (MessageBusException)
         {
@@ -740,62 +751,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
         return queueName;
     }
 
-    public override void Dispose()
-    {
-        base.Dispose();
-
-        if (_isDisposed)
-            return;
-
-        _isDisposed = true;
-
-        _factory.AutomaticRecoveryEnabled = false;
-
-        ClosePublisherConnection();
-        CloseSubscriberConnection();
-        GC.SuppressFinalize(this);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        base.Dispose();
-
-        if (_isDisposed)
-            return;
-
-        _isDisposed = true;
-
-        _factory.AutomaticRecoveryEnabled = false;
-
-        await ClosePublisherConnectionAsync().AnyContext();
-        await CloseSubscriberConnectionAsync().AnyContext();
-        GC.SuppressFinalize(this);
-    }
-
-    private void ClosePublisherConnection(CancellationToken cancellationToken = default)
-    {
-        if (_publisherConnection is null)
-            return;
-
-        using (_lock.Lock(cancellationToken))
-        {
-            _logger.LogTrace("ClosePublisherConnection");
-
-            if (_publisherChannel is not null)
-            {
-                _publisherChannel.Dispose();
-                _publisherChannel = null;
-            }
-
-            if (_publisherConnection is not null)
-            {
-                UnregisterPublisherConnectionEventHandlers();
-                _publisherConnection.Dispose();
-                _publisherConnection = null;
-            }
-        }
-    }
-
     private async Task ClosePublisherConnectionAsync()
     {
         if (_publisherConnection is null)
@@ -816,36 +771,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>, IAs
                 UnregisterPublisherConnectionEventHandlers();
                 await _publisherConnection.DisposeAsync().AnyContext();
                 _publisherConnection = null;
-            }
-        }
-    }
-
-    private void CloseSubscriberConnection(CancellationToken cancellationToken = default)
-    {
-        if (_subscriberConnection is null)
-            return;
-
-        using (_lock.Lock(cancellationToken))
-        {
-            _logger.LogTrace("CloseSubscriberConnection");
-
-            if (_consumer is not null)
-            {
-                UnregisterConsumerEventHandlers();
-                _consumer = null;
-            }
-
-            if (_subscriberChannel is not null)
-            {
-                _subscriberChannel.Dispose();
-                _subscriberChannel = null;
-            }
-
-            if (_subscriberConnection is not null)
-            {
-                UnregisterSubscriberConnectionEventHandlers();
-                _subscriberConnection.Dispose();
-                _subscriberConnection = null;
             }
         }
     }
