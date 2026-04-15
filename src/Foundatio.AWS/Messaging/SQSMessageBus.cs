@@ -61,7 +61,7 @@ namespace Foundatio.Messaging;
 /// </remarks>
 /// <seealso cref="SQSMessageBusOptions"/>
 /// <seealso cref="SQSMessageBusOptionsBuilder"/>
-public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposable
+public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>
 {
     private readonly AsyncLock _lock = new();
     private readonly Lazy<AmazonSimpleNotificationServiceClient> _snsClient;
@@ -72,7 +72,6 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
     private string? _subscriptionArn;
     private CancellationTokenSource? _subscriberCts;
     private Task? _subscriberTask;
-    private bool _isDisposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SQSMessageBus"/> class with the specified options.
@@ -392,10 +391,36 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             {
                 await _subscriberCts.CancelAsync().AnyContext();
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
+                _logger.LogTrace(ex, "Subscriber CTS already disposed during cleanup");
             }
         }
+
+        if (_subscriberTask is not null)
+        {
+            try
+            {
+                await _subscriberTask.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogTrace(ex, "Subscriber task cancelled during cleanup");
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Subscriber task did not complete within timeout during dispose");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error waiting for subscriber task to complete during dispose");
+            }
+        }
+    }
+
+    protected override async Task CleanupAsync()
+    {
+        _subscriberCts?.Dispose();
 
         if (!String.IsNullOrEmpty(_subscriptionArn) && _snsClient.IsValueCreated)
         {
@@ -435,6 +460,12 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
         _queueUrl = null;
         _queueArn = null;
+
+        if (_snsClient.IsValueCreated)
+            _snsClient.Value.Dispose();
+
+        if (_sqsClient.IsValueCreated)
+            _sqsClient.Value.Dispose();
     }
 
     private async Task SubscriberLoopAsync(CancellationToken cancellationToken)
@@ -485,13 +516,16 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
 
                     try
                     {
-                        await ProcessMessageAsync(sqsMessage, cancellationToken).AnyContext();
+                        bool handled = await ProcessMessageAsync(sqsMessage, cancellationToken).AnyContext();
 
-                        await _sqsClient.Value.DeleteMessageAsync(new DeleteMessageRequest
+                        if (handled)
                         {
-                            QueueUrl = _queueUrl,
-                            ReceiptHandle = sqsMessage.ReceiptHandle
-                        }, CancellationToken.None).AnyContext();
+                            await _sqsClient.Value.DeleteMessageAsync(new DeleteMessageRequest
+                            {
+                                QueueUrl = _queueUrl,
+                                ReceiptHandle = sqsMessage.ReceiptHandle
+                            }, CancellationToken.None).AnyContext();
+                        }
                     }
                     catch (ReceiptHandleIsInvalidException ex)
                     {
@@ -532,10 +566,10 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
         _logger.LogTrace("Subscriber loop ended for {MessageBusId}", MessageBusId);
     }
 
-    private async Task ProcessMessageAsync(Amazon.SQS.Model.Message sqsMessage, CancellationToken cancellationToken)
+    private async Task<bool> ProcessMessageAsync(Amazon.SQS.Model.Message sqsMessage, CancellationToken cancellationToken)
     {
         if (_subscribers.IsEmpty)
-            return;
+            return !cancellationToken.IsCancellationRequested;
 
         _logger.LogTrace("Processing message {MessageId}", sqsMessage.MessageId);
 
@@ -577,6 +611,7 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
             message.Properties[property.Key] = property.Value;
 
         await SendMessageToSubscribersAsync(message).AnyContext();
+        return true;
     }
 
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
@@ -658,83 +693,6 @@ public class SQSMessageBus : MessageBusBase<SQSMessageBusOptions>, IAsyncDisposa
                 throw new MessageBusException($"Failed to publish message to SNS topic {topicName}: {ex.Message}", ex);
             }
         }, cancellationToken).AnyContext();
-    }
-
-    /// <summary>
-    /// Asynchronously releases all resources used by the message bus.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Disposal performs the following cleanup operations:
-    /// <list type="bullet">
-    /// <item>Cancels and waits for the subscriber polling loop to complete</item>
-    /// <item>Unsubscribes the SQS queue from the SNS topic</item>
-    /// <item>Deletes the SQS queue if <see cref="SQSMessageBusOptions.SubscriptionQueueAutoDelete"/> is true</item>
-    /// <item>Disposes the SNS and SQS clients</item>
-    /// </list>
-    /// </para>
-    /// <para>
-    /// For durable subscriptions, set <see cref="SQSMessageBusOptions.SubscriptionQueueAutoDelete"/> to false
-    /// to preserve the queue across restarts.
-    /// </para>
-    /// </remarks>
-    public async ValueTask DisposeAsync()
-    {
-        if (_isDisposed)
-            return;
-
-        _isDisposed = true;
-        BeginDispose();
-        await CleanupAsync().AnyContext();
-    }
-
-    /// <inheritdoc />
-    public override void Dispose()
-    {
-        if (_isDisposed)
-            return;
-
-        _isDisposed = true;
-        BeginDispose();
-        Task.Run(() => CleanupAsync()).GetAwaiter().GetResult();
-    }
-
-    private void BeginDispose()
-    {
-        try { _subscriberCts?.Cancel(); }
-        catch (ObjectDisposedException) { }
-
-        base.Dispose();
-    }
-
-    private async Task CleanupAsync()
-    {
-        if (_subscriberTask is not null)
-        {
-            try
-            {
-                await _subscriberTask.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
-            }
-            catch (OperationCanceledException) { }
-            catch (TimeoutException)
-            {
-                _logger.LogWarning("Subscriber task did not complete within timeout during dispose");
-            }
-            catch (AggregateException ex)
-            {
-                _logger.LogWarning(ex, "Error waiting for subscriber task to complete during dispose");
-            }
-        }
-
-        _subscriberCts?.Dispose();
-
-        await RemoveTopicSubscriptionAsync().AnyContext();
-
-        if (_snsClient.IsValueCreated)
-            _snsClient.Value.Dispose();
-
-        if (_sqsClient.IsValueCreated)
-            _sqsClient.Value.Dispose();
     }
 
     /// <summary>
