@@ -117,6 +117,10 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
         {
             await SendMessageToSubscribersAsync(message).AnyContext();
         }
+        catch (OperationCanceledException) when (IsDisposed)
+        {
+            // Bus is disposing — Redis pub/sub is fire-and-forget, message is lost
+        }
         catch (MessageBusException)
         {
             // SendMessageToSubscribersAsync already logged the error
@@ -160,30 +164,32 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
             cancellationToken).AnyContext();
     }
 
-    public override void Dispose()
+    protected override async Task CleanupAsync()
     {
-        base.Dispose();
+        if (!_isSubscribed)
+            return;
 
-        if (_isSubscribed)
+        using (await _lock.LockAsync().AnyContext())
         {
-            using (_lock.Lock())
-            {
-                if (!_isSubscribed)
-                    return;
+            if (!_isSubscribed)
+                return;
 
+            if (_channelMessageQueue is not null)
+            {
                 _logger.LogTrace("Unsubscribing from topic {Topic}", _options.Topic);
                 try
                 {
-                    _channelMessageQueue?.Unsubscribe(CommandFlags.FireAndForget);
+                    _channelMessageQueue.Unsubscribe(CommandFlags.FireAndForget);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error unsubscribing from topic {Topic}: {Message}", _options.Topic, ex.Message);
                 }
                 _channelMessageQueue = null;
-                _isSubscribed = false;
-                _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
             }
+
+            _isSubscribed = false;
+            _logger.LogTrace("Unsubscribed from topic {Topic}", _options.Topic);
         }
     }
 }
