@@ -390,6 +390,9 @@ await DoWork();
 
 // Queue entries should be completed/abandoned
 var entry = await queue.DequeueAsync();
+if (entry is null)
+    return;
+
 try
 {
     await ProcessAsync(entry.Value);

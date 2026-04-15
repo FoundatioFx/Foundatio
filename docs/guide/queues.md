@@ -18,9 +18,9 @@ public interface IQueue<T> : IQueue where T : class
     AsyncEvent<QueueDeletedEventArgs<T>> QueueDeleted { get; }
 
     void AttachBehavior(IQueueBehavior<T> behavior);
-    Task<string> EnqueueAsync(T data, QueueEntryOptions options = null);
-    Task<IQueueEntry<T>> DequeueAsync(CancellationToken cancellationToken);
-    Task<IQueueEntry<T>> DequeueAsync(TimeSpan? timeout = null);
+    Task<string?> EnqueueAsync(T data, QueueEntryOptions? options = null);
+    Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken);
+    Task<IQueueEntry<T>?> DequeueAsync(TimeSpan? timeout = null);
     Task RenewLockAsync(IQueueEntry<T> queueEntry);
     Task CompleteAsync(IQueueEntry<T> queueEntry);
     Task AbandonAsync(IQueueEntry<T> queueEntry);
@@ -56,8 +56,11 @@ await queue.EnqueueAsync(new WorkItem { Id = 1, Data = "Hello" });
 
 // Dequeue and process
 var entry = await queue.DequeueAsync();
-Console.WriteLine($"Processing: {entry.Value.Data}");
-await entry.CompleteAsync();
+if (entry != null)
+{
+    Console.WriteLine($"Processing: {entry.Value.Data}");
+    await entry.CompleteAsync();
+}
 ```
 
 ### RedisQueue
@@ -173,6 +176,9 @@ Mark an entry as successfully processed:
 
 ```csharp
 var entry = await queue.DequeueAsync();
+if (entry is null)
+    return;
+
 try
 {
     await ProcessAsync(entry.Value);
@@ -191,6 +197,9 @@ Return an entry to the queue for retry:
 
 ```csharp
 var entry = await queue.DequeueAsync();
+if (entry is null)
+    return;
+
 if (!CanProcess(entry.Value))
 {
     // Return to queue for later processing
@@ -289,7 +298,7 @@ public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
     }
 
     // Override to lock on the order ID instead of the queue entry ID
-    protected override Task<ILock> GetQueueEntryLockAsync(
+    protected override Task<ILock?> GetQueueEntryLockAsync(
         IQueueEntry<OrderWorkItem> queueEntry,
         CancellationToken cancellationToken = default)
     {
@@ -884,6 +893,8 @@ public class WorkItem
 
 ```csharp
 var entry = await queue.DequeueAsync();
+if (entry is null)
+    return;
 
 // Check if already processed
 if (await _processedIds.ContainsAsync(entry.Value.Id))

@@ -211,6 +211,9 @@ await queue.StartWorkingAsync(async (entry, token) =>
 while (await queue.GetQueueStatsAsync() is { Queued: > 0 })
 {
     var entry = await queue.DequeueAsync();
+    if (entry is null)
+        break;
+
     await entry.CompleteAsync();
 }
 ```

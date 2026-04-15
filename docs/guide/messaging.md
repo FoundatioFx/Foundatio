@@ -14,7 +14,7 @@ public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposabl
 public interface IMessagePublisher
 {
     Task PublishAsync(Type messageType, object message,
-                      MessageOptions options = null,
+                      MessageOptions? options = null,
                       CancellationToken cancellationToken = default);
 }
 

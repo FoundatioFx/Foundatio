@@ -217,14 +217,17 @@ await queue.EnqueueAsync(new WorkItem { Id = 1 });
 
 // Dequeue and process
 var entry = await queue.DequeueAsync();
-try
+if (entry != null)
 {
-    await ProcessAsync(entry.Value);
-    await entry.CompleteAsync();
-}
-catch
-{
-    await entry.AbandonAsync();
+    try
+    {
+        await ProcessAsync(entry.Value);
+        await entry.CompleteAsync();
+    }
+    catch
+    {
+        await entry.AbandonAsync();
+    }
 }
 ```
 

@@ -210,8 +210,8 @@ public static class LockProviderExtensions
         ArgumentNullException.ThrowIfNull(resources);
 
         string[] resourceList = resources.Distinct().OrderBy(r => r).ToArray();
-        if (resourceList.Length == 0)
-            return new EmptyLock();
+        if (resourceList.Length is 0)
+            return EmptyLock.Empty;
 
         var logger = provider.GetLogger();
 

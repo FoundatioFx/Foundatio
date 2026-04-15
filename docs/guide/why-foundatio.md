@@ -178,7 +178,8 @@ var throttledLocker = new ThrottlingLockProvider(
 );
 
 // Only allows 10 operations per minute across all instances
-if (await throttledLocker.AcquireAsync("api-call"))
+await using var lck = await throttledLocker.AcquireAsync("api-call");
+if (lck != null)
 {
     await CallExternalApiAsync();
 }

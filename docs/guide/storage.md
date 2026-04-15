@@ -9,9 +9,9 @@ File storage provides abstracted file operations with multiple backend implement
 ```csharp
 public interface IFileStorage : IHaveSerializer, IDisposable
 {
-    Task<Stream> GetFileStreamAsync(string path, StreamMode streamMode,
-                                     CancellationToken cancellationToken = default);
-    Task<FileSpec> GetFileInfoAsync(string path);
+    Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode,
+                                      CancellationToken cancellationToken = default);
+    Task<FileSpec?> GetFileInfoAsync(string path);
     Task<bool> ExistsAsync(string path);
     Task<bool> SaveFileAsync(string path, Stream stream,
                              CancellationToken cancellationToken = default);
@@ -20,10 +20,10 @@ public interface IFileStorage : IHaveSerializer, IDisposable
     Task<bool> CopyFileAsync(string path, string targetPath,
                              CancellationToken cancellationToken = default);
     Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default);
-    Task<int> DeleteFilesAsync(string searchPattern = null,
+    Task<int> DeleteFilesAsync(string? searchPattern = null,
                                CancellationToken cancellation = default);
     Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100,
-                                                     string searchPattern = null,
+                                                     string? searchPattern = null,
                                                      CancellationToken cancellationToken = default);
 }
 ```
@@ -192,13 +192,13 @@ await storage.SaveObjectAsync("data/user.json", new User { Name = "John" });
 using var stream = await storage.GetFileStreamAsync("file.pdf", StreamMode.Read);
 
 // Read as string (extension method)
-string content = await storage.GetFileContentsAsync("config.json");
+string? content = await storage.GetFileContentsAsync("config.json");
 
 // Read and deserialize (extension method)
 var user = await storage.GetObjectAsync<User>("data/user.json");
 
 // Get raw bytes (extension method)
-byte[] bytes = await storage.GetFileBytesAsync("image.png");
+byte[]? bytes = await storage.GetFileContentsRawAsync("image.png");
 ```
 
 ### File Information
@@ -398,11 +398,11 @@ Foundatio provides helpful extension methods:
 ```csharp
 // String content
 await storage.SaveFileAsync("text.txt", "Hello World");
-string text = await storage.GetFileContentsAsync("text.txt");
+string? text = await storage.GetFileContentsAsync("text.txt");
 
 // Bytes
 await storage.SaveFileAsync("data.bin", byteArray);
-byte[] bytes = await storage.GetFileBytesAsync("data.bin");
+byte[]? bytes = await storage.GetFileContentsRawAsync("data.bin");
 
 // Objects (serialized)
 await storage.SaveObjectAsync("user.json", user);
@@ -524,7 +524,7 @@ await stream.CopyToAsync(destination);
 ```csharp
 public class FileSpec
 {
-    public string Path { get; set; }
+    public required string Path { get; set; }
     public long Size { get; set; }
     public DateTime Created { get; set; }
     public DateTime Modified { get; set; }

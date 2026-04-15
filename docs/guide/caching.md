@@ -12,7 +12,7 @@ public interface ICacheClient : IDisposable
     // Key operations
     Task<bool> RemoveAsync(string key);
     Task<bool> RemoveIfEqualAsync<T>(string key, T expected);
-    Task<int> RemoveAllAsync(IEnumerable<string> keys = null);
+    Task<int> RemoveAllAsync(IEnumerable<string>? keys = null);
     Task<int> RemoveByPrefixAsync(string prefix);
     Task<bool> ExistsAsync(string key);
 

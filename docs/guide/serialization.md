@@ -17,14 +17,14 @@ public interface ISerializer
     /// <summary>
     /// Deserializes data from a stream into an object of the specified type.
     /// </summary>
-    object Deserialize(Stream data, Type objectType);
+    object? Deserialize(Stream data, Type objectType);
 
     /// <summary>
     /// Serializes an object to the specified output stream.
     /// Null values are valid and will be serialized (e.g., as "null" for JSON serializers
     /// or nil markers for binary serializers).
     /// </summary>
-    void Serialize(object value, Stream output);
+    void Serialize(object? value, Stream output);
 }
 
 /// <summary>

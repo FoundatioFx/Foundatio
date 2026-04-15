@@ -9,9 +9,9 @@ Locks ensure a resource is only accessed by one consumer at any given time. Foun
 ```csharp
 public interface ILockProvider
 {
-    Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
-                              bool releaseOnDispose = true,
-                              CancellationToken cancellationToken = default);
+    Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
+                               bool releaseOnDispose = true,
+                               CancellationToken cancellationToken = default);
     Task<bool> IsLockedAsync(string resource);
     Task ReleaseAsync(string resource, string lockId);
     Task ReleaseAsync(string resource);

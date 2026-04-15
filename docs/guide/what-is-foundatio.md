@@ -76,8 +76,11 @@ Reliable message delivery with at-least-once semantics:
 IQueue<WorkItem> queue = new InMemoryQueue<WorkItem>();
 await queue.EnqueueAsync(new WorkItem { Id = 1 });
 var entry = await queue.DequeueAsync();
-// Process and complete
-await entry.CompleteAsync();
+if (entry != null)
+{
+    // Process and complete
+    await entry.CompleteAsync();
+}
 ```
 
 [Learn more about Queues →](./queues)
