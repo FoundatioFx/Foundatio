@@ -110,24 +110,6 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
-    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
-    {
-        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
-    }
-
-    [Fact]
-    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
-    {
-        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
-    }
-
-    [Fact]
-    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
-    {
-        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
-    }
-
-    [Fact]
     public override Task CanSubscribeConcurrentlyAsync()
     {
         return base.CanSubscribeConcurrentlyAsync();
@@ -231,9 +213,9 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
-    public override void CanDisposeWithNoSubscribersOrPublishers()
+    public override Task CanDisposeWithNoSubscribersOrPublishersAsync()
     {
-        base.CanDisposeWithNoSubscribersOrPublishers();
+        return base.CanDisposeWithNoSubscribersOrPublishersAsync();
     }
 
     [Fact]
@@ -243,9 +225,39 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
-    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    public override Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
     {
-        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
+        return base.DisposeAsync_CalledMultipleTimes_IsIdempotentAsync();
+    }
+
+    [Fact]
+    public override Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
+    {
+        return base.DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync();
+    }
+
+    [Fact]
+    public override Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
+    {
+        return base.DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        return base.PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
     }
 
     [Fact]
@@ -255,8 +267,32 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     }
 
     [Fact]
+    public override Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        return base.SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    {
+        return base.SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
     public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
     {
         return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
     }
 }

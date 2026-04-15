@@ -67,7 +67,9 @@ static async Task DequeueMessages(string connectionString, string queueName, int
         try
         {
             cts.Cancel();
-        } catch {
+        }
+        catch
+        {
         }
 
         logger.LogInformation("Cancellation requested...");

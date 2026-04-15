@@ -67,7 +67,9 @@ static async Task SubscribeToMessages(string connectionString, string topic, str
         try
         {
             cts.Cancel();
-        } catch {
+        }
+        catch
+        {
         }
 
         logger.LogInformation("Cancellation requested...");
