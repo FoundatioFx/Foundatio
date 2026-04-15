@@ -870,6 +870,90 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>
+    /// Verifies that cancellation is surfaced as OperationCanceledException, not swallowed
+    /// or wrapped in MessageBusException. This ensures callers can distinguish between
+    /// cancellation and actual publish failures.
+    /// </summary>
+    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        // Arrange
+        var messageReceived = new AsyncAutoResetEvent(false);
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                _logger.LogTrace("Got message - this should NOT happen");
+                messageReceived.Set();
+            }, TestCancellationToken);
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA
+            {
+                Data = "ShouldBeDiscarded"
+            }, new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+
+            _logger.LogTrace("Published delayed message, disposing immediately...");
+            messageBus.Dispose();
+            messageBus = null;
+
+            // Assert
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(250));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
+        }
+        finally
+        {
+            if (messageBus is not null)
+                await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        // Arrange
+        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnSerialize = true };
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
+
+            // Act & Assert
+            await Assert.ThrowsAsync<MessageBusException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
     public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
     {
         // Arrange
@@ -891,6 +975,11 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>
+    /// Cancelling a subscription token should only remove that subscriber, not tear down
+    /// the underlying transport (connections, channels, polling loops). Other active
+    /// subscribers must continue to receive messages.
+    /// </summary>
     public virtual async Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
     {
         // Arrange
@@ -931,64 +1020,23 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    /// <summary>
+    /// Verifies that cancellation is surfaced as OperationCanceledException, not swallowed
+    /// or wrapped in MessageBusException. This ensures callers can distinguish between
+    /// cancellation and actual subscribe failures.
+    /// </summary>
+    public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
         // Arrange
-        var faultSerializer = new FaultInjectingSerializer();
-        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
-        if (messageBus is null)
-            return;
-
-        long handlerInvocations = 0;
-        var messageReceived = new AsyncAutoResetEvent(false);
-
-        try
-        {
-            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
-            {
-                _logger.LogTrace("SimpleAMessage received");
-                Interlocked.Increment(ref handlerInvocations);
-                messageReceived.Set();
-            });
-
-            // Publish a valid message first (serializer works normally)
-            await messageBus.PublishAsync(new SimpleMessageA { Data = "valid" }, cancellationToken: TestCancellationToken);
-            await messageReceived.WaitAsync(TestCancellationToken);
-            Assert.Equal(1, handlerInvocations);
-
-            // Flip the flag so deserialization throws on the next message
-            faultSerializer.ShouldFailOnDeserialize = true;
-
-            // Act: publish a message that will fail deserialization on receive
-            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
-
-            // Wait a reasonable time for the message to be processed (or skipped)
-            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
-
-            // Assert: handler should still have been invoked only once (for the valid message)
-            Assert.Equal(1, handlerInvocations);
-        }
-        finally
-        {
-            await CleanupMessageBusAsync(messageBus);
-        }
-    }
-
-    public virtual async Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
-    {
-        // Arrange
-        var faultSerializer = new FaultInjectingSerializer { ShouldFailOnSerialize = true };
-        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
+        using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         try
         {
-            await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
-
-            // Act & Assert: publishing with a broken serializer should throw
-            await Assert.ThrowsAsync<MessageBusException>(async () =>
-                await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
+            // Act & Assert
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+                await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
         }
         finally
         {
@@ -1013,11 +1061,11 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 Interlocked.Increment(ref handlerInvocations);
             });
 
-            // Act: publish a message that will fail deserialization on receive
+            // Act
             await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
             await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
-            // Assert: handler should never be invoked for a poisoned message
+            // Assert
             Assert.Equal(0, handlerInvocations);
         }
         finally
@@ -1026,75 +1074,38 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    public virtual async Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
     {
         // Arrange
-        using var messageBus = GetMessageBus();
+        var faultSerializer = new FaultInjectingSerializer();
+        using var messageBus = GetMessageBus(o => { o.Serializer = faultSerializer; return o; });
         if (messageBus is null)
             return;
 
-        try
-        {
-            // Act & Assert
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-                await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
-        }
-        finally
-        {
-            await CleanupMessageBusAsync(messageBus);
-        }
-    }
-
-    public virtual async Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
-    {
-        // Arrange
+        long handlerInvocations = 0;
         var messageReceived = new AsyncAutoResetEvent(false);
-        var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
 
         try
         {
-            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            await messageBus.SubscribeAsync<SimpleMessageA>(_ =>
             {
-                _logger.LogTrace("Got message - this should NOT happen");
+                _logger.LogTrace("SimpleAMessage received");
+                Interlocked.Increment(ref handlerInvocations);
                 messageReceived.Set();
-            }, TestCancellationToken);
+            });
 
-            // Act - publish with short delay, then dispose immediately before delay expires
-            await messageBus.PublishAsync(new SimpleMessageA
-            {
-                Data = "ShouldBeDiscarded"
-            }, new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "valid" }, cancellationToken: TestCancellationToken);
+            await messageReceived.WaitAsync(TestCancellationToken);
+            Assert.Equal(1, handlerInvocations);
 
-            _logger.LogTrace("Published delayed message, disposing immediately...");
-            messageBus.Dispose();
-            messageBus = null; // Mark as disposed to skip cleanup
+            faultSerializer.ShouldFailOnDeserialize = true;
 
-            // Assert - wait slightly longer than the delay; message should NOT be delivered
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
-            cts.CancelAfter(TimeSpan.FromMilliseconds(250));
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => messageReceived.WaitAsync(cts.Token));
-        }
-        finally
-        {
-            if (messageBus is not null)
-                await CleanupMessageBusAsync(messageBus);
-        }
-    }
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "poison" }, cancellationToken: TestCancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
-    public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
-    {
-        // Arrange
-        using var messageBus = GetMessageBus();
-        if (messageBus is null)
-            return;
-
-        try
-        {
-            // Act & Assert
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
-                await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
+            // Assert
+            Assert.Equal(1, handlerInvocations);
         }
         finally
         {
