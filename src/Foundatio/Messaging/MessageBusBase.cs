@@ -25,8 +25,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly IResiliencePolicy _resiliencePolicy;
     protected readonly ISerializer _serializer;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
-    private bool _isDisposed;
-    protected bool IsDisposed => _isDisposed;
+    private int _disposeState;
+    protected bool IsDisposed => _disposeState != 0;
 
     public MessageBusBase(TOptions options)
     {
@@ -328,8 +328,11 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected async Task SendMessageToSubscribersAsync(IMessage message)
     {
-        if (_isDisposed)
-            throw new OperationCanceledException("Message bus is disposing.");
+        if (IsDisposed)
+        {
+            _logger.LogTrace("Message bus {MessageBusId} is disposed, skipping message delivery for type {MessageType}", MessageBusId, message.Type);
+            return;
+        }
 
         var subscribers = GetMessageSubscribers(message);
 
@@ -512,10 +515,9 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public virtual async ValueTask DisposeAsync()
     {
-        if (_isDisposed)
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
             return;
 
-        _isDisposed = true;
         _logger.LogTrace("MessageBus {MessageBusId} async dispose", MessageBusId);
 
         try
@@ -544,13 +546,12 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public virtual void Dispose()
     {
-        if (_isDisposed)
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
         {
             _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
             return;
         }
 
-        _isDisposed = true;
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
 
         try

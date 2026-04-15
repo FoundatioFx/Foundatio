@@ -995,10 +995,10 @@ services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 
 Disposal follows a **two-phase** sequence to prevent message loss in durable providers:
 
-1. **Graceful drain** — In-flight handlers finish executing while subscribers and the internal cancellation token are still active. Providers that support processor-level draining (e.g., Azure Service Bus `StopProcessingAsync`) execute it here.
-2. **Teardown** — The internal cancellation token is cancelled, all subscribers are cleared, and transport infrastructure (connections, channels, clients) is closed and disposed.
+1. **Graceful drain** — In-flight handlers finish executing while subscribers and the internal cancellation token are still active. Providers that support processor-level draining (e.g., Azure Service Bus `StopProcessingAsync`) execute it here via `ShutdownAsync`.
+2. **Teardown** — The internal cancellation token is cancelled, all subscribers are cleared, and transport infrastructure (connections, channels, clients) is closed and disposed via `CleanupAsync`.
 
-This means a call to `DisposeAsync()` will not return until currently executing subscriber callbacks have completed or timed out.
+> **Note:** The base `MessageBusBase` implementation does not guarantee that all active subscriber callbacks have completed before `DisposeAsync` returns. Provider-specific draining behavior (such as Azure Service Bus `StopProcessingAsync`) is implemented in provider overrides of `ShutdownAsync`.
 
 ### Message Durability During Shutdown
 
