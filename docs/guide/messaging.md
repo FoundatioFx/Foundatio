@@ -7,7 +7,7 @@ Messaging allows you to publish and subscribe to messages flowing through your a
 [View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio/Messaging/IMessageBus.cs)
 
 ```csharp
-public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable
+public interface IMessageBus : IMessagePublisher, IMessageSubscriber, IDisposable, IAsyncDisposable
 {
 }
 
@@ -979,24 +979,68 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 
 ## Resource Management
 
-### Proper Disposal
+### Disposal Lifecycle
 
-Message buses implement `IDisposable` and should be properly disposed:
+Message buses implement both `IDisposable` and `IAsyncDisposable`. Prefer `await using` (or `DisposeAsync()`) for clean shutdown:
 
 ```csharp
-// ✅ Good: DI container manages lifetime
-services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-
-// ✅ Good: Manual disposal when needed
+// Preferred: async disposal
 await using var messageBus = new InMemoryMessageBus();
-await messageBus.SubscribeAsync<MyEvent>(async e => { });
-// Disposed when scope ends
+await messageBus.SubscribeAsync<MyEvent>(async e => { /* ... */ });
+// DisposeAsync is called when scope ends
 
-// ❌ Bad: Not disposing
-var messageBus = new InMemoryMessageBus();
-// ... use it
-// Never disposed, subscriptions leak
+// DI container manages lifetime automatically
+services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 ```
+
+Disposal follows a **two-phase** sequence to prevent message loss in durable providers:
+
+1. **Graceful drain** — In-flight handlers finish executing while subscribers and the internal cancellation token are still active. Providers that support processor-level draining (e.g., Azure Service Bus `StopProcessingAsync`) execute it here via `ShutdownAsync`.
+2. **Teardown** — The internal cancellation token is cancelled, all subscribers are cleared, and transport infrastructure (connections, channels, clients) is closed and disposed via `CleanupAsync`.
+
+> **Note:** The base `MessageBusBase` implementation does not guarantee that all active subscriber callbacks have completed before `DisposeAsync` returns. Provider-specific draining behavior (such as Azure Service Bus `StopProcessingAsync`) is implemented in provider overrides of `ShutdownAsync`.
+
+### Message Durability During Shutdown
+
+What happens to messages that arrive while the bus is disposing depends on the provider:
+
+| Provider | In-Flight Messages | Arriving During Dispose | After Dispose |
+|---|---|---|---|
+| **InMemoryMessageBus** | Completed normally | Dropped (no persistence) | Lost |
+| **AzureServiceBusMessageBus** | Completed; abandoned if bus disposes mid-handler (PeekLock) | Remain in topic for other subscribers | Persisted in Azure |
+| **KafkaMessageBus** | Completed; offset not committed if bus disposes mid-handler | Remain in partition (uncommitted offset) | Persisted in Kafka |
+| **RabbitMQMessageBus** | Completed; requeued if bus disposes mid-handler | Remain in queue | Persisted in RabbitMQ |
+| **RedisMessageBus** | Completed normally | Dropped (pub/sub has no persistence) | Lost |
+| **SQSMessageBus** | Completed; message not deleted if bus disposes mid-handler | Remain in SQS queue | Persisted in SQS |
+
+::: tip Fire-and-Forget Providers
+`InMemoryMessageBus` and `RedisMessageBus` use fire-and-forget delivery. Messages that arrive when no subscriber is listening are permanently lost. This is by design — if you need guaranteed delivery, use a durable provider or `IQueue<T>`.
+:::
+
+### Writing Custom Providers
+
+If you are extending `MessageBusBase<TOptions>` with a custom provider, override the lifecycle hooks:
+
+- **`ShutdownAsync()`** — Called *before* the cancellation token is cancelled and *before* subscribers are cleared. Use this to gracefully drain your transport (e.g., stop a processor, close a consumer group). Subscribers are still active and can finish processing.
+- **`CleanupAsync()`** — Called *after* the cancellation token is cancelled and *after* subscribers are cleared. Use this to tear down transport infrastructure (close connections, dispose clients, await background tasks).
+
+```csharp
+public class MyMessageBus : MessageBusBase<MyOptions>
+{
+    // Phase 1: Stop accepting new messages, drain in-flight work.
+    // When the body is a single call, return the Task directly (no extra async state machine).
+    protected override Task ShutdownAsync() => _processor.StopAsync();
+
+    protected override async Task CleanupAsync()
+    {
+        // Phase 2: Close connections, dispose clients — ConfigureAwait(false) in library overrides
+        await _connection.CloseAsync().ConfigureAwait(false);
+        _client.Dispose();
+    }
+}
+```
+
+If `ShutdownAsync` needs multiple steps, use `async`/`await` and apply `.ConfigureAwait(false)` to each await (within Foundatio provider projects, the same pattern uses the internal `AnyContext()` helper).
 
 ## Next Steps
 

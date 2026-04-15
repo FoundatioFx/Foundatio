@@ -14,7 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
-public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable where TOptions : SharedMessageBusOptions
+public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable, IAsyncDisposable where TOptions : SharedMessageBusOptions
 {
     protected readonly ConcurrentDictionary<string, Subscriber> _subscribers = new();
     protected readonly TOptions _options;
@@ -25,8 +25,8 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly IResiliencePolicy _resiliencePolicy;
     protected readonly ISerializer _serializer;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
-    private bool _isDisposed;
-    protected bool IsDisposed => _isDisposed;
+    private int _disposeState;
+    protected bool IsDisposed => _disposeState != 0;
 
     public MessageBusBase(TOptions options)
     {
@@ -172,7 +172,41 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         return resolvedType;
     }
 
+    /// <summary>
+    /// Called during the first phase of disposal, <b>before</b> <see cref="DisposedCancellationToken"/>
+    /// is cancelled and <b>before</b> subscribers are cleared.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Override this method to gracefully drain in-flight work (stop processors, close consumer
+    /// groups, flush buffers). Subscribers are still registered and the cancellation token is
+    /// still active, so handlers can finish processing normally.
+    /// </para>
+    /// <para>
+    /// The base implementation delegates to <see cref="RemoveTopicSubscriptionAsync"/> so that
+    /// existing provider overrides continue to work without changes.
+    /// </para>
+    /// </remarks>
+    protected virtual Task ShutdownAsync() => RemoveTopicSubscriptionAsync();
+
+    /// <summary>
+    /// Called during the second phase of disposal, <b>after</b> <see cref="DisposedCancellationToken"/>
+    /// is cancelled and <b>after</b> subscribers are cleared.
+    /// </summary>
+    /// <remarks>
+    /// Override this method to tear down transport infrastructure — close connections,
+    /// dispose clients, await background listener tasks. No subscribers remain at this point
+    /// and the cancellation token has been signaled, so background loops should have exited.
+    /// </remarks>
+    protected virtual Task CleanupAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Called during the first phase of disposal to remove transport-level topic subscriptions.
+    /// New providers should prefer overriding <see cref="ShutdownAsync"/> instead, which calls
+    /// this method by default.
+    /// </summary>
     protected virtual Task RemoveTopicSubscriptionAsync() => Task.CompletedTask;
+
     /// <summary>
     /// Called after subscribing to ensure the topic subscription infrastructure exists. The
     /// <paramref name="cancellationToken"/> is always <see cref="MaintenanceBase.DisposedCancellationToken"/>;
@@ -205,28 +239,14 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
         if (cancellationToken != CancellationToken.None)
         {
+            // CancellationToken.Register only accepts synchronous callbacks, so we cannot safely
+            // call RemoveTopicSubscriptionAsync here. The async-capable CancelAsync was added in
+            // .NET 8 but still does not support async callbacks — see:
+            // https://github.com/dotnet/runtime/issues/31315
+            // Topic subscription teardown is handled during DisposeAsync via ShutdownAsync/CleanupAsync.
             cancellationToken.Register(() =>
             {
                 _subscribers.TryRemove(subscriber.Id, out _);
-                if (_subscribers.Count > 0)
-                    return;
-
-                _logger.LogDebug("Removing topic subscription for {MessageBusId}: No subscribers", MessageBusId);
-                // CancellationToken.Register only accepts synchronous callbacks, so we fire-and-forget
-                // to avoid blocking on the async method which causes deadlocks during disposal.
-                // Tracked at https://github.com/dotnet/runtime/issues/31315
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await RemoveTopicSubscriptionAsync().AnyContext();
-                        _logger.LogDebug("Topic subscription removed for {MessageBusId}", MessageBusId);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error removing topic subscription for {MessageBusId}: {Message}", MessageBusId, ex.Message);
-                    }
-                });
             });
         }
 
@@ -308,6 +328,12 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected async Task SendMessageToSubscribersAsync(IMessage message)
     {
+        if (IsDisposed)
+        {
+            _logger.LogTrace("Message bus {MessageBusId} is disposed, skipping message delivery for type {MessageType}", MessageBusId, message.Type);
+            return;
+        }
+
         var subscribers = GetMessageSubscribers(message);
 
         _logger.LogTrace("Found {SubscriberCount} subscribers for message type: ClrType={MessageClrType} Type={MessageType}", subscribers.Count, message.ClrType, message.Type);
@@ -487,19 +513,100 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public string MessageBusId { get; init; }
 
+    public virtual async ValueTask DisposeAsync()
+    {
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
+            return;
+
+        _logger.LogTrace("MessageBus {MessageBusId} async dispose", MessageBusId);
+
+        try
+        {
+            await ShutdownAsync().AnyContext();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Shutdown cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Resource already disposed during shutdown for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
+        _subscribers?.Clear();
+        _disposedCancellationTokenSource.Cancel();
+
+        try
+        {
+            await CleanupAsync().AnyContext();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Cleanup cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Resource already disposed during cleanup for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
+        _disposedCancellationTokenSource.Dispose();
+    }
+
     public virtual void Dispose()
     {
-        if (_isDisposed)
+        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
         {
             _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
             return;
         }
 
-        _isDisposed = true;
-
         _logger.LogTrace("MessageBus {MessageBusId} dispose", MessageBusId);
+
+        try
+        {
+            ShutdownAsync().AnyContext().GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Shutdown cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Resource already disposed during shutdown for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
         _subscribers?.Clear();
         _disposedCancellationTokenSource.Cancel();
+
+        try
+        {
+            CleanupAsync().AnyContext().GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Cleanup cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogDebug(ex, "Resource already disposed during cleanup for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+
         _disposedCancellationTokenSource.Dispose();
     }
 

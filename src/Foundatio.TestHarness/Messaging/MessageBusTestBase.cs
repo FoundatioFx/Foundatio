@@ -729,20 +729,23 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual void CanDisposeWithNoSubscribersOrPublishers()
+    public virtual async Task CanDisposeWithNoSubscribersOrPublishersAsync()
     {
         using var messageBus = GetMessageBus();
-        if (messageBus == null)
+        if (messageBus is null)
             return;
 
         using (messageBus)
         {
             // Empty using statement to ensure Dispose is called
         }
+
+        await CleanupMessageBusAsync(messageBus);
     }
 
     public virtual async Task CanHandlePoisonedMessageAsync()
     {
+        // Arrange
         using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
@@ -758,11 +761,169 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
                 throw new Exception("Poisoned message");
             });
 
+            // Act
             await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: TestCancellationToken);
             _logger.LogTrace("Published one...");
 
             await Task.Delay(TimeSpan.FromSeconds(3));
+
+            // Assert
             Assert.InRange(handlerInvocations, 1, 5);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            // Act
+            await messageBus.DisposeAsync();
+            await messageBus.DisposeAsync();
+            await messageBus.DisposeAsync();
+
+            // Assert - no exception thrown
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            var subscriberStarted = new AsyncAutoResetEvent(false);
+
+            await messageBus.SubscribeAsync<SimpleMessageA>(async msg =>
+            {
+                subscriberStarted.Set();
+                await Task.Delay(500, TestCancellationToken);
+            });
+
+            // Act
+            _ = messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+            await subscriberStarted.WaitAsync(TestCancellationToken);
+
+            await messageBus.DisposeAsync();
+
+            // Assert - no deadlock or exception thrown
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            // Act
+            await messageBus.DisposeAsync();
+
+            // Assert - no exception thrown
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.DisposeAsync();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<MessageBusException>(async () =>
+                await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            await messageBus.DisposeAsync();
+
+            // Act & Assert
+            await Assert.ThrowsAsync<MessageBusException>(async () =>
+                await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    {
+        // Arrange
+        var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+            var cancelledHandlerCount = new AsyncCountdownEvent(1);
+
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                cancelledHandlerCount.Signal();
+            }, cts.Token);
+
+            await cts.CancelAsync();
+
+            var activeHandlerReceived = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Hello", msg.Data);
+                activeHandlerReceived.Signal();
+            }, TestCancellationToken);
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+            await activeHandlerReceived.WaitAsync(TimeSpan.FromSeconds(5));
+
+            // Assert
+            Assert.Equal(0, activeHandlerReceived.CurrentCount);
+            Assert.Equal(1, cancelledHandlerCount.CurrentCount);
         }
         finally
         {
@@ -867,13 +1028,14 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
+        // Arrange
         using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         try
         {
-            // Act & Assert - cancelled token should throw OperationCanceledException, not MessageBusException
+            // Act & Assert
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
                 await messageBus.PublishAsync(new SimpleMessageA(), cancellationToken: new CancellationToken(true)));
         }
@@ -923,13 +1085,14 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
+        // Arrange
         using var messageBus = GetMessageBus();
         if (messageBus is null)
             return;
 
         try
         {
-            // Act & Assert - cancelled token should throw OperationCanceledException
+            // Act & Assert
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
                 await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }, cancellationToken: new CancellationToken(true)));
         }
