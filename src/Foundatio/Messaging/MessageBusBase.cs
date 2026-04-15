@@ -524,7 +524,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         {
             await ShutdownAsync().AnyContext();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Shutdown cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogTrace(ex, "Resource already disposed during shutdown for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
         }
@@ -536,7 +544,15 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         {
             await CleanupAsync().AnyContext();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Cleanup cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogTrace(ex, "Resource already disposed during cleanup for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
         }
@@ -558,7 +574,19 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         {
             ShutdownAsync().AnyContext().GetAwaiter().GetResult();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Shutdown cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (AggregateException ex)
+        {
+            _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogTrace(ex, "Resource already disposed during shutdown for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "Error during shutdown for {MessageBusId}: {Message}", MessageBusId, ex.Message);
         }
@@ -570,7 +598,19 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         {
             CleanupAsync().AnyContext().GetAwaiter().GetResult();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException ex)
+        {
+            _logger.LogTrace(ex, "Cleanup cancelled for {MessageBusId}", MessageBusId);
+        }
+        catch (AggregateException ex)
+        {
+            _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
+        }
+        catch (ObjectDisposedException ex)
+        {
+            _logger.LogTrace(ex, "Resource already disposed during cleanup for {MessageBusId}", MessageBusId);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
             _logger.LogWarning(ex, "Error during cleanup for {MessageBusId}: {Message}", MessageBusId, ex.Message);
         }
