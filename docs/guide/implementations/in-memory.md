@@ -191,7 +191,7 @@ var queue = new InMemoryQueue<WorkItem>(options =>
     options.RetryDelay = TimeSpan.FromSeconds(30);
 
     // Processing behaviors
-    options.Behaviors.Add(new EnqueueAbandonedQueueEntryBehavior());
+    options.Behaviors.Add(new DuplicateDetectionQueueBehavior<WorkItem>(cacheClient, loggerFactory));
 
     // Logger
     options.LoggerFactory = loggerFactory;

@@ -189,6 +189,37 @@ public class CleanupJob : JobBase
 }
 ```
 
+### Job with Lock (Singleton / Leader Election)
+
+`JobWithLockBase` acquires a distributed lock before each run. If the lock isn't available the run is cancelled. Implements `IJobWithOptions`.
+
+```csharp
+[Job(Description = "Singleton maintenance", Interval = "5s")]
+public class MaintenanceJob : JobWithLockBase
+{
+    private readonly ILockProvider _lockProvider;
+
+    public MaintenanceJob(
+        ICacheClient cache, IMessageBus messageBus,
+        TimeProvider timeProvider, IResiliencePolicyProvider resiliencePolicyProvider,
+        ILoggerFactory loggerFactory) : base(timeProvider, resiliencePolicyProvider, loggerFactory)
+    {
+        _lockProvider = new CacheLockProvider(cache, messageBus, loggerFactory);
+    }
+
+    // new CancellationToken(true) = try once, skip if lock is held
+    protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken) =>
+        _lockProvider.AcquireAsync(nameof(MaintenanceJob), TimeSpan.FromMinutes(15),
+            cancellationToken: new CancellationToken(true));
+
+    protected override async Task<JobResult> RunInternalAsync(JobContext context)
+    {
+        await DoMaintenanceAsync(context.CancellationToken);
+        return JobResult.Success;
+    }
+}
+```
+
 ### Queue Processor Job
 
 ```csharp
@@ -272,6 +303,8 @@ public class OrderServiceTests : TestLoggerBase
 - **Cache TTL floor**: Expiration values below 5ms are treated as already-expired and the key is silently removed. If you compute TTL dynamically (e.g., `expiresAt - now`), guard against near-zero values.
 - **Cache `GetAsync` returns `CacheValue<T>`**: Check `result.HasValue` before accessing `result.Value`. A missing key returns `HasValue = false`, not an exception.
 - **Queue auto-complete**: `QueueJobBase<T>` auto-completes entries based on `JobResult` by default. Set `AutoComplete = false` only when you need manual `CompleteAsync()`/`AbandonAsync()` control. Manual `DequeueAsync` does NOT auto-complete.
+- **JobWithLockBase vs manual locking**: Use `JobWithLockBase` when the entire run must be single-instance (leader election). Use manual `ILockProvider.AcquireAsync` inside `JobBase` for finer-grained locking within a job.
+- **JobContext.RenewLockAsync**: Call in long-running jobs (both `JobBase` and `QueueJobBase`) to prevent lock expiration mid-processing.
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
 - **In-memory for tests**: All in-memory implementations are functionally equivalent to production providers. Swap via DI for fast, isolated unit tests with no external dependencies.
