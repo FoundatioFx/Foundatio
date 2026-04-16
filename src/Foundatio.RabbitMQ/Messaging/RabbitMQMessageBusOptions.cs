@@ -93,9 +93,9 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
 
 public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder>
 {
-    public RabbitMQMessageBusOptionsBuilder ConnectionString(string connectionString)
+    public RabbitMQMessageBusOptionsBuilder ConnectionString(string? connectionString)
     {
-        Target.ConnectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 
