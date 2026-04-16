@@ -76,11 +76,9 @@ public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class
 
 public class AzureStorageQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureStorageQueueOptions<T>, AzureStorageQueueOptionsBuilder<T>> where T : class
 {
-    public AzureStorageQueueOptionsBuilder<T> ConnectionString(string connectionString)
+    public AzureStorageQueueOptionsBuilder<T> ConnectionString(string? connectionString)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 

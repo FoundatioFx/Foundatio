@@ -27,11 +27,9 @@ public class AzureFileStorageOptions : SharedOptions
 
 public class AzureFileStorageOptionsBuilder : SharedOptionsBuilder<AzureFileStorageOptions, AzureFileStorageOptionsBuilder>
 {
-    public AzureFileStorageOptionsBuilder ConnectionString(string connectionString)
+    public AzureFileStorageOptionsBuilder ConnectionString(string? connectionString)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 

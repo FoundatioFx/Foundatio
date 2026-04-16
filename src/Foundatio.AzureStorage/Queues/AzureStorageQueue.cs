@@ -225,7 +225,8 @@ public class AzureStorageQueue<T> : QueueBase<T, AzureStorageQueueOptions<T>> wh
         {
             _logger.LogWarning(deserializeException, "Error deserializing message {MessageId} (attempt {DequeueCount}), abandoning for retry", message.MessageId, message.DequeueCount);
 
-            var poisonEntry = new AzureStorageQueueEntry<T>(message, null, null, null, this);
+            // Poison message: null! is intentional — deserialization failed, entry is immediately abandoned.
+            var poisonEntry = new AzureStorageQueueEntry<T>(message, null, null, null!, this);
             await AbandonAsync(poisonEntry).AnyContext();
             return null;
         }

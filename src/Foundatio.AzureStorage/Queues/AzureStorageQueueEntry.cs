@@ -14,7 +14,7 @@ public class AzureStorageQueueEntry<T> : QueueEntry<T> where T : class
     /// </summary>
     public string PopReceipt { get; internal set; }
 
-    public AzureStorageQueueEntry(QueueMessage message, string? correlationId, IDictionary<string, string>? properties, T? data, IQueue<T> queue)
+    public AzureStorageQueueEntry(QueueMessage message, string? correlationId, IDictionary<string, string>? properties, T data, IQueue<T> queue)
         : base(message.MessageId, correlationId, data, queue, message.InsertedOn?.UtcDateTime ?? DateTime.MinValue, (int)message.DequeueCount)
     {
         UnderlyingMessage = message;
