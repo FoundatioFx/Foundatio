@@ -407,7 +407,8 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         if (data is null)
         {
             _logger.LogWarning(deserializeException, "Error deserializing message {MessageId} (delivery {DeliveryCount}), abandoning for retry", message.MessageId, message.DeliveryCount);
-            var poisonEntry = new AzureServiceBusQueueEntry<T>(message, null, this);
+            // Poison message: null! is intentional — deserialization failed, entry is immediately abandoned.
+            var poisonEntry = new AzureServiceBusQueueEntry<T>(message, null!, this);
             await AbandonAsync(poisonEntry).AnyContext();
             return null;
         }

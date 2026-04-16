@@ -8,7 +8,7 @@ public class AzureServiceBusQueueEntry<T> : QueueEntry<T> where T : class
 {
     public ServiceBusReceivedMessage UnderlyingMessage { get; }
 
-    public AzureServiceBusQueueEntry(ServiceBusReceivedMessage message, T? value, IQueue<T> queue)
+    public AzureServiceBusQueueEntry(ServiceBusReceivedMessage message, T value, IQueue<T> queue)
         : base(message.MessageId, message.CorrelationId, value, queue, message.EnqueuedTime.UtcDateTime, GetAttemptCount(message))
     {
         if (message.ApplicationProperties is not null)

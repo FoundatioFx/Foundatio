@@ -164,10 +164,9 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
 public class AzureServiceBusMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<
     AzureServiceBusMessageBusOptions, AzureServiceBusMessageBusOptionsBuilder>
 {
-    public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string connectionString)
+    public AzureServiceBusMessageBusOptionsBuilder ConnectionString(string? connectionString)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 

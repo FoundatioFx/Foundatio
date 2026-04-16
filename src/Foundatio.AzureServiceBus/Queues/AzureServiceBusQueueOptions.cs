@@ -110,10 +110,9 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
 
 public class AzureServiceBusQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, AzureServiceBusQueueOptions<T>, AzureServiceBusQueueOptionsBuilder<T>> where T : class
 {
-    public AzureServiceBusQueueOptionsBuilder<T> ConnectionString(string connectionString)
+    public AzureServiceBusQueueOptionsBuilder<T> ConnectionString(string? connectionString)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 
