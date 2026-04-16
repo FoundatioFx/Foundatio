@@ -28,11 +28,9 @@ public class SQSQueueOptions<T> : SharedQueueOptions<T> where T : class
 
 public class SQSQueueOptionsBuilder<T> : SharedQueueOptionsBuilder<T, SQSQueueOptions<T>, SQSQueueOptionsBuilder<T>> where T : class
 {
-    public SQSQueueOptionsBuilder<T> ConnectionString(string connectionString)
+    public SQSQueueOptionsBuilder<T> ConnectionString(string? connectionString)
     {
-        if (string.IsNullOrEmpty(connectionString))
-            throw new ArgumentNullException(nameof(connectionString));
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = string.IsNullOrEmpty(connectionString) ? null : connectionString;
         return this;
     }
 

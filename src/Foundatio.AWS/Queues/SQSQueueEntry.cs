@@ -8,7 +8,7 @@ public class SQSQueueEntry<T>
 {
     public Message UnderlyingMessage { get; }
 
-    public SQSQueueEntry(Message message, T? value, IQueue<T> queue)
+    public SQSQueueEntry(Message message, T value, IQueue<T> queue)
         : base(message.MessageId, message.CorrelationId(), value, queue, message.SentTimestamp(), message.ApproximateReceiveCount())
     {
         if (message.MessageAttributes is not null)

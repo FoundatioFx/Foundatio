@@ -20,11 +20,9 @@ public class S3FileStorageOptions : SharedOptions
 
 public class S3FileStorageOptionsBuilder : SharedOptionsBuilder<S3FileStorageOptions, S3FileStorageOptionsBuilder>
 {
-    public S3FileStorageOptionsBuilder ConnectionString(string connectionString)
+    public S3FileStorageOptionsBuilder ConnectionString(string? connectionString)
     {
-        if (String.IsNullOrEmpty(connectionString))
-            throw new ArgumentNullException(nameof(connectionString));
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrEmpty(connectionString) ? null : connectionString;
         return this;
     }
 

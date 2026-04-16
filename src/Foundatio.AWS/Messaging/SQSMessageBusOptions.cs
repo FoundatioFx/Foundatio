@@ -90,10 +90,9 @@ public class SQSMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<SQSMes
     /// <summary>
     /// Sets the connection string containing AWS credentials and configuration.
     /// </summary>
-    public SQSMessageBusOptionsBuilder ConnectionString(string connectionString)
+    public SQSMessageBusOptionsBuilder ConnectionString(string? connectionString)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        Target.ConnectionString = connectionString;
+        Target.ConnectionString = String.IsNullOrWhiteSpace(connectionString) ? null : connectionString;
         return this;
     }
 
