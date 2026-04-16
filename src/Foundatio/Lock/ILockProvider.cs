@@ -23,8 +23,14 @@ public interface ILockProvider
     /// For long-running operations, call <see cref="ILock.RenewAsync"/> periodically.
     /// </param>
     /// <param name="releaseOnDispose">If true, the lock is released when disposed.</param>
-    /// <param name="cancellationToken">Token to cancel the acquisition attempt.</param>
-    /// <returns>An <see cref="ILock"/> representing the acquired lock, or null if acquisition was cancelled.</returns>
+    /// <param name="cancellationToken">Token to cancel the acquisition attempt. When cancellation occurs
+    /// before the lock is acquired, the method returns <c>null</c>.</param>
+    /// <returns>
+    /// An <see cref="ILock"/> representing the acquired lock, or <c>null</c> if acquisition was cancelled
+    /// or the lock could not be obtained within the timeout. Callers should always check for <c>null</c>
+    /// before using the returned lock. For convenience wrappers that handle the null check, see
+    /// <see cref="LockProviderExtensions.TryUsingAsync(ILockProvider, string, Func{CancellationToken, Task}, TimeSpan?, CancellationToken)"/>.
+    /// </returns>
     Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
 
     /// <summary>

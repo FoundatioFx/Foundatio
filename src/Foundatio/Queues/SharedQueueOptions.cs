@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Queues;
 
@@ -8,7 +9,8 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     public string Name { get; set; } = typeof(T).Name;
     public int Retries { get; set; } = 2;
     public TimeSpan WorkItemTimeout { get; set; } = TimeSpan.FromMinutes(5);
-    public ICollection<IQueueBehavior<T>> Behaviors { get; set; } = new List<IQueueBehavior<T>>();
+    [DisallowNull]
+    public ICollection<IQueueBehavior<T>> Behaviors { get => field; set => field = value ?? new List<IQueueBehavior<T>>(); } = new List<IQueueBehavior<T>>();
 
     /// <summary>
     /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
@@ -31,7 +33,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     where TOptions : SharedQueueOptions<T>, new()
     where TBuilder : SharedQueueOptionsBuilder<T, TOptions, TBuilder>, new()
 {
-    public TBuilder Name(string name)
+    public TBuilder Name(string? name)
     {
         if (!String.IsNullOrWhiteSpace(name))
             Target.Name = name.Trim();
@@ -77,7 +79,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     /// <summary>
     /// Allows you to set a prefix on queue metrics. This allows you to have unique metrics for keyed queues (e.g., priority queues).
     /// </summary>
-    public TBuilder MetricsPrefix(string prefix)
+    public TBuilder MetricsPrefix(string? prefix)
     {
         if (!String.IsNullOrWhiteSpace(prefix))
             Target.MetricsPrefix = prefix.Trim();

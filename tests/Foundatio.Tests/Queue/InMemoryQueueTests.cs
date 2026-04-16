@@ -401,7 +401,7 @@ public class InMemoryQueueTests : QueueTestBase
             _queueEntry = queueEntry;
         }
 
-        public T? Value => _queueEntry.Value;
+        public T Value => _queueEntry.Value;
 
         public string Id => _queueEntry.Id;
 
@@ -409,7 +409,7 @@ public class InMemoryQueueTests : QueueTestBase
 
         public IDictionary<string, string> Properties => _queueEntry.Properties;
 
-        public Type? EntryType => _queueEntry.EntryType;
+        public Type EntryType => _queueEntry.EntryType;
 
         public bool IsCompleted => _queueEntry.IsCompleted;
 
@@ -432,7 +432,7 @@ public class InMemoryQueueTests : QueueTestBase
             return _queueEntry.DisposeAsync();
         }
 
-        public object? GetValue()
+        public object GetValue()
         {
             return _queueEntry.GetValue();
         }

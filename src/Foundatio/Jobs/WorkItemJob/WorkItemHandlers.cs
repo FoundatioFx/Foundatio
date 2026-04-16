@@ -43,13 +43,61 @@ public class WorkItemHandlers
     }
 }
 
+/// <summary>
+/// Defines a handler that processes a specific type of work item dequeued by <see cref="WorkItemJob"/>.
+/// Register handlers with <see cref="WorkItemHandlers"/> to map work item types to processing logic.
+/// For simple cases, use <see cref="DelegateWorkItemHandler"/>; for complex scenarios, extend <see cref="WorkItemHandlerBase"/>.
+/// </summary>
 public interface IWorkItemHandler
 {
+    /// <summary>
+    /// Acquires a lock for the given work item to prevent concurrent processing.
+    /// </summary>
+    /// <param name="workItem">The deserialized work item payload.</param>
+    /// <param name="cancellationToken">Token to cancel the lock acquisition.</param>
+    /// <returns>
+    /// An <see cref="ILock"/> if the lock was acquired, or <c>null</c> if the work item
+    /// should be abandoned (e.g., another instance is already processing it).
+    /// The default implementation returns <see cref="Disposable.EmptyLock"/> (always succeeds).
+    /// </returns>
     Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Processes a single work item. The <paramref name="context"/> provides access to the
+    /// deserialized payload via <see cref="WorkItemContext.GetData{T}"/> and supports reporting
+    /// progress via <see cref="WorkItemContext.ReportProgressAsync(int, string?)"/>.
+    /// If this method completes without calling <see cref="IQueueEntry.CompleteAsync"/>,
+    /// the entry is auto-completed when <see cref="AutoRenewLockOnProgress"/> is <c>true</c>.
+    /// </summary>
+    /// <param name="context">Context containing the queue entry, work item data, and progress reporting.</param>
     Task HandleItemAsync(WorkItemContext context);
+
+    /// <summary>
+    /// When <c>true</c>, the lock on the queue entry is automatically renewed each time
+    /// the handler reports progress. This prevents long-running work items from timing out.
+    /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
+
+    /// <summary>
+    /// The logger used by this handler for diagnostic output.
+    /// </summary>
     ILogger Log { get; set; }
+
+    /// <summary>
+    /// Called when a work item begins processing. Override to customize logging behavior.
+    /// </summary>
+    /// <param name="queueEntry">The raw queue entry being processed.</param>
+    /// <param name="workItemDataType">The CLR type of the deserialized work item payload.</param>
+    /// <param name="workItem">The deserialized work item payload.</param>
     void LogProcessingQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem);
+
+    /// <summary>
+    /// Called when a work item is auto-completed after the handler returns without
+    /// explicitly completing or abandoning the entry. Override to customize logging behavior.
+    /// </summary>
+    /// <param name="queueEntry">The raw queue entry that was auto-completed.</param>
+    /// <param name="workItemDataType">The CLR type of the deserialized work item payload.</param>
+    /// <param name="workItem">The deserialized work item payload.</param>
     void LogAutoCompletedQueueEntry(IQueueEntry<WorkItemData> queueEntry, Type workItemDataType, object workItem);
 }
 

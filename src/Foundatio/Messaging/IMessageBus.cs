@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging;
 
@@ -48,5 +49,6 @@ public record MessageOptions
     /// These properties are propagated through the message bus and available to subscribers.
     /// The mechanism for propagation varies by provider implementation.
     /// </summary>
-    public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
+    [DisallowNull]
+    public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging;
 
@@ -13,7 +14,8 @@ public class SharedMessageBusOptions : SharedOptions
     /// <summary>
     /// Controls which types messages are mapped to.
     /// </summary>
-    public Dictionary<string, Type> MessageTypeMappings { get; set; } = new();
+    [DisallowNull]
+    public Dictionary<string, Type> MessageTypeMappings { get => field; set => field = value ?? new(); } = new();
 }
 
 public class SharedMessageBusOptionsBuilder<TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>

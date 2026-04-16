@@ -173,7 +173,7 @@ public class PagedFileListResult : IHasNextPageFunc
     /// </summary>
     public bool HasMore { get; private set; }
 
-    protected IDictionary<string, object> Data { get; } = new DataDictionary();
+    protected IDictionary<string, object?> Data { get; } = new DataDictionary();
     Func<PagedFileListResult, Task<NextPageResult>>? IHasNextPageFunc.NextPageFunc { get; set; }
 
     /// <summary>
@@ -232,7 +232,7 @@ public class FileSpec : IHaveData
     /// <summary>
     /// Additional provider-specific metadata (e.g., ETag, version ID, content type).
     /// </summary>
-    public IDictionary<string, object> Data { get; } = new DataDictionary();
+    public IDictionary<string, object?> Data { get; } = new DataDictionary();
 }
 
 public static class FileStorageExtensions

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -41,7 +42,8 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
     /// <summary>
     /// A collection of exception types that will not be handled by the policy. These exceptions will be thrown immediately without retrying. Default includes OperationCanceledException and BrokenCircuitException.
     /// </summary>
-    public HashSet<Type> UnhandledExceptions { get; set; } = [typeof(OperationCanceledException), typeof(BrokenCircuitException)];
+    [DisallowNull]
+    public HashSet<Type> UnhandledExceptions { get => field; set => field = value ?? []; } = [typeof(OperationCanceledException), typeof(BrokenCircuitException)];
 
     /// <summary>
     /// A function that determines whether to retry based on the attempt number and exception.

@@ -28,13 +28,20 @@ public interface IQueueEntry
     /// <summary>
     /// Gets the CLR type of the message payload.
     /// </summary>
-    Type? EntryType { get; }
+    /// <remarks>
+    /// For poison messages (deserialization failures), the return value may be <c>null</c> at runtime.
+    /// </remarks>
+    Type EntryType { get; }
 
     /// <summary>
     /// Gets the message payload as an untyped object.
-    /// Returns <c>null</c> when the message could not be deserialized (poison message).
     /// </summary>
-    object? GetValue();
+    /// <remarks>
+    /// For poison messages (deserialization failures), the return value is <c>null</c> at runtime
+    /// even though the signature is non-nullable. Poison entries are immediately abandoned and
+    /// only observable via the <see cref="IQueue{T}.Abandoned"/> event.
+    /// </remarks>
+    object GetValue();
 
     /// <summary>
     /// Gets whether this entry has been marked as completed.
@@ -96,7 +103,11 @@ public interface IQueueEntry<T> : IQueueEntry where T : class
 {
     /// <summary>
     /// Gets the deserialized message payload.
-    /// Returns <c>null</c> when the message could not be deserialized (poison message).
     /// </summary>
-    T? Value { get; }
+    /// <remarks>
+    /// For poison messages (deserialization failures), the return value is <c>null</c> at runtime
+    /// even though the property is typed as non-nullable. Poison entries are immediately abandoned
+    /// and only observable via the <see cref="IQueue{T}.Abandoned"/> event.
+    /// </remarks>
+    T Value { get; }
 }

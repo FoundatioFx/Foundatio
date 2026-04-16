@@ -13,10 +13,10 @@ public interface IHaveData
     /// <summary>
     /// Gets the dictionary for storing arbitrary key-value data.
     /// </summary>
-    IDictionary<string, object> Data { get; }
+    IDictionary<string, object?> Data { get; }
 }
 
-public class DataDictionary : Dictionary<string, object>
+public class DataDictionary : Dictionary<string, object?>
 {
     public static readonly DataDictionary Empty = new();
 
@@ -24,7 +24,7 @@ public class DataDictionary : Dictionary<string, object>
     {
     }
 
-    public DataDictionary(IEnumerable<KeyValuePair<string, object>>? values) : base(StringComparer.OrdinalIgnoreCase)
+    public DataDictionary(IEnumerable<KeyValuePair<string, object?>>? values) : base(StringComparer.OrdinalIgnoreCase)
     {
         if (values != null)
         {
@@ -36,22 +36,22 @@ public class DataDictionary : Dictionary<string, object>
 
 public static class DataDictionaryExtensions
 {
-    public static object? GetValueOrDefault(this IDictionary<string, object> dictionary, string key)
+    public static object? GetValueOrDefault(this IDictionary<string, object?> dictionary, string key)
     {
         return dictionary.TryGetValue(key, out object? value) ? value : null;
     }
 
-    public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, object defaultValue)
+    public static object? GetValueOrDefault(this IDictionary<string, object?> dictionary, string key, object? defaultValue)
     {
         return dictionary.TryGetValue(key, out object? value) ? value : defaultValue;
     }
 
-    public static object GetValueOrDefault(this IDictionary<string, object> dictionary, string key, Func<object> defaultValueProvider)
+    public static object? GetValueOrDefault(this IDictionary<string, object?> dictionary, string key, Func<object?> defaultValueProvider)
     {
         return dictionary.TryGetValue(key, out object? value) ? value : defaultValueProvider();
     }
 
-    public static T? GetValue<T>(this IDictionary<string, object> dictionary, string key)
+    public static T? GetValue<T>(this IDictionary<string, object?> dictionary, string key)
     {
         if (!dictionary.ContainsKey(key))
             throw new KeyNotFoundException($"Key \"{key}\" not found in the dictionary");
@@ -59,7 +59,7 @@ public static class DataDictionaryExtensions
         return dictionary.GetValueOrDefault<T>(key);
     }
 
-    public static T? GetValueOrDefault<T>(this IDictionary<string, object> dictionary, string key, T? defaultValue = default)
+    public static T? GetValueOrDefault<T>(this IDictionary<string, object?> dictionary, string key, T? defaultValue = default)
     {
         if (!dictionary.TryGetValue(key, out object? data))
             return defaultValue;
@@ -69,7 +69,7 @@ public static class DataDictionaryExtensions
             case T t:
                 return t;
             case null:
-                return defaultValue;
+                return default;
             default:
                 try
                 {
@@ -82,20 +82,43 @@ public static class DataDictionaryExtensions
         }
     }
 
-    public static string? GetString(this IDictionary<string, object> dictionary, string name)
+    public static string? GetString(this IDictionary<string, object?> dictionary, string name)
     {
         return dictionary.GetString(name, null);
     }
 
-    public static string? GetString(this IDictionary<string, object> dictionary, string name, string? @default)
+    public static string? GetString(this IDictionary<string, object?> dictionary, string name, string? @default)
     {
         if (!dictionary.TryGetValue(name, out object? value))
             return @default;
 
+        if (value is null)
+            return null;
+
         if (value is string s)
             return s;
 
-        return null;
+        return @default;
+    }
+
+    public static bool GetBoolean(this IDictionary<string, object?> dictionary, string name)
+    {
+        return dictionary.GetBoolean(name, false);
+    }
+
+    public static bool GetBoolean(this IDictionary<string, object?> dictionary, string name, bool @default)
+    {
+        if (!dictionary.TryGetValue(name, out object? value))
+            return @default;
+
+        if (value is bool b)
+            return b;
+
+        string? valueString = value?.ToString();
+        if (valueString is not null && Boolean.TryParse(valueString, out bool result))
+            return result;
+
+        return @default;
     }
 }
 

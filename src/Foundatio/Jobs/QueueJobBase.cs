@@ -99,6 +99,7 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return JobResult.CancelledWithMessage($"Abandoning {_queueName} queue entry: {queueEntry.Id}");
         }
 
+        // Safety net: poison messages have null Value at runtime despite the non-nullable type.
         if (queueEntry.Value is null)
         {
             _logger.LogWarning("Null queue entry value (poison message) in {QueueName}: {EntryId}. Abandoning.", _queueName, queueEntry.Id);

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging;
 
@@ -74,7 +75,8 @@ public class Message : IMessage
     public string? CorrelationId { get; set; }
     public string? Type { get; set; }
     public Type? ClrType { get; set; }
-    public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
+    [DisallowNull]
+    public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
     public byte[] Data { get; set; }
     public object? GetBody() => _getBody(this);
 }

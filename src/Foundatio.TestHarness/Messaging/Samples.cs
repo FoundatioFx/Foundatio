@@ -13,7 +13,7 @@ namespace Foundatio.Tests.Messaging
         public string? Data { get; set; }
         public int Count { get; set; }
 
-        public IDictionary<string, object> Items { get; set; }
+        public IDictionary<string, object?> Items { get; set; }
     }
 
     public class DerivedSimpleMessageA : SimpleMessageA { }
@@ -55,6 +55,6 @@ namespace Foundatio.Tests.MessagingAlt
         public string? Data { get; set; }
         public int Count { get; set; }
 
-        public IDictionary<string, object> Items { get; set; }
+        public IDictionary<string, object?> Items { get; set; }
     }
 }

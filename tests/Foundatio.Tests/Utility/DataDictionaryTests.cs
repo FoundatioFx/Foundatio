@@ -82,7 +82,7 @@ public class MyModel : IHaveData, IHaveSerializer
 {
     public int IntProperty { get; set; }
     public string? StringProperty { get; set; }
-    public IDictionary<string, object> Data { get; } = new DataDictionary();
+    public IDictionary<string, object?> Data { get; } = new DataDictionary();
 
     public ISerializer Serializer { get; set; } = null!;
 }

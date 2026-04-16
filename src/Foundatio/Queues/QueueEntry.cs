@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
@@ -9,14 +8,14 @@ namespace Foundatio.Queues;
 public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposable where T : class
 {
     private readonly IQueue<T> _queue;
-    private readonly T? _original;
+    private readonly T _original;
 
-    public QueueEntry(string id, string? correlationId, T? value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
+    public QueueEntry(string id, string? correlationId, T value, IQueue<T> queue, DateTime enqueuedTimeUtc, int attempts)
     {
         Id = id;
         CorrelationId = correlationId;
         _original = value;
-        Value = value?.DeepClone();
+        Value = value?.DeepClone()!;
         _queue = queue;
         EnqueuedTimeUtc = enqueuedTimeUtc;
         Attempts = attempts;
@@ -29,10 +28,9 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
 
-    [NotNullIfNotNull(nameof(Value))]
-    public Type? EntryType => Value?.GetType();
-    public object? GetValue() => Value;
-    public T? Value { get; set; }
+    public Type EntryType => Value?.GetType()!;
+    public object GetValue() => Value;
+    public T Value { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }
     public DateTime RenewedTimeUtc { get; set; }
     public DateTime DequeuedTimeUtc { get; set; }

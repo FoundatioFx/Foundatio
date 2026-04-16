@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Serializer;
@@ -43,6 +44,9 @@ public interface IQueue<T> : IQueue where T : class
 
     /// <summary>
     /// Raised after a queue entry has been abandoned and returned to the queue.
+    /// When a poison message (deserialization failure) is detected, the entry is automatically
+    /// abandoned and this event is raised with a phantom entry whose <see cref="IQueueEntry{T}.Value"/>
+    /// is <c>null</c> at runtime. See <see cref="AbandonedEventArgs{T}"/> for details.
     /// </summary>
     AsyncEvent<AbandonedEventArgs<T>> Abandoned { get; }
 
@@ -222,7 +226,8 @@ public record QueueEntryOptions
     /// <summary>
     /// Custom properties to attach to the message.
     /// </summary>
-    public IDictionary<string, string> Properties { get; set; } = new Dictionary<string, string>();
+    [DisallowNull]
+    public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -319,6 +324,14 @@ public class CompletedEventArgs<T> : EventArgs where T : class
 /// Event arguments for the <see cref="IQueue{T}.Abandoned"/> event.
 /// </summary>
 /// <typeparam name="T">The type of message payload.</typeparam>
+/// <remarks>
+/// When a queue entry is abandoned due to a deserialization failure (poison message),
+/// <see cref="Entry"/>.<see cref="IQueueEntry{T}.Value"/> may be <c>null</c> at runtime
+/// even though the property is typed as non-nullable. This occurs because the message
+/// payload could not be deserialized, so the queue creates a phantom entry with a null value
+/// that is immediately abandoned. Handlers subscribing to the <see cref="IQueue{T}.Abandoned"/>
+/// event should check for null before accessing <c>Value</c> if they need the payload.
+/// </remarks>
 public class AbandonedEventArgs<T> : EventArgs where T : class
 {
     /// <summary>

@@ -45,7 +45,7 @@ public class DuplicateDetectionQueueBehavior<T> : QueueBehaviorBase<T> where T :
         await _cacheClient.RemoveAsync(uniqueIdentifier);
     }
 
-    private string? GetUniqueIdentifier(T? data)
+    private string? GetUniqueIdentifier(T data)
     {
         var haveUniqueIdentifier = data as IHaveUniqueIdentifier;
         return haveUniqueIdentifier?.UniqueIdentifier;

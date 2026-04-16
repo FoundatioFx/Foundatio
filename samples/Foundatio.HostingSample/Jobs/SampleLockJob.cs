@@ -20,7 +20,7 @@ public class SampleLockJob : JobWithLockBase
 
     protected override Task<ILock> GetLockAsync(CancellationToken cancellationToken = default)
     {
-        return _lockProvider.AcquireAsync(nameof(SampleLockJob), TimeSpan.FromMinutes(15), new CancellationToken(true));
+        return _lockProvider.AcquireAsync(nameof(SampleLockJob), TimeSpan.FromMinutes(15), cancellationToken);
     }
 
     protected override Task<JobResult> RunInternalAsync(JobContext context)

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Foundatio.Utility;
@@ -61,7 +62,8 @@ public class CircuitBreaker : ICircuitBreaker, IHaveTimeProvider, IHaveLogger
     /// <summary>
     /// A collection of exception types that will not be recorded by the circuit breaker. These exceptions will not trigger the circuit breaker to open. Default includes OperationCanceledException.
     /// </summary>
-    public HashSet<Type> UnrecordedExceptions { get; set; } = [typeof(OperationCanceledException)];
+    [DisallowNull]
+    public HashSet<Type> UnrecordedExceptions { get => field; set => field = value ?? []; } = [typeof(OperationCanceledException)];
 
     /// <summary>
     /// Gets or sets a function that determines whether to record an exception.
