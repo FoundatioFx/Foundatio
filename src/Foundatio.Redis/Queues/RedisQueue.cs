@@ -375,7 +375,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error deserializing queue entry payload: {WorkId}, abandoning for retry", value);
-            var poisonEntry = new QueueEntry<T>(workId, null, null, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
+            // Poison message: null! is intentional — deserialization failed, entry is immediately abandoned.
+            var poisonEntry = new QueueEntry<T>(workId, null, null!, this, _timeProvider.GetUtcNow().UtcDateTime, 0);
             await AbandonAsync(poisonEntry).AnyContext();
             return null;
         }
