@@ -28,8 +28,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
 
-    public Type EntryType => Value?.GetType()
-        ?? throw new InvalidOperationException("Cannot get EntryType: Value is null (poison message).");
+    public Type? EntryType => Value?.GetType();
     public object GetValue() => Value;
     public T Value { get; set; }
     public DateTime EnqueuedTimeUtc { get; set; }

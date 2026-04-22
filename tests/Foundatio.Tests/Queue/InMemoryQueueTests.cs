@@ -409,7 +409,7 @@ public class InMemoryQueueTests : QueueTestBase
 
         public IDictionary<string, string> Properties => _queueEntry.Properties;
 
-        public Type EntryType => _queueEntry.EntryType;
+        public Type? EntryType => _queueEntry.EntryType;
 
         public bool IsCompleted => _queueEntry.IsCompleted;
 
