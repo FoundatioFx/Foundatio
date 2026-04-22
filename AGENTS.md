@@ -78,6 +78,18 @@ docs                                  # Documentation site
 - Write complete, runnable code—no placeholders, TODOs, or `// existing code...` comments
 - Use modern C# features: pattern matching, nullable references, `is` expressions, target-typed `new()`
 - Follow SOLID, DRY principles; remove unused code and parameters
+
+### Nullable Reference Types (NRT) Conventions
+
+The codebase has NRT enabled. Follow these patterns:
+
+- **Entity/model properties** (`= null!`): Acceptable for properties set by deserialization or ORM frameworks. Prefer `required` keyword where construction is controlled.
+- **Expression tree `!`**: Required when expressions like `SortDescending(x => x.DateCreatedUtc!)` box `DateTime?` to `object?` but the delegate expects `object`. The value is never evaluated -- only used for field path extraction. This is correct and unavoidable.
+- **`.Where(x => x is not null).Select(x => x!)`**: The compiler can't prove non-null through a lambda boundary after filtering. This is the idiomatic post-filter pattern.
+- **`null!` in test `Assert.Throws` calls**: Intentional contract violation to test null guards.
+- **`[return: MaybeNull]` with `return default!`**: Idiomatic pattern for unconstrained generic methods that may return null (e.g., `Deserialize<T>`).
+- **Vendored code** (`#nullable disable`): Leave internalized third-party code (FastCloner, Nito) as-is. Ensure public API boundaries have proper null checks.
+- **Avoid `!` to forward nullable parameters**: Prefer making the parameter nullable on the interface, or calling an overload that accepts nullable (e.g., `options?.Configure()` instead of `options!`).
 - Clear, descriptive naming; prefer explicit over clever
 - Use `AnyContext()` (e.g., `ConfigureAwait(false)`) in library code (not in tests)
 - Prefer `ValueTask<T>` for hot paths that may complete synchronously
