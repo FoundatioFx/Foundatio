@@ -29,9 +29,9 @@ public interface IQueueEntry
     /// Gets the CLR type of the message payload.
     /// </summary>
     /// <remarks>
-    /// For poison messages (deserialization failures), the return value may be <c>null</c> at runtime.
+    /// For poison messages (deserialization failures), the return value is <c>null</c>.
     /// </remarks>
-    Type EntryType { get; }
+    Type? EntryType { get; }
 
     /// <summary>
     /// Gets the message payload as an untyped object.
