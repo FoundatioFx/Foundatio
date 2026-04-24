@@ -579,6 +579,63 @@ public async Task<User> GetUserAsync(int userId)
 }
 ```
 
+### Cache Stampede Protection
+
+The cache-aside pattern above is vulnerable to **cache stampedes** (also called the thundering herd problem). When a popular key expires, many concurrent requests all see a cache miss simultaneously and each independently loads the same data from the backing store. For an expensive query that takes two seconds to run, 50 concurrent callers means 50 identical database queries instead of one.
+
+Use [`CacheLockProvider`](/guide/locks) to serialize cache regeneration so only one caller loads the data while others wait:
+
+```csharp
+public class ProductService
+{
+    private readonly ICacheClient _cache;
+    private readonly ILockProvider _locker;
+
+    public ProductService(ICacheClient cache, ILockProvider locker)
+    {
+        _cache = cache;
+        _locker = locker;
+    }
+
+    public async Task<Product?> GetProductAsync(int productId, CancellationToken ct)
+    {
+        var cacheKey = $"product:{productId}";
+
+        var cached = await _cache.GetAsync<Product>(cacheKey);
+        if (cached.HasValue)
+            return cached.Value;
+
+        // Only one caller regenerates; others wait for the lock then re-check cache.
+        await using var lck = await _locker.AcquireAsync(
+            $"cache-load:{cacheKey}",
+            timeUntilExpires: TimeSpan.FromSeconds(30),
+            cancellationToken: ct);
+
+        if (lck is null)
+            return null; // Could not acquire -- caller decides how to handle
+
+        // Double-check: another caller may have populated cache while we waited.
+        cached = await _cache.GetAsync<Product>(cacheKey);
+        if (cached.HasValue)
+            return cached.Value;
+
+        var product = await _database.GetProductAsync(productId);
+        await _cache.SetAsync(cacheKey, product, TimeSpan.FromMinutes(30));
+        return product;
+    }
+}
+```
+
+The key points of this pattern:
+
+1. **Lock on the cache key.** Use a lock name derived from the cache key (e.g., `cache-load:product:42`) so different keys are loaded concurrently while the same key is serialized.
+2. **Double-check after acquiring.** Another caller may have populated the cache while you were waiting for the lock. Always re-read before loading from the backing store.
+3. **Lock expiration as a safety net.** Set `timeUntilExpires` to a value longer than the expected load time. If the loader crashes, the lock auto-expires and the next caller retries.
+
+::: tip CacheLockProvider + IMessageBus
+When `CacheLockProvider` is configured with an `IMessageBus`, waiting callers are notified instantly via pub/sub when the lock is released. Without a message bus, lock release falls back to polling. For stampede protection where multiple callers are blocked on the same lock, the message bus significantly reduces wait time.
+:::
+
 ### Atomic Operations
 
 Use conditional operations for race-safe updates:
