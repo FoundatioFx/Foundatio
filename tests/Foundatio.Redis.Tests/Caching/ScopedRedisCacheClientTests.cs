@@ -586,14 +586,15 @@ public class ScopedRedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
         return base.SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly();
     }
 
-    public override ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
         if (muxer is null)
-            return ValueTask.CompletedTask;
+            return;
 
-        return new ValueTask(muxer.FlushAllAsync());
+        await muxer.FlushAllAsync();
     }
 
     public override async ValueTask DisposeAsync()

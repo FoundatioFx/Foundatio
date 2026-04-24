@@ -153,6 +153,7 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
 
     public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
         if (muxer is null)

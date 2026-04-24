@@ -863,14 +863,15 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
     private record Command1(int Id);
     private record Command2(int Id);
 
-    public override ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
+        await base.InitializeAsync();
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
         if (muxer is null)
-            return ValueTask.CompletedTask;
+            return;
 
-        return new ValueTask(muxer.FlushAllAsync());
+        await muxer.FlushAllAsync();
     }
 
 }
