@@ -686,7 +686,7 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
         }
     }
 
-    public ValueTask InitializeAsync()
+    public override ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
@@ -696,11 +696,10 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
         return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
+        await base.DisposeAsync();
         _logger.LogDebug("Disposing");
-
-        return ValueTask.CompletedTask;
     }
 }
 

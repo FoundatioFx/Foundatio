@@ -725,7 +725,7 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
         return base.SetUnixTimeSecondsAsync_WithUtcDateTime_StoresCorrectly();
     }
 
-    public ValueTask InitializeAsync()
+    public override ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
@@ -735,12 +735,11 @@ public class RedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLife
         return new ValueTask(muxer.FlushAllAsync());
     }
 
-    public ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
+        await base.DisposeAsync();
         _logger.LogDebug("Disposing");
         Dispose();
-
-        return ValueTask.CompletedTask;
     }
 }
 

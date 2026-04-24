@@ -151,7 +151,7 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
         return base.CanSaveOverExistingStoredContent();
     }
 
-    public async ValueTask InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         _logger.LogDebug("Initializing");
         var muxer = SharedConnection.GetMuxer(Log, Protocol);
@@ -161,11 +161,10 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
         await muxer.FlushAllAsync();
     }
 
-    public ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
+        await base.DisposeAsync();
         _logger.LogDebug("Disposing");
-
-        return ValueTask.CompletedTask;
     }
 }
 
