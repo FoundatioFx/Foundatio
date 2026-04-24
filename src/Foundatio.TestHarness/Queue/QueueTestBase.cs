@@ -1815,8 +1815,10 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
+        await base.DisposeAsync();
+
         using var queue = GetQueue();
         if (queue is null)
             return;
