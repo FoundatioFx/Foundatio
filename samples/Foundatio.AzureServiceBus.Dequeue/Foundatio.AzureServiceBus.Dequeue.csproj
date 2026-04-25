@@ -2,7 +2,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.AzureServiceBus\Foundatio.AzureServiceBus.csproj" />
     <ProjectReference Include="..\Foundatio.AzureServiceBus.Enqueue\Foundatio.AzureServiceBus.Enqueue.csproj" />
-    <PackageReference Include="System.CommandLine" Version="2.0.1" />
+    <PackageReference Include="System.CommandLine" Version="2.0.7" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.7" />
   </ItemGroup>
 </Project>
