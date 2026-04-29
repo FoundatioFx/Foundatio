@@ -7,7 +7,7 @@ public class JobResult
 {
     public bool IsCancelled { get; set; }
     public Exception? Error { get; set; }
-    public string Message { get; set; } = string.Empty;
+    public string Message { get; set; } = String.Empty;
     public bool IsSuccess { get; set; }
 
     public static readonly JobResult None = new()
