@@ -15,6 +15,30 @@ namespace Foundatio.Lock;
 public interface ILockProvider
 {
     /// <summary>
+    /// Acquires a lock on the specified resource. Throws <see cref="LockAcquisitionTimeoutException"/>
+    /// if the lock cannot be obtained before the supplied <paramref name="cancellationToken"/> is cancelled.
+    /// </summary>
+    /// <param name="resource">The resource identifier to lock. Use consistent naming across processes.</param>
+    /// <param name="timeUntilExpires">
+    /// How long the lock is held before automatic release. Defaults to 20 minutes.
+    /// For long-running operations, call <see cref="ILock.RenewAsync"/> periodically.
+    /// </param>
+    /// <param name="releaseOnDispose">If true, the lock is released when disposed.</param>
+    /// <param name="cancellationToken">
+    /// Token used to abort the acquisition attempt. Pass a token from a <see cref="CancellationTokenSource"/>
+    /// with a <c>CancelAfter</c> to apply a timeout. The method throws
+    /// <see cref="LockAcquisitionTimeoutException"/> when the token is cancelled before acquisition completes.
+    /// </param>
+    /// <returns>The acquired <see cref="ILock"/>.</returns>
+    /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
+    /// <remarks>
+    /// Use this when the work cannot run safely without the lock. For best-effort acquisition where
+    /// failure is a normal control-flow outcome, call <see cref="TryAcquireAsync(string, TimeSpan?, bool, CancellationToken)"/>
+    /// and check the result for <c>null</c>.
+    /// </remarks>
+    Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Attempts to acquire a lock on the specified resource. Returns <c>null</c> if the lock
     /// cannot be obtained before the supplied <paramref name="cancellationToken"/> is cancelled.
     /// </summary>
@@ -31,10 +55,9 @@ public interface ILockProvider
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>, or <c>null</c> if the lock could not be obtained.</returns>
     /// <remarks>
-    /// This is the Try-pattern entry point: callers that treat lock unavailability as a normal
-    /// outcome should use this and check for <c>null</c>. Callers that require the lock should
-    /// use <see cref="LockProviderExtensions.AcquireAsync(ILockProvider, string, TimeSpan?, TimeSpan?)"/>,
-    /// which throws <see cref="LockAcquisitionTimeoutException"/> on failure.
+    /// Use this when lock unavailability is a normal control-flow outcome (best-effort dedupe,
+    /// opportunistic work). When the work cannot run without the lock, call
+    /// <see cref="AcquireAsync(string, TimeSpan?, bool, CancellationToken)"/> instead.
     /// </remarks>
     Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
 
@@ -123,6 +146,34 @@ public static class LockProviderExtensions
     }
 
     // ------------------------------------------------------------------
+    // AcquireAsync — single resource. Throws LockAcquisitionTimeoutException
+    // on failure. Use this when failure to acquire is genuinely exceptional
+    // (e.g. a serialization lock guarding correctness).
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// Acquires the lock or throws <see cref="LockAcquisitionTimeoutException"/> if the
+    /// supplied <paramref name="cancellationToken"/> is cancelled before the lock is acquired.
+    /// </summary>
+    /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
+    public static Task<ILock> AcquireAsync(this ILockProvider provider, string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
+    {
+        return provider.AcquireAsync(resource, timeUntilExpires, true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Acquires the lock, waiting up to <paramref name="acquireTimeout"/> before throwing
+    /// <see cref="LockAcquisitionTimeoutException"/>. A null <paramref name="acquireTimeout"/>
+    /// applies a 30-second default.
+    /// </summary>
+    /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before the timeout elapsed.</exception>
+    public static async Task<ILock> AcquireAsync(this ILockProvider provider, string resource, TimeSpan? timeUntilExpires = null, TimeSpan? acquireTimeout = null)
+    {
+        using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
+        return await provider.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+    }
+
+    // ------------------------------------------------------------------
     // TryAcquireAsync — single resource. Returns null on failure.
     // Use this when lock unavailability is a normal control-flow outcome.
     // ------------------------------------------------------------------
@@ -138,47 +189,13 @@ public static class LockProviderExtensions
 
     /// <summary>
     /// Tries to acquire the lock, waiting up to <paramref name="acquireTimeout"/> before giving up.
-    /// Returns <c>null</c> if the timeout elapses without acquiring the lock.
+    /// Returns <c>null</c> if the timeout elapses without acquiring the lock. A null
+    /// <paramref name="acquireTimeout"/> applies a 30-second default.
     /// </summary>
     public static async Task<ILock?> TryAcquireAsync(this ILockProvider provider, string resource, TimeSpan? timeUntilExpires = null, TimeSpan? acquireTimeout = null)
     {
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
         return await provider.TryAcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
-    }
-
-    // ------------------------------------------------------------------
-    // AcquireAsync — single resource. Throws LockAcquisitionTimeoutException
-    // on failure. Use this when failure to acquire is genuinely exceptional
-    // (e.g. a serialization lock guarding correctness).
-    // ------------------------------------------------------------------
-
-    /// <summary>
-    /// Acquires the lock or throws <see cref="LockAcquisitionTimeoutException"/> if the
-    /// supplied <paramref name="cancellationToken"/> is cancelled before the lock is acquired.
-    /// </summary>
-    /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
-    public static async Task<ILock> AcquireAsync(this ILockProvider provider, string resource, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
-    {
-        var l = await provider.TryAcquireAsync(resource, timeUntilExpires, true, cancellationToken).AnyContext();
-        if (l is null)
-            throw new LockAcquisitionTimeoutException(resource);
-
-        return l;
-    }
-
-    /// <summary>
-    /// Acquires the lock, waiting up to <paramref name="acquireTimeout"/> before throwing
-    /// <see cref="LockAcquisitionTimeoutException"/>.
-    /// </summary>
-    /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before the timeout elapsed.</exception>
-    public static async Task<ILock> AcquireAsync(this ILockProvider provider, string resource, TimeSpan? timeUntilExpires = null, TimeSpan? acquireTimeout = null)
-    {
-        using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
-        var l = await provider.TryAcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
-        if (l is null)
-            throw new LockAcquisitionTimeoutException(resource);
-
-        return l;
     }
 
     // ------------------------------------------------------------------
@@ -369,9 +386,15 @@ public static class LockProviderExtensions
     /// <exception cref="LockAcquisitionTimeoutException">One or more locks could not be acquired.</exception>
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        var l = await provider.TryAcquireAsync(resources, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
+        ArgumentNullException.ThrowIfNull(resources);
+
+        // Materialize once so the exception message reports exactly what we attempted to acquire,
+        // and so single-use enumerables don't get walked twice.
+        string[] resourceList = resources as string[] ?? resources.ToArray();
+
+        var l = await provider.TryAcquireAsync(resourceList, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
         if (l is null)
-            throw new LockAcquisitionTimeoutException(String.Join(",", resources));
+            throw new LockAcquisitionTimeoutException(String.Join(",", resourceList));
 
         return l;
     }
@@ -379,10 +402,14 @@ public static class LockProviderExtensions
     /// <exception cref="LockAcquisitionTimeoutException">One or more locks could not be acquired before the timeout elapsed.</exception>
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout)
     {
+        ArgumentNullException.ThrowIfNull(resources);
+
+        string[] resourceList = resources as string[] ?? resources.ToArray();
+
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
-        var l = await provider.TryAcquireAsync(resources, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
+        var l = await provider.TryAcquireAsync(resourceList, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
         if (l is null)
-            throw new LockAcquisitionTimeoutException(String.Join(",", resources));
+            throw new LockAcquisitionTimeoutException(String.Join(",", resourceList));
 
         return l;
     }
@@ -390,10 +417,14 @@ public static class LockProviderExtensions
     /// <exception cref="LockAcquisitionTimeoutException">One or more locks could not be acquired before the timeout elapsed.</exception>
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires, TimeSpan? acquireTimeout, bool releaseOnDispose)
     {
+        ArgumentNullException.ThrowIfNull(resources);
+
+        string[] resourceList = resources as string[] ?? resources.ToArray();
+
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
-        var l = await provider.TryAcquireAsync(resources, timeUntilExpires, releaseOnDispose, cancellationTokenSource.Token).AnyContext();
+        var l = await provider.TryAcquireAsync(resourceList, timeUntilExpires, releaseOnDispose, cancellationTokenSource.Token).AnyContext();
         if (l is null)
-            throw new LockAcquisitionTimeoutException(String.Join(",", resources));
+            throw new LockAcquisitionTimeoutException(String.Join(",", resourceList));
 
         return l;
     }

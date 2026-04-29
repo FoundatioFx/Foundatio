@@ -9,6 +9,9 @@ Locks ensure a resource is only accessed by one consumer at any given time. Foun
 ```csharp
 public interface ILockProvider
 {
+    Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
+                              bool releaseOnDispose = true,
+                              CancellationToken cancellationToken = default);
     Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
                                   bool releaseOnDispose = true,
                                   CancellationToken cancellationToken = default);
@@ -36,10 +39,10 @@ public interface ILock : IAsyncDisposable
 
 | API | Returns | Use when |
 | --- | --- | --- |
-| `TryAcquireAsync` | `Task<ILock?>` — `null` on failure | Lock unavailability is a normal control-flow outcome (best-effort dedupe, opportunistic work) |
 | `AcquireAsync` | `Task<ILock>` — throws `LockAcquisitionTimeoutException` on failure | The work cannot safely run without the lock — failure is genuinely exceptional |
+| `TryAcquireAsync` | `Task<ILock?>` — `null` on failure | Lock unavailability is a normal control-flow outcome (best-effort dedupe, opportunistic work) |
 
-The throwing `AcquireAsync` is provided as an extension method on `ILockProvider`. Pick whichever one matches the caller's intent — they share the same underlying acquisition logic.
+Both are interface methods backed by the same acquisition logic — pick whichever one matches the caller's intent. `AcquireAsync` is the safer default: there is no null return to forget about, so the type system makes "ran the work without holding the lock" impossible to write by accident.
 
 ## Implementations
 

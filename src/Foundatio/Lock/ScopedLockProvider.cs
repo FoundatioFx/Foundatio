@@ -53,6 +53,11 @@ public class ScopedLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory
         return String.Concat(_keyPrefix, key);
     }
 
+    public Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    {
+        return UnscopedLockProvider.AcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, releaseOnDispose, cancellationToken);
+    }
+
     public Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         return UnscopedLockProvider.TryAcquireAsync(GetScopedLockProviderKey(resource), timeUntilExpires, releaseOnDispose, cancellationToken);
