@@ -9,9 +9,9 @@ Locks ensure a resource is only accessed by one consumer at any given time. Foun
 ```csharp
 public interface ILockProvider
 {
-    Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
-                               bool releaseOnDispose = true,
-                               CancellationToken cancellationToken = default);
+    Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null,
+                                  bool releaseOnDispose = true,
+                                  CancellationToken cancellationToken = default);
     Task<bool> IsLockedAsync(string resource);
     Task ReleaseAsync(string resource, string lockId);
     Task ReleaseAsync(string resource);
@@ -30,6 +30,17 @@ public interface ILock : IAsyncDisposable
 }
 ```
 
+### Choosing Between `AcquireAsync` and `TryAcquireAsync`
+
+`ILockProvider` exposes two acquisition shapes:
+
+| API | Returns | Use when |
+| --- | --- | --- |
+| `TryAcquireAsync` | `Task<ILock?>` — `null` on failure | Lock unavailability is a normal control-flow outcome (best-effort dedupe, opportunistic work) |
+| `AcquireAsync` | `Task<ILock>` — throws `LockAcquisitionTimeoutException` on failure | The work cannot safely run without the lock — failure is genuinely exceptional |
+
+The throwing `AcquireAsync` is provided as an extension method on `ILockProvider`. Pick whichever one matches the caller's intent — they share the same underlying acquisition logic.
+
 ## Implementations
 
 ### CacheLockProvider
@@ -47,8 +58,8 @@ var cache = new InMemoryCacheClient();
 var messageBus = new InMemoryMessageBus();
 var locker = new CacheLockProvider(cache, messageBus);
 
-await using var lck = await locker.AcquireAsync("my-resource");
-if (lck != null)
+await using var lck = await locker.TryAcquireAsync("my-resource");
+if (lck is not null)
 {
     // Exclusive access to resource
     await DoExclusiveWorkAsync();
@@ -80,8 +91,8 @@ var throttledLocker = new ThrottlingLockProvider(
 );
 
 // Only allows 10 operations per minute across all instances
-var lck = await throttledLocker.AcquireAsync("api-rate-limit");
-if (lck != null)
+var lck = await throttledLocker.TryAcquireAsync("api-rate-limit");
+if (lck is not null)
 {
     await CallExternalApiAsync();
     await lck.ReleaseAsync();
@@ -106,7 +117,7 @@ var baseLock = new CacheLockProvider(cache, messageBus);
 var tenantLock = new ScopedLockProvider(baseLock, "tenant:abc");
 
 // Lock key becomes: "tenant:abc:resource-1"
-await using var lck = await tenantLock.AcquireAsync("resource-1");
+await using var lck = await tenantLock.TryAcquireAsync("resource-1");
 ```
 
 ## Basic Usage
@@ -116,10 +127,10 @@ await using var lck = await tenantLock.AcquireAsync("resource-1");
 ```csharp
 var locker = new CacheLockProvider(cache, messageBus);
 
-// Acquire lock
-var lck = await locker.AcquireAsync("my-resource");
+// Best-effort acquire — null when held elsewhere
+var lck = await locker.TryAcquireAsync("my-resource");
 
-if (lck != null)
+if (lck is not null)
 {
     try
     {
@@ -139,8 +150,8 @@ if (lck != null)
 The recommended pattern uses `await using` for automatic release:
 
 ```csharp
-await using var lck = await locker.AcquireAsync("my-resource");
-if (lck != null)
+await using var lck = await locker.TryAcquireAsync("my-resource");
+if (lck is not null)
 {
     // Lock is automatically released when scope ends
     await DoExclusiveWorkAsync();
@@ -149,11 +160,11 @@ if (lck != null)
 
 ### Non-Blocking Acquire
 
-Check if lock was acquired:
+Try to acquire without waiting:
 
 ```csharp
-await using var lck = await locker.AcquireAsync("my-resource");
-if (lck == null)
+await using var lck = await locker.TryAcquireAsync("my-resource");
+if (lck is null)
 {
     // Resource is locked by another process
     return;
@@ -165,28 +176,38 @@ await DoWorkAsync();
 
 ### Blocking Acquire with Timeout
 
-Wait for lock with cancellation:
+Wait up to a timeout, throwing on failure:
 
 ```csharp
-using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-
 try
 {
     await using var lck = await locker.AcquireAsync(
         "my-resource",
-        cancellationToken: cts.Token
-    );
+        acquireTimeout: TimeSpan.FromSeconds(30));
 
-    if (lck != null)
-    {
-        await DoWorkAsync();
-    }
+    await DoWorkAsync();
 }
-catch (OperationCanceledException)
+catch (LockAcquisitionTimeoutException)
 {
-    // Timeout waiting for lock
+    // Lock could not be acquired before the timeout elapsed.
     _logger.LogWarning("Timed out waiting for lock");
 }
+```
+
+If the failure is expected control flow, prefer `TryAcquireAsync` so you don't pay for an exception:
+
+```csharp
+await using var lck = await locker.TryAcquireAsync(
+    "my-resource",
+    acquireTimeout: TimeSpan.FromSeconds(30));
+
+if (lck is null)
+{
+    _logger.LogWarning("Could not acquire lock");
+    return;
+}
+
+await DoWorkAsync();
 ```
 
 ## Lock Expiration
@@ -197,7 +218,7 @@ Locks expire automatically to prevent deadlocks:
 
 ```csharp
 // Lock expires after 5 minutes
-await using var lck = await locker.AcquireAsync(
+await using var lck = await locker.TryAcquireAsync(
     "my-resource",
     timeUntilExpires: TimeSpan.FromMinutes(5)
 );
@@ -208,12 +229,12 @@ await using var lck = await locker.AcquireAsync(
 For long-running operations, renew the lock:
 
 ```csharp
-await using var lck = await locker.AcquireAsync(
+await using var lck = await locker.TryAcquireAsync(
     "my-resource",
     timeUntilExpires: TimeSpan.FromMinutes(1)
 );
 
-if (lck != null)
+if (lck is not null)
 {
     // Do some work
     await DoPartOneAsync();
@@ -231,8 +252,8 @@ if (lck != null)
 For very long operations, set up automatic renewal:
 
 ```csharp
-await using var lck = await locker.AcquireAsync("my-resource");
-if (lck == null) return;
+await using var lck = await locker.TryAcquireAsync("my-resource");
+if (lck is null) return;
 
 using var cts = new CancellationTokenSource();
 
@@ -265,9 +286,9 @@ Ensure only one instance processes a resource:
 ```csharp
 public async Task ProcessOrderAsync(int orderId)
 {
-    await using var lck = await _locker.AcquireAsync($"order:{orderId}");
+    await using var lck = await _locker.TryAcquireAsync($"order:{orderId}");
 
-    if (lck == null)
+    if (lck is null)
     {
         _logger.LogInformation("Order {OrderId} is being processed elsewhere", orderId);
         return;
@@ -287,9 +308,9 @@ public async Task RunAsLeaderAsync(CancellationToken ct)
 {
     while (!ct.IsCancellationRequested)
     {
-        await using var lck = await _locker.AcquireAsync("leader:job-runner");
+        await using var lck = await _locker.TryAcquireAsync("leader:job-runner");
 
-        if (lck != null)
+        if (lck is not null)
         {
             _logger.LogInformation("This instance is now the leader");
 
@@ -315,16 +336,12 @@ public async Task RunAsLeaderAsync(CancellationToken ct)
 ```csharp
 public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
 {
-    // Prevent duplicate orders for same customer
+    // Prevent duplicate orders for same customer; throw if we can't lock.
     await using var lck = await _locker.AcquireAsync(
         $"create-order:{request.CustomerId}",
-        timeUntilExpires: TimeSpan.FromSeconds(30)
+        timeUntilExpires: TimeSpan.FromSeconds(30),
+        acquireTimeout: TimeSpan.FromSeconds(5)
     );
-
-    if (lck == null)
-    {
-        throw new ConcurrencyException("Another order is being created");
-    }
 
     // Check for recent duplicates
     var recentOrder = await _db.GetRecentOrderAsync(request.CustomerId);
@@ -380,9 +397,9 @@ public class RateLimitedApiClient
 
     public async Task<T> GetAsync<T>(string endpoint)
     {
-        await using var lck = await _throttler.AcquireAsync("external-api");
+        await using var lck = await _throttler.TryAcquireAsync("external-api");
 
-        if (lck == null)
+        if (lck is null)
         {
             throw new RateLimitExceededException();
         }
@@ -399,9 +416,9 @@ public class RateLimitedApiClient
 public async Task<IActionResult> ProcessRequest(string userId)
 {
     // 10 requests per minute per user
-    await using var lck = await _throttler.AcquireAsync($"user:{userId}:api");
+    await using var lck = await _throttler.TryAcquireAsync($"user:{userId}:api");
 
-    if (lck == null)
+    if (lck is null)
     {
         return StatusCode(429, "Too many requests");
     }
@@ -476,57 +493,37 @@ services.AddKeyedSingleton<ILockProvider>("throttle", (sp, _) =>
 
 ## Best Practices
 
-### 1. Always Handle Null Lock
+### 1. Pick the API That Matches Your Intent
 
-**Critical:** `AcquireAsync` returns `null` when the lock cannot be acquired. You **must** handle this case.
+If failure to acquire is **normal control flow** (best-effort dedupe, opportunistic work), call `TryAcquireAsync` and check for `null`. If failure is **genuinely exceptional** (the work cannot run safely without the lock), call `AcquireAsync` and let it throw.
 
 ```csharp
-// ✅ Good: Check for null and handle appropriately
-await using var lck = await locker.AcquireAsync("resource");
-
+// ✅ Best-effort: skip work when lock is held elsewhere
+await using var lck = await locker.TryAcquireAsync("resource");
 if (lck is null)
-{
-    _logger.LogWarning("Could not acquire lock for resource");
-    return; // or throw, or retry
-}
+    return;
 
 await DoWork();
 
-// ✅ Good: Throw when lock is required
-await using var lck = await locker.AcquireAsync("resource");
-
-if (lck is null)
-    throw new InvalidOperationException("Failed to acquire lock on 'resource'");
-
+// ✅ Required lock: throw if we can't get it
+await using var lck = await locker.AcquireAsync("resource",
+    acquireTimeout: TimeSpan.FromSeconds(5));
 await DoWork();
-
-// ❌ Bad: Assume lock acquired
-await using var lck = await locker.AcquireAsync("resource");
-await DoWork(); // May not have the lock!
+// ↑ If acquisition fails, LockAcquisitionTimeoutException propagates.
 ```
 
-### 2. Common Null-Handling Patterns
+::: warning
+Do not catch `LockAcquisitionTimeoutException` to convert "couldn't acquire" into a normal control-flow path — that is exactly the case `TryAcquireAsync` is designed for. Use the right method up front.
+:::
 
-**Pattern: Throw Exception**
+### 2. Common Patterns
 
-```csharp
-public async Task ProcessOrderAsync(int orderId)
-{
-    await using var lck = await _locker.AcquireAsync($"order:{orderId}");
-
-    if (lck is null)
-        throw new ConcurrencyException($"Order {orderId} is being processed by another worker");
-
-    await DoProcessingAsync(orderId);
-}
-```
-
-**Pattern: Skip Processing**
+**Pattern: Skip Processing (best-effort)**
 
 ```csharp
 public async Task TryProcessOrderAsync(int orderId)
 {
-    await using var lck = await _locker.AcquireAsync($"order:{orderId}");
+    await using var lck = await _locker.TryAcquireAsync($"order:{orderId}");
 
     if (lck is null)
     {
@@ -538,32 +535,42 @@ public async Task TryProcessOrderAsync(int orderId)
 }
 ```
 
-**Pattern: Retry with Timeout**
+**Pattern: Required Lock (throws)**
 
 ```csharp
-public async Task ProcessOrderWithRetryAsync(int orderId, CancellationToken ct)
+public async Task ProcessOrderAsync(int orderId)
+{
+    // Throws LockAcquisitionTimeoutException if the lock can't be acquired.
+    await using var lck = await _locker.AcquireAsync(
+        $"order:{orderId}",
+        acquireTimeout: TimeSpan.FromSeconds(30));
+
+    await DoProcessingAsync(orderId);
+}
+```
+
+**Pattern: Wait with Cancellation**
+
+```csharp
+public async Task ProcessOrderAsync(int orderId, CancellationToken ct)
 {
     using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
     timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
 
     await using var lck = await _locker.AcquireAsync(
         $"order:{orderId}",
-        cancellationToken: timeoutCts.Token
-    );
-
-    if (lck is null)
-        throw new TimeoutException($"Timed out waiting for lock on order {orderId}");
+        cancellationToken: timeoutCts.Token);
 
     await DoProcessingAsync(orderId);
 }
 ```
 
-**Pattern: Return Result**
+**Pattern: Return Result (best-effort)**
 
 ```csharp
 public async Task<LockResult<T>> TryWithLockAsync<T>(string resource, Func<Task<T>> work)
 {
-    await using var lck = await _locker.AcquireAsync(resource);
+    await using var lck = await _locker.TryAcquireAsync(resource);
 
     if (lck is null)
         return LockResult<T>.NotAcquired();
@@ -577,20 +584,20 @@ public async Task<LockResult<T>> TryWithLockAsync<T>(string resource, Func<Task<
 
 ```csharp
 // ✅ Good: Descriptive, hierarchical
-await locker.AcquireAsync($"order:process:{orderId}");
-await locker.AcquireAsync($"user:{userId}:balance:update");
+await locker.TryAcquireAsync($"order:process:{orderId}");
+await locker.TryAcquireAsync($"user:{userId}:balance:update");
 
 // ❌ Bad: Generic, ambiguous
-await locker.AcquireAsync("lock1");
-await locker.AcquireAsync("resource");
+await locker.TryAcquireAsync("lock1");
+await locker.TryAcquireAsync("resource");
 ```
 
 ### 4. Set Appropriate Expiration
 
 ```csharp
 // Match expiration to expected operation duration + buffer
-await locker.AcquireAsync("quick-op", TimeSpan.FromSeconds(30));   // 10s operation + buffer
-await locker.AcquireAsync("long-op", TimeSpan.FromMinutes(10));    // 5min operation + buffer
+await locker.TryAcquireAsync("quick-op", TimeSpan.FromSeconds(30));   // 10s operation + buffer
+await locker.TryAcquireAsync("long-op", TimeSpan.FromMinutes(10));    // 5min operation + buffer
 ```
 
 ::: tip Default Expiration
@@ -603,7 +610,7 @@ Locks implement `IAsyncDisposable`. Using `await using` ensures the lock is rele
 
 ```csharp
 // ✅ Good: Automatic release on dispose
-await using var lck = await locker.AcquireAsync("resource");
+await using var lck = await locker.TryAcquireAsync("resource");
 
 if (lck is null)
     return;
@@ -612,7 +619,7 @@ await DoWork();
 // Lock is automatically released when scope ends
 
 // ✅ Good: Manual release when needed
-var lck = await locker.AcquireAsync("resource", releaseOnDispose: false);
+var lck = await locker.TryAcquireAsync("resource", releaseOnDispose: false);
 
 if (lck is null)
     return;
@@ -627,7 +634,7 @@ finally
 }
 
 // ❌ Bad: Not using dispose pattern
-var lck = await locker.AcquireAsync("resource");
+var lck = await locker.TryAcquireAsync("resource");
 
 if (lck is null)
     return;
@@ -648,8 +655,8 @@ var tenantLock = new ScopedLockProvider(baseLock, $"tenant:{tenantId}");
 Access lock metadata:
 
 ```csharp
-await using var lck = await locker.AcquireAsync("resource");
-if (lck != null)
+await using var lck = await locker.TryAcquireAsync("resource");
+if (lck is not null)
 {
     Console.WriteLine($"Lock ID: {lck.LockId}");
     Console.WriteLine($"Resource: {lck.Resource}");

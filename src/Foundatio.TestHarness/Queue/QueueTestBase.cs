@@ -1512,8 +1512,7 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
             await queue.StartWorkingAsync(async w =>
             {
                 _logger.LogInformation("Acquiring distributed lock in work item");
-                var l = await distributedLock.AcquireAsync("test");
-                Assert.NotNull(l);
+                var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
                 _logger.LogInformation("Acquired distributed lock");
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
                 await l.ReleaseAsync();
@@ -1579,7 +1578,6 @@ public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
                     {
                         _logger.LogInformation("[{Instance}] Acquiring distributed lock in work item: {QueueEntryId}", instanceCount, w.Id);
                         var l = await distributedLock.AcquireAsync("test", cancellationToken: cancellationTokenSource.Token);
-                        Assert.NotNull(l);
                         _logger.LogInformation("[{Instance}] Acquired distributed lock: {QueueEntryId}", instanceCount, w.Id);
                         await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationTokenSource.Token);
                         await l.ReleaseAsync();

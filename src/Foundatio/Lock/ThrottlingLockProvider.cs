@@ -43,7 +43,7 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
-    public async Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    public async Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
         _logger.LogTrace("AcquireLockAsync: {Resource}", resource);
 

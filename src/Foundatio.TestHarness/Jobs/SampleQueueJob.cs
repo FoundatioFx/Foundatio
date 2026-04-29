@@ -58,7 +58,7 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
     protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
     {
         if (_lockProvider != null)
-            return _lockProvider.AcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
+            return _lockProvider.TryAcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
 
         return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
     }

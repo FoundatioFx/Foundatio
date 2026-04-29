@@ -191,12 +191,12 @@ internal class ScheduledJobInstance
             try
             {
                 // hold this lock for 1 hour to prevent duplicates
-                scheduledTimeLock = await _lockProvider.AcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext();
+                scheduledTimeLock = await _lockProvider.TryAcquireAsync(GetLockKey(scheduledTime), TimeSpan.FromHours(1), TimeSpan.Zero).AnyContext();
 
                 if (scheduledTimeLock is not null)
                 {
                     // hold this lock while the job is running to prevent multiple instances of the job running at the same time
-                    jobRunningLock = await _lockProvider.AcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext();
+                    jobRunningLock = await _lockProvider.TryAcquireAsync(CacheKey, TimeSpan.FromMinutes(15), TimeSpan.Zero).AnyContext();
 
                     if (jobRunningLock is null)
                         await scheduledTimeLock.ReleaseAsync().AnyContext();
