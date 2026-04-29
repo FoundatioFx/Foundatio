@@ -91,7 +91,7 @@ public static class LoggerExtensions
             logger.LogError(message, args);
     }
 
-    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, Exception exception, string message, params object?[] args)
+    public static void LogError(this ILogger logger, Func<LogState, LogState> stateBuilder, Exception? exception, string message, params object?[] args)
     {
         using (BeginScope(logger, stateBuilder))
             logger.LogError(exception, message, args);
