@@ -145,12 +145,6 @@ public static class LockProviderExtensions
         return provider.RenewAsync(@lock.Resource, @lock.LockId, timeUntilExpires);
     }
 
-    // ------------------------------------------------------------------
-    // AcquireAsync — single resource. Throws LockAcquisitionTimeoutException
-    // on failure. Use this when failure to acquire is genuinely exceptional
-    // (e.g. a serialization lock guarding correctness).
-    // ------------------------------------------------------------------
-
     /// <summary>
     /// Acquires the lock or throws <see cref="LockAcquisitionTimeoutException"/> if the
     /// supplied <paramref name="cancellationToken"/> is cancelled before the lock is acquired.
@@ -173,11 +167,6 @@ public static class LockProviderExtensions
         return await provider.AcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
     }
 
-    // ------------------------------------------------------------------
-    // TryAcquireAsync — single resource. Returns null on failure.
-    // Use this when lock unavailability is a normal control-flow outcome.
-    // ------------------------------------------------------------------
-
     /// <summary>
     /// Tries to acquire the lock without a timeout. Returns <c>null</c> if the supplied
     /// <paramref name="cancellationToken"/> is cancelled before the lock is acquired.
@@ -197,11 +186,6 @@ public static class LockProviderExtensions
         using var cancellationTokenSource = acquireTimeout.ToCancellationTokenSource(TimeSpan.FromSeconds(30));
         return await provider.TryAcquireAsync(resource, timeUntilExpires, true, cancellationTokenSource.Token).AnyContext();
     }
-
-    // ------------------------------------------------------------------
-    // TryUsingAsync — single resource. Best-effort: skips work if lock
-    // can't be obtained, returns whether the work ran.
-    // ------------------------------------------------------------------
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, string resource, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
@@ -285,10 +269,6 @@ public static class LockProviderExtensions
             return Task.CompletedTask;
         }, timeUntilExpires, acquireTimeout);
     }
-
-    // ------------------------------------------------------------------
-    // TryAcquireAsync — multiple resources. Returns null on failure.
-    // ------------------------------------------------------------------
 
     public static async Task<ILock?> TryAcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
@@ -379,10 +359,6 @@ public static class LockProviderExtensions
         return await provider.TryAcquireAsync(resources, timeUntilExpires, releaseOnDispose, cancellationTokenSource.Token).AnyContext();
     }
 
-    // ------------------------------------------------------------------
-    // AcquireAsync — multiple resources. Throws on failure.
-    // ------------------------------------------------------------------
-
     /// <exception cref="LockAcquisitionTimeoutException">One or more locks could not be acquired.</exception>
     public static async Task<ILock> AcquireAsync(this ILockProvider provider, IEnumerable<string> resources, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
@@ -428,10 +404,6 @@ public static class LockProviderExtensions
 
         return l;
     }
-
-    // ------------------------------------------------------------------
-    // TryUsingAsync — multiple resources.
-    // ------------------------------------------------------------------
 
     public static async Task<bool> TryUsingAsync(this ILockProvider locker, IEnumerable<string> resources, Func<CancellationToken, Task> work, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {

@@ -12,7 +12,7 @@ namespace Foundatio.Lock;
 /// dedupe, opportunistic work) should call <see cref="ILockProvider.TryAcquireAsync"/> instead
 /// and check the returned <see cref="ILock"/> for <c>null</c>.
 /// </remarks>
-public sealed class LockAcquisitionTimeoutException : Exception
+public sealed class LockAcquisitionTimeoutException : LockException
 {
     public LockAcquisitionTimeoutException(string resource)
         : base($"Failed to acquire lock for resource '{resource}'.")
