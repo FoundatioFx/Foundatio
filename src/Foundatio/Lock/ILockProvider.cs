@@ -28,6 +28,8 @@ public interface ILockProvider
     /// Token used to abort the acquisition attempt. Pass a token from a <see cref="CancellationTokenSource"/>
     /// with a <c>CancelAfter</c> to apply a timeout. The method throws
     /// <see cref="LockAcquisitionTimeoutException"/> when the token is cancelled before acquisition completes.
+    /// An already-cancelled token is treated as an immediate-deadline attempt: a single acquire is tried
+    /// and <see cref="LockAcquisitionTimeoutException"/> is thrown if it fails.
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>.</returns>
     /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
@@ -51,7 +53,9 @@ public interface ILockProvider
     /// <param name="cancellationToken">
     /// Token used to abort the acquisition attempt. Pass a token from a <see cref="CancellationTokenSource"/>
     /// with a <c>CancelAfter</c> to apply a timeout. When acquisition cannot complete before
-    /// cancellation, the method returns <c>null</c> rather than throwing.
+    /// cancellation, the method returns <c>null</c> rather than throwing. An already-cancelled token
+    /// is treated as an immediate-deadline attempt: a single acquire is tried and <c>null</c> is returned
+    /// if it fails.
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>, or <c>null</c> if the lock could not be obtained.</returns>
     /// <remarks>
