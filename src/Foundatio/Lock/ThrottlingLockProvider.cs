@@ -45,19 +45,19 @@ public class ThrottlingLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFac
 
     public Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        return TryAcquireCoreAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken);
+        return TryAcquireImplAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken);
     }
 
     public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
     {
-        var l = await TryAcquireCoreAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
+        var l = await TryAcquireImplAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
         if (l is null)
             throw new LockAcquisitionTimeoutException(resource);
 
         return l;
     }
 
-    private async Task<ILock?> TryAcquireCoreAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
+    private async Task<ILock?> TryAcquireImplAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
     {
         _logger.LogTrace("TryAcquireAsync: {Resource}", resource);
 
