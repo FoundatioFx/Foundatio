@@ -95,6 +95,24 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenLockNotAvailableAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
+    {
+        return base.AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync();
+    }
+
+    [Fact]
     public override Task CanReleaseLockMultipleTimes()
     {
         return base.CanReleaseLockMultipleTimes();

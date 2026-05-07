@@ -460,7 +460,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
 
         var lockProvider = new CacheLockProvider(mockCacheClient.Object, new InMemoryMessageBus());
 
-        var l = await lockProvider.AcquireAsync("test", TimeSpan.FromSeconds(1), TimeSpan.Zero);
+        var l = await lockProvider.TryAcquireAsync("test", TimeSpan.FromSeconds(1), TimeSpan.Zero);
         Assert.NotNull(l);
         Assert.True(await lockProvider.IsLockedAsync("test"));
 

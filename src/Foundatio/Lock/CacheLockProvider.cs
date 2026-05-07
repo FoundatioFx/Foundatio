@@ -97,7 +97,21 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         return activity;
     }
 
-    public async Task<ILock?> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    public Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    {
+        return TryAcquireImplAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken);
+    }
+
+    public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+    {
+        var l = await TryAcquireImplAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
+        if (l is null)
+            throw new LockAcquisitionTimeoutException(resource);
+
+        return l;
+    }
+
+    private async Task<ILock?> TryAcquireImplAsync(string resource, TimeSpan? timeUntilExpires, bool releaseOnDispose, CancellationToken cancellationToken)
     {
         bool shouldWait = !cancellationToken.IsCancellationRequested;
         string lockId = GenerateNewLockId();

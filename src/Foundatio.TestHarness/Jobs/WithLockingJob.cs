@@ -23,7 +23,7 @@ public class WithLockingJob : JobWithLockBase
 
     protected override Task<ILock?> GetLockAsync(CancellationToken cancellationToken = default(CancellationToken))
     {
-        return _locker.AcquireAsync(nameof(WithLockingJob), TimeSpan.FromSeconds(1), TimeSpan.Zero);
+        return _locker.TryAcquireAsync(nameof(WithLockingJob), TimeSpan.FromSeconds(1), TimeSpan.Zero);
     }
 
     protected override async Task<JobResult> RunInternalAsync(JobContext context)
