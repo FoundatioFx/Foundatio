@@ -57,6 +57,9 @@ jobs:
           branch=""
         elif [[ "$branch" = "master." ]]; then
           branch=""
+        # Treat version maintenance branches (e.g., 7.x, 7.10, 8.x) as primary branches
+        elif [[ "$branch" =~ ^[0-9]+\.(x|[0-9]+)\.$ ]]; then
+          branch=""
         elif [[ "${GITHUB_REF}" = refs/tags* ]]; then
           branch=""
         elif [[ "${GITHUB_REF}" = refs/pull* ]]; then
