@@ -71,6 +71,12 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync()
+    {
+        return base.DequeueAsync_AfterAbandonWithMutatedValue_ReturnsOriginalValueAsync();
+    }
+
+    [Fact]
     public override Task CanDequeueWithCancelledTokenAsync()
     {
         return base.CanDequeueWithCancelledTokenAsync();
@@ -116,6 +122,24 @@ public class LegacyAzureStorageQueueTests : QueueTestBase
     public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
     {
         return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync()
+    {
+        return base.DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync()
+    {
+        return base.DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync()
+    {
+        return base.DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync();
     }
 
     [Fact]
