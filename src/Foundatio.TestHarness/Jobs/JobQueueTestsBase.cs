@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -185,5 +185,34 @@ public abstract class JobQueueTestsBase : TestWithLoggingBase
                 q.Dispose();
             }
         }
+    }
+
+    public virtual async Task GetQueueEntryLockAsync_WhenLockThrows_AbandonsQueueEntry()
+    {
+        // Arrange
+        using var queue = GetSampleWorkItemQueue(retries: 0, retryDelay: TimeSpan.Zero);
+        await queue.DeleteQueueAsync();
+
+        await queue.EnqueueAsync(new SampleQueueWorkItem
+        {
+            Created = DateTime.UtcNow,
+            Path = "somepath"
+        });
+
+        var job = new SampleQueueJobWithThrowingLock(queue, loggerFactory: Log);
+
+        // Act
+        var result = await job.RunAsync();
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.NotNull(result.Error);
+        Assert.IsType<InvalidOperationException>(result.Error);
+
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Queued);
+        Assert.Equal(1, stats.Enqueued);
+        Assert.Equal(1, stats.Abandoned);
+        Assert.Equal(0, stats.Completed);
     }
 }

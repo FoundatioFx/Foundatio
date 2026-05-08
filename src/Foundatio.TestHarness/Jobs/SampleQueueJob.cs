@@ -1,4 +1,4 @@
-﻿#pragma warning disable 612, 618
+#pragma warning disable 612, 618
 
 using System;
 using System.Threading;
@@ -57,10 +57,24 @@ public class SampleQueueJobWithLocking : QueueJobBase<SampleQueueWorkItem>
 
     protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default(CancellationToken))
     {
-        if (_lockProvider != null)
-            return _lockProvider.TryAcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
+        return _lockProvider.TryAcquireAsync("job", TimeSpan.FromMilliseconds(100), TimeSpan.Zero);
+    }
 
-        return base.GetQueueEntryLockAsync(queueEntry, cancellationToken);
+    protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)
+    {
+        return Task.FromResult(JobResult.Success);
+    }
+}
+
+public class SampleQueueJobWithThrowingLock : QueueJobBase<SampleQueueWorkItem>
+{
+    public SampleQueueJobWithThrowingLock(IQueue<SampleQueueWorkItem> queue, TimeProvider? timeProvider = null, IResiliencePolicyProvider? resiliencePolicyProvider = null, ILoggerFactory? loggerFactory = null) : base(queue, timeProvider, resiliencePolicyProvider, loggerFactory)
+    {
+    }
+
+    protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<SampleQueueWorkItem> queueEntry, CancellationToken cancellationToken = default)
+    {
+        throw new InvalidOperationException("Lock provider is unavailable");
     }
 
     protected override Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<SampleQueueWorkItem> context)

@@ -269,7 +269,7 @@ protected override Task<JobResult> RunInternalAsync(JobContext context)
 **Key behaviors:**
 
 - **AutoComplete (default: `true`)** — entries are completed when `ProcessQueueEntryAsync` returns success, or abandoned on failure/exception. Set `AutoComplete = false` when you need to call `CompleteAsync()` / `AbandonAsync()` yourself.
-- **Entry-level locking** — override `GetQueueEntryLockAsync` to acquire a distributed lock per queue entry before processing. The default returns an empty (no-op) lock.
+- **Entry-level locking** — override `GetQueueEntryLockAsync` to acquire a distributed lock per queue entry before processing. The default returns an empty (no-op) lock. If `GetQueueEntryLockAsync` returns `null`, the entry is abandoned. If it throws, the entry is abandoned and a failure `JobResult` is returned.
 - **Poison message safety** — entries with `null` values (deserialization failures) are automatically abandoned without calling your code.
 
 ```csharp

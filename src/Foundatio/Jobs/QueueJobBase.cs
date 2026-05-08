@@ -107,7 +107,18 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             return JobResult.SuccessWithMessage($"Abandoned poison message in {_queueName}: {queueEntry.Id}");
         }
 
-        var lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
+        ILock? lockValue;
+        try
+        {
+            lockValue = await GetQueueEntryLockAsync(queueEntry, cancellationToken).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error acquiring lock for {QueueName} queue entry {QueueEntryId}: {Message}", _queueName, queueEntry.Id, ex.Message);
+            await queueEntry.AbandonAsync().AnyContext();
+            return JobResult.FromException(ex, $"Error acquiring lock for {_queueName} queue entry {queueEntry.Id}: {ex.Message}");
+        }
+
         if (lockValue is null)
         {
             await queueEntry.AbandonAsync().AnyContext();
