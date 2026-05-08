@@ -341,6 +341,102 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync()
+    {
+        using var queue = GetQueue();
+        if (queue == null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(o => o.LoggerFactory(Log)), Log));
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "First", UniqueIdentifier = "aaa" });
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second", UniqueIdentifier = "bbb" });
+
+            // Assert
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(2, stats.Enqueued);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync()
+    {
+        using var queue = GetQueue();
+        if (queue == null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(
+                new InMemoryCacheClient(o => o.LoggerFactory(Log)), Log, detectionWindow: TimeSpan.FromMilliseconds(100)));
+
+            // Act - enqueue first item
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello", UniqueIdentifier = "abc" });
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Enqueued);
+            }
+
+            // Act - wait for detection window to expire, then enqueue same identifier
+            await Task.Delay(250);
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello", UniqueIdentifier = "abc" });
+
+            // Assert
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(2, stats.Enqueued);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync()
+    {
+        using var queue = GetQueue();
+        if (queue == null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+            queue.AttachBehavior(new DuplicateDetectionQueueBehavior<SimpleWorkItem>(new InMemoryCacheClient(o => o.LoggerFactory(Log)), Log));
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello", UniqueIdentifier = null });
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello", UniqueIdentifier = null });
+
+            // Assert
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(2, stats.Enqueued);
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task VerifyRetryAttemptsAsync()
     {
         const int retryCount = 2;

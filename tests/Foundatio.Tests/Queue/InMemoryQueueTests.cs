@@ -71,6 +71,24 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync()
+    {
+        return base.DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync()
+    {
+        return base.DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync()
+    {
+        return base.DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync();
+    }
+
+    [Fact]
     public override Task CanDequeueWithCancelledTokenAsync()
     {
         return base.CanDequeueWithCancelledTokenAsync();
