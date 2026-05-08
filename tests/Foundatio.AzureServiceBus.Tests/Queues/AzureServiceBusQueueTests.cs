@@ -12,10 +12,6 @@ namespace Foundatio.AzureServiceBus.Tests.Queue;
 
 public class AzureServiceBusQueueTests : QueueTestBase
 {
-    // Azure Service Bus Emulator limitations documentation:
-    // https://learn.microsoft.com/en-us/azure/service-bus-messaging/test-locally-with-service-bus-emulator
-    // The emulator does not support the Service Bus Management HTTP API for runtime queue stats,
-    // and has connection quota limits that affect multi-instance tests.
     private const string EmulatorLimitationsUrl = "https://learn.microsoft.com/en-us/azure/service-bus-messaging/test-locally-with-service-bus-emulator";
 
     private static readonly bool _isEmulator = IsEmulator();
@@ -40,7 +36,6 @@ public class AzureServiceBusQueueTests : QueueTestBase
     {
         Log.SetLogLevel<AzureServiceBusQueue<SimpleWorkItem>>(LogLevel.Trace);
 
-        // Disable stats assertions when using the emulator since admin API is not available
         if (_isEmulator)
             _assertStats = false;
     }
@@ -64,16 +59,14 @@ public class AzureServiceBusQueueTests : QueueTestBase
              .Serializer(serializer)
              .LoggerFactory(Log);
 
-            // Configure retry delay if provided
             if (retryDelay.HasValue)
                 o.RetryDelay(_ => retryDelay.Value);
 
-            // These options are not supported by the emulator
             if (!_isEmulator)
             {
                 o.AutoDeleteOnIdle(TimeSpan.FromMinutes(5))
                  .EnableBatchedOperations(true)
-                 .EnablePartitioning(false) // Disabled to ensure consistent message delivery
+                 .EnablePartitioning(false)
                  .RequiresDuplicateDetection(false)
                  .RequiresSession(false);
             }
@@ -90,8 +83,6 @@ public class AzureServiceBusQueueTests : QueueTestBase
         if (queue is null)
             return;
 
-        // Only drain the queue when using the emulator to ensure test isolation
-        // Don't delete the queue on real Azure Service Bus - it's expensive and will be cleaned up later
         if (_isEmulator)
             await queue.DeleteQueueAsync();
 
@@ -99,9 +90,33 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
-    public override Task CanQueueAndDequeueWorkItemAsync()
+    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
     {
-        return base.CanQueueAndDequeueWorkItemAsync();
+        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task CanAbandonQueueEntryOnceAsync()
+    {
+        return base.CanAbandonQueueEntryOnceAsync();
+    }
+
+    [Fact]
+    public override Task CanAutoCompleteWorkerAsync()
+    {
+        return base.CanAutoCompleteWorkerAsync();
+    }
+
+    [Fact]
+    public override Task CanCompleteQueueEntryOnceAsync()
+    {
+        return base.CanCompleteQueueEntryOnceAsync();
+    }
+
+    [Fact(Skip = "Dequeue Time takes forever")]
+    public override Task CanDequeueEfficientlyAsync()
+    {
+        return base.CanDequeueEfficientlyAsync();
     }
 
     [Fact]
@@ -111,11 +126,64 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task CanDequeueWithLockingAsync()
+    {
+        return base.CanDequeueWithLockingAsync();
+    }
+
+    [Fact(Skip = "Not using this test because you can set specific delay times for servicebus")]
+    public override Task CanDelayRetryAsync()
+    {
+        return base.CanDelayRetryAsync();
+    }
+
+    [Fact]
+    public override Task CanDiscardDuplicateQueueEntriesAsync()
+    {
+        return base.CanDiscardDuplicateQueueEntriesAsync();
+    }
+
+    [Fact(Skip = "Azure Service Bus handles visibility timeout natively")]
+    public override Task CanHandleAutoAbandonInWorker()
+    {
+        return base.CanHandleAutoAbandonInWorker();
+    }
+
+    [Fact]
+    public override Task CanHandleErrorInWorkerAsync()
+    {
+        return base.CanHandleErrorInWorkerAsync();
+    }
+
+    [Fact]
+    public override async Task CanHaveMultipleQueueInstancesAsync()
+    {
+        if (_isEmulator)
+        {
+            _logger.LogWarning("Skipping {TestName}: Azure Service Bus Emulator uses fixed MaxDeliveryCount which conflicts with this test's retries:0 requirement. See {Url}",
+                nameof(CanHaveMultipleQueueInstancesAsync), EmulatorLimitationsUrl);
+            return;
+        }
+
+        await base.CanHaveMultipleQueueInstancesAsync();
+    }
+
+    [Fact]
+    public override async Task CanHaveMultipleQueueInstancesWithLockingAsync()
+    {
+        if (_isEmulator)
+        {
+            _logger.LogWarning("Skipping {TestName}: Azure Service Bus Emulator uses fixed MaxDeliveryCount which conflicts with this test's retries:0 requirement. See {Url}",
+                nameof(CanHaveMultipleQueueInstancesWithLockingAsync), EmulatorLimitationsUrl);
+            return;
+        }
+
+        await base.CanHaveMultipleQueueInstancesWithLockingAsync();
+    }
+
+    [Fact]
     public override async Task CanQueueAndDequeueMultipleWorkItemsAsync()
     {
-        // Skip this test when using the emulator because the test harness checks
-        // queue stats (Queued count) which requires the admin API that the emulator doesn't support.
-        // See: https://learn.microsoft.com/en-us/azure/service-bus-messaging/test-locally-with-service-bus-emulator
         if (_isEmulator)
         {
             _logger.LogWarning("Skipping {TestName}: Azure Service Bus Emulator does not support the Management HTTP API for queue statistics. See {Url}",
@@ -127,9 +195,45 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
-    public override Task WillWaitForItemAsync()
+    public override Task CanQueueAndDequeueWorkItemAsync()
     {
-        return base.WillWaitForItemAsync();
+        return base.CanQueueAndDequeueWorkItemAsync();
+    }
+
+    [Fact]
+    public override Task CanQueueAndDequeueWorkItemWithDelayAsync()
+    {
+        return base.CanQueueAndDequeueWorkItemWithDelayAsync();
+    }
+
+    [Fact(Skip = "Dequeue Time takes forever")]
+    public override Task CanRenewLockAsync()
+    {
+        return base.CanRenewLockAsync();
+    }
+
+    [Fact(Skip = "Dequeue Time takes forever")]
+    public override Task CanResumeDequeueEfficientlyAsync()
+    {
+        return base.CanResumeDequeueEfficientlyAsync();
+    }
+
+    [Fact]
+    public override Task CanRunWorkItemWithMetricsAsync()
+    {
+        return base.CanRunWorkItemWithMetricsAsync();
+    }
+
+    [Fact]
+    public override Task CanUseQueueOptionsAsync()
+    {
+        return base.CanUseQueueOptionsAsync();
+    }
+
+    [Fact]
+    public override Task CanUseQueueWorkerAsync()
+    {
+        return base.CanUseQueueWorkerAsync();
     }
 
     [Fact]
@@ -139,16 +243,8 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
-    public override Task DequeueWaitWillGetSignaledAsync()
-    {
-        return base.DequeueWaitWillGetSignaledAsync();
-    }
-
-    [Fact]
     public override async Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
     {
-        // The emulator does not support the Management HTTP API for runtime queue stats
-        // (DeadLetterMessageCount is always 0), so verify the abandon cycle and empty queue instead.
         if (!_isEmulator)
         {
             await base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
@@ -179,15 +275,10 @@ public class AzureServiceBusQueueTests : QueueTestBase
                     attempt + 1, intermediateStats.Queued, intermediateStats.Deadletter, intermediateStats.Abandoned);
             }
 
-            // On the emulator, DeadLetterMessageCount is not reported via management API.
-            // Verify the message went through the full abandon cycle and the queue is empty.
             var stats = await queue.GetQueueStatsAsync();
-            _logger.LogInformation("Poison message final stats: Queued={Queued} Deadletter={Deadletter} Abandoned={Abandoned}",
-                stats.Queued, stats.Deadletter, stats.Abandoned);
             Assert.Equal(retries + 1, stats.Abandoned);
             Assert.Equal(0, stats.Queued);
 
-            // Verify no more messages are available (dead-lettered, not stuck in queue)
             var finalEntry = await queue.DequeueAsync(TimeSpan.FromSeconds(2));
             Assert.Null(finalEntry);
         }
@@ -198,135 +289,39 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task DequeueWaitWillGetSignaledAsync()
+    {
+        return base.DequeueWaitWillGetSignaledAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync()
+    {
+        return base.DuplicateDetection_WithDifferentIdentifiers_AcceptsBothItemsAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync()
+    {
+        return base.DuplicateDetection_WithExpiredWindow_AcceptsDuplicateAsync();
+    }
+
+    [Fact]
+    public override Task DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync()
+    {
+        return base.DuplicateDetection_WithNullIdentifier_AcceptsAllItemsAsync();
+    }
+
+    [Fact]
     public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
     [Fact]
-    public override Task CanUseQueueWorkerAsync()
+    public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
     {
-        return base.CanUseQueueWorkerAsync();
-    }
-
-    [Fact]
-    public override Task CanHandleErrorInWorkerAsync()
-    {
-        return base.CanHandleErrorInWorkerAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task WorkItemsWillTimeoutAsync()
-    {
-        return base.WorkItemsWillTimeoutAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task WillNotWaitForItemAsync()
-    {
-        return base.WillNotWaitForItemAsync();
-    }
-
-    [Fact]
-    public override Task WorkItemsWillGetMovedToDeadletterAsync()
-    {
-        return base.WorkItemsWillGetMovedToDeadletterAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task CanResumeDequeueEfficientlyAsync()
-    {
-        return base.CanResumeDequeueEfficientlyAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task CanDequeueEfficientlyAsync()
-    {
-        return base.CanDequeueEfficientlyAsync();
-    }
-
-    [Fact]
-    public override Task CanDequeueWithLockingAsync()
-    {
-        return base.CanDequeueWithLockingAsync();
-    }
-
-    [Fact]
-    public override async Task CanHaveMultipleQueueInstancesWithLockingAsync()
-    {
-        // Skip this test when using the emulator - the test uses retries: 0 which requires
-        // MaxDeliveryCount: 1, but other tests require higher MaxDeliveryCount values.
-        // Since the emulator doesn't support dynamic queue configuration, we can't satisfy both.
-        // The emulator is configured with MaxDeliveryCount: 5 to support retry tests.
-        // See emulator limitations: https://learn.microsoft.com/en-us/azure/service-bus-messaging/overview-emulator#known-limitations
-        if (_isEmulator)
-        {
-            _logger.LogWarning("Skipping {TestName}: Azure Service Bus Emulator uses fixed MaxDeliveryCount which conflicts with this test's retries:0 requirement. See {Url}",
-                nameof(CanHaveMultipleQueueInstancesWithLockingAsync), EmulatorLimitationsUrl);
-            return;
-        }
-
-        await base.CanHaveMultipleQueueInstancesWithLockingAsync();
-    }
-
-    [Fact]
-    public override Task CanAutoCompleteWorkerAsync()
-    {
-        return base.CanAutoCompleteWorkerAsync();
-    }
-
-    [Fact]
-    public override async Task CanHaveMultipleQueueInstancesAsync()
-    {
-        // Skip this test when using the emulator - the test uses retries: 0 which requires
-        // MaxDeliveryCount: 1, but other tests require higher MaxDeliveryCount values.
-        // Since the emulator doesn't support dynamic queue configuration, we can't satisfy both.
-        // The emulator is configured with MaxDeliveryCount: 5 to support retry tests.
-        // See emulator limitations: https://learn.microsoft.com/en-us/azure/service-bus-messaging/overview-emulator#known-limitations
-        if (_isEmulator)
-        {
-            _logger.LogWarning("Skipping {TestName}: Azure Service Bus Emulator uses fixed MaxDeliveryCount which conflicts with this test's retries:0 requirement. See {Url}",
-                nameof(CanHaveMultipleQueueInstancesAsync), EmulatorLimitationsUrl);
-            return;
-        }
-
-        await base.CanHaveMultipleQueueInstancesAsync();
-    }
-
-    [Fact]
-    public override Task CanRunWorkItemWithMetricsAsync()
-    {
-        return base.CanRunWorkItemWithMetricsAsync();
-    }
-
-    [Fact(Skip = "Dequeue Time takes forever")]
-    public override Task CanRenewLockAsync()
-    {
-        return base.CanRenewLockAsync();
-    }
-
-    [Fact]
-    public override Task CanAbandonQueueEntryOnceAsync()
-    {
-        return base.CanAbandonQueueEntryOnceAsync();
-    }
-
-    [Fact]
-    public override Task CanCompleteQueueEntryOnceAsync()
-    {
-        return base.CanCompleteQueueEntryOnceAsync();
-    }
-
-    [Fact(Skip = "Not using this test because you can set specific delay times for servicebus")]
-    public override Task CanDelayRetryAsync()
-    {
-        return base.CanDelayRetryAsync();
-    }
-
-    [Fact]
-    public override Task VerifyRetryAttemptsAsync()
-    {
-        return base.VerifyRetryAttemptsAsync();
+        return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
     }
 
     [Fact]
@@ -336,9 +331,33 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
-    public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
+    public override Task VerifyRetryAttemptsAsync()
     {
-        return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+        return base.VerifyRetryAttemptsAsync();
+    }
+
+    [Fact(Skip = "Dequeue Time takes forever")]
+    public override Task WillNotWaitForItemAsync()
+    {
+        return base.WillNotWaitForItemAsync();
+    }
+
+    [Fact]
+    public override Task WillWaitForItemAsync()
+    {
+        return base.WillWaitForItemAsync();
+    }
+
+    [Fact(Skip = "Dequeue Time takes forever")]
+    public override Task WorkItemsWillTimeoutAsync()
+    {
+        return base.WorkItemsWillTimeoutAsync();
+    }
+
+    [Fact]
+    public override Task WorkItemsWillGetMovedToDeadletterAsync()
+    {
+        return base.WorkItemsWillGetMovedToDeadletterAsync();
     }
 
 }
