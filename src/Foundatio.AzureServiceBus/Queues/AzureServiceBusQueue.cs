@@ -150,8 +150,14 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         else
         {
             _logger.LogDebug("Draining queue - using Azure Service Bus Emulator");
-            // Drain all messages from the queue since we can't delete it
-            await DrainQueueAsync().AnyContext();
+            try
+            {
+                await DrainQueueAsync().AnyContext();
+            }
+            catch (ServiceBusException ex) when (ex.Reason == ServiceBusFailureReason.MessagingEntityNotFound)
+            {
+                _logger.LogDebug(ex, "Queue {QueueName} not found while draining (emulator); treating as empty", _options.Name);
+            }
         }
 
         if (_queueSender is not null)
