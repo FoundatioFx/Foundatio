@@ -1924,7 +1924,8 @@ public abstract class QueueTestBase : TestWithLoggingBase
 
             // Act
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem?.Value);
+            Assert.NotNull(workItem);
+            Assert.NotNull(workItem.Value);
             Assert.Equal("dispose-test", workItem.Value.Data);
             await workItem.DisposeAsync();
 
@@ -1987,7 +1988,7 @@ public abstract class QueueTestBase : TestWithLoggingBase
 
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "deadletter-test" });
             var workItem = await queue.DequeueAsync(TimeSpan.Zero);
-            Assert.NotNull(workItem?.Value);
+            Assert.NotNull(workItem);
             await workItem.AbandonAsync();
 
             if (_assertStats)
