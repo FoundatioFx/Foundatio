@@ -1908,6 +1908,247 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 1, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "dispose-test" });
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem?.Value);
+            Assert.Equal("dispose-test", workItem.Value.Data);
+            await workItem.DisposeAsync();
+
+            // Assert
+            await Task.Delay(100, TestCancellationToken);
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.True(stats.Abandoned > 0 || stats.Queued > 0,
+                    $"Expected item to be abandoned or re-queued after dispose. Stats: Abandoned={stats.Abandoned}, Queued={stats.Queued}");
+            }
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Act
+            string? entryId = await queue.EnqueueAsync(new SimpleWorkItem { Data = "unique-id-test" },
+                new QueueEntryOptions { UniqueId = "my-custom-id-123" });
+
+            // Assert
+            Assert.NotNull(entryId);
+            Assert.Equal("my-custom-id-123", entryId);
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+            Assert.Equal("my-custom-id-123", workItem.Id);
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(retries: 0, retryDelay: TimeSpan.Zero);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "deadletter-test" });
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem?.Value);
+            await workItem.AbandonAsync();
+
+            if (_assertStats)
+            {
+                var stats = await queue.GetQueueStatsAsync();
+                Assert.Equal(1, stats.Deadletter);
+            }
+
+            // Act
+            var deadletterItems = await queue.GetDeadletterItemsAsync();
+
+            // Assert
+            var items = new List<SimpleWorkItem>(deadletterItems);
+            Assert.Single(items);
+            Assert.Equal("deadletter-test", items[0].Data);
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        if (queue is not IQueueActivity activity)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            Assert.Null(activity.LastEnqueueActivity);
+            Assert.Null(activity.LastDequeueActivity);
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "activity-test" });
+
+            // Assert
+            Assert.NotNull(activity.LastEnqueueActivity);
+            var enqueueTime = activity.LastEnqueueActivity.Value;
+            Assert.True(enqueueTime <= DateTimeOffset.UtcNow);
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+
+            // Assert
+            Assert.NotNull(activity.LastDequeueActivity);
+            Assert.True(activity.LastDequeueActivity.Value >= enqueueTime);
+
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            var beforeEnqueue = DateTime.UtcNow;
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "metadata-test" });
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+
+            // Assert
+            if (workItem is IQueueEntryMetadata metadata)
+            {
+                Assert.True(metadata.EnqueuedTimeUtc >= beforeEnqueue.AddSeconds(-1),
+                    $"EnqueuedTimeUtc {metadata.EnqueuedTimeUtc} should be >= {beforeEnqueue.AddSeconds(-1)}");
+                Assert.True(metadata.DequeuedTimeUtc >= metadata.EnqueuedTimeUtc,
+                    $"DequeuedTimeUtc {metadata.DequeuedTimeUtc} should be >= EnqueuedTimeUtc {metadata.EnqueuedTimeUtc}");
+                Assert.True(metadata.ProcessingTime >= TimeSpan.Zero);
+                Assert.True(metadata.TotalTime >= TimeSpan.Zero);
+            }
+
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task QueueEntry_EntryType_ReturnsCorrectTypeAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "entrytype-test" });
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+
+            // Assert
+            Assert.Equal(typeof(SimpleWorkItem), ((IQueueEntry)workItem).EntryType);
+
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task QueueEntry_GetValue_ReturnsUntypedValueAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "getvalue-test" });
+
+            // Act
+            var workItem = await queue.DequeueAsync(TimeSpan.Zero);
+            Assert.NotNull(workItem);
+            object untypedValue = ((IQueueEntry)workItem).GetValue();
+
+            // Assert
+            Assert.NotNull(untypedValue);
+            Assert.IsType<SimpleWorkItem>(untypedValue);
+            Assert.Equal("getvalue-test", ((SimpleWorkItem)untypedValue).Data);
+
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();

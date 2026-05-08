@@ -1616,6 +1616,42 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
+    [Fact]
+    public override Task AddAsync_WhenKeyAlreadyExists_ReturnsFalseAndDoesNotOverwrite()
+    {
+        return base.AddAsync_WhenKeyAlreadyExists_ReturnsFalseAndDoesNotOverwrite();
+    }
+
+    [Fact]
+    public override Task GetAsync_WhenKeyDoesNotExist_ReturnsNoValue()
+    {
+        return base.GetAsync_WhenKeyDoesNotExist_ReturnsNoValue();
+    }
+
+    [Fact]
+    public override Task IncrementAsync_WithAmountZero_ReturnsCurrentValue()
+    {
+        return base.IncrementAsync_WithAmountZero_ReturnsCurrentValue();
+    }
+
+    [Fact]
+    public override Task RemoveAsync_WhenKeyDoesNotExist_ReturnsFalse()
+    {
+        return base.RemoveAsync_WhenKeyDoesNotExist_ReturnsFalse();
+    }
+
+    [Fact]
+    public override Task RemoveByPrefixAsync_WithNoMatchingKeys_ReturnsZero()
+    {
+        return base.RemoveByPrefixAsync_WithNoMatchingKeys_ReturnsZero();
+    }
+
+    [Fact]
+    public override Task SetExpirationAsync_OnNonExistentKey_DoesNotThrow()
+    {
+        return base.SetExpirationAsync_OnNonExistentKey_DoesNotThrow();
+    }
+
     private record MyData(string Name, int Value);
 }
 

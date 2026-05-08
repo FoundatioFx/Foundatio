@@ -257,6 +257,48 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
+    {
+        return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
+    {
+        return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
+    }
+
+    [Fact]
+    public override Task GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync()
+    {
+        return base.GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync()
+    {
+        return base.GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync()
+    {
+        return base.GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync();
+    }
+
+    [Fact]
+    public override Task QueueEntry_EntryType_ReturnsCorrectTypeAsync()
+    {
+        return base.QueueEntry_EntryType_ReturnsCorrectTypeAsync();
+    }
+
+    [Fact]
+    public override Task QueueEntry_GetValue_ReturnsUntypedValueAsync()
+    {
+        return base.QueueEntry_GetValue_ReturnsUntypedValueAsync();
+    }
+
+    [Fact]
     public async Task TestAsyncEvents()
     {
         using var q = new InMemoryQueue<SimpleWorkItem>(o => o.LoggerFactory(Log));

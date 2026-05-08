@@ -652,6 +652,142 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         Assert.NotNull(actualInfo);
         Assert.Equal(shortIdInfo, actualInfo!);
     }
+
+    public virtual async Task CopyFileAsync_WithExistingFile_CreatesIdenticalCopy()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Arrange
+        const string sourcePath = "original.txt";
+        const string targetPath = "copy.txt";
+        const string content = "hello world";
+
+        await storage.SaveFileAsync(sourcePath, content).AnyContext();
+
+        // Act
+        bool result = await storage.CopyFileAsync(sourcePath, targetPath).AnyContext();
+
+        // Assert
+        Assert.True(result);
+
+        Assert.True(await storage.ExistsAsync(sourcePath).AnyContext());
+        Assert.True(await storage.ExistsAsync(targetPath).AnyContext());
+
+        string? sourceContent = await storage.GetFileContentsAsync(sourcePath).AnyContext();
+        string? targetContent = await storage.GetFileContentsAsync(targetPath).AnyContext();
+        Assert.Equal(content, sourceContent);
+        Assert.Equal(content, targetContent);
+    }
+
+    public virtual async Task CopyFileAsync_WithNonExistentSource_ReturnsFalse()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Act
+        bool result = await storage.CopyFileAsync("nonexistent.txt", "target.txt").AnyContext();
+
+        // Assert
+        Assert.False(result);
+    }
+
+    public virtual async Task DeleteFileAsync_WhenFileDoesNotExist_ReturnsFalse()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Act
+        bool result = await storage.DeleteFileAsync("nonexistent.txt").AnyContext();
+
+        // Assert
+        Assert.False(result);
+    }
+
+    public virtual async Task DeleteFilesAsync_WithFileSpecCollection_DeletesSpecifiedFiles()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Arrange
+        await storage.SaveFileAsync("file1.txt", "content1").AnyContext();
+        await storage.SaveFileAsync("file2.txt", "content2").AnyContext();
+        await storage.SaveFileAsync("file3.txt", "content3").AnyContext();
+
+        var filesToDelete = new[] { new FileSpec { Path = "file1.txt" }, new FileSpec { Path = "file3.txt" } };
+
+        // Act
+        await storage.DeleteFilesAsync(filesToDelete).AnyContext();
+
+        // Assert
+        Assert.False(await storage.ExistsAsync("file1.txt").AnyContext());
+        Assert.True(await storage.ExistsAsync("file2.txt").AnyContext());
+        Assert.False(await storage.ExistsAsync("file3.txt").AnyContext());
+    }
+
+    public virtual async Task GetFileContentsRawAsync_WithExistingFile_ReturnsByteArray()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Arrange
+        const string path = "binary.dat";
+        byte[] expected = Encoding.UTF8.GetBytes("raw content");
+        using (var ms = new MemoryStream(expected))
+            await storage.SaveFileAsync(path, ms).AnyContext();
+
+        // Act
+        byte[]? actual = await storage.GetFileContentsRawAsync(path).AnyContext();
+
+        // Assert
+        Assert.NotNull(actual);
+        Assert.Equal(expected, actual);
+    }
+
+    public virtual async Task GetFileStreamAsync_WithNonExistentFileInReadMode_ReturnsNull()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Act
+        var stream = await storage.GetFileStreamAsync("nonexistent.txt", StreamMode.Read).AnyContext();
+
+        // Assert
+        Assert.Null(stream);
+    }
+
+    public virtual async Task RenameFileAsync_WhenSourceDoesNotExist_ReturnsFalse()
+    {
+        using var storage = GetStorage();
+        if (storage is null)
+            return;
+
+        await ResetAsync(storage).AnyContext();
+
+        // Act
+        bool result = await storage.RenameFileAsync("nonexistent.txt", "newname.txt").AnyContext();
+
+        // Assert
+        Assert.False(result);
+    }
 }
 
 public record PostInfo

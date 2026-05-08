@@ -86,7 +86,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     protected override async Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
-        string id = Guid.NewGuid().ToString("N");
+        string id = !String.IsNullOrEmpty(options.UniqueId) ? options.UniqueId : Guid.NewGuid().ToString("N");
         _logger.LogTrace("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
 
         if (!await OnEnqueuingAsync(data, options).AnyContext())

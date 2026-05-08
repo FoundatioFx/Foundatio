@@ -3535,6 +3535,125 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
                 keyCount * 2, sw.ElapsedMilliseconds, keyCount * 2 / sw.Elapsed.TotalSeconds);
         }
     }
+
+    public virtual async Task AddAsync_WhenKeyAlreadyExists_ReturnsFalseAndDoesNotOverwrite()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Arrange
+            await cache.SetAsync("existing-key", "original-value");
+
+            // Act
+            bool added = await cache.AddAsync("existing-key", "new-value");
+
+            // Assert
+            Assert.False(added);
+            Assert.Equal("original-value", (await cache.GetAsync<string>("existing-key")).Value);
+        }
+    }
+
+    public virtual async Task GetAsync_WhenKeyDoesNotExist_ReturnsNoValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Act
+            var result = await cache.GetAsync<string>("nonexistent-key");
+
+            // Assert
+            Assert.False(result.HasValue);
+        }
+    }
+
+    public virtual async Task IncrementAsync_WithAmountZero_ReturnsCurrentValue()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Arrange
+            await cache.SetAsync("counter", 5L);
+
+            // Act
+            long result = await cache.IncrementAsync("counter", 0);
+
+            // Assert
+            Assert.Equal(5, result);
+        }
+    }
+
+    public virtual async Task RemoveAsync_WhenKeyDoesNotExist_ReturnsFalse()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Act
+            bool removed = await cache.RemoveAsync("key-that-does-not-exist");
+
+            // Assert
+            Assert.False(removed);
+        }
+    }
+
+    public virtual async Task RemoveByPrefixAsync_WithNoMatchingKeys_ReturnsZero()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Arrange
+            await cache.SetAsync("alpha:1", "value1");
+            await cache.SetAsync("alpha:2", "value2");
+
+            // Act
+            int removed = await cache.RemoveByPrefixAsync("beta:");
+
+            // Assert
+            Assert.Equal(0, removed);
+        }
+    }
+
+    public virtual async Task SetExpirationAsync_OnNonExistentKey_DoesNotThrow()
+    {
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Act
+            await cache.SetExpirationAsync("nonexistent-key", TimeSpan.FromMinutes(5));
+
+            // Assert
+            Assert.False(await cache.ExistsAsync("nonexistent-key"));
+        }
+    }
 }
 
 public class SimpleModel
