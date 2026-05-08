@@ -20,8 +20,6 @@ using Microsoft.Extensions.Time.Testing;
 using StackExchange.Redis;
 using Xunit;
 
-#pragma warning disable 4014
-
 namespace Foundatio.Redis.Tests.Queues;
 
 public class RedisQueueTests : QueueTestBase, IAsyncLifetime
@@ -594,8 +592,8 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
 local now = tonumber(redis.call(""time"")[1]);
 while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end";
 
-        // db will be busy for DELAY_TIME_SEC which will cause timeout on the dequeue to follow
-        database.ScriptEvaluateAsync(databaseDelayScript);
+        // Fire-and-forget: intentionally blocks Redis server-side to simulate timeout; result is not needed.
+        _ = database.ScriptEvaluateAsync(databaseDelayScript);
 
         var completion = new TaskCompletionSource<bool>();
         await queue.StartWorkingAsync(async (item) =>

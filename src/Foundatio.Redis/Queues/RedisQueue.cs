@@ -12,7 +12,6 @@ using Foundatio.Redis;
 using Foundatio.Redis.Utility;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
-#pragma warning disable 4014
 
 namespace Foundatio.Queues;
 
@@ -504,9 +503,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
             var tx = Database.CreateTransaction();
             tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-            tx.ListRemoveAsync(_workListName, entry.Id);
-            tx.ListLeftPushAsync(_waitListName, entry.Id);
-            tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
+            // Transaction-queued: commands execute atomically with ExecuteAsync(); individual results are not needed.
+            _ = tx.ListRemoveAsync(_workListName, entry.Id);
+            _ = tx.ListLeftPushAsync(_waitListName, entry.Id);
+            _ = tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
             bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
                 throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
@@ -521,9 +521,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
             var tx = Database.CreateTransaction();
             tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-            tx.ListRemoveAsync(_workListName, entry.Id);
-            tx.ListLeftPushAsync(_queueListName, entry.Id);
-            tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
+            // Transaction-queued: commands execute atomically with ExecuteAsync(); individual results are not needed.
+            _ = tx.ListRemoveAsync(_workListName, entry.Id);
+            _ = tx.ListLeftPushAsync(_queueListName, entry.Id);
+            _ = tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
             bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
             if (!success)
                 throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
@@ -548,10 +549,11 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
         var tx = Database.CreateTransaction();
         tx.AddCondition(Condition.KeyExists(GetRenewedTimeKey(entry.Id)));
-        tx.ListRemoveAsync(_workListName, entry.Id);
-        tx.ListLeftPushAsync(_deadListName, entry.Id);
-        tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
-        tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
+        // Transaction-queued: commands execute atomically with ExecuteAsync(); individual results are not needed.
+        _ = tx.ListRemoveAsync(_workListName, entry.Id);
+        _ = tx.ListLeftPushAsync(_deadListName, entry.Id);
+        _ = tx.KeyDeleteAsync(GetRenewedTimeKey(entry.Id));
+        _ = tx.KeyExpireAsync(GetPayloadKey(entry.Id), _options.DeadLetterTimeToLive);
         bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
         if (!success)
             throw new QueueException("Queue entry not in work list, it may have been auto abandoned.");
@@ -724,9 +726,10 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
                 _logger.LogDebug("{WaitId}: Adding item back to queue for retry", waitId);
 
                 var tx = Database.CreateTransaction();
-                tx.ListRemoveAsync(_waitListName, waitId);
-                tx.ListLeftPushAsync(_queueListName, waitId);
-                tx.KeyDeleteAsync(GetWaitTimeKey(waitId.ToString()));
+                // Transaction-queued: commands execute atomically with ExecuteAsync(); individual results are not needed.
+                _ = tx.ListRemoveAsync(_waitListName, waitId);
+                _ = tx.ListLeftPushAsync(_queueListName, waitId);
+                _ = tx.KeyDeleteAsync(GetWaitTimeKey(waitId.ToString()));
                 bool success = await _resiliencePolicy.ExecuteAsync(async _ => await tx.ExecuteAsync()).AnyContext();
                 if (!success)
                     throw new Exception("Unable to move item to queue list.");
