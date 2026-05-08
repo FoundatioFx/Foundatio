@@ -19,11 +19,10 @@ using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Xunit;
-#pragma warning disable CS4014
 
 namespace Foundatio.Tests.Queue;
 
-public abstract class QueueTestBase : TestWithLoggingBase, IAsyncDisposable
+public abstract class QueueTestBase : TestWithLoggingBase
 {
     protected QueueTestBase(ITestOutputHelper output) : base(output)
     {

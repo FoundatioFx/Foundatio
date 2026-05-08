@@ -1,6 +1,5 @@
 using Foundatio.AppHost.Extensions;
 using Projects;
-#pragma warning disable ASPIREPROXYENDPOINTS001
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -25,4 +24,4 @@ builder.AddProject<Foundatio_HostingSample>("Foundatio-HostingSample")
         u.Urls.Add(new ResourceUrlAnnotation { Url = "/jobs/run", DisplayText = "Run Job", Endpoint = u.GetEndpoint("http") });
     });
 
-builder.Build().Run();
+await builder.Build().RunAsync();
