@@ -129,8 +129,9 @@ public abstract class QueueJobBase<T> : IQueueJob<T>, IHaveLogger, IHaveLoggerFa
             }
             else
             {
-                if (result.Error != null || result.Message != null)
-                    _logger.LogError(result.Error, "{QueueName} queue entry {QueueEntryId} returned an unsuccessful response: {Message}", _queueName, queueEntry.Id, result.Message ?? result.Error?.Message);
+                string? message = !String.IsNullOrEmpty(result.Message) ? result.Message : result.Error?.Message;
+                if (result.Error != null || !String.IsNullOrEmpty(message))
+                    _logger.LogError(result.Error, "{QueueName} queue entry {QueueEntryId} returned an unsuccessful response: {Message}", _queueName, queueEntry.Id, message);
 
                 _logger.LogTrace("Processing was not successful. Auto Abandoning {QueueName} queue entry: {QueueEntryId}", _queueName, queueEntry.Id);
                 await queueEntry.AbandonAsync().AnyContext();
