@@ -305,7 +305,7 @@ public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
         // Lock on the business key (order ID) to prevent concurrent processing
         // of the same order across all queue entries
         string lockKey = $"order:{queueEntry.Value.OrderId}";
-        return _lockProvider.AcquireAsync(lockKey, TimeSpan.FromMinutes(5), cancellationToken);
+        return _lockProvider.TryAcquireAsync(lockKey, TimeSpan.FromMinutes(5), cancellationToken);
     }
 
     protected override async Task<JobResult> ProcessQueueEntryAsync(
@@ -325,8 +325,9 @@ public class OrderProcessorJob : QueueJobBase<OrderWorkItem>
 
 1. When `QueueJobBase` dequeues an entry, it calls `GetQueueEntryLockAsync` before processing
 2. If the lock cannot be acquired (returns `null`), the entry is abandoned and returned to the queue
-3. If the lock is acquired, processing continues and the lock is automatically released after completion
-4. The lock is also used for manual renewal within `ProcessQueueEntryAsync` via `await context.QueueEntry.RenewLockAsync()`
+3. If the lock acquisition throws an exception (e.g., network failure), the entry is abandoned and a `JobResult.FromException` is returned
+4. If the lock is acquired, processing continues and the lock is automatically released after completion
+5. The lock is also used for manual renewal within `ProcessQueueEntryAsync` via `await context.QueueEntry.RenewLockAsync()`
 
 ::: tip Lock Provider Selection
 Use a distributed lock provider (e.g., `CacheLockProvider` with Redis) in production to coordinate across multiple instances. For single-instance scenarios, `CacheLockProvider` with `InMemoryCacheClient` is sufficient.
