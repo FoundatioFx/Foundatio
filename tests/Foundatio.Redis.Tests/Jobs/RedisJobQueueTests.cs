@@ -32,15 +32,15 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public override Task CanRunMultipleQueueJobsAsync()
+    public override Task ActivityWillFlowThroughQueueJobAsync()
     {
-        return base.CanRunMultipleQueueJobsAsync();
+        return base.ActivityWillFlowThroughQueueJobAsync();
     }
 
     [Fact]
-    public override Task CanRunQueueJobWithLockFailAsync()
+    public override Task CanRunMultipleQueueJobsAsync()
     {
-        return base.CanRunQueueJobWithLockFailAsync();
+        return base.CanRunMultipleQueueJobsAsync();
     }
 
     [Fact]
@@ -50,9 +50,15 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public override Task ActivityWillFlowThroughQueueJobAsync()
+    public override Task CanRunQueueJobWithLockFailAsync()
     {
-        return base.ActivityWillFlowThroughQueueJobAsync();
+        return base.CanRunQueueJobWithLockFailAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueEntryLockAsync_WhenLockThrows_AbandonsQueueEntry()
+    {
+        return base.GetQueueEntryLockAsync_WhenLockThrows_AbandonsQueueEntry();
     }
 
     public override async ValueTask InitializeAsync()

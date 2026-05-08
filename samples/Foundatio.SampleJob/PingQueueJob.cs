@@ -28,7 +28,7 @@ public class PingQueueJob : QueueJobBase<PingRequest>
 
     protected override Task<ILock?> GetQueueEntryLockAsync(IQueueEntry<PingRequest> queueEntry, CancellationToken cancellationToken = new CancellationToken())
     {
-        return _locker.AcquireAsync(String.Concat("pull:", queueEntry.Value!.Id),
+        return _locker.TryAcquireAsync(String.Concat("pull:", queueEntry.Value.Id),
             TimeSpan.FromMinutes(30),
             TimeSpan.FromSeconds(1));
     }
