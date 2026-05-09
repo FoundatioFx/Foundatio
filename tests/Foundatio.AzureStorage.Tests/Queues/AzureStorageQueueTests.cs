@@ -113,6 +113,12 @@ public class AzureStorageQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
+    {
+        return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
+    }
+
+    [Fact]
     public override Task DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync()
     {
         return base.DequeueAsync_WithPoisonMessage_MovesToDeadletterAsync();
@@ -140,6 +146,30 @@ public class AzureStorageQueueTests : QueueTestBase
     public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
+    }
+
+    [Fact(Skip = "Azure Storage Queues do not support custom entry IDs")]
+    public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
+    {
+        return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
+    }
+
+    [Fact(Skip = "Azure Storage Queues do not support retrieving the entire queue")]
+    public override Task GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync()
+    {
+        return base.GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync()
+    {
+        return base.GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync()
+    {
+        return base.GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync();
     }
 
     [Fact]
@@ -230,6 +260,18 @@ public class AzureStorageQueueTests : QueueTestBase
     public override Task MaintainJobNotAbandon_NotWorkTimeOutEntry()
     {
         return base.MaintainJobNotAbandon_NotWorkTimeOutEntry();
+    }
+
+    [Fact]
+    public override Task QueueEntry_EntryType_ReturnsCorrectTypeAsync()
+    {
+        return base.QueueEntry_EntryType_ReturnsCorrectTypeAsync();
+    }
+
+    [Fact]
+    public override Task QueueEntry_GetValue_ReturnsUntypedValueAsync()
+    {
+        return base.QueueEntry_GetValue_ReturnsUntypedValueAsync();
     }
 
     [Fact]
