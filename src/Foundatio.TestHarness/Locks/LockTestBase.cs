@@ -580,14 +580,18 @@ public abstract class LockTestBase : TestWithLoggingBase
         var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5), releaseOnDispose: false).AnyContext();
         Assert.NotNull(lockInstance);
 
-        // Act
-        await lockInstance.DisposeAsync().AnyContext();
+        try
+        {
+            // Act
+            await lockInstance.DisposeAsync().AnyContext();
 
-        // Assert
-        Assert.True(await locker.IsLockedAsync(lockName).AnyContext());
-
-        // Cleanup: force-release
-        await locker.ReleaseAsync(lockName).AnyContext();
+            // Assert
+            Assert.True(await locker.IsLockedAsync(lockName).AnyContext());
+        }
+        finally
+        {
+            await locker.ReleaseAsync(lockName).AnyContext();
+        }
     }
 
     public virtual async Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
