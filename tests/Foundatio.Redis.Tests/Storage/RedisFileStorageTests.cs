@@ -80,9 +80,27 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task RenameFileAsync_WhenSourceDoesNotExist_ReturnsFalse()
+    {
+        return base.RenameFileAsync_WhenSourceDoesNotExist_ReturnsFalse();
+    }
+
+    [Fact]
     public override Task CanConcurrentlyManageFilesAsync()
     {
         return base.CanConcurrentlyManageFilesAsync();
+    }
+
+    [Fact]
+    public override Task CopyFileAsync_WithExistingFile_CreatesIdenticalCopy()
+    {
+        return base.CopyFileAsync_WithExistingFile_CreatesIdenticalCopy();
+    }
+
+    [Fact]
+    public override Task CopyFileAsync_WithNonExistentSource_ReturnsFalse()
+    {
+        return base.CopyFileAsync_WithNonExistentSource_ReturnsFalse();
     }
 
     [Fact]
@@ -95,6 +113,18 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
     public override Task CanDeleteEntireFolderAsync()
     {
         return base.CanDeleteEntireFolderAsync();
+    }
+
+    [Fact]
+    public override Task DeleteFileAsync_WhenFileDoesNotExist_ReturnsFalse()
+    {
+        return base.DeleteFileAsync_WhenFileDoesNotExist_ReturnsFalse();
+    }
+
+    [Fact]
+    public override Task DeleteFilesAsync_WithFileSpecCollection_DeletesSpecifiedFiles()
+    {
+        return base.DeleteFilesAsync_WithFileSpecCollection_DeletesSpecifiedFiles();
     }
 
     [Fact]
@@ -119,6 +149,18 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
     public override Task CanDeleteNestedFolderAsync()
     {
         return base.CanDeleteNestedFolderAsync();
+    }
+
+    [Fact]
+    public override Task GetFileContentsRawAsync_WithExistingFile_ReturnsByteArray()
+    {
+        return base.GetFileContentsRawAsync_WithExistingFile_ReturnsByteArray();
+    }
+
+    [Fact]
+    public override Task GetFileStreamAsync_WithNonExistentFileInReadMode_ReturnsNull()
+    {
+        return base.GetFileStreamAsync_WithNonExistentFileInReadMode_ReturnsNull();
     }
 
     [Fact]

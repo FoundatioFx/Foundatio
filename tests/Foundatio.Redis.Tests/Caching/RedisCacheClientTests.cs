@@ -40,6 +40,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task AddAsync_WhenKeyAlreadyExists_ReturnsFalseAndDoesNotOverwrite()
+    {
+        return base.AddAsync_WhenKeyAlreadyExists_ReturnsFalseAndDoesNotOverwrite();
+    }
+
+    [Fact]
     public override Task AddAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.AddAsync_WithExpiration_SetsExpirationCorrectly();
@@ -130,6 +136,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task GetAsync_WhenKeyDoesNotExist_ReturnsNoValue()
+    {
+        return base.GetAsync_WhenKeyDoesNotExist_ReturnsNoValue();
+    }
+
+    [Fact]
     public override Task GetAsync_WithNumericTypeConversion_ConvertsBetweenTypes()
     {
         return base.GetAsync_WithNumericTypeConversion_ConvertsBetweenTypes();
@@ -193,6 +205,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     public override Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.IncrementAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public override Task IncrementAsync_WithAmountZero_ReturnsCurrentValue()
+    {
+        return base.IncrementAsync_WithAmountZero_ReturnsCurrentValue();
     }
 
     [Fact]
@@ -310,6 +328,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task RemoveAsync_WhenKeyDoesNotExist_ReturnsFalse()
+    {
+        return base.RemoveAsync_WhenKeyDoesNotExist_ReturnsFalse();
+    }
+
+    [Fact]
     public override Task RemoveAsync_WithNonExistentKey_ReturnsFalse()
     {
         return base.RemoveAsync_WithNonExistentKey_ReturnsFalse();
@@ -390,6 +414,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     public override Task RemoveByPrefixAsync_WithNullOrEmptyPrefix_RemovesAllKeys()
     {
         return base.RemoveByPrefixAsync_WithNullOrEmptyPrefix_RemovesAllKeys();
+    }
+
+    [Fact]
+    public override Task RemoveByPrefixAsync_WithNoMatchingKeys_ReturnsZero()
+    {
+        return base.RemoveByPrefixAsync_WithNoMatchingKeys_ReturnsZero();
     }
 
     [Theory]
@@ -581,6 +611,12 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     public override Task SetExpirationAsync_WithInvalidKey_ThrowsArgumentException()
     {
         return base.SetExpirationAsync_WithInvalidKey_ThrowsArgumentException();
+    }
+
+    [Fact]
+    public override Task SetExpirationAsync_OnNonExistentKey_DoesNotThrow()
+    {
+        return base.SetExpirationAsync_OnNonExistentKey_DoesNotThrow();
     }
 
     [Fact]

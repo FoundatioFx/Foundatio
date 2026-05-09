@@ -57,9 +57,27 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     }
 
     [Fact]
+    public override Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
+    {
+        return base.AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose();
+    }
+
+    [Fact]
     public override Task LockWillTimeoutAsync()
     {
         return base.LockWillTimeoutAsync();
+    }
+
+    [Fact]
+    public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
+    {
+        return base.Lock_AcquiredTimeUtc_ReturnsValidTimestamp();
+    }
+
+    [Fact]
+    public override Task Lock_LockIdAndResource_ReturnCorrectValues()
+    {
+        return base.Lock_LockIdAndResource_ReturnCorrectValues();
     }
 
     [Fact]
@@ -108,6 +126,18 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     public override Task CanReleaseLockMultipleTimes()
     {
         return base.CanReleaseLockMultipleTimes();
+    }
+
+    [Fact]
+    public override Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
+    {
+        return base.ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId();
+    }
+
+    [Fact]
+    public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
+    {
+        return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
     }
 
     [Fact]

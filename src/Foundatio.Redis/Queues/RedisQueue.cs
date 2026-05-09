@@ -198,6 +198,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 
     protected override async Task<string?> EnqueueImplAsync(T data, QueueEntryOptions options)
     {
+        // TODO: Use options.UniqueId as the entry ID when provided (like InMemoryQueue and AzureServiceBusQueue do)
         string id = Guid.NewGuid().ToString("N");
         _logger.LogDebug("Queue {QueueName} enqueue item: {QueueEntryId}", _options.Name, id);
 

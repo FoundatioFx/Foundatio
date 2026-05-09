@@ -123,6 +123,12 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
+    {
+        return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
+    }
+
+    [Fact]
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
@@ -156,6 +162,12 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
+    {
+        return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
     }
 
     [Fact]
@@ -874,6 +886,36 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
     public override Task AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync()
     {
         return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
+    }
+
+    [Fact]
+    public override Task GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync()
+    {
+        return base.GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync()
+    {
+        return base.GetQueueActivity_AfterEnqueueAndDequeue_ReturnsTimestampsAsync();
+    }
+
+    [Fact]
+    public override Task GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync()
+    {
+        return base.GetQueueEntryMetadata_AfterDequeue_ReturnsValidTimestampsAsync();
+    }
+
+    [Fact]
+    public override Task QueueEntry_EntryType_ReturnsCorrectTypeAsync()
+    {
+        return base.QueueEntry_EntryType_ReturnsCorrectTypeAsync();
+    }
+
+    [Fact]
+    public override Task QueueEntry_GetValue_ReturnsUntypedValueAsync()
+    {
+        return base.QueueEntry_GetValue_ReturnsUntypedValueAsync();
     }
 
     private record Command1(int Id);
