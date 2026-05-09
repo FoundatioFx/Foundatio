@@ -164,7 +164,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
-    [Fact(Skip = "Redis does not use UniqueId as entry ID")]
+    [Fact]
     public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
     {
         return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
