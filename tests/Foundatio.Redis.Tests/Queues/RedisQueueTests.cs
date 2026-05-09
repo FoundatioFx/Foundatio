@@ -164,7 +164,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Redis does not use UniqueId as entry ID")]
     public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
     {
         return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
@@ -888,7 +888,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         return base.AbandonAsync_WhenRetriesExceeded_MovesToDeadletterAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Redis queue does not support deadletter retrieval")]
     public override Task GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync()
     {
         return base.GetDeadletterItemsAsync_WithDeadletteredEntry_ReturnsItemsAsync();
