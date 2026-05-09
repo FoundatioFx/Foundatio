@@ -771,6 +771,8 @@ public abstract class FileStorageTestsBase : TestWithLoggingBase
         var stream = await storage.GetFileStreamAsync("nonexistent.txt", StreamMode.Read).AnyContext();
 
         // Assert
+        if (stream is not null)
+            await stream.DisposeAsync().AnyContext();
         Assert.Null(stream);
     }
 

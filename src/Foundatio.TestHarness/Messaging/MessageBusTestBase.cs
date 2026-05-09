@@ -1130,7 +1130,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             }, TestCancellationToken).AnyContext();
 
             // Allow subscription to propagate in distributed providers
-            await Task.Delay(250).AnyContext();
+            await Task.Delay(250, TestCancellationToken).AnyContext();
 
             // Act
             await messageBus.PublishAsync(new SimpleMessageA { Data = "Delayed" }, TimeSpan.FromSeconds(1), TestCancellationToken).AnyContext();
