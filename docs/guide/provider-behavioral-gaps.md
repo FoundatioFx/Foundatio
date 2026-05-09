@@ -79,8 +79,8 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Provider | Supported | Notes |
 |----------|-----------|-------|
 | InMemory | ✅ | Returns all deadlettered entries |
-| Redis | ✅ | Returns all deadlettered entries |
-| Azure Service Bus | ✅ | Returns deadletter sub-queue entries |
+| Redis | ❌ | Not implemented |
+| Azure Service Bus | ❌ | Deadletter is a separate sub-queue; requires different API |
 | Azure Storage Queue | ❌ | No deadletter concept in Azure Storage Queues |
 | SQS | ❌ | Deadletter is a separate queue; not retrievable via this API |
 
@@ -166,6 +166,6 @@ All tested providers (InMemory, Redis) exhibit fully consistent behavior. No beh
 
 3. **Use at least 1-second granularity for delivery delays** when targeting distributed providers. Sub-second delays are only reliable with InMemory.
 
-4. **Don't use `GetDeadletterItemsAsync` with Azure Storage Queues or SQS** — it is not supported. Design deadletter processing around provider-specific mechanisms instead.
+4. **Don't rely on `GetDeadletterItemsAsync`** — only InMemory supports it. Design deadletter processing around provider-specific mechanisms instead.
 
 5. **Prefer `QueueEntryOptions.UniqueId` only with providers that support it** (InMemory, Redis, Azure Service Bus). On SQS and Azure Storage Queues, the system assigns its own IDs.
