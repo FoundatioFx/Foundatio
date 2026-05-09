@@ -1113,4 +1113,154 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task PublishAsync_WithDeliveryDelayExtension_DelaysDeliveryAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            var countdown = new AsyncCountdownEvent(1);
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                Assert.Equal("Delayed", msg.Data);
+                countdown.Signal();
+            }, TestCancellationToken).AnyContext();
+
+            // Allow subscription to propagate in distributed providers
+            await Task.Delay(250, TestCancellationToken).AnyContext();
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Delayed" }, TimeSpan.FromSeconds(1), TestCancellationToken).AnyContext();
+
+            // Assert - message should NOT be received immediately
+            await Assert.ThrowsAsync<TimeoutException>(async () =>
+                await countdown.WaitAsync(TimeSpan.FromMilliseconds(250))).AnyContext();
+            Assert.Equal(1, countdown.CurrentCount);
+
+            // Assert - message SHOULD arrive after the delay
+            await countdown.WaitAsync(TimeSpan.FromSeconds(10)).AnyContext();
+            Assert.Equal(0, countdown.CurrentCount);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task PublishAsync_WithUniqueId_PropagatesUniqueIdToSubscriberAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            var countdown = new AsyncCountdownEvent(1);
+            string? receivedUniqueId = null;
+
+            await messageBus.SubscribeAsync<IMessage<SimpleMessageA>>(msg =>
+            {
+                receivedUniqueId = msg.UniqueId;
+                countdown.Signal();
+            }, TestCancellationToken).AnyContext();
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, new MessageOptions
+            {
+                UniqueId = "test-unique-123"
+            }, TestCancellationToken).AnyContext();
+
+            // Assert
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.Equal("test-unique-123", receivedUniqueId);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_ToRawIMessage_CanAccessAllPropertiesAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            var countdown = new AsyncCountdownEvent(1);
+            string? receivedCorrelationId = null;
+            string? receivedUniqueId = null;
+            IDictionary<string, string>? receivedProperties = null;
+
+            await messageBus.SubscribeAsync(msg =>
+            {
+                receivedCorrelationId = msg.CorrelationId;
+                receivedUniqueId = msg.UniqueId;
+                receivedProperties = msg.Properties;
+                countdown.Signal();
+            }, TestCancellationToken).AnyContext();
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, new MessageOptions
+            {
+                CorrelationId = "corr-456",
+                UniqueId = "unique-789",
+                Properties = new Dictionary<string, string> { { "env", "test" }, { "version", "1.0" } }
+            }, TestCancellationToken).AnyContext();
+
+            // Assert
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.Equal("corr-456", receivedCorrelationId);
+            Assert.Equal("unique-789", receivedUniqueId);
+            Assert.NotNull(receivedProperties);
+            Assert.Equal("test", receivedProperties["env"]);
+            Assert.Equal("1.0", receivedProperties["version"]);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
+    public virtual async Task SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus();
+        if (messageBus is null)
+            return;
+
+        try
+        {
+            var countdown = new AsyncCountdownEvent(1);
+            bool tokenWasCancelled = true;
+
+            await messageBus.SubscribeAsync<SimpleMessageA>((msg, ct) =>
+            {
+                tokenWasCancelled = ct.IsCancellationRequested;
+                countdown.Signal();
+                return Task.CompletedTask;
+            }, TestCancellationToken).AnyContext();
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken).AnyContext();
+
+            // Assert
+            await countdown.WaitAsync(TimeSpan.FromSeconds(5)).AnyContext();
+            Assert.Equal(0, countdown.CurrentCount);
+            Assert.False(tokenWasCancelled);
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
+    }
+
 }

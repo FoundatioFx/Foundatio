@@ -567,4 +567,112 @@ public abstract class LockTestBase : TestWithLoggingBase
             await secondLock.DisposeAsync();
         }
     }
+
+    public virtual async Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5), releaseOnDispose: false).AnyContext();
+        Assert.NotNull(lockInstance);
+
+        try
+        {
+            // Act
+            await lockInstance.DisposeAsync().AnyContext();
+
+            // Assert
+            Assert.True(await locker.IsLockedAsync(lockName).AnyContext());
+        }
+        finally
+        {
+            await locker.ReleaseAsync(lockName).AnyContext();
+        }
+    }
+
+    public virtual async Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        var before = DateTime.UtcNow;
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5)).AnyContext();
+        var after = DateTime.UtcNow;
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        Assert.True(lockInstance.AcquiredTimeUtc >= before.AddSeconds(-1), $"AcquiredTimeUtc {lockInstance.AcquiredTimeUtc:O} should be >= {before.AddSeconds(-1):O}");
+        Assert.True(lockInstance.AcquiredTimeUtc <= after.AddSeconds(1), $"AcquiredTimeUtc {lockInstance.AcquiredTimeUtc:O} should be <= {after.AddSeconds(1):O}");
+    }
+
+    public virtual async Task Lock_LockIdAndResource_ReturnCorrectValues()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5)).AnyContext();
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        Assert.False(String.IsNullOrEmpty(lockInstance.LockId));
+        Assert.Contains(lockName, lockInstance.Resource);
+    }
+
+    public virtual async Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5)).AnyContext();
+        Assert.NotNull(lockInstance);
+        Assert.True(await locker.IsLockedAsync(lockName).AnyContext());
+
+        // Act
+        await locker.ReleaseAsync(lockName).AnyContext();
+
+        // Assert
+        Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
+    }
+
+    public virtual async Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        bool actionExecuted = false;
+
+        // Act
+        bool success = await locker.TryUsingAsync(lockName, () =>
+        {
+            actionExecuted = true;
+            return Task.CompletedTask;
+        }, timeUntilExpires: TimeSpan.FromSeconds(5), acquireTimeout: TimeSpan.FromSeconds(1)).AnyContext();
+
+        // Assert
+        Assert.True(success);
+        Assert.True(actionExecuted);
+        Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
+    }
 }
