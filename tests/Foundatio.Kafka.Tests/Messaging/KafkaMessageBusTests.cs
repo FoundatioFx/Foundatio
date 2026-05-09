@@ -147,6 +147,12 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     }
 
     [Fact]
+    public override Task PublishAsync_WithDeliveryDelayExtension_DelaysDeliveryAsync()
+    {
+        return base.PublishAsync_WithDeliveryDelayExtension_DelaysDeliveryAsync();
+    }
+
+    [Fact]
     public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
     {
         return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
@@ -156,6 +162,12 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
     {
         return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithUniqueId_PropagatesUniqueIdToSubscriberAsync()
+    {
+        return base.PublishAsync_WithUniqueId_PropagatesUniqueIdToSubscriberAsync();
     }
 
     [Fact]
@@ -171,9 +183,21 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     }
 
     [Fact]
+    public override Task SubscribeAsync_ToRawIMessage_CanAccessAllPropertiesAsync()
+    {
+        return base.SubscribeAsync_ToRawIMessage_CanAccessAllPropertiesAsync();
+    }
+
+    [Fact]
     public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
     {
         return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync()
+    {
+        return base.SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync();
     }
 
     [Fact]
