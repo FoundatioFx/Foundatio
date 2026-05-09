@@ -1,16 +1,18 @@
 # Test Coverage Audit — May 2026
 
-This document summarizes the test coverage improvements made across the Foundatio workspace in May 2026, including new base test methods, provider overrides, implementation fixes, and behavioral gap documentation.
+This document summarizes the test coverage improvements planned and executed across the Foundatio workspace in May 2026. The base test harness changes (this repository) establish the new test methods; provider repositories receive corresponding `[Fact]` overrides in separate PRs.
 
 ## Scope
 
-- **29 new virtual test methods** added to 5 base test harness classes
-- **1 implementation fix** to `InMemoryQueue`
-- **1 timing robustness fix** to `MessageBusTestBase`
-- **9 repositories** updated (core + 8 providers)
+- **29 new virtual test methods** added to 5 base test harness classes (this repo)
+- **1 implementation fix** to `InMemoryQueue` (this repo)
+- **1 timing robustness fix** to `MessageBusTestBase` (this repo)
+- **8 provider repositories** require corresponding `[Fact]` overrides (separate PRs)
 - **9 tests skipped** with documented provider-specific behavioral gaps
 
 ## Changes by Repository
+
+> **Note:** Only the Foundatio (core) row is included in this PR. Provider repo changes are tracked in separate PRs that depend on this one.
 
 | Repository | Files Changed | Lines Added | Lines Removed |
 |------------|--------------|-------------|---------------|
