@@ -1,4 +1,4 @@
-﻿local item = redis.call('RPOPLPUSH', @queueListName, @workListName);
+﻿local item = redis.call('LMOVE', @queueListName, @workListName, 'RIGHT', 'LEFT');
 if item then
     local dequeuedTimeKey = @listPrefix .. ':' .. item .. ':dequeued';
     local renewedTimeKey = @listPrefix .. ':' .. item .. ':renewed';

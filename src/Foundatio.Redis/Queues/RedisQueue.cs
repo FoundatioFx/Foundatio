@@ -805,6 +805,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         return script ?? throw new QueueException("Lua scripts not loaded. Call LoadScriptsAsync first.");
     }
 
+    // NOTE: Implement IAsyncDisposable when Foundatio's IQueue interface adds support for it.
+    // IConnectionMultiplexer supports IAsyncDisposable since SE.Redis 2.6.66.
     public override void Dispose()
     {
         base.Dispose();

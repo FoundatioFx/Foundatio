@@ -47,6 +47,8 @@ public class RedisFileStorage : IFileStorage
     ISerializer IHaveSerializer.Serializer => _serializer;
     public IDatabase Database => _connectionMultiplexer.GetDatabase();
 
+    // NOTE: Implement IAsyncDisposable when Foundatio's IFileStorage interface adds support for it.
+    // IConnectionMultiplexer supports IAsyncDisposable since SE.Redis 2.6.66.
     public void Dispose()
     {
         _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;

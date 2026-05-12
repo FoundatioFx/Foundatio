@@ -1010,6 +1010,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         _logger.LogWarning("Redis connection failed: {FailureType}", connectionFailedEventArgs.FailureType);
     }
 
+    // NOTE: Implement IAsyncDisposable when Foundatio's ICacheClient interface adds support for it.
+    // IConnectionMultiplexer supports IAsyncDisposable since SE.Redis 2.6.66.
     public void Dispose()
     {
         if (_isDisposed)
