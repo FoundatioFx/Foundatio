@@ -71,6 +71,7 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
     /// When true, the QoS settings apply to all consumers on the connection.
     /// When false (default), the QoS settings apply only to consumers on this channel.
     /// </summary>
+    [Obsolete("Global QoS is deprecated in RabbitMQ 4.3+ and will be removed in a future version. Use per-channel prefetch (GlobalQos = false) instead.")]
     public bool GlobalQos { get; set; }
 
     /// <summary>
@@ -184,9 +185,12 @@ public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<R
         return this;
     }
 
+    [Obsolete("Global QoS is deprecated in RabbitMQ 4.3+ and will be removed in a future version. Use per-channel prefetch (GlobalQos = false) instead.")]
     public RabbitMQMessageBusOptionsBuilder GlobalQos(bool globalQos)
     {
+#pragma warning disable CS0618
         Target.GlobalQos = globalQos;
+#pragma warning restore CS0618
         return this;
     }
 

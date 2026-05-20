@@ -19,6 +19,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
     private const string XDeliveryCountHeader = "x-delivery-count";
     private const string XOriginalMessageIdHeader = "x-original-message-id";
     private static readonly Version _delayedExchangePluginIncompatibleVersion = new(4, 3);
+    private static readonly Version _globalQosRemovedVersion = new(4, 3);
 
     private readonly AsyncLock _lock = new();
     private readonly AsyncManualResetEvent _publisherReady = new(true);
@@ -144,9 +145,22 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
             // Set QoS (Quality of Service) settings for the consumer
             if (_options.PrefetchCount > 0 || _options.PrefetchSize > 0)
             {
-                await _subscriberChannel.BasicQosAsync(_options.PrefetchSize, _options.PrefetchCount, _options.GlobalQos, cancellationToken).AnyContext();
+#pragma warning disable CS0618 // GlobalQos is obsolete but we still need to read it for backward compatibility
+                bool useGlobalQos = _options.GlobalQos;
+#pragma warning restore CS0618
+                if (useGlobalQos && _serverVersion is not null && _serverVersion >= _globalQosRemovedVersion)
+                {
+                    _logger.LogWarning("GlobalQos is not supported on RabbitMQ {ServerVersion}. Falling back to per-channel prefetch (global: false). Remove the GlobalQos option to suppress this warning", _serverVersion);
+                    useGlobalQos = false;
+                }
+                else if (useGlobalQos && _serverVersion is not null)
+                {
+                    _logger.LogWarning("GlobalQos is deprecated in RabbitMQ 4.3+ and will be removed in a future version. Use per-channel prefetch instead");
+                }
+
+                await _subscriberChannel.BasicQosAsync(_options.PrefetchSize, _options.PrefetchCount, useGlobalQos, cancellationToken).AnyContext();
                 _logger.LogDebug("Set channel QoS - PrefetchCount: {PrefetchCount}, PrefetchSize: {PrefetchSize}, Global: {GlobalQos} for acknowledgment strategy {AcknowledgementStrategy}",
-                    _options.PrefetchCount, _options.PrefetchSize, _options.GlobalQos, _options.AcknowledgementStrategy);
+                    _options.PrefetchCount, _options.PrefetchSize, useGlobalQos, _options.AcknowledgementStrategy);
             }
             else
             {
@@ -591,7 +605,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         // if the RabbitMQ plugin is not available, then use the base class delay mechanism
         if (_delayedExchangePluginEnabled is false && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
-            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            _logger.LogTrace("Delayed message will be scheduled in-memory (broker-side delayed exchange unavailable): {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
             var mappedType = GetMappedMessageType(messageType);
             if (mappedType is null)
                 throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
@@ -703,8 +717,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         if (_serverVersion is not null && _serverVersion >= _delayedExchangePluginIncompatibleVersion)
         {
-            _logger.LogInformation(
-                "Skipping delayed exchange plugin probe: RabbitMQ {ServerVersion} removed Mnesia, plugin is incompatible",
+            _logger.LogWarning(
+                "The rabbitmq_delayed_message_exchange plugin is incompatible with RabbitMQ {ServerVersion} (Mnesia removed). Delayed messages will be scheduled in-memory. Support for this plugin will be removed in a future version",
                 _serverVersion);
             _delayedExchangePluginEnabled = false;
             return null;
@@ -734,7 +748,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         if (success)
         {
             _logger.LogWarning(
-                "The rabbitmq_delayed_message_exchange plugin is deprecated and incompatible with RabbitMQ 4.3+. See https://github.com/rabbitmq/rabbitmq-delayed-message-exchange for details. Plan migration before upgrading to RabbitMQ 4.3");
+                "The rabbitmq_delayed_message_exchange plugin is deprecated and incompatible with RabbitMQ 4.3+. Support will be removed in a future version and delayed messages will fall back to in-memory scheduling. See https://github.com/rabbitmq/rabbitmq-delayed-message-exchange for details");
         }
 
         _delayedExchangePluginEnabled = success;
