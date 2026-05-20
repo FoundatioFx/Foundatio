@@ -21,12 +21,13 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
     private static readonly Version _delayedExchangePluginIncompatibleVersion = new(4, 3);
 
     private readonly AsyncLock _lock = new();
+    private readonly AsyncManualResetEvent _publisherReady = new(true);
     private readonly ConnectionFactory _factory;
     private readonly List<AmqpTcpEndpoint> _endpoints;
     private IConnection? _publisherConnection;
     private IConnection? _subscriberConnection;
-    private IChannel? _publisherChannel;
-    private IChannel? _subscriberChannel;
+    private volatile IChannel? _publisherChannel;
+    private volatile IChannel? _subscriberChannel;
     private AsyncEventingBasicConsumer? _consumer;
     private bool? _delayedExchangePluginEnabled;
     private Version? _serverVersion;
@@ -39,11 +40,11 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         ArgumentException.ThrowIfNullOrWhiteSpace(options?.ConnectionString, nameof(options.ConnectionString));
 
         if (!Uri.TryCreate(options.ConnectionString, UriKind.Absolute, out var primaryUri))
-            throw new ArgumentException($"ConnectionString is not a valid URI: {options.ConnectionString}");
+            throw new ArgumentException("ConnectionString is not a valid URI.");
 
         if (!primaryUri.Scheme.Equals("amqp", StringComparison.OrdinalIgnoreCase) &&
             !primaryUri.Scheme.Equals("amqps", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException($"ConnectionString must use amqp:// or amqps:// scheme: {options.ConnectionString}");
+            throw new ArgumentException($"ConnectionString must use amqp:// or amqps:// scheme: {SanitizeUri(primaryUri)}");
 
         _isQuorumQueue = options.Arguments is not null && options.Arguments.TryGetValue("x-queue-type", out object? queueType) && queueType is string type && String.Equals(type, "quorum", StringComparison.OrdinalIgnoreCase);
 
@@ -96,6 +97,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         await ClosePublisherConnectionAsync().AnyContext();
         await CloseSubscriberConnectionAsync().AnyContext();
+
+        _publisherReady.Set();
     }
 
     protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
@@ -355,6 +358,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         try
         {
             await EnsureTopicCreatedAsync(envelope.CancellationToken).AnyContext();
+            // PERF: ToArray() allocates; PublishMessageAsync takes byte[] until Foundatio base supports ReadOnlyMemory<byte>
             await PublishMessageAsync(envelope.Exchange, envelope.RoutingKey, envelope.Body.ToArray(), properties, envelope.CancellationToken).AnyContext();
             await subscriberChannel.BasicAckAsync(envelope.DeliveryTag, false).AnyContext();
 
@@ -402,25 +406,47 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
     private async Task PublishMessageAsync(string exchange, string routingKey, byte[] body, BasicProperties properties, CancellationToken cancellationToken)
     {
-        using (await _lock.LockAsync(cancellationToken).AnyContext())
+        await _resiliencePolicy.ExecuteAsync(async _ =>
         {
-            if (_publisherChannel is not { } channel)
-                throw new MessageBusException("Cannot publish: publisher channel was closed.");
-
-            await _resiliencePolicy.ExecuteAsync(async _ =>
+            if (!_publisherReady.IsSet)
             {
-                // Check blocked state inside resilience policy - re-evaluated on each retry
-                // MessageBusException is excluded from retries in the base class policy
+                if (_options.PublishRecoveryTimeout <= TimeSpan.Zero)
+                    throw new MessageBusException("Cannot publish: publisher channel is closed or unavailable.");
+
+                _logger.LogDebug("Publisher waiting for connection recovery...");
+                try
+                {
+                    await _publisherReady.WaitAsync(cancellationToken)
+                        .WaitAsync(_options.PublishRecoveryTimeout, cancellationToken).AnyContext();
+                }
+                catch (TimeoutException)
+                {
+                    throw new MessageBusException(
+                        $"Publish failed: connection recovery did not complete within {_options.PublishRecoveryTimeout.TotalMilliseconds:F0}ms timeout.");
+                }
+            }
+
+            // PERF: Single lock serializes all publishes; with publisher confirms this limits throughput to 1 RTT.
+            // Consider channel pooling or batch publishing for high-throughput scenarios.
+            using (await _lock.LockAsync(cancellationToken).AnyContext())
+            {
+                if (_publisherChannel is not { IsOpen: true } channel)
+                    throw new MessageBusException("Cannot publish: publisher channel is closed or unavailable.");
+
+                // Fail fast on broker resource alarms -- retrying would add pressure to a constrained broker.
+                // Unlike connection drops (which use the recovery gate to wait), blocked state has no recovery signal timing.
                 if (_isPublisherBlocked)
-                    throw new MessageBusException($"Cannot publish: publisher connection is blocked by broker ({_publisherBlockedReason ?? "resource alarm"})");
+                    throw new MessageBusException(
+                        $"Cannot publish: publisher connection is blocked by broker ({_publisherBlockedReason ?? "resource alarm"})");
 
                 await channel.BasicPublishAsync(exchange, routingKey, mandatory: false, properties, body, cancellationToken: cancellationToken);
-            }, cancellationToken).AnyContext();
-        }
+            }
+        }, cancellationToken).AnyContext();
     }
 
     protected virtual IMessage ConvertToMessage(BasicDeliverEventArgs envelope)
     {
+        // PERF: ToArray() allocates a copy; Message ctor requires byte[] until Foundatio supports ReadOnlyMemory<byte>
         var message = new Message(envelope.Body.ToArray(), DeserializeMessageBody)
         {
             Type = envelope.BasicProperties.Type,
@@ -462,17 +488,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
             _isPublisherBlocked = false;
             _publisherBlockedReason = null;
 
-            if (_options.PublisherConfirmsEnabled)
-            {
-                var channelOptions = new CreateChannelOptions(
-                    publisherConfirmationsEnabled: true,
-                    publisherConfirmationTrackingEnabled: true);
-                _publisherChannel = await _publisherConnection.CreateChannelAsync(channelOptions, cancellationToken).AnyContext();
-            }
-            else
-            {
-                _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
-            }
+            _publisherChannel = await CreatePublisherChannelAsync(cancellationToken).AnyContext();
 
             // We first attempt to create "x-delayed-type". For this the rabbitmq_delayed_message_exchange plugin should be installed.
             // However, if the plugin is not installed this will throw an exception. In that case
@@ -500,17 +516,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
                 _isPublisherBlocked = false;
                 _publisherBlockedReason = null;
 
-                if (_options.PublisherConfirmsEnabled)
-                {
-                    var channelOptions = new CreateChannelOptions(
-                        publisherConfirmationsEnabled: true,
-                        publisherConfirmationTrackingEnabled: true);
-                    _publisherChannel = await _publisherConnection.CreateChannelAsync(channelOptions, cancellationToken).AnyContext();
-                }
-                else
-                {
-                    _publisherChannel = await _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken).AnyContext();
-                }
+                _publisherChannel = await CreatePublisherChannelAsync(cancellationToken).AnyContext();
                 await CreateRegularExchangeAsync(_publisherChannel).AnyContext();
             }
 
@@ -534,12 +540,23 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
     private Task OnPublisherConnectionOnConnectionRecoveryErrorAsync(object sender, ConnectionRecoveryErrorEventArgs e)
     {
-        _logger.LogError(e.Exception, "Publisher connection recovery error: {Message}", e.Exception.Message);
+        _logger.LogError(e.Exception, "Publisher connection recovery attempt failed, retrying: {Message}", e.Exception.Message);
         return Task.CompletedTask;
     }
 
     private Task OnPublisherConnectionOnConnectionShutdownAsync(object sender, ShutdownEventArgs e)
     {
+        if (e.Initiator != ShutdownInitiator.Application)
+        {
+            _publisherReady.Reset();
+            if (_options.PublishRecoveryTimeout > TimeSpan.Zero)
+                _logger.LogWarning("Publisher connection lost (Reply Code: {ReplyCode}, Reason: {ReplyText}). Publishes will wait up to {Timeout:g} for recovery.",
+                    e.ReplyCode, e.ReplyText, _options.PublishRecoveryTimeout);
+            else
+                _logger.LogWarning("Publisher connection lost (Reply Code: {ReplyCode}, Reason: {ReplyText}). Publishes will fail immediately (recovery timeout disabled).",
+                    e.ReplyCode, e.ReplyText);
+        }
+
         _logger.LogInformation(e.Exception, "Publisher shutdown. Reply Code: {ReplyCode} Reason: {ReplyText} Initiator: {Initiator}", e.ReplyCode, e.ReplyText, e.Initiator);
         return Task.CompletedTask;
     }
@@ -560,29 +577,15 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
     private Task OnPublisherConnectionOnRecoverySucceededAsync(object sender, AsyncEventArgs e)
     {
-        // Reset blocked state on recovery - the new connection starts unblocked
         _isPublisherBlocked = false;
         _publisherBlockedReason = null;
+        _publisherReady.Set();
         _logger.LogInformation("Publisher connection recovery succeeded");
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// Publish the message
-    /// </summary>
-    /// <param name="messageType"></param>
-    /// <param name="message"></param>
-    /// <param name="options">Message options</param>
-    /// <param name="cancellationToken"></param>
-    /// <remarks>RabbitMQ has an upper limit of 2GB for messages.BasicPublish blocking AMQP operations.
-    /// The rule of thumb is: avoid sharing channels across threads.
-    /// Publishers in your application that publish from separate threads should use their own channels.
-    /// The same is a good idea for consumers.</remarks>
     protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
     {
-        if (_isPublisherBlocked)
-            throw new MessageBusException($"Cannot publish: publisher connection is blocked by broker ({_publisherBlockedReason ?? "resource alarm"})");
-
         byte[] data = SerializeMessageBody(messageType, message);
 
         // if the RabbitMQ plugin is not available, then use the base class delay mechanism
@@ -619,11 +622,13 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
         if (_delayedExchangePluginEnabled is true && options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
         {
-            // It's necessary to typecast long to int because RabbitMQ on the consumer side is reading the
-            // data back as signed (using BinaryReader#ReadInt64). You will see the value to be negative
-            // and the data will be delivered immediately.
+            // RabbitMQ's x-delay header must be a 32-bit signed int; the broker reads it as Int32
+            // and negative values cause immediate delivery.
             basicProperties.Headers ??= new Dictionary<string, object?>();
-            basicProperties.Headers["x-delay"] = Convert.ToInt32(options.DeliveryDelay.Value.TotalMilliseconds);
+            double delayMs = options.DeliveryDelay.Value.TotalMilliseconds;
+            if (delayMs > Int32.MaxValue)
+                throw new ArgumentOutOfRangeException(nameof(options), $"DeliveryDelay ({options.DeliveryDelay.Value}) exceeds the maximum supported by RabbitMQ delayed exchange plugin ({Int32.MaxValue}ms).");
+            basicProperties.Headers["x-delay"] = (int)delayMs;
             _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
         }
         else
@@ -635,14 +640,25 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         _logger.LogDebug("Done publishing type {MessageType} {MessageId}", messageType, basicProperties.MessageId);
     }
 
-    /// <summary>
-    /// Connect to a broker - RabbitMQ
-    /// </summary>
-    /// <returns></returns>
     private Task<IConnection> CreateConnectionAsync()
     {
-        // Use multiple endpoints for failover support
         return _factory.CreateConnectionAsync(_endpoints);
+    }
+
+    private Task<IChannel> CreatePublisherChannelAsync(CancellationToken cancellationToken)
+    {
+        if (_publisherConnection is null)
+            throw new MessageBusException("Publisher connection must be initialized before creating a channel.");
+
+        if (_options.PublisherConfirmsEnabled)
+        {
+            var channelOptions = new CreateChannelOptions(
+                publisherConfirmationsEnabled: true,
+                publisherConfirmationTrackingEnabled: true);
+            return _publisherConnection.CreateChannelAsync(channelOptions, cancellationToken);
+        }
+
+        return _publisherConnection.CreateChannelAsync(cancellationToken: cancellationToken);
     }
 
     private void DetectServerVersion(IConnection connection)
@@ -805,6 +821,15 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         }
     }
 
+    private static string SanitizeUri(Uri uri)
+    {
+        if (String.IsNullOrEmpty(uri.UserInfo))
+            return uri.ToString();
+
+        string portSuffix = uri.IsDefaultPort ? "" : $":{uri.Port}";
+        return $"{uri.Scheme}://***@{uri.Host}{portSuffix}{uri.AbsolutePath}";
+    }
+
     /// <summary>
     /// Parses a host string in format "hostname" or "hostname:port" into an AmqpTcpEndpoint.
     /// </summary>
@@ -814,14 +839,37 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
             return null;
 
         string trimmed = host.Trim();
+
+        // Handle IPv6 bracket notation: [::1] or [::1]:5672
+        if (trimmed.StartsWith('['))
+        {
+            int closeBracket = trimmed.IndexOf(']');
+            if (closeBracket < 0)
+                return new AmqpTcpEndpoint(trimmed, defaultPort);
+
+            string ipv6Host = trimmed[1..closeBracket];
+            if (closeBracket + 1 < trimmed.Length && trimmed[closeBracket + 1] == ':')
+            {
+                return Int32.TryParse(trimmed[(closeBracket + 2)..], out int port)
+                    ? new AmqpTcpEndpoint(ipv6Host, port)
+                    : new AmqpTcpEndpoint(ipv6Host, defaultPort);
+            }
+
+            return new AmqpTcpEndpoint(ipv6Host, defaultPort);
+        }
+
         int colonIndex = trimmed.LastIndexOf(':');
         if (colonIndex < 0)
             return new AmqpTcpEndpoint(trimmed, defaultPort);
 
+        // Multiple colons without brackets indicates an unbracketed IPv6 address — treat as bare hostname
+        if (trimmed.IndexOf(':') != colonIndex)
+            return new AmqpTcpEndpoint(trimmed, defaultPort);
+
         string hostname = trimmed[..colonIndex];
-        return Int32.TryParse(trimmed[(colonIndex + 1)..], out int port)
-            ? new AmqpTcpEndpoint(hostname, port)
-            : new AmqpTcpEndpoint(trimmed, defaultPort);
+        return Int32.TryParse(trimmed[(colonIndex + 1)..], out int parsedPort)
+            ? new AmqpTcpEndpoint(hostname, parsedPort)
+            : new AmqpTcpEndpoint(hostname, defaultPort);
     }
 
     private void RegisterPublisherConnectionEventHandlers()
@@ -896,5 +944,45 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         _consumer.ReceivedAsync -= OnMessageAsync;
         _consumer.ShutdownAsync -= OnConsumerShutdownAsync;
+    }
+
+    /// <summary>
+    /// Simulates an unexpected publisher connection loss for testing the recovery gate.
+    /// Closes the gate so that subsequent publishes will wait for recovery.
+    /// </summary>
+    internal void SimulatePublisherConnectionLost()
+    {
+        _publisherReady.Reset();
+    }
+
+    /// <summary>
+    /// Simulates a successful publisher connection recovery for testing.
+    /// Opens the gate so that waiting publishes resume.
+    /// </summary>
+    internal void SimulatePublisherRecoverySucceeded()
+    {
+        _publisherReady.Set();
+    }
+
+    /// <summary>
+    /// Simulates a publisher connection shutdown event for testing.
+    /// Triggers the full shutdown handler (gate closure) and nulls the publisher channel
+    /// to represent a real unexpected disconnect.
+    /// </summary>
+    internal async Task SimulatePublisherConnectionShutdownAsync()
+    {
+        await OnPublisherConnectionOnConnectionShutdownAsync(this,
+            new ShutdownEventArgs(ShutdownInitiator.Library, 541, "Simulated connection reset")).AnyContext();
+        _publisherChannel = null;
+    }
+
+    /// <summary>
+    /// Simulates a connection recovery error event for testing.
+    /// Verifies the gate remains closed (recovery continues retrying).
+    /// </summary>
+    internal Task SimulatePublisherConnectionRecoveryErrorAsync()
+    {
+        return OnPublisherConnectionOnConnectionRecoveryErrorAsync(this,
+            new ConnectionRecoveryErrorEventArgs(new Exception("Simulated recovery failure")));
     }
 }
