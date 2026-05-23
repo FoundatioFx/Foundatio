@@ -1,21 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.CommandLine;
+using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.RabbitMQ;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 Option<string> connectionStringOption = new("--connection-string")
 {
     Description = "RabbitMQ connection string (provides credentials and vhost)",
-    DefaultValueFactory = _ => "amqp://localhost:5672"
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ConnectionStrings__messaging") ?? "amqp://localhost:5672"
 };
 
 Option<string> hostsOption = new("--hosts")
 {
-    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)"
+    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("RABBITMQ_HOSTS") ?? ""
 };
 
 Option<string> topicOption = new("--topic")
@@ -139,9 +147,46 @@ static async Task RunPublisher(
     ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
     ArgumentException.ThrowIfNullOrWhiteSpace(topic);
 
+    var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "publisher";
+    var resourceBuilder = ResourceBuilder.CreateDefault().AddService(serviceName);
+
+    TracerProvider? tracerProvider = null;
+    MeterProvider? meterProvider = null;
+
+    if (!string.IsNullOrEmpty(otlpEndpoint))
+    {
+        tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddSource("Foundatio", "RabbitMQ.Client.*")
+            .AddOtlpExporter()
+            .Build();
+
+        meterProvider = Sdk.CreateMeterProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddMeter("Foundatio")
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter()
+            .Build();
+    }
+
+    using var tracerDisposable = tracerProvider;
+    using var meterDisposable = meterProvider;
+
     using var loggerFactory = LoggerFactory.Create(builder =>
     {
         builder.AddConsole().SetMinimumLevel(logLevel);
+
+        if (!string.IsNullOrEmpty(otlpEndpoint))
+        {
+            builder.AddOpenTelemetry(otel =>
+            {
+                otel.SetResourceBuilder(resourceBuilder);
+                otel.IncludeFormattedMessage = true;
+                otel.IncludeScopes = true;
+                otel.AddOtlpExporter();
+            });
+        }
     });
     var logger = loggerFactory.CreateLogger("Publisher");
 
@@ -193,42 +238,52 @@ static async Task RunPublisher(
 
     if (interval > 0)
     {
-        // Auto-send mode
         logger.LogInformation("Auto-send mode enabled. Press Ctrl+C to stop.");
-        int orderCount = 0;
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-        try
+        int orderCount = 0;
+        int successCount = 0;
+        int failCount = 0;
+        var statsTimer = Stopwatch.StartNew();
+
+        while (!cts.Token.IsCancellationRequested)
         {
-            while (true)
+            try
             {
                 ++orderCount;
                 var order = OrderEvent.Create(orderCount, messageSize);
 
                 TimeSpan? delay = delaySeconds > 0 ? TimeSpan.FromSeconds(delaySeconds) : null;
                 if (delay.HasValue)
-                {
-                    await messageBus.PublishAsync(order, delay.Value);
-                    logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount} | {Delay}s delay",
-                        orderCount, order.OrderId, order.CustomerId, order.Amount, delaySeconds);
-                }
+                    await messageBus.PublishAsync(order, delay.Value, cancellationToken: cts.Token);
                 else
-                {
-                    await messageBus.PublishAsync(order);
-                    logger.LogInformation("Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount}",
-                        orderCount, order.OrderId, order.CustomerId, order.Amount);
-                }
+                    await messageBus.PublishAsync(order, cancellationToken: cts.Token);
 
-                await Task.Delay(interval);
+                ++successCount;
+                logger.LogInformation("Order #{Seq} | {OrderId} | ${Amount}", orderCount, order.OrderId, order.Amount);
             }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Foundatio.Messaging.MessageBusException ex)
+            {
+                ++failCount;
+                logger.LogWarning(ex, "Publish failed (order #{Seq}), retrying in {Interval}ms...", orderCount, interval);
+            }
+
+            if (statsTimer.Elapsed >= TimeSpan.FromSeconds(10))
+            {
+                logger.LogInformation("Stats | Sent: {Success} | Failed: {Failed} | Total: {Total} | Uptime: {Uptime:hh\\:mm\\:ss}",
+                    successCount, failCount, orderCount, statsTimer.Elapsed);
+                statsTimer.Restart();
+            }
+
+            await Task.Delay(interval, cts.Token);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            logger.LogError(ex, "Error in auto-send loop");
-        }
-        finally
-        {
-            logger.LogInformation("Exiting. Total orders sent: {Count}", orderCount);
-        }
+
+        logger.LogInformation("Exiting | Sent: {Success} | Failed: {Failed} | Total: {Total}", successCount, failCount, orderCount);
     }
     else
     {

@@ -2,7 +2,12 @@ using Xunit;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
 
-public class RabbitMqMessageBusDelayedExchangeTests : RabbitMqMessageBusTestBase
+public class RabbitMqMessageBusDelayedExchangeTests : RabbitMqMessageBusTestBase, IClassFixture<AspireFixture>
 {
-    public RabbitMqMessageBusDelayedExchangeTests(ITestOutputHelper output) : base("amqp://localhost:5673", output) { }
+    public RabbitMqMessageBusDelayedExchangeTests(AspireFixture fixture, ITestOutputHelper output)
+        : base(fixture.MessagingDelayedConnectionString ?? fixture.MessagingConnectionString!, output)
+    {
+        Assert.SkipWhen(string.IsNullOrEmpty(fixture.MessagingDelayedConnectionString),
+            "Delayed exchange container not available");
+    }
 }

@@ -1,22 +1,29 @@
 using System;
 using System.Collections.Generic;
 using System.CommandLine;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.RabbitMQ;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 Option<string> connectionStringOption = new("--connection-string")
 {
     Description = "RabbitMQ connection string (provides credentials and vhost)",
-    DefaultValueFactory = _ => "amqp://localhost:5672"
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ConnectionStrings__messaging") ?? "amqp://localhost:5672"
 };
 
 Option<string> hostsOption = new("--hosts")
 {
-    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)"
+    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("RABBITMQ_HOSTS") ?? ""
 };
 
 Option<string> topicOption = new("--topic")
@@ -124,9 +131,46 @@ static async Task RunSubscriberAsync(
     ArgumentException.ThrowIfNullOrWhiteSpace(topic);
     ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
 
+    var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "subscriber";
+    var resourceBuilder = ResourceBuilder.CreateDefault().AddService(serviceName);
+
+    TracerProvider? tracerProvider = null;
+    MeterProvider? meterProvider = null;
+
+    if (!string.IsNullOrEmpty(otlpEndpoint))
+    {
+        tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddSource("Foundatio", "RabbitMQ.Client.*")
+            .AddOtlpExporter()
+            .Build();
+
+        meterProvider = Sdk.CreateMeterProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddMeter("Foundatio")
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter()
+            .Build();
+    }
+
+    using var tracerDisposable = tracerProvider;
+    using var meterDisposable = meterProvider;
+
     using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
     {
         builder.AddConsole().SetMinimumLevel(logLevel);
+
+        if (!string.IsNullOrEmpty(otlpEndpoint))
+        {
+            builder.AddOpenTelemetry(otel =>
+            {
+                otel.SetResourceBuilder(resourceBuilder);
+                otel.IncludeFormattedMessage = true;
+                otel.IncludeScopes = true;
+                otel.AddOtlpExporter();
+            });
+        }
     });
     var logger = loggerFactory.CreateLogger("Subscriber");
 
@@ -198,8 +242,30 @@ static async Task RunSubscriberAsync(
 
         await Task.WhenAll(subscriptions);
 
-        logger.LogInformation("Waiting for messages. Press enter to quit...");
-        Console.ReadLine();
+        logger.LogInformation("Waiting for messages. Press Ctrl+C to quit...");
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        var statsTimer = Stopwatch.StartNew();
+        int lastProcessed = 0;
+
+        try
+        {
+            while (!cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cts.Token);
+                int current = Interlocked.CompareExchange(ref totalProcessed, 0, 0);
+                int delta = current - lastProcessed;
+                lastProcessed = current;
+                logger.LogInformation("Stats | Processed: {Total} | Last 10s: +{Delta} | Rate: {Rate}/s | Uptime: {Uptime:hh\\:mm\\:ss}",
+                    current, delta, (delta / 10.0).ToString("F1"), statsTimer.Elapsed);
+            }
+        }
+        catch (OperationCanceledException) { }
     }
     finally
     {
