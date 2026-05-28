@@ -78,6 +78,53 @@ The `rabbitmq_delayed_message_exchange` plugin is [archived and no longer mainta
 - On RabbitMQ >= 4.3: Delayed messages use the in-memory fallback automatically. Be aware that these are not durable across process restarts.
 - For durable delayed delivery on RabbitMQ 4.3+, consider implementing TTL + Dead-Letter Exchange patterns or using an external scheduler.
 
+### RabbitMQ 4.3 Feature Support
+
+**Supported (AMQP 0.9.1 compatible):**
+
+- 32 strict message priority levels on quorum queues (via `UseMessagePriority()`)
+- Delayed retries with linear backoff (via `UseDelayedRetries()`)
+- Per-queue consumer timeouts (via `ConsumerTimeout()`)
+- Single active consumer (via `UseSingleActiveConsumer()`)
+
+**Not supported (require AMQP 1.0 protocol):**
+
+- `x-opt-delivery-time` annotation -- per-message delayed retry override via the `modified` disposition outcome. AMQP 0.9.1 `basic.nack`/`basic.reject` do not support annotations.
+- `x-opt-delivery-delay` annotation -- relative delay for the enterprise Message Scheduler / Delayed Queue plugin.
+- Rejected-by and rejection reason -- returned to publishers in the AMQP 1.0 `Rejected` outcome.
+- Consumer activity notification -- signaled via AMQP 1.0 flow frames for single active consumer state transitions.
+
+This library uses the `RabbitMQ.Client` package (AMQP 0.9.1). To use AMQP 1.0 features, consider the [Amqp.Net Lite](https://github.com/Azure/amqpnetlite) library or the [RabbitMQ AMQP 1.0 .NET client](https://github.com/rabbitmq/rabbitmq-amqp-dotnet-client).
+
+### OpenTelemetry
+
+Foundatio automatically propagates W3C trace context (`traceparent` / `tracestate`) through message headers. On publish, the current `Activity.Id` is stored as the message's `CorrelationId`; on receive, Foundatio starts a new `Activity` parented to that ID, linking consumer spans back to the publisher's trace.
+
+To collect Foundatio's application-level message spans, add the `"Foundatio"` source:
+
+```csharp
+.AddSource("Foundatio")
+```
+
+For additional **transport-level** visibility (AMQP channel operations, network round-trips), the `RabbitMQ.Client` 7.x library emits its own spans:
+
+```csharp
+.AddSource("RabbitMQ.Client.*")
+```
+
+A complete tracing setup:
+
+```csharp
+services.AddOpenTelemetry().WithTracing(tracing =>
+{
+    tracing.AddSource("Foundatio");          // message publish/handle spans
+    tracing.AddSource("RabbitMQ.Client.*");  // AMQP transport spans (optional)
+    tracing.AddOtlpExporter();
+});
+```
+
+> **Note:** The [`RabbitMQ.Client.OpenTelemetry`](https://www.nuget.org/packages/RabbitMQ.Client.OpenTelemetry/) package (currently pre-release) is NOT required -- Foundatio handles cross-process trace propagation at the application level. That package adds an alternative propagation mechanism at the transport level which is redundant when using Foundatio.
+
 ### Core Features
 
 - [Getting Started](https://foundatio.dev/guide/getting-started) - Installation and setup

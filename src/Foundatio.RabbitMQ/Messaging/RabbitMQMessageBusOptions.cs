@@ -101,6 +101,109 @@ public class RabbitMQMessageBusOptions : SharedMessageBusOptions
     /// Default: 10 seconds (covers one full NetworkRecoveryInterval cycle with margin).
     /// </summary>
     public TimeSpan PublishRecoveryTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Heartbeat timeout negotiated with the broker. Controls how quickly dead TCP connections are detected.
+    /// Lower values detect failures faster but may cause false positives on congested networks.
+    /// Set to TimeSpan.Zero to disable heartbeats (not recommended for production).
+    /// Default: null (uses client library default of 60 seconds).
+    /// See: https://www.rabbitmq.com/docs/heartbeats
+    /// </summary>
+    public TimeSpan? RequestedHeartbeat { get; set; }
+
+    /// <summary>
+    /// Time between automatic connection recovery attempts after a network failure.
+    /// Higher values reduce reconnection pressure on the broker during outages but increase downtime.
+    /// Default: null (uses client library default of 5 seconds).
+    /// See: https://www.rabbitmq.com/client-libraries/dotnet-api-guide#connection-recovery
+    /// </summary>
+    public TimeSpan? NetworkRecoveryInterval { get; set; }
+
+    /// <summary>
+    /// Dead letter exchange name. Messages that exceed the delivery limit or are rejected
+    /// will be routed to this exchange instead of being dropped.
+    /// Set via the x-dead-letter-exchange queue argument.
+    /// See: https://www.rabbitmq.com/docs/dlx
+    /// </summary>
+    public string? DeadLetterExchange { get; set; }
+
+    /// <summary>
+    /// Routing key used when dead-lettering messages. If not set, the original routing key is preserved.
+    /// Only effective when DeadLetterExchange is also set.
+    /// Set via the x-dead-letter-routing-key queue argument.
+    /// </summary>
+    public string? DeadLetterRoutingKey { get; set; }
+
+    /// <summary>
+    /// Dead-letter strategy for quorum queues. Controls whether messages are transferred
+    /// to the DLX with at-most-once (default, may lose messages) or at-least-once (guaranteed delivery)
+    /// semantics. At-least-once requires Overflow to be set to RejectPublish.
+    /// Set via the x-dead-letter-strategy queue argument.
+    /// See: https://www.rabbitmq.com/docs/quorum-queues#dead-lettering
+    /// </summary>
+    public DeadLetterStrategy? DeadLetterStrategy { get; set; }
+
+    /// <summary>
+    /// Queue overflow behavior when the queue reaches its max length.
+    /// Must be set to RejectPublish when using at-least-once dead-lettering.
+    /// Set via the x-overflow queue argument.
+    /// See: https://www.rabbitmq.com/docs/maxlength#overflow-behaviour
+    /// </summary>
+    public QueueOverflowBehavior? Overflow { get; set; }
+
+    /// <summary>
+    /// Consumer timeout in milliseconds for quorum queues (RabbitMQ 4.3+).
+    /// Limits how long a consumer can hold unacknowledged messages before the broker returns them.
+    /// When exceeded, messages are requeued and the consumer is cancelled gracefully.
+    /// Set via the x-consumer-timeout queue argument.
+    /// Default: null (uses broker default, typically 30 minutes).
+    /// See: https://www.rabbitmq.com/docs/consumers#acknowledgement-timeout
+    /// </summary>
+    public TimeSpan? ConsumerTimeout { get; set; }
+
+    /// <summary>
+    /// When true, only one consumer at a time will receive messages from the queue.
+    /// Other consumers act as standby and automatically take over if the active consumer disconnects.
+    /// Useful for strict message ordering with automatic failover.
+    /// Set via the x-single-active-consumer queue argument.
+    /// See: https://www.rabbitmq.com/docs/consumers#single-active-consumer
+    /// </summary>
+    public bool SingleActiveConsumer { get; set; }
+
+    /// <summary>
+    /// Maximum number of priority levels for the queue (1-32).
+    /// Messages published with a higher priority value are delivered to consumers before lower-priority messages.
+    /// RabbitMQ 4.3+ quorum queues support 32 strict priority levels.
+    /// Set via the x-max-priority queue argument.
+    /// See: https://www.rabbitmq.com/docs/priority
+    /// </summary>
+    public byte? MaxPriority { get; set; }
+
+    /// <summary>
+    /// Configures native delayed retry for quorum queues (RabbitMQ 4.3+).
+    /// When set, rejected/failed messages are held in a delayed state before becoming available again.
+    /// The delay uses linear backoff: min(min_delay * delivery_count, max_delay).
+    /// Requires quorum queues. Set via x-delayed-retry-type queue argument.
+    /// Default: null (not configured).
+    /// See: https://www.rabbitmq.com/docs/quorum-queues#delayed-retries
+    /// </summary>
+    public DelayedRetryType? DelayedRetryType { get; set; }
+
+    /// <summary>
+    /// Minimum delay in milliseconds for native delayed retry (RabbitMQ 4.3+).
+    /// The actual delay is: min(DelayedRetryMin * delivery_count, DelayedRetryMax).
+    /// Only effective when DelayedRetryType is set.
+    /// Set via x-delayed-retry-min queue argument.
+    /// </summary>
+    public int? DelayedRetryMin { get; set; }
+
+    /// <summary>
+    /// Maximum delay in milliseconds for native delayed retry (RabbitMQ 4.3+).
+    /// Caps the linear backoff so delays don't grow unbounded.
+    /// Only effective when DelayedRetryType is set.
+    /// Set via x-delayed-retry-max queue argument.
+    /// </summary>
+    public int? DelayedRetryMax { get; set; }
 }
 
 public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<RabbitMQMessageBusOptions, RabbitMQMessageBusOptionsBuilder>
@@ -249,6 +352,116 @@ public class RabbitMQMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<R
         Target.Arguments["x-queue-type"] = "quorum";
         Target.Arguments["x-delivery-limit"] = Target.DeliveryLimit;
 
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the heartbeat timeout negotiated with the broker.
+    /// Controls how quickly dead TCP connections are detected.
+    /// </summary>
+    /// <param name="heartbeat">Heartbeat interval. TimeSpan.Zero disables heartbeats.</param>
+    public RabbitMQMessageBusOptionsBuilder RequestedHeartbeat(TimeSpan heartbeat)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(heartbeat, TimeSpan.Zero);
+        Target.RequestedHeartbeat = heartbeat;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the interval between automatic connection recovery attempts.
+    /// </summary>
+    /// <param name="interval">Recovery interval. Must be positive.</param>
+    public RabbitMQMessageBusOptionsBuilder NetworkRecoveryInterval(TimeSpan interval)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        Target.NetworkRecoveryInterval = interval;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures a dead letter exchange for messages that exceed the delivery limit or are rejected.
+    /// </summary>
+    /// <param name="exchange">The DLX exchange name.</param>
+    /// <param name="routingKey">Optional routing key for dead-lettered messages.</param>
+    /// <param name="strategy">Dead-letter strategy. AtLeastOnce requires overflow to be RejectPublish.</param>
+    public RabbitMQMessageBusOptionsBuilder DeadLetterExchange(string exchange, string? routingKey = null, DeadLetterStrategy? strategy = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(exchange);
+        Target.DeadLetterExchange = exchange;
+        Target.DeadLetterRoutingKey = routingKey;
+        Target.DeadLetterStrategy = strategy;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the queue overflow behavior when max length is reached.
+    /// Must be RejectPublish when using at-least-once dead-lettering on quorum queues.
+    /// </summary>
+    /// <param name="behavior">The overflow behavior.</param>
+    public RabbitMQMessageBusOptionsBuilder OverflowBehavior(QueueOverflowBehavior behavior)
+    {
+        Target.Overflow = behavior;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the consumer timeout for quorum queues (RabbitMQ 4.3+).
+    /// When a consumer holds unacknowledged messages longer than this, the broker returns them
+    /// and gracefully cancels the consumer.
+    /// </summary>
+    /// <param name="timeout">Timeout duration. Must be positive.</param>
+    public RabbitMQMessageBusOptionsBuilder ConsumerTimeout(TimeSpan timeout)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        Target.ConsumerTimeout = timeout;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables single active consumer mode for strict message ordering with automatic failover.
+    /// Only one consumer at a time will receive messages; others act as standby.
+    /// </summary>
+    /// <param name="enabled">Whether to enable single active consumer. Default: true.</param>
+    public RabbitMQMessageBusOptionsBuilder UseSingleActiveConsumer(bool enabled = true)
+    {
+        Target.SingleActiveConsumer = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Enables message priority on the queue. Messages published with higher priority are
+    /// delivered to consumers before lower-priority messages.
+    /// RabbitMQ 4.3+ quorum queues support up to 32 strict priority levels.
+    /// </summary>
+    /// <param name="maxPriority">Maximum priority levels (1-32). Default: 32.</param>
+    public RabbitMQMessageBusOptionsBuilder UseMessagePriority(byte maxPriority = 32)
+    {
+        ArgumentOutOfRangeException.ThrowIfZero(maxPriority);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(maxPriority, (byte)32);
+
+        Target.MaxPriority = maxPriority;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures native delayed retry for quorum queues (RabbitMQ 4.3+).
+    /// Rejected/failed messages are held in a delayed state with linear backoff before redelivery.
+    /// This replaces the need for the delayed message exchange plugin for retry scenarios.
+    /// </summary>
+    /// <param name="minDelayMs">Minimum delay in milliseconds (multiplied by delivery count).</param>
+    /// <param name="maxDelayMs">Maximum delay cap in milliseconds.</param>
+    /// <param name="retryType">Retry type controlling which messages are delayed. Default: All.</param>
+    public RabbitMQMessageBusOptionsBuilder UseDelayedRetries(int minDelayMs = 1000, int maxDelayMs = 60000, DelayedRetryType retryType = DelayedRetryType.All)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(minDelayMs, 0);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(maxDelayMs, 0);
+
+        if (maxDelayMs < minDelayMs)
+            throw new ArgumentOutOfRangeException(nameof(maxDelayMs), $"maxDelayMs ({maxDelayMs}) must be >= minDelayMs ({minDelayMs})");
+
+        Target.DelayedRetryType = retryType;
+        Target.DelayedRetryMin = minDelayMs;
+        Target.DelayedRetryMax = maxDelayMs;
         return this;
     }
 }

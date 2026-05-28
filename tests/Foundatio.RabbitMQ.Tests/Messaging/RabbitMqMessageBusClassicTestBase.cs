@@ -17,6 +17,9 @@ public abstract class RabbitMqMessageBusClassicTestBase : RabbitMqMessageBusTest
 
     protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
+        if (string.IsNullOrEmpty(ConnectionString))
+            return null;
+
         return new RabbitMQMessageBus(o =>
         {
             o.ConnectionString(ConnectionString);
@@ -31,6 +34,8 @@ public abstract class RabbitMqMessageBusClassicTestBase : RabbitMqMessageBusTest
     [Fact]
     public override async Task CanHandlePoisonedMessageWithAutomaticAcknowledgementsAsync()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)

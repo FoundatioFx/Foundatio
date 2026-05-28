@@ -13,6 +13,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_WithRecoveryTimeoutDisabled_FailsImmediatelyOnConnectionDrop()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -33,6 +35,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_DuringRecovery_WaitsAndSucceeds()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -57,6 +61,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_RecoveryTimeout_ThrowsMessageBusException()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -76,6 +82,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_CancellationDuringRecovery_RespectsCancellation()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -94,6 +102,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_WhenConnectionHealthy_SucceedsImmediately()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -109,6 +119,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_DuringDisposal_FailsFastWithOperationCanceledException()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)
@@ -140,6 +152,8 @@ public class RabbitMqPublishResilienceTests(AspireFixture fixture, ITestOutputHe
     [Fact]
     public async Task PublishAsync_RecoveryErrorDoesNotOpenGate_WaitsUntilTimeout()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)

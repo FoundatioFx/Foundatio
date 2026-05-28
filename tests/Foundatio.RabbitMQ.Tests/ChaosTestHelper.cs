@@ -47,6 +47,36 @@ public class ChaosTestHelper
         await RunDockerCommandAsync($"start {containerId}", cancellationToken);
     }
 
+    public async Task WaitForNodeReadyAsync(string resourceName, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        using var deadlineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadlineCts.CancelAfter(timeout);
+        var linkedToken = deadlineCts.Token;
+
+        while (!linkedToken.IsCancellationRequested)
+        {
+            try
+            {
+                var containerId = await GetContainerIdAsync(resourceName, cancellationToken: linkedToken);
+                var output = await DockerExecAsync(containerId, "rabbitmqctl status", linkedToken);
+                if (output.Contains("pid", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+            {
+                _logger.LogTrace(ex, "Node {Resource} not ready yet: {Message}, retrying...", resourceName, ex.Message);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1), linkedToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+
+        throw new TimeoutException($"Node '{resourceName}' did not become ready within {timeout.TotalSeconds}s");
+    }
+
     public async Task<bool> HasDiskAlarmAsync(string resourceName, CancellationToken cancellationToken = default)
     {
         var containerId = await GetContainerIdAsync(resourceName, cancellationToken: cancellationToken);
@@ -61,21 +91,46 @@ public class ChaosTestHelper
         {
             if (await HasDiskAlarmAsync(resourceName, cancellationToken))
                 return;
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
         }
 
         throw new TimeoutException($"Disk alarm on '{resourceName}' did not activate within {timeout.TotalSeconds}s");
-    }    public async Task WaitForAlarmClearedAsync(string resourceName, TimeSpan timeout, CancellationToken cancellationToken = default)
+    }
+
+    public async Task WaitForAlarmClearedAsync(string resourceName, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         var deadline = DateTime.UtcNow + timeout;
         while (DateTime.UtcNow < deadline)
         {
             if (!await HasDiskAlarmAsync(resourceName, cancellationToken))
                 return;
-            await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken);
         }
 
         throw new TimeoutException($"Disk alarm on '{resourceName}' did not clear within {timeout.TotalSeconds}s");
+    }
+
+    public async Task TriggerMemoryAlarmAsync(string resourceName, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Setting vm_memory_high_watermark to 0.0001 on {Resource} to trigger memory alarm", resourceName);
+        var containerId = await GetContainerIdAsync(resourceName, cancellationToken: cancellationToken);
+        await DockerExecAsync(containerId, "rabbitmqctl set_vm_memory_high_watermark 0.0001", cancellationToken);
+    }
+
+    private const string TestResetMemoryWatermark = "0.8";
+
+    public async Task ClearMemoryAlarmAsync(string resourceName, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Resetting vm_memory_high_watermark to test default ({Watermark}) on {Resource}", TestResetMemoryWatermark, resourceName);
+        var containerId = await GetContainerIdAsync(resourceName, cancellationToken: cancellationToken);
+        await DockerExecAsync(containerId, $"rabbitmqctl set_vm_memory_high_watermark {TestResetMemoryWatermark}", cancellationToken);
+    }
+
+    public async Task CloseAllConnectionsAsync(string resourceName, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Force-closing all connections on {Resource}", resourceName);
+        var containerId = await GetContainerIdAsync(resourceName, cancellationToken: cancellationToken);
+        await DockerExecAsync(containerId, "rabbitmqctl close_all_connections chaos-test", cancellationToken);
     }
 
     public string GetConnectionString(string resourceName)
@@ -108,6 +163,9 @@ public class ChaosTestHelper
 
     private static async Task<string> RunDockerCommandAsync(string args, CancellationToken cancellationToken)
     {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo
         {
@@ -123,10 +181,10 @@ public class ChaosTestHelper
 
         try
         {
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            var outputTask = process.StandardOutput.ReadToEndAsync(timeoutCts.Token);
+            var errorTask = process.StandardError.ReadToEndAsync(timeoutCts.Token);
             await Task.WhenAll(outputTask, errorTask);
-            await process.WaitForExitAsync(cancellationToken);
+            await process.WaitForExitAsync(timeoutCts.Token);
 
             if (process.ExitCode != 0)
                 throw new InvalidOperationException(

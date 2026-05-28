@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -17,6 +19,9 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
 
     protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
+        if (string.IsNullOrEmpty(ConnectionString))
+            return null;
+
         return new RabbitMQMessageBus(o =>
         {
             o.SubscriptionQueueName($"{_topic}_{Guid.NewGuid():N}");
@@ -244,6 +249,8 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
     [Fact]
     public virtual async Task CanHandlePoisonedMessageWithAutomaticAcknowledgementsAsync()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         string topic = $"test_topic_poisoned_{DateTime.UtcNow.Ticks}";
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
@@ -276,8 +283,57 @@ public abstract class RabbitMqMessageBusTestBase(string connectionString, ITestO
     }
 
     [Fact]
+    public async Task PublishAsync_WithPriority_DeliversHighPriorityFirst()
+    {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
+        // Arrange
+        string topic = $"test_topic_priority_{DateTime.UtcNow.Ticks}";
+        string queueName = $"{topic}_{Guid.NewGuid():N}";
+
+        await using var publisher = new RabbitMQMessageBus(o => o
+            .ConnectionString(ConnectionString)
+            .SubscriptionQueueName(queueName)
+            .AcknowledgementStrategy(AcknowledgementStrategy.Automatic)
+            .UseQuorumQueues()
+            .UseMessagePriority()
+            .PrefetchCount(1)
+            .LoggerFactory(Log));
+
+        await publisher.PublishAsync(new SimpleMessageA { Data = "low" },
+            new MessageOptions { Properties = { ["Priority"] = "1" } }, TestCancellationToken);
+        await publisher.PublishAsync(new SimpleMessageA { Data = "high" },
+            new MessageOptions { Properties = { ["Priority"] = "10" } }, TestCancellationToken);
+        await publisher.PublishAsync(new SimpleMessageA { Data = "medium" },
+            new MessageOptions { Properties = { ["Priority"] = "5" } }, TestCancellationToken);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+
+        var received = new ConcurrentQueue<string>();
+        var countdownEvent = new AsyncCountdownEvent(3);
+
+        // Act
+        await publisher.SubscribeAsync<SimpleMessageA>(msg =>
+        {
+            received.Enqueue(msg.Data!);
+            countdownEvent.Signal();
+        }, TestCancellationToken);
+
+        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(10));
+
+        // Assert
+        var messages = received.ToArray();
+        Assert.Equal(3, messages.Length);
+        Assert.Equal("high", messages[0]);
+        Assert.Equal("medium", messages[1]);
+        Assert.Equal("low", messages[2]);
+    }
+
+    [Fact]
     public async Task CanPersistAndNotLoseMessages()
     {
+        Assert.SkipWhen(string.IsNullOrEmpty(ConnectionString), "RabbitMQ infrastructure not available");
+
         var messageBus1 = new RabbitMQMessageBus(o => o
             .ConnectionString(ConnectionString)
             .LoggerFactory(Log)

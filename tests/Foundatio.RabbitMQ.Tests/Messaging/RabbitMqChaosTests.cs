@@ -20,8 +20,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_DuringDiskAlarm_BlocksUntilAlarmClears()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-1");
+        string connectionString = Chaos.GetConnectionString("chaos-1");
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(connectionString)
             .Topic("chaos-disk-alarm-test-" + Guid.NewGuid().ToString("N")[..8])
@@ -33,13 +35,13 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
 
             // Act - trigger disk alarm
             await Chaos.FillDiskAsync("chaos-1", TestCancellationToken);
-            await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(30), TestCancellationToken);
+            await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(10), TestCancellationToken);
 
             // Issue a publish with a short timeout. The disk alarm should eventually block
             // the connection, causing this to either timeout or succeed quickly before the
             // block notification arrives. Either outcome is acceptable; the key assertion
             // is that publishing resumes after the alarm clears.
-            using var alarmPublishCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var alarmPublishCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             try
             {
                 await messageBus.PublishAsync(new SimpleMessageA { Data = "during alarm" },
@@ -52,10 +54,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
 
             // Clear alarm and verify publish resumes
             await Chaos.ClearDiskAsync("chaos-1", TestCancellationToken);
-            await Chaos.WaitForAlarmClearedAsync("chaos-1", TimeSpan.FromSeconds(30), TestCancellationToken);
+            await Chaos.WaitForAlarmClearedAsync("chaos-1", TimeSpan.FromSeconds(10), TestCancellationToken);
 
             // After clearing, a new publish should succeed
-            using var recoveryCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var recoveryCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             bool published = false;
             while (!recoveryCts.Token.IsCancellationRequested && !published)
             {
@@ -65,9 +67,9 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
                         cancellationToken: recoveryCts.Token);
                     published = true;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(2), recoveryCts.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), recoveryCts.Token);
                 }
             }
 
@@ -82,8 +84,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task SubscribeAsync_DuringDiskAlarm_ContinuesReceivingAfterRecovery()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-2");
+        string connectionString = Chaos.GetConnectionString("chaos-2");
         var received = new ConcurrentBag<string>();
 
         await using var messageBus = new RabbitMQMessageBus(o => o
@@ -97,19 +101,19 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
         }, TestCancellationToken);
 
         await messageBus.PublishAsync(new SimpleMessageA { Data = "before-alarm" }, cancellationToken: TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(1), TestCancellationToken);
 
         // Act - trigger alarm and then clear it
         await Chaos.FillDiskAsync("chaos-2", TestCancellationToken);
-        await Chaos.WaitForAlarmActiveAsync("chaos-2", TimeSpan.FromSeconds(30), TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
+        await Chaos.WaitForAlarmActiveAsync("chaos-2", TimeSpan.FromSeconds(10), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
         await Chaos.ClearDiskAsync("chaos-2", TestCancellationToken);
-        await Chaos.WaitForAlarmClearedAsync("chaos-2", TimeSpan.FromSeconds(30), TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
+        await Chaos.WaitForAlarmClearedAsync("chaos-2", TimeSpan.FromSeconds(10), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
         await messageBus.PublishAsync(new SimpleMessageA { Data = "after-recovery" }, cancellationToken: TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
         // Assert
         Assert.Contains("before-alarm", received);
@@ -119,8 +123,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_AfterNodeRestart_RecoversAndDelivers()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-3");
+        string connectionString = Chaos.GetConnectionString("chaos-3");
 
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(connectionString)
@@ -131,12 +137,12 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
 
         // Act - kill and restart
         await Chaos.StopNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(5), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
         await Chaos.StartNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(15), TestCancellationToken);
+        await Chaos.WaitForNodeReadyAsync("chaos-3", TimeSpan.FromSeconds(30), TestCancellationToken);
 
         // Assert - publish should eventually succeed after recovery
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         bool published = false;
 
         while (!cts.Token.IsCancellationRequested && !published)
@@ -147,10 +153,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
                     cancellationToken: cts.Token);
                 published = true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Publish failed during recovery, retrying...");
-                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
             }
         }
 
@@ -160,16 +166,18 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_WithMultipleHosts_FailsOverToHealthyNode()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var host1 = Chaos.GetConnectionString("chaos-1");
-        var host2 = Chaos.GetConnectionString("chaos-2");
-        var host3 = Chaos.GetConnectionString("chaos-3");
+        string host1 = Chaos.GetConnectionString("chaos-1");
+        string host2 = Chaos.GetConnectionString("chaos-2");
+        string host3 = Chaos.GetConnectionString("chaos-3");
         var uri2 = new Uri(host2);
         var uri3 = new Uri(host3);
 
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(host1)
-            .Hosts([$"{uri2.Host}:{uri2.Port}", $"{uri3.Host}:{uri3.Port}"])
+            .Hosts($"{uri2.Host}:{uri2.Port}", $"{uri3.Host}:{uri3.Port}")
             .Topic("chaos-failover-test-" + Guid.NewGuid().ToString("N")[..8])
             .LoggerFactory(Log));
 
@@ -177,12 +185,12 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
 
         // Act - trigger disk alarm on primary
         await Chaos.FillDiskAsync("chaos-1", TestCancellationToken);
-        await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(30), TestCancellationToken);
+        await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(10), TestCancellationToken);
 
         try
         {
             // Assert - should still be able to publish (failover to chaos-2 or chaos-3)
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
             bool published = false;
 
             while (!cts.Token.IsCancellationRequested && !published)
@@ -193,10 +201,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
                         cancellationToken: cts.Token);
                     published = true;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
                 {
                     _logger.LogWarning(ex, "Publish attempt failed, retrying...");
-                    await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                    await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
                 }
             }
 
@@ -212,16 +220,18 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_DuringQuorumLoss_RetriesAndResumesWhenNodeRejoins()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange - connect to all 3 cluster nodes
-        var host1 = Chaos.GetConnectionString("chaos-1");
-        var host2 = Chaos.GetConnectionString("chaos-2");
-        var host3 = Chaos.GetConnectionString("chaos-3");
+        string host1 = Chaos.GetConnectionString("chaos-1");
+        string host2 = Chaos.GetConnectionString("chaos-2");
+        string host3 = Chaos.GetConnectionString("chaos-3");
         var uri2 = new Uri(host2);
         var uri3 = new Uri(host3);
 
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(host1)
-            .Hosts([$"{uri2.Host}:{uri2.Port}", $"{uri3.Host}:{uri3.Port}"])
+            .Hosts($"{uri2.Host}:{uri2.Port}", $"{uri3.Host}:{uri3.Port}")
             .Topic("chaos-quorum-loss-test-" + Guid.NewGuid().ToString("N")[..8])
             .LoggerFactory(Log));
 
@@ -230,10 +240,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
         // Act - kill 2 of 3 nodes (causes quorum loss in RabbitMQ 4.x Raft)
         await Chaos.StopNodeAsync("chaos-2", TestCancellationToken);
         await Chaos.StopNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(5), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
 
         // Publish should fail/timeout during quorum loss
-        using var failCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var failCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var publishDuringLoss = await Record.ExceptionAsync(() =>
             messageBus.PublishAsync(new SimpleMessageA { Data = "during-quorum-loss" },
                 cancellationToken: failCts.Token));
@@ -245,10 +255,11 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
         // Act - bring nodes back to restore quorum
         await Chaos.StartNodeAsync("chaos-2", TestCancellationToken);
         await Chaos.StartNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(30), TestCancellationToken);
+        await Chaos.WaitForNodeReadyAsync("chaos-2", TimeSpan.FromSeconds(30), TestCancellationToken);
+        await Chaos.WaitForNodeReadyAsync("chaos-3", TimeSpan.FromSeconds(30), TestCancellationToken);
 
         // Assert - publishing should resume once quorum is restored
-        using var recoveryCts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var recoveryCts = new CancellationTokenSource(TimeSpan.FromSeconds(45));
         bool published = false;
 
         while (!recoveryCts.Token.IsCancellationRequested && !published)
@@ -259,10 +270,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
                     cancellationToken: recoveryCts.Token);
                 published = true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Publish still failing during recovery, retrying...");
-                await Task.Delay(TimeSpan.FromSeconds(3), recoveryCts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(2), recoveryCts.Token);
             }
         }
 
@@ -272,8 +283,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_WithPublisherConfirms_DuringDiskAlarm_FailsOrTimesOut()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-1");
+        string connectionString = Chaos.GetConnectionString("chaos-1");
 
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(connectionString)
@@ -286,12 +299,12 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
 
         // Act
         await Chaos.FillDiskAsync("chaos-1", TestCancellationToken);
-        await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(30), TestCancellationToken);
+        await Chaos.WaitForAlarmActiveAsync("chaos-1", TimeSpan.FromSeconds(10), TestCancellationToken);
 
         try
         {
             // Assert - publish with confirms should fail or timeout during alarm
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var exception = await Record.ExceptionAsync(() =>
                 messageBus.PublishAsync(new SimpleMessageA { Data = "during alarm" },
                     cancellationToken: cts.Token));
@@ -309,8 +322,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task SubscribeAsync_AfterNodeKill_ReconnectsAndReceivesMessages()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-3");
+        string connectionString = Chaos.GetConnectionString("chaos-3");
         var received = new ConcurrentBag<string>();
 
         await using var messageBus = new RabbitMQMessageBus(o => o
@@ -324,17 +339,17 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
         }, TestCancellationToken);
 
         await messageBus.PublishAsync(new SimpleMessageA { Data = "before-kill" }, cancellationToken: TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(1), TestCancellationToken);
         Assert.Contains("before-kill", received);
 
         // Act - kill node and restart
         await Chaos.StopNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(5), TestCancellationToken);
+        await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
         await Chaos.StartNodeAsync("chaos-3", TestCancellationToken);
-        await Task.Delay(TimeSpan.FromSeconds(15), TestCancellationToken);
+        await Chaos.WaitForNodeReadyAsync("chaos-3", TimeSpan.FromSeconds(30), TestCancellationToken);
 
         // Assert - subscriber should reconnect and receive new messages
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         bool messageReceived = false;
 
         while (!cts.Token.IsCancellationRequested && !messageReceived)
@@ -343,13 +358,13 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
             {
                 await messageBus.PublishAsync(new SimpleMessageA { Data = "after-kill" },
                     cancellationToken: cts.Token);
-                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
                 messageReceived = received.Contains("after-kill");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Publish/subscribe still recovering...");
-                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
             }
         }
 
@@ -359,8 +374,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
     [Fact]
     public async Task PublishAsync_DuringRapidNodeFlapping_RemainsResilient()
     {
+        Assert.SkipWhen(!fixture.ChaosClusterAvailable, "Chaos cluster not available");
+
         // Arrange
-        var connectionString = Chaos.GetConnectionString("chaos-2");
+        string connectionString = Chaos.GetConnectionString("chaos-2");
 
         await using var messageBus = new RabbitMQMessageBus(o => o
             .ConnectionString(connectionString)
@@ -374,15 +391,15 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
         {
             _logger.LogInformation("Flap cycle {Cycle}/3: killing node", i + 1);
             await Chaos.StopNodeAsync("chaos-2", TestCancellationToken);
-            await Task.Delay(TimeSpan.FromSeconds(3), TestCancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), TestCancellationToken);
 
             _logger.LogInformation("Flap cycle {Cycle}/3: restarting node", i + 1);
             await Chaos.StartNodeAsync("chaos-2", TestCancellationToken);
-            await Task.Delay(TimeSpan.FromSeconds(10), TestCancellationToken);
+            await Chaos.WaitForNodeReadyAsync("chaos-2", TimeSpan.FromSeconds(20), TestCancellationToken);
         }
 
         // Assert - should eventually be able to publish after flapping stabilizes
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         bool published = false;
 
         while (!cts.Token.IsCancellationRequested && !published)
@@ -393,10 +410,10 @@ public class RabbitMqChaosTests(AspireFixture fixture, ITestOutputHelper output)
                     cancellationToken: cts.Token);
                 published = true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException and not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Still recovering from flapping...");
-                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                await Task.Delay(TimeSpan.FromSeconds(1), cts.Token);
             }
         }
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,6 +19,7 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 {
     private const string XDeliveryCountHeader = "x-delivery-count";
     private const string XOriginalMessageIdHeader = "x-original-message-id";
+    private const string PriorityPropertyKey = "Priority";
     private static readonly Version _delayedExchangePluginIncompatibleVersion = new(4, 3);
     private static readonly Version _globalQosRemovedVersion = new(4, 3);
 
@@ -80,6 +82,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
             Uri = primaryUri,
             AutomaticRecoveryEnabled = true
         };
+
+        if (options.RequestedHeartbeat.HasValue)
+            _factory.RequestedHeartbeat = options.RequestedHeartbeat.Value;
+
+        if (options.NetworkRecoveryInterval.HasValue)
+            _factory.NetworkRecoveryInterval = options.NetworkRecoveryInterval.Value;
     }
 
     public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
@@ -148,7 +156,12 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 #pragma warning disable CS0618 // GlobalQos is obsolete but we still need to read it for backward compatibility
                 bool useGlobalQos = _options.GlobalQos;
 #pragma warning restore CS0618
-                if (useGlobalQos && _serverVersion is not null && _serverVersion >= _globalQosRemovedVersion)
+                if (useGlobalQos && _isQuorumQueue)
+                {
+                    _logger.LogWarning("GlobalQos is not supported on quorum queues. Falling back to per-channel prefetch (global: false). Remove the GlobalQos option to suppress this warning");
+                    useGlobalQos = false;
+                }
+                else if (useGlobalQos && _serverVersion is not null && _serverVersion >= _globalQosRemovedVersion)
                 {
                     _logger.LogWarning("GlobalQos is not supported on RabbitMQ {ServerVersion}. Falling back to per-channel prefetch (global: false). Remove the GlobalQos option to suppress this warning", _serverVersion);
                     useGlobalQos = false;
@@ -626,11 +639,16 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         if (_options.DefaultMessageTimeToLive.HasValue)
             basicProperties.Expiration = _options.DefaultMessageTimeToLive.Value.TotalMilliseconds.ToString(CultureInfo.InvariantCulture);
 
+        if (options.Properties.TryGetValue(PriorityPropertyKey, out string? priorityValue) && Byte.TryParse(priorityValue, out byte priority))
+            basicProperties.Priority = priority;
+
         if (options.Properties.Count > 0)
         {
             basicProperties.Headers ??= new Dictionary<string, object?>();
-            foreach (var property in options.Properties)
+            foreach (var property in options.Properties.Where(p => !String.Equals(p.Key, PriorityPropertyKey, StringComparison.Ordinal)))
+            {
                 basicProperties.Headers.Add(property.Key, property.Value);
+            }
         }
 
         // RabbitMQ only supports delayed messages with a third party plugin called "rabbitmq_delayed_message_exchange"
@@ -772,11 +790,72 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
         // Set up the queue where the messages will reside - it requires the queue name and durability.
         // Durable (the queue will survive a broker restart)
         // Arguments (some brokers use it to implement additional features like message TTL)
-        var result = await channel.QueueDeclareAsync(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, _options.SubscriptionQueueAutoDelete, _options.Arguments).AnyContext();
+        var arguments = _options.Arguments is not null
+            ? new Dictionary<string, object?>(_options.Arguments)
+            : new Dictionary<string, object?>();
+
+        if (!String.IsNullOrWhiteSpace(_options.DeadLetterExchange))
+        {
+            arguments["x-dead-letter-exchange"] = _options.DeadLetterExchange;
+
+            if (!String.IsNullOrWhiteSpace(_options.DeadLetterRoutingKey))
+                arguments["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey;
+
+            if (_options.DeadLetterStrategy.HasValue)
+            {
+                if (_options.DeadLetterStrategy == DeadLetterStrategy.AtLeastOnce)
+                {
+                    if (!_isQuorumQueue)
+                        throw new MessageBusException("At-least-once dead-lettering requires quorum queues. Call UseQuorumQueues().");
+
+                    if (_options.Overflow != QueueOverflowBehavior.RejectPublish)
+                        throw new MessageBusException("At-least-once dead-lettering requires overflow to be set to RejectPublish. Call .OverflowBehavior(QueueOverflowBehavior.RejectPublish).");
+                }
+
+                arguments["x-dead-letter-strategy"] = _options.DeadLetterStrategy.Value.ToEnumString();
+            }
+        }
+
+        if (_options.Overflow.HasValue)
+            arguments["x-overflow"] = _options.Overflow.Value.ToEnumString();
+
+        if (_options.ConsumerTimeout.HasValue)
+        {
+            if (!_isQuorumQueue)
+                throw new MessageBusException("Per-queue consumer timeout (x-consumer-timeout) requires quorum queues (RabbitMQ 4.3+). Call UseQuorumQueues() before ConsumerTimeout().");
+
+            if (_serverVersion is not null && _serverVersion < _delayedExchangePluginIncompatibleVersion)
+                throw new MessageBusException($"Per-queue consumer timeout (x-consumer-timeout) requires RabbitMQ 4.3+. Detected server version: {_serverVersion}.");
+
+            arguments["x-consumer-timeout"] = (long)_options.ConsumerTimeout.Value.TotalMilliseconds;
+        }
+
+        if (_options.SingleActiveConsumer)
+            arguments["x-single-active-consumer"] = true;
+
+        if (_options.MaxPriority.HasValue)
+            arguments["x-max-priority"] = (int)_options.MaxPriority.Value;
+
+        if (_options.DelayedRetryType.HasValue)
+        {
+            if (!_isQuorumQueue)
+                throw new MessageBusException("Delayed retries (x-delayed-retry-*) require quorum queues (RabbitMQ 4.3+). Call UseQuorumQueues() before UseDelayedRetries().");
+
+            if (_serverVersion is not null && _serverVersion < _delayedExchangePluginIncompatibleVersion)
+                throw new MessageBusException($"Delayed retries (x-delayed-retry-*) require RabbitMQ 4.3+. Detected server version: {_serverVersion}.");
+
+            arguments["x-delayed-retry-type"] = _options.DelayedRetryType.Value.ToEnumString();
+            if (_options.DelayedRetryMin.HasValue)
+                arguments["x-delayed-retry-min"] = _options.DelayedRetryMin.Value;
+            if (_options.DelayedRetryMax.HasValue)
+                arguments["x-delayed-retry-max"] = _options.DelayedRetryMax.Value;
+        }
+
+        var result = await channel.QueueDeclareAsync(_options.SubscriptionQueueName, _options.IsDurable, _options.IsSubscriptionQueueExclusive, _options.SubscriptionQueueAutoDelete, arguments.Count > 0 ? arguments : null).AnyContext();
         string queueName = result.QueueName;
 
-        // bind the queue with the exchange.
-        await channel.QueueBindAsync(queueName, _options.Topic, "").AnyContext();
+        // Bind the queue with the exchange.
+        await channel.QueueBindAsync(queueName, _options.Topic, String.Empty).AnyContext();
 
         return queueName;
     }

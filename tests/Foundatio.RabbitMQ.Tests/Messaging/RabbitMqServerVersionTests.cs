@@ -91,7 +91,7 @@ public class RabbitMqServerVersionTests
     }
 
     [Fact]
-    public void VersionGating_Rmq42_IsBelow43()
+    public void VersionComparison_WithLowerVersion_DetectsAsBelow()
     {
         // Arrange
         var rmq42 = new Version(4, 2, 0);
@@ -105,7 +105,7 @@ public class RabbitMqServerVersionTests
     }
 
     [Fact]
-    public void VersionGating_Rmq43_IsAtOrAbove43()
+    public void VersionComparison_WithExactThreshold_DetectsAsAtOrAbove()
     {
         // Arrange
         var rmq43 = new Version(4, 3, 0);
@@ -119,7 +119,7 @@ public class RabbitMqServerVersionTests
     }
 
     [Fact]
-    public void VersionGating_Rmq50_IsAbove43()
+    public void VersionComparison_WithHigherMajor_DetectsAsAbove()
     {
         // Arrange
         var rmq50 = new Version(5, 0, 0);
