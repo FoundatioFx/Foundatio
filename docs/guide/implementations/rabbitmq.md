@@ -59,5 +59,6 @@ For durable delayed delivery on newer brokers, plan a migration (for example TTL
 
 ## Next Steps
 
+- [Quorum Queue Migration](/guide/implementations/rabbitmq-quorum-migration) - Migrate from classic to quorum queues
 - [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
 - [Serialization](/guide/serialization) - Configure serialization
