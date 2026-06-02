@@ -2937,7 +2937,7 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             success = await cache.SetAsync("test2", 1, expiresAt.AddMilliseconds(50));
             Assert.True(success);
             Assert.Equal(1, (await cache.GetAsync<int>("test")).Value);
-            Assert.True((await cache.GetExpirationAsync("test")).Value < TimeSpan.FromSeconds(1));
+            Assert.True((await cache.GetExpirationAsync("test")).GetValueOrDefault() < TimeSpan.FromSeconds(1));
 
             await Task.Delay(200);
             Assert.False((await cache.GetAsync<int>("test")).HasValue);

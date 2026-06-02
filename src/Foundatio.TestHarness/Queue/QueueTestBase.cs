@@ -2150,6 +2150,36 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException()
+    {
+        // Arrange
+        var queue = GetQueue(runQueueMaintenance: true);
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "trigger-maintenance" });
+            var item = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(item);
+            await item.CompleteAsync();
+            await Task.Delay(100);
+
+            // Act
+            var exception = Record.Exception(() => queue.Dispose());
+
+            // Assert
+            Assert.Null(exception);
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();

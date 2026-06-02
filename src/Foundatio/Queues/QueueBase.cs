@@ -429,14 +429,8 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     public override void Dispose()
     {
-        if (IsDisposed)
-        {
-            _logger.LogTrace("Queue {QueueName} ({QueueId})  dispose was already called", _options.Name, QueueId);
-            return;
-        }
-
         _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose", _options.Name, QueueId);
-        base.Dispose();
+        SignalDispose();
 
         Abandoned?.Dispose();
         Completed?.Dispose();
@@ -450,6 +444,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             behavior.Dispose();
 
         _behaviors.Clear();
+        base.Dispose();
     }
 }
 
