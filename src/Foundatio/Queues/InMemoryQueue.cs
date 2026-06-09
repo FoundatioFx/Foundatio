@@ -419,7 +419,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     public override void Dispose()
     {
-        base.Dispose();
+        if (!SignalDispose())
+        {
+            _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose was already called", _options.Name, QueueId);
+            return;
+        }
+
         _queue.Clear();
         _deadletterQueue.Clear();
         _dequeued.Clear();
@@ -434,5 +439,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             if (!worker.Wait(TimeSpan.FromSeconds(5)))
                 _logger.LogError("Failed waiting for worker to stop");
         }
+
+        base.Dispose();
     }
 }

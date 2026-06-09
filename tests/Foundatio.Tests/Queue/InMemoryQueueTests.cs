@@ -263,6 +263,12 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException()
+    {
+        return base.Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException();
+    }
+
+    [Fact]
     public override Task EnqueueAsync_WithUniqueId_UsesProvidedIdAsync()
     {
         return base.EnqueueAsync_WithUniqueId_UsesProvidedIdAsync();
