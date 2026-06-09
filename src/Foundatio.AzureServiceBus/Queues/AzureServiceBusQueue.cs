@@ -622,7 +622,11 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
 
     public override void Dispose()
     {
-        base.Dispose();
+        if (!SignalDispose())
+        {
+            _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose was already called", _options.Name, QueueId);
+            return;
+        }
 
         if (_queueSender is not null)
         {
@@ -640,11 +644,17 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         {
             _client.Value.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
+
+        base.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
-        base.Dispose();
+        if (!SignalDispose())
+        {
+            _logger.LogTrace("Queue {QueueName} ({QueueId}) async dispose was already called", _options.Name, QueueId);
+            return;
+        }
 
         if (_queueSender is not null)
         {
@@ -662,6 +672,8 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
         {
             await _client.Value.DisposeAsync().AnyContext();
         }
+
+        base.Dispose();
     }
 
     private async Task DeadLetterMessageAsync(AzureServiceBusQueueEntry<T> entry)
