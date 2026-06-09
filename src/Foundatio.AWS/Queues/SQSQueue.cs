@@ -452,10 +452,16 @@ public class SQSQueue<T> : QueueBase<T, SQSQueueOptions<T>> where T : class
 
     public override void Dispose()
     {
-        base.Dispose();
+        if (!SignalDispose())
+        {
+            _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose was already called", _options.Name, QueueId);
+            return;
+        }
 
         if (_client.IsValueCreated)
             _client.Value.Dispose();
+
+        base.Dispose();
     }
 
     protected virtual async Task CreateQueueAsync()
