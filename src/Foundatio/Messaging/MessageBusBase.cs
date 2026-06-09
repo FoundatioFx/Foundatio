@@ -26,7 +26,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     protected readonly ISerializer _serializer;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private int _disposeState;
-    protected bool IsDisposed => _disposeState != 0;
+    protected bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
     public MessageBusBase(TOptions options)
     {
@@ -516,7 +516,10 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     public virtual async ValueTask DisposeAsync()
     {
         if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
+        {
+            _logger.LogTrace("MessageBus {MessageBusId} async dispose was already called", MessageBusId);
             return;
+        }
 
         _logger.LogTrace("MessageBus {MessageBusId} async dispose", MessageBusId);
 
