@@ -129,6 +129,12 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException()
+    {
+        return base.Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException();
+    }
+
+    [Fact]
     public override Task DequeueWaitWillGetSignaledAsync()
     {
         return base.DequeueWaitWillGetSignaledAsync();
