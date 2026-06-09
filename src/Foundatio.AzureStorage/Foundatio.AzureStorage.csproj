@@ -4,8 +4,8 @@
     <PackageTags>Queue;Messaging;Message;File;Distributed;Storage;Blob;Azure</PackageTags>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.28.0" />
-    <PackageReference Include="Azure.Storage.Queues" Version="12.26.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.0" />
+    <PackageReference Include="Azure.Storage.Queues" Version="12.27.0" />
 
     <PackageReference Include="Foundatio" Version="13.0.2-preview.0.4" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
     <ProjectReference Include="..\..\..\Foundatio\src\Foundatio\Foundatio.csproj" Condition="'$(ReferenceFoundatioSource)' == 'true'" />
