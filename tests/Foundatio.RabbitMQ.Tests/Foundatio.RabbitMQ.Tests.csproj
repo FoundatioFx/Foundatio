@@ -4,6 +4,6 @@
     <ProjectReference Include="..\Foundatio.RabbitMQ.AppHost\Foundatio.RabbitMQ.AppHost.csproj" IsAspireProjectResource="false" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Aspire.Hosting.Testing" Version="13.3.5" />
+    <PackageReference Include="Aspire.Hosting.Testing" Version="13.4.3" />
   </ItemGroup>
 </Project>
