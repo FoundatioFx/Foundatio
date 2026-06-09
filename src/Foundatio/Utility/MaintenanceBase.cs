@@ -55,12 +55,14 @@ public class MaintenanceBase : IDisposable
     /// Call this early in derived <c>Dispose()</c> methods to signal background tasks before waiting on them.
     /// Calling <see cref="Dispose()"/> after this method is still required to release resources.
     /// </summary>
-    protected void SignalDispose()
+    /// <returns><c>true</c> if this is the first caller (disposal was signaled); <c>false</c> if already signaled.</returns>
+    protected bool SignalDispose()
     {
         if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
-            return;
+            return false;
 
         _disposedCancellationTokenSource.Cancel();
+        return true;
     }
 
     public virtual void Dispose()

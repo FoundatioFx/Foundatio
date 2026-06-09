@@ -419,13 +419,12 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     public override void Dispose()
     {
-        if (IsDisposed)
+        if (!SignalDispose())
         {
             _logger.LogTrace("Queue {QueueName} ({QueueId}) dispose was already called", _options.Name, QueueId);
             return;
         }
 
-        SignalDispose();
         _queue.Clear();
         _deadletterQueue.Clear();
         _dequeued.Clear();

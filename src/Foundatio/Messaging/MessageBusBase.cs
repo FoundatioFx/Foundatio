@@ -28,6 +28,17 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
     private int _disposeState;
     protected bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
 
+    /// <summary>
+    /// Signals that this instance is being disposed by setting <see cref="IsDisposed"/>.
+    /// Unlike <see cref="MaintenanceBase.SignalDispose"/>, does not cancel the token immediately
+    /// because <see cref="MessageBusBase{TOptions}"/> cancels after shutdown completes.
+    /// </summary>
+    /// <returns><c>true</c> if this is the first caller; <c>false</c> if already signaled.</returns>
+    protected bool SignalDispose()
+    {
+        return Interlocked.CompareExchange(ref _disposeState, 1, 0) == 0;
+    }
+
     public MessageBusBase(TOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -515,7 +526,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public virtual async ValueTask DisposeAsync()
     {
-        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
+        if (!SignalDispose())
         {
             _logger.LogTrace("MessageBus {MessageBusId} async dispose was already called", MessageBusId);
             return;
@@ -565,7 +576,7 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     public virtual void Dispose()
     {
-        if (Interlocked.CompareExchange(ref _disposeState, 1, 0) != 0)
+        if (!SignalDispose())
         {
             _logger.LogTrace("MessageBus {MessageBusId} dispose was already called", MessageBusId);
             return;
