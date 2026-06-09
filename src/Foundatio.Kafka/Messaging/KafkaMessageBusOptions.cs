@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
@@ -17,52 +17,12 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     /// </summary>
     public string? GroupId { get; set; }
 
-    /// <summary>
-    /// Resolve a message type from a custom source.
-    /// </summary>
-    public Func<ConsumeResult<string, byte[]>, string?>? ResolveMessageType { get; set; }
-
     public string ContentType { get; set; } = "application/json";
 
     /// <summary>
     /// <inheritdoc cref="Message{TKey,TValue}.Key"/>
     /// </summary>
     public string? PublishKey { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.AutoCommitIntervalMs"/>
-    /// </summary>
-    public int? AutoCommitIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCertificateLocation"/>
-    /// </summary>
-    public string? SslCertificateLocation { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslMechanism"/>
-    /// </summary>
-    public SaslMechanism? SaslMechanism { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslUsername"/>
-    /// </summary>
-    public string? SaslUsername { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslPassword"/>
-    /// </summary>
-    public string? SaslPassword { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCaLocation"/>
-    /// </summary>
-    public string? SslCaLocation { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SecurityProtocol"/>
-    /// </summary>
-    public SecurityProtocol? SecurityProtocol { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="TopicSpecification.NumPartitions"/>
@@ -85,154 +45,24 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public Dictionary<int, List<int>>? TopicReplicasAssignments { get; set; }
 
     /// <summary>
+    /// Resolve a message type from a custom source.
+    /// </summary>
+    public Func<ConsumeResult<string, byte[]>, string?>? ResolveMessageType { get; set; }
+
+    /// <summary>
     /// <inheritdoc cref="ClientConfig.Acks"/>
     /// </summary>
     public Acks? Acks { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.ClientId"/>
+    /// <inheritdoc cref="ClientConfig.AllowAutoCreateTopics"/>
     /// </summary>
-    public string? ClientId { get; set; }
+    public bool? AllowAutoCreateTopics { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.MessageMaxBytes"/>
+    /// <inheritdoc cref="ClientConfig.ApiVersionFallbackMs"/>
     /// </summary>
-    public int? MessageMaxBytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.MessageCopyMaxBytes"/>
-    /// </summary>
-    public int? MessageCopyMaxBytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.ReceiveMessageMaxBytes"/>
-    /// </summary>
-    public int? ReceiveMessageMaxBytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.MaxInFlight"/>
-    /// </summary>
-    public int? MaxInFlight { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshIntervalMs"/>
-    /// </summary>
-    public int? TopicMetadataRefreshIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.MetadataMaxAgeMs"/>
-    /// </summary>
-    public int? MetadataMaxAgeMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshFastIntervalMs"/>
-    /// </summary>
-    public int? TopicMetadataRefreshFastIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshSparse"/>
-    /// </summary>
-    public bool? TopicMetadataRefreshSparse { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.TopicMetadataPropagationMaxMs"/>
-    /// </summary>
-    public int? TopicMetadataPropagationMaxMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.TopicBlacklist"/>
-    /// </summary>
-    public string? TopicBlacklist { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.Debug"/>
-    /// </summary>
-    public string? Debug { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketTimeoutMs"/>
-    /// </summary>
-    public int? SocketTimeoutMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketSendBufferBytes"/>
-    /// </summary>
-    public int? SocketSendBufferBytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketReceiveBufferBytes"/>
-    /// </summary>
-    public int? SocketReceiveBufferBytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketKeepaliveEnable"/>
-    /// </summary>
-    public bool? SocketKeepaliveEnable { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketNagleDisable"/>
-    /// </summary>
-    public bool? SocketNagleDisable { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SocketMaxFails"/>
-    /// </summary>
-    public int? SocketMaxFails { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.BrokerAddressTtl"/>
-    /// </summary>
-    public int? BrokerAddressTtl { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.BrokerAddressFamily"/>
-    /// </summary>
-    public BrokerAddressFamily? BrokerAddressFamily { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.ConnectionsMaxIdleMs"/>
-    /// </summary>
-    public int? ConnectionsMaxIdleMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.ReconnectBackoffMs"/>
-    /// </summary>
-    public int? ReconnectBackoffMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.ReconnectBackoffMaxMs"/>
-    /// </summary>
-    public int? ReconnectBackoffMaxMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.StatisticsIntervalMs"/>
-    /// </summary>
-    public int? StatisticsIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.LogQueue"/>
-    /// </summary>
-    public bool? LogQueue { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.LogThreadName"/>
-    /// </summary>
-    public bool? LogThreadName { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.EnableRandomSeed"/>
-    /// </summary>
-    public bool? EnableRandomSeed { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.LogConnectionClose"/>
-    /// </summary>
-    public bool? LogConnectionClose { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.InternalTerminationSignal"/>
-    /// </summary>
-    public int? InternalTerminationSignal { get; set; }
+    public int? ApiVersionFallbackMs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.ApiVersionRequest"/>
@@ -245,9 +75,14 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public int? ApiVersionRequestTimeoutMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.ApiVersionFallbackMs"/>
+    /// <inheritdoc cref="ClientConfig.BrokerAddressFamily"/>
     /// </summary>
-    public int? ApiVersionFallbackMs { get; set; }
+    public BrokerAddressFamily? BrokerAddressFamily { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.BrokerAddressTtl"/>
+    /// </summary>
+    public int? BrokerAddressTtl { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.BrokerVersionFallback"/>
@@ -255,9 +90,364 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public string? BrokerVersionFallback { get; set; }
 
     /// <summary>
+    /// <inheritdoc cref="ClientConfig.ClientDnsLookup"/>
+    /// </summary>
+    public ClientDnsLookup? ClientDnsLookup { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ClientId"/>
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ClientRack"/>
+    /// </summary>
+    public string? ClientRack { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ConnectionsMaxIdleMs"/>
+    /// </summary>
+    public int? ConnectionsMaxIdleMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.Debug"/>
+    /// </summary>
+    public string? Debug { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.EnableMetricsPush"/>
+    /// </summary>
+    public bool? EnableMetricsPush { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.EnableRandomSeed"/>
+    /// </summary>
+    public bool? EnableRandomSeed { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.EnableSaslOauthbearerUnsecureJwt"/>
+    /// </summary>
+    public bool? EnableSaslOauthbearerUnsecureJwt { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.EnableSslCertificateVerification"/>
+    /// </summary>
+    public bool? EnableSslCertificateVerification { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.HttpsCaLocation"/>
+    /// </summary>
+    public string? HttpsCaLocation { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.HttpsCaPem"/>
+    /// </summary>
+    public string? HttpsCaPem { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.InternalTerminationSignal"/>
+    /// </summary>
+    public int? InternalTerminationSignal { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.LogConnectionClose"/>
+    /// </summary>
+    public bool? LogConnectionClose { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.LogQueue"/>
+    /// </summary>
+    public bool? LogQueue { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.LogThreadName"/>
+    /// </summary>
+    public bool? LogThreadName { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MaxInFlight"/>
+    /// </summary>
+    public int? MaxInFlight { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MessageCopyMaxBytes"/>
+    /// </summary>
+    public int? MessageCopyMaxBytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MessageMaxBytes"/>
+    /// </summary>
+    public int? MessageMaxBytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MetadataMaxAgeMs"/>
+    /// </summary>
+    public int? MetadataMaxAgeMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MetadataRecoveryRebootstrapTriggerMs"/>
+    /// </summary>
+    public int? MetadataRecoveryRebootstrapTriggerMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.MetadataRecoveryStrategy"/>
+    /// </summary>
+    public MetadataRecoveryStrategy? MetadataRecoveryStrategy { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.PluginLibraryPaths"/>
+    /// </summary>
+    public string? PluginLibraryPaths { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ReceiveMessageMaxBytes"/>
+    /// </summary>
+    public int? ReceiveMessageMaxBytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ReconnectBackoffMaxMs"/>
+    /// </summary>
+    public int? ReconnectBackoffMaxMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.ReconnectBackoffMs"/>
+    /// </summary>
+    public int? ReconnectBackoffMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.RetryBackoffMaxMs"/>
+    /// </summary>
+    public int? RetryBackoffMaxMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.RetryBackoffMs"/>
+    /// </summary>
+    public int? RetryBackoffMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslKerberosKeytab"/>
+    /// </summary>
+    public string? SaslKerberosKeytab { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslKerberosKinitCmd"/>
+    /// </summary>
+    public string? SaslKerberosKinitCmd { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslKerberosMinTimeBeforeRelogin"/>
+    /// </summary>
+    public int? SaslKerberosMinTimeBeforeRelogin { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslKerberosPrincipal"/>
+    /// </summary>
+    public string? SaslKerberosPrincipal { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslKerberosServiceName"/>
+    /// </summary>
+    public string? SaslKerberosServiceName { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslMechanism"/>
+    /// </summary>
+    public SaslMechanism? SaslMechanism { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionAlgorithm"/>
+    /// </summary>
+    public SaslOauthbearerAssertionAlgorithm? SaslOauthbearerAssertionAlgorithm { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimAud"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionClaimAud { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimExpSeconds"/>
+    /// </summary>
+    public int? SaslOauthbearerAssertionClaimExpSeconds { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimIss"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionClaimIss { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimJtiInclude"/>
+    /// </summary>
+    public bool? SaslOauthbearerAssertionClaimJtiInclude { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimNbfSeconds"/>
+    /// </summary>
+    public int? SaslOauthbearerAssertionClaimNbfSeconds { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionClaimSub"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionClaimSub { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionFile"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionFile { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionJwtTemplateFile"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionJwtTemplateFile { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionPrivateKeyFile"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionPrivateKeyFile { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionPrivateKeyPassphrase"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionPrivateKeyPassphrase { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerAssertionPrivateKeyPem"/>
+    /// </summary>
+    public string? SaslOauthbearerAssertionPrivateKeyPem { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerClientId"/>
+    /// </summary>
+    public string? SaslOauthbearerClientId { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerClientSecret"/>
+    /// </summary>
+    public string? SaslOauthbearerClientSecret { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerConfig"/>
+    /// </summary>
+    public string? SaslOauthbearerConfig { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerExtensions"/>
+    /// </summary>
+    public string? SaslOauthbearerExtensions { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerGrantType"/>
+    /// </summary>
+    public SaslOauthbearerGrantType? SaslOauthbearerGrantType { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerMetadataAuthenticationType"/>
+    /// </summary>
+    public SaslOauthbearerMetadataAuthenticationType? SaslOauthbearerMetadataAuthenticationType { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerMethod"/>
+    /// </summary>
+    public SaslOauthbearerMethod? SaslOauthbearerMethod { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerScope"/>
+    /// </summary>
+    public string? SaslOauthbearerScope { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerSubClaimName"/>
+    /// </summary>
+    public string? SaslOauthbearerSubClaimName { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslOauthbearerTokenEndpointUrl"/>
+    /// </summary>
+    public string? SaslOauthbearerTokenEndpointUrl { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslPassword"/>
+    /// </summary>
+    public string? SaslPassword { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SaslUsername"/>
+    /// </summary>
+    public string? SaslUsername { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SecurityProtocol"/>
+    /// </summary>
+    public SecurityProtocol? SecurityProtocol { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketConnectionSetupTimeoutMs"/>
+    /// </summary>
+    public int? SocketConnectionSetupTimeoutMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketKeepaliveEnable"/>
+    /// </summary>
+    public bool? SocketKeepaliveEnable { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketMaxFails"/>
+    /// </summary>
+    public int? SocketMaxFails { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketNagleDisable"/>
+    /// </summary>
+    public bool? SocketNagleDisable { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketReceiveBufferBytes"/>
+    /// </summary>
+    public int? SocketReceiveBufferBytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketSendBufferBytes"/>
+    /// </summary>
+    public int? SocketSendBufferBytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SocketTimeoutMs"/>
+    /// </summary>
+    public int? SocketTimeoutMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCaCertificateStores"/>
+    /// </summary>
+    public string? SslCaCertificateStores { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCaLocation"/>
+    /// </summary>
+    public string? SslCaLocation { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCaPem"/>
+    /// </summary>
+    public string? SslCaPem { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCertificateLocation"/>
+    /// </summary>
+    public string? SslCertificateLocation { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCertificatePem"/>
+    /// </summary>
+    public string? SslCertificatePem { get; set; }
+
+    /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCipherSuites"/>
     /// </summary>
     public string? SslCipherSuites { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslCrlLocation"/>
+    /// </summary>
+    public string? SslCrlLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslCurvesList"/>
@@ -265,9 +455,19 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public string? SslCurvesList { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslSigalgsList"/>
+    /// <inheritdoc cref="ClientConfig.SslEndpointIdentificationAlgorithm"/>
     /// </summary>
-    public string? SslSigalgsList { get; set; }
+    public SslEndpointIdentificationAlgorithm? SslEndpointIdentificationAlgorithm { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslEngineId"/>
+    /// </summary>
+    public string? SslEngineId { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ClientConfig.SslEngineLocation"/>
+    /// </summary>
+    public string? SslEngineLocation { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeyLocation"/>
@@ -285,26 +485,6 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public string? SslKeyPem { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCertificatePem"/>
-    /// </summary>
-    public string? SslCertificatePem { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCaPem"/>
-    /// </summary>
-    public string? SslCaPem { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCaCertificateStores"/>
-    /// </summary>
-    public string? SslCaCertificateStores { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslCrlLocation"/>
-    /// </summary>
-    public string? SslCrlLocation { get; set; }
-
-    /// <summary>
     /// <inheritdoc cref="ClientConfig.SslKeystoreLocation"/>
     /// </summary>
     public string? SslKeystoreLocation { get; set; }
@@ -315,159 +495,44 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public string? SslKeystorePassword { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslEngineLocation"/>
+    /// <inheritdoc cref="ClientConfig.SslProviders"/>
     /// </summary>
-    public string? SslEngineLocation { get; set; }
+    public string? SslProviders { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslEngineId"/>
+    /// <inheritdoc cref="ClientConfig.SslSigalgsList"/>
     /// </summary>
-    public string? SslEngineId { get; set; }
+    public string? SslSigalgsList { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.EnableSslCertificateVerification"/>
+    /// <inheritdoc cref="ClientConfig.StatisticsIntervalMs"/>
     /// </summary>
-    public bool? EnableSslCertificateVerification { get; set; }
+    public int? StatisticsIntervalMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SslEndpointIdentificationAlgorithm"/>
+    /// <inheritdoc cref="ClientConfig.TopicBlacklist"/>
     /// </summary>
-    public SslEndpointIdentificationAlgorithm? SslEndpointIdentificationAlgorithm { get; set; }
+    public string? TopicBlacklist { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslKerberosServiceName"/>
+    /// <inheritdoc cref="ClientConfig.TopicMetadataPropagationMaxMs"/>
     /// </summary>
-    public string? SaslKerberosServiceName { get; set; }
+    public int? TopicMetadataPropagationMaxMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslKerberosPrincipal"/>
+    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshFastIntervalMs"/>
     /// </summary>
-    public string? SaslKerberosPrincipal { get; set; }
+    public int? TopicMetadataRefreshFastIntervalMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslKerberosKinitCmd"/>
+    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshIntervalMs"/>
     /// </summary>
-    public string? SaslKerberosKinitCmd { get; set; }
+    public int? TopicMetadataRefreshIntervalMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslKerberosKeytab"/>
+    /// <inheritdoc cref="ClientConfig.TopicMetadataRefreshSparse"/>
     /// </summary>
-    public string? SaslKerberosKeytab { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslKerberosMinTimeBeforeRelogin"/>
-    /// </summary>
-    public int? SaslKerberosMinTimeBeforeRelogin { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.SaslOauthbearerConfig"/>
-    /// </summary>
-    public string? SaslOauthbearerConfig { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.EnableSaslOauthbearerUnsecureJwt"/>
-    /// </summary>
-    public bool? EnableSaslOauthbearerUnsecureJwt { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.PluginLibraryPaths"/>
-    /// </summary>
-    public string? PluginLibraryPaths { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.ClientRack"/>
-    /// </summary>
-    public string? ClientRack { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.EnableBackgroundPoll"/>
-    /// </summary>
-    public bool? EnableBackgroundPoll { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.EnableDeliveryReports"/>
-    /// </summary>
-    public bool? EnableDeliveryReports { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.DeliveryReportFields"/>
-    /// </summary>
-    public string? DeliveryReportFields { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.RequestTimeoutMs"/>
-    /// </summary>
-    public int? RequestTimeoutMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.MessageTimeoutMs"/>
-    /// </summary>
-    public int? MessageTimeoutMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.Partitioner"/>
-    /// </summary>
-    public Partitioner? Partitioner { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.CompressionLevel"/>
-    /// </summary>
-    public int? CompressionLevel { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.TransactionalId"/>
-    /// </summary>
-    public string? TransactionalId { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.TransactionTimeoutMs"/>
-    /// </summary>
-    public int? TransactionTimeoutMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.EnableIdempotence"/>
-    /// </summary>
-    public bool? EnableIdempotence { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.EnableGaplessGuarantee"/>
-    /// </summary>
-    public bool? EnableGaplessGuarantee { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.QueueBufferingMaxMessages"/>
-    /// </summary>
-    public int? QueueBufferingMaxMessages { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.QueueBufferingMaxKbytes"/>
-    /// </summary>
-    public int? QueueBufferingMaxKbytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.LingerMs"/>
-    /// </summary>
-    public double? LingerMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.MessageSendMaxRetries"/>
-    /// </summary>
-    public int? MessageSendMaxRetries { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ClientConfig.RetryBackoffMs"/>
-    /// </summary>
-    public int? RetryBackoffMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.QueueBufferingBackpressureThreshold"/>
-    /// </summary>
-    public int? QueueBufferingBackpressureThreshold { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ProducerConfig.CompressionType"/>
-    /// </summary>
-    public CompressionType? CompressionType { get; set; }
+    public bool? TopicMetadataRefreshSparse { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ProducerConfig.BatchNumMessages"/>
@@ -480,14 +545,99 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public int? BatchSize { get; set; }
 
     /// <summary>
+    /// <inheritdoc cref="ProducerConfig.CompressionLevel"/>
+    /// </summary>
+    public int? CompressionLevel { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.CompressionType"/>
+    /// </summary>
+    public CompressionType? CompressionType { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.DeliveryReportFields"/>
+    /// </summary>
+    public string? DeliveryReportFields { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.EnableBackgroundPoll"/>
+    /// </summary>
+    public bool? EnableBackgroundPoll { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.EnableDeliveryReports"/>
+    /// </summary>
+    public bool? EnableDeliveryReports { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.EnableGaplessGuarantee"/>
+    /// </summary>
+    public bool? EnableGaplessGuarantee { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.EnableIdempotence"/>
+    /// </summary>
+    public bool? EnableIdempotence { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.LingerMs"/>
+    /// </summary>
+    public double? LingerMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.MessageSendMaxRetries"/>
+    /// </summary>
+    public int? MessageSendMaxRetries { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.MessageTimeoutMs"/>
+    /// </summary>
+    public int? MessageTimeoutMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.Partitioner"/>
+    /// </summary>
+    public Partitioner? Partitioner { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.QueueBufferingBackpressureThreshold"/>
+    /// </summary>
+    public int? QueueBufferingBackpressureThreshold { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.QueueBufferingMaxKbytes"/>
+    /// </summary>
+    public int? QueueBufferingMaxKbytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.QueueBufferingMaxMessages"/>
+    /// </summary>
+    public int? QueueBufferingMaxMessages { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.RequestTimeoutMs"/>
+    /// </summary>
+    public int? RequestTimeoutMs { get; set; }
+
+    /// <summary>
     /// <inheritdoc cref="ProducerConfig.StickyPartitioningLingerMs"/>
     /// </summary>
     public int? StickyPartitioningLingerMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.ConsumeResultFields"/>
+    /// <inheritdoc cref="ProducerConfig.TransactionTimeoutMs"/>
     /// </summary>
-    public string? ConsumeResultFields { get; set; }
+    public int? TransactionTimeoutMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ProducerConfig.TransactionalId"/>
+    /// </summary>
+    public string? TransactionalId { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.AutoCommitIntervalMs"/>
+    /// </summary>
+    public int? AutoCommitIntervalMs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.AutoOffsetReset"/>
@@ -495,39 +645,19 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public AutoOffsetReset? AutoOffsetReset { get; set; } = Confluent.Kafka.AutoOffsetReset.Earliest;
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.GroupInstanceId"/>
+    /// <inheritdoc cref="ConsumerConfig.CheckCrcs"/>
     /// </summary>
-    public string? GroupInstanceId { get; set; }
+    public bool? CheckCrcs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.PartitionAssignmentStrategy"/>
+    /// <inheritdoc cref="ConsumerConfig.ConsumeResultFields"/>
     /// </summary>
-    public PartitionAssignmentStrategy? PartitionAssignmentStrategy { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.SessionTimeoutMs"/>
-    /// </summary>
-    public int? SessionTimeoutMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.HeartbeatIntervalMs"/>
-    /// </summary>
-    public int? HeartbeatIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.GroupProtocolType"/>
-    /// </summary>
-    public string? GroupProtocolType { get; set; }
+    public string? ConsumeResultFields { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.CoordinatorQueryIntervalMs"/>
     /// </summary>
     public int? CoordinatorQueryIntervalMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.MaxPollIntervalMs"/>
-    /// </summary>
-    public int? MaxPollIntervalMs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.EnableAutoCommit"/>
@@ -540,24 +670,14 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public bool? EnableAutoOffsetStore { get; set; } = false;
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.QueuedMinMessages"/>
+    /// <inheritdoc cref="ConsumerConfig.EnablePartitionEof"/>
     /// </summary>
-    public int? QueuedMinMessages { get; set; }
+    public bool? EnablePartitionEof { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.QueuedMaxMessagesKbytes"/>
+    /// <inheritdoc cref="ConsumerConfig.FetchErrorBackoffMs"/>
     /// </summary>
-    public int? QueuedMaxMessagesKbytes { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.FetchWaitMaxMs"/>
-    /// </summary>
-    public int? FetchWaitMaxMs { get; set; }
-
-    /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.MaxPartitionFetchBytes"/>
-    /// </summary>
-    public int? MaxPartitionFetchBytes { get; set; }
+    public int? FetchErrorBackoffMs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.FetchMaxBytes"/>
@@ -570,9 +690,39 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public int? FetchMinBytes { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.FetchErrorBackoffMs"/>
+    /// <inheritdoc cref="ConsumerConfig.FetchQueueBackoffMs"/>
     /// </summary>
-    public int? FetchErrorBackoffMs { get; set; }
+    public int? FetchQueueBackoffMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.FetchWaitMaxMs"/>
+    /// </summary>
+    public int? FetchWaitMaxMs { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.GroupInstanceId"/>
+    /// </summary>
+    public string? GroupInstanceId { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.GroupProtocol"/>
+    /// </summary>
+    public GroupProtocol? GroupProtocol { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.GroupProtocolType"/>
+    /// </summary>
+    public string? GroupProtocolType { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.GroupRemoteAssignor"/>
+    /// </summary>
+    public string? GroupRemoteAssignor { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.HeartbeatIntervalMs"/>
+    /// </summary>
+    public int? HeartbeatIntervalMs { get; set; }
 
     /// <summary>
     /// <inheritdoc cref="ConsumerConfig.IsolationLevel"/>
@@ -580,19 +730,34 @@ public class KafkaMessageBusOptions : SharedMessageBusOptions
     public IsolationLevel? IsolationLevel { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.EnablePartitionEof"/>
+    /// <inheritdoc cref="ConsumerConfig.MaxPartitionFetchBytes"/>
     /// </summary>
-    public bool? EnablePartitionEof { get; set; }
+    public int? MaxPartitionFetchBytes { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ConsumerConfig.EnablePartitionEof"/>
+    /// <inheritdoc cref="ConsumerConfig.MaxPollIntervalMs"/>
     /// </summary>
-    public bool? CheckCrcs { get; set; }
+    public int? MaxPollIntervalMs { get; set; }
 
     /// <summary>
-    /// <inheritdoc cref="ClientConfig.AllowAutoCreateTopics"/>
+    /// <inheritdoc cref="ConsumerConfig.PartitionAssignmentStrategy"/>
     /// </summary>
-    public bool? AllowAutoCreateTopics { get; set; }
+    public PartitionAssignmentStrategy? PartitionAssignmentStrategy { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.QueuedMaxMessagesKbytes"/>
+    /// </summary>
+    public int? QueuedMaxMessagesKbytes { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.QueuedMinMessages"/>
+    /// </summary>
+    public int? QueuedMinMessages { get; set; }
+
+    /// <summary>
+    /// <inheritdoc cref="ConsumerConfig.SessionTimeoutMs"/>
+    /// </summary>
+    public int? SessionTimeoutMs { get; set; }
 }
 
 public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<KafkaMessageBusOptions, KafkaMessageBusOptionsBuilder>
@@ -625,83 +790,11 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.AutoCommitIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder AutoCommitIntervalMs(int autoCommitIntervalMs)
-    {
-        Target.AutoCommitIntervalMs = autoCommitIntervalMs;
-        return this;
-    }
-
-    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.PublishKey"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder PublishKey(string publishKey)
     {
         Target.PublishKey = publishKey ?? throw new ArgumentNullException(nameof(publishKey));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCertificateLocation"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCertificateLocation(string sslCertificateLocation)
-    {
-        Target.SslCertificateLocation = sslCertificateLocation ?? throw new ArgumentNullException(nameof(sslCertificateLocation));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslMechanism"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslMechanism(SaslMechanism? saslMechanism)
-    {
-        Target.SaslMechanism = saslMechanism ?? throw new ArgumentNullException(nameof(saslMechanism));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslUsername"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslUsername(string saslUsername)
-    {
-        Target.SaslUsername = saslUsername ?? throw new ArgumentNullException(nameof(saslUsername));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslPassword"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslPassword(string saslPassword)
-    {
-        Target.SaslPassword = saslPassword ?? throw new ArgumentNullException(nameof(saslPassword));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaLocation"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCaLocation(string sslCaLocation)
-    {
-        Target.SslCaLocation = sslCaLocation ?? throw new ArgumentNullException(nameof(sslCaLocation));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SecurityProtocol"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SecurityProtocol(SecurityProtocol? securityProtocol)
-    {
-        Target.SecurityProtocol = securityProtocol ?? throw new ArgumentNullException(nameof(securityProtocol));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.AutoCommitIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder AutoCommitIntervalMs(int? autoCommitIntervalMs)
-    {
-        Target.AutoCommitIntervalMs = autoCommitIntervalMs ?? throw new ArgumentNullException(nameof(autoCommitIntervalMs));
         return this;
     }
 
@@ -724,60 +817,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.Acks"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder Acks(Acks? acks)
-    {
-        Target.Acks = acks ?? throw new ArgumentNullException(nameof(acks));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ClientId"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder ClientId(string clientId)
-    {
-        Target.ClientId = clientId ?? throw new ArgumentNullException(nameof(clientId));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MessageMaxBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MessageMaxBytes(int? messageMaxBytes)
-    {
-        Target.MessageMaxBytes = messageMaxBytes ?? throw new ArgumentNullException(nameof(messageMaxBytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MessageCopyMaxBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MessageCopyMaxBytes(int? messageCopyMaxBytes)
-    {
-        Target.MessageCopyMaxBytes = messageCopyMaxBytes ?? throw new ArgumentNullException(nameof(messageCopyMaxBytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ReceiveMessageMaxBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder ReceiveMessageMaxBytes(int? receiveMessageMaxBytes)
-    {
-        Target.ReceiveMessageMaxBytes = receiveMessageMaxBytes ?? throw new ArgumentNullException(nameof(receiveMessageMaxBytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MaxInFlight"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MaxInFlight(int? maxInFlight)
-    {
-        Target.MaxInFlight = maxInFlight ?? throw new ArgumentNullException(nameof(maxInFlight));
-        return this;
-    }
-
-    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.TopicConfigs"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder TopicConfigs(Dictionary<string, string> topicConfigs)
@@ -796,123 +835,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshIntervalMs(int? topicMetadataRefreshIntervalMs)
-    {
-        Target.TopicMetadataRefreshIntervalMs = topicMetadataRefreshIntervalMs ?? throw new ArgumentNullException(nameof(topicMetadataRefreshIntervalMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MetadataMaxAgeMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MetadataMaxAgeMs(int? metadataMaxAgeMs)
-    {
-        Target.MetadataMaxAgeMs = metadataMaxAgeMs ?? throw new ArgumentNullException(nameof(metadataMaxAgeMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshFastIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshFastIntervalMs(int? topicMetadataRefreshFastIntervalMs)
-    {
-        Target.TopicMetadataRefreshFastIntervalMs = topicMetadataRefreshFastIntervalMs ?? throw new ArgumentNullException(nameof(topicMetadataRefreshFastIntervalMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshSparse"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshSparse(bool? topicMetadataRefreshSparse)
-    {
-        Target.TopicMetadataRefreshSparse = topicMetadataRefreshSparse ?? throw new ArgumentNullException(nameof(topicMetadataRefreshSparse));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataPropagationMaxMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TopicMetadataPropagationMaxMs(int? topicMetadataPropagationMaxMs)
-    {
-        Target.TopicMetadataPropagationMaxMs = topicMetadataPropagationMaxMs ?? throw new ArgumentNullException(nameof(topicMetadataPropagationMaxMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TopicBlacklist"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TopicBlacklist(string topicBlacklist)
-    {
-        Target.TopicBlacklist = topicBlacklist ?? throw new ArgumentNullException(nameof(topicBlacklist));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.Debug"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder Debug(string debug)
-    {
-        Target.Debug = debug ?? throw new ArgumentNullException(nameof(debug));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketTimeoutMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketTimeoutMs(int? socketTimeoutMs)
-    {
-        Target.SocketTimeoutMs = socketTimeoutMs ?? throw new ArgumentNullException(nameof(socketTimeoutMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketSendBufferBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketSendBufferBytes(int? socketSendBufferBytes)
-    {
-        Target.SocketSendBufferBytes = socketSendBufferBytes ?? throw new ArgumentNullException(nameof(socketSendBufferBytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketReceiveBufferBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketReceiveBufferBytes(int? socketReceiveBufferBytes)
-    {
-        Target.SocketReceiveBufferBytes = socketReceiveBufferBytes ?? throw new ArgumentNullException(nameof(socketReceiveBufferBytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketKeepaliveEnable"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketKeepaliveEnable(bool? socketKeepaliveEnable)
-    {
-        Target.SocketKeepaliveEnable = socketKeepaliveEnable ?? throw new ArgumentNullException(nameof(socketKeepaliveEnable));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketNagleDisable"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketNagleDisable(bool? socketNagleDisable)
-    {
-        Target.SocketNagleDisable = socketNagleDisable ?? throw new ArgumentNullException(nameof(socketNagleDisable));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SocketMaxFails"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SocketMaxFails(int? socketMaxFails)
-    {
-        Target.SocketMaxFails = socketMaxFails ?? throw new ArgumentNullException(nameof(socketMaxFails));
-        return this;
-    }
-
-    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.BootstrapServers"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder BrokerAddressTtl(int? brokerAddressTtl)
@@ -922,92 +844,29 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.BrokerAddressFamily"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.Acks"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder BrokerAddressFamily(BrokerAddressFamily? brokerAddressFamily)
+    public KafkaMessageBusOptionsBuilder Acks(Acks? acks)
     {
-        Target.BrokerAddressFamily = brokerAddressFamily ?? throw new ArgumentNullException(nameof(brokerAddressFamily));
+        Target.Acks = acks ?? throw new ArgumentNullException(nameof(acks));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ConnectionsMaxIdleMs"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.AllowAutoCreateTopics"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder ConnectionsMaxIdleMs(int? connectionsMaxIdleMs)
+    public KafkaMessageBusOptionsBuilder AllowAutoCreateTopics(bool? allowAutoCreateTopics)
     {
-        Target.ConnectionsMaxIdleMs = connectionsMaxIdleMs ?? throw new ArgumentNullException(nameof(connectionsMaxIdleMs));
+        Target.AllowAutoCreateTopics = allowAutoCreateTopics ?? throw new ArgumentNullException(nameof(allowAutoCreateTopics));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ReconnectBackoffMs"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ApiVersionFallbackMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder ReconnectBackoffMs(int? reconnectBackoffMs)
+    public KafkaMessageBusOptionsBuilder ApiVersionFallbackMs(int? apiVersionFallbackMs)
     {
-        Target.ReconnectBackoffMs = reconnectBackoffMs ?? throw new ArgumentNullException(nameof(reconnectBackoffMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ReconnectBackoffMaxMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder ReconnectBackoffMaxMs(int? reconnectBackoffMaxMs)
-    {
-        Target.ReconnectBackoffMaxMs = reconnectBackoffMaxMs ?? throw new ArgumentNullException(nameof(reconnectBackoffMaxMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.StatisticsIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder StatisticsIntervalMs(int? statisticsIntervalMs)
-    {
-        Target.StatisticsIntervalMs = statisticsIntervalMs ?? throw new ArgumentNullException(nameof(statisticsIntervalMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.LogQueue"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder LogQueue(bool? logQueue)
-    {
-        Target.LogQueue = logQueue ?? throw new ArgumentNullException(nameof(logQueue));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.LogThreadName"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder LogThreadName(bool? logThreadName)
-    {
-        Target.LogThreadName = logThreadName ?? throw new ArgumentNullException(nameof(logThreadName));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableRandomSeed"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableRandomSeed(bool? enableRandomSeed)
-    {
-        Target.EnableRandomSeed = enableRandomSeed ?? throw new ArgumentNullException(nameof(enableRandomSeed));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.LogConnectionClose"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder LogConnectionClose(bool? logConnectionClose)
-    {
-        Target.LogConnectionClose = logConnectionClose ?? throw new ArgumentNullException(nameof(logConnectionClose));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.InternalTerminationSignal"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder InternalTerminationSignal(int? internalTerminationSignal)
-    {
-        Target.InternalTerminationSignal = internalTerminationSignal ?? throw new ArgumentNullException(nameof(internalTerminationSignal));
+        Target.ApiVersionFallbackMs = apiVersionFallbackMs ?? throw new ArgumentNullException(nameof(apiVersionFallbackMs));
         return this;
     }
 
@@ -1030,11 +889,11 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ApiVersionFallbackMs"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.BrokerAddressFamily"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder ApiVersionFallbackMs(int? apiVersionFallbackMs)
+    public KafkaMessageBusOptionsBuilder BrokerAddressFamily(BrokerAddressFamily? brokerAddressFamily)
     {
-        Target.ApiVersionFallbackMs = apiVersionFallbackMs ?? throw new ArgumentNullException(nameof(apiVersionFallbackMs));
+        Target.BrokerAddressFamily = brokerAddressFamily ?? throw new ArgumentNullException(nameof(brokerAddressFamily));
         return this;
     }
 
@@ -1048,11 +907,650 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ClientDnsLookup"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ClientDnsLookup(ClientDnsLookup? clientDnsLookup)
+    {
+        Target.ClientDnsLookup = clientDnsLookup;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ClientId"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ClientId(string clientId)
+    {
+        Target.ClientId = clientId ?? throw new ArgumentNullException(nameof(clientId));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ClientRack"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ClientRack(string clientRack)
+    {
+        Target.ClientRack = clientRack ?? throw new ArgumentNullException(nameof(clientRack));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ConnectionsMaxIdleMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ConnectionsMaxIdleMs(int? connectionsMaxIdleMs)
+    {
+        Target.ConnectionsMaxIdleMs = connectionsMaxIdleMs ?? throw new ArgumentNullException(nameof(connectionsMaxIdleMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.Debug"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder Debug(string debug)
+    {
+        Target.Debug = debug ?? throw new ArgumentNullException(nameof(debug));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableMetricsPush"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableMetricsPush(bool? enableMetricsPush)
+    {
+        Target.EnableMetricsPush = enableMetricsPush;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableRandomSeed"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableRandomSeed(bool? enableRandomSeed)
+    {
+        Target.EnableRandomSeed = enableRandomSeed ?? throw new ArgumentNullException(nameof(enableRandomSeed));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableSaslOauthbearerUnsecureJwt"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableSaslOauthbearerUnsecureJwt(bool? enableSaslOauthbearerUnsecureJwt)
+    {
+        Target.EnableSaslOauthbearerUnsecureJwt = enableSaslOauthbearerUnsecureJwt ?? throw new ArgumentNullException(nameof(enableSaslOauthbearerUnsecureJwt));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableSslCertificateVerification"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableSslCertificateVerification(bool? enableSslCertificateVerification)
+    {
+        Target.EnableSslCertificateVerification = enableSslCertificateVerification ?? throw new ArgumentNullException(nameof(enableSslCertificateVerification));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.HttpsCaLocation"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder HttpsCaLocation(string? httpsCaLocation)
+    {
+        Target.HttpsCaLocation = httpsCaLocation ?? throw new ArgumentNullException(nameof(httpsCaLocation));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.HttpsCaPem"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder HttpsCaPem(string? httpsCaPem)
+    {
+        Target.HttpsCaPem = httpsCaPem ?? throw new ArgumentNullException(nameof(httpsCaPem));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.InternalTerminationSignal"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder InternalTerminationSignal(int? internalTerminationSignal)
+    {
+        Target.InternalTerminationSignal = internalTerminationSignal ?? throw new ArgumentNullException(nameof(internalTerminationSignal));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.LogConnectionClose"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder LogConnectionClose(bool? logConnectionClose)
+    {
+        Target.LogConnectionClose = logConnectionClose ?? throw new ArgumentNullException(nameof(logConnectionClose));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.LogQueue"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder LogQueue(bool? logQueue)
+    {
+        Target.LogQueue = logQueue ?? throw new ArgumentNullException(nameof(logQueue));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.LogThreadName"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder LogThreadName(bool? logThreadName)
+    {
+        Target.LogThreadName = logThreadName ?? throw new ArgumentNullException(nameof(logThreadName));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MaxInFlight"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MaxInFlight(int? maxInFlight)
+    {
+        Target.MaxInFlight = maxInFlight ?? throw new ArgumentNullException(nameof(maxInFlight));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MessageCopyMaxBytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MessageCopyMaxBytes(int? messageCopyMaxBytes)
+    {
+        Target.MessageCopyMaxBytes = messageCopyMaxBytes ?? throw new ArgumentNullException(nameof(messageCopyMaxBytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MessageMaxBytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MessageMaxBytes(int? messageMaxBytes)
+    {
+        Target.MessageMaxBytes = messageMaxBytes ?? throw new ArgumentNullException(nameof(messageMaxBytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MetadataMaxAgeMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MetadataMaxAgeMs(int? metadataMaxAgeMs)
+    {
+        Target.MetadataMaxAgeMs = metadataMaxAgeMs ?? throw new ArgumentNullException(nameof(metadataMaxAgeMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MetadataRecoveryRebootstrapTriggerMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MetadataRecoveryRebootstrapTriggerMs(int? metadataRecoveryRebootstrapTriggerMs)
+    {
+        Target.MetadataRecoveryRebootstrapTriggerMs = metadataRecoveryRebootstrapTriggerMs;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MetadataRecoveryStrategy"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MetadataRecoveryStrategy(MetadataRecoveryStrategy? metadataRecoveryStrategy)
+    {
+        Target.MetadataRecoveryStrategy = metadataRecoveryStrategy;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.PluginLibraryPaths"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder PluginLibraryPaths(string pluginLibraryPaths)
+    {
+        Target.PluginLibraryPaths = pluginLibraryPaths ?? throw new ArgumentNullException(nameof(pluginLibraryPaths));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ReceiveMessageMaxBytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ReceiveMessageMaxBytes(int? receiveMessageMaxBytes)
+    {
+        Target.ReceiveMessageMaxBytes = receiveMessageMaxBytes ?? throw new ArgumentNullException(nameof(receiveMessageMaxBytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ReconnectBackoffMaxMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ReconnectBackoffMaxMs(int? reconnectBackoffMaxMs)
+    {
+        Target.ReconnectBackoffMaxMs = reconnectBackoffMaxMs ?? throw new ArgumentNullException(nameof(reconnectBackoffMaxMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ReconnectBackoffMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder ReconnectBackoffMs(int? reconnectBackoffMs)
+    {
+        Target.ReconnectBackoffMs = reconnectBackoffMs ?? throw new ArgumentNullException(nameof(reconnectBackoffMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.RetryBackoffMaxMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder RetryBackoffMaxMs(int? retryBackoffMaxMs)
+    {
+        Target.RetryBackoffMaxMs = retryBackoffMaxMs;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.RetryBackoffMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder RetryBackoffMs(int? retryBackoffMs)
+    {
+        Target.RetryBackoffMs = retryBackoffMs ?? throw new ArgumentNullException(nameof(retryBackoffMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosKeytab"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslKerberosKeytab(string saslKerberosKeytab)
+    {
+        Target.SaslKerberosKeytab = saslKerberosKeytab ?? throw new ArgumentNullException(nameof(saslKerberosKeytab));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosKinitCmd"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslKerberosKinitCmd(string saslKerberosKinitCmd)
+    {
+        Target.SaslKerberosKinitCmd = saslKerberosKinitCmd ?? throw new ArgumentNullException(nameof(saslKerberosKinitCmd));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosMinTimeBeforeRelogin"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslKerberosMinTimeBeforeRelogin(int? saslKerberosMinTimeBeforeRelogin)
+    {
+        Target.SaslKerberosMinTimeBeforeRelogin = saslKerberosMinTimeBeforeRelogin ?? throw new ArgumentNullException(nameof(saslKerberosMinTimeBeforeRelogin));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosPrincipal"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslKerberosPrincipal(string saslKerberosPrincipal)
+    {
+        Target.SaslKerberosPrincipal = saslKerberosPrincipal ?? throw new ArgumentNullException(nameof(saslKerberosPrincipal));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosServiceName"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslKerberosServiceName(string saslKerberosServiceName)
+    {
+        Target.SaslKerberosServiceName = saslKerberosServiceName ?? throw new ArgumentNullException(nameof(saslKerberosServiceName));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslMechanism"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslMechanism(SaslMechanism? saslMechanism)
+    {
+        Target.SaslMechanism = saslMechanism ?? throw new ArgumentNullException(nameof(saslMechanism));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionAlgorithm"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionAlgorithm(SaslOauthbearerAssertionAlgorithm? saslOauthbearerAssertionAlgorithm)
+    {
+        Target.SaslOauthbearerAssertionAlgorithm = saslOauthbearerAssertionAlgorithm;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimAud"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimAud(string? saslOauthbearerAssertionClaimAud)
+    {
+        Target.SaslOauthbearerAssertionClaimAud = saslOauthbearerAssertionClaimAud ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionClaimAud));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimExpSeconds"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimExpSeconds(int? saslOauthbearerAssertionClaimExpSeconds)
+    {
+        Target.SaslOauthbearerAssertionClaimExpSeconds = saslOauthbearerAssertionClaimExpSeconds;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimIss"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimIss(string? saslOauthbearerAssertionClaimIss)
+    {
+        Target.SaslOauthbearerAssertionClaimIss = saslOauthbearerAssertionClaimIss ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionClaimIss));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimJtiInclude"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimJtiInclude(bool? saslOauthbearerAssertionClaimJtiInclude)
+    {
+        Target.SaslOauthbearerAssertionClaimJtiInclude = saslOauthbearerAssertionClaimJtiInclude;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimNbfSeconds"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimNbfSeconds(int? saslOauthbearerAssertionClaimNbfSeconds)
+    {
+        Target.SaslOauthbearerAssertionClaimNbfSeconds = saslOauthbearerAssertionClaimNbfSeconds;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionClaimSub"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionClaimSub(string? saslOauthbearerAssertionClaimSub)
+    {
+        Target.SaslOauthbearerAssertionClaimSub = saslOauthbearerAssertionClaimSub ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionClaimSub));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionFile"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionFile(string? saslOauthbearerAssertionFile)
+    {
+        Target.SaslOauthbearerAssertionFile = saslOauthbearerAssertionFile ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionFile));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionJwtTemplateFile"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionJwtTemplateFile(string? saslOauthbearerAssertionJwtTemplateFile)
+    {
+        Target.SaslOauthbearerAssertionJwtTemplateFile = saslOauthbearerAssertionJwtTemplateFile ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionJwtTemplateFile));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionPrivateKeyFile"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionPrivateKeyFile(string? saslOauthbearerAssertionPrivateKeyFile)
+    {
+        Target.SaslOauthbearerAssertionPrivateKeyFile = saslOauthbearerAssertionPrivateKeyFile ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionPrivateKeyFile));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionPrivateKeyPassphrase"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionPrivateKeyPassphrase(string? saslOauthbearerAssertionPrivateKeyPassphrase)
+    {
+        Target.SaslOauthbearerAssertionPrivateKeyPassphrase = saslOauthbearerAssertionPrivateKeyPassphrase ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionPrivateKeyPassphrase));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerAssertionPrivateKeyPem"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerAssertionPrivateKeyPem(string? saslOauthbearerAssertionPrivateKeyPem)
+    {
+        Target.SaslOauthbearerAssertionPrivateKeyPem = saslOauthbearerAssertionPrivateKeyPem ?? throw new ArgumentNullException(nameof(saslOauthbearerAssertionPrivateKeyPem));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerClientId"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerClientId(string? saslOauthbearerClientId)
+    {
+        Target.SaslOauthbearerClientId = saslOauthbearerClientId ?? throw new ArgumentNullException(nameof(saslOauthbearerClientId));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerClientSecret"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerClientSecret(string? saslOauthbearerClientSecret)
+    {
+        Target.SaslOauthbearerClientSecret = saslOauthbearerClientSecret ?? throw new ArgumentNullException(nameof(saslOauthbearerClientSecret));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerConfig"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerConfig(string saslOauthbearerConfig)
+    {
+        Target.SaslOauthbearerConfig = saslOauthbearerConfig ?? throw new ArgumentNullException(nameof(saslOauthbearerConfig));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerExtensions"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerExtensions(string? saslOauthbearerExtensions)
+    {
+        Target.SaslOauthbearerExtensions = saslOauthbearerExtensions ?? throw new ArgumentNullException(nameof(saslOauthbearerExtensions));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerGrantType"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerGrantType(SaslOauthbearerGrantType? saslOauthbearerGrantType)
+    {
+        Target.SaslOauthbearerGrantType = saslOauthbearerGrantType;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerMetadataAuthenticationType"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerMetadataAuthenticationType(SaslOauthbearerMetadataAuthenticationType? saslOauthbearerMetadataAuthenticationType)
+    {
+        Target.SaslOauthbearerMetadataAuthenticationType = saslOauthbearerMetadataAuthenticationType;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerMethod"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerMethod(SaslOauthbearerMethod? saslOauthbearerMethod)
+    {
+        Target.SaslOauthbearerMethod = saslOauthbearerMethod;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerScope"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerScope(string? saslOauthbearerScope)
+    {
+        Target.SaslOauthbearerScope = saslOauthbearerScope ?? throw new ArgumentNullException(nameof(saslOauthbearerScope));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerSubClaimName"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerSubClaimName(string? saslOauthbearerSubClaimName)
+    {
+        Target.SaslOauthbearerSubClaimName = saslOauthbearerSubClaimName ?? throw new ArgumentNullException(nameof(saslOauthbearerSubClaimName));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerTokenEndpointUrl"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslOauthbearerTokenEndpointUrl(string? saslOauthbearerTokenEndpointUrl)
+    {
+        Target.SaslOauthbearerTokenEndpointUrl = saslOauthbearerTokenEndpointUrl ?? throw new ArgumentNullException(nameof(saslOauthbearerTokenEndpointUrl));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslPassword"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslPassword(string saslPassword)
+    {
+        Target.SaslPassword = saslPassword ?? throw new ArgumentNullException(nameof(saslPassword));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SaslUsername"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SaslUsername(string saslUsername)
+    {
+        Target.SaslUsername = saslUsername ?? throw new ArgumentNullException(nameof(saslUsername));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SecurityProtocol"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SecurityProtocol(SecurityProtocol? securityProtocol)
+    {
+        Target.SecurityProtocol = securityProtocol ?? throw new ArgumentNullException(nameof(securityProtocol));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketConnectionSetupTimeoutMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketConnectionSetupTimeoutMs(int? socketConnectionSetupTimeoutMs)
+    {
+        Target.SocketConnectionSetupTimeoutMs = socketConnectionSetupTimeoutMs;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketKeepaliveEnable"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketKeepaliveEnable(bool? socketKeepaliveEnable)
+    {
+        Target.SocketKeepaliveEnable = socketKeepaliveEnable ?? throw new ArgumentNullException(nameof(socketKeepaliveEnable));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketMaxFails"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketMaxFails(int? socketMaxFails)
+    {
+        Target.SocketMaxFails = socketMaxFails ?? throw new ArgumentNullException(nameof(socketMaxFails));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketNagleDisable"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketNagleDisable(bool? socketNagleDisable)
+    {
+        Target.SocketNagleDisable = socketNagleDisable ?? throw new ArgumentNullException(nameof(socketNagleDisable));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketReceiveBufferBytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketReceiveBufferBytes(int? socketReceiveBufferBytes)
+    {
+        Target.SocketReceiveBufferBytes = socketReceiveBufferBytes ?? throw new ArgumentNullException(nameof(socketReceiveBufferBytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketSendBufferBytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketSendBufferBytes(int? socketSendBufferBytes)
+    {
+        Target.SocketSendBufferBytes = socketSendBufferBytes ?? throw new ArgumentNullException(nameof(socketSendBufferBytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SocketTimeoutMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SocketTimeoutMs(int? socketTimeoutMs)
+    {
+        Target.SocketTimeoutMs = socketTimeoutMs ?? throw new ArgumentNullException(nameof(socketTimeoutMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaCertificateStores"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCaCertificateStores(string sslCaCertificateStores)
+    {
+        Target.SslCaCertificateStores = sslCaCertificateStores ?? throw new ArgumentNullException(nameof(sslCaCertificateStores));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaLocation"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCaLocation(string sslCaLocation)
+    {
+        Target.SslCaLocation = sslCaLocation ?? throw new ArgumentNullException(nameof(sslCaLocation));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaPem"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCaPem(string sslCaPem)
+    {
+        Target.SslCaPem = sslCaPem ?? throw new ArgumentNullException(nameof(sslCaPem));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCertificateLocation"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCertificateLocation(string sslCertificateLocation)
+    {
+        Target.SslCertificateLocation = sslCertificateLocation ?? throw new ArgumentNullException(nameof(sslCertificateLocation));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCertificatePem"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCertificatePem(string sslCertificatePem)
+    {
+        Target.SslCertificatePem = sslCertificatePem ?? throw new ArgumentNullException(nameof(sslCertificatePem));
+        return this;
+    }
+
+    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.SslCipherSuites"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder SslCipherSuites(string sslCipherSuites)
     {
         Target.SslCipherSuites = sslCipherSuites ?? throw new ArgumentNullException(nameof(sslCipherSuites));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslCrlLocation"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslCrlLocation(string sslCrlLocation)
+    {
+        Target.SslCrlLocation = sslCrlLocation ?? throw new ArgumentNullException(nameof(sslCrlLocation));
         return this;
     }
 
@@ -1066,11 +1564,29 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslSigalgsList"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslEndpointIdentificationAlgorithm"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SslSigalgsList(string sslSigalgsList)
+    public KafkaMessageBusOptionsBuilder SslEndpointIdentificationAlgorithm(SslEndpointIdentificationAlgorithm? sslEndpointIdentificationAlgorithm)
     {
-        Target.SslSigalgsList = sslSigalgsList ?? throw new ArgumentNullException(nameof(sslSigalgsList));
+        Target.SslEndpointIdentificationAlgorithm = sslEndpointIdentificationAlgorithm ?? throw new ArgumentNullException(nameof(sslEndpointIdentificationAlgorithm));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslEngineId"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslEngineId(string sslEngineId)
+    {
+        Target.SslEngineId = sslEngineId ?? throw new ArgumentNullException(nameof(sslEngineId));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslEngineLocation"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SslEngineLocation(string sslEngineLocation)
+    {
+        Target.SslEngineLocation = sslEngineLocation ?? throw new ArgumentNullException(nameof(sslEngineLocation));
         return this;
     }
 
@@ -1102,42 +1618,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCertificatePem"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCertificatePem(string sslCertificatePem)
-    {
-        Target.SslCertificatePem = sslCertificatePem ?? throw new ArgumentNullException(nameof(sslCertificatePem));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaPem"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCaPem(string sslCaPem)
-    {
-        Target.SslCaPem = sslCaPem ?? throw new ArgumentNullException(nameof(sslCaPem));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCaCertificateStores"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCaCertificateStores(string sslCaCertificateStores)
-    {
-        Target.SslCaCertificateStores = sslCaCertificateStores ?? throw new ArgumentNullException(nameof(sslCaCertificateStores));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslCrlLocation"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SslCrlLocation(string sslCrlLocation)
-    {
-        Target.SslCrlLocation = sslCrlLocation ?? throw new ArgumentNullException(nameof(sslCrlLocation));
-        return this;
-    }
-
-    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.SslKeystoreLocation"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder SslKeystoreLocation(string sslKeystoreLocation)
@@ -1156,281 +1636,74 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslEngineLocation"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslProviders"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SslEngineLocation(string sslEngineLocation)
+    public KafkaMessageBusOptionsBuilder SslProviders(string? sslProviders)
     {
-        Target.SslEngineLocation = sslEngineLocation ?? throw new ArgumentNullException(nameof(sslEngineLocation));
+        Target.SslProviders = sslProviders ?? throw new ArgumentNullException(nameof(sslProviders));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslEngineId"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SslSigalgsList"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SslEngineId(string sslEngineId)
+    public KafkaMessageBusOptionsBuilder SslSigalgsList(string sslSigalgsList)
     {
-        Target.SslEngineId = sslEngineId ?? throw new ArgumentNullException(nameof(sslEngineId));
+        Target.SslSigalgsList = sslSigalgsList ?? throw new ArgumentNullException(nameof(sslSigalgsList));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableSslCertificateVerification"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.StatisticsIntervalMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableSslCertificateVerification(bool? enableSslCertificateVerification)
+    public KafkaMessageBusOptionsBuilder StatisticsIntervalMs(int? statisticsIntervalMs)
     {
-        Target.EnableSslCertificateVerification = enableSslCertificateVerification ?? throw new ArgumentNullException(nameof(enableSslCertificateVerification));
+        Target.StatisticsIntervalMs = statisticsIntervalMs ?? throw new ArgumentNullException(nameof(statisticsIntervalMs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SslEndpointIdentificationAlgorithm"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TopicBlacklist"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SslEndpointIdentificationAlgorithm(SslEndpointIdentificationAlgorithm? sslEndpointIdentificationAlgorithm)
+    public KafkaMessageBusOptionsBuilder TopicBlacklist(string topicBlacklist)
     {
-        Target.SslEndpointIdentificationAlgorithm = sslEndpointIdentificationAlgorithm ?? throw new ArgumentNullException(nameof(sslEndpointIdentificationAlgorithm));
+        Target.TopicBlacklist = topicBlacklist ?? throw new ArgumentNullException(nameof(topicBlacklist));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosServiceName"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataPropagationMaxMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslKerberosServiceName(string saslKerberosServiceName)
+    public KafkaMessageBusOptionsBuilder TopicMetadataPropagationMaxMs(int? topicMetadataPropagationMaxMs)
     {
-        Target.SaslKerberosServiceName = saslKerberosServiceName ?? throw new ArgumentNullException(nameof(saslKerberosServiceName));
+        Target.TopicMetadataPropagationMaxMs = topicMetadataPropagationMaxMs ?? throw new ArgumentNullException(nameof(topicMetadataPropagationMaxMs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosPrincipal"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshFastIntervalMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslKerberosPrincipal(string saslKerberosPrincipal)
+    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshFastIntervalMs(int? topicMetadataRefreshFastIntervalMs)
     {
-        Target.SaslKerberosPrincipal = saslKerberosPrincipal ?? throw new ArgumentNullException(nameof(saslKerberosPrincipal));
+        Target.TopicMetadataRefreshFastIntervalMs = topicMetadataRefreshFastIntervalMs ?? throw new ArgumentNullException(nameof(topicMetadataRefreshFastIntervalMs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosKinitCmd"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshIntervalMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslKerberosKinitCmd(string saslKerberosKinitCmd)
+    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshIntervalMs(int? topicMetadataRefreshIntervalMs)
     {
-        Target.SaslKerberosKinitCmd = saslKerberosKinitCmd ?? throw new ArgumentNullException(nameof(saslKerberosKinitCmd));
+        Target.TopicMetadataRefreshIntervalMs = topicMetadataRefreshIntervalMs ?? throw new ArgumentNullException(nameof(topicMetadataRefreshIntervalMs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosKeytab"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TopicMetadataRefreshSparse"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslKerberosKeytab(string saslKerberosKeytab)
+    public KafkaMessageBusOptionsBuilder TopicMetadataRefreshSparse(bool? topicMetadataRefreshSparse)
     {
-        Target.SaslKerberosKeytab = saslKerberosKeytab ?? throw new ArgumentNullException(nameof(saslKerberosKeytab));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslKerberosMinTimeBeforeRelogin"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslKerberosMinTimeBeforeRelogin(int? saslKerberosMinTimeBeforeRelogin)
-    {
-        Target.SaslKerberosMinTimeBeforeRelogin = saslKerberosMinTimeBeforeRelogin ?? throw new ArgumentNullException(nameof(saslKerberosMinTimeBeforeRelogin));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SaslOauthbearerConfig"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SaslOauthbearerConfig(string saslOauthbearerConfig)
-    {
-        Target.SaslOauthbearerConfig = saslOauthbearerConfig ?? throw new ArgumentNullException(nameof(saslOauthbearerConfig));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableSaslOauthbearerUnsecureJwt"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableSaslOauthbearerUnsecureJwt(bool? enableSaslOauthbearerUnsecureJwt)
-    {
-        Target.EnableSaslOauthbearerUnsecureJwt = enableSaslOauthbearerUnsecureJwt ?? throw new ArgumentNullException(nameof(enableSaslOauthbearerUnsecureJwt));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.PluginLibraryPaths"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder PluginLibraryPaths(string pluginLibraryPaths)
-    {
-        Target.PluginLibraryPaths = pluginLibraryPaths ?? throw new ArgumentNullException(nameof(pluginLibraryPaths));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ClientRack"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder ClientRack(string clientRack)
-    {
-        Target.ClientRack = clientRack ?? throw new ArgumentNullException(nameof(clientRack));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableBackgroundPoll"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableBackgroundPoll(bool? enableBackgroundPoll)
-    {
-        Target.EnableBackgroundPoll = enableBackgroundPoll ?? throw new ArgumentNullException(nameof(enableBackgroundPoll));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableDeliveryReports"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableDeliveryReports(bool? enableDeliveryReports)
-    {
-        Target.EnableDeliveryReports = enableDeliveryReports ?? throw new ArgumentNullException(nameof(enableDeliveryReports));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.DeliveryReportFields"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder DeliveryReportFields(string deliveryReportFields)
-    {
-        Target.DeliveryReportFields = deliveryReportFields ?? throw new ArgumentNullException(nameof(deliveryReportFields));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.RequestTimeoutMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder RequestTimeoutMs(int? requestTimeoutMs)
-    {
-        Target.RequestTimeoutMs = requestTimeoutMs ?? throw new ArgumentNullException(nameof(requestTimeoutMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MessageTimeoutMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MessageTimeoutMs(int? messageTimeoutMs)
-    {
-        Target.MessageTimeoutMs = messageTimeoutMs ?? throw new ArgumentNullException(nameof(messageTimeoutMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.Partitioner"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder Partitioner(Partitioner? partitioner)
-    {
-        Target.Partitioner = partitioner ?? throw new ArgumentNullException(nameof(partitioner));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.CompressionLevel"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder CompressionLevel(int? compressionLevel)
-    {
-        Target.CompressionLevel = compressionLevel ?? throw new ArgumentNullException(nameof(compressionLevel));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TransactionalId"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TransactionalId(string transactionalId)
-    {
-        Target.TransactionalId = transactionalId ?? throw new ArgumentNullException(nameof(transactionalId));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.TransactionTimeoutMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder TransactionTimeoutMs(int? transactionTimeoutMs)
-    {
-        Target.TransactionTimeoutMs = transactionTimeoutMs ?? throw new ArgumentNullException(nameof(transactionTimeoutMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableIdempotence"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableIdempotence(bool? enableIdempotence)
-    {
-        Target.EnableIdempotence = enableIdempotence ?? throw new ArgumentNullException(nameof(enableIdempotence));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnableGaplessGuarantee"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder EnableGaplessGuarantee(bool? enableGaplessGuarantee)
-    {
-        Target.EnableGaplessGuarantee = enableGaplessGuarantee ?? throw new ArgumentNullException(nameof(enableGaplessGuarantee));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingMaxMessages"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder QueueBufferingMaxMessages(int? queueBufferingMaxMessages)
-    {
-        Target.QueueBufferingMaxMessages = queueBufferingMaxMessages ?? throw new ArgumentNullException(nameof(queueBufferingMaxMessages));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingMaxKbytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder QueueBufferingMaxKbytes(int? queueBufferingMaxKbytes)
-    {
-        Target.QueueBufferingMaxKbytes = queueBufferingMaxKbytes ?? throw new ArgumentNullException(nameof(queueBufferingMaxKbytes));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.LingerMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder LingerMs(double? lingerMs)
-    {
-        Target.LingerMs = lingerMs ?? throw new ArgumentNullException(nameof(lingerMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MessageSendMaxRetries"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MessageSendMaxRetries(int? messageSendMaxRetries)
-    {
-        Target.MessageSendMaxRetries = messageSendMaxRetries ?? throw new ArgumentNullException(nameof(messageSendMaxRetries));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.RetryBackoffMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder RetryBackoffMs(int? retryBackoffMs)
-    {
-        Target.RetryBackoffMs = retryBackoffMs ?? throw new ArgumentNullException(nameof(retryBackoffMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingBackpressureThreshold"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder QueueBufferingBackpressureThreshold(int? queueBufferingBackpressureThreshold)
-    {
-        Target.QueueBufferingBackpressureThreshold = queueBufferingBackpressureThreshold ?? throw new ArgumentNullException(nameof(queueBufferingBackpressureThreshold));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.CompressionType"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder CompressionType(CompressionType? compressionType)
-    {
-        Target.CompressionType = compressionType ?? throw new ArgumentNullException(nameof(compressionType));
+        Target.TopicMetadataRefreshSparse = topicMetadataRefreshSparse ?? throw new ArgumentNullException(nameof(topicMetadataRefreshSparse));
         return this;
     }
 
@@ -1453,6 +1726,141 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.CompressionLevel"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder CompressionLevel(int? compressionLevel)
+    {
+        Target.CompressionLevel = compressionLevel ?? throw new ArgumentNullException(nameof(compressionLevel));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.CompressionType"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder CompressionType(CompressionType? compressionType)
+    {
+        Target.CompressionType = compressionType ?? throw new ArgumentNullException(nameof(compressionType));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.DeliveryReportFields"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder DeliveryReportFields(string deliveryReportFields)
+    {
+        Target.DeliveryReportFields = deliveryReportFields ?? throw new ArgumentNullException(nameof(deliveryReportFields));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableBackgroundPoll"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableBackgroundPoll(bool? enableBackgroundPoll)
+    {
+        Target.EnableBackgroundPoll = enableBackgroundPoll ?? throw new ArgumentNullException(nameof(enableBackgroundPoll));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableDeliveryReports"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableDeliveryReports(bool? enableDeliveryReports)
+    {
+        Target.EnableDeliveryReports = enableDeliveryReports ?? throw new ArgumentNullException(nameof(enableDeliveryReports));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableGaplessGuarantee"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableGaplessGuarantee(bool? enableGaplessGuarantee)
+    {
+        Target.EnableGaplessGuarantee = enableGaplessGuarantee ?? throw new ArgumentNullException(nameof(enableGaplessGuarantee));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnableIdempotence"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder EnableIdempotence(bool? enableIdempotence)
+    {
+        Target.EnableIdempotence = enableIdempotence ?? throw new ArgumentNullException(nameof(enableIdempotence));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.LingerMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder LingerMs(double? lingerMs)
+    {
+        Target.LingerMs = lingerMs ?? throw new ArgumentNullException(nameof(lingerMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MessageSendMaxRetries"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MessageSendMaxRetries(int? messageSendMaxRetries)
+    {
+        Target.MessageSendMaxRetries = messageSendMaxRetries ?? throw new ArgumentNullException(nameof(messageSendMaxRetries));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MessageTimeoutMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder MessageTimeoutMs(int? messageTimeoutMs)
+    {
+        Target.MessageTimeoutMs = messageTimeoutMs ?? throw new ArgumentNullException(nameof(messageTimeoutMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.Partitioner"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder Partitioner(Partitioner? partitioner)
+    {
+        Target.Partitioner = partitioner ?? throw new ArgumentNullException(nameof(partitioner));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingBackpressureThreshold"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder QueueBufferingBackpressureThreshold(int? queueBufferingBackpressureThreshold)
+    {
+        Target.QueueBufferingBackpressureThreshold = queueBufferingBackpressureThreshold ?? throw new ArgumentNullException(nameof(queueBufferingBackpressureThreshold));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingMaxKbytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder QueueBufferingMaxKbytes(int? queueBufferingMaxKbytes)
+    {
+        Target.QueueBufferingMaxKbytes = queueBufferingMaxKbytes ?? throw new ArgumentNullException(nameof(queueBufferingMaxKbytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.QueueBufferingMaxMessages"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder QueueBufferingMaxMessages(int? queueBufferingMaxMessages)
+    {
+        Target.QueueBufferingMaxMessages = queueBufferingMaxMessages ?? throw new ArgumentNullException(nameof(queueBufferingMaxMessages));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.RequestTimeoutMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder RequestTimeoutMs(int? requestTimeoutMs)
+    {
+        Target.RequestTimeoutMs = requestTimeoutMs ?? throw new ArgumentNullException(nameof(requestTimeoutMs));
+        return this;
+    }
+
+    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.StickyPartitioningLingerMs"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder StickyPartitioningLingerMs(int? stickyPartitioningLingerMs)
@@ -1462,11 +1870,29 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.ConsumeResultFields"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TransactionTimeoutMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder ConsumeResultFields(string consumeResultFields)
+    public KafkaMessageBusOptionsBuilder TransactionTimeoutMs(int? transactionTimeoutMs)
     {
-        Target.ConsumeResultFields = consumeResultFields ?? throw new ArgumentNullException(nameof(consumeResultFields));
+        Target.TransactionTimeoutMs = transactionTimeoutMs ?? throw new ArgumentNullException(nameof(transactionTimeoutMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.TransactionalId"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder TransactionalId(string transactionalId)
+    {
+        Target.TransactionalId = transactionalId ?? throw new ArgumentNullException(nameof(transactionalId));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.AutoCommitIntervalMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder AutoCommitIntervalMs(int autoCommitIntervalMs)
+    {
+        Target.AutoCommitIntervalMs = autoCommitIntervalMs;
         return this;
     }
 
@@ -1480,47 +1906,20 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.GroupInstanceId"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.CheckCrcs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder GroupInstanceId(string groupInstanceId)
+    public KafkaMessageBusOptionsBuilder CheckCrcs(bool? checkCrcs)
     {
-        Target.GroupInstanceId = groupInstanceId ?? throw new ArgumentNullException(nameof(groupInstanceId));
+        Target.CheckCrcs = checkCrcs ?? throw new ArgumentNullException(nameof(checkCrcs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.PartitionAssignmentStrategy"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.ConsumeResultFields"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder PartitionAssignmentStrategy(PartitionAssignmentStrategy? partitionAssignmentStrategy)
+    public KafkaMessageBusOptionsBuilder ConsumeResultFields(string consumeResultFields)
     {
-        Target.PartitionAssignmentStrategy = partitionAssignmentStrategy ?? throw new ArgumentNullException(nameof(partitionAssignmentStrategy));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.SessionTimeoutMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder SessionTimeoutMs(int? sessionTimeoutMs)
-    {
-        Target.SessionTimeoutMs = sessionTimeoutMs ?? throw new ArgumentNullException(nameof(sessionTimeoutMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.HeartbeatIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder HeartbeatIntervalMs(int? heartbeatIntervalMs)
-    {
-        Target.HeartbeatIntervalMs = heartbeatIntervalMs ?? throw new ArgumentNullException(nameof(heartbeatIntervalMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.GroupProtocolType"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder GroupProtocolType(string groupProtocolType)
-    {
-        Target.GroupProtocolType = groupProtocolType ?? throw new ArgumentNullException(nameof(groupProtocolType));
+        Target.ConsumeResultFields = consumeResultFields ?? throw new ArgumentNullException(nameof(consumeResultFields));
         return this;
     }
 
@@ -1530,15 +1929,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     public KafkaMessageBusOptionsBuilder CoordinatorQueryIntervalMs(int? coordinatorQueryIntervalMs)
     {
         Target.CoordinatorQueryIntervalMs = coordinatorQueryIntervalMs ?? throw new ArgumentNullException(nameof(coordinatorQueryIntervalMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MaxPollIntervalMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MaxPollIntervalMs(int? maxPollIntervalMs)
-    {
-        Target.MaxPollIntervalMs = maxPollIntervalMs ?? throw new ArgumentNullException(nameof(maxPollIntervalMs));
         return this;
     }
 
@@ -1561,20 +1951,11 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.QueuedMinMessages"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.EnablePartitionEof"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder QueuedMinMessages(int? queuedMinMessages)
+    public KafkaMessageBusOptionsBuilder EnablePartitionEof(bool? enablePartitionEof)
     {
-        Target.QueuedMinMessages = queuedMinMessages ?? throw new ArgumentNullException(nameof(queuedMinMessages));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.QueuedMaxMessagesKbytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder QueuedMaxMessagesKbytes(int? queuedMaxMessagesKbytes)
-    {
-        Target.QueuedMaxMessagesKbytes = queuedMaxMessagesKbytes ?? throw new ArgumentNullException(nameof(queuedMaxMessagesKbytes));
+        Target.EnablePartitionEof = enablePartitionEof ?? throw new ArgumentNullException(nameof(enablePartitionEof));
         return this;
     }
 
@@ -1584,24 +1965,6 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     public KafkaMessageBusOptionsBuilder FetchErrorBackoffMs(int? fetchErrorBackoffMs)
     {
         Target.FetchErrorBackoffMs = fetchErrorBackoffMs ?? throw new ArgumentNullException(nameof(fetchErrorBackoffMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.FetchWaitMaxMs"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder FetchWaitMaxMs(int? fetchWaitMaxMs)
-    {
-        Target.FetchWaitMaxMs = fetchWaitMaxMs ?? throw new ArgumentNullException(nameof(fetchWaitMaxMs));
-        return this;
-    }
-
-    /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.MaxPartitionFetchBytes"/>
-    /// </summary>
-    public KafkaMessageBusOptionsBuilder MaxPartitionFetchBytes(int? maxPartitionFetchBytes)
-    {
-        Target.MaxPartitionFetchBytes = maxPartitionFetchBytes ?? throw new ArgumentNullException(nameof(maxPartitionFetchBytes));
         return this;
     }
 
@@ -1624,6 +1987,69 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.FetchQueueBackoffMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder FetchQueueBackoffMs(int? fetchQueueBackoffMs)
+    {
+        Target.FetchQueueBackoffMs = fetchQueueBackoffMs;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.FetchWaitMaxMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder FetchWaitMaxMs(int? fetchWaitMaxMs)
+    {
+        Target.FetchWaitMaxMs = fetchWaitMaxMs ?? throw new ArgumentNullException(nameof(fetchWaitMaxMs));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.GroupInstanceId"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder GroupInstanceId(string groupInstanceId)
+    {
+        Target.GroupInstanceId = groupInstanceId ?? throw new ArgumentNullException(nameof(groupInstanceId));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.GroupProtocol"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder GroupProtocol(GroupProtocol? groupProtocol)
+    {
+        Target.GroupProtocol = groupProtocol;
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.GroupProtocolType"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder GroupProtocolType(string groupProtocolType)
+    {
+        Target.GroupProtocolType = groupProtocolType ?? throw new ArgumentNullException(nameof(groupProtocolType));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.GroupRemoteAssignor"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder GroupRemoteAssignor(string? groupRemoteAssignor)
+    {
+        Target.GroupRemoteAssignor = groupRemoteAssignor ?? throw new ArgumentNullException(nameof(groupRemoteAssignor));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.HeartbeatIntervalMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder HeartbeatIntervalMs(int? heartbeatIntervalMs)
+    {
+        Target.HeartbeatIntervalMs = heartbeatIntervalMs ?? throw new ArgumentNullException(nameof(heartbeatIntervalMs));
+        return this;
+    }
+
+    /// <summary>
     /// <inheritdoc cref="KafkaMessageBusOptions.IsolationLevel"/>
     /// </summary>
     public KafkaMessageBusOptionsBuilder IsolationLevel(IsolationLevel? isolationLevel)
@@ -1633,29 +2059,56 @@ public class KafkaMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<Kafk
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.EnablePartitionEof"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MaxPartitionFetchBytes"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder EnablePartitionEof(bool? enablePartitionEof)
+    public KafkaMessageBusOptionsBuilder MaxPartitionFetchBytes(int? maxPartitionFetchBytes)
     {
-        Target.EnablePartitionEof = enablePartitionEof ?? throw new ArgumentNullException(nameof(enablePartitionEof));
+        Target.MaxPartitionFetchBytes = maxPartitionFetchBytes ?? throw new ArgumentNullException(nameof(maxPartitionFetchBytes));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.CheckCrcs"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.MaxPollIntervalMs"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder CheckCrcs(bool? checkCrcs)
+    public KafkaMessageBusOptionsBuilder MaxPollIntervalMs(int? maxPollIntervalMs)
     {
-        Target.CheckCrcs = checkCrcs ?? throw new ArgumentNullException(nameof(checkCrcs));
+        Target.MaxPollIntervalMs = maxPollIntervalMs ?? throw new ArgumentNullException(nameof(maxPollIntervalMs));
         return this;
     }
 
     /// <summary>
-    /// <inheritdoc cref="KafkaMessageBusOptions.AllowAutoCreateTopics"/>
+    /// <inheritdoc cref="KafkaMessageBusOptions.PartitionAssignmentStrategy"/>
     /// </summary>
-    public KafkaMessageBusOptionsBuilder AllowAutoCreateTopics(bool? allowAutoCreateTopics)
+    public KafkaMessageBusOptionsBuilder PartitionAssignmentStrategy(PartitionAssignmentStrategy? partitionAssignmentStrategy)
     {
-        Target.AllowAutoCreateTopics = allowAutoCreateTopics ?? throw new ArgumentNullException(nameof(allowAutoCreateTopics));
+        Target.PartitionAssignmentStrategy = partitionAssignmentStrategy ?? throw new ArgumentNullException(nameof(partitionAssignmentStrategy));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.QueuedMaxMessagesKbytes"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder QueuedMaxMessagesKbytes(int? queuedMaxMessagesKbytes)
+    {
+        Target.QueuedMaxMessagesKbytes = queuedMaxMessagesKbytes ?? throw new ArgumentNullException(nameof(queuedMaxMessagesKbytes));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.QueuedMinMessages"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder QueuedMinMessages(int? queuedMinMessages)
+    {
+        Target.QueuedMinMessages = queuedMinMessages ?? throw new ArgumentNullException(nameof(queuedMinMessages));
+        return this;
+    }
+
+    /// <summary>
+    /// <inheritdoc cref="KafkaMessageBusOptions.SessionTimeoutMs"/>
+    /// </summary>
+    public KafkaMessageBusOptionsBuilder SessionTimeoutMs(int? sessionTimeoutMs)
+    {
+        Target.SessionTimeoutMs = sessionTimeoutMs ?? throw new ArgumentNullException(nameof(sessionTimeoutMs));
         return this;
     }
 }
