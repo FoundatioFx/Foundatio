@@ -27,8 +27,8 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     private readonly AsyncLock _lock = new();
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private bool _isDisposed;
-    private bool _scriptsLoaded;
-    private bool? _supportsMsetEx;
+    private volatile bool _scriptsLoaded;
+    private readonly RedisCapabilities _capabilities;
 
     private LoadedLuaScript? _incrementWithExpire;
     private LoadedLuaScript? _removeIfEqual;
@@ -48,6 +48,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
         options.Serializer ??= DefaultSerializer.Instance;
         _logger = options.LoggerFactory?.CreateLogger(typeof(RedisCacheClient)) ?? NullLogger.Instance;
+        _capabilities = new RedisCapabilities(_connectionMultiplexer, _logger);
 
         _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
         _connectionMultiplexer.ConnectionFailed += ConnectionMultiplexerOnConnectionFailed;
@@ -642,7 +643,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         if (expiresIn.HasValue)
         {
             // With expiration: use MSETEX if available, otherwise fall back to pipelined SETs
-            if (SupportsMsetexCommand())
+            if (_capabilities.SupportsMsetex)
             {
                 bool success = await Database.StringSetAsync(pairs, When.Always, new Expiration(expiresIn.Value)).AnyContext();
                 return success ? pairs.Length : 0;
@@ -662,73 +663,6 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
         // No expiration: use MSET (available since Redis 1.0.1) - single atomic batch operation
         bool msetSuccess = await Database.StringSetAsync(pairs).AnyContext();
         return msetSuccess ? pairs.Length : 0;
-    }
-
-    /// <summary>
-    /// Checks if the connected Redis server supports the MSETEX command (Redis 8.4+).
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// MSETEX allows setting multiple keys with expiration in a single atomic operation.
-    /// StackExchange.Redis 2.10.1+ supports this via the <c>StringSetAsync</c> overload that
-    /// accepts an <see cref="Expiration"/> parameter. However, SE.Redis does NOT automatically
-    /// fall back to individual SET commands on older Redis versions - it will fail.
-    /// </para>
-    /// <para>
-    /// This method detects the Redis server version and caches the result. The cache is
-    /// invalidated when the connection is restored (e.g., after failover to a different server).
-    /// </para>
-    /// <para>
-    /// Note: For batch sets WITHOUT expiration, use <c>StringSetAsync(pairs, When, CommandFlags)</c>
-    /// which uses MSET - available since Redis 1.0.1 and doesn't require version detection.
-    /// MSET replaces existing values and removes any existing TTL, just like regular SET.
-    /// </para>
-    /// </remarks>
-    /// <returns>
-    /// <c>true</c> if all connected primary servers support MSETEX;
-    /// <c>false</c> if any primary is running Redis &lt; 8.4 or no primaries are connected.
-    /// </returns>
-    private bool SupportsMsetexCommand()
-    {
-        if (_supportsMsetEx.HasValue)
-            return _supportsMsetEx.Value;
-
-        // Redis 8.4 RC1 is internally versioned as 8.3.224
-        var minVersion = new Version(8, 3, 224);
-
-        var endpoints = _connectionMultiplexer.GetEndPoints();
-        if (endpoints.Length == 0)
-        {
-            _logger.LogDebug("SupportsMsetexCommand: No endpoints configured, MSETEX not available");
-            return false; // Don't cache - no endpoints configured
-        }
-
-        bool foundConnectedPrimary = false;
-        foreach (var endpoint in endpoints)
-        {
-            var server = _connectionMultiplexer.GetServer(endpoint);
-            if (server.IsConnected && !server.IsReplica)
-            {
-                foundConnectedPrimary = true;
-                if (server.Version < minVersion)
-                {
-                    _logger.LogDebug("SupportsMsetexCommand: Server {Endpoint} version {Version} does not support MSETEX (requires {MinVersion}+)",
-                        endpoint, server.Version, minVersion);
-                    _supportsMsetEx = false;
-                    return false;
-                }
-            }
-        }
-
-        if (foundConnectedPrimary)
-        {
-            _supportsMsetEx = true;
-            return true;
-        }
-
-        _logger.LogDebug("SupportsMsetexCommand: No connected primaries found, MSETEX availability unknown");
-        // No connected primaries found - don't cache, will retry on next call
-        return false;
     }
 
     public Task<bool> ReplaceAsync<T>(string key, T value, TimeSpan? expiresIn = null)
@@ -1002,7 +936,7 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
-        _supportsMsetEx = null; // Re-check version on next call
+        _capabilities.Invalidate();
     }
 
     private void ConnectionMultiplexerOnConnectionFailed(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)

@@ -16,7 +16,7 @@ public class RedisMessageBus : MessageBusBase<RedisMessageBusOptions>
 {
     private readonly AsyncLock _lock = new();
     private readonly ISubscriber _subscriber;
-    private bool _isSubscribed;
+    private volatile bool _isSubscribed;
     private ChannelMessageQueue? _channelMessageQueue;
     private readonly RedisChannel _channel;
 

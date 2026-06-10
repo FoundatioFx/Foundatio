@@ -30,9 +30,9 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private long _workItemTimeoutCount;
     private readonly ILockProvider _maintenanceLockProvider;
     private Task? _maintenanceTask;
-    private bool _isSubscribed;
+    private volatile bool _isSubscribed;
     private readonly TimeSpan _payloadTimeToLive;
-    private bool _scriptsLoaded;
+    private volatile bool _scriptsLoaded;
     private readonly string _listPrefix;
     private readonly RedisChannel _topicChannel;
 
