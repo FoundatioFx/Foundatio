@@ -258,6 +258,42 @@ do
 } while (await result.NextPageAsync());
 ```
 
+### Search Patterns
+
+The `searchPattern` parameter in `GetFileListAsync`, `GetPagedFileListAsync`, and `DeleteFilesAsync` uses **wildcard syntax** — not regex.
+
+Supported wildcards:
+
+- `*` — matches any sequence of characters, including directory separators (making searches recursive by default)
+- `?` — matches any single character
+
+Both `/` and `\` are accepted as path separators and are normalized internally.
+
+| Pattern | Matches |
+|---|---|
+| `null` or omitted | all files |
+| `*` | all files (explicit) |
+| `archived/*` | all files under `archived/` at any depth |
+| `archived/*.txt` | `.txt` files under `archived/` |
+| `*.json` | all JSON files at any depth |
+| `*report*` | any file containing "report" in the path |
+| `logs/2024/*/*` | files exactly two levels deep under `logs/2024/` |
+| `path/to/file.txt` | exact path match |
+
+```csharp
+// All files
+var all = await storage.GetFileListAsync();
+
+// All files under a directory (recursive)
+var archived = await storage.GetFileListAsync("archived/*");
+
+// Only .json files anywhere in storage
+var jsonFiles = await storage.GetFileListAsync("*.json");
+
+// Files matching a mid-path wildcard
+var reports = await storage.GetFileListAsync("reports/2024/*/summary.pdf");
+```
+
 ## Stream Modes
 
 Control how file streams are opened:
