@@ -2,6 +2,12 @@
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+    <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Dequeue/Foundatio.AzureServiceBus.Dequeue.csproj" />
+    <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
+    <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
+    <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Subscribe/Foundatio.AzureServiceBus.Subscribe.csproj" />
+    <Project Path="../Foundatio.AzureStorage/samples/Foundatio.AzureStorage.Dequeue/Foundatio.AzureStorage.Dequeue.csproj" />
+    <Project Path="../Foundatio.AzureStorage/samples/Foundatio.AzureStorage.Enqueue/Foundatio.AzureStorage.Enqueue.csproj" />
     <Project Path="../Foundatio.Kafka/samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="../Foundatio.Kafka/samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
     <Project Path="../Foundatio.RabbitMQ/samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
