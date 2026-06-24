@@ -319,14 +319,14 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected virtual object? DeserializeMessageBody(IMessage message)
     {
-        if (message.Data is null || message.Data.Length == 0)
+        if (message.Data.IsEmpty)
             return null;
 
         object? body;
         try
         {
             var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
-            body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
+            body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data.ToArray();
         }
         catch (Exception ex)
         {

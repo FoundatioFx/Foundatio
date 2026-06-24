@@ -1,3 +1,4 @@
+using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Running;
 using RhoMicro.BdnLogging;
 
@@ -14,6 +15,11 @@ public class Program
         //   dotnet run -c Release -- --filter *Resilience* # Run only resilience benchmarks
         //   dotnet run -c Release -- --filter *DeepClone*  # Run only deep clone benchmarks
         //   dotnet run -c Release -- --list tree           # List all benchmarks
-        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, SpotlightConfig.Instance);
+
+        // The spotlight logger renders a live, cursor-positioned console. When output is
+        // redirected (CI, agents, log files) there is no interactive console and its cursor
+        // calls throw, so fall back to the default config in that case.
+        var config = System.Console.IsOutputRedirected ? DefaultConfig.Instance : SpotlightConfig.Instance;
+        BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, config);
     }
 }

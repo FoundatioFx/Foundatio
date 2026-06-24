@@ -31,6 +31,7 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((Stream)null!));
         Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((byte[])null!));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>([]));
+        Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>(ReadOnlyMemory<byte>.Empty));
         Assert.Throws<ArgumentNullException>(() => serializer.Deserialize<SerializeModel>((string)null!));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>(String.Empty));
         Assert.Throws<ArgumentException>(() => serializer.Deserialize<SerializeModel>("   "));
@@ -115,6 +116,24 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
         Assert.Equal(model.IntProperty, actual.IntProperty);
         Assert.Equal(model.StringProperty, actual.StringProperty);
         Assert.Equal(model.ListProperty, actual.ListProperty);
+
+        // Act - ReadOnlyMemory<byte> over a managed array (MemoryMarshal.TryGetArray fast path)
+        var fromArrayMemory = serializer.Deserialize<SerializeModel>(new ReadOnlyMemory<byte>(bytes));
+        Assert.NotNull(fromArrayMemory);
+
+        // Assert
+        Assert.Equal(model.IntProperty, fromArrayMemory.IntProperty);
+        Assert.Equal(model.StringProperty, fromArrayMemory.StringProperty);
+        Assert.Equal(model.ListProperty, fromArrayMemory.ListProperty);
+
+        // Act - ReadOnlyMemory<byte> NOT backed by a managed array (ReadOnlyMemoryStream fallback)
+        var fromNativeMemory = serializer.Deserialize<SerializeModel>(CreateNativeBackedMemory(bytes));
+        Assert.NotNull(fromNativeMemory);
+
+        // Assert
+        Assert.Equal(model.IntProperty, fromNativeMemory.IntProperty);
+        Assert.Equal(model.StringProperty, fromNativeMemory.StringProperty);
+        Assert.Equal(model.ListProperty, fromNativeMemory.ListProperty);
 
         // Act
         string text = serializer.SerializeToString(model);
@@ -429,6 +448,32 @@ public abstract class SerializerTestsBase : TestWithLoggingBase
     {
         return value is byte or sbyte or short or ushort or int or uint or long or ulong
             or float or double or decimal;
+    }
+
+    /// <summary>
+    /// Creates a <see cref="ReadOnlyMemory{T}"/> that is NOT backed by a managed array (it is backed by a
+    /// custom <see cref="System.Buffers.MemoryManager{T}"/>), so the
+    /// <see cref="System.Runtime.InteropServices.MemoryMarshal.TryGetArray"/> fast path fails and the
+    /// <c>ReadOnlyMemoryStream</c> fallback is exercised.
+    /// </summary>
+    private static ReadOnlyMemory<byte> CreateNativeBackedMemory(byte[] source)
+    {
+        return new ManagerBackedMemory(source).Memory;
+    }
+
+    private sealed class ManagerBackedMemory : System.Buffers.MemoryManager<byte>
+    {
+        private readonly byte[] _buffer;
+
+        public ManagerBackedMemory(byte[] source) => _buffer = source;
+
+        public override Span<byte> GetSpan() => _buffer;
+
+        public override System.Buffers.MemoryHandle Pin(int elementIndex = 0) => throw new NotSupportedException();
+
+        public override void Unpin() { }
+
+        protected override void Dispose(bool disposing) { }
     }
 }
 
