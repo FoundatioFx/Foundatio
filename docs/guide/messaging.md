@@ -272,7 +272,7 @@ await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =
     var order = message.GetBody<OrderCreated>();
 });
 ```
-**Breaking change in v5.0: `IMessage.Data` is now `ReadOnlyMemory<byte>`**
+**Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`**
 
 `IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus avoid copying the payload into a new array. Since it is a struct, follow these patterns:
 
