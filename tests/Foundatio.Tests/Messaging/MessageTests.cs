@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 using Foundatio.Messaging;
 using Xunit;
 
@@ -28,6 +29,13 @@ public class MessageTests
 
         Assert.Equal(3, message.Data.Length);
         Assert.True(payload.AsSpan().SequenceEqual(message.Data.Span));
+
+        // Verify the data was stored without copying: the stored memory must still be backed by the
+        // exact same array instance and segment as the original payload, not a defensive copy.
+        Assert.True(MemoryMarshal.TryGetArray(message.Data, out ArraySegment<byte> segment));
+        Assert.Same(payload, segment.Array);
+        Assert.Equal(0, segment.Offset);
+        Assert.Equal(payload.Length, segment.Count);
     }
 
     [Fact]
