@@ -37,9 +37,10 @@ public interface IMessage
     /// </summary>
     /// <remarks>
     /// Returned as a <see cref="ReadOnlyMemory{T}"/> to avoid forcing an array copy on providers
-    /// whose transport buffers are already memory-backed (e.g. Azure Service Bus). Implementations
-    /// are expected to keep the underlying buffer valid for the lifetime of the message; consumers
-    /// that need to retain the payload beyond the current operation should copy it via <c>ToArray()</c>.
+    /// whose transport buffers are already memory-backed (e.g. Azure Service Bus, RabbitMQ). The buffer
+    /// is only guaranteed valid for the duration of message handling: some providers (e.g. RabbitMQ)
+    /// expose a pooled transport buffer that is reclaimed once the handler returns. Consumers that need
+    /// to retain the payload beyond the current handler invocation must copy it via <c>ToArray()</c>.
     /// </remarks>
     ReadOnlyMemory<byte> Data { get; }
 

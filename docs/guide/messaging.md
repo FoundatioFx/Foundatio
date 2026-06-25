@@ -275,11 +275,13 @@ await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =
 
 #### Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`
 
-`IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus avoid copying the payload into a new array. Since it is a struct, follow these patterns:
+`IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus and RabbitMQ expose the payload without copying it into a new array. Since it is a struct, follow these patterns:
 
 - Check for an empty payload with `message.Data.IsEmpty` (not `== null`)
 - Read the bytes directly via `message.Data.Span`
 - Call `message.Data.ToArray()` only when you need a `byte[]`
+
+**Buffer validity:** `Data` is only guaranteed valid for the duration of message handling. Some providers (such as RabbitMQ) expose a pooled transport buffer that is reclaimed once your handler returns, so the framework deserializes the body within the handler. If you need to retain the raw payload beyond the current handler invocation, copy it with `message.Data.ToArray()`.
 
 Most code that uses `GetBody()` / `Body` is unaffected. When constructing a `Message`, you can still pass a `byte[]`; it converts implicitly to `ReadOnlyMemory<byte>`.
 
