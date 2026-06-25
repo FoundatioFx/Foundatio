@@ -34,6 +34,7 @@ internal sealed class ReadOnlyMemoryStream : Stream
         {
             ArgumentOutOfRangeException.ThrowIfNegative(value);
             ArgumentOutOfRangeException.ThrowIfGreaterThan(value, _memory.Length);
+
             _position = (int)value;
         }
     }
@@ -76,6 +77,7 @@ internal sealed class ReadOnlyMemoryStream : Stream
 
         ArgumentOutOfRangeException.ThrowIfNegative(target);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(target, _memory.Length);
+
         _position = (int)target;
         return _position;
     }
