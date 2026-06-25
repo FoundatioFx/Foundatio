@@ -99,6 +99,7 @@ public interface IJobMonitor
 public interface IJobClient : IJobMonitor
 {
     Task<string> RunAsync<TJob>(RunJobOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
+    Task<string> RunAsync(Type jobType, RunJobOptions? options = null, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
 }
 
@@ -418,11 +419,20 @@ public sealed class JobClient : IJobClient
         return _store.QueryAsync(query, cancellationToken);
     }
 
-    public async Task<string> RunAsync<TJob>(RunJobOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
+    public Task<string> RunAsync<TJob>(RunJobOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
     {
+        return RunAsync(typeof(TJob), options, cancellationToken);
+    }
+
+    public async Task<string> RunAsync(Type jobType, RunJobOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobType);
+        if (!typeof(IJob).IsAssignableFrom(jobType))
+            throw new ArgumentException("Job type must implement IJob.", nameof(jobType));
+
         options ??= new RunJobOptions();
         string jobId = options.JobId ?? Guid.NewGuid().ToString("N");
-        string name = options.Name ?? typeof(TJob).Name;
+        string name = options.Name ?? jobType.Name;
         string nodeId = options.NodeId ?? _nodeId;
         var now = _timeProvider.GetUtcNow();
 
@@ -448,7 +458,7 @@ public sealed class JobClient : IJobClient
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var cancellationWatcher = WatchCancellation(jobId, linkedCancellationTokenSource);
-        var job = ActivatorUtilities.GetServiceOrCreateInstance<TJob>(_serviceProvider);
+        var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
 
         try
         {
