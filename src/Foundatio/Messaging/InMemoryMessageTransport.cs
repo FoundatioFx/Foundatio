@@ -2,9 +2,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Threading.Channels;
 using Foundatio.AsyncEx;
 using Foundatio.Queues;
 using Foundatio.Utility;
@@ -107,7 +107,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
             try
             {
-                await state.AvailableSignal.WaitAsync(waitCancellationTokenSource.Token).AnyContext();
+                if (!await state.WaitToReadAsync(waitCancellationTokenSource.Token).ConfigureAwait(false))
+                    break;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_disposeCancellationTokenSource.IsCancellationRequested)
             {
@@ -258,7 +259,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(name);
 
         _roles.TryRemove(name, out _);
-        _destinations.TryRemove(name, out _);
+        if (_destinations.TryRemove(name, out var removed))
+            removed.Complete();
         _topicSubscriptions.TryRemove(name, out _);
 
         foreach (var subscriptions in _topicSubscriptions.Values)
@@ -523,49 +525,92 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
     private sealed class DestinationState
     {
-        private readonly ConcurrentQueue<StoredMessage>[] _queues =
+        private readonly Channel<StoredMessage>[] _channels =
         [
-            new ConcurrentQueue<StoredMessage>(),
-            new ConcurrentQueue<StoredMessage>(),
-            new ConcurrentQueue<StoredMessage>()
+            Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions()),
+            Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions()),
+            Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions())
         ];
 
-        private readonly ConcurrentQueue<StoredMessage> _deadletterQueue = new();
+        private readonly Channel<StoredMessage> _deadletterChannel = Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions());
+        private readonly SemaphoreSlim _availableMessages = new(0);
+        private long _queuedCount;
+        private long _deadletterCount;
+        private int _isCompleted;
 
         public ConcurrentDictionary<string, InFlightMessage> InFlight { get; } = new(StringComparer.Ordinal);
-        public AsyncAutoResetEvent AvailableSignal { get; } = new();
         public long Enqueued;
         public long Dequeued;
         public long Completed;
         public long Abandoned;
         public long Deadlettered;
 
-        public long QueuedCount => _queues.Sum(q => q.Count);
-        public long DeadletterCount => _deadletterQueue.Count;
+        public long QueuedCount => Volatile.Read(ref _queuedCount);
+        public long DeadletterCount => Volatile.Read(ref _deadletterCount);
 
         public void Enqueue(StoredMessage message)
         {
-            _queues[(int)message.Priority].Enqueue(message);
+            if (!_channels[(int)message.Priority].Writer.TryWrite(message))
+                throw new InvalidOperationException("The destination is no longer accepting messages.");
+
+            Interlocked.Increment(ref _queuedCount);
             Interlocked.Increment(ref Enqueued);
-            AvailableSignal.Set();
+            _availableMessages.Release();
         }
 
         public bool TryDequeue(out StoredMessage message)
         {
             for (int index = (int)MessagePriority.High; index >= (int)MessagePriority.Low; index--)
             {
-                if (_queues[index].TryDequeue(out message!))
+                if (_channels[index].Reader.TryRead(out message!))
+                {
+                    _availableMessages.Wait(0);
+                    Interlocked.Decrement(ref _queuedCount);
                     return true;
+                }
             }
 
             message = null!;
             return false;
         }
 
+        public async ValueTask<bool> WaitToReadAsync(CancellationToken cancellationToken)
+        {
+            if (QueuedCount > 0)
+                return true;
+
+            await _availableMessages.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
         public void Deadletter(StoredMessage message)
         {
-            _deadletterQueue.Enqueue(message);
+            if (!_deadletterChannel.Writer.TryWrite(message))
+                throw new InvalidOperationException("The destination is no longer accepting dead-letter messages.");
+
+            Interlocked.Increment(ref _deadletterCount);
             Interlocked.Increment(ref Deadlettered);
+        }
+
+        public void Complete()
+        {
+            if (Interlocked.Exchange(ref _isCompleted, 1) == 1)
+                return;
+
+            foreach (var channel in _channels)
+                channel.Writer.TryComplete();
+
+            _deadletterChannel.Writer.TryComplete();
+        }
+
+        private static UnboundedChannelOptions CreateChannelOptions()
+        {
+            return new UnboundedChannelOptions
+            {
+                AllowSynchronousContinuations = false,
+                SingleReader = false,
+                SingleWriter = false
+            };
         }
     }
 
