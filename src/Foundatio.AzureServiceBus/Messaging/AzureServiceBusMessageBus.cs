@@ -130,8 +130,7 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             .Property("MessageId", brokeredMessage.MessageId));
 
         _logger.LogTrace("OnMessageAsync({MessageId})", brokeredMessage.MessageId);
-
-        var message = new Message(brokeredMessage.Body.ToArray(), DeserializeMessageBody)
+        var message = new Message(brokeredMessage.Body.ToMemory(), DeserializeMessageBody)
         {
             Type = brokeredMessage.ContentType,
             ClrType = GetMappedMessageType(brokeredMessage.ContentType),
