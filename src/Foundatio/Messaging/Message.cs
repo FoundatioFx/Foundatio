@@ -35,11 +35,12 @@ public interface IMessage
     /// <summary>
     /// Gets the raw serialized message payload.
     /// </summary>
-/// <remarks>
-/// Returned as a <see cref="ReadOnlyMemory{T}"/> to avoid forcing an array copy on providers
-/// whose transport buffers are already memory-backed (e.g. Azure Service Bus). Implementations
-/// should ensure the backing memory remains valid for the lifetime of the message.
-/// </remarks>
+    /// <remarks>
+    /// Returned as a <see cref="ReadOnlyMemory{T}"/> to avoid forcing an array copy on providers
+    /// whose transport buffers are already memory-backed (e.g. Azure Service Bus). Implementations
+    /// are expected to keep the underlying buffer valid for the lifetime of the message; consumers
+    /// that need to retain the payload beyond the current operation should copy it via <c>ToArray()</c>.
+    /// </remarks>
     ReadOnlyMemory<byte> Data { get; }
 
     /// <summary>

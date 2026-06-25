@@ -272,7 +272,8 @@ await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =
     var order = message.GetBody<OrderCreated>();
 });
 ```
-**Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`**
+
+#### Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`
 
 `IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus avoid copying the payload into a new array. Since it is a struct, follow these patterns:
 
@@ -281,6 +282,8 @@ await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =
 - Call `message.Data.ToArray()` only when you need a `byte[]`
 
 Most code that uses `GetBody()` / `Body` is unaffected. When constructing a `Message`, you can still pass a `byte[]`; it converts implicitly to `ReadOnlyMemory<byte>`.
+
+## Common Patterns
 
 ### Event-Driven Architecture
 
