@@ -265,7 +265,7 @@ public class InMemoryMessageBusTests : MessageBusTestBase, IDisposable
         {
             Assert.Null(msg.Type);
             Assert.Null(msg.ClrType);
-            Assert.NotEmpty(msg.Data);
+            Assert.False(msg.Data.IsEmpty);
             rawReceived.Signal();
         }, TestCancellationToken);
 

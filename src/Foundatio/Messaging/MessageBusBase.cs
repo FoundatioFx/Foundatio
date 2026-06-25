@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Resilience;
@@ -319,14 +320,14 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
 
     protected virtual object? DeserializeMessageBody(IMessage message)
     {
-        if (message.Data is null || message.Data.Length == 0)
+        if (message.Data.IsEmpty)
             return null;
 
         object? body;
         try
         {
             var clrType = message.ClrType ?? GetMappedMessageType(message.Type);
-            body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : message.Data;
+            body = clrType != null ? _serializer.Deserialize(message.Data, clrType) : GetRawBody(message.Data);
         }
         catch (Exception ex)
         {
@@ -335,6 +336,27 @@ public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHave
         }
 
         return body;
+    }
+
+    /// <summary>
+    /// Returns the raw payload as a <see cref="byte"/> array for subscribers that consume the body
+    /// without a mapped CLR type (e.g. <c>Subscribe&lt;byte[]&gt;()</c>).
+    /// </summary>
+    /// <remarks>
+    /// When the payload already wraps a full-length managed array (offset 0, count equal to the array
+    /// length) the underlying array is returned directly, preserving the no-copy behavior that existed
+    /// before <see cref="IMessage.Data"/> became a <see cref="ReadOnlyMemory{T}"/>. Otherwise the memory
+    /// is copied to honor the <c>byte[]</c> contract.
+    /// </remarks>
+    private static byte[] GetRawBody(ReadOnlyMemory<byte> data)
+    {
+        if (MemoryMarshal.TryGetArray(data, out ArraySegment<byte> segment) && segment.Array is not null
+            && segment.Offset == 0 && segment.Count == segment.Array.Length)
+        {
+            return segment.Array;
+        }
+
+        return data.ToArray();
     }
 
     protected async Task SendMessageToSubscribersAsync(IMessage message)

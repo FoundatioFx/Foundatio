@@ -35,7 +35,13 @@ public interface IMessage
     /// <summary>
     /// Gets the raw serialized message payload.
     /// </summary>
-    byte[] Data { get; }
+    /// <remarks>
+    /// Returned as a <see cref="ReadOnlyMemory{T}"/> to avoid forcing an array copy on providers
+    /// whose transport buffers are already memory-backed (e.g. Azure Service Bus). Implementations
+    /// are expected to keep the underlying buffer valid for the lifetime of the message; consumers
+    /// that need to retain the payload beyond the current operation should copy it via <c>ToArray()</c>.
+    /// </remarks>
+    ReadOnlyMemory<byte> Data { get; }
 
     /// <summary>
     /// Deserializes and returns the message payload.
@@ -65,7 +71,7 @@ public class Message : IMessage
 {
     private readonly Func<IMessage, object?> _getBody;
 
-    public Message(byte[] data, Func<IMessage, object?> getBody)
+    public Message(ReadOnlyMemory<byte> data, Func<IMessage, object?> getBody)
     {
         Data = data;
         _getBody = getBody;
@@ -77,7 +83,7 @@ public class Message : IMessage
     public Type? ClrType { get; set; }
     [DisallowNull]
     public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
-    public byte[] Data { get; set; }
+    public ReadOnlyMemory<byte> Data { get; set; }
     public object? GetBody() => _getBody(this);
 }
 
@@ -90,7 +96,7 @@ public class Message<T> : IMessage<T> where T : class
         _message = message;
     }
 
-    public byte[] Data => _message.Data;
+    public ReadOnlyMemory<byte> Data => _message.Data;
 
     public T Body => GetBody() as T ?? throw new MessageBusException("Message body is null or not of expected type");
 

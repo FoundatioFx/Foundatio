@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace Foundatio.Serializer;
@@ -104,6 +105,51 @@ public static class SerializerExtensions
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
         using var stream = new MemoryStream(data);
+        return serializer.Deserialize(stream, objectType);
+    }
+
+    /// <summary>
+    /// Deserializes an object of type <typeparamref name="T"/> from <paramref name="data"/>.
+    /// </summary>
+    /// <returns>The deserialized value, or <c>default</c> if the underlying serializer returns <c>null</c>.</returns>
+    /// <remarks>
+    /// The return type is <c>T</c> annotated with <c>[return: MaybeNull]</c> rather than <c>T?</c>
+    /// because <c>T?</c> on an unconstrained generic would double-wrap <c>Nullable&lt;T&gt;</c> value types.
+    /// Callers that expect <c>null</c> should use a nullable type argument, e.g. <c>Deserialize&lt;MyType?&gt;</c>.
+    /// </remarks>
+    [return: MaybeNull]
+    public static T Deserialize<T>(this ISerializer serializer, ReadOnlyMemory<byte> data)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        if (data.IsEmpty)
+            throw new ArgumentException("Data cannot be empty.", nameof(data));
+
+        object? result = serializer.Deserialize(data, typeof(T));
+        if (result is T typed)
+            return typed;
+
+        if (result is not null)
+            throw new SerializerException($"Deserialized object is of type '{result.GetType().FullName}', expected '{typeof(T).FullName}'.");
+
+        return default!;
+    }
+
+    public static object? Deserialize(this ISerializer serializer, ReadOnlyMemory<byte> data, Type objectType)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        ArgumentNullException.ThrowIfNull(objectType);
+        if (data.IsEmpty)
+            throw new ArgumentException("Data cannot be empty.", nameof(data));
+
+        // Fast path: if the memory is backed by a managed array we can hand it straight to a
+        // MemoryStream without copying. Otherwise fall back to a stream over the memory.
+        if (MemoryMarshal.TryGetArray(data, out ArraySegment<byte> segment) && segment.Array is not null)
+        {
+            using var arrayStream = new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false);
+            return serializer.Deserialize(arrayStream, objectType);
+        }
+
+        using var stream = new ReadOnlyMemoryStream(data);
         return serializer.Deserialize(stream, objectType);
     }
 
