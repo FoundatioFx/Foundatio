@@ -84,16 +84,16 @@ public sealed class JobScheduleProcessor
 
     private readonly IJobScheduler _scheduler;
     private readonly IJobRuntimeStore _store;
-    private readonly IJobClient _jobClient;
+    private readonly IJobWorker _jobWorker;
     private readonly TimeProvider _timeProvider;
     private readonly string _nodeId;
     private readonly IMessageTransport? _transport;
 
-    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobClient jobClient, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null)
+    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobWorker jobWorker, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null)
     {
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
         _store = store ?? throw new ArgumentNullException(nameof(store));
-        _jobClient = jobClient ?? throw new ArgumentNullException(nameof(jobClient));
+        _jobWorker = jobWorker ?? throw new ArgumentNullException(nameof(jobWorker));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _nodeId = !String.IsNullOrEmpty(nodeId)
             ? nodeId
@@ -136,6 +136,7 @@ public sealed class JobScheduleProcessor
             {
                 JobId = jobId,
                 Name = definition.Name,
+                JobType = definition.JobType?.AssemblyQualifiedName,
                 Status = JobStatus.Scheduled,
                 CreatedUtc = utcNow,
                 LastUpdatedUtc = utcNow,
@@ -206,12 +207,7 @@ public sealed class JobScheduleProcessor
                     continue;
                 }
 
-                await _jobClient.RunAsync(definition.JobType, new RunJobOptions
-                {
-                    JobId = jobId,
-                    Name = definition.Name,
-                    NodeId = _nodeId
-                }, cancellationToken).ConfigureAwait(false);
+                await _jobWorker.RunAsync(jobId, cancellationToken).ConfigureAwait(false);
 
                 var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                 if (state?.Status == JobStatus.Failed)
@@ -271,7 +267,7 @@ public sealed class JobScheduleProcessor
 
     private async Task<bool> TryPrepareOccurrenceForRunAsync(string jobId, ScheduledJobDefinition definition, DateTimeOffset utcNow, CancellationToken cancellationToken)
     {
-        if (await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { LastUpdatedUtc = utcNow }, cancellationToken).ConfigureAwait(false))
+        if (await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { JobType = definition.JobType?.AssemblyQualifiedName, LastUpdatedUtc = utcNow }, cancellationToken).ConfigureAwait(false))
             return true;
 
         var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -291,6 +287,7 @@ public sealed class JobScheduleProcessor
 
         return await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.Queued, new JobStatePatch
         {
+            JobType = definition.JobType?.AssemblyQualifiedName,
             ClearNodeId = true,
             ClearLeaseExpiresUtc = true,
             LastUpdatedUtc = utcNow

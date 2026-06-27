@@ -31,6 +31,7 @@ public sealed record JobState
 {
     public required string JobId { get; init; }
     public required string Name { get; init; }
+    public string? JobType { get; init; }
     public JobStatus Status { get; init; } = JobStatus.Queued;
     public int? Progress { get; init; }
     public string? ProgressMessage { get; init; }
@@ -49,6 +50,7 @@ public sealed record JobState
 public sealed record JobStatePatch
 {
     public JobStatus? Status { get; init; }
+    public string? JobType { get; init; }
     public int? Progress { get; init; }
     public string? ProgressMessage { get; init; }
     public string? Error { get; init; }
@@ -85,11 +87,35 @@ public sealed record ScheduledDispatchState
     public string? JobId { get; init; }
 }
 
-public sealed record RunJobOptions
+public sealed record JobRequestOptions
 {
     public string? JobId { get; init; }
     public string? Name { get; init; }
-    public string? NodeId { get; init; }
+}
+
+public sealed class JobHandle
+{
+    private readonly IJobMonitor _monitor;
+    private readonly Func<string, CancellationToken, Task<bool>> _requestCancellation;
+
+    internal JobHandle(string jobId, IJobMonitor monitor, Func<string, CancellationToken, Task<bool>> requestCancellation)
+    {
+        JobId = jobId;
+        _monitor = monitor;
+        _requestCancellation = requestCancellation;
+    }
+
+    public string JobId { get; }
+
+    public Task<JobState?> GetStateAsync(CancellationToken cancellationToken = default)
+    {
+        return _monitor.GetAsync(JobId, cancellationToken);
+    }
+
+    public Task<bool> RequestCancellationAsync(CancellationToken cancellationToken = default)
+    {
+        return _requestCancellation(JobId, cancellationToken);
+    }
 }
 
 public interface IJobMonitor
@@ -98,11 +124,17 @@ public interface IJobMonitor
     Task<IReadOnlyList<JobState>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
 }
 
-public interface IJobClient : IJobMonitor
+public interface IJobClient
 {
-    Task<string> RunAsync<TJob>(RunJobOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
-    Task<string> RunAsync(Type jobType, RunJobOptions? options = null, CancellationToken cancellationToken = default);
+    Task<JobHandle> EnqueueAsync<TJob>(JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
+    Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
+}
+
+public interface IJobWorker
+{
+    Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default);
+    Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default);
 }
 
 public interface IJobRuntimeStore : IJobMonitor
@@ -380,6 +412,7 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
         return state with
         {
             Status = patch.Status ?? state.Status,
+            JobType = patch.JobType ?? state.JobType,
             Progress = patch.Progress ?? state.Progress,
             ProgressMessage = patch.ProgressMessage ?? state.ProgressMessage,
             Error = patch.Error ?? state.Error,
@@ -397,11 +430,60 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
 public sealed class JobClient : IJobClient
 {
     private readonly IJobRuntimeStore _store;
+    private readonly TimeProvider _timeProvider;
+
+    public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null)
+    {
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    public Task<JobHandle> EnqueueAsync<TJob>(JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
+    {
+        return EnqueueAsync(typeof(TJob), options, cancellationToken);
+    }
+
+    public async Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(jobType);
+        if (!typeof(IJob).IsAssignableFrom(jobType))
+            throw new ArgumentException("Job type must implement IJob.", nameof(jobType));
+
+        options ??= new JobRequestOptions();
+        string jobId = options.JobId ?? Guid.NewGuid().ToString("N");
+        string name = options.Name ?? jobType.Name;
+        var now = _timeProvider.GetUtcNow();
+
+        await _store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = jobId,
+            Name = name,
+            JobType = jobType.AssemblyQualifiedName,
+            Status = JobStatus.Queued,
+            CreatedUtc = now,
+            LastUpdatedUtc = now
+        }, cancellationToken).ConfigureAwait(false);
+
+        return new JobHandle(jobId, _store, RequestCancellationAsync);
+    }
+
+    public Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        return _store.RequestCancellationAsync(jobId, cancellationToken);
+    }
+}
+
+public sealed class JobWorker : IJobWorker
+{
+    private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
+
+    private readonly IJobRuntimeStore _store;
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
     private readonly string _nodeId;
+    private readonly TimeSpan _lease;
 
-    public JobClient(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null)
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -409,102 +491,128 @@ public sealed class JobClient : IJobClient
         _nodeId = !String.IsNullOrEmpty(nodeId)
             ? nodeId
             : Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") ?? Environment.MachineName;
+        _lease = lease ?? DefaultLease;
     }
 
-    public Task<JobState?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default)
     {
-        return _store.GetAsync(jobId, cancellationToken);
-    }
-
-    public Task<IReadOnlyList<JobState>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
-    {
-        return _store.QueryAsync(query, cancellationToken);
-    }
-
-    public Task<string> RunAsync<TJob>(RunJobOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
-    {
-        return RunAsync(typeof(TJob), options, cancellationToken);
-    }
-
-    public async Task<string> RunAsync(Type jobType, RunJobOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(jobType);
-        if (!typeof(IJob).IsAssignableFrom(jobType))
-            throw new ArgumentException("Job type must implement IJob.", nameof(jobType));
-
-        options ??= new RunJobOptions();
-        string jobId = options.JobId ?? Guid.NewGuid().ToString("N");
-        string name = options.Name ?? jobType.Name;
-        string nodeId = options.NodeId ?? _nodeId;
-        var now = _timeProvider.GetUtcNow();
-
-        await _store.CreateIfAbsentAsync(new JobState
+        var queued = await _store.QueryAsync(new JobQuery
         {
-            JobId = jobId,
-            Name = name,
             Status = JobStatus.Queued,
-            CreatedUtc = now,
-            LastUpdatedUtc = now
+            Limit = limit
         }, cancellationToken).ConfigureAwait(false);
 
-        if (!await _store.TryTransitionAsync(jobId, JobStatus.Queued, JobStatus.Processing, new JobStatePatch
+        int completed = 0;
+        foreach (var state in queued)
         {
-            NodeId = nodeId,
+            if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
+                completed++;
+        }
+
+        return completed;
+    }
+
+    public async Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+
+        var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        return state is not null && await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> RunJobStateAsync(JobState state, CancellationToken cancellationToken)
+    {
+        if (state.Status != JobStatus.Queued)
+            return false;
+
+        var now = _timeProvider.GetUtcNow();
+        if (!await _store.TryTransitionAsync(state.JobId, JobStatus.Queued, JobStatus.Processing, new JobStatePatch
+        {
+            NodeId = _nodeId,
             StartedUtc = now,
-            LeaseExpiresUtc = now.AddMinutes(5),
+            LeaseExpiresUtc = now.Add(_lease),
             AttemptDelta = 1
         }, cancellationToken).ConfigureAwait(false))
         {
-            return jobId;
+            return false;
         }
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using var cancellationWatcher = WatchCancellation(jobId, linkedCancellationTokenSource);
-        var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
+        using var cancellationWatcher = WatchCancellation(state.JobId, linkedCancellationTokenSource);
 
         try
         {
+            var jobType = ResolveJobType(state);
+            var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
             var result = await job.TryRunAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             var completedAt = _timeProvider.GetUtcNow();
+
             if (result.IsCancelled)
             {
-                await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.Cancelled, new JobStatePatch
+                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Cancelled, new JobStatePatch
                 {
                     Error = result.Message,
                     CompletedUtc = completedAt,
-                    LeaseExpiresUtc = null
+                    ClearNodeId = true,
+                    ClearLeaseExpiresUtc = true
                 }, CancellationToken.None).ConfigureAwait(false);
             }
             else if (result.IsSuccess)
             {
-                await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.Completed, new JobStatePatch
+                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Completed, new JobStatePatch
                 {
                     CompletedUtc = completedAt,
-                    LeaseExpiresUtc = null,
+                    ClearNodeId = true,
+                    ClearLeaseExpiresUtc = true,
                     Progress = 100
                 }, CancellationToken.None).ConfigureAwait(false);
             }
             else
             {
-                await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
+                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
                 {
                     Error = result.Message,
                     CompletedUtc = completedAt,
-                    LeaseExpiresUtc = null
+                    ClearNodeId = true,
+                    ClearLeaseExpiresUtc = true
                 }, CancellationToken.None).ConfigureAwait(false);
             }
-        }
-        finally
-        {
-            await _store.ReleaseClaimAsync(jobId, nodeId, CancellationToken.None).ConfigureAwait(false);
-        }
 
-        return jobId;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
+            {
+                Error = ex.Message,
+                CompletedUtc = _timeProvider.GetUtcNow(),
+                ClearNodeId = true,
+                ClearLeaseExpiresUtc = true
+            }, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
-    public Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
+    private static Type ResolveJobType(JobState state)
     {
-        return _store.RequestCancellationAsync(jobId, cancellationToken);
+        if (String.IsNullOrEmpty(state.JobType))
+            throw new InvalidOperationException($"Job \"{state.JobId}\" does not have a job type and cannot be executed by a worker.");
+
+        var jobType = Type.GetType(state.JobType, throwOnError: false);
+        if (jobType is null)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                jobType = assembly.GetType(state.JobType, throwOnError: false);
+                if (jobType is not null)
+                    break;
+            }
+        }
+
+        if (jobType is null || !typeof(IJob).IsAssignableFrom(jobType))
+            throw new InvalidOperationException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.");
+
+        return jobType;
     }
 
     private IDisposable WatchCancellation(string jobId, CancellationTokenSource cancellationTokenSource)

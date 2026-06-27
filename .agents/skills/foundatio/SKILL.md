@@ -23,6 +23,16 @@ query-docs(libraryId="/foundatiofx/foundatio", query="How to configure queue ret
 
 Query with specific questions, not single keywords. All provider docs (Redis, Azure, AWS, Kafka, etc.) are included in the main library.
 
+
+## Messaging/Jobs Redesign Notes
+
+- New queue/pub-sub APIs live under `Foundatio.Messaging`: app-facing `IQueue`, `IPubSub`, shared `IReceivedMessage<T>`, `QueueMessageOptions`, `QueueReceiveOptions`, `QueueConsumerOptions`, `PubSubMessageOptions`, and `PubSubSubscriptionOptions`.
+- Route resolution is type-driven: operation override > resolver/registration > `MessageRouteAttribute` > kebab-case type-name convention. `Destination` and `Source` are advanced queue overrides; `Topic` and `Subscription` are advanced pub/sub overrides.
+- Listener startup returns handles: `StartConsumerAsync<T>` returns `IMessageConsumer`; `SubscribeAsync<T>` returns `IMessageSubscription`. Use `RunConsumerAsync` or `RunSubscriptionAsync` only for blocking lifetime loops.
+- Received-message settlement uses explicit verbs only: `CompleteAsync`, `AbandonAsync`, `DeadLetterAsync`, `RenewLockAsync`, and `ReportProgressAsync`. Unsupported capabilities should throw clearly instead of silently downgrading.
+- New durable job runtime roles are separated: `IJobClient` submits and returns `JobHandle`, `IJobMonitor` queries state, `IJobRuntimeStore` persists runtime state, and `IJobWorker` claims and executes queued jobs.
+- In-memory setup for the redesign is `services.AddFoundatio().Messaging.UseInMemory().Jobs.UseInMemoryRuntime()`.
+
 ## Core Interfaces
 
 | Interface | Purpose | In-Memory | Production |
