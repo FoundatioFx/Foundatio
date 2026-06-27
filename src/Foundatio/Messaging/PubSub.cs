@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -39,6 +40,8 @@ public sealed record PubSubOptions
     public Func<Type, string>? TopicResolver { get; init; }
     public Func<Type, string>? MessageTypeResolver { get; init; }
     public Func<Type, string, string>? SubscriptionResolver { get; init; }
+    public IJobRuntimeStore? RuntimeStore { get; init; }
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
 
 public interface IPubSub : IAsyncDisposable
@@ -69,7 +72,14 @@ public sealed class PubSub : IPubSub
         string topic = GetTopic(typeof(T), options.Topic);
         await EnsureTopicAsync(topic, cancellationToken).AnyContext();
 
-        var result = await _transport.SendAsync(topic, [CreateTransportMessage(message, options)], CreateSendOptions(options), cancellationToken).AnyContext();
+        var sendOptions = CreateSendOptions(options);
+        string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
+        var transportMessage = CreateTransportMessage(message, options, messageId);
+
+        if (await TryScheduleDispatchAsync(topic, transportMessage, sendOptions, cancellationToken).AnyContext())
+            return;
+
+        var result = await _transport.SendAsync(topic, [transportMessage], sendOptions, cancellationToken).AnyContext();
         var item = result.Items.Count > 0 ? result.Items[0] : null;
         if (item is null || !item.Success)
             throw new MessageBusException($"Unable to publish message to \"{topic}\": {item?.ErrorCode ?? "unknown error"}");
@@ -84,16 +94,23 @@ public sealed class PubSub : IPubSub
         string topic = GetTopic(typeof(T), options.Topic);
         await EnsureTopicAsync(topic, cancellationToken).AnyContext();
 
+        var sendOptions = CreateSendOptions(options);
+        int index = 0;
         var transportMessages = messages.Select(message =>
         {
             ArgumentNullException.ThrowIfNull(message);
-            return CreateTransportMessage(message, options);
+            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
+            index++;
+            return CreateTransportMessage(message, options, messageId);
         }).ToArray();
 
         if (transportMessages.Length == 0)
             return;
 
-        var result = await _transport.SendAsync(topic, transportMessages, CreateSendOptions(options), cancellationToken).AnyContext();
+        if (await TryScheduleDispatchesAsync(topic, transportMessages, sendOptions, cancellationToken).AnyContext())
+            return;
+
+        var result = await _transport.SendAsync(topic, transportMessages, sendOptions, cancellationToken).AnyContext();
         if (!result.AllSucceeded)
             throw new MessageBusException($"Unable to publish {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{topic}\".");
     }
@@ -172,7 +189,7 @@ public sealed class PubSub : IPubSub
             if (message is null)
                 throw new MessageBusException($"Message \"{entry.Id}\" deserialized to null.");
 
-            return new ReceivedMessage<T>(_transport, entry, message, cancellationToken);
+            return new ReceivedMessage<T>(_transport, entry, message, cancellationToken, _options.RuntimeStore, _options.TimeProvider);
         }
         catch (Exception ex) when (ex is not MessageBusException)
         {
@@ -202,7 +219,7 @@ public sealed class PubSub : IPubSub
         }
     }
 
-    private TransportMessage CreateTransportMessage<T>(T message, PublishOptions options) where T : class
+    private TransportMessage CreateTransportMessage<T>(T message, PublishOptions options, string? messageId = null) where T : class
     {
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
             .Set(KnownHeaders.MessageType, GetMessageType(typeof(T)))
@@ -222,23 +239,73 @@ public sealed class PubSub : IPubSub
         }
 
         if (options.TimeToLive is { } ttl)
-            headers.Set(KnownHeaders.Expiration, DateTimeOffset.UtcNow.Add(ttl).ToString("O", CultureInfo.InvariantCulture));
+            headers.Set(KnownHeaders.Expiration, _options.TimeProvider.GetUtcNow().Add(ttl).ToString("O", CultureInfo.InvariantCulture));
 
         return new TransportMessage
         {
             Body = _options.Serializer.SerializeToBytes(message),
-            Headers = headers.Build()
+            Headers = headers.Build(),
+            MessageId = messageId
         };
     }
 
-    private static TransportSendOptions CreateSendOptions(PublishOptions options)
+    private TransportSendOptions CreateSendOptions(PublishOptions options)
     {
         return new TransportSendOptions
         {
             Priority = options.Priority,
-            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? DateTimeOffset.UtcNow.Add(delay) : null),
+            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? _options.TimeProvider.GetUtcNow().Add(delay) : null),
             DeduplicationId = options.DeduplicationId
         };
+    }
+
+    private async Task<bool> TryScheduleDispatchesAsync(string topic, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
+    {
+        if (!ShouldScheduleThroughRuntimeStore(options, out var dueUtc))
+            return false;
+
+        for (int index = 0; index < messages.Count; index++)
+        {
+            var message = messages[index];
+            string messageId = message.MessageId ?? Guid.NewGuid().ToString("N");
+            await ScheduleDispatchAsync(topic, message with { MessageId = messageId }, options, dueUtc, cancellationToken).AnyContext();
+        }
+
+        return true;
+    }
+
+    private Task<bool> TryScheduleDispatchAsync(string topic, TransportMessage message, TransportSendOptions options, CancellationToken cancellationToken)
+    {
+        return TryScheduleDispatchesAsync(topic, [message], options, cancellationToken);
+    }
+
+    private bool ShouldScheduleThroughRuntimeStore(TransportSendOptions options, out DateTimeOffset dueUtc)
+    {
+        dueUtc = options.DeliverAt.GetValueOrDefault();
+        if (options.DeliverAt is null || dueUtc <= _options.TimeProvider.GetUtcNow())
+            return false;
+
+        if (_transport is ISupportsDelayedDelivery)
+            return false;
+
+        if (_options.RuntimeStore is null)
+            throw new MessageBusException($"Delayed publish requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" or {nameof(PubSubOptions)}.{nameof(PubSubOptions.RuntimeStore)}.");
+
+        return true;
+    }
+
+    private Task ScheduleDispatchAsync(string topic, TransportMessage message, TransportSendOptions options, DateTimeOffset dueUtc, CancellationToken cancellationToken)
+    {
+        return _options.RuntimeStore!.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = message.MessageId!,
+            Kind = ScheduledDispatchKind.PubSubMessage,
+            Destination = topic,
+            Body = message.Body,
+            Headers = message.Headers,
+            Options = options with { DeliverAt = null },
+            DueUtc = dueUtc
+        }, cancellationToken);
     }
 
     private string GetTopic(Type messageType, string? topic)
@@ -262,10 +329,7 @@ public sealed class PubSub : IPubSub
 
     private async Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken cancellationToken)
     {
-        if (_transport is ISupportsDeadLetter deadLetter)
-            await deadLetter.DeadLetterAsync(entry, reason, cancellationToken).AnyContext();
-        else
-            await _transport.AbandonAsync(entry, cancellationToken).AnyContext();
+        await ReceivedMessage<object>.DeadLetterAsync(_transport, entry, reason, cancellationToken).AnyContext();
     }
 
     private void ThrowIfDisposed()

@@ -87,8 +87,9 @@ public sealed class JobScheduleProcessor
     private readonly IJobClient _jobClient;
     private readonly TimeProvider _timeProvider;
     private readonly string _nodeId;
+    private readonly IMessageTransport? _transport;
 
-    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobClient jobClient, TimeProvider? timeProvider = null, string? nodeId = null)
+    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobClient jobClient, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null)
     {
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
         _store = store ?? throw new ArgumentNullException(nameof(store));
@@ -97,6 +98,7 @@ public sealed class JobScheduleProcessor
         _nodeId = !String.IsNullOrEmpty(nodeId)
             ? nodeId
             : Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") ?? Environment.MachineName;
+        _transport = transport;
     }
 
     public Task<IReadOnlyList<ScheduledDispatchState>> EnqueueDueOccurrencesAsync(CancellationToken cancellationToken = default)
@@ -175,9 +177,16 @@ public sealed class JobScheduleProcessor
 
         foreach (var dispatch in dispatches)
         {
+            if (dispatch.Kind is ScheduledDispatchKind.QueueMessage or ScheduledDispatchKind.PubSubMessage)
+            {
+                await MaterializeMessageDispatchAsync(dispatch, cancellationToken).ConfigureAwait(false);
+                completed++;
+                continue;
+            }
+
             if (dispatch.Kind != ScheduledDispatchKind.JobOccurrence)
             {
-                await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, dispatch.DueUtc, cancellationToken).ConfigureAwait(false);
+                await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -191,13 +200,41 @@ public sealed class JobScheduleProcessor
 
             try
             {
-                await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { LastUpdatedUtc = utcNow }, cancellationToken).ConfigureAwait(false);
+                if (!await TryPrepareOccurrenceForRunAsync(jobId, definition, utcNow, cancellationToken).ConfigureAwait(false))
+                {
+                    await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 await _jobClient.RunAsync(definition.JobType, new RunJobOptions
                 {
                     JobId = jobId,
                     Name = definition.Name,
                     NodeId = _nodeId
                 }, cancellationToken).ConfigureAwait(false);
+
+                var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                if (state?.Status == JobStatus.Failed)
+                {
+                    if (state.Attempt <= definition.MaxRetries)
+                    {
+                        await _store.TryTransitionAsync(jobId, JobStatus.Failed, JobStatus.Scheduled, new JobStatePatch
+                        {
+                            ClearNodeId = true,
+                            ClearLeaseExpiresUtc = true,
+                            LastUpdatedUtc = utcNow
+                        }, cancellationToken).ConfigureAwait(false);
+                        await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    await _store.TryTransitionAsync(jobId, JobStatus.Failed, JobStatus.DeadLettered, new JobStatePatch
+                    {
+                        ClearNodeId = true,
+                        ClearLeaseExpiresUtc = true,
+                        LastUpdatedUtc = utcNow
+                    }, cancellationToken).ConfigureAwait(false);
+                }
 
                 await _store.CompleteDispatchAsync(dispatch.DispatchId, _nodeId, cancellationToken).ConfigureAwait(false);
                 completed++;
@@ -210,6 +247,54 @@ public sealed class JobScheduleProcessor
         }
 
         return completed;
+    }
+
+    private async Task MaterializeMessageDispatchAsync(ScheduledDispatchState dispatch, CancellationToken cancellationToken)
+    {
+        if (_transport is null)
+            throw new InvalidOperationException("A message transport is required to materialize scheduled queue and pub/sub dispatches.");
+
+        var result = await _transport.SendAsync(dispatch.Destination, [
+            new TransportMessage
+            {
+                MessageId = dispatch.DispatchId,
+                Body = dispatch.Body,
+                Headers = dispatch.Headers
+            }
+        ], dispatch.Options with { DeliverAt = null }, cancellationToken).ConfigureAwait(false);
+
+        if (!result.AllSucceeded)
+            throw new MessageBusException($"Unable to materialize scheduled dispatch \"{dispatch.DispatchId}\" to \"{dispatch.Destination}\".");
+
+        await _store.CompleteDispatchAsync(dispatch.DispatchId, _nodeId, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryPrepareOccurrenceForRunAsync(string jobId, ScheduledJobDefinition definition, DateTimeOffset utcNow, CancellationToken cancellationToken)
+    {
+        if (await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { LastUpdatedUtc = utcNow }, cancellationToken).ConfigureAwait(false))
+            return true;
+
+        var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (state?.Status != JobStatus.Processing || state.LeaseExpiresUtc is null || state.LeaseExpiresUtc > utcNow)
+            return false;
+
+        if (state.Attempt > definition.MaxRetries)
+        {
+            await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.DeadLettered, new JobStatePatch
+            {
+                ClearNodeId = true,
+                ClearLeaseExpiresUtc = true,
+                LastUpdatedUtc = utcNow
+            }, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        return await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.Queued, new JobStatePatch
+        {
+            ClearNodeId = true,
+            ClearLeaseExpiresUtc = true,
+            LastUpdatedUtc = utcNow
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<bool> HasActiveOccurrenceAsync(string name, string scopeKey, CancellationToken cancellationToken)
