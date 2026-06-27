@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -28,6 +27,7 @@ public sealed record PubSubMessageOptions
 public sealed record PubSubSubscriptionOptions
 {
     public string? Topic { get; init; }
+    public Type? RouteType { get; init; }
     public string? Subscription { get; init; }
     public string? Key { get; init; }
     public AckMode AckMode { get; init; } = AckMode.Auto;
@@ -39,9 +39,7 @@ public sealed record PubSubOptions
 {
     public ISerializer Serializer { get; init; } = DefaultSerializer.Instance;
     public string ContentType { get; init; } = "application/json";
-    public Func<Type, string>? TopicResolver { get; init; }
-    public Func<Type, string>? MessageTypeResolver { get; init; }
-    public Func<Type, string, string>? SubscriptionResolver { get; init; }
+    public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
@@ -50,7 +48,10 @@ public interface IPubSub : IAsyncDisposable
 {
     Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task PublishBatchAsync<T>(IEnumerable<T> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task PublishBatchAsync(IEnumerable<object> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default);
+    Task<IMessageSubscription> SubscribeAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
     Task<IMessageSubscription> SubscribeAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task RunSubscriptionAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
     Task RunSubscriptionAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
 }
 
@@ -87,7 +88,7 @@ public sealed class PubSub : IPubSub
 
         var sendOptions = CreateSendOptions(options);
         string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
-        var transportMessage = CreateTransportMessage(message, options, messageId);
+        var transportMessage = CreateTransportMessage(message, typeof(T), options, messageId);
 
         if (await TryScheduleDispatchAsync(topic, transportMessage, sendOptions, cancellationToken).AnyContext())
             return;
@@ -101,82 +102,55 @@ public sealed class PubSub : IPubSub
     public async Task PublishBatchAsync<T>(IEnumerable<T> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
-        ThrowIfDisposed();
+        await PublishBatchCoreAsync(messages.Cast<object>(), typeof(T), options, cancellationToken).AnyContext();
+    }
 
-        options ??= new PubSubMessageOptions();
-        ValidateSendOptions(options);
+    public async Task PublishBatchAsync(IEnumerable<object> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        await PublishBatchCoreAsync(messages, null, options, cancellationToken).AnyContext();
+    }
 
-        string topic = GetTopic(typeof(T), options.Topic);
-        await EnsureTopicAsync(topic, cancellationToken).AnyContext();
+    public async Task<IMessageSubscription> SubscribeAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        options ??= new PubSubSubscriptionOptions();
+        Type routeType = options.RouteType ?? typeof(object);
+        string topic = GetTopic(routeType, options.Topic);
+        string subscription = GetSubscription(routeType, topic, options.Subscription);
+        string key = GetSubscriptionKey(routeType, topic, subscription, options.Key);
+        var registration = MessageListenerRegistration.Create(handler, routeType, topic, subscription, options);
+        await EnsureSubscriptionAsync(topic, subscription, cancellationToken).AnyContext();
 
-        var sendOptions = CreateSendOptions(options);
-        int index = 0;
-        var transportMessages = messages.Select(message =>
+        return await SubscribeCoreAsync(topic, subscription, key, registration, options, async (entry, token) =>
         {
-            ArgumentNullException.ThrowIfNull(message);
-            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
-            index++;
-            return CreateTransportMessage(message, options, messageId);
-        }).ToArray();
-
-        if (transportMessages.Length == 0)
-            return;
-
-        if (await TryScheduleDispatchesAsync(topic, transportMessages, sendOptions, cancellationToken).AnyContext())
-            return;
-
-        var result = await _transport.SendAsync(topic, transportMessages, sendOptions, cancellationToken).AnyContext();
-        if (!result.AllSucceeded)
-            throw new MessageBusException($"Unable to publish {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{topic}\".");
+            var received = CreateReceivedMessage(entry, token);
+            await HandleMessageAsync(received, handler, options, token).AnyContext();
+        }, cancellationToken).AnyContext();
     }
 
     public async Task<IMessageSubscription> SubscribeAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
-        ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
         options ??= new PubSubSubscriptionOptions();
-        string topic = GetTopic(typeof(T), options.Topic);
-        string subscription = GetSubscription(typeof(T), topic, options.Subscription);
-        string key = GetSubscriptionKey(typeof(T), topic, subscription, options.Key);
+        Type routeType = options.RouteType ?? typeof(T);
+        string topic = GetTopic(routeType, options.Topic);
+        string subscription = GetSubscription(routeType, topic, options.Subscription);
+        string key = GetSubscriptionKey(routeType, topic, subscription, options.Key);
+        var registration = MessageListenerRegistration.Create(handler, routeType, topic, subscription, options);
         await EnsureSubscriptionAsync(topic, subscription, cancellationToken).AnyContext();
 
-        if (_subscriptions.TryGetValue(key, out var existing) && !existing.IsDisposed)
-            return existing;
-
-        var handle = new MessageSubscriptionHandle(topic, subscription, key, RemoveSubscription);
-        if (!_subscriptions.TryAdd(key, handle))
+        return await SubscribeCoreAsync(topic, subscription, key, registration, options, async (entry, token) =>
         {
-            await handle.DisposeAsync().AnyContext();
-            return _subscriptions[key];
-        }
+            var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
+            await HandleMessageAsync(received, handler, options, token).AnyContext();
+        }, cancellationToken).AnyContext();
+    }
 
-        try
-        {
-            if (_transport is ISupportsPush push)
-            {
-                var pushSubscription = await push.SubscribeAsync(subscription, async (entry, token) =>
-                {
-                    var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
-                    await HandleMessageAsync(received, handler, options, token).AnyContext();
-                }, new PushOptions { MaxConcurrentMessages = Math.Max(1, options.MaxConcurrency) }, cancellationToken).AnyContext();
-
-                handle.SetPushSubscription(pushSubscription);
-                return handle;
-            }
-
-            if (_transport is not ISupportsPull pull)
-                throw new MessageBusException($"Transport \"{_transport.GetType().Name}\" does not support subscriptions.");
-
-            handle.Start(RunPullSubscriptionLoopAsync(subscription, pull, handler, options, handle.CancellationToken));
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().AnyContext();
-            throw;
-        }
+    public async Task RunSubscriptionAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        await using var subscription = await SubscribeAsync(handler, options, cancellationToken).AnyContext();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).AnyContext();
     }
 
     public async Task RunSubscriptionAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -197,7 +171,91 @@ public sealed class PubSub : IPubSub
         await _transport.DisposeAsync().AnyContext();
     }
 
-    private async Task RunPullSubscriptionLoopAsync<T>(string subscription, ISupportsPull pull, Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions options, CancellationToken cancellationToken) where T : class
+    private async Task PublishBatchCoreAsync(IEnumerable<object> messages, Type? declaredType, PubSubMessageOptions? options, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        options ??= new PubSubMessageOptions();
+        ValidateSendOptions(options);
+
+        var sendOptions = CreateSendOptions(options);
+        var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
+        int index = 0;
+
+        foreach (var message in messages)
+        {
+            ArgumentNullException.ThrowIfNull(message);
+            Type messageType = declaredType ?? message.GetType();
+            string topic = GetTopic(messageType, options.Topic);
+            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
+            index++;
+
+            if (!grouped.TryGetValue(topic, out var transportMessages))
+            {
+                transportMessages = [];
+                grouped.Add(topic, transportMessages);
+            }
+
+            transportMessages.Add(CreateTransportMessage(message, messageType, options, messageId));
+        }
+
+        foreach (var group in grouped)
+        {
+            await EnsureTopicAsync(group.Key, cancellationToken).AnyContext();
+
+            if (await TryScheduleDispatchesAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext())
+                continue;
+
+            var result = await _transport.SendAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext();
+            if (!result.AllSucceeded)
+                throw new MessageBusException($"Unable to publish {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{group.Key}\".");
+        }
+    }
+
+    private async Task<IMessageSubscription> SubscribeCoreAsync(string topic, string subscription, string key, MessageListenerRegistration registration, PubSubSubscriptionOptions options, Func<TransportEntry, CancellationToken, Task> onMessage, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_subscriptions.TryGetValue(key, out var existing) && !existing.IsDisposed)
+        {
+            existing.ThrowIfConflicting(registration);
+            return existing;
+        }
+
+        var handle = new MessageSubscriptionHandle(topic, subscription, key, registration, RemoveSubscription);
+        if (!_subscriptions.TryAdd(key, handle))
+        {
+            await handle.DisposeAsync().AnyContext();
+            var current = _subscriptions[key];
+            current.ThrowIfConflicting(registration);
+            return current;
+        }
+
+        try
+        {
+            if (_transport is ISupportsPush push)
+            {
+                var pushSubscription = await push.SubscribeAsync(subscription, onMessage, new PushOptions { MaxConcurrentMessages = Math.Max(1, options.MaxConcurrency) }, cancellationToken).AnyContext();
+
+                handle.SetPushSubscription(pushSubscription);
+                return handle;
+            }
+
+            if (_transport is not ISupportsPull pull)
+                throw new MessageBusException($"Transport \"{_transport.GetType().Name}\" does not support subscriptions.");
+
+            handle.Start(RunPullSubscriptionLoopAsync(subscription, pull, onMessage, options, handle.CancellationToken));
+            return handle;
+        }
+        catch
+        {
+            await handle.DisposeAsync().AnyContext();
+            throw;
+        }
+    }
+
+    private async Task RunPullSubscriptionLoopAsync(string subscription, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, PubSubSubscriptionOptions options, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -207,14 +265,14 @@ public sealed class PubSub : IPubSub
                 MaxWaitTime = TimeSpan.FromSeconds(1)
             }, cancellationToken).AnyContext();
 
-            var tasks = entries.Select(async entry =>
-            {
-                var received = await CreateReceivedMessageAsync<T>(entry, cancellationToken).AnyContext();
-                await HandleMessageAsync(received, handler, options, cancellationToken).AnyContext();
-            }).ToArray();
-
+            var tasks = entries.Select(entry => onMessage(entry, cancellationToken)).ToArray();
             await Task.WhenAll(tasks).AnyContext();
         }
+    }
+
+    private ReceivedMessage CreateReceivedMessage(TransportEntry entry, CancellationToken cancellationToken)
+    {
+        return new ReceivedMessage(_transport, entry, cancellationToken, _options.RuntimeStore, _options.TimeProvider);
     }
 
     private async Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)
@@ -256,6 +314,21 @@ public sealed class PubSub : IPubSub
         }
     }
 
+    private async Task HandleMessageAsync(IReceivedMessage message, Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions options, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await handler(message, cancellationToken).AnyContext();
+
+            if (options.AckMode == AckMode.Auto && !message.IsHandled)
+                await message.CompleteAsync(cancellationToken).AnyContext();
+        }
+        catch
+        {
+            await SettleFailedMessageAsync(message, options, cancellationToken).AnyContext();
+        }
+    }
+
     private async Task HandleMessageAsync<T>(IReceivedMessage<T> message, Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions options, CancellationToken cancellationToken) where T : class
     {
         try
@@ -267,23 +340,28 @@ public sealed class PubSub : IPubSub
         }
         catch
         {
-            if (message.IsHandled)
-                return;
-
-            if (message.Attempts >= options.MaxAttempts)
-            {
-                await message.DeadLetterAsync("handler-error", cancellationToken).AnyContext();
-                return;
-            }
-
-            await message.AbandonAsync(cancellationToken).AnyContext();
+            await SettleFailedMessageAsync(message, options, cancellationToken).AnyContext();
         }
     }
 
-    private TransportMessage CreateTransportMessage<T>(T message, PubSubMessageOptions options, string? messageId = null) where T : class
+    private static async Task SettleFailedMessageAsync(IReceivedMessage message, PubSubSubscriptionOptions options, CancellationToken cancellationToken)
+    {
+        if (message.IsHandled)
+            return;
+
+        if (message.Attempts >= options.MaxAttempts)
+        {
+            await message.DeadLetterAsync("handler-error", cancellationToken).AnyContext();
+            return;
+        }
+
+        await message.AbandonAsync(cancellationToken).AnyContext();
+    }
+
+    private TransportMessage CreateTransportMessage(object message, Type messageType, PubSubMessageOptions options, string? messageId = null)
     {
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
-            .Set(KnownHeaders.MessageType, GetMessageType(typeof(T)))
+            .Set(KnownHeaders.MessageType, GetMessageType(messageType))
             .Set(KnownHeaders.ContentType, _options.ContentType)
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
@@ -380,25 +458,22 @@ public sealed class PubSub : IPubSub
 
     private string GetTopic(Type messageType, string? topic)
     {
-        if (!String.IsNullOrEmpty(topic))
-            return topic;
-
-        if (_options.TopicResolver?.Invoke(messageType) is { Length: > 0 } resolved)
-            return resolved;
-
-        var route = messageType.GetCustomAttribute<MessageRouteAttribute>();
-        return route?.Topic ?? route?.Destination ?? MessageRoutingConventions.ToKebabCase(messageType.Name);
+        return _options.Router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = messageType,
+            Role = MessageRouteRole.PubSubTopic,
+            OperationOverride = topic
+        });
     }
 
     private string GetSubscription(Type messageType, string topic, string? subscription)
     {
-        if (!String.IsNullOrEmpty(subscription))
-            return subscription;
-
-        if (_options.SubscriptionResolver?.Invoke(messageType, topic) is { Length: > 0 } resolved)
-            return resolved;
-
-        return messageType.GetCustomAttribute<MessageRouteAttribute>()?.Subscription ?? $"{topic}.{MessageRoutingConventions.ToKebabCase(messageType.Name)}";
+        return _options.Router.ResolveSubscription(new MessageSubscriptionContext
+        {
+            MessageType = messageType,
+            Topic = topic,
+            OperationOverride = subscription
+        });
     }
 
     private static string GetSubscriptionKey(Type messageType, string topic, string subscription, string? key)
@@ -410,12 +485,12 @@ public sealed class PubSub : IPubSub
 
     private string GetMessageType(Type messageType)
     {
-        return _options.MessageTypeResolver?.Invoke(messageType) ?? messageType.FullName ?? messageType.Name;
+        return _options.Router.ResolveMessageType(messageType);
     }
 
     private async Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken cancellationToken)
     {
-        await ReceivedMessage<object>.DeadLetterAsync(_transport, entry, reason, cancellationToken).AnyContext();
+        await ReceivedMessage.DeadLetterAsync(_transport, entry, reason, cancellationToken).AnyContext();
     }
 
     private void RemoveSubscription(string key, MessageSubscriptionHandle handle)
@@ -437,19 +512,27 @@ internal sealed class MessageSubscriptionHandle : IMessageSubscription
     private Task? _worker;
     private int _isDisposed;
 
-    public MessageSubscriptionHandle(string topic, string subscription, string key, Action<string, MessageSubscriptionHandle> remove)
+    public MessageSubscriptionHandle(string topic, string subscription, string key, MessageListenerRegistration registration, Action<string, MessageSubscriptionHandle> remove)
     {
         Topic = topic;
         Subscription = subscription;
         Key = key;
+        Registration = registration;
         _remove = remove;
     }
 
     public string Topic { get; }
     public string Subscription { get; }
     public string Key { get; }
+    public MessageListenerRegistration Registration { get; }
     public CancellationToken CancellationToken => _cancellationTokenSource.Token;
     public bool IsDisposed => Volatile.Read(ref _isDisposed) == 1;
+
+    public void ThrowIfConflicting(MessageListenerRegistration registration)
+    {
+        if (!Registration.Matches(registration))
+            throw new InvalidOperationException($"A subscription with key \"{Key}\" is already registered with different handler or options.");
+    }
 
     public void SetPushSubscription(IPushSubscription subscription)
     {

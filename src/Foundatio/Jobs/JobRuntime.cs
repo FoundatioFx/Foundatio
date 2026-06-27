@@ -93,6 +93,80 @@ public sealed record JobRequestOptions
     public string? Name { get; init; }
 }
 
+public sealed record JobTypeRegistration(string Name, Type JobType);
+
+public interface IJobTypeRegistry
+{
+    string GetName(Type jobType);
+    Type Resolve(string name);
+}
+
+public sealed class JobTypeRegistry : IJobTypeRegistry
+{
+    private readonly Dictionary<string, Type> _nameToType;
+    private readonly Dictionary<Type, string> _typeToName;
+
+    public JobTypeRegistry(IEnumerable<JobTypeRegistration>? registrations = null)
+    {
+        _nameToType = new Dictionary<string, Type>(StringComparer.Ordinal);
+        _typeToName = new Dictionary<Type, string>();
+
+        foreach (var registration in registrations ?? [])
+            Add(registration);
+    }
+
+    public string GetName(Type jobType)
+    {
+        ArgumentNullException.ThrowIfNull(jobType);
+        if (!typeof(IJob).IsAssignableFrom(jobType))
+            throw new ArgumentException("Job type must implement IJob.", nameof(jobType));
+
+        return _typeToName.TryGetValue(jobType, out string? name)
+            ? name
+            : jobType.FullName ?? jobType.Name;
+    }
+
+    public Type Resolve(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
+        if (_nameToType.TryGetValue(name, out var registered))
+            return registered;
+
+        var jobType = Type.GetType(name, throwOnError: false);
+        if (jobType is null)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                jobType = assembly.GetType(name, throwOnError: false);
+                if (jobType is not null)
+                    break;
+            }
+        }
+
+        if (jobType is null || !typeof(IJob).IsAssignableFrom(jobType))
+            throw new InvalidOperationException($"Job type \"{name}\" could not be resolved to an IJob implementation.");
+
+        return jobType;
+    }
+
+    private void Add(JobTypeRegistration registration)
+    {
+        ArgumentNullException.ThrowIfNull(registration);
+        ArgumentException.ThrowIfNullOrEmpty(registration.Name);
+        ArgumentNullException.ThrowIfNull(registration.JobType);
+
+        if (!typeof(IJob).IsAssignableFrom(registration.JobType))
+            throw new ArgumentException("Job type must implement IJob.", nameof(registration));
+
+        if (_nameToType.TryGetValue(registration.Name, out var existing) && existing != registration.JobType)
+            throw new InvalidOperationException($"Job type name \"{registration.Name}\" is already registered for \"{existing.FullName}\".");
+
+        _nameToType[registration.Name] = registration.JobType;
+        _typeToName[registration.JobType] = registration.Name;
+    }
+}
+
 public sealed class JobHandle
 {
     private readonly IJobMonitor _monitor;
@@ -431,11 +505,13 @@ public sealed class JobClient : IJobClient
 {
     private readonly IJobRuntimeStore _store;
     private readonly TimeProvider _timeProvider;
+    private readonly IJobTypeRegistry _jobTypes;
 
-    public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null)
+    public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null, IJobTypeRegistry? jobTypes = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _jobTypes = jobTypes ?? new JobTypeRegistry();
     }
 
     public Task<JobHandle> EnqueueAsync<TJob>(JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
@@ -458,7 +534,7 @@ public sealed class JobClient : IJobClient
         {
             JobId = jobId,
             Name = name,
-            JobType = jobType.AssemblyQualifiedName,
+            JobType = _jobTypes.GetName(jobType),
             Status = JobStatus.Queued,
             CreatedUtc = now,
             LastUpdatedUtc = now
@@ -480,14 +556,16 @@ public sealed class JobWorker : IJobWorker
     private readonly IJobRuntimeStore _store;
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
+    private readonly IJobTypeRegistry _jobTypes;
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
 
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null)
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _jobTypes = jobTypes ?? new JobTypeRegistry();
         _nodeId = !String.IsNullOrEmpty(nodeId)
             ? nodeId
             : Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") ?? Environment.MachineName;
@@ -593,26 +671,19 @@ public sealed class JobWorker : IJobWorker
         }
     }
 
-    private static Type ResolveJobType(JobState state)
+    private Type ResolveJobType(JobState state)
     {
         if (String.IsNullOrEmpty(state.JobType))
             throw new InvalidOperationException($"Job \"{state.JobId}\" does not have a job type and cannot be executed by a worker.");
 
-        var jobType = Type.GetType(state.JobType, throwOnError: false);
-        if (jobType is null)
+        try
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                jobType = assembly.GetType(state.JobType, throwOnError: false);
-                if (jobType is not null)
-                    break;
-            }
+            return _jobTypes.Resolve(state.JobType);
         }
-
-        if (jobType is null || !typeof(IJob).IsAssignableFrom(jobType))
-            throw new InvalidOperationException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.");
-
-        return jobType;
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+        {
+            throw new InvalidOperationException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.", ex);
+        }
     }
 
     private IDisposable WatchCancellation(string jobId, CancellationTokenSource cancellationTokenSource)

@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -34,6 +33,7 @@ public sealed record QueueMessageOptions
 public sealed record QueueReceiveOptions
 {
     public string? Source { get; init; }
+    public Type? RouteType { get; init; }
     public TimeSpan? MaxWaitTime { get; init; } = TimeSpan.FromSeconds(30);
 }
 
@@ -41,6 +41,7 @@ public sealed record QueueConsumerOptions
 {
     public AckMode AckMode { get; init; } = AckMode.Auto;
     public string? Source { get; init; }
+    public Type? RouteType { get; init; }
     public string? Key { get; init; }
     public int MaxConcurrency { get; init; } = 1;
     public int MaxAttempts { get; init; } = 5;
@@ -51,8 +52,7 @@ public sealed record QueueOptions
 {
     public ISerializer Serializer { get; init; } = DefaultSerializer.Instance;
     public string ContentType { get; init; } = "application/json";
-    public Func<Type, string>? DestinationResolver { get; init; }
-    public Func<Type, string>? MessageTypeResolver { get; init; }
+    public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
@@ -61,8 +61,12 @@ public interface IQueue : IAsyncDisposable
 {
     Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task EnqueueBatchAsync<T>(IEnumerable<T> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task EnqueueBatchAsync(IEnumerable<object> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default);
+    Task<IReceivedMessage?> ReceiveAsync(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default);
     Task<IReceivedMessage<T>?> ReceiveAsync<T>(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task<IMessageConsumer> StartConsumerAsync(Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default);
     Task<IMessageConsumer> StartConsumerAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task RunConsumerAsync(Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default);
     Task RunConsumerAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class;
 }
 
@@ -72,10 +76,10 @@ public interface IMessageConsumer : IAsyncDisposable
     string Key { get; }
 }
 
-public interface IReceivedMessage<out T> where T : class
+public interface IReceivedMessage
 {
-    T Message { get; }
     string Id { get; }
+    ReadOnlyMemory<byte> Body { get; }
     MessageHeaders Headers { get; }
     string? CorrelationId { get; }
     string? MessageType { get; }
@@ -88,6 +92,11 @@ public interface IReceivedMessage<out T> where T : class
     Task DeadLetterAsync(string? reason = null, CancellationToken cancellationToken = default);
     Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default);
     Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default);
+}
+
+public interface IReceivedMessage<out T> : IReceivedMessage where T : class
+{
+    T Message { get; }
 }
 
 public sealed class MessageQueue : IQueue
@@ -114,7 +123,7 @@ public sealed class MessageQueue : IQueue
         string destination = GetDestination(typeof(T), options.Destination);
         var sendOptions = CreateSendOptions(options);
         string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
-        var transportMessage = CreateTransportMessage(message, options, messageId);
+        var transportMessage = CreateTransportMessage(message, typeof(T), options, messageId);
 
         if (await TryScheduleDispatchAsync(ScheduledDispatchKind.QueueMessage, destination, transportMessage, sendOptions, cancellationToken).AnyContext())
             return messageId;
@@ -131,31 +140,35 @@ public sealed class MessageQueue : IQueue
     public async Task EnqueueBatchAsync<T>(IEnumerable<T> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
+        await EnqueueBatchCoreAsync(messages.Cast<object>(), typeof(T), options, cancellationToken).AnyContext();
+    }
+
+    public async Task EnqueueBatchAsync(IEnumerable<object> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        await EnqueueBatchCoreAsync(messages, null, options, cancellationToken).AnyContext();
+    }
+
+    public async Task<IReceivedMessage?> ReceiveAsync(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default)
+    {
         ThrowIfDisposed();
 
-        options ??= new QueueMessageOptions();
-        ValidateSendOptions(options);
+        if (_transport is not ISupportsPull pull)
+            throw new MessageQueueException($"Transport \"{_transport.GetType().Name}\" does not support pull receive.");
 
-        string destination = GetDestination(typeof(T), options.Destination);
-        var sendOptions = CreateSendOptions(options);
-        int index = 0;
-        var transportMessages = messages.Select(message =>
+        options ??= new QueueReceiveOptions();
+        Type routeType = options.RouteType ?? typeof(object);
+        string source = GetDestination(routeType, options.Source);
+        var entries = await pull.ReceiveAsync(source, new ReceiveRequest
         {
-            ArgumentNullException.ThrowIfNull(message);
-            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
-            index++;
-            return CreateTransportMessage(message, options, messageId);
-        }).ToArray();
+            MaxMessages = 1,
+            MaxWaitTime = options.MaxWaitTime
+        }, cancellationToken).AnyContext();
 
-        if (transportMessages.Length == 0)
-            return;
+        if (entries.Count == 0)
+            return null;
 
-        if (await TryScheduleDispatchesAsync(ScheduledDispatchKind.QueueMessage, destination, transportMessages, sendOptions, cancellationToken).AnyContext())
-            return;
-
-        var result = await _transport.SendAsync(destination, transportMessages, sendOptions, cancellationToken).AnyContext();
-        if (!result.AllSucceeded)
-            throw new MessageQueueException($"Unable to enqueue {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{destination}\".");
+        return CreateReceivedMessage(entries[0], cancellationToken);
     }
 
     public async Task<IReceivedMessage<T>?> ReceiveAsync<T>(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -166,7 +179,7 @@ public sealed class MessageQueue : IQueue
             throw new MessageQueueException($"Transport \"{_transport.GetType().Name}\" does not support pull receive.");
 
         options ??= new QueueReceiveOptions();
-        string source = GetDestination(typeof(T), options.Source);
+        string source = GetDestination(options.RouteType ?? typeof(T), options.Source);
         var entries = await pull.ReceiveAsync(source, new ReceiveRequest
         {
             MaxMessages = 1,
@@ -179,51 +192,42 @@ public sealed class MessageQueue : IQueue
         return await CreateReceivedMessageAsync<T>(entries[0], cancellationToken).AnyContext();
     }
 
+    public async Task<IMessageConsumer> StartConsumerAsync(Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        options ??= new QueueConsumerOptions();
+        Type routeType = options.RouteType ?? typeof(object);
+        string source = GetDestination(routeType, options.Source);
+        string key = GetConsumerKey(routeType, source, options.Key);
+        var registration = MessageListenerRegistration.Create(handler, routeType, source, options);
+
+        return await StartConsumerCoreAsync(source, key, registration, options, async (entry, token) =>
+        {
+            var received = CreateReceivedMessage(entry, token);
+            await HandleMessageAsync(received, handler, options, token).AnyContext();
+        }, cancellationToken).AnyContext();
+    }
+
     public async Task<IMessageConsumer> StartConsumerAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
-        ThrowIfDisposed();
-        cancellationToken.ThrowIfCancellationRequested();
-
         options ??= new QueueConsumerOptions();
-        string source = GetDestination(typeof(T), options.Source);
-        string key = GetConsumerKey(typeof(T), source, options.Key);
+        Type routeType = options.RouteType ?? typeof(T);
+        string source = GetDestination(routeType, options.Source);
+        string key = GetConsumerKey(routeType, source, options.Key);
+        var registration = MessageListenerRegistration.Create(handler, routeType, source, options);
 
-        if (_consumers.TryGetValue(key, out var existing) && !existing.IsDisposed)
-            return existing;
-
-        var handle = new MessageConsumerHandle(source, key, RemoveConsumer);
-        if (!_consumers.TryAdd(key, handle))
+        return await StartConsumerCoreAsync(source, key, registration, options, async (entry, token) =>
         {
-            await handle.DisposeAsync().AnyContext();
-            return _consumers[key];
-        }
+            var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
+            await HandleMessageAsync(received, handler, options, token).AnyContext();
+        }, cancellationToken).AnyContext();
+    }
 
-        try
-        {
-            if (_transport is ISupportsPush push)
-            {
-                var subscription = await push.SubscribeAsync(source, async (entry, token) =>
-                {
-                    var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
-                    await HandleMessageAsync(received, handler, options, token).AnyContext();
-                }, new PushOptions { MaxConcurrentMessages = Math.Max(1, options.MaxConcurrency) }, cancellationToken).AnyContext();
-
-                handle.SetPushSubscription(subscription);
-                return handle;
-            }
-
-            if (_transport is not ISupportsPull pull)
-                throw new MessageQueueException($"Transport \"{_transport.GetType().Name}\" does not support receiving messages.");
-
-            handle.Start(RunPullConsumerLoopAsync(source, pull, handler, options, handle.CancellationToken));
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().AnyContext();
-            throw;
-        }
+    public async Task RunConsumerAsync(Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        await using var consumer = await StartConsumerAsync(handler, options, cancellationToken).AnyContext();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).AnyContext();
     }
 
     public async Task RunConsumerAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -244,7 +248,89 @@ public sealed class MessageQueue : IQueue
         await _transport.DisposeAsync().AnyContext();
     }
 
-    private async Task RunPullConsumerLoopAsync<T>(string source, ISupportsPull pull, Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions options, CancellationToken cancellationToken) where T : class
+    private async Task EnqueueBatchCoreAsync(IEnumerable<object> messages, Type? declaredType, QueueMessageOptions? options, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+
+        options ??= new QueueMessageOptions();
+        ValidateSendOptions(options);
+
+        var sendOptions = CreateSendOptions(options);
+        var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
+        int index = 0;
+
+        foreach (var message in messages)
+        {
+            ArgumentNullException.ThrowIfNull(message);
+            Type messageType = declaredType ?? message.GetType();
+            string destination = GetDestination(messageType, options.Destination);
+            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
+            index++;
+
+            if (!grouped.TryGetValue(destination, out var transportMessages))
+            {
+                transportMessages = [];
+                grouped.Add(destination, transportMessages);
+            }
+
+            transportMessages.Add(CreateTransportMessage(message, messageType, options, messageId));
+        }
+
+        foreach (var group in grouped)
+        {
+            if (await TryScheduleDispatchesAsync(ScheduledDispatchKind.QueueMessage, group.Key, group.Value, sendOptions, cancellationToken).AnyContext())
+                continue;
+
+            var result = await _transport.SendAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext();
+            if (!result.AllSucceeded)
+                throw new MessageQueueException($"Unable to enqueue {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{group.Key}\".");
+        }
+    }
+
+    private async Task<IMessageConsumer> StartConsumerCoreAsync(string source, string key, MessageListenerRegistration registration, QueueConsumerOptions options, Func<TransportEntry, CancellationToken, Task> onMessage, CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_consumers.TryGetValue(key, out var existing) && !existing.IsDisposed)
+        {
+            existing.ThrowIfConflicting(registration);
+            return existing;
+        }
+
+        var handle = new MessageConsumerHandle(source, key, registration, RemoveConsumer);
+        if (!_consumers.TryAdd(key, handle))
+        {
+            await handle.DisposeAsync().AnyContext();
+            var current = _consumers[key];
+            current.ThrowIfConflicting(registration);
+            return current;
+        }
+
+        try
+        {
+            if (_transport is ISupportsPush push)
+            {
+                var subscription = await push.SubscribeAsync(source, onMessage, new PushOptions { MaxConcurrentMessages = Math.Max(1, options.MaxConcurrency) }, cancellationToken).AnyContext();
+
+                handle.SetPushSubscription(subscription);
+                return handle;
+            }
+
+            if (_transport is not ISupportsPull pull)
+                throw new MessageQueueException($"Transport \"{_transport.GetType().Name}\" does not support receiving messages.");
+
+            handle.Start(RunPullConsumerLoopAsync(source, pull, onMessage, options, handle.CancellationToken));
+            return handle;
+        }
+        catch
+        {
+            await handle.DisposeAsync().AnyContext();
+            throw;
+        }
+    }
+
+    private async Task RunPullConsumerLoopAsync(string source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, QueueConsumerOptions options, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -254,14 +340,14 @@ public sealed class MessageQueue : IQueue
                 MaxWaitTime = TimeSpan.FromSeconds(1)
             }, cancellationToken).AnyContext();
 
-            var tasks = entries.Select(async entry =>
-            {
-                var received = await CreateReceivedMessageAsync<T>(entry, cancellationToken).AnyContext();
-                await HandleMessageAsync(received, handler, options, cancellationToken).AnyContext();
-            }).ToArray();
-
+            var tasks = entries.Select(entry => onMessage(entry, cancellationToken)).ToArray();
             await Task.WhenAll(tasks).AnyContext();
         }
+    }
+
+    private ReceivedMessage CreateReceivedMessage(TransportEntry entry, CancellationToken ct)
+    {
+        return new ReceivedMessage(_transport, entry, ct, _options.RuntimeStore, _options.TimeProvider);
     }
 
     private async Task<IReceivedMessage<T>> CreateReceivedMessageAsync<T>(TransportEntry entry, CancellationToken ct) where T : class
@@ -286,6 +372,21 @@ public sealed class MessageQueue : IQueue
         }
     }
 
+    private async Task HandleMessageAsync(IReceivedMessage message, Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions options, CancellationToken ct)
+    {
+        try
+        {
+            await handler(message, ct).AnyContext();
+
+            if (options.AckMode == AckMode.Auto && !message.IsHandled)
+                await message.CompleteAsync(ct).AnyContext();
+        }
+        catch
+        {
+            await SettleFailedMessageAsync(message, options, ct).AnyContext();
+        }
+    }
+
     private async Task HandleMessageAsync<T>(IReceivedMessage<T> message, Func<IReceivedMessage<T>, CancellationToken, Task> handler, QueueConsumerOptions options, CancellationToken ct) where T : class
     {
         try
@@ -297,27 +398,32 @@ public sealed class MessageQueue : IQueue
         }
         catch
         {
-            if (message.IsHandled)
-                return;
-
-            if (message.Attempts >= options.MaxAttempts)
-            {
-                await message.DeadLetterAsync("handler-error", ct).AnyContext();
-                return;
-            }
-
-            TimeSpan? redeliveryDelay = options.RedeliveryBackoff?.Invoke(message.Attempts);
-            if (redeliveryDelay is { } delay && delay > TimeSpan.Zero && message is ReceivedMessage<T> received)
-                await received.AbandonAsync(delay, ct).AnyContext();
-            else
-                await message.AbandonAsync(ct).AnyContext();
+            await SettleFailedMessageAsync(message, options, ct).AnyContext();
         }
     }
 
-    private TransportMessage CreateTransportMessage<T>(T message, QueueMessageOptions options, string? messageId = null) where T : class
+    private static async Task SettleFailedMessageAsync(IReceivedMessage message, QueueConsumerOptions options, CancellationToken ct)
+    {
+        if (message.IsHandled)
+            return;
+
+        if (message.Attempts >= options.MaxAttempts)
+        {
+            await message.DeadLetterAsync("handler-error", ct).AnyContext();
+            return;
+        }
+
+        TimeSpan? redeliveryDelay = options.RedeliveryBackoff?.Invoke(message.Attempts);
+        if (redeliveryDelay is { } delay && delay > TimeSpan.Zero && message is ISupportsDelayedMessageAbandon received)
+            await received.AbandonAsync(delay, ct).AnyContext();
+        else
+            await message.AbandonAsync(ct).AnyContext();
+    }
+
+    private TransportMessage CreateTransportMessage(object message, Type messageType, QueueMessageOptions options, string? messageId = null)
     {
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
-            .Set(KnownHeaders.MessageType, GetMessageType(typeof(T)))
+            .Set(KnownHeaders.MessageType, GetMessageType(messageType))
             .Set(KnownHeaders.ContentType, _options.ContentType)
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
@@ -414,18 +520,17 @@ public sealed class MessageQueue : IQueue
 
     private string GetDestination(Type messageType, string? destination)
     {
-        if (!String.IsNullOrEmpty(destination))
-            return destination;
-
-        if (_options.DestinationResolver?.Invoke(messageType) is { Length: > 0 } resolved)
-            return resolved;
-
-        return messageType.GetCustomAttribute<MessageRouteAttribute>()?.Destination ?? MessageRoutingConventions.ToKebabCase(messageType.Name);
+        return _options.Router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = messageType,
+            Role = MessageRouteRole.QueueDestination,
+            OperationOverride = destination
+        });
     }
 
     private string GetMessageType(Type messageType)
     {
-        return _options.MessageTypeResolver?.Invoke(messageType) ?? messageType.FullName ?? messageType.Name;
+        return _options.Router.ResolveMessageType(messageType);
     }
 
     private static string GetConsumerKey(Type messageType, string source, string? key)
@@ -437,7 +542,7 @@ public sealed class MessageQueue : IQueue
 
     private async Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken ct)
     {
-        await ReceivedMessage<object>.DeadLetterAsync(_transport, entry, reason, ct).AnyContext();
+        await ReceivedMessage.DeadLetterAsync(_transport, entry, reason, ct).AnyContext();
     }
 
     private void RemoveConsumer(string key, MessageConsumerHandle handle)
@@ -451,7 +556,12 @@ public sealed class MessageQueue : IQueue
     }
 }
 
-internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
+internal interface ISupportsDelayedMessageAbandon
+{
+    Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken cancellationToken = default);
+}
+
+internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbandon
 {
     private readonly IMessageTransport _transport;
     private readonly TransportEntry _entry;
@@ -459,18 +569,17 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
     private readonly TimeProvider _timeProvider;
     private int _isHandled;
 
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
+    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
     {
         _transport = transport;
         _entry = entry;
         _runtimeStore = runtimeStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        Message = message;
         CancellationToken = cancellationToken;
     }
 
-    public T Message { get; }
     public string Id => _entry.Id;
+    public ReadOnlyMemory<byte> Body => _entry.Body;
     public MessageHeaders Headers => _entry.Headers;
     public string? CorrelationId => Headers.GetValueOrDefault(KnownHeaders.CorrelationId);
     public string? MessageType => Headers.GetValueOrDefault(KnownHeaders.MessageType);
@@ -495,7 +604,7 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
         return _transport.AbandonAsync(_entry, cancellationToken);
     }
 
-    internal async Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken cancellationToken = default)
+    public async Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken cancellationToken = default)
     {
         if (!TryMarkHandled())
             return;
@@ -562,6 +671,17 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
     }
 }
 
+internal sealed class ReceivedMessage<T> : ReceivedMessage, IReceivedMessage<T> where T : class
+{
+    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
+        : base(transport, entry, cancellationToken, runtimeStore, timeProvider)
+    {
+        Message = message;
+    }
+
+    public T Message { get; }
+}
+
 internal static class MessageRoutingConventions
 {
     public static string ToKebabCase(string value)
@@ -599,17 +719,25 @@ internal sealed class MessageConsumerHandle : IMessageConsumer
     private Task? _worker;
     private int _isDisposed;
 
-    public MessageConsumerHandle(string source, string key, Action<string, MessageConsumerHandle> remove)
+    public MessageConsumerHandle(string source, string key, MessageListenerRegistration registration, Action<string, MessageConsumerHandle> remove)
     {
         Source = source;
         Key = key;
+        Registration = registration;
         _remove = remove;
     }
 
     public string Source { get; }
     public string Key { get; }
+    public MessageListenerRegistration Registration { get; }
     public CancellationToken CancellationToken => _cancellationTokenSource.Token;
     public bool IsDisposed => Volatile.Read(ref _isDisposed) == 1;
+
+    public void ThrowIfConflicting(MessageListenerRegistration registration)
+    {
+        if (!Registration.Matches(registration))
+            throw new InvalidOperationException($"A consumer with key \"{Key}\" is already registered with different handler or options.");
+    }
 
     public void SetPushSubscription(IPushSubscription subscription)
     {
@@ -642,5 +770,55 @@ internal sealed class MessageConsumerHandle : IMessageConsumer
 
         _cancellationTokenSource.Dispose();
         _remove(Key, this);
+    }
+}
+
+internal sealed record MessageListenerRegistration
+{
+    public required Type MessageType { get; init; }
+    public required string Source { get; init; }
+    public required Delegate Handler { get; init; }
+    public required AckMode AckMode { get; init; }
+    public required int MaxConcurrency { get; init; }
+    public required int MaxAttempts { get; init; }
+    public required bool HasRedeliveryBackoff { get; init; }
+
+    public static MessageListenerRegistration Create(Delegate handler, Type messageType, string source, QueueConsumerOptions options)
+    {
+        return new MessageListenerRegistration
+        {
+            MessageType = messageType,
+            Source = source,
+            Handler = handler,
+            AckMode = options.AckMode,
+            MaxConcurrency = Math.Max(1, options.MaxConcurrency),
+            MaxAttempts = options.MaxAttempts,
+            HasRedeliveryBackoff = options.RedeliveryBackoff is not null
+        };
+    }
+
+    public static MessageListenerRegistration Create(Delegate handler, Type messageType, string topic, string subscription, PubSubSubscriptionOptions options)
+    {
+        return new MessageListenerRegistration
+        {
+            MessageType = messageType,
+            Source = $"{topic}:{subscription}",
+            Handler = handler,
+            AckMode = options.AckMode,
+            MaxConcurrency = Math.Max(1, options.MaxConcurrency),
+            MaxAttempts = options.MaxAttempts,
+            HasRedeliveryBackoff = false
+        };
+    }
+
+    public bool Matches(MessageListenerRegistration other)
+    {
+        return MessageType == other.MessageType
+            && String.Equals(Source, other.Source, StringComparison.Ordinal)
+            && Handler == other.Handler
+            && AckMode == other.AckMode
+            && MaxConcurrency == other.MaxConcurrency
+            && MaxAttempts == other.MaxAttempts
+            && HasRedeliveryBackoff == other.HasRedeliveryBackoff;
     }
 }
