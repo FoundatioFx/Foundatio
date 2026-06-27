@@ -244,6 +244,8 @@ public class FoundatioBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
         private readonly IServiceCollection _services;
+        private bool _routingServicesRegistered;
+        private bool _topologyServicesRegistered;
 
         internal MessagingBuilder(IFoundatioBuilder builder)
         {
@@ -274,13 +276,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         {
             ArgumentNullException.ThrowIfNull(configure);
 
-            _services.ReplaceSingleton<IMessageRouter>(_ =>
-            {
-                var options = new MessageRoutingOptions();
-                configure(new MessageRoutingOptionsBuilder(options));
-                return new DefaultMessageRouter(options);
-            });
-
+            _services.AddSingleton<Action<MessageRoutingOptionsBuilder>>(configure);
+            RegisterRoutingServices();
             return this;
         }
 
@@ -304,8 +301,8 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseTransport(IMessageTransport transport)
         {
-            _services.ReplaceSingleton(_ => transport);
-            RegisterMessageClients();
+            ArgumentNullException.ThrowIfNull(transport);
+            RegisterMessagingRuntime(_ => transport);
             return _builder;
         }
 
@@ -318,11 +315,44 @@ public class FoundatioBuilder : IFoundatioBuilder
         private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
         {
             _services.ReplaceSingleton(factory);
+            RegisterMessageTopology();
             RegisterMessageClients();
+        }
+
+        private void RegisterRoutingServices()
+        {
+            if (_routingServicesRegistered)
+                return;
+
+            _routingServicesRegistered = true;
+            _services.ReplaceSingleton<MessageRoutingOptions>(sp =>
+            {
+                var options = new MessageRoutingOptions();
+                var builder = new MessageRoutingOptionsBuilder(options);
+                foreach (var configure in sp.GetServices<Action<MessageRoutingOptionsBuilder>>())
+                    configure(builder);
+
+                return options;
+            });
+            _services.ReplaceSingleton<IMessageRouter>(sp => new DefaultMessageRouter(sp.GetRequiredService<MessageRoutingOptions>()));
+        }
+
+        private void RegisterMessageTopology()
+        {
+            RegisterRoutingServices();
+
+            if (_topologyServicesRegistered)
+                return;
+
+            _topologyServicesRegistered = true;
+            _services.ReplaceSingleton<IMessageTopology>(sp => new MessageTopology(
+                sp.GetRequiredService<IMessageTransport>(),
+                sp.GetRequiredService<MessageRoutingOptions>()));
         }
 
         private void RegisterMessageClients()
         {
+            RegisterRoutingServices();
             _services.ReplaceSingleton<Messaging.IQueue>(sp => new MessageQueue(sp.GetRequiredService<IMessageTransport>(), CreateQueueOptions(sp)));
             _services.ReplaceSingleton<IPubSub>(sp => new PubSub(sp.GetRequiredService<IMessageTransport>(), CreatePubSubOptions(sp)));
         }

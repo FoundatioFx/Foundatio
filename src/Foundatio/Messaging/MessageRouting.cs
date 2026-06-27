@@ -42,13 +42,38 @@ public sealed record MessageRouteMap
 public sealed class MessageRoutingOptions
 {
     internal List<MessageRouteMap> RouteMaps { get; } = [];
+    internal List<DestinationDeclaration> TopologyDeclarations { get; } = [];
 
-    public string? GlobalQueueDestination { get; set; }
-    public string? GlobalPubSubTopic { get; set; }
+    public string? DefaultQueueDestination { get; set; }
+    public string? DefaultPubSubTopic { get; set; }
     public string? SubscriptionIdentity { get; set; }
     public string? ServiceIdentity { get; set; }
     public Func<MessageRouteContext, string>? Convention { get; set; }
     public Func<Type, string>? MessageTypeResolver { get; set; }
+
+    public IReadOnlyList<DestinationDeclaration> GetTopologyDeclarations()
+    {
+        return TopologyDeclarations.ToArray();
+    }
+
+    internal void Declare(DestinationDeclaration declaration)
+    {
+        ArgumentNullException.ThrowIfNull(declaration);
+        ArgumentException.ThrowIfNullOrEmpty(declaration.Name);
+
+        bool exists = TopologyDeclarations.Any(d =>
+            String.Equals(d.Name, declaration.Name, StringComparison.Ordinal)
+            && d.Role == declaration.Role
+            && String.Equals(d.Source, declaration.Source, StringComparison.Ordinal));
+
+        if (!exists)
+            TopologyDeclarations.Add(declaration);
+    }
+
+    internal void RemoveDeclarations(Predicate<DestinationDeclaration> match)
+    {
+        TopologyDeclarations.RemoveAll(match);
+    }
 }
 
 public sealed class MessageRoutingOptionsBuilder
@@ -65,17 +90,19 @@ public sealed class MessageRoutingOptionsBuilder
         _options = options;
     }
 
-    public MessageRoutingOptionsBuilder UseGlobalQueue(string destination)
+    public MessageRoutingOptionsBuilder UseDefaultQueue(string destination)
     {
         ArgumentException.ThrowIfNullOrEmpty(destination);
-        _options.GlobalQueueDestination = destination;
+        _options.DefaultQueueDestination = destination;
+        DeclareQueue(destination);
         return this;
     }
 
-    public MessageRoutingOptionsBuilder UseGlobalTopic(string topic)
+    public MessageRoutingOptionsBuilder UseDefaultTopic(string topic)
     {
         ArgumentException.ThrowIfNullOrEmpty(topic);
-        _options.GlobalPubSubTopic = topic;
+        _options.DefaultPubSubTopic = topic;
+        DeclareTopic(topic);
         return this;
     }
 
@@ -113,6 +140,7 @@ public sealed class MessageRoutingOptionsBuilder
     {
         ArgumentException.ThrowIfNullOrEmpty(subscription);
         _options.SubscriptionIdentity = subscription;
+        RebuildSubscriptionDeclarations();
         return this;
     }
 
@@ -120,6 +148,7 @@ public sealed class MessageRoutingOptionsBuilder
     {
         ArgumentException.ThrowIfNullOrEmpty(serviceIdentity);
         _options.ServiceIdentity = serviceIdentity;
+        RebuildSubscriptionDeclarations();
         return this;
     }
 
@@ -159,7 +188,53 @@ public sealed class MessageRoutingOptionsBuilder
             });
         }
 
+        if (role == MessageRouteRole.QueueDestination)
+            DeclareQueue(route);
+        else
+            DeclareTopic(route);
+
         return this;
+    }
+
+    private void DeclareQueue(string destination)
+    {
+        _options.Declare(new DestinationDeclaration { Name = destination, Role = DestinationRole.Queue });
+    }
+
+    private void DeclareTopic(string topic)
+    {
+        _options.Declare(new DestinationDeclaration { Name = topic, Role = DestinationRole.Topic });
+        DeclareSubscription(topic);
+    }
+
+    private void RebuildSubscriptionDeclarations()
+    {
+        _options.RemoveDeclarations(d => d.Role == DestinationRole.Subscription);
+
+        if (!String.IsNullOrEmpty(_options.DefaultPubSubTopic))
+            DeclareSubscription(_options.DefaultPubSubTopic);
+
+        foreach (string topic in _options.RouteMaps
+            .Where(m => m.Role == MessageRouteRole.PubSubTopic)
+            .Select(m => m.Route)
+            .Distinct(StringComparer.Ordinal))
+        {
+            DeclareSubscription(topic);
+        }
+    }
+
+    private void DeclareSubscription(string topic)
+    {
+        string? subscription = _options.SubscriptionIdentity ?? _options.ServiceIdentity;
+        if (String.IsNullOrEmpty(subscription))
+            return;
+
+        DeclareSubscription(topic, subscription);
+    }
+
+    private void DeclareSubscription(string topic, string subscription)
+    {
+        _options.Declare(new DestinationDeclaration { Name = subscription, Role = DestinationRole.Subscription, Source = topic });
     }
 }
 
@@ -198,12 +273,12 @@ public sealed class DefaultMessageRouter : IMessageRouter
         if (!String.IsNullOrEmpty(attributedRoute))
             return attributedRoute;
 
-        string? configuredConvention = context.Role == MessageRouteRole.QueueDestination
-            ? _options.GlobalQueueDestination
-            : _options.GlobalPubSubTopic;
+        string? configuredDefault = context.Role == MessageRouteRole.QueueDestination
+            ? _options.DefaultQueueDestination
+            : _options.DefaultPubSubTopic;
 
-        if (!String.IsNullOrEmpty(configuredConvention))
-            return configuredConvention;
+        if (!String.IsNullOrEmpty(configuredDefault))
+            return configuredDefault;
 
         if (_options.Convention is not null)
         {

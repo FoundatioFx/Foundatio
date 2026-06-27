@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,50 @@ public class PubSubTests
         var secondStats = await transport.GetStatsAsync("subscriber-b", cancellationToken);
         Assert.Equal(1, firstStats.Completed);
         Assert.Equal(1, secondStats.Completed);
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithSameSubscriptionAndDifferentKeys_CompetesOnTransportSubscriptionAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var pubSub = new PubSub(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var received = new AsyncCountdownEvent(2);
+        var deliveriesByMessageId = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
+
+        Func<IReceivedMessage<PreviewEvent>, CancellationToken, Task> handler = (message, _) =>
+        {
+            deliveriesByMessageId.AddOrUpdate(message.Id, 1, (_, count) => count + 1);
+            received.Signal();
+            return Task.CompletedTask;
+        };
+
+        await using var first = await pubSub.SubscribeAsync(handler, new PubSubSubscriptionOptions
+        {
+            Subscription = "billing-service",
+            Key = "node-a"
+        }, cts.Token);
+        await using var second = await pubSub.SubscribeAsync(handler, new PubSubSubscriptionOptions
+        {
+            Subscription = "billing-service",
+            Key = "node-b"
+        }, cts.Token);
+
+        await pubSub.PublishBatchAsync([
+            new PreviewEvent { Data = "one" },
+            new PreviewEvent { Data = "two" }
+        ], cancellationToken: cancellationToken);
+
+        await received.WaitAsync(TimeSpan.FromSeconds(2));
+        await WaitForCompletedAsync(transport, "billing-service", 2, cancellationToken);
+
+        Assert.Equal(first.Topic, second.Topic);
+        Assert.Equal(first.Subscription, second.Subscription);
+        Assert.NotEqual(first.Key, second.Key);
+        Assert.Equal(2, deliveriesByMessageId.Count);
+        Assert.All(deliveriesByMessageId.Values, count => Assert.Equal(1, count));
     }
 
     [Fact]
@@ -236,6 +281,22 @@ public class PubSubTests
         Assert.Equal(2, stats.Completed);
     }
 
+
+    private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, long expected, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var stats = await transport.GetStatsAsync(destination, cancellationToken);
+            if (stats.Completed == expected)
+                return;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
+        }
+
+        var finalStats = await transport.GetStatsAsync(destination, cancellationToken);
+        Assert.Equal(expected, finalStats.Completed);
+    }
 
     private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
