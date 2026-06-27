@@ -287,9 +287,49 @@ public class MessageQueueTests
 
         Assert.NotNull(provider.GetRequiredService<Foundatio.Messaging.IQueue>());
         Assert.NotNull(provider.GetRequiredService<IPubSub>());
+        Assert.NotNull(provider.GetRequiredService<IMessageRouter>());
+        Assert.NotNull(provider.GetRequiredService<IMessageTopology>());
         Assert.NotNull(provider.GetRequiredService<IJobClient>());
         Assert.NotNull(provider.GetRequiredService<IJobMonitor>());
         Assert.NotNull(provider.GetRequiredService<IJobWorker>());
+    }
+
+    [Fact]
+    public async Task AddFoundatio_WithRouting_RegistersRouterAndTopologyAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var services = new ServiceCollection();
+
+        services.AddFoundatio()
+            .Messaging.ConfigureRouting(r => r
+                .UseDefaultQueue("all-work")
+                .MapTopic("grouped-events", typeof(IGroupedWorkItem))
+                .UseServiceIdentity("billing-service"))
+            .UseInMemory();
+
+        await using var provider = services.BuildServiceProvider();
+
+        var router = provider.GetRequiredService<IMessageRouter>();
+        Assert.Equal("all-work", router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = typeof(PreviewWorkItem),
+            Role = MessageRouteRole.QueueDestination
+        }));
+        Assert.Equal("grouped-events", router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = typeof(OtherWorkItem),
+            Role = MessageRouteRole.PubSubTopic
+        }));
+
+        var topology = provider.GetRequiredService<IMessageTopology>();
+        var declarations = topology.GetDeclarations();
+        Assert.Contains(declarations, d => d.Role == DestinationRole.Queue && d.Name == "all-work");
+        Assert.Contains(declarations, d => d.Role == DestinationRole.Topic && d.Name == "grouped-events");
+        Assert.Contains(declarations, d => d.Role == DestinationRole.Subscription && d.Name == "billing-service" && d.Source == "grouped-events");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await topology.ValidateAsync(cancellationToken));
+        await topology.EnsureAsync(cancellationToken);
+        await topology.ValidateAsync(cancellationToken);
     }
 
     [Fact]
@@ -361,11 +401,11 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task ReceiveAsync_WithGlobalQueueRoute_ReturnsRawMessageAsync()
+    public async Task ReceiveAsync_WithDefaultQueueRoute_ReturnsRawMessageAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var routing = new MessageRoutingOptionsBuilder()
-            .UseGlobalQueue("all-work")
+            .UseDefaultQueue("all-work")
             .Build();
         await using var queue = new MessageQueue(new InMemoryMessageTransport(), new QueueOptions { Router = new DefaultMessageRouter(routing) });
 

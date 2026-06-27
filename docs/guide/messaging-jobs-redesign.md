@@ -14,12 +14,12 @@ services.AddFoundatio()
         .MapQueue<OrderSubmitted>("orders")
         .MapTopic("order-events", typeof(IOrderEvent))
         .UseSubscriptionIdentity("billing-service"))
-        .UseInMemory()
+    .UseInMemory()
     .Jobs.UseInMemoryRuntime()
     .Jobs.Register<RebuildSearchIndexJob>("search.rebuild");
 ```
 
-Application code should depend on `Foundatio.Messaging.IQueue`, `IPubSub`, `IJobClient`, `IJobMonitor`, and `IJobWorker` instead of constructing `InMemoryMessageTransport`, `MessageQueue`, `PubSub`, or `JobClient` directly.
+Application code should depend on `Foundatio.Messaging.IQueue`, `IPubSub`, `IJobClient`, `IJobMonitor`, and `IJobWorker` instead of constructing `InMemoryMessageTransport`, `MessageQueue`, `PubSub`, or `JobClient` directly. Deployment or admin code can depend on `IMessageTopology` to inspect, create, or validate the destinations implied by routing configuration.
 
 ## Queue
 
@@ -43,7 +43,7 @@ IReceivedMessage<OrderSubmitted>? received = await queue.ReceiveAsync<OrderSubmi
 });
 ```
 
-Grouped or global queues can be consumed through the raw envelope path:
+Grouped or default queues can be consumed through the raw envelope path:
 
 ```csharp
 IReceivedMessage? received = await queue.ReceiveAsync(new QueueReceiveOptions {
@@ -74,7 +74,7 @@ await pubsub.PublishAsync(new OrderSubmitted(id));
 await using IMessageSubscription subscription = await pubsub.SubscribeAsync<OrderSubmitted>(HandleAsync);
 ```
 
-Topic routing and subscription identity are separate. The topic answers where the event is published. The subscription answers which logical service or consumer group receives it:
+Topic routing and subscription identity are separate. The topic answers where the event is published. The subscription answers which logical service or consumer group receives it. Multiple instances using the same subscription compete on the same transport subscription; different subscriptions on the same topic receive fan-out copies:
 
 ```csharp
 services.AddFoundatio()
@@ -98,14 +98,14 @@ await using IMessageSubscription subscription = await pubsub.SubscribeAsync<Orde
     });
 ```
 
-`PubSubMessageOptions` mirrors queue send options where concepts overlap: priority, delay, TTL, correlation id, deduplication id, headers, and topic override. `PublishBatchAsync(IEnumerable<object>)` supports heterogeneous event batches and groups sends by resolved topic.
+`PubSubMessageOptions` mirrors queue send options where concepts overlap: priority, delay, TTL, correlation id, deduplication id, headers, and topic override. `PubSubSubscriptionOptions.Key` is only the local duplicate-listener key; `Subscription` is the transport consumer group identity. `PublishBatchAsync(IEnumerable<object>)` supports heterogeneous event batches and groups sends by resolved topic.
 
 ## Routing
 
 Default route precedence is:
 
 ```text
-operation override > explicit route map > interface/base-type map > MessageRouteAttribute > configured convention
+operation override > explicit route map > interface/base-type map > MessageRouteAttribute > configured default/convention
 ```
 
 `IMessageRouter` is shared by queues and pub/sub. Configure routes once with `MessageRoutingOptionsBuilder`:
@@ -113,8 +113,8 @@ operation override > explicit route map > interface/base-type map > MessageRoute
 ```csharp
 services.AddFoundatio()
     .Messaging.ConfigureRouting(r => r
-        .UseGlobalQueue("all-work")
-        .UseGlobalTopic("all-events")
+        .UseDefaultQueue("all-work")
+        .UseDefaultTopic("all-events")
         .MapQueue<OrderSubmitted>("orders")
         .MapQueue("orders", typeof(OrderSubmitted), typeof(OrderCancelled))
         .MapQueue("order-work", typeof(IOrderMessage))
@@ -123,6 +123,15 @@ services.AddFoundatio()
 ```
 
 `QueueMessageOptions.Destination`, `QueueReceiveOptions.Source`, `PubSubMessageOptions.Topic`, and `PubSubSubscriptionOptions.Topic`/`Subscription` are final escape hatches for one operation. Attribute routing remains available for type-local defaults, but central routing should be the normal path.
+
+Routing configuration is also the topology declaration source. `UseDefaultQueue`, `UseDefaultTopic`, `MapQueue`, and `MapTopic` declare the queue destinations or topics they name; `UseSubscriptionIdentity` declares subscriptions for configured topics. Operation-level overrides are intentionally not part of startup topology because they are exceptional one-off routes.
+
+```csharp
+IMessageTopology topology = provider.GetRequiredService<IMessageTopology>();
+IReadOnlyList<DestinationDeclaration> declarations = topology.GetDeclarations();
+await topology.EnsureAsync();   // deploy/admin process with create permissions
+await topology.ValidateAsync(); // app startup check without creating destinations
+```
 
 ## Delivery Settlement
 
@@ -183,7 +192,7 @@ await pubsub.PublishAsync(new OrderSubmitted(id));
 await using var subscription = await pubsub.SubscribeAsync<OrderSubmitted>(HandleAsync);
 ```
 
-For per-type routing, register each type. For grouped routing, map an interface or base type. For global routing, set one queue destination or topic for all messages. Operation-level overrides should be reserved for exceptional paths such as replays or priority lanes.
+For per-type routing, register each type. For grouped routing, map an interface or base type. For default/global-style routing, set one default queue destination or topic for otherwise unmapped messages. Operation-level overrides should be reserved for exceptional paths such as replays or priority lanes.
 
 ## Rollout Notes
 
