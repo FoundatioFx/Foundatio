@@ -270,6 +270,20 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
+        public MessagingBuilder ConfigureRouting(Action<MessageRoutingOptionsBuilder> configure)
+        {
+            ArgumentNullException.ThrowIfNull(configure);
+
+            _services.ReplaceSingleton<IMessageRouter>(_ =>
+            {
+                var options = new MessageRoutingOptions();
+                configure(new MessageRoutingOptionsBuilder(options));
+                return new DefaultMessageRouter(options);
+            });
+
+            return this;
+        }
+
         public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
         {
             _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
@@ -318,6 +332,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             return new QueueOptions
             {
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
+                Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
             };
@@ -328,6 +343,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             return new PubSubOptions
             {
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
+                Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
             };
@@ -369,18 +385,27 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
+        public FoundatioBuilder Register<TJob>(string name) where TJob : IJob
+        {
+            ArgumentException.ThrowIfNullOrEmpty(name);
+            _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
+            return _builder;
+        }
+
         private void RegisterJobServices()
         {
+            _services.ReplaceSingleton<IJobTypeRegistry>(sp => new JobTypeRegistry(sp.GetServices<JobTypeRegistration>()));
             _services.ReplaceSingleton<IJobMonitor>(sp => sp.GetRequiredService<IJobRuntimeStore>());
-            _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>()));
-            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>()));
+            _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>()));
+            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>()));
             _services.ReplaceSingleton<IJobScheduler, InMemoryJobScheduler>();
             _services.ReplaceSingleton(sp => new JobScheduleProcessor(
                 sp.GetRequiredService<IJobScheduler>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
                 sp.GetRequiredService<IJobWorker>(),
                 sp.GetService<TimeProvider>(),
-                transport: sp.GetService<IMessageTransport>()));
+                transport: sp.GetService<IMessageTransport>(),
+                jobTypes: sp.GetRequiredService<IJobTypeRegistry>()));
         }
     }
 

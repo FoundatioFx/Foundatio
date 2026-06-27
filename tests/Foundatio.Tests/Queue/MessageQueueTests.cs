@@ -156,8 +156,7 @@ public class MessageQueueTests
 
         await queue.EnqueueAsync(new PreviewWorkItem { Data = "work" }, cancellationToken: cts.Token);
         await handled.WaitAsync(TimeSpan.FromSeconds(2));
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
-        Assert.Equal(1, stats.Completed);
+        await WaitForCompletedAsync(transport, "preview-work-item", cancellationToken);
     }
 
     [Fact]
@@ -309,17 +308,92 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task StartConsumerAsync_WithSameKey_ReturnsExistingConsumerAsync()
+    public async Task StartConsumerAsync_WithSameKeyAndSameRegistration_ReturnsExistingConsumerAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageQueue(new InMemoryMessageTransport());
+        Func<IReceivedMessage<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
+
+        await using var first = await queue.StartConsumerAsync(handler, new QueueConsumerOptions { Key = "shared" }, cancellationToken);
+        var second = await queue.StartConsumerAsync(handler, new QueueConsumerOptions { Key = "shared" }, cancellationToken);
+
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithSameKeyAndDifferentHandler_ThrowsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var queue = new MessageQueue(new InMemoryMessageTransport());
 
         await using var first = await queue.StartConsumerAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new QueueConsumerOptions { Key = "shared" }, cancellationToken);
-        var second = await queue.StartConsumerAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new QueueConsumerOptions { Key = "shared" }, cancellationToken);
 
-        Assert.Same(first, second);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await queue.StartConsumerAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new QueueConsumerOptions { Key = "shared" }, cancellationToken));
     }
 
+    [Fact]
+    public async Task ReceiveAsync_WithGroupedInterfaceRoute_ReturnsRawMessagesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .MapQueue("grouped-work", typeof(IGroupedWorkItem))
+            .Build();
+        await using var queue = new MessageQueue(new InMemoryMessageTransport(), new QueueOptions { Router = new DefaultMessageRouter(routing) });
+
+        await queue.EnqueueBatchAsync(new object[]
+        {
+            new PreviewWorkItem { Data = "one" },
+            new OtherWorkItem { Data = "two" }
+        }, cancellationToken: cancellationToken);
+
+        var first = await queue.ReceiveAsync(new QueueReceiveOptions { RouteType = typeof(IGroupedWorkItem), MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        var second = await queue.ReceiveAsync(new QueueReceiveOptions { RouteType = typeof(IGroupedWorkItem), MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotEmpty(first.Body.ToArray());
+        Assert.Equal(typeof(PreviewWorkItem).FullName, first.MessageType);
+        Assert.Equal(typeof(OtherWorkItem).FullName, second.MessageType);
+
+        await first.CompleteAsync(cancellationToken);
+        await second.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WithGlobalQueueRoute_ReturnsRawMessageAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .UseGlobalQueue("all-work")
+            .Build();
+        await using var queue = new MessageQueue(new InMemoryMessageTransport(), new QueueOptions { Router = new DefaultMessageRouter(routing) });
+
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "global" }, cancellationToken: cancellationToken);
+
+        var received = await queue.ReceiveAsync(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+
+        Assert.NotNull(received);
+        Assert.Equal(typeof(PreviewWorkItem).FullName, received.MessageType);
+        await received.CompleteAsync(cancellationToken);
+    }
+
+
+    private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var stats = await transport.GetStatsAsync(destination, cancellationToken);
+            if (stats.Completed == 1)
+                return;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
+        }
+
+        var finalStats = await transport.GetStatsAsync(destination, cancellationToken);
+        Assert.Equal(1, finalStats.Completed);
+    }
 
     private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
@@ -334,7 +408,16 @@ public class MessageQueueTests
         public string? Data { get; set; }
     }
 
-    private sealed class PreviewWorkItem
+    private interface IGroupedWorkItem
+    {
+    }
+
+    private sealed class PreviewWorkItem : IGroupedWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    private sealed class OtherWorkItem : IGroupedWorkItem
     {
         public string? Data { get; set; }
     }

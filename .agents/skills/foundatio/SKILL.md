@@ -26,12 +26,14 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 
 ## Messaging/Jobs Redesign Notes
 
-- New queue/pub-sub APIs live under `Foundatio.Messaging`: app-facing `IQueue`, `IPubSub`, shared `IReceivedMessage<T>`, `QueueMessageOptions`, `QueueReceiveOptions`, `QueueConsumerOptions`, `PubSubMessageOptions`, and `PubSubSubscriptionOptions`.
-- Route resolution is type-driven: operation override > resolver/registration > `MessageRouteAttribute` > kebab-case type-name convention. `Destination` and `Source` are advanced queue overrides; `Topic` and `Subscription` are advanced pub/sub overrides.
-- Listener startup returns handles: `StartConsumerAsync<T>` returns `IMessageConsumer`; `SubscribeAsync<T>` returns `IMessageSubscription`. Use `RunConsumerAsync` or `RunSubscriptionAsync` only for blocking lifetime loops.
+- New queue/pub-sub APIs live under `Foundatio.Messaging`: app-facing `IQueue`, `IPubSub`, shared `IReceivedMessage` / `IReceivedMessage<T>`, `QueueMessageOptions`, `QueueReceiveOptions`, `QueueConsumerOptions`, `PubSubMessageOptions`, and `PubSubSubscriptionOptions`.
+- Route resolution is centralized in `IMessageRouter`: operation override > explicit route map > interface/base-type map > `MessageRouteAttribute` > configured convention. Configure with `.Messaging.ConfigureRouting(...)`; `Destination`, `Source`, `Topic`, and `Subscription` are advanced operation overrides.
+- Pub/sub topic routing and subscription identity are separate. Topic answers where an event is published; subscription answers the logical service/consumer group. Prefer `UseSubscriptionIdentity(...)` or service identity configuration instead of deriving subscriptions from message type.
+- Raw/envelope paths make grouped/global routes usable: `queue.ReceiveAsync(...)`, `queue.StartConsumerAsync(Func<IReceivedMessage,...>)`, and `pubsub.SubscribeAsync(Func<IReceivedMessage,...>)`. Typed `ReceiveAsync<T>` / `SubscribeAsync<T>` remain the simple path.
+- Listener startup returns handles: `StartConsumerAsync<T>` returns `IMessageConsumer`; `SubscribeAsync<T>` returns `IMessageSubscription`. Same-key duplicate registrations are idempotent only for the same handler/options; conflicting registrations throw. Use `RunConsumerAsync` or `RunSubscriptionAsync` only for blocking lifetime loops.
 - Received-message settlement uses explicit verbs only: `CompleteAsync`, `AbandonAsync`, `DeadLetterAsync`, `RenewLockAsync`, and `ReportProgressAsync`. Unsupported capabilities should throw clearly instead of silently downgrading.
-- New durable job runtime roles are separated: `IJobClient` submits and returns `JobHandle`, `IJobMonitor` queries state, `IJobRuntimeStore` persists runtime state, and `IJobWorker` claims and executes queued jobs.
-- In-memory setup for the redesign is `services.AddFoundatio().Messaging.UseInMemory().Jobs.UseInMemoryRuntime()`.
+- New durable job runtime roles are separated: `IJobClient` submits and returns `JobHandle`, `IJobMonitor` queries state, `IJobRuntimeStore` persists runtime state, and `IJobWorker` claims and executes queued jobs. Job types persist stable registry names via `IJobTypeRegistry` / `.Jobs.Register<TJob>(name)`, not assembly-qualified names.
+- In-memory setup for the redesign is `services.AddFoundatio().Messaging.ConfigureRouting(...).UseInMemory().Jobs.UseInMemoryRuntime()`.
 
 ## Core Interfaces
 

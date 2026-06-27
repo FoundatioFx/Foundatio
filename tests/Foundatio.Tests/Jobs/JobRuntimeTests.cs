@@ -139,6 +139,33 @@ public class JobRuntimeTests
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithRegisteredJobType_PersistsStableNameAndWorkerResolvesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobRuntimeProbe();
+        var registry = new JobTypeRegistry([new JobTypeRegistration("search.rebuild", typeof(SuccessfulTrackedJob))]);
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(probe)
+            .BuildServiceProvider();
+        var client = new JobClient(store, jobTypes: registry);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", jobTypes: registry);
+
+        JobHandle handle = await client.EnqueueAsync<SuccessfulTrackedJob>(new JobRequestOptions { JobId = "job-registered" }, cancellationToken);
+        var queued = await handle.GetStateAsync(cancellationToken);
+
+        Assert.NotNull(queued);
+        Assert.Equal("search.rebuild", queued.JobType);
+        Assert.DoesNotContain(",", queued.JobType);
+        Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
+
+        var completed = await handle.GetStateAsync(cancellationToken);
+        Assert.NotNull(completed);
+        Assert.Equal(JobStatus.Completed, completed.Status);
+        Assert.Equal(1, probe.RunCount);
+    }
+
+    [Fact]
     public async Task RequestCancellationAsync_WhenJobIsRunning_CancelsAndTracksStateAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

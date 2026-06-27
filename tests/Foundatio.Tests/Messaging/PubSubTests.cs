@@ -171,15 +171,69 @@ public class PubSubTests
 
 
     [Fact]
-    public async Task SubscribeAsync_WithSameKey_ReturnsExistingSubscriptionAsync()
+    public async Task SubscribeAsync_WithSameKeyAndSameRegistration_ReturnsExistingSubscriptionAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var pubSub = new PubSub(new InMemoryMessageTransport());
+        Func<IReceivedMessage<PreviewEvent>, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
+
+        await using var first = await pubSub.SubscribeAsync(handler, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
+        var second = await pubSub.SubscribeAsync(handler, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
+
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithSameKeyAndDifferentHandler_ThrowsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var pubSub = new PubSub(new InMemoryMessageTransport());
 
         await using var first = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
-        var second = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
 
-        Assert.Same(first, second);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken));
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithGroupedTopicAndSubscriptionIdentity_ReceivesRawMessagesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        var routing = new MessageRoutingOptionsBuilder()
+            .MapTopic("order-events", typeof(IGroupedEvent))
+            .UseSubscriptionIdentity("billing-service")
+            .Build();
+        await using var pubSub = new PubSub(transport, new PubSubOptions { Router = new DefaultMessageRouter(routing) });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var received = new AsyncCountdownEvent(2);
+        var messageTypes = new List<string>();
+
+        await using var subscription = await pubSub.SubscribeAsync((message, _) =>
+        {
+            lock (messageTypes)
+                messageTypes.Add(message.MessageType!);
+
+            received.Signal();
+            return Task.CompletedTask;
+        }, new PubSubSubscriptionOptions { RouteType = typeof(IGroupedEvent) }, cts.Token);
+
+        await pubSub.PublishBatchAsync(new object[]
+        {
+            new PreviewEvent { Data = "one" },
+            new OtherEvent { Data = "two" }
+        }, cancellationToken: cancellationToken);
+
+        await received.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("order-events", subscription.Topic);
+        Assert.Equal("billing-service", subscription.Subscription);
+        Assert.Contains(typeof(PreviewEvent).FullName!, messageTypes);
+        Assert.Contains(typeof(OtherEvent).FullName!, messageTypes);
+
+        var stats = await transport.GetStatsAsync("billing-service", cancellationToken);
+        Assert.Equal(2, stats.Completed);
     }
 
 
@@ -190,7 +244,16 @@ public class PubSubTests
         return new JobScheduleProcessor(new InMemoryJobScheduler(), store, worker, nodeId: "node-a", transport: transport);
     }
 
-    private sealed class PreviewEvent
+    private interface IGroupedEvent
+    {
+    }
+
+    private sealed class PreviewEvent : IGroupedEvent
+    {
+        public string? Data { get; set; }
+    }
+
+    private sealed class OtherEvent : IGroupedEvent
     {
         public string? Data { get; set; }
     }
