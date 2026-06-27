@@ -11,7 +11,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging;
 
-public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsRedeliveryDelay, ISupportsDeadLetter, ISupportsStats, ISupportsPriority, ISupportsDelayedDelivery, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
+public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsDeadLetter, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
 {
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles = new HashSet<DestinationRole>
     {
@@ -46,13 +46,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
+        if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
+            throw new NotSupportedException($"Transport \"{GetType().Name}\" does not support native delayed delivery. Use the runtime-store scheduled dispatch fallback.");
+
         var results = new SendItemResult[messages.Count];
         for (int index = 0; index < messages.Count; index++)
         {
             var message = messages[index];
             string messageId = message.MessageId ?? options.DeduplicationId ?? Guid.NewGuid().ToString("N");
             var stored = CreateStoredMessage(destination, messageId, message, options);
-            EnqueueOrSchedule(destination, stored, options);
+            EnqueueForDestination(destination, stored);
 
             results[index] = new SendItemResult
             {
@@ -137,11 +140,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
     public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
     {
-        return AbandonAsync(entry, TimeSpan.Zero, ct);
-    }
-
-    public Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct)
-    {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(entry);
@@ -154,11 +152,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         Interlocked.Increment(ref state.Abandoned);
         var redelivered = inFlight.Message with { DeliveryCount = entry.DeliveryCount + 1 };
-
-        if (redeliveryDelay > TimeSpan.Zero)
-            _ = Run.DelayedAsync(redeliveryDelay, () => EnqueueStoredMessageAsync(receipt.Destination, redelivered), _timeProvider, _disposeCancellationTokenSource.Token);
-        else
-            EnqueueStoredMessage(receipt.Destination, redelivered);
+        EnqueueStoredMessage(receipt.Destination, redelivered);
 
         return Task.CompletedTask;
     }
@@ -331,27 +325,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         }
     }
 
-    private void EnqueueOrSchedule(string destination, StoredMessage message, TransportSendOptions options)
-    {
-        if (options.DeliverAt is { } deliverAt)
-        {
-            TimeSpan delay = deliverAt - _timeProvider.GetUtcNow();
-            if (delay > TimeSpan.Zero)
-            {
-                _ = Run.DelayedAsync(delay, () => EnqueueForDestinationAsync(destination, message), _timeProvider, _disposeCancellationTokenSource.Token);
-                return;
-            }
-        }
-
-        EnqueueForDestination(destination, message);
-    }
-
-    private Task EnqueueForDestinationAsync(string destination, StoredMessage message)
-    {
-        EnqueueForDestination(destination, message);
-        return Task.CompletedTask;
-    }
-
     private void EnqueueForDestination(string destination, StoredMessage message)
     {
         var role = _roles.GetOrAdd(destination, DestinationRole.Queue);
@@ -370,12 +343,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             throw new InvalidOperationException($"Cannot send directly to binding destination \"{destination}\".");
 
         EnqueueStoredMessage(destination, message);
-    }
-
-    private Task EnqueueStoredMessageAsync(string destination, StoredMessage message)
-    {
-        EnqueueStoredMessage(destination, message);
-        return Task.CompletedTask;
     }
 
     private void EnqueueStoredMessage(string destination, StoredMessage message)
@@ -439,6 +406,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         var headers = message.Headers.ToBuilder()
             .SetIfMissing(KnownHeaders.Priority, options.Priority.ToString())
             .Build();
+        int deliveryCount = Int32.TryParse(headers.GetValueOrDefault(KnownHeaders.Attempts), NumberStyles.Integer, CultureInfo.InvariantCulture, out int attempts) && attempts > 0
+            ? attempts
+            : 1;
 
         return new StoredMessage(
             messageId,
@@ -446,7 +416,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             message.Body.ToArray(),
             headers,
             NormalizePriority(options.Priority),
-            DeliveryCount: 1,
+            DeliveryCount: deliveryCount,
             EnqueuedUtc: _timeProvider.GetUtcNow());
     }
 

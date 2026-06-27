@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -50,6 +51,8 @@ public sealed record MessageQueueOptions
     public string ContentType { get; init; } = "application/json";
     public Func<Type, string>? DestinationResolver { get; init; }
     public Func<Type, string>? MessageTypeResolver { get; init; }
+    public IJobRuntimeStore? RuntimeStore { get; init; }
+    public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
 }
 
 public interface IMessageQueue : IAsyncDisposable
@@ -97,13 +100,20 @@ public sealed class MessageQueue : IMessageQueue
 
         options ??= new EnqueueOptions();
         string destination = GetDestination(typeof(T), options.Destination);
-        var result = await _transport.SendAsync(destination, [CreateTransportMessage(message, options)], CreateSendOptions(options), cancellationToken).AnyContext();
+        var sendOptions = CreateSendOptions(options);
+        string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
+        var transportMessage = CreateTransportMessage(message, options, messageId);
+
+        if (await TryScheduleDispatchAsync(ScheduledDispatchKind.QueueMessage, destination, transportMessage, sendOptions, cancellationToken).AnyContext())
+            return messageId;
+
+        var result = await _transport.SendAsync(destination, [transportMessage], sendOptions, cancellationToken).AnyContext();
         var item = result.Items.Count > 0 ? result.Items[0] : null;
 
         if (item is null || !item.Success)
             throw new QueueException($"Unable to enqueue message to \"{destination}\": {item?.ErrorCode ?? "unknown error"}");
 
-        return item.MessageId ?? throw new QueueException($"Transport did not return a message id for \"{destination}\".");
+        return item.MessageId ?? messageId;
     }
 
     public async Task EnqueueBatchAsync<T>(IEnumerable<T> messages, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -113,16 +123,23 @@ public sealed class MessageQueue : IMessageQueue
 
         options ??= new EnqueueOptions();
         string destination = GetDestination(typeof(T), options.Destination);
+        var sendOptions = CreateSendOptions(options);
+        int index = 0;
         var transportMessages = messages.Select(message =>
         {
             ArgumentNullException.ThrowIfNull(message);
-            return CreateTransportMessage(message, options);
+            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
+            index++;
+            return CreateTransportMessage(message, options, messageId);
         }).ToArray();
 
         if (transportMessages.Length == 0)
             return;
 
-        var result = await _transport.SendAsync(destination, transportMessages, CreateSendOptions(options), cancellationToken).AnyContext();
+        if (await TryScheduleDispatchesAsync(ScheduledDispatchKind.QueueMessage, destination, transportMessages, sendOptions, cancellationToken).AnyContext())
+            return;
+
+        var result = await _transport.SendAsync(destination, transportMessages, sendOptions, cancellationToken).AnyContext();
         if (!result.AllSucceeded)
             throw new QueueException($"Unable to enqueue {result.Items.Count(i => !i.Success)} of {result.Items.Count} messages to \"{destination}\".");
     }
@@ -203,7 +220,7 @@ public sealed class MessageQueue : IMessageQueue
             if (message is null)
                 throw new QueueException($"Message \"{entry.Id}\" deserialized to null.");
 
-            return new ReceivedMessage<T>(_transport, entry, message, ct);
+            return new ReceivedMessage<T>(_transport, entry, message, ct, _options.RuntimeStore, _options.TimeProvider);
         }
         catch (Exception ex) when (ex is not QueueException)
         {
@@ -229,11 +246,19 @@ public sealed class MessageQueue : IMessageQueue
         catch
         {
             if (!message.IsHandled)
-                await message.RejectAsync(message.Attempts < options.MaxAttempts, "handler-error", ct).AnyContext();
+            {
+                bool retry = message.Attempts < options.MaxAttempts;
+                TimeSpan? redeliveryDelay = retry ? options.RedeliveryBackoff?.Invoke(message.Attempts) : null;
+
+                if (message is ReceivedMessage<T> received)
+                    await received.RejectAsync(retry, "handler-error", redeliveryDelay, ct).AnyContext();
+                else
+                    await message.RejectAsync(retry, "handler-error", ct).AnyContext();
+            }
         }
     }
 
-    private TransportMessage CreateTransportMessage<T>(T message, EnqueueOptions options) where T : class
+    private TransportMessage CreateTransportMessage<T>(T message, EnqueueOptions options, string? messageId = null) where T : class
     {
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
             .Set(KnownHeaders.MessageType, GetMessageType(typeof(T)))
@@ -253,23 +278,73 @@ public sealed class MessageQueue : IMessageQueue
         }
 
         if (options.TimeToLive is { } ttl)
-            headers.Set(KnownHeaders.Expiration, DateTimeOffset.UtcNow.Add(ttl).ToString("O", CultureInfo.InvariantCulture));
+            headers.Set(KnownHeaders.Expiration, _options.TimeProvider.GetUtcNow().Add(ttl).ToString("O", CultureInfo.InvariantCulture));
 
         return new TransportMessage
         {
             Body = _options.Serializer.SerializeToBytes(message),
-            Headers = headers.Build()
+            Headers = headers.Build(),
+            MessageId = messageId
         };
     }
 
-    private static TransportSendOptions CreateSendOptions(EnqueueOptions options)
+    private TransportSendOptions CreateSendOptions(EnqueueOptions options)
     {
         return new TransportSendOptions
         {
             Priority = options.Priority,
-            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? DateTimeOffset.UtcNow.Add(delay) : null),
+            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? _options.TimeProvider.GetUtcNow().Add(delay) : null),
             DeduplicationId = options.DeduplicationId
         };
+    }
+
+    private async Task<bool> TryScheduleDispatchesAsync(ScheduledDispatchKind kind, string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
+    {
+        if (!ShouldScheduleThroughRuntimeStore(options, out var dueUtc))
+            return false;
+
+        for (int index = 0; index < messages.Count; index++)
+        {
+            var message = messages[index];
+            string messageId = message.MessageId ?? Guid.NewGuid().ToString("N");
+            await ScheduleDispatchAsync(kind, destination, message with { MessageId = messageId }, options, dueUtc, cancellationToken).AnyContext();
+        }
+
+        return true;
+    }
+
+    private Task<bool> TryScheduleDispatchAsync(ScheduledDispatchKind kind, string destination, TransportMessage message, TransportSendOptions options, CancellationToken cancellationToken)
+    {
+        return TryScheduleDispatchesAsync(kind, destination, [message], options, cancellationToken);
+    }
+
+    private bool ShouldScheduleThroughRuntimeStore(TransportSendOptions options, out DateTimeOffset dueUtc)
+    {
+        dueUtc = options.DeliverAt.GetValueOrDefault();
+        if (options.DeliverAt is null || dueUtc <= _options.TimeProvider.GetUtcNow())
+            return false;
+
+        if (_transport is ISupportsDelayedDelivery)
+            return false;
+
+        if (_options.RuntimeStore is null)
+            throw new QueueException($"Delayed queue delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" or {nameof(MessageQueueOptions)}.{nameof(MessageQueueOptions.RuntimeStore)}.");
+
+        return true;
+    }
+
+    private Task ScheduleDispatchAsync(ScheduledDispatchKind kind, string destination, TransportMessage message, TransportSendOptions options, DateTimeOffset dueUtc, CancellationToken cancellationToken)
+    {
+        return _options.RuntimeStore!.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = message.MessageId!,
+            Kind = kind,
+            Destination = destination,
+            Body = message.Body,
+            Headers = message.Headers,
+            Options = options with { DeliverAt = null },
+            DueUtc = dueUtc
+        }, cancellationToken);
     }
 
     private string GetDestination(Type messageType, string? destination)
@@ -286,10 +361,7 @@ public sealed class MessageQueue : IMessageQueue
 
     private async Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken ct)
     {
-        if (_transport is ISupportsDeadLetter deadLetter)
-            await deadLetter.DeadLetterAsync(entry, reason, ct).AnyContext();
-        else
-            await _transport.AbandonAsync(entry, ct).AnyContext();
+        await ReceivedMessage<object>.DeadLetterAsync(_transport, entry, reason, ct).AnyContext();
     }
 
     private void ThrowIfDisposed()
@@ -328,12 +400,16 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
 {
     private readonly IMessageTransport _transport;
     private readonly TransportEntry _entry;
+    private readonly IJobRuntimeStore? _runtimeStore;
+    private readonly TimeProvider _timeProvider;
     private int _isHandled;
 
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken)
+    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
     {
         _transport = transport;
         _entry = entry;
+        _runtimeStore = runtimeStore;
+        _timeProvider = timeProvider ?? TimeProvider.System;
         Message = message;
         CancellationToken = cancellationToken;
     }
@@ -358,7 +434,17 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
 
     public Task RejectAsync(bool retry = true, string? reason = null, CancellationToken cancellationToken = default)
     {
-        return retry ? AbandonAsync(cancellationToken) : DeadLetterAsync(reason, cancellationToken);
+        return RejectAsync(retry, reason, redeliveryDelay: null, cancellationToken);
+    }
+
+    internal Task RejectAsync(bool retry, string? reason, TimeSpan? redeliveryDelay, CancellationToken cancellationToken = default)
+    {
+        if (!retry)
+            return DeadLetterAsync(reason, cancellationToken);
+
+        return redeliveryDelay is { } delay && delay > TimeSpan.Zero
+            ? AbandonAsync(delay, cancellationToken)
+            : AbandonAsync(cancellationToken);
     }
 
     public async Task DeadLetterAsync(string? reason = null, CancellationToken cancellationToken = default)
@@ -366,22 +452,19 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
         if (!TryMarkHandled())
             return;
 
-        if (_transport is ISupportsDeadLetter deadLetter)
-            await deadLetter.DeadLetterAsync(_entry, reason, cancellationToken).AnyContext();
-        else
-            await _transport.AbandonAsync(_entry, cancellationToken).AnyContext();
+        await DeadLetterAsync(_transport, _entry, reason, cancellationToken).AnyContext();
     }
 
     public Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default)
     {
         return _transport is ISupportsLockRenewal lockRenewal
             ? lockRenewal.RenewLockAsync(_entry, duration, cancellationToken)
-            : Task.CompletedTask;
+            : throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support lock renewal.");
     }
 
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
-        return Task.CompletedTask;
+        throw new NotSupportedException("Message progress reporting requires tracked job execution and is not available for untracked queue messages.");
     }
 
     private Task AbandonAsync(CancellationToken ct)
@@ -390,6 +473,66 @@ internal sealed class ReceivedMessage<T> : IReceivedMessage<T> where T : class
             return Task.CompletedTask;
 
         return _transport.AbandonAsync(_entry, ct);
+    }
+
+    private async Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken ct)
+    {
+        if (!TryMarkHandled())
+            return;
+
+        if (_transport is ISupportsRedeliveryDelay redelivery)
+        {
+            await redelivery.AbandonAsync(_entry, redeliveryDelay, ct).AnyContext();
+            return;
+        }
+
+        if (_runtimeStore is null)
+            throw new QueueException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" or {nameof(MessageQueueOptions)}.{nameof(MessageQueueOptions.RuntimeStore)}.");
+
+        int nextAttempt = _entry.DeliveryCount + 1;
+        var headers = _entry.Headers.ToBuilder()
+            .Set(KnownHeaders.Attempts, nextAttempt.ToString(CultureInfo.InvariantCulture))
+            .Build();
+
+        await _runtimeStore.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = $"{_entry.Id}:retry:{nextAttempt}",
+            Kind = ScheduledDispatchKind.QueueMessage,
+            Destination = _entry.Destination,
+            Body = _entry.Body,
+            Headers = headers,
+            Options = new TransportSendOptions { Priority = Priority },
+            DueUtc = _timeProvider.GetUtcNow().Add(redeliveryDelay)
+        }, ct).AnyContext();
+
+        await _transport.CompleteAsync(_entry, ct).AnyContext();
+    }
+
+    internal static async Task DeadLetterAsync(IMessageTransport transport, TransportEntry entry, string? reason, CancellationToken cancellationToken)
+    {
+        if (transport is ISupportsDeadLetter deadLetter)
+        {
+            await deadLetter.DeadLetterAsync(entry, reason, cancellationToken).AnyContext();
+            return;
+        }
+
+        var headers = entry.Headers.ToBuilder();
+        if (!String.IsNullOrEmpty(reason))
+            headers.Set(KnownHeaders.DeadLetterReason, reason);
+
+        var result = await transport.SendAsync($"{entry.Destination}-deadletter", [
+            new TransportMessage
+            {
+                MessageId = $"{entry.Id}:deadletter",
+                Body = entry.Body,
+                Headers = headers.Build()
+            }
+        ], new TransportSendOptions(), cancellationToken).AnyContext();
+
+        if (!result.AllSucceeded)
+            throw new QueueException($"Unable to write message \"{entry.Id}\" to the managed dead-letter destination \"{entry.Destination}-deadletter\".");
+
+        await transport.CompleteAsync(entry, cancellationToken).AnyContext();
     }
 
     private bool TryMarkHandled()

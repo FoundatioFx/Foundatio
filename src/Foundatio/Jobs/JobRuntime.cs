@@ -54,7 +54,9 @@ public sealed record JobStatePatch
     public string? Error { get; init; }
     public int AttemptDelta { get; init; }
     public string? NodeId { get; init; }
+    public bool ClearNodeId { get; init; }
     public DateTimeOffset? LeaseExpiresUtc { get; init; }
+    public bool ClearLeaseExpiresUtc { get; init; }
     public DateTimeOffset? LastUpdatedUtc { get; init; }
     public DateTimeOffset? StartedUtc { get; init; }
     public DateTimeOffset? CompletedUtc { get; init; }
@@ -382,8 +384,8 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
             ProgressMessage = patch.ProgressMessage ?? state.ProgressMessage,
             Error = patch.Error ?? state.Error,
             Attempt = state.Attempt + patch.AttemptDelta,
-            NodeId = patch.NodeId ?? state.NodeId,
-            LeaseExpiresUtc = patch.LeaseExpiresUtc ?? state.LeaseExpiresUtc,
+            NodeId = patch.ClearNodeId ? null : patch.NodeId ?? state.NodeId,
+            LeaseExpiresUtc = patch.ClearLeaseExpiresUtc ? null : patch.LeaseExpiresUtc ?? state.LeaseExpiresUtc,
             LastUpdatedUtc = patch.LastUpdatedUtc ?? state.LastUpdatedUtc,
             StartedUtc = patch.StartedUtc ?? state.StartedUtc,
             CompletedUtc = patch.CompletedUtc ?? state.CompletedUtc,

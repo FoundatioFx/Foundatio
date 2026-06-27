@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
+using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -121,10 +123,13 @@ public class PubSubTests
     }
 
     [Fact]
-    public async Task PublishAsync_WithDelay_DelaysDeliveryAsync()
+    public async Task PublishAsync_WithDelay_SchedulesThroughRuntimeStoreAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        await using var pubSub = new PubSub(new InMemoryMessageTransport());
+        var store = new InMemoryJobRuntimeStore();
+        await using var transport = new InMemoryMessageTransport();
+        await using var pubSub = new PubSub(transport, new PubSubOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var received = new AsyncCountdownEvent(1);
@@ -135,9 +140,10 @@ public class PubSubTests
             return Task.CompletedTask;
         }, new SubscriptionOptions { Subscription = "delayed-subscription" }, cts.Token);
 
-        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new PublishOptions { Delay = TimeSpan.FromMilliseconds(250) }, cancellationToken);
+        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new PublishOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
         await Assert.ThrowsAsync<TimeoutException>(async () => await received.WaitAsync(TimeSpan.FromMilliseconds(50)));
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
         await received.WaitAsync(TimeSpan.FromSeconds(2));
 
         await cts.CancelAsync();
@@ -176,6 +182,14 @@ public class PubSubTests
         var stats = await transport.GetStatsAsync("retry-subscription", cancellationToken);
         Assert.Equal(1, stats.Completed);
         Assert.Equal(1, stats.Abandoned);
+    }
+
+
+    private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
+        return new JobScheduleProcessor(new InMemoryJobScheduler(), store, client, nodeId: "node-a", transport: transport);
     }
 
     private sealed class PreviewEvent

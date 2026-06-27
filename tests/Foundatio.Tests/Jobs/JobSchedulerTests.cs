@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -128,12 +129,13 @@ public class JobSchedulerTests
     }
 
     [Fact]
-    public async Task RunDueOccurrencesAsync_WhenDispatchIsNotJobOccurrence_ReleasesItAsync()
+    public async Task RunDueOccurrencesAsync_WhenDispatchIsQueueMessage_MaterializesItAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var scheduler = new InMemoryJobScheduler();
         var store = new InMemoryJobRuntimeStore();
-        var processor = CreateProcessor(scheduler, store, "node-a");
+        await using var transport = new InMemoryMessageTransport();
+        var processor = CreateProcessor(scheduler, store, "node-a", transport);
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         await store.ScheduleDispatchAsync(new ScheduledDispatchState
@@ -147,19 +149,110 @@ public class JobSchedulerTests
 
         int completed = await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
 
-        Assert.Equal(0, completed);
-        var claimed = await store.ClaimDueDispatchesAsync(now, 10, "node-b", TimeSpan.FromMinutes(1), cancellationToken);
-        var dispatch = Assert.Single(claimed);
-        Assert.Equal("delayed-message", dispatch.DispatchId);
-        Assert.Equal("node-b", dispatch.ClaimOwner);
+        Assert.Equal(1, completed);
+        var pull = Assert.IsAssignableFrom<ISupportsPull>(transport);
+        var entries = await pull.ReceiveAsync("work", new ReceiveRequest { MaxMessages = 1, MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
+        var entry = Assert.Single(entries);
+        Assert.Equal("delayed-message", entry.Id);
+        Assert.Equal("hello"u8.ToArray(), entry.Body.ToArray());
     }
-    private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId)
+
+    [Fact]
+    public async Task RunDueOccurrencesAsync_WhenJobFails_RetriesThenDeadLettersAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var scheduler = new InMemoryJobScheduler();
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobSchedulerProbe();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(probe)
+            .BuildServiceProvider();
+        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
+        var processor = new JobScheduleProcessor(scheduler, store, client, nodeId: "node-a");
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
+
+        await scheduler.ScheduleAsync(new ScheduledJobDefinition
+        {
+            Name = "nightly",
+            Cron = "* * * * *",
+            JobType = typeof(FailingScheduledJob),
+            MaxRetries = 1
+        }, cancellationToken);
+        var scheduled = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
+        var dispatch = Assert.Single(scheduled);
+
+        Assert.Equal(0, await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken));
+        var retried = await store.GetAsync(dispatch.JobId!, cancellationToken);
+        Assert.NotNull(retried);
+        Assert.Equal(JobStatus.Scheduled, retried.Status);
+        Assert.Equal(1, retried.Attempt);
+
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(now.AddMinutes(2), cancellationToken: cancellationToken));
+        var deadlettered = await store.GetAsync(dispatch.JobId!, cancellationToken);
+        Assert.NotNull(deadlettered);
+        Assert.Equal(JobStatus.DeadLettered, deadlettered.Status);
+        Assert.Equal(2, deadlettered.Attempt);
+        Assert.Equal(2, probe.RunCount);
+    }
+
+    [Fact]
+    public async Task RunDueOccurrencesAsync_WhenProcessingLeaseExpired_ReclaimsAndRunsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var scheduler = new InMemoryJobScheduler();
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobSchedulerProbe();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(probe)
+            .BuildServiceProvider();
+        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
+        var processor = new JobScheduleProcessor(scheduler, store, client, nodeId: "node-a");
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
+        const string jobId = "nightly:20260101000000:global";
+
+        await scheduler.ScheduleAsync(new ScheduledJobDefinition
+        {
+            Name = "nightly",
+            Cron = "* * * * *",
+            JobType = typeof(ScheduledProbeJob),
+            MaxRetries = 1
+        }, cancellationToken);
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = jobId,
+            Name = "nightly",
+            Status = JobStatus.Processing,
+            Attempt = 1,
+            NodeId = "node-b",
+            LeaseExpiresUtc = now.AddMinutes(-1),
+            ScheduledForUtc = now.AddSeconds(-30)
+        }, cancellationToken);
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = jobId,
+            Kind = ScheduledDispatchKind.JobOccurrence,
+            Destination = "nightly",
+            Body = Array.Empty<byte>(),
+            DueUtc = now,
+            JobId = jobId
+        }, cancellationToken);
+
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken));
+
+        var state = await store.GetAsync(jobId, cancellationToken);
+        Assert.NotNull(state);
+        Assert.Equal(JobStatus.Completed, state.Status);
+        Assert.Equal(2, state.Attempt);
+        Assert.Equal(1, probe.RunCount);
+    }
+
+    private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
     {
         var serviceProvider = new ServiceCollection()
             .AddSingleton(new JobSchedulerProbe())
             .BuildServiceProvider();
         var client = new JobClient(store, serviceProvider, nodeId: nodeId);
-        return new JobScheduleProcessor(scheduler, store, client, nodeId: nodeId);
+        return new JobScheduleProcessor(scheduler, store, client, nodeId: nodeId, transport: transport);
     }
 
     private sealed class JobSchedulerProbe
@@ -171,6 +264,23 @@ public class JobSchedulerTests
         public void RecordRun()
         {
             Interlocked.Increment(ref _runCount);
+        }
+    }
+
+    private sealed class FailingScheduledJob : IJob
+    {
+        private readonly JobSchedulerProbe _probe;
+
+        public FailingScheduledJob(JobSchedulerProbe probe)
+        {
+            _probe = probe;
+        }
+
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _probe.RecordRun();
+            return Task.FromResult(JobResult.FromException(new InvalidOperationException("failed")));
         }
     }
 
