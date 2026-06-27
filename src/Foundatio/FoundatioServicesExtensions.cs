@@ -1,6 +1,7 @@
 using System;
 using Foundatio.Caching;
 using Foundatio.Extensions;
+using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
@@ -36,6 +37,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         Storage = new StorageBuilder(this);
         Messaging = new MessagingBuilder(this);
         Queueing = new QueueingBuilder(this);
+        Jobs = new JobsBuilder(this);
         Locking = new LockingBuilder(this);
     }
 
@@ -61,6 +63,11 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// Configure queueing services for Foundatio.
     /// </summary>
     public QueueingBuilder Queueing { get; }
+
+    /// <summary>
+    /// Configure background job runtime services for Foundatio.
+    /// </summary>
+    public JobsBuilder Jobs { get; }
 
     /// <summary>
     /// Configure locking services for Foundatio.
@@ -268,6 +275,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
             _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
             _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
             return _builder;
         }
 
@@ -276,7 +284,103 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(b => b.Configure(config).UseServices(sp)));
             _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
             _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
             return _builder;
+        }
+
+        public FoundatioBuilder UseTransport(IMessageTransport transport)
+        {
+            _services.ReplaceSingleton(_ => transport);
+            RegisterMessageClients();
+            return _builder;
+        }
+
+        public FoundatioBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
+        {
+            RegisterMessagingRuntime(factory);
+            return _builder;
+        }
+
+        private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
+        {
+            _services.ReplaceSingleton(factory);
+            RegisterMessageClients();
+        }
+
+        private void RegisterMessageClients()
+        {
+            _services.ReplaceSingleton<Messaging.IQueue>(sp => new MessageQueue(sp.GetRequiredService<IMessageTransport>(), CreateQueueOptions(sp)));
+            _services.ReplaceSingleton<IPubSub>(sp => new PubSub(sp.GetRequiredService<IMessageTransport>(), CreatePubSubOptions(sp)));
+        }
+
+        private static QueueOptions CreateQueueOptions(IServiceProvider serviceProvider)
+        {
+            return new QueueOptions
+            {
+                Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
+                RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
+                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+            };
+        }
+
+        private static PubSubOptions CreatePubSubOptions(IServiceProvider serviceProvider)
+        {
+            return new PubSubOptions
+            {
+                Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
+                RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
+                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+            };
+        }
+    }
+
+    public class JobsBuilder : IFoundatioBuilder
+    {
+        private readonly FoundatioBuilder _builder;
+        private readonly IServiceCollection _services;
+
+        internal JobsBuilder(IFoundatioBuilder builder)
+        {
+            _builder = builder.Builder;
+            _services = builder.Services;
+        }
+
+        IServiceCollection IFoundatioBuilder.Services => _services;
+        FoundatioBuilder IFoundatioBuilder.Builder => _builder;
+
+        public FoundatioBuilder UseRuntimeStore(IJobRuntimeStore store)
+        {
+            _services.ReplaceSingleton(_ => store);
+            RegisterJobServices();
+            return _builder;
+        }
+
+        public FoundatioBuilder UseRuntimeStore(Func<IServiceProvider, IJobRuntimeStore> factory)
+        {
+            _services.ReplaceSingleton(factory);
+            RegisterJobServices();
+            return _builder;
+        }
+
+        public FoundatioBuilder UseInMemoryRuntime()
+        {
+            _services.ReplaceSingleton<IJobRuntimeStore>(sp => new InMemoryJobRuntimeStore(sp.GetService<TimeProvider>()));
+            RegisterJobServices();
+            return _builder;
+        }
+
+        private void RegisterJobServices()
+        {
+            _services.ReplaceSingleton<IJobMonitor>(sp => sp.GetRequiredService<IJobRuntimeStore>());
+            _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>()));
+            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>()));
+            _services.ReplaceSingleton<IJobScheduler, InMemoryJobScheduler>();
+            _services.ReplaceSingleton(sp => new JobScheduleProcessor(
+                sp.GetRequiredService<IJobScheduler>(),
+                sp.GetRequiredService<IJobRuntimeStore>(),
+                sp.GetRequiredService<IJobWorker>(),
+                sp.GetService<TimeProvider>(),
+                transport: sp.GetService<IMessageTransport>()));
         }
     }
 

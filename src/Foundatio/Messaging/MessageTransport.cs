@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Queues;
 
 namespace Foundatio.Messaging;
 
@@ -70,6 +69,19 @@ public sealed record ReceiveRequest
 {
     public int MaxMessages { get; init; } = 1;
     public TimeSpan? MaxWaitTime { get; init; }
+}
+
+public sealed record MessageDestinationStats
+{
+    public long Queued { get; init; }
+    public long Working { get; init; }
+    public long Deadletter { get; init; }
+    public long Enqueued { get; init; }
+    public long Dequeued { get; init; }
+    public long Completed { get; init; }
+    public long Abandoned { get; init; }
+    public long Errors { get; init; }
+    public long Timeouts { get; init; }
 }
 
 public sealed record SendItemResult
@@ -156,7 +168,7 @@ public interface ISupportsVisibilityTimeout : IMessageTransport
 
 public interface ISupportsStats : IMessageTransport
 {
-    Task<QueueStats> GetStatsAsync(string destination, CancellationToken ct);
+    Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct);
 }
 
 public interface ISupportsPriority : IMessageTransport { }

@@ -51,8 +51,8 @@ public class JobSchedulerTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, client, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
         await scheduler.ScheduleAsync(new ScheduledJobDefinition
@@ -167,8 +167,8 @@ public class JobSchedulerTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, client, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
         await scheduler.ScheduleAsync(new ScheduledJobDefinition
@@ -205,8 +205,8 @@ public class JobSchedulerTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, client, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
         const string jobId = "nightly:20260101000000:global";
 
@@ -251,8 +251,8 @@ public class JobSchedulerTests
         var serviceProvider = new ServiceCollection()
             .AddSingleton(new JobSchedulerProbe())
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: nodeId);
-        return new JobScheduleProcessor(scheduler, store, client, nodeId: nodeId, transport: transport);
+        var worker = new JobWorker(store, serviceProvider, nodeId: nodeId);
+        return new JobScheduleProcessor(scheduler, store, worker, nodeId: nodeId, transport: transport);
     }
 
     private sealed class JobSchedulerProbe

@@ -120,11 +120,13 @@ public class JobRuntimeTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
 
-        string jobId = await client.RunAsync<SuccessfulTrackedJob>(new RunJobOptions { JobId = "job-1" }, cancellationToken);
+        JobHandle handle = await client.EnqueueAsync<SuccessfulTrackedJob>(new JobRequestOptions { JobId = "job-1" }, cancellationToken);
+        Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
 
-        var state = await client.GetAsync(jobId, cancellationToken);
+        var state = await handle.GetStateAsync(cancellationToken);
         Assert.NotNull(state);
         Assert.Equal(1, probe.RunCount);
         Assert.Equal(JobStatus.Completed, state.Status);
@@ -145,16 +147,18 @@ public class JobRuntimeTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
 
-        var runTask = client.RunAsync<CancellableTrackedJob>(new RunJobOptions { JobId = "job-1" }, cancellationToken);
+        JobHandle handle = await client.EnqueueAsync<CancellableTrackedJob>(new JobRequestOptions { JobId = "job-1" }, cancellationToken);
+        var runTask = worker.RunAsync(handle.JobId, cancellationToken);
         await probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
-        Assert.True(await client.RequestCancellationAsync("job-1", cancellationToken));
+        Assert.True(await handle.RequestCancellationAsync(cancellationToken));
 
         await probe.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-        string jobId = await runTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-        var state = await client.GetAsync(jobId, cancellationToken);
+        Assert.True(await runTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken));
+        var state = await handle.GetStateAsync(cancellationToken);
 
         Assert.NotNull(state);
         Assert.Equal(JobStatus.Cancelled, state.Status);

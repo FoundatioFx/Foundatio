@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
-using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
@@ -26,28 +25,24 @@ public class PubSubTests
         var firstReceived = new AsyncCountdownEvent(1);
         var secondReceived = new AsyncCountdownEvent(1);
 
-        var first = pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
+        await using var first = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
             Assert.Equal("published", message.Message.Data);
             firstReceived.Signal();
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "subscriber-a" }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "subscriber-a" }, cts.Token);
 
-        var second = pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
+        await using var second = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
             Assert.Equal("published", message.Message.Data);
             secondReceived.Signal();
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "subscriber-b" }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "subscriber-b" }, cts.Token);
 
         await pubSub.PublishAsync(new PreviewEvent { Data = "published" }, cancellationToken: cancellationToken);
 
         await firstReceived.WaitAsync(TimeSpan.FromSeconds(2));
         await secondReceived.WaitAsync(TimeSpan.FromSeconds(2));
-        await cts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await first);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await second);
-
         var firstStats = await transport.GetStatsAsync("subscriber-a", cancellationToken);
         var secondStats = await transport.GetStatsAsync("subscriber-b", cancellationToken);
         Assert.Equal(1, firstStats.Completed);
@@ -64,12 +59,12 @@ public class PubSubTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var received = new AsyncCountdownEvent(2);
 
-        var subscription = pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
+        await using var subscription = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
             Assert.StartsWith("batch-", message.Message.Data);
             received.Signal();
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "batch-subscription" }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "batch-subscription" }, cts.Token);
 
         await pubSub.PublishBatchAsync([
             new PreviewEvent { Data = "batch-one" },
@@ -77,9 +72,6 @@ public class PubSubTests
         ], cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        await cts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await subscription);
-
         var stats = await transport.GetStatsAsync("batch-subscription", cancellationToken);
         Assert.Equal(2, stats.Completed);
     }
@@ -93,13 +85,13 @@ public class PubSubTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var received = new TaskCompletionSource<IReceivedMessage<PreviewEvent>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var subscription = pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
+        await using var subscription = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
             received.TrySetResult(message);
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "metadata-subscription" }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "metadata-subscription" }, cts.Token);
 
-        await pubSub.PublishAsync(new PreviewEvent { Data = "metadata" }, new PublishOptions
+        await pubSub.PublishAsync(new PreviewEvent { Data = "metadata" }, new PubSubMessageOptions
         {
             CorrelationId = "corr-456",
             Priority = MessagePriority.High,
@@ -118,8 +110,6 @@ public class PubSubTests
         Assert.Equal("acme", message.Headers["tenant"]);
         Assert.Equal(typeof(PreviewEvent).FullName, message.MessageType);
 
-        await cts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await subscription);
     }
 
     [Fact]
@@ -134,20 +124,18 @@ public class PubSubTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var received = new AsyncCountdownEvent(1);
 
-        var subscription = pubSub.SubscribeAsync<PreviewEvent>((_, _) =>
+        await using var subscription = await pubSub.SubscribeAsync<PreviewEvent>((_, _) =>
         {
             received.Signal();
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "delayed-subscription" }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "delayed-subscription" }, cts.Token);
 
-        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new PublishOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
+        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new PubSubMessageOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
         await Assert.ThrowsAsync<TimeoutException>(async () => await received.WaitAsync(TimeSpan.FromMilliseconds(50)));
         Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
         await received.WaitAsync(TimeSpan.FromSeconds(2));
 
-        await cts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await subscription);
     }
 
     [Fact]
@@ -161,7 +149,7 @@ public class PubSubTests
         var received = new AsyncCountdownEvent(2);
         int attempts = 0;
 
-        var subscription = pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
+        await using var subscription = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
             attempts++;
             Assert.Equal(attempts, message.Attempts);
@@ -171,25 +159,35 @@ public class PubSubTests
                 throw new InvalidOperationException("try again");
 
             return Task.CompletedTask;
-        }, new SubscriptionOptions { Subscription = "retry-subscription", MaxAttempts = 2 }, cts.Token);
+        }, new PubSubSubscriptionOptions { Subscription = "retry-subscription", MaxAttempts = 2 }, cts.Token);
 
         await pubSub.PublishAsync(new PreviewEvent { Data = "retry" }, cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        await cts.CancelAsync();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await subscription);
-
         var stats = await transport.GetStatsAsync("retry-subscription", cancellationToken);
         Assert.Equal(1, stats.Completed);
         Assert.Equal(1, stats.Abandoned);
     }
 
 
+    [Fact]
+    public async Task SubscribeAsync_WithSameKey_ReturnsExistingSubscriptionAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var pubSub = new PubSub(new InMemoryMessageTransport());
+
+        await using var first = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
+        var second = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new PubSubSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
+
+        Assert.Same(first, second);
+    }
+
+
     private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var client = new JobClient(store, serviceProvider, nodeId: "node-a");
-        return new JobScheduleProcessor(new InMemoryJobScheduler(), store, client, nodeId: "node-a", transport: transport);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        return new JobScheduleProcessor(new InMemoryJobScheduler(), store, worker, nodeId: "node-a", transport: transport);
     }
 
     private sealed class PreviewEvent

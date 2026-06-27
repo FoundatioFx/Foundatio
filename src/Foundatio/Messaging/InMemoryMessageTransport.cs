@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Channels;
 using Foundatio.AsyncEx;
-using Foundatio.Queues;
 using Foundatio.Utility;
 
 namespace Foundatio.Messaging;
@@ -186,16 +185,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.FromResult<IPushSubscription>(subscription);
     }
 
-    public Task<QueueStats> GetStatsAsync(string destination, CancellationToken ct)
+    public Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrEmpty(destination);
 
         if (!_destinations.TryGetValue(destination, out var state))
-            return Task.FromResult(new QueueStats());
+            return Task.FromResult(new MessageDestinationStats());
 
-        return Task.FromResult(new QueueStats
+        return Task.FromResult(new MessageDestinationStats
         {
             Queued = state.QueuedCount,
             Working = state.InFlight.Count,

@@ -4,7 +4,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
-using Foundatio.Queues;
 using Foundatio.Xunit;
 using Xunit;
 
@@ -60,7 +59,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
 
             if (transport is ISupportsStats stats)
             {
-                QueueStats queueStats = await stats.GetStatsAsync("orders", TestCancellationToken);
+                MessageDestinationStats queueStats = await stats.GetStatsAsync("orders", TestCancellationToken);
                 Assert.Equal(0, queueStats.Queued);
                 Assert.Equal(0, queueStats.Working);
                 Assert.Equal(2, queueStats.Completed);
@@ -258,7 +257,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             var entry = Assert.Single(await pull.ReceiveAsync("deadletter", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
             await ((ISupportsDeadLetter)transport).DeadLetterAsync(entry, "bad-payload", TestCancellationToken);
 
-            QueueStats queueStats = await stats.GetStatsAsync("deadletter", TestCancellationToken);
+            MessageDestinationStats queueStats = await stats.GetStatsAsync("deadletter", TestCancellationToken);
             Assert.Equal(0, queueStats.Working);
             Assert.Equal(1, queueStats.Deadletter);
         }
@@ -290,7 +289,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             var entries = await pull.ReceiveAsync("expiration", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
             Assert.Empty(entries);
 
-            QueueStats queueStats = await stats.GetStatsAsync("expiration", TestCancellationToken);
+            MessageDestinationStats queueStats = await stats.GetStatsAsync("expiration", TestCancellationToken);
             Assert.Equal(0, queueStats.Queued);
             Assert.Equal(1, queueStats.Deadletter);
         }
