@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -12,6 +13,21 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
+
+/// <summary>
+/// Core-owned messaging instruments. Counters and histograms are transport-agnostic and shared by every
+/// <see cref="MessageQueue"/> and <see cref="PubSub"/> instance so that send/receive/settlement volume and handler
+/// latency are observable regardless of which transport is plugged in.
+/// </summary>
+internal static class MessagingInstruments
+{
+    public static readonly Counter<long> Sent = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.sent", description: "Number of messages sent to a destination");
+    public static readonly Counter<long> Received = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.received", description: "Number of messages received from a source");
+    public static readonly Counter<long> Completed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.completed", description: "Number of messages completed");
+    public static readonly Counter<long> Abandoned = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.abandoned", description: "Number of messages abandoned");
+    public static readonly Counter<long> DeadLettered = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.deadlettered", description: "Number of messages dead-lettered");
+    public static readonly Histogram<double> HandlerTime = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.messaging.handlertime", unit: "ms", description: "Message handler execution time");
+}
 
 /// <summary>
 /// Transport-neutral envelope options shared by queue send and pub/sub publish operations.
@@ -236,36 +252,97 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    // MaxConcurrency bounds the number of in-flight messages processed per receive batch. A failure while receiving
-    // or while processing a single entry (including a poison message that was already dead-lettered) must never tear
-    // down the loop, otherwise one bad message or a transient transport blip silently stops consumption.
+    // MaxConcurrency bounds the number of in-flight messages. A slot is held from receive until the message settles
+    // and is released the instant that one message finishes — so a single slow message never stalls the other slots
+    // (no head-of-line blocking) and steady-state utilization stays at the configured concurrency. A failure while
+    // receiving or while processing a single entry (including a poison message that was already dead-lettered) must
+    // never tear down the loop, otherwise one bad message or a transient transport blip silently stops consumption.
     private async Task RunPullLoopAsync(string source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            IReadOnlyList<TransportEntry> entries;
-            try
-            {
-                entries = await pull.ReceiveAsync(source, new ReceiveRequest
-                {
-                    MaxMessages = Math.Max(1, maxConcurrency),
-                    MaxWaitTime = TimeSpan.FromSeconds(1)
-                }, cancellationToken).AnyContext();
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
-                await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
-                continue;
-            }
+        maxConcurrency = Math.Max(1, maxConcurrency);
+        var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        var inFlight = new ConcurrentDictionary<Task, byte>();
 
-            var tasks = entries.Select(entry => SafeProcessAsync(entry, onMessage, source, cancellationToken)).ToArray();
-            await Task.WhenAll(tasks).AnyContext();
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                // Block for a free slot before receiving so we never pull more than we can process concurrently.
+                try
+                {
+                    await slots.WaitAsync(cancellationToken).AnyContext();
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // Opportunistically claim any other idle slots so a transport that supports batch receive can still
+                // pull a batch while keeping per-message slot release. WaitAsync(Zero) is a non-blocking try-acquire.
+                int claimed = 1;
+                while (claimed < maxConcurrency && await slots.WaitAsync(TimeSpan.Zero).AnyContext())
+                    claimed++;
+
+                IReadOnlyList<TransportEntry> entries;
+                try
+                {
+                    entries = await pull.ReceiveAsync(source, new ReceiveRequest
+                    {
+                        MaxMessages = claimed,
+                        MaxWaitTime = TimeSpan.FromSeconds(1)
+                    }, cancellationToken).AnyContext();
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    ReleaseSlots(slots, claimed);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ReleaseSlots(slots, claimed);
+                    _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
+                    await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                    continue;
+                }
+
+                // Return any slots we claimed but didn't fill (empty receive or a partial batch).
+                ReleaseSlots(slots, claimed - entries.Count);
+
+                foreach (var entry in entries)
+                {
+                    var task = ProcessAndReleaseSlotAsync(entry, onMessage, source, slots, cancellationToken);
+                    if (!task.IsCompleted)
+                    {
+                        inFlight[task] = 0;
+                        _ = task.ContinueWith(static (t, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(t, out _), inFlight, TaskScheduler.Default);
+                    }
+                }
+            }
         }
+        finally
+        {
+            // Drain in-flight handlers before the semaphore is disposed so their slot releases never hit a disposed handle.
+            await Task.WhenAll(inFlight.Keys.ToArray()).AnyContext();
+            slots.Dispose();
+        }
+    }
+
+    private async Task ProcessAndReleaseSlotAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string source, SemaphoreSlim slots, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SafeProcessAsync(entry, onMessage, source, cancellationToken).AnyContext();
+        }
+        finally
+        {
+            slots.Release();
+        }
+    }
+
+    private static void ReleaseSlots(SemaphoreSlim slots, int count)
+    {
+        if (count > 0)
+            slots.Release(count);
     }
 
     private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string source, CancellationToken cancellationToken)
@@ -287,6 +364,10 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private async Task HandleMessageAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, Task> handler, CancellationToken cancellationToken) where TMessage : IReceivedMessage
     {
+        // Re-establish the producer's trace context on the consumer side so a cross-process trace continues here
+        // instead of breaking at the transport boundary.
+        using var activity = StartProcessActivity(message, config);
+        long startTimestamp = Stopwatch.GetTimestamp();
         try
         {
             await handler(message, cancellationToken).AnyContext();
@@ -296,9 +377,36 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            activity?.SetErrorStatus(ex);
             _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, config.Source, message.Attempts, config.MaxAttempts, ex.Message);
             await SettleFailedMessageAsync(message, config, cancellationToken).AnyContext();
         }
+        finally
+        {
+            MessagingInstruments.HandlerTime.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds, new KeyValuePair<string, object?>("source", config.Source));
+        }
+    }
+
+    private static Activity? StartProcessActivity(IReceivedMessage message, ListenerConfig config)
+    {
+        string? traceParent = message.Headers.GetValueOrDefault(KnownHeaders.TraceParent);
+        var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessMessage", ActivityKind.Consumer, traceParent);
+        if (activity is null)
+            return null;
+
+        string? traceState = message.Headers.GetValueOrDefault(KnownHeaders.TraceState);
+        if (!String.IsNullOrEmpty(traceState))
+            activity.TraceStateString = traceState;
+
+        activity.DisplayName = $"Process: {message.MessageType ?? config.MessageType.Name}";
+
+        if (activity.IsAllDataRequested)
+        {
+            activity.SetTag("messaging.source", config.Source);
+            activity.SetTag("messaging.message.id", message.Id);
+        }
+
+        return activity;
     }
 
     private static async Task SettleFailedMessageAsync(IReceivedMessage message, ListenerConfig config, CancellationToken cancellationToken)
@@ -321,11 +429,14 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private ReceivedMessage CreateReceivedMessage(TransportEntry entry, CancellationToken cancellationToken)
     {
+        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
         return new ReceivedMessage(_transport, entry, cancellationToken, _runtimeStore, _timeProvider);
     }
 
     private async Task<IReceivedMessage<T>> CreateReceivedMessageAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
     {
+        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
+
         T? message;
         try
         {
@@ -448,6 +559,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (maxBatchSize is not { } limit || limit <= 0 || messages.Count <= limit)
         {
             var result = await _transport.SendAsync(destination, messages, options, cancellationToken).AnyContext();
+            RecordSent(destination, result.Items);
             return result.Items;
         }
 
@@ -456,10 +568,24 @@ internal sealed class MessageClientCore : IAsyncDisposable
         {
             var chunk = messages.Skip(offset).Take(limit).ToArray();
             var result = await _transport.SendAsync(destination, chunk, options, cancellationToken).AnyContext();
+            RecordSent(destination, result.Items);
             items.AddRange(result.Items);
         }
 
         return items;
+    }
+
+    private static void RecordSent(string destination, IReadOnlyList<SendItemResult> items)
+    {
+        int sent = 0;
+        for (int index = 0; index < items.Count; index++)
+        {
+            if (items[index].Success)
+                sent++;
+        }
+
+        if (sent > 0)
+            MessagingInstruments.Sent.Add(sent, new KeyValuePair<string, object?>("destination", destination));
     }
 
     private ISupportsPull RequirePull()
@@ -507,7 +633,13 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
     public string? CorrelationId => Headers.GetValueOrDefault(KnownHeaders.CorrelationId);
     public string? MessageType => Headers.GetValueOrDefault(KnownHeaders.MessageType);
     public MessagePriority Priority => Enum.TryParse(Headers.GetValueOrDefault(KnownHeaders.Priority), ignoreCase: true, out MessagePriority priority) ? priority : MessagePriority.Normal;
-    public int Attempts => _entry.DeliveryCount;
+
+    // Reconcile the transport-reported delivery count with the message.attempts header. When redelivery-delay is
+    // served through the runtime-store fallback (transports without native ISupportsRedeliveryDelay), the message is
+    // re-sent as a brand-new transport message, so its DeliveryCount resets to 1; the carried-over attempt count
+    // lives in the header. Taking the max keeps MaxAttempts/dead-letter correct regardless of whether the transport
+    // honors the header, so the counter never silently resets and redelivery can't loop forever.
+    public int Attempts => Math.Max(_entry.DeliveryCount, ParseAttemptsHeader(_entry.Headers));
     public bool IsHandled => Volatile.Read(ref _isHandled) == 1;
     public CancellationToken CancellationToken { get; }
 
@@ -516,6 +648,7 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         if (!TryMarkHandled())
             return Task.CompletedTask;
 
+        MessagingInstruments.Completed.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
         return _transport.CompleteAsync(_entry, cancellationToken);
     }
 
@@ -524,6 +657,7 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         if (!TryMarkHandled())
             return Task.CompletedTask;
 
+        MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
         return _transport.AbandonAsync(_entry, cancellationToken);
     }
 
@@ -531,6 +665,8 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
     {
         if (!TryMarkHandled())
             return;
+
+        MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
 
         if (_transport is ISupportsRedeliveryDelay redelivery)
         {
@@ -565,6 +701,7 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         if (!TryMarkHandled())
             return;
 
+        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
         await DeadLetterAsync(_transport, _entry, reason, cancellationToken).AnyContext();
     }
 
@@ -591,6 +728,13 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
     private bool TryMarkHandled()
     {
         return Interlocked.CompareExchange(ref _isHandled, 1, 0) == 0;
+    }
+
+    private static int ParseAttemptsHeader(MessageHeaders headers)
+    {
+        return Int32.TryParse(headers.GetValueOrDefault(KnownHeaders.Attempts), NumberStyles.Integer, CultureInfo.InvariantCulture, out int attempts) && attempts > 0
+            ? attempts
+            : 0;
     }
 }
 

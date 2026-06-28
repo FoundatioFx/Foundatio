@@ -100,6 +100,18 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
     }
 
     [Fact]
+    public override Task AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync()
+    {
+        return base.AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync();
+    }
+
+    [Fact]
+    public override Task RenewLockAsync_ExtendsVisibilityWindowAsync()
+    {
+        return base.RenewLockAsync_ExtendsVisibilityWindowAsync();
+    }
+
+    [Fact]
     public override Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync()
     {
         return base.CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync();

@@ -194,6 +194,23 @@ await using var subscription = await pubsub.SubscribeAsync<OrderSubmitted>(Handl
 
 For per-type routing, register each type. For grouped routing, map an interface or base type. For default/global-style routing, set one default queue destination or topic for otherwise unmapped messages. Operation-level overrides should be reserved for exceptional paths such as replays or priority lanes.
 
+### `IQueue` name collision during migration
+
+Two public `IQueue` types coexist while the legacy queue is still shipped:
+
+- `Foundatio.Queues.IQueue` / `IQueue<T>` — the legacy one-type-per-queue API.
+- `Foundatio.Messaging.IQueue` — the new app-facing queue.
+
+A file that has `using` directives for both namespaces will get a `CS0104` ambiguous-reference error on the bare name `IQueue`. Until the legacy API is removed, disambiguate per file with a `using` alias rather than fully qualifying every usage:
+
+```csharp
+using IQueue = Foundatio.Messaging.IQueue;       // new code
+// or, while finishing a migration:
+// using LegacyQueue = Foundatio.Queues.IQueue<MyMessage>;
+```
+
+New application code should depend on `Foundatio.Messaging.IQueue`; the alias keeps call sites clean without dropping the legacy namespace a file may still need mid-migration.
+
 ## Rollout Notes
 
 The in-memory transport proves the API shape and conformance coverage for local development. Before locking this as a stable public API, validate at least one external provider against the same routing, topic/subscription, delayed delivery, dead-letter, TTL, priority, and batch constraints.
