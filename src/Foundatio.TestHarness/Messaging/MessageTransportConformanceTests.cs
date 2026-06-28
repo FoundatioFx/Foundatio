@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -27,7 +28,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
             return;
+        }
 
         try
         {
@@ -49,9 +53,19 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             }, TestCancellationToken);
 
             Assert.Equal(2, entries.Count);
-            Assert.Equal("one", ReadBody(entries[0]));
-            Assert.Equal("two", ReadBody(entries[1]));
-            Assert.Equal("acme", entries[0].Headers["tenant"]);
+            var bodies = entries.Select(ReadBody).ToList();
+            Assert.Contains("one", bodies);
+            Assert.Contains("two", bodies);
+
+            // Only assert positional FIFO order when the transport actually guarantees ordering; a best-effort
+            // (OrderingGuarantee.None) transport may legitimately deliver out of order.
+            if (transport is not ITransportInfo { Ordering: OrderingGuarantee.None })
+            {
+                Assert.Equal("one", ReadBody(entries[0]));
+                Assert.Equal("two", ReadBody(entries[1]));
+            }
+
+            Assert.All(entries, e => Assert.Equal("acme", e.Headers["tenant"]));
             Assert.Equal(1, entries[0].DeliveryCount);
 
             await transport.CompleteAsync(entries[0], TestCancellationToken);
@@ -75,7 +89,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
             return;
+        }
 
         try
         {
@@ -104,7 +121,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
             return;
+        }
 
         try
         {
@@ -127,7 +147,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPush push)
+        {
+            Assert.Skip("Transport does not support push delivery (ISupportsPush).");
             return;
+        }
 
         try
         {
@@ -157,7 +180,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsProvisioning)
+        {
+            Assert.Skip("Transport does not support pull receive and provisioning (ISupportsPull + ISupportsProvisioning).");
             return;
+        }
 
         try
         {
@@ -187,7 +213,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsPriority)
+        {
+            Assert.Skip("Transport does not support pull receive with priority (ISupportsPull + ISupportsPriority).");
             return;
+        }
 
         try
         {
@@ -220,7 +249,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsDelayedDelivery)
+        {
+            Assert.Skip("Transport does not support pull receive with delayed delivery (ISupportsPull + ISupportsDelayedDelivery).");
             return;
+        }
 
         try
         {
@@ -247,7 +279,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsDeadLetter || transport is not ISupportsStats stats)
+        {
+            Assert.Skip("Transport does not support pull receive with dead-letter and stats (ISupportsPull + ISupportsDeadLetter + ISupportsStats).");
             return;
+        }
 
         try
         {
@@ -271,7 +306,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsExpiration || transport is not ISupportsStats stats)
+        {
+            Assert.Skip("Transport does not support pull receive with expiration and stats (ISupportsPull + ISupportsExpiration + ISupportsStats).");
             return;
+        }
 
         try
         {
@@ -298,6 +336,98 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await CleanupTransportIfNotNullAsync(transport);
         }
     }
+    public virtual async Task ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsVisibilityTimeout visibility)
+        {
+            Assert.Skip("Transport does not support visibility timeout (ISupportsVisibilityTimeout).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "visibility", Role = DestinationRole.Queue });
+            await transport.SendAsync("visibility", [CreateMessage("lease")], new TransportSendOptions(), TestCancellationToken);
+
+            var first = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(250), TestCancellationToken));
+            Assert.Equal(1, first.DeliveryCount);
+
+            // Still within the visibility window: a competing receive must not see the in-flight message.
+            var hidden = await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TimeSpan.FromMilliseconds(250), TestCancellationToken);
+            Assert.Empty(hidden);
+
+            // After the visibility window lapses without settlement, the message must be redelivered (at-least-once).
+            await Task.Delay(TimeSpan.FromMilliseconds(400), TestCancellationToken);
+            var second = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(250), TestCancellationToken));
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(2, second.DeliveryCount);
+
+            await transport.CompleteAsync(second, TestCancellationToken);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    public virtual async Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "competing", Role = DestinationRole.Queue });
+            await transport.SendAsync("competing", [CreateMessage("once")], new TransportSendOptions(), TestCancellationToken);
+
+            var first = Assert.Single(await pull.ReceiveAsync("competing", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+
+            // A competing consumer must not receive the same message while it is in flight.
+            var second = await pull.ReceiveAsync("competing", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, TestCancellationToken);
+            Assert.Empty(second);
+
+            await transport.CompleteAsync(first, TestCancellationToken);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    public virtual async Task ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsPull pull || transport is not ISupportsDeadLetter deadLetter)
+        {
+            Assert.Skip("Transport does not support pull receive and dead-letter (ISupportsPull + ISupportsDeadLetter).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "dlq-read", Role = DestinationRole.Queue });
+            await transport.SendAsync("dlq-read", [CreateMessage("poison", ("tenant", "acme"))], new TransportSendOptions(), TestCancellationToken);
+
+            var entry = Assert.Single(await pull.ReceiveAsync("dlq-read", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+            await deadLetter.DeadLetterAsync(entry, "bad-payload", TestCancellationToken);
+
+            // The raw (un-deserialized) payload and the dead-letter reason must be inspectable.
+            var deadLettered = Assert.Single(await deadLetter.ReceiveDeadLetteredAsync("dlq-read", new ReceiveRequest { MaxMessages = 10 }, TestCancellationToken));
+            Assert.Equal("poison", ReadBody(deadLettered));
+            Assert.Equal("acme", deadLettered.Headers["tenant"]);
+            Assert.Equal("bad-payload", deadLettered.Headers[KnownHeaders.DeadLetterReason]);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
     private async ValueTask CleanupTransportIfNotNullAsync(IMessageTransport? transport)
     {
         if (transport is not null)

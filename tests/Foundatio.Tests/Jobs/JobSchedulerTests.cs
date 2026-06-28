@@ -42,6 +42,68 @@ public class JobSchedulerTests
     }
 
     [Fact]
+    public async Task EnqueueDueOccurrencesAsync_WithAllowConcurrent_MaterializesEveryMissedOccurrenceAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var scheduler = new InMemoryJobScheduler();
+        var store = new InMemoryJobRuntimeStore();
+        var processor = CreateProcessor(scheduler, store, "node-a");
+        var now = new DateTimeOffset(2026, 1, 1, 0, 5, 30, TimeSpan.Zero);
+
+        await scheduler.ScheduleAsync(new ScheduledJobDefinition
+        {
+            Name = "frequent",
+            Cron = "* * * * *",
+            JobType = typeof(ScheduledProbeJob),
+            Overlap = OverlapPolicy.AllowConcurrent,
+            MisfireWindow = TimeSpan.FromMinutes(10)
+        }, cancellationToken);
+
+        // A scheduler that lagged behind a per-minute cadence must materialize every missed occurrence in the window,
+        // not just the most recent one.
+        var first = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
+        Assert.True(first.Count >= 5, $"Expected multiple missed occurrences, got {first.Count}");
+
+        // Deterministic occurrence ids dedupe across overlapping windows: a second pass at the same time adds nothing.
+        var second = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
+        Assert.Empty(second);
+    }
+
+    [Fact]
+    public async Task JobRuntimeService_RunsQueuedJobsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var probe = new JobSchedulerProbe();
+        var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
+        var store = new InMemoryJobRuntimeStore();
+        var scheduler = new InMemoryJobScheduler();
+        var registry = new JobTypeRegistry([new JobTypeRegistration("probe", typeof(ScheduledProbeJob))]);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", jobTypes: registry);
+        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a", jobTypes: registry);
+        var client = new JobClient(store, jobTypes: registry);
+
+        var service = new Foundatio.Extensions.Hosting.Jobs.JobRuntimeService(processor, worker,
+            options: new Foundatio.Extensions.Hosting.Jobs.JobRuntimeServiceOptions { PollInterval = TimeSpan.FromMilliseconds(50) });
+
+        await ((Microsoft.Extensions.Hosting.IHostedService)service).StartAsync(cancellationToken);
+        try
+        {
+            var handle = await client.EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
+
+            JobState? state = null;
+            for (int i = 0; i < 100 && (state = await handle.GetStateAsync(cancellationToken))?.Status != JobStatus.Completed; i++)
+                await Task.Delay(50, cancellationToken);
+
+            Assert.Equal(JobStatus.Completed, state?.Status);
+            Assert.Equal(1, probe.RunCount);
+        }
+        finally
+        {
+            await ((Microsoft.Extensions.Hosting.IHostedService)service).StopAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task RunDueOccurrencesAsync_WhenOccurrenceIsDue_RunsConfiguredJobAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

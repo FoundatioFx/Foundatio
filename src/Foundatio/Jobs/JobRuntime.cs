@@ -214,7 +214,10 @@ public interface IJobWorker
 public interface IJobRuntimeStore : IJobMonitor
 {
     Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default);
-    Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default);
+    // When expectedNodeId is non-null, the transition only succeeds if the job is currently owned by that node.
+    // Worker terminal transitions pass their node id so a stale worker whose lease was reclaimed cannot overwrite
+    // the new owner's state.
+    Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default);
     Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
     Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
     Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default);
@@ -280,13 +283,16 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
             .ToArray());
     }
 
-    public Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default)
+    public Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         lock (_lock)
         {
             if (!_jobs.TryGetValue(jobId, out var current) || current.Status != expectedStatus)
+                return Task.FromResult(false);
+
+            if (expectedNodeId is not null && !String.Equals(current.NodeId, expectedNodeId, StringComparison.Ordinal))
                 return Task.FromResult(false);
 
             _jobs[jobId] = ApplyPatch(current, patch) with
@@ -549,6 +555,25 @@ public sealed class JobClient : IJobClient
     }
 }
 
+/// <summary>
+/// Resolves a stable, process-unique node identity used for job claims and per-node scheduling.
+/// Honors the <c>FOUNDATIO_NODE_ID</c> environment variable when set; otherwise combines machine name,
+/// process id, and a process-lifetime token so co-located worker processes do not collapse to one identity.
+/// </summary>
+internal static class NodeIdentity
+{
+    public static string Current { get; } = Resolve();
+
+    private static string Resolve()
+    {
+        string? configured = Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID");
+        if (!String.IsNullOrEmpty(configured))
+            return configured;
+
+        return $"{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid().ToString("N")[..8]}";
+    }
+}
+
 public sealed class JobWorker : IJobWorker
 {
     private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
@@ -566,9 +591,7 @@ public sealed class JobWorker : IJobWorker
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
-        _nodeId = !String.IsNullOrEmpty(nodeId)
-            ? nodeId
-            : Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") ?? Environment.MachineName;
+        _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _lease = lease ?? DefaultLease;
     }
 
@@ -610,13 +633,14 @@ public sealed class JobWorker : IJobWorker
             StartedUtc = now,
             LeaseExpiresUtc = now.Add(_lease),
             AttemptDelta = 1
-        }, cancellationToken).ConfigureAwait(false))
+        }, cancellationToken: cancellationToken).ConfigureAwait(false))
         {
             return false;
         }
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var cancellationWatcher = WatchCancellation(state.JobId, linkedCancellationTokenSource);
+        using var leaseRenewer = RenewLeasePeriodically(state.JobId, linkedCancellationTokenSource);
 
         try
         {
@@ -633,7 +657,7 @@ public sealed class JobWorker : IJobWorker
                     CompletedUtc = completedAt,
                     ClearNodeId = true,
                     ClearLeaseExpiresUtc = true
-                }, CancellationToken.None).ConfigureAwait(false);
+                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             }
             else if (result.IsSuccess)
             {
@@ -643,7 +667,7 @@ public sealed class JobWorker : IJobWorker
                     ClearNodeId = true,
                     ClearLeaseExpiresUtc = true,
                     Progress = 100
-                }, CancellationToken.None).ConfigureAwait(false);
+                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             }
             else
             {
@@ -653,7 +677,7 @@ public sealed class JobWorker : IJobWorker
                     CompletedUtc = completedAt,
                     ClearNodeId = true,
                     ClearLeaseExpiresUtc = true
-                }, CancellationToken.None).ConfigureAwait(false);
+                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             }
 
             return true;
@@ -666,7 +690,7 @@ public sealed class JobWorker : IJobWorker
                 CompletedUtc = _timeProvider.GetUtcNow(),
                 ClearNodeId = true,
                 ClearLeaseExpiresUtc = true
-            }, CancellationToken.None).ConfigureAwait(false);
+            }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             throw;
         }
     }
@@ -689,6 +713,30 @@ public sealed class JobWorker : IJobWorker
     private IDisposable WatchCancellation(string jobId, CancellationTokenSource cancellationTokenSource)
     {
         return new Timer(_ => _ = PollCancellationAsync(jobId, cancellationTokenSource), null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
+    }
+
+    private IDisposable RenewLeasePeriodically(string jobId, CancellationTokenSource cancellationTokenSource)
+    {
+        // Renew well before the lease elapses so a slow-but-alive worker keeps ownership and is not reclaimed.
+        var interval = TimeSpan.FromMilliseconds(Math.Max(250, _lease.TotalMilliseconds / 3));
+        return new Timer(_ => _ = RenewLeaseAsync(jobId, cancellationTokenSource), null, interval, interval);
+    }
+
+    private async Task RenewLeaseAsync(string jobId, CancellationTokenSource cancellationTokenSource)
+    {
+        if (cancellationTokenSource.IsCancellationRequested)
+            return;
+
+        try
+        {
+            // If renewal fails the lease was lost to another node; cancel the run so this worker stops and
+            // its terminal transition (guarded by expectedNodeId) cannot overwrite the new owner's state.
+            if (!await _store.RenewClaimAsync(jobId, _nodeId, _lease, CancellationToken.None).ConfigureAwait(false))
+                await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
     }
 
     private async Task PollCancellationAsync(string jobId, CancellationTokenSource cancellationTokenSource)

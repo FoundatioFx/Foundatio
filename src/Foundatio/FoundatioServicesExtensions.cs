@@ -364,7 +364,8 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
-                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
+                LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };
         }
 
@@ -375,7 +376,8 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
-                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System
+                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
+                LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };
         }
     }

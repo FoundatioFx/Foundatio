@@ -154,6 +154,10 @@ public interface ISupportsRedeliveryDelay : IMessageTransport
 public interface ISupportsDeadLetter : IMessageTransport
 {
     Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct);
+
+    // Reads dead-lettered entries for a destination so callers can inspect raw payloads (including poison messages
+    // that never deserialized) and the dead-letter reason header. Read entries are removed from the dead-letter store.
+    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct);
 }
 
 public interface ISupportsLockRenewal : IMessageTransport

@@ -1,4 +1,4 @@
-﻿// The MIT License(MIT)
+// The MIT License(MIT)
 //
 // Copyright (c) 2017 Sergey Odinokov
 //
@@ -22,23 +22,21 @@
 
 using System;
 
-namespace Foundatio.Extensions.Hosting.Cronos;
+namespace Foundatio.Cronos;
 
 /// <summary>
-/// Represents an exception that's thrown, when invalid Cron expression is given.
+/// Defines the cron format options that customize string parsing for <see cref="CronExpression.Parse(string, CronFormat)"/>.
 /// </summary>
-[Serializable]
-public class CronFormatException : FormatException
+[Flags]
+public enum CronFormat
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="CronFormatException"/> class with
-    /// the given message.
+    /// Parsing string must contain only 5 fields: minute, hour, day of month, month, day of week.
     /// </summary>
-    public CronFormatException(string message) : base(message)
-    {
-    }
+    Standard = 0,
 
-    internal CronFormatException(CronField field, string message) : this($"{field}: {message}")
-    {
-    }
+    /// <summary>
+    /// Second field must be specified in parsing string.
+    /// </summary>
+    IncludeSeconds = 1
 }

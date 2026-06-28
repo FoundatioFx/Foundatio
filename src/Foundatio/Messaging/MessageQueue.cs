@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
@@ -55,6 +57,7 @@ public sealed record QueueOptions
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+    public ILoggerFactory? LoggerFactory { get; init; }
 }
 
 public interface IQueue : IAsyncDisposable
@@ -103,6 +106,7 @@ public sealed class MessageQueue : IQueue
 {
     private readonly IMessageTransport _transport;
     private readonly QueueOptions _options;
+    private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, MessageConsumerHandle> _consumers = new(StringComparer.Ordinal);
     private int _isDisposed;
 
@@ -110,6 +114,7 @@ public sealed class MessageQueue : IQueue
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _options = options ?? new QueueOptions();
+        _logger = (_options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageQueue>();
     }
 
     public async Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -330,18 +335,52 @@ public sealed class MessageQueue : IQueue
         }
     }
 
+    // MaxConcurrency bounds the number of in-flight messages processed per receive batch. A failure while receiving
+    // or while processing a single entry (including a poison message that was already dead-lettered) must never tear
+    // down the consumer loop, otherwise one bad message or a transient transport blip silently stops consumption.
     private async Task RunPullConsumerLoopAsync(string source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, QueueConsumerOptions options, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var entries = await pull.ReceiveAsync(source, new ReceiveRequest
+            IReadOnlyList<TransportEntry> entries;
+            try
             {
-                MaxMessages = Math.Max(1, options.MaxConcurrency),
-                MaxWaitTime = TimeSpan.FromSeconds(1)
-            }, cancellationToken).AnyContext();
+                entries = await pull.ReceiveAsync(source, new ReceiveRequest
+                {
+                    MaxMessages = Math.Max(1, options.MaxConcurrency),
+                    MaxWaitTime = TimeSpan.FromSeconds(1)
+                }, cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
+                await _options.TimeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                continue;
+            }
 
-            var tasks = entries.Select(entry => onMessage(entry, cancellationToken)).ToArray();
+            var tasks = entries.Select(entry => SafeProcessAsync(entry, onMessage, source, cancellationToken)).ToArray();
             await Task.WhenAll(tasks).AnyContext();
+        }
+    }
+
+    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string source, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await onMessage(entry, cancellationToken).AnyContext();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            // The message has already been settled (dead-lettered on deserialize failure, abandoned/dead-lettered on
+            // handler error); swallowing here keeps the loop alive for the next message.
+            _logger.LogError(ex, "Error processing message \"{MessageId}\" from \"{Source}\": {Message}", entry.Id, source, ex.Message);
         }
     }
 
@@ -381,8 +420,9 @@ public sealed class MessageQueue : IQueue
             if (options.AckMode == AckMode.Auto && !message.IsHandled)
                 await message.CompleteAsync(ct).AnyContext();
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, message.MessageType, message.Attempts, options.MaxAttempts, ex.Message);
             await SettleFailedMessageAsync(message, options, ct).AnyContext();
         }
     }
@@ -396,8 +436,9 @@ public sealed class MessageQueue : IQueue
             if (options.AckMode == AckMode.Auto && !message.IsHandled)
                 await message.CompleteAsync(ct).AnyContext();
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, message.MessageType, message.Attempts, options.MaxAttempts, ex.Message);
             await SettleFailedMessageAsync(message, options, ct).AnyContext();
         }
     }
@@ -422,9 +463,10 @@ public sealed class MessageQueue : IQueue
 
     private TransportMessage CreateTransportMessage(object message, Type messageType, QueueMessageOptions options, string? messageId = null)
     {
+        // Content type is intentionally not written as a header: the receive path always uses the single configured
+        // serializer, so advertising a per-message content type would be misleading until real negotiation exists.
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
             .Set(KnownHeaders.MessageType, GetMessageType(messageType))
-            .Set(KnownHeaders.ContentType, _options.ContentType)
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
         if (!String.IsNullOrEmpty(options.CorrelationId))

@@ -22,7 +22,7 @@
 
 using System;
 
-namespace Foundatio.Extensions.Hosting.Cronos;
+namespace Foundatio.Cronos;
 
 internal static class TimeZoneHelper
 {

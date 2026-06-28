@@ -22,14 +22,23 @@
 
 using System;
 
-namespace Foundatio.Extensions.Hosting.Cronos;
+namespace Foundatio.Cronos;
 
-[Flags]
-internal enum CronExpressionFlag : byte
+/// <summary>
+/// Represents an exception that's thrown, when invalid Cron expression is given.
+/// </summary>
+[Serializable]
+public class CronFormatException : FormatException
 {
-    DayOfMonthLast = 0b00001,
-    DayOfWeekLast = 0b00010,
-    Interval = 0b00100,
-    NearestWeekday = 0b01000,
-    NthDayOfWeek = 0b10000
+    /// <summary>
+    /// Initializes a new instance of the <see cref="CronFormatException"/> class with
+    /// the given message.
+    /// </summary>
+    public CronFormatException(string message) : base(message)
+    {
+    }
+
+    internal CronFormatException(CronField field, string message) : this($"{field}: {message}")
+    {
+    }
 }
