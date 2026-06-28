@@ -10,8 +10,10 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging;
 
-public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
+public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
 {
+    private static readonly TimeSpan _defaultLockRenewal = TimeSpan.FromMinutes(1);
+
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles = new HashSet<DestinationRole>
     {
         DestinationRole.Queue,
@@ -23,6 +25,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     private readonly ConcurrentDictionary<string, DestinationState> _destinations = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DestinationRole> _roles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _topicSubscriptions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<ITimer, byte> _redeliveryTimers = new();
     private readonly TimeProvider _timeProvider;
     private readonly CancellationTokenSource _disposeCancellationTokenSource = new();
     private int _isDisposed;
@@ -156,6 +159,52 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         Interlocked.Increment(ref state.Abandoned);
         var redelivered = inFlight.Message with { DeliveryCount = entry.DeliveryCount + 1 };
         EnqueueStoredMessage(receipt.Destination, redelivered);
+
+        return Task.CompletedTask;
+    }
+
+    public Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct)
+    {
+        ThrowIfDisposed();
+        ct.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(entry);
+
+        if (redeliveryDelay <= TimeSpan.Zero)
+            return AbandonAsync(entry, ct);
+
+        var receipt = GetReceipt(entry);
+        var state = GetExistingDestination(receipt.Destination);
+
+        if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+            throw new ReceiptExpiredException();
+
+        Interlocked.Increment(ref state.Abandoned);
+        var redelivered = inFlight.Message with { DeliveryCount = entry.DeliveryCount + 1 };
+        ScheduleRedelivery(receipt.Destination, redelivered, redeliveryDelay);
+
+        return Task.CompletedTask;
+    }
+
+    public Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct)
+    {
+        ThrowIfDisposed();
+        ct.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(entry);
+
+        var receipt = GetReceipt(entry);
+        var state = GetExistingDestination(receipt.Destination);
+
+        if (!state.InFlight.TryGetValue(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+            throw new ReceiptExpiredException();
+
+        // Renewal only extends a finite visibility window. A message received without a window holds an indefinite
+        // lock, so there is nothing to extend — leave it as-is rather than imposing a window that could reclaim it.
+        if (inFlight.VisibilityExpiresUtc is null)
+            return Task.CompletedTask;
+
+        var renewed = inFlight with { VisibilityExpiresUtc = _timeProvider.GetUtcNow().Add(duration ?? _defaultLockRenewal) };
+        if (!state.InFlight.TryUpdate(receipt.LockToken, renewed, inFlight))
+            throw new ReceiptExpiredException();
 
         return Task.CompletedTask;
     }
@@ -311,6 +360,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         _disposeCancellationTokenSource.Cancel();
         _disposeCancellationTokenSource.Dispose();
+
+        foreach (var timer in _redeliveryTimers.Keys)
+        {
+            if (_redeliveryTimers.TryRemove(timer, out _))
+                timer.Dispose();
+        }
+
         _destinations.Clear();
         _roles.Clear();
         _topicSubscriptions.Clear();
@@ -395,6 +451,35 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         var role = _roles.GetOrAdd(destination, DestinationRole.Queue);
         var state = GetOrAddDestination(destination, role == DestinationRole.Topic ? DestinationRole.Queue : role);
         state.Enqueue(message with { Destination = destination });
+    }
+
+    // Make an abandoned message invisible for the redelivery delay, then re-enqueue it. Re-enqueueing releases the
+    // destination's availability semaphore, so a consumer blocked in a long receive wait wakes immediately when the
+    // message becomes due. The one-shot timer is tracked so it can be disposed if the transport is torn down first.
+    private void ScheduleRedelivery(string destination, StoredMessage message, TimeSpan delay)
+    {
+        ITimer? timer = null;
+        timer = _timeProvider.CreateTimer(timerState =>
+        {
+            if (timer is not null && _redeliveryTimers.TryRemove(timer, out _))
+                timer.Dispose();
+
+            if (Volatile.Read(ref _isDisposed) == 1)
+                return;
+
+            try
+            {
+                EnqueueStoredMessage(destination, message);
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { } // destination was deleted / completed between scheduling and firing
+        }, null, delay, Timeout.InfiniteTimeSpan);
+
+        _redeliveryTimers[timer] = 0;
+
+        // A redelivery scheduled right as the transport disposes could otherwise leak its timer; clean up the race.
+        if (Volatile.Read(ref _isDisposed) == 1 && _redeliveryTimers.TryRemove(timer, out _))
+            timer.Dispose();
     }
 
     private bool TryReceive(string source, DestinationState state, TimeSpan? visibility, out TransportEntry entry)

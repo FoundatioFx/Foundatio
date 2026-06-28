@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,19 @@ using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Foundatio.Jobs;
+
+/// <summary>
+/// Core-owned durable-job instruments, shared by every <see cref="JobWorker"/> so job throughput and run latency are
+/// observable independent of the runtime store implementation.
+/// </summary>
+internal static class JobInstruments
+{
+    public static readonly Counter<long> Started = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.started", description: "Number of durable jobs started");
+    public static readonly Counter<long> Completed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.completed", description: "Number of durable jobs completed successfully");
+    public static readonly Counter<long> Failed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.failed", description: "Number of durable jobs that failed");
+    public static readonly Counter<long> Cancelled = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.cancelled", description: "Number of durable jobs that were cancelled");
+    public static readonly Histogram<double> RunTime = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.jobs.runtime", unit: "ms", description: "Durable job execution time");
+}
 
 public enum JobStatus
 {
@@ -577,6 +591,7 @@ internal static class NodeIdentity
 public sealed class JobWorker : IJobWorker
 {
     private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DefaultCancellationPollInterval = TimeSpan.FromSeconds(1);
 
     private readonly IJobRuntimeStore _store;
     private readonly IServiceProvider _serviceProvider;
@@ -584,8 +599,9 @@ public sealed class JobWorker : IJobWorker
     private readonly IJobTypeRegistry _jobTypes;
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
+    private readonly TimeSpan _cancellationPollInterval;
 
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null)
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -593,6 +609,12 @@ public sealed class JobWorker : IJobWorker
         _jobTypes = jobTypes ?? new JobTypeRegistry();
         _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _lease = lease ?? DefaultLease;
+
+        // Cooperative cancellation is observed by polling the runtime store. The default is intentionally
+        // conservative (one poll per second per running job) so a real store isn't hammered when many jobs run
+        // concurrently; callers that need snappier cancellation can opt into a tighter interval.
+        var pollInterval = cancellationPollInterval ?? DefaultCancellationPollInterval;
+        _cancellationPollInterval = pollInterval > TimeSpan.Zero ? pollInterval : DefaultCancellationPollInterval;
     }
 
     public async Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default)
@@ -638,6 +660,9 @@ public sealed class JobWorker : IJobWorker
             return false;
         }
 
+        var jobTag = new KeyValuePair<string, object?>("job", state.Name);
+        JobInstruments.Started.Add(1, jobTag);
+
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using var cancellationWatcher = WatchCancellation(state.JobId, linkedCancellationTokenSource);
         using var leaseRenewer = RenewLeasePeriodically(state.JobId, linkedCancellationTokenSource);
@@ -680,17 +705,28 @@ public sealed class JobWorker : IJobWorker
                 }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             }
 
+            if (result.IsCancelled)
+                JobInstruments.Cancelled.Add(1, jobTag);
+            else if (result.IsSuccess)
+                JobInstruments.Completed.Add(1, jobTag);
+            else
+                JobInstruments.Failed.Add(1, jobTag);
+
+            JobInstruments.RunTime.Record((completedAt - now).TotalMilliseconds, jobTag);
             return true;
         }
         catch (Exception ex)
         {
+            var failedAt = _timeProvider.GetUtcNow();
             await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
             {
                 Error = ex.Message,
-                CompletedUtc = _timeProvider.GetUtcNow(),
+                CompletedUtc = failedAt,
                 ClearNodeId = true,
                 ClearLeaseExpiresUtc = true
             }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            JobInstruments.Failed.Add(1, jobTag);
+            JobInstruments.RunTime.Record((failedAt - now).TotalMilliseconds, jobTag);
             throw;
         }
     }
@@ -712,7 +748,7 @@ public sealed class JobWorker : IJobWorker
 
     private IDisposable WatchCancellation(string jobId, CancellationTokenSource cancellationTokenSource)
     {
-        return new Timer(_ => _ = PollCancellationAsync(jobId, cancellationTokenSource), null, TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50));
+        return new Timer(_ => _ = PollCancellationAsync(jobId, cancellationTokenSource), null, _cancellationPollInterval, _cancellationPollInterval);
     }
 
     private IDisposable RenewLeasePeriodically(string jobId, CancellationTokenSource cancellationTokenSource)

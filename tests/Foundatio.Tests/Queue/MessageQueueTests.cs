@@ -97,7 +97,9 @@ public class MessageQueueTests
     public async Task RenewLockAsync_WhenUnsupported_ThrowsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        await using var queue = new MessageQueue(new InMemoryMessageTransport());
+        // BasicQueueTransport intentionally does not implement ISupportsLockRenewal, so the core must surface the
+        // unsupported capability rather than silently no-op.
+        await using var queue = new MessageQueue(new BasicQueueTransport());
 
         await queue.EnqueueAsync(new PreviewWorkItem { Data = "lock" }, cancellationToken: cancellationToken);
         var message = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
@@ -270,7 +272,10 @@ public class MessageQueueTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var store = new InMemoryJobRuntimeStore();
-        await using var transport = new InMemoryMessageTransport();
+        // BasicQueueTransport lacks native redelivery delay, so the backoff routes through the runtime store. It also
+        // never seeds the delivery count from the message.attempts header, proving the core reconciles the attempt
+        // count from the header itself (second attempt must observe Attempts == 2, not a reset-to-1 loop).
+        await using var transport = new BasicQueueTransport();
         await using var queue = new MessageQueue(transport, new QueueOptions { RuntimeStore = store });
         var processor = CreateDispatchProcessor(store, transport);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);

@@ -371,6 +371,78 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    public virtual async Task AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsPull pull || transport is not ISupportsRedeliveryDelay redelivery)
+        {
+            Assert.Skip("Transport does not support pull receive with redelivery delay (ISupportsPull + ISupportsRedeliveryDelay).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "redelivery-delay", Role = DestinationRole.Queue });
+            await transport.SendAsync("redelivery-delay", [CreateMessage("delay-me")], new TransportSendOptions(), TestCancellationToken);
+
+            var first = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+            Assert.Equal(1, first.DeliveryCount);
+
+            await redelivery.AbandonAsync(first, TimeSpan.FromMilliseconds(300), TestCancellationToken);
+
+            // Within the delay window the message must not be visible again.
+            var early = await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
+            Assert.Empty(early);
+
+            // After the delay lapses it is redelivered with an incremented delivery count.
+            var second = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
+            Assert.Equal(first.Id, second.Id);
+            Assert.Equal(2, second.DeliveryCount);
+            Assert.Equal("delay-me", ReadBody(second));
+
+            await transport.CompleteAsync(second, TestCancellationToken);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    public virtual async Task RenewLockAsync_ExtendsVisibilityWindowAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsVisibilityTimeout visibility || transport is not ISupportsLockRenewal lockRenewal)
+        {
+            Assert.Skip("Transport does not support visibility timeout with lock renewal (ISupportsVisibilityTimeout + ISupportsLockRenewal).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "lock-renewal", Role = DestinationRole.Queue });
+            await transport.SendAsync("lock-renewal", [CreateMessage("hold")], new TransportSendOptions(), TestCancellationToken);
+
+            var first = Assert.Single(await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(300), TestCancellationToken));
+            Assert.Equal(1, first.DeliveryCount);
+
+            // Renew before the original window lapses, extending it well past the original expiry.
+            await Task.Delay(TimeSpan.FromMilliseconds(150), TestCancellationToken);
+            await lockRenewal.RenewLockAsync(first, TimeSpan.FromSeconds(2), TestCancellationToken);
+
+            // Past the original 300ms window but inside the renewed window: the message must still be held, so a
+            // competing receive sees nothing rather than a premature redelivery.
+            await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
+            var held = await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TimeSpan.FromMilliseconds(300), TestCancellationToken);
+            Assert.Empty(held);
+
+            await transport.CompleteAsync(first, TestCancellationToken);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
     public virtual async Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync()
     {
         var transport = CreateTransport();
