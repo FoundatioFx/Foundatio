@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Cronos;
 using Foundatio.Messaging;
 
 namespace Foundatio.Jobs;
@@ -30,6 +31,13 @@ public sealed record ScheduledJobDefinition
     public OverlapPolicy Overlap { get; init; } = OverlapPolicy.SkipIfRunning;
     public TimeSpan? MisfireWindow { get; init; }
     public int MaxRetries { get; init; } = 3;
+
+    /// <summary>
+    /// Computes the delay before a failed occurrence is retried, given the attempt number (1-based).
+    /// Defaults to capped exponential backoff when null.
+    /// </summary>
+    public Func<int, TimeSpan>? RetryBackoff { get; init; }
+
     public bool Enabled { get; init; } = true;
 }
 
@@ -97,9 +105,7 @@ public sealed class JobScheduleProcessor
         _jobWorker = jobWorker ?? throw new ArgumentNullException(nameof(jobWorker));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
-        _nodeId = !String.IsNullOrEmpty(nodeId)
-            ? nodeId
-            : Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") ?? Environment.MachineName;
+        _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _transport = transport;
     }
 
@@ -120,44 +126,63 @@ public sealed class JobScheduleProcessor
             if (!definition.Enabled)
                 continue;
 
-            var cron = CronSchedule.Parse(definition.Cron);
-            var scheduledForUtc = cron.GetLastOccurrence(utcNow, definition.TimeZone ?? TimeZoneInfo.Utc, definition.MisfireWindow ?? DefaultMisfireWindow);
-            if (scheduledForUtc is null)
-                continue;
+            var cron = ParseCron(definition.Cron);
+            var timeZone = definition.TimeZone ?? TimeZoneInfo.Utc;
+            var window = definition.MisfireWindow ?? DefaultMisfireWindow;
+            if (window < TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(definition), window, "MisfireWindow must be greater than or equal to zero.");
 
             string scopeKey = GetScopeKey(definition);
-            string jobId = CreateOccurrenceId(definition.Name, scheduledForUtc.Value, scopeKey);
 
-            if (await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is not null)
+            // Materialize every occurrence that fell due within the misfire window, not just the most recent, so a
+            // scheduler that lagged behind the cadence does not silently drop intermediate ticks. Deterministic
+            // occurrence ids dedupe across overlapping windows and across nodes ticking simultaneously.
+            var occurrences = cron.GetOccurrences(utcNow - window, utcNow, timeZone, fromInclusive: true, toInclusive: true).ToList();
+            if (occurrences.Count == 0)
                 continue;
 
-            if (definition.Overlap == OverlapPolicy.SkipIfRunning && await HasActiveOccurrenceAsync(definition.Name, scopeKey, cancellationToken).ConfigureAwait(false))
-                continue;
-
-            await _store.CreateIfAbsentAsync(new JobState
+            if (definition.Overlap == OverlapPolicy.SkipIfRunning)
             {
-                JobId = jobId,
-                Name = definition.Name,
-                JobType = GetJobTypeName(definition.JobType),
-                Status = JobStatus.Scheduled,
-                CreatedUtc = utcNow,
-                LastUpdatedUtc = utcNow,
-                ScheduledForUtc = scheduledForUtc
-            }, cancellationToken).ConfigureAwait(false);
+                // Don't stampede: if a prior occurrence is still pending or running, skip this tick entirely;
+                // otherwise collapse the window to a single (most recent) catch-up occurrence.
+                if (await HasActiveOccurrenceAsync(definition.Name, scopeKey, cancellationToken).ConfigureAwait(false))
+                    continue;
 
-            var dispatch = new ScheduledDispatchState
+                occurrences = [occurrences[^1]];
+            }
+
+            foreach (var occurrence in occurrences)
             {
-                DispatchId = jobId,
-                Kind = ScheduledDispatchKind.JobOccurrence,
-                Destination = definition.Name,
-                Body = Array.Empty<byte>(),
-                Headers = CreateOccurrenceHeaders(definition, scheduledForUtc.Value, scopeKey),
-                DueUtc = utcNow,
-                JobId = jobId
-            };
+                string jobId = CreateOccurrenceId(definition.Name, occurrence, scopeKey);
 
-            await _store.ScheduleDispatchAsync(dispatch, cancellationToken).ConfigureAwait(false);
-            scheduled.Add(dispatch);
+                if (await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false) is not null)
+                    continue;
+
+                await _store.CreateIfAbsentAsync(new JobState
+                {
+                    JobId = jobId,
+                    Name = definition.Name,
+                    JobType = GetJobTypeName(definition.JobType),
+                    Status = JobStatus.Scheduled,
+                    CreatedUtc = utcNow,
+                    LastUpdatedUtc = utcNow,
+                    ScheduledForUtc = occurrence
+                }, cancellationToken).ConfigureAwait(false);
+
+                var dispatch = new ScheduledDispatchState
+                {
+                    DispatchId = jobId,
+                    Kind = ScheduledDispatchKind.JobOccurrence,
+                    Destination = definition.Name,
+                    Body = Array.Empty<byte>(),
+                    Headers = CreateOccurrenceHeaders(definition, occurrence, scopeKey),
+                    DueUtc = utcNow,
+                    JobId = jobId
+                };
+
+                await _store.ScheduleDispatchAsync(dispatch, cancellationToken).ConfigureAwait(false);
+                scheduled.Add(dispatch);
+            }
         }
 
         return scheduled;
@@ -221,8 +246,8 @@ public sealed class JobScheduleProcessor
                             ClearNodeId = true,
                             ClearLeaseExpiresUtc = true,
                             LastUpdatedUtc = utcNow
-                        }, cancellationToken).ConfigureAwait(false);
-                        await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
+                        }, cancellationToken: cancellationToken).ConfigureAwait(false);
+                        await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.Add(GetRetryBackoff(definition, state.Attempt)), cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 
@@ -231,7 +256,7 @@ public sealed class JobScheduleProcessor
                         ClearNodeId = true,
                         ClearLeaseExpiresUtc = true,
                         LastUpdatedUtc = utcNow
-                    }, cancellationToken).ConfigureAwait(false);
+                    }, cancellationToken: cancellationToken).ConfigureAwait(false);
                 }
 
                 await _store.CompleteDispatchAsync(dispatch.DispatchId, _nodeId, cancellationToken).ConfigureAwait(false);
@@ -269,7 +294,7 @@ public sealed class JobScheduleProcessor
 
     private async Task<bool> TryPrepareOccurrenceForRunAsync(string jobId, ScheduledJobDefinition definition, DateTimeOffset utcNow, CancellationToken cancellationToken)
     {
-        if (await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { JobType = GetJobTypeName(definition.JobType), LastUpdatedUtc = utcNow }, cancellationToken).ConfigureAwait(false))
+        if (await _store.TryTransitionAsync(jobId, JobStatus.Scheduled, JobStatus.Queued, new JobStatePatch { JobType = GetJobTypeName(definition.JobType), LastUpdatedUtc = utcNow }, cancellationToken: cancellationToken).ConfigureAwait(false))
             return true;
 
         var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
@@ -283,7 +308,7 @@ public sealed class JobScheduleProcessor
                 ClearNodeId = true,
                 ClearLeaseExpiresUtc = true,
                 LastUpdatedUtc = utcNow
-            }, cancellationToken).ConfigureAwait(false);
+            }, cancellationToken: cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -293,12 +318,22 @@ public sealed class JobScheduleProcessor
             ClearNodeId = true,
             ClearLeaseExpiresUtc = true,
             LastUpdatedUtc = utcNow
-        }, cancellationToken).ConfigureAwait(false);
+        }, cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     private string? GetJobTypeName(Type? jobType)
     {
         return jobType is null ? null : _jobTypes.GetName(jobType);
+    }
+
+    private static TimeSpan GetRetryBackoff(ScheduledJobDefinition definition, int attempt)
+    {
+        if (definition.RetryBackoff is { } custom)
+            return custom(attempt);
+
+        // Capped exponential backoff: 1s, 2s, 4s, ... up to 5 minutes.
+        double seconds = Math.Min(300, Math.Pow(2, Math.Max(0, attempt - 1)));
+        return TimeSpan.FromSeconds(seconds);
     }
 
     private async Task<bool> HasActiveOccurrenceAsync(string name, string scopeKey, CancellationToken cancellationToken)
@@ -328,189 +363,24 @@ public sealed class JobScheduleProcessor
 
     internal static void ValidateCron(string expression)
     {
-        CronSchedule.Parse(expression);
+        ParseCron(expression);
     }
 
-    private sealed class CronSchedule
+    /// <summary>
+    /// Parses a 5- or 6-field cron expression using the vendored Cronos parser. Six fields are interpreted as
+    /// seconds-first (<see cref="CronFormat.IncludeSeconds"/>); five fields use the standard format. Cronos
+    /// supports the full grammar (ranges, steps, lists, <c>L</c>/<c>W</c>/<c>#</c>, named months/days, and macros
+    /// such as <c>@daily</c>).
+    /// </summary>
+    private static CronExpression ParseCron(string expression)
     {
-        private readonly CronFieldSet _second;
-        private readonly CronFieldSet _minute;
-        private readonly CronFieldSet _hour;
-        private readonly CronFieldSet _dayOfMonth;
-        private readonly CronFieldSet _month;
-        private readonly CronFieldSet _dayOfWeek;
+        ArgumentException.ThrowIfNullOrWhiteSpace(expression);
 
-        private CronSchedule(CronFieldSet second, CronFieldSet minute, CronFieldSet hour, CronFieldSet dayOfMonth, CronFieldSet month, CronFieldSet dayOfWeek)
-        {
-            _second = second;
-            _minute = minute;
-            _hour = hour;
-            _dayOfMonth = dayOfMonth;
-            _month = month;
-            _dayOfWeek = dayOfWeek;
-        }
+        if (expression.StartsWith('@'))
+            return CronExpression.Parse(expression, CronFormat.IncludeSeconds);
 
-        public static CronSchedule Parse(string expression)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(expression);
-
-            var parts = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length != 5 && parts.Length != 6)
-                throw new FormatException("Cron expressions must contain five fields, or six fields when seconds are included.");
-
-            int offset = parts.Length == 6 ? 0 : -1;
-            return new CronSchedule(
-                offset == 0 ? CronFieldSet.Parse(parts[0], 0, 59) : CronFieldSet.Single(0, 0, 59),
-                CronFieldSet.Parse(parts[1 + offset], 0, 59),
-                CronFieldSet.Parse(parts[2 + offset], 0, 23),
-                CronFieldSet.Parse(parts[3 + offset], 1, 31, allowQuestion: true),
-                CronFieldSet.Parse(parts[4 + offset], 1, 12),
-                CronFieldSet.Parse(parts[5 + offset], 0, 6, allowQuestion: true, normalizeDayOfWeek: true));
-        }
-
-        public DateTimeOffset? GetLastOccurrence(DateTimeOffset utcNow, TimeZoneInfo timeZone, TimeSpan misfireWindow)
-        {
-            if (misfireWindow < TimeSpan.Zero)
-                throw new ArgumentOutOfRangeException(nameof(misfireWindow), misfireWindow, "MisfireWindow must be greater than or equal to zero.");
-
-            var localNow = TimeZoneInfo.ConvertTime(utcNow, timeZone);
-            var candidate = new DateTimeOffset(localNow.Year, localNow.Month, localNow.Day, localNow.Hour, localNow.Minute, localNow.Second, localNow.Offset);
-            int secondsToSearch = Math.Max(1, (int)Math.Ceiling(misfireWindow.TotalSeconds)) + 1;
-
-            for (int i = 0; i <= secondsToSearch; i++)
-            {
-                if (Matches(candidate.DateTime))
-                    return TimeZoneInfo.ConvertTime(candidate, TimeZoneInfo.Utc);
-
-                candidate = candidate.AddSeconds(-1);
-            }
-
-            return null;
-        }
-
-        private bool Matches(DateTime local)
-        {
-            if (!_second.Contains(local.Second) || !_minute.Contains(local.Minute) || !_hour.Contains(local.Hour) || !_month.Contains(local.Month))
-                return false;
-
-            bool dayOfMonthMatches = _dayOfMonth.Contains(local.Day);
-            bool dayOfWeekMatches = _dayOfWeek.Contains((int)local.DayOfWeek);
-            return _dayOfMonth.IsAny || _dayOfWeek.IsAny
-                ? dayOfMonthMatches && dayOfWeekMatches
-                : dayOfMonthMatches || dayOfWeekMatches;
-        }
-    }
-
-    private sealed class CronFieldSet
-    {
-        private readonly bool[] _values;
-        private readonly int _min;
-
-        private CronFieldSet(bool[] values, int min, bool isAny)
-        {
-            _values = values;
-            _min = min;
-            IsAny = isAny;
-        }
-
-        public bool IsAny { get; }
-
-        public static CronFieldSet Single(int value, int min, int max)
-        {
-            var values = new bool[max - min + 1];
-            values[value - min] = true;
-            return new CronFieldSet(values, min, false);
-        }
-
-        public static CronFieldSet Parse(string expression, int min, int max, bool allowQuestion = false, bool normalizeDayOfWeek = false)
-        {
-            if (expression == "*" || (allowQuestion && expression == "?"))
-                return Any(min, max);
-
-            var values = new bool[max - min + 1];
-            foreach (string segment in expression.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                AddSegment(values, segment, min, max, allowQuestion, normalizeDayOfWeek);
-
-            return new CronFieldSet(values, min, false);
-        }
-
-        public bool Contains(int value)
-        {
-            int index = value - _min;
-            return index >= 0 && index < _values.Length && _values[index];
-        }
-
-        private static CronFieldSet Any(int min, int max)
-        {
-            var values = new bool[max - min + 1];
-            Array.Fill(values, true);
-            return new CronFieldSet(values, min, true);
-        }
-
-        private static void AddSegment(bool[] values, string segment, int min, int max, bool allowQuestion, bool normalizeDayOfWeek)
-        {
-            string[] stepParts = segment.Split('/', StringSplitOptions.TrimEntries);
-            if (stepParts.Length > 2)
-                throw new FormatException($"Invalid cron field segment '{segment}'.");
-
-            int step = stepParts.Length == 2 ? ParseNumber(stepParts[1], 1, max) : 1;
-            string range = stepParts[0];
-
-            if (range == "*" || (allowQuestion && range == "?"))
-            {
-                AddRange(values, min, max, step, min, normalizeDayOfWeek);
-                return;
-            }
-
-            string[] rangeParts = range.Split('-', StringSplitOptions.TrimEntries);
-            if (rangeParts.Length == 1)
-            {
-                int value = Normalize(ParseNumber(rangeParts[0], min, normalizeDayOfWeek ? max + 1 : max), normalizeDayOfWeek);
-                EnsureInRange(value, min, max);
-                values[value - min] = true;
-                return;
-            }
-
-            if (rangeParts.Length != 2)
-                throw new FormatException($"Invalid cron field segment '{segment}'.");
-
-            int start = Normalize(ParseNumber(rangeParts[0], min, normalizeDayOfWeek ? max + 1 : max), normalizeDayOfWeek);
-            int end = Normalize(ParseNumber(rangeParts[1], min, normalizeDayOfWeek ? max + 1 : max), normalizeDayOfWeek);
-            EnsureInRange(start, min, max);
-            EnsureInRange(end, min, max);
-
-            if (end < start)
-                throw new FormatException($"Invalid cron range '{segment}'.");
-
-            AddRange(values, start, end, step, min, normalizeDayOfWeek);
-        }
-
-        private static void AddRange(bool[] values, int start, int end, int step, int min, bool normalizeDayOfWeek)
-        {
-            for (int value = start; value <= end; value += step)
-            {
-                int normalized = Normalize(value, normalizeDayOfWeek);
-                values[normalized - min] = true;
-            }
-        }
-
-        private static int ParseNumber(string value, int min, int max)
-        {
-            if (!Int32.TryParse(value, out int result) || result < min || result > max)
-                throw new FormatException($"Cron value '{value}' must be between {min} and {max}.");
-
-            return result;
-        }
-
-        private static int Normalize(int value, bool normalizeDayOfWeek)
-        {
-            return normalizeDayOfWeek && value == 7 ? 0 : value;
-        }
-
-        private static void EnsureInRange(int value, int min, int max)
-        {
-            if (value < min || value > max)
-                throw new FormatException($"Cron value '{value}' must be between {min} and {max}.");
-        }
+        int fieldCount = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Length;
+        var format = fieldCount == 6 ? CronFormat.IncludeSeconds : CronFormat.Standard;
+        return CronExpression.Parse(expression, format);
     }
 }

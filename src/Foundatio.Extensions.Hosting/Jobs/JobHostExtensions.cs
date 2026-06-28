@@ -194,6 +194,24 @@ public static class JobHostExtensions
         return services;
     }
 
+    /// <summary>
+    /// Registers the hosted pump that drives the durable job runtime (<see cref="Foundatio.Jobs.IJobRuntimeStore"/>):
+    /// materializing CRON occurrences, dispatching delayed/scheduled work, recovering stale occurrences, and running
+    /// jobs submitted via <see cref="Foundatio.Jobs.IJobClient"/>. Register the runtime store and job services first
+    /// (e.g. <c>services.AddFoundatio().Jobs.UseInMemoryRuntime()</c>).
+    /// </summary>
+    public static IServiceCollection AddJobRuntimeService(this IServiceCollection services, Action<JobRuntimeServiceOptions>? configure = null)
+    {
+        var options = new JobRuntimeServiceOptions();
+        configure?.Invoke(options);
+        services.AddSingleton(options);
+
+        if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimeService)))
+            services.AddSingleton<IHostedService, JobRuntimeService>();
+
+        return services;
+    }
+
     public static IServiceCollection AddJobLifetimeService(this IServiceCollection services)
     {
         services.AddSingleton<ShutdownHostIfNoJobsRunningService>();

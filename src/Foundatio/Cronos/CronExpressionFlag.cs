@@ -1,4 +1,4 @@
-// The MIT License(MIT)
+﻿// The MIT License(MIT)
 //
 // Copyright (c) 2017 Sergey Odinokov
 //
@@ -22,21 +22,14 @@
 
 using System;
 
-namespace Foundatio.Extensions.Hosting.Cronos;
+namespace Foundatio.Cronos;
 
-/// <summary>
-/// Defines the cron format options that customize string parsing for <see cref="CronExpression.Parse(string, CronFormat)"/>.
-/// </summary>
 [Flags]
-public enum CronFormat
+internal enum CronExpressionFlag : byte
 {
-    /// <summary>
-    /// Parsing string must contain only 5 fields: minute, hour, day of month, month, day of week.
-    /// </summary>
-    Standard = 0,
-
-    /// <summary>
-    /// Second field must be specified in parsing string.
-    /// </summary>
-    IncludeSeconds = 1
+    DayOfMonthLast = 0b00001,
+    DayOfWeekLast = 0b00010,
+    Interval = 0b00100,
+    NearestWeekday = 0b01000,
+    NthDayOfWeek = 0b10000
 }

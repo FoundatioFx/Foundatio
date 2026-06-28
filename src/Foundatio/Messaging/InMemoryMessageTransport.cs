@@ -10,7 +10,7 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging;
 
-public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsDeadLetter, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
+public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
 {
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles = new HashSet<DestinationRole>
     {
@@ -89,9 +89,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             ? _timeProvider.GetUtcNow().Add(waitTime)
             : null;
 
+        // Return any messages whose visibility window lapsed (consumer crashed without settling) to the queue so
+        // they are redelivered with an incremented delivery count — honoring the advertised at-least-once contract.
+        state.ReclaimExpired(_timeProvider.GetUtcNow());
+
         while (entries.Count < maxMessages)
         {
-            if (TryReceive(source, state, out var entry))
+            if (TryReceive(source, state, visibility, out var entry))
             {
                 entries.Add(entry);
                 continue;
@@ -170,6 +174,35 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         DeadLetter(state, inFlight.Message, reason);
         return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct)
+    {
+        ThrowIfDisposed();
+        ct.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!_destinations.TryGetValue(destination, out var state))
+            return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
+
+        int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
+        var entries = new List<TransportEntry>(maxMessages);
+        while (entries.Count < maxMessages && state.TryReadDeadletter(out var message))
+        {
+            entries.Add(new TransportEntry
+            {
+                Id = message.Id,
+                Destination = destination,
+                Body = message.Body,
+                Headers = message.Headers,
+                DeliveryCount = message.DeliveryCount,
+                EnqueuedUtc = message.EnqueuedUtc,
+                Receipt = new Receipt { TransportState = null }
+            });
+        }
+
+        return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
     }
 
     public Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct)
@@ -318,7 +351,20 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
                 }
                 catch
                 {
-                    await AbandonAsync(entry, token).AnyContext();
+                    // Safety net: the handler threw without settling, so abandon for redelivery. If the handler had
+                    // already settled the message (e.g. dead-lettered a poison payload and then rethrew), the receipt
+                    // is gone — treat that as already handled rather than faulting the subscription loop.
+                    try
+                    {
+                        await AbandonAsync(entry, token).AnyContext();
+                    }
+                    catch (ReceiptExpiredException)
+                    {
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -351,7 +397,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         state.Enqueue(message with { Destination = destination });
     }
 
-    private bool TryReceive(string source, DestinationState state, out TransportEntry entry)
+    private bool TryReceive(string source, DestinationState state, TimeSpan? visibility, out TransportEntry entry)
     {
         while (state.TryDequeue(out var message))
         {
@@ -362,7 +408,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             }
 
             var receipt = new InMemoryReceipt(source, Guid.NewGuid().ToString("N"));
-            state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt);
+            DateTimeOffset? visibilityExpiresUtc = visibility is { } window ? _timeProvider.GetUtcNow().Add(window) : null;
+            state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
             Interlocked.Increment(ref state.Dequeued);
 
             entry = new TransportEntry
@@ -488,7 +535,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         int DeliveryCount,
         DateTimeOffset EnqueuedUtc);
 
-    private sealed record InFlightMessage(StoredMessage Message, InMemoryReceipt Receipt);
+    private sealed record InFlightMessage(StoredMessage Message, InMemoryReceipt Receipt, DateTimeOffset? VisibilityExpiresUtc);
 
     private sealed record InMemoryReceipt(string Destination, string LockToken);
 
@@ -559,6 +606,33 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
             Interlocked.Increment(ref _deadletterCount);
             Interlocked.Increment(ref Deadlettered);
+        }
+
+        public bool TryReadDeadletter(out StoredMessage message)
+        {
+            if (_deadletterChannel.Reader.TryRead(out message!))
+            {
+                Interlocked.Decrement(ref _deadletterCount);
+                return true;
+            }
+
+            message = null!;
+            return false;
+        }
+
+        public void ReclaimExpired(DateTimeOffset now)
+        {
+            if (Volatile.Read(ref _isCompleted) == 1)
+                return;
+
+            foreach (var kvp in InFlight)
+            {
+                if (kvp.Value.VisibilityExpiresUtc is { } expiry && expiry <= now && InFlight.TryRemove(kvp.Key, out var inFlight))
+                {
+                    Interlocked.Increment(ref Abandoned);
+                    Enqueue(inFlight.Message with { DeliveryCount = inFlight.Message.DeliveryCount + 1 });
+                }
+            }
         }
 
         public void Complete()

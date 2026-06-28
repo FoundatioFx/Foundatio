@@ -160,6 +160,60 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task StartConsumerAsync_WithManualAck_DoesNotAutoCompleteAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageQueue(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var handled = new AsyncCountdownEvent(1);
+
+        await using var consumer = await queue.StartConsumerAsync<PreviewWorkItem>((message, _) =>
+        {
+            handled.Signal();
+            return Task.CompletedTask; // intentionally does NOT settle the message
+        }, new QueueConsumerOptions { AckMode = AckMode.Manual }, cts.Token);
+
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "manual" }, cancellationToken: cts.Token);
+        await handled.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(200, cts.Token);
+
+        // Manual ack: the handler ran but did not settle, so the message stays in flight and is not auto-completed.
+        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Working);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithPoisonMessage_DeadLettersAndKeepsConsumingAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageQueue(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var handled = new AsyncCountdownEvent(1);
+
+        await using var consumer = await queue.StartConsumerAsync<PreviewWorkItem>((message, _) =>
+        {
+            Assert.Equal("good", message.Message.Data);
+            handled.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // A poison (undeserializable) payload must be dead-lettered without tearing down the consumer loop, so the
+        // subsequent valid message is still delivered.
+        await transport.SendAsync("preview-work-item", [
+            new TransportMessage { Body = System.Text.Encoding.UTF8.GetBytes("}{ not json"), Headers = MessageHeaders.Empty }
+        ], new TransportSendOptions(), cts.Token);
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "good" }, cancellationToken: cts.Token);
+
+        await handled.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, handled.CurrentCount);
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithDelay_SchedulesThroughRuntimeStoreAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

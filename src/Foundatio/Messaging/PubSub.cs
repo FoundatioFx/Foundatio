@@ -9,6 +9,8 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
@@ -42,6 +44,7 @@ public sealed record PubSubOptions
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+    public ILoggerFactory? LoggerFactory { get; init; }
 }
 
 public interface IPubSub : IAsyncDisposable
@@ -66,6 +69,7 @@ public sealed class PubSub : IPubSub
 {
     private readonly IMessageTransport _transport;
     private readonly PubSubOptions _options;
+    private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, MessageSubscriptionHandle> _subscriptions = new(StringComparer.Ordinal);
     private int _isDisposed;
 
@@ -73,6 +77,7 @@ public sealed class PubSub : IPubSub
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _options = options ?? new PubSubOptions();
+        _logger = (_options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<PubSub>();
     }
 
     public async Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -255,18 +260,50 @@ public sealed class PubSub : IPubSub
         }
     }
 
+    // MaxConcurrency bounds the number of in-flight messages processed per receive batch. A failure while receiving
+    // or while processing a single entry (including a poison message that was already dead-lettered) must never tear
+    // down the subscription loop, otherwise one bad message or a transient transport blip silently stops delivery.
     private async Task RunPullSubscriptionLoopAsync(string subscription, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, PubSubSubscriptionOptions options, CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
-            var entries = await pull.ReceiveAsync(subscription, new ReceiveRequest
+            IReadOnlyList<TransportEntry> entries;
+            try
             {
-                MaxMessages = Math.Max(1, options.MaxConcurrency),
-                MaxWaitTime = TimeSpan.FromSeconds(1)
-            }, cancellationToken).AnyContext();
+                entries = await pull.ReceiveAsync(subscription, new ReceiveRequest
+                {
+                    MaxMessages = Math.Max(1, options.MaxConcurrency),
+                    MaxWaitTime = TimeSpan.FromSeconds(1)
+                }, cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error receiving from subscription \"{Subscription}\"; retrying: {Message}", subscription, ex.Message);
+                await _options.TimeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                continue;
+            }
 
-            var tasks = entries.Select(entry => onMessage(entry, cancellationToken)).ToArray();
+            var tasks = entries.Select(entry => SafeProcessAsync(entry, onMessage, subscription, cancellationToken)).ToArray();
             await Task.WhenAll(tasks).AnyContext();
+        }
+    }
+
+    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string subscription, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await onMessage(entry, cancellationToken).AnyContext();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing message \"{MessageId}\" from subscription \"{Subscription}\": {Message}", entry.Id, subscription, ex.Message);
         }
     }
 
@@ -323,8 +360,9 @@ public sealed class PubSub : IPubSub
             if (options.AckMode == AckMode.Auto && !message.IsHandled)
                 await message.CompleteAsync(cancellationToken).AnyContext();
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Subscriber failed for message \"{MessageId}\" from \"{Subscription}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, message.MessageType, message.Attempts, options.MaxAttempts, ex.Message);
             await SettleFailedMessageAsync(message, options, cancellationToken).AnyContext();
         }
     }
@@ -338,8 +376,9 @@ public sealed class PubSub : IPubSub
             if (options.AckMode == AckMode.Auto && !message.IsHandled)
                 await message.CompleteAsync(cancellationToken).AnyContext();
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogError(ex, "Subscriber failed for message \"{MessageId}\" from \"{Subscription}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, message.MessageType, message.Attempts, options.MaxAttempts, ex.Message);
             await SettleFailedMessageAsync(message, options, cancellationToken).AnyContext();
         }
     }
@@ -360,9 +399,10 @@ public sealed class PubSub : IPubSub
 
     private TransportMessage CreateTransportMessage(object message, Type messageType, PubSubMessageOptions options, string? messageId = null)
     {
+        // Content type is intentionally not written as a header: the receive path always uses the single configured
+        // serializer, so advertising a per-message content type would be misleading until real negotiation exists.
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
             .Set(KnownHeaders.MessageType, GetMessageType(messageType))
-            .Set(KnownHeaders.ContentType, _options.ContentType)
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
         if (!String.IsNullOrEmpty(options.CorrelationId))

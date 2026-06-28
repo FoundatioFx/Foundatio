@@ -92,4 +92,22 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
     {
         return base.ReceiveAsync_WithExpiredMessage_DeadlettersAndSkipsAsync();
     }
+
+    [Fact]
+    public override Task ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync()
+    {
+        return base.ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync();
+    }
+
+    [Fact]
+    public override Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync()
+    {
+        return base.CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync();
+    }
+
+    [Fact]
+    public override Task ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync()
+    {
+        return base.ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync();
+    }
 }

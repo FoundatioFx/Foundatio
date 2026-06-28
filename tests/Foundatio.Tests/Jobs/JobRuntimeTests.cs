@@ -40,6 +40,32 @@ public class JobRuntimeTests
     }
 
     [Fact]
+    public async Task TryTransitionAsync_WithExpectedNodeId_RejectsStaleOwnerAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+
+        await store.CreateIfAbsentAsync(new JobState { JobId = "job-1", Name = "test", Status = JobStatus.Queued }, cancellationToken);
+
+        // node-a claims and moves to Processing.
+        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Queued, JobStatus.Processing, new JobStatePatch { NodeId = "node-a" }, cancellationToken: cancellationToken));
+
+        // Its lease lapses and node-b reclaims (re-queue, then claim); node-a is no longer the owner.
+        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Queued, new JobStatePatch { ClearNodeId = true }, cancellationToken: cancellationToken));
+        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Queued, JobStatus.Processing, new JobStatePatch { NodeId = "node-b" }, cancellationToken: cancellationToken));
+
+        // Stale node-a must NOT be able to complete the job it no longer owns (would otherwise stomp node-b's run).
+        Assert.False(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, patch: null, expectedNodeId: "node-a", cancellationToken: cancellationToken));
+
+        // The current owner (node-b) can.
+        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, patch: null, expectedNodeId: "node-b", cancellationToken: cancellationToken));
+
+        var state = await store.GetAsync("job-1", cancellationToken);
+        Assert.NotNull(state);
+        Assert.Equal(JobStatus.Completed, state.Status);
+    }
+
+    [Fact]
     public async Task TryClaimAsync_WhenLeaseIsHeldByAnotherNode_ReturnsFalseUntilLeaseExpiresAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

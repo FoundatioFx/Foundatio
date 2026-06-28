@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions.Hosting.Cronos;
+using Foundatio.Cronos;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
