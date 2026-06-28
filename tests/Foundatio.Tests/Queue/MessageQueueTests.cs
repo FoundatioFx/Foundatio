@@ -214,6 +214,26 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task EnqueueBatchAsync_RespectsTransportMaxBatchSizeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var transport = new BatchLimitTransport(maxBatchSize: 2);
+        await using var queue = new MessageQueue(transport);
+
+        await queue.EnqueueBatchAsync(new[]
+        {
+            new PreviewWorkItem { Data = "1" },
+            new PreviewWorkItem { Data = "2" },
+            new PreviewWorkItem { Data = "3" },
+            new PreviewWorkItem { Data = "4" },
+            new PreviewWorkItem { Data = "5" }
+        }, cancellationToken: cancellationToken);
+
+        // Five messages to one destination with MaxBatchSize=2 must be split into chunks of 2, 2, 1.
+        Assert.Equal(new[] { 2, 2, 1 }, transport.SendBatchSizes);
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithDelay_SchedulesThroughRuntimeStoreAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -514,5 +534,34 @@ public class MessageQueueTests
     private sealed class OtherWorkItem : IGroupedWorkItem
     {
         public string? Data { get; set; }
+    }
+
+    private sealed class BatchLimitTransport : IMessageTransport, ITransportInfo
+    {
+        public BatchLimitTransport(int maxBatchSize)
+        {
+            MaxBatchSize = maxBatchSize;
+        }
+
+        public List<int> SendBatchSizes { get; } = new();
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public OrderingGuarantee Ordering => OrderingGuarantee.Fifo;
+        public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
+        public int? MaxBatchSize { get; }
+        public long? MaxMessageBytes => null;
+
+        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            SendBatchSizes.Add(messages.Count);
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+                items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N"), Success = true };
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }
