@@ -31,7 +31,8 @@ public sealed record PubSubSubscriptionOptions
     public string? Key { get; init; }
     public AckMode AckMode { get; init; } = AckMode.Auto;
     public int MaxConcurrency { get; init; } = 1;
-    public int MaxAttempts { get; init; } = 5;
+    // Null falls back to the pub/sub default RetryPolicy.
+    public int? MaxAttempts { get; init; }
     public Func<int, TimeSpan>? RedeliveryBackoff { get; init; }
 }
 
@@ -41,6 +42,7 @@ public sealed record PubSubOptions
     public string ContentType { get; init; } = "application/json";
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IJobRuntimeStore? RuntimeStore { get; init; }
+    public RetryPolicy RetryPolicy { get; init; } = new();
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
     public ILoggerFactory? LoggerFactory { get; init; }
 }
@@ -77,7 +79,7 @@ public sealed class PubSub : IPubSub
         options ??= new PubSubOptions();
         var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<PubSub>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
-            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner));
+            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy);
     }
 
     public Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class

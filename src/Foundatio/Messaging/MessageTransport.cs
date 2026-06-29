@@ -112,6 +112,10 @@ public sealed record DestinationDeclaration
     public required string Name { get; init; }
     public DestinationRole Role { get; init; } = DestinationRole.Queue;
     public string? Source { get; init; }
+
+    // Provider-specific creation arguments for transports that provision destinations (e.g. RabbitMQ queue arguments).
+    // Retry and dead-letter behavior is owned by the core RetryPolicy, not declared here, so destinations stay simple.
+    public IReadOnlyDictionary<string, string>? ProviderArguments { get; init; }
 }
 
 public sealed record PushOptions
@@ -148,6 +152,11 @@ public interface ISupportsPush : IMessageTransport
 
 public interface ISupportsRedeliveryDelay : IMessageTransport
 {
+    // The longest redelivery delay the transport can honor natively (e.g. SQS serves this via ChangeMessageVisibility,
+    // capped at 12 hours). Null means unbounded. A requested delay longer than this is routed through the runtime-store
+    // fallback instead of being silently clamped by the broker.
+    TimeSpan? MaxRedeliveryDelay { get; }
+
     Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct);
 }
 
@@ -167,6 +176,11 @@ public interface ISupportsLockRenewal : IMessageTransport
 
 public interface ISupportsVisibilityTimeout : IMessageTransport
 {
+    // The longest receive visibility timeout the transport can honor natively (e.g. SQS caps visibility at 12 hours).
+    // Null means unbounded. Callers requesting a longer visibility than the broker supports should treat that as
+    // unsatisfiable rather than relying on a silently clamped value.
+    TimeSpan? MaxVisibilityTimeout { get; }
+
     Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct);
 }
 
@@ -177,7 +191,13 @@ public interface ISupportsStats : IMessageTransport
 
 public interface ISupportsPriority : IMessageTransport { }
 
-public interface ISupportsDelayedDelivery : IMessageTransport { }
+public interface ISupportsDelayedDelivery : IMessageTransport
+{
+    // The longest delivery delay the transport can honor natively (e.g. SQS caps DelaySeconds at 15 minutes).
+    // Null means unbounded. A send scheduled further out than this is routed through the runtime-store fallback
+    // instead of being silently truncated to the broker's maximum.
+    TimeSpan? MaxDeliveryDelay { get; }
+}
 
 public interface ISupportsExpiration : IMessageTransport { }
 
