@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
+  </ItemGroup>
+</Project>
