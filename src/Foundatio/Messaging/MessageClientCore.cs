@@ -76,11 +76,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly Func<string, Exception?, Exception> _exceptionFactory;
     private readonly RetryPolicy _retryPolicy;
+    private readonly IMessageTypeRegistry _typeRegistry;
+    private readonly bool _ownsTransport;
     private readonly ConcurrentDictionary<string, SourceListener> _sources = new(StringComparer.Ordinal);
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
-        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null)
+        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _serializer = serializer;
@@ -90,6 +92,8 @@ internal sealed class MessageClientCore : IAsyncDisposable
         _logger = logger;
         _exceptionFactory = exceptionFactory;
         _retryPolicy = retryPolicy ?? new RetryPolicy();
+        _typeRegistry = typeRegistry ?? new MessageTypeRegistry();
+        _ownsTransport = ownsTransport;
     }
 
     public IMessageRouter Router => _router;
@@ -209,7 +213,11 @@ internal sealed class MessageClientCore : IAsyncDisposable
         foreach (var listener in _sources.Values.ToArray())
             await listener.DisposeAsync().AnyContext();
 
-        await _transport.DisposeAsync().AnyContext();
+        // Only dispose the transport when this client owns it. In DI the transport is a shared singleton owned by the
+        // container, so neither the queue nor the pub/sub client should dispose it (that would double-dispose the one
+        // the other still depends on).
+        if (_ownsTransport)
+            await _transport.DisposeAsync().AnyContext();
     }
 
     // Multiple typed consumers can share one destination. They attach to a single per-source listener whose loop
@@ -228,7 +236,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             Dispatch = dispatch,
             Info = MessageListenerRegistration.Create(handler, config),
             IsCatchAll = catchAll,
-            TypeName = catchAll ? null : _router.ResolveMessageType(config.MessageType)
+            TypeName = catchAll ? null : _typeRegistry.GetName(config.MessageType)
         };
 
         while (true)
@@ -459,10 +467,27 @@ internal sealed class MessageClientCore : IAsyncDisposable
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
 
+        // For an interface/base route the body cannot be deserialized as T directly. Resolve the concrete payload type
+        // from the message-type header via the registry and deserialize that, then hand it back as T (the concrete
+        // instance is assignable to T). Exact concrete routes deserialize as T directly.
+        Type targetType = typeof(T);
+        if (typeof(T).IsInterface || typeof(T).IsAbstract)
+        {
+            string? typeName = entry.Headers.GetValueOrDefault(KnownHeaders.MessageType);
+            var resolved = String.IsNullOrEmpty(typeName) ? null : _typeRegistry.Resolve(typeName);
+            if (resolved is null || !typeof(T).IsAssignableFrom(resolved))
+            {
+                await DeadLetterPoisonMessageAsync(entry, "unresolved-type", cancellationToken).AnyContext();
+                throw _exceptionFactory($"Unable to resolve a concrete type \"{typeName}\" assignable to \"{typeof(T).Name}\" for message \"{entry.Id}\".", null);
+            }
+
+            targetType = resolved;
+        }
+
         T? message;
         try
         {
-            message = _serializer.Deserialize<T>(entry.Body);
+            message = _serializer.Deserialize(entry.Body, targetType) as T;
         }
         catch (Exception ex)
         {
@@ -485,14 +510,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return ReceivedMessage.DeadLetterOrDropAsync(_transport, entry, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
     }
 
-    public string ResolveMessageType(Type messageType) => _router.ResolveMessageType(messageType);
 
     private TransportMessage CreateTransportMessage(object message, Type messageType, MessageEnvelopeOptions options, string? messageId)
     {
         // Content type is intentionally not written as a header: the receive path always uses the single configured
         // serializer, so advertising a per-message content type would be misleading until real negotiation exists.
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
-            .Set(KnownHeaders.MessageType, _router.ResolveMessageType(messageType))
+            .Set(KnownHeaders.MessageType, _typeRegistry.GetName(messageType))
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
         if (!String.IsNullOrEmpty(options.CorrelationId))
@@ -959,11 +983,6 @@ internal class ReceivedMessage : IReceivedMessage
         return _transport is ISupportsLockRenewal lockRenewal
             ? lockRenewal.RenewLockAsync(_entry, duration, cancellationToken)
             : throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support lock renewal.");
-    }
-
-    public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
-    {
-        throw new NotSupportedException("Message progress reporting requires tracked job execution and is not available for untracked queue or pub/sub messages.");
     }
 
     // Terminal settlement. Prefer the transport's native dead-letter sink (preserves native DLQ tooling). When the

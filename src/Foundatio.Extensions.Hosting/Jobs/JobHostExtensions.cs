@@ -61,6 +61,13 @@ public static class JobHostExtensions
         return services.AddJob(jobOptionsBuilder.Target);
     }
 
+    /// <remarks>
+    /// Legacy/compat. This registers the in-process <see cref="ScheduledJobService"/>, which runs CRON occurrences
+    /// in-process and does not materialize durable, recoverable occurrences. The forward path in the redesigned runtime
+    /// is the durable scheduler — register it with <c>services.AddFoundatio().Jobs.UseInMemoryRuntime()</c> plus
+    /// <see cref="AddJobRuntimeService"/>, which materializes durable occurrences with retry, recovery, and
+    /// dead-lettering. Routing this default API onto the durable scheduler is a planned follow-up.
+    /// </remarks>
     public static IServiceCollection AddCronJob(this IServiceCollection services, ScheduledJobOptions jobOptions)
     {
         if (jobOptions.JobFactory == null)
@@ -180,6 +187,11 @@ public static class JobHostExtensions
         })));
     }
 
+    /// <remarks>
+    /// Legacy/compat: registers the in-process <see cref="ScheduledJobService"/> CRON scheduler. For durable,
+    /// recoverable CRON occurrences use the redesigned runtime (<c>AddFoundatio().Jobs.UseInMemoryRuntime()</c> +
+    /// <see cref="AddJobRuntimeService"/>) instead.
+    /// </remarks>
     public static IServiceCollection AddJobScheduler(this IServiceCollection services)
     {
         if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(ScheduledJobService)))

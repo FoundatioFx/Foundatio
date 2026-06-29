@@ -29,7 +29,6 @@ public interface IMessageRouter
 {
     string ResolveRoute(MessageRouteContext context);
     string ResolveSubscription(MessageSubscriptionContext context);
-    string ResolveMessageType(Type messageType);
 }
 
 public sealed record MessageRouteMap
@@ -49,7 +48,6 @@ public sealed class MessageRoutingOptions
     public string? SubscriptionIdentity { get; set; }
     public string? ServiceIdentity { get; set; }
     public Func<MessageRouteContext, string>? Convention { get; set; }
-    public Func<Type, string>? MessageTypeResolver { get; set; }
 
     public IReadOnlyList<DestinationDeclaration> GetTopologyDeclarations()
     {
@@ -158,11 +156,6 @@ public sealed class MessageRoutingOptionsBuilder
         return this;
     }
 
-    public MessageRoutingOptionsBuilder UseMessageTypeName(Func<Type, string> resolver)
-    {
-        _options.MessageTypeResolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
-        return this;
-    }
 
     public MessageRoutingOptions Build()
     {
@@ -311,11 +304,6 @@ public sealed class DefaultMessageRouter : IMessageRouter
         return GetDefaultServiceIdentity();
     }
 
-    public string ResolveMessageType(Type messageType)
-    {
-        ArgumentNullException.ThrowIfNull(messageType);
-        return _options.MessageTypeResolver?.Invoke(messageType) ?? messageType.FullName ?? messageType.Name;
-    }
 
     private static string GetDefaultServiceIdentity()
     {

@@ -296,6 +296,15 @@ public class FoundatioBuilder : IFoundatioBuilder
             return ConfigureRetry(configure(new RetryPolicy()));
         }
 
+        // Registers a stable wire name for a message type so the discriminator survives assembly/namespace moves and
+        // grouped/interface consumers can resolve and deserialize the concrete payload type.
+        public MessagingBuilder RegisterMessageType<T>(string name) where T : class
+        {
+            ArgumentException.ThrowIfNullOrEmpty(name);
+            _services.AddSingleton(new MessageTypeRegistration(name, typeof(T)));
+            return this;
+        }
+
         public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
         {
             _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
@@ -368,6 +377,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         private void RegisterMessageClients()
         {
             RegisterRoutingServices();
+            _services.ReplaceSingleton<IMessageTypeRegistry>(sp => new MessageTypeRegistry(sp.GetServices<MessageTypeRegistration>()));
             _services.ReplaceSingleton<Messaging.IQueue>(sp => new MessageQueue(sp.GetRequiredService<IMessageTransport>(), CreateQueueOptions(sp)));
             _services.ReplaceSingleton<IPubSub>(sp => new PubSub(sp.GetRequiredService<IMessageTransport>(), CreatePubSubOptions(sp)));
         }
@@ -378,8 +388,12 @@ public class FoundatioBuilder : IFoundatioBuilder
             {
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
+                MessageTypes = serviceProvider.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
                 RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
+                // The transport is a shared DI singleton owned by the container; the queue must not dispose it (the
+                // pub/sub client uses the same instance).
+                OwnsTransport = false,
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                 LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };
@@ -391,8 +405,11 @@ public class FoundatioBuilder : IFoundatioBuilder
             {
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
+                MessageTypes = serviceProvider.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
                 RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
+                // Shared DI singleton transport; disposed once by the container, not by this client.
+                OwnsTransport = false,
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                 LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };

@@ -11,6 +11,87 @@ namespace Foundatio.Tests.Jobs;
 public class JobRuntimeTests
 {
     [Fact]
+    public async Task RunAsync_WithExecutionContext_ReportsProgressAndIdentityAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var worker = new JobWorker(store, serviceProvider, nodeId: "ctx-node");
+
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = "ctx-job",
+            Name = "ctx",
+            JobType = typeof(ProgressJob).FullName,
+            Status = JobStatus.Queued
+        }, cancellationToken);
+
+        Assert.True(await worker.RunAsync("ctx-job", cancellationToken));
+
+        var state = await store.GetAsync("ctx-job", cancellationToken);
+        Assert.Equal(JobStatus.Completed, state!.Status);
+        Assert.Equal(100, state.Progress); // a completed job is 100%; the worker sets this on success
+        // The job wrote its context identity + attempt into the progress message (preserved through completion),
+        // proving the store-backed context is wired through to job code.
+        Assert.Equal("ctx-job:1", state.ProgressMessage);
+    }
+
+    [Fact]
+    public async Task RecoverStaleAsync_ReclaimsExpiredProcessingJobsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var worker = new JobWorker(store, serviceProvider, nodeId: "recovery-node");
+
+        var expired = DateTimeOffset.UtcNow.AddMinutes(-5);
+
+        // A crashed job with attempts remaining -> re-queued.
+        await store.CreateIfAbsentAsync(new JobState { JobId = "retry-me", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 1 }, cancellationToken);
+        // A crashed job that exhausted its attempts -> dead-lettered.
+        await store.CreateIfAbsentAsync(new JobState { JobId = "give-up", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 3 }, cancellationToken);
+        // A healthy job whose lease is still valid -> untouched.
+        await store.CreateIfAbsentAsync(new JobState { JobId = "alive", Name = "j", Status = JobStatus.Processing, NodeId = "live-node", LeaseExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(5), Attempt = 1 }, cancellationToken);
+        // A CRON occurrence (ScheduledForUtc set) with an expired lease -> NOT reclaimed here; the scheduler owns it.
+        await store.CreateIfAbsentAsync(new JobState { JobId = "occurrence", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 1, ScheduledForUtc = expired }, cancellationToken);
+
+        int recovered = await worker.RecoverStaleAsync(maxAttempts: 3, cancellationToken: cancellationToken);
+
+        Assert.Equal(2, recovered);
+
+        var retried = await store.GetAsync("retry-me", cancellationToken);
+        Assert.Equal(JobStatus.Queued, retried!.Status);
+        Assert.Null(retried.NodeId);
+        Assert.Null(retried.LeaseExpiresUtc);
+
+        Assert.Equal(JobStatus.DeadLettered, (await store.GetAsync("give-up", cancellationToken))!.Status);
+        Assert.Equal(JobStatus.Processing, (await store.GetAsync("alive", cancellationToken))!.Status);
+        // The CRON occurrence is left for the scheduler's own recovery, not reclaimed as a plain job.
+        Assert.Equal(JobStatus.Processing, (await store.GetAsync("occurrence", cancellationToken))!.Status);
+    }
+
+    [Fact]
+    public async Task TryReclaimExpiredAsync_GuardsAgainstOwnerRenewAndForeignNodeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var now = DateTimeOffset.UtcNow;
+
+        await store.CreateIfAbsentAsync(new JobState { JobId = "expired", Name = "j", Status = JobStatus.Processing, NodeId = "owner", LeaseExpiresUtc = now.AddMinutes(-1), Attempt = 1 }, cancellationToken);
+        await store.CreateIfAbsentAsync(new JobState { JobId = "renewed", Name = "j", Status = JobStatus.Processing, NodeId = "owner", LeaseExpiresUtc = now.AddMinutes(5), Attempt = 1 }, cancellationToken);
+
+        // Wrong owner -> rejected (another node already reclaimed/re-ran it).
+        Assert.False(await store.TryReclaimExpiredAsync("expired", now, "different-node", JobStatus.Queued, cancellationToken: cancellationToken));
+        // Owner renewed its lease (no longer expired) -> rejected, so a live worker is never yanked out from under itself.
+        Assert.False(await store.TryReclaimExpiredAsync("renewed", now, "owner", JobStatus.Queued, cancellationToken: cancellationToken));
+        // Still owned by the presumed-dead node and still expired -> reclaimed.
+        Assert.True(await store.TryReclaimExpiredAsync("expired", now, "owner", JobStatus.Queued, cancellationToken: cancellationToken));
+
+        Assert.Equal(JobStatus.Queued, (await store.GetAsync("expired", cancellationToken))!.Status);
+        Assert.Equal(JobStatus.Processing, (await store.GetAsync("renewed", cancellationToken))!.Status);
+    }
+
+    [Fact]
     public async Task CreateIfAbsentAsync_WithExistingJob_DoesNotOverwriteStateAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -276,6 +357,18 @@ public class JobRuntimeTests
                 _probe.Cancelled.TrySetResult();
                 throw;
             }
+        }
+    }
+
+    private sealed class ProgressJob : IJobWithExecutionContext
+    {
+        public JobExecutionContext? ExecutionContext { get; set; }
+
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        {
+            var context = ExecutionContext!;
+            await context.ReportProgressAsync(75, $"{context.JobId}:{context.Attempt}", cancellationToken);
+            return JobResult.Success;
         }
     }
 }

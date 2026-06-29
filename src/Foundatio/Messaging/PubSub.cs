@@ -41,8 +41,15 @@ public sealed record PubSubOptions
     public ISerializer Serializer { get; init; } = DefaultSerializer.Instance;
     public string ContentType { get; init; } = "application/json";
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
+    public IMessageTypeRegistry MessageTypes { get; init; } = new MessageTypeRegistry();
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public RetryPolicy RetryPolicy { get; init; } = new();
+
+    /// <summary>
+    /// Whether disposing this pub/sub client also disposes the transport. True (default) for a transport it solely
+    /// uses; set false when the transport is shared/externally owned (e.g. a DI singleton also used by a queue client).
+    /// </summary>
+    public bool OwnsTransport { get; init; } = true;
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
     public ILoggerFactory? LoggerFactory { get; init; }
 }
@@ -63,6 +70,13 @@ public interface IMessageSubscription : IAsyncDisposable
     string Topic { get; }
     string Subscription { get; }
     string Key { get; }
+
+    /// <summary>
+    /// The transport destination this subscription receives from. It encodes both the topic and the subscription
+    /// identity (so the same subscription name on two different topics maps to two distinct sources), rather than the
+    /// bare subscription name.
+    /// </summary>
+    string Source { get; }
 }
 
 /// <summary>
@@ -79,7 +93,7 @@ public sealed class PubSub : IPubSub
         options ??= new PubSubOptions();
         var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<PubSub>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
-            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy);
+            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes);
     }
 
     public Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -146,7 +160,9 @@ public sealed class PubSub : IPubSub
         {
             Topic = topic,
             Subscription = subscription,
-            Source = subscription, // a pub/sub consumer receives from its subscription destination
+            // The transport source is the topic-qualified subscription destination, not the bare subscription name, so
+            // the same subscription identity used on two topics resolves to two distinct sources (and isolates).
+            Source = SubscriptionDestination(topic, subscription),
             Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{topic}:{subscription}:{routeType.FullName ?? routeType.Name}",
             MessageType = routeType,
             AckMode = options.AckMode,
@@ -165,8 +181,15 @@ public sealed class PubSub : IPubSub
     {
         return _core.EnsureAsync([
             new DestinationDeclaration { Name = config.Topic, Role = DestinationRole.Topic },
-            new DestinationDeclaration { Name = config.Subscription, Role = DestinationRole.Subscription, Source = config.Topic }
+            new DestinationDeclaration { Name = config.Source, Role = DestinationRole.Subscription, Source = config.Topic }
         ], cancellationToken);
+    }
+
+    // The topic-qualified subscription destination. The topic is part of the identity so the same subscription name on
+    // two topics does not collide on one transport source. (A provider can map this to its native subscription address.)
+    private static string SubscriptionDestination(string topic, string subscription)
+    {
+        return $"{topic}/{subscription}";
     }
 
     private string GetTopic(Type messageType, string? topic)

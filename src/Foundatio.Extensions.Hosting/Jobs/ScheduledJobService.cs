@@ -13,6 +13,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
+/// <summary>
+/// Legacy/compat in-process CRON scheduler used by <see cref="JobHostExtensions.AddCronJob(IServiceCollection, ScheduledJobOptions)"/>.
+/// It runs occurrences in-process and does not materialize durable, recoverable occurrences. The redesigned runtime's
+/// durable scheduler (<c>JobScheduleProcessor</c> driven by <see cref="JobRuntimeService"/>) is the forward path.
+/// </summary>
 public class ScheduledJobService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;

@@ -25,6 +25,12 @@ public class JobRuntimeServiceOptions
     /// Maximum number of due dispatches and queued jobs claimed per pump iteration.
     /// </summary>
     public int BatchSize { get; set; } = 100;
+
+    /// <summary>
+    /// Maximum number of processing attempts for a durable job before a stale (lease-expired) instance is
+    /// dead-lettered instead of re-queued. Defaults to 3.
+    /// </summary>
+    public int MaxJobAttempts { get; set; } = 3;
 }
 
 /// <summary>
@@ -65,6 +71,10 @@ public class JobRuntimeService : BackgroundService
                 // Claim and run due dispatches: CRON occurrences plus delayed queue/pub-sub messages. This also
                 // recovers occurrences whose processing lease expired (crash mid-run) and applies retry/dead-letter.
                 await _processor.RunDueOccurrencesAsync(now, _options.BatchSize, lease: null, stoppingToken).AnyContext();
+
+                // Recover plain (non-CRON) jobs whose processing lease expired (a worker crash mid-run): re-queue them
+                // while attempts remain, otherwise dead-letter them. Without this they would strand in Processing.
+                await _worker.RecoverStaleAsync(_options.MaxJobAttempts, _options.BatchSize, stoppingToken).AnyContext();
 
                 // Run jobs submitted via IJobClient that are sitting in the Queued state.
                 await _worker.RunQueuedAsync(_options.BatchSize, stoppingToken).AnyContext();

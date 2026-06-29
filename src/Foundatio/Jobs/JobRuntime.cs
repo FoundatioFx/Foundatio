@@ -206,6 +206,42 @@ public sealed class JobHandle
     }
 }
 
+/// <summary>
+/// Passed to a durable job that implements <see cref="IJobWithExecutionContext"/>. Gives the running job its identity
+/// and attempt number, plus store-backed progress reporting, lease heartbeat (for long runs), and cooperative
+/// cancellation checks — the parts of <see cref="IJobRuntimeStore"/> that are useful from inside job code.
+/// </summary>
+public sealed class JobExecutionContext
+{
+    private readonly IJobRuntimeStore _store;
+    private readonly string _nodeId;
+    private readonly TimeSpan _lease;
+
+    internal JobExecutionContext(string jobId, int attempt, CancellationToken cancellationToken, IJobRuntimeStore store, string nodeId, TimeSpan lease)
+    {
+        JobId = jobId;
+        Attempt = attempt;
+        CancellationToken = cancellationToken;
+        _store = store;
+        _nodeId = nodeId;
+        _lease = lease;
+    }
+
+    public string JobId { get; }
+    public int Attempt { get; }
+    public CancellationToken CancellationToken { get; }
+
+    public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
+        => _store.SetProgressAsync(JobId, percent, message, cancellationToken);
+
+    // Extends the worker's lease so a long-but-alive run is not reclaimed as stale.
+    public Task<bool> RenewLeaseAsync(CancellationToken cancellationToken = default)
+        => _store.RenewClaimAsync(JobId, _nodeId, _lease, cancellationToken);
+
+    public Task<bool> IsCancellationRequestedAsync(CancellationToken cancellationToken = default)
+        => _store.IsCancellationRequestedAsync(JobId, cancellationToken);
+}
+
 public interface IJobMonitor
 {
     Task<JobState?> GetAsync(string jobId, CancellationToken cancellationToken = default);
@@ -223,6 +259,9 @@ public interface IJobWorker
 {
     Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default);
     Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default);
+    // Reclaims jobs stuck in Processing past their lease (a worker that crashed mid-run): re-queues them while attempts
+    // remain, otherwise dead-letters them. Returns the number recovered.
+    Task<int> RecoverStaleAsync(int maxAttempts, int limit = 100, CancellationToken cancellationToken = default);
 }
 
 public interface IJobRuntimeStore : IJobMonitor
@@ -235,6 +274,15 @@ public interface IJobRuntimeStore : IJobMonitor
     Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
     Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
     Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default);
+    // Returns plain (non-CRON-occurrence) jobs in Processing whose lease has expired as of <paramref name="now"/>
+    // (their owning worker is presumed dead), so the runtime can reclaim them. CRON occurrences are excluded — the
+    // scheduler recovers those with its own per-definition retry budget.
+    Task<IReadOnlyList<JobState>> GetExpiredProcessingAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);
+    // Atomically reclaims a stale Processing job: the transition applies only if the job is STILL owned by
+    // <paramref name="expectedNodeId"/> and its lease is STILL expired as of <paramref name="now"/>. This closes the
+    // race where the owning worker renews its lease between a stale scan and the reclaim (which would otherwise
+    // re-queue a live job and double-run it).
+    Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default);
     Task SetProgressAsync(string jobId, int? percent = null, string? message = null, CancellationToken cancellationToken = default);
     Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
@@ -375,6 +423,52 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
                 NodeId = null,
                 LeaseExpiresUtc = null,
                 LastUpdatedUtc = _timeProvider.GetUtcNow()
+            };
+            return Task.FromResult(true);
+        }
+    }
+
+    public Task<IReadOnlyList<JobState>> GetExpiredProcessingAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_lock)
+        {
+            var expired = _jobs.Values
+                // Exclude CRON occurrences (ScheduledForUtc set): the scheduler owns their recovery via its own
+                // per-definition retry budget. This path only recovers plain IJobClient-submitted jobs.
+                .Where(s => s.Status == JobStatus.Processing && s.ScheduledForUtc is null && s.LeaseExpiresUtc is { } lease && lease <= now)
+                .OrderBy(s => s.LeaseExpiresUtc)
+                .Take(Math.Max(1, limit))
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<JobState>>(expired);
+        }
+    }
+
+    public Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrEmpty(expectedNodeId);
+
+        lock (_lock)
+        {
+            if (!_jobs.TryGetValue(jobId, out var current))
+                return Task.FromResult(false);
+
+            // Re-check (atomically, under the lock) the conditions the stale scan saw: still Processing, still owned by
+            // the same node, and the lease is still expired. A renewal or re-claim that landed since the scan fails one
+            // of these and the reclaim is skipped.
+            if (current.Status != JobStatus.Processing || !String.Equals(current.NodeId, expectedNodeId, StringComparison.Ordinal))
+                return Task.FromResult(false);
+
+            if (current.LeaseExpiresUtc is not { } lease || lease > now)
+                return Task.FromResult(false);
+
+            _jobs[jobId] = ApplyPatch(current, patch) with
+            {
+                Status = newStatus,
+                LastUpdatedUtc = patch?.LastUpdatedUtc ?? _timeProvider.GetUtcNow()
             };
             return Task.FromResult(true);
         }
@@ -643,6 +737,44 @@ public sealed class JobWorker : IJobWorker
         return state is not null && await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<int> RecoverStaleAsync(int maxAttempts, int limit = 100, CancellationToken cancellationToken = default)
+    {
+        var now = _timeProvider.GetUtcNow();
+        var stale = await _store.GetExpiredProcessingAsync(now, limit, cancellationToken).ConfigureAwait(false);
+
+        int recovered = 0;
+        foreach (var state in stale)
+        {
+            if (String.IsNullOrEmpty(state.NodeId))
+                continue;
+
+            // TryReclaimExpiredAsync re-verifies (atomically) that the job is still owned by the same presumed-dead
+            // node and its lease is still expired, so a worker that renewed between the scan and here is not yanked out
+            // from under itself (no double-run). Attempts are incremented per run, so a job that keeps crashing is
+            // dead-lettered once it has consumed its attempt budget instead of being re-queued forever.
+            bool transitioned = state.Attempt >= maxAttempts
+                ? await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.DeadLettered, new JobStatePatch
+                {
+                    Error = $"Lease expired after {state.Attempt} attempt(s) without completion.",
+                    ClearNodeId = true,
+                    ClearLeaseExpiresUtc = true,
+                    CompletedUtc = now,
+                    LastUpdatedUtc = now
+                }, cancellationToken).ConfigureAwait(false)
+                : await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.Queued, new JobStatePatch
+                {
+                    ClearNodeId = true,
+                    ClearLeaseExpiresUtc = true,
+                    LastUpdatedUtc = now
+                }, cancellationToken).ConfigureAwait(false);
+
+            if (transitioned)
+                recovered++;
+        }
+
+        return recovered;
+    }
+
     private async Task<bool> RunJobStateAsync(JobState state, CancellationToken cancellationToken)
     {
         if (state.Status != JobStatus.Queued)
@@ -671,6 +803,12 @@ public sealed class JobWorker : IJobWorker
         {
             var jobType = ResolveJobType(state);
             var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
+
+            // Hand the job its execution context (progress, heartbeat, cancellation, identity) when it opts in. The
+            // store was already incremented to this attempt by the Queued -> Processing transition above.
+            if (job is IJobWithExecutionContext contextual)
+                contextual.ExecutionContext = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease);
+
             var result = await job.TryRunAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             var completedAt = _timeProvider.GetUtcNow();
 
