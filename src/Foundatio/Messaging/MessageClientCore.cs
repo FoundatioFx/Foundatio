@@ -26,6 +26,7 @@ internal static class MessagingInstruments
     public static readonly Counter<long> Completed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.completed", description: "Number of messages completed");
     public static readonly Counter<long> Abandoned = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.abandoned", description: "Number of messages abandoned");
     public static readonly Counter<long> DeadLettered = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.deadlettered", description: "Number of messages dead-lettered");
+    public static readonly Counter<long> Unhandled = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.messaging.unhandled", description: "Number of received messages with no registered consumer for their type");
     public static readonly Histogram<double> HandlerTime = FoundatioDiagnostics.Meter.CreateHistogram<double>("foundatio.messaging.handlertime", unit: "ms", description: "Message handler execution time");
 }
 
@@ -55,7 +56,8 @@ internal sealed record ListenerConfig
     public string Subscription { get; init; } = "";
     public AckMode AckMode { get; init; } = AckMode.Auto;
     public int MaxConcurrency { get; init; } = 1;
-    public int MaxAttempts { get; init; } = 5;
+    // Null falls back to the client's default RetryPolicy.
+    public int? MaxAttempts { get; init; }
     public Func<int, TimeSpan>? RedeliveryBackoff { get; init; }
 }
 
@@ -73,11 +75,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly Func<string, Exception?, Exception> _exceptionFactory;
-    private readonly ConcurrentDictionary<string, MessageListenerHandle> _listeners = new(StringComparer.Ordinal);
+    private readonly RetryPolicy _retryPolicy;
+    private readonly ConcurrentDictionary<string, SourceListener> _sources = new(StringComparer.Ordinal);
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
-        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory)
+        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _serializer = serializer;
@@ -86,6 +89,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         _timeProvider = timeProvider;
         _logger = logger;
         _exceptionFactory = exceptionFactory;
+        _retryPolicy = retryPolicy ?? new RetryPolicy();
     }
 
     public IMessageRouter Router => _router;
@@ -180,8 +184,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IReceivedMessage, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        var registration = MessageListenerRegistration.Create(handler, config);
-        return StartListenerCoreAsync(config, registration, async (entry, token) =>
+        return RegisterConsumerAsync(config, handler, async (entry, token) =>
         {
             var received = CreateReceivedMessage(entry, token);
             await HandleMessageAsync(received, config, handler, token).AnyContext();
@@ -191,8 +194,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public Task<MessageListenerHandle> StartListenerAsync<T>(ListenerConfig config, Func<IReceivedMessage<T>, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
-        var registration = MessageListenerRegistration.Create(handler, config);
-        return StartListenerCoreAsync(config, registration, async (entry, token) =>
+        return RegisterConsumerAsync(config, handler, async (entry, token) =>
         {
             var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
             await HandleMessageAsync(received, config, handler, token).AnyContext();
@@ -204,52 +206,77 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return;
 
-        foreach (var listener in _listeners.Values.ToArray())
+        foreach (var listener in _sources.Values.ToArray())
             await listener.DisposeAsync().AnyContext();
 
         await _transport.DisposeAsync().AnyContext();
     }
 
-    private async Task<MessageListenerHandle> StartListenerCoreAsync(ListenerConfig config, MessageListenerRegistration registration, Func<TransportEntry, CancellationToken, Task> onMessage, CancellationToken cancellationToken)
+    // Multiple typed consumers can share one destination. They attach to a single per-source listener whose loop
+    // demultiplexes each message to the consumer registered for its type; a type with no registered consumer is
+    // handled by HandleUnmatchedAsync. Starting the same consumer key with a matching handler/options is idempotent.
+    private async Task<MessageListenerHandle> RegisterConsumerAsync(ListenerConfig config, Delegate handler, Func<TransportEntry, CancellationToken, Task> dispatch, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_listeners.TryGetValue(config.Key, out var existing) && !existing.IsDisposed)
+        bool catchAll = IsCatchAll(config.MessageType);
+        var registration = new ConsumerRegistration
         {
-            existing.ThrowIfConflicting(registration);
-            return existing;
-        }
+            Key = config.Key,
+            Config = config,
+            Dispatch = dispatch,
+            Info = MessageListenerRegistration.Create(handler, config),
+            IsCatchAll = catchAll,
+            TypeName = catchAll ? null : _router.ResolveMessageType(config.MessageType)
+        };
 
-        var handle = new MessageListenerHandle(config.Topic, config.Subscription, config.Source, config.Key, registration, RemoveListener);
-        if (!_listeners.TryAdd(config.Key, handle))
+        while (true)
         {
-            await handle.DisposeAsync().AnyContext();
-            var current = _listeners[config.Key];
-            current.ThrowIfConflicting(registration);
-            return current;
-        }
-
-        try
-        {
-            if (_transport is ISupportsPush push)
+            var listener = _sources.GetOrAdd(config.Source, source => new SourceListener(this, source));
+            if (listener.TryAddConsumer(registration, out var handle, out bool created))
             {
-                var subscription = await push.SubscribeAsync(config.Source, onMessage, new PushOptions { MaxConcurrentMessages = Math.Max(1, config.MaxConcurrency) }, cancellationToken).AnyContext();
-                handle.SetPushSubscription(subscription);
+                if (created)
+                {
+                    try
+                    {
+                        await listener.StartAsync(cancellationToken).AnyContext();
+                    }
+                    catch
+                    {
+                        await listener.DisposeAsync().AnyContext();
+                        throw;
+                    }
+                }
+
                 return handle;
             }
 
-            if (_transport is not ISupportsPull pull)
-                throw _exceptionFactory($"Transport \"{_transport.GetType().Name}\" does not support receiving messages.", null);
+            // The listener was disposing as its last consumer detached; drop our stale reference and retry.
+            _sources.TryRemove(new KeyValuePair<string, SourceListener>(config.Source, listener));
+        }
+    }
 
-            handle.Start(RunPullLoopAsync(config.Source, pull, onMessage, config.MaxConcurrency, handle.CancellationToken));
-            return handle;
-        }
-        catch
-        {
-            await handle.DisposeAsync().AnyContext();
-            throw;
-        }
+    // A concrete message type binds an exact-type consumer; object/interface/abstract route types are catch-alls that
+    // receive every message a more specific typed consumer did not claim (the grouped/raw-envelope path).
+    private static bool IsCatchAll(Type messageType)
+    {
+        return messageType == typeof(object) || messageType.IsInterface || messageType.IsAbstract;
+    }
+
+    private async Task HandleUnmatchedAsync(TransportEntry entry, string source, CancellationToken cancellationToken)
+    {
+        MessagingInstruments.Unhandled.Add(1, new KeyValuePair<string, object?>("source", source));
+
+        var message = CreateReceivedMessage(entry, cancellationToken);
+
+        // Retry so a node that does handle this type can pick it up; dead-letter as "no-handler" once the lenient
+        // budget is exhausted so a genuinely orphaned type cannot loop forever.
+        await SettleFailedMessageAsync(message, _retryPolicy.UnmatchedMaxAttempts, _retryPolicy.UnmatchedBackoff, deadLetterReason: "no-handler", cancellationToken).AnyContext();
+
+        // Surface loudly. The throw is caught by the loop's per-message handling (SafeProcessAsync), so it never tears
+        // down the receive loop or the other type handlers sharing this source.
+        throw new UnhandledMessageTypeException(message.MessageType, source);
     }
 
     // MaxConcurrency bounds the number of in-flight messages. A slot is held from receive until the message settles
@@ -378,8 +405,10 @@ internal sealed class MessageClientCore : IAsyncDisposable
         catch (Exception ex)
         {
             activity?.SetErrorStatus(ex);
-            _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, config.Source, message.Attempts, config.MaxAttempts, ex.Message);
-            await SettleFailedMessageAsync(message, config, cancellationToken).AnyContext();
+            int maxAttempts = config.MaxAttempts ?? _retryPolicy.MaxAttempts;
+            var backoff = config.RedeliveryBackoff ?? _retryPolicy.Backoff;
+            _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
+            await SettleFailedMessageAsync(message, maxAttempts, backoff, "handler-error", cancellationToken).AnyContext();
         }
         finally
         {
@@ -409,28 +438,21 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return activity;
     }
 
-    private static async Task SettleFailedMessageAsync(IReceivedMessage message, ListenerConfig config, CancellationToken cancellationToken)
+    private static Task SettleFailedMessageAsync(IReceivedMessage message, int maxAttempts, Func<int, TimeSpan>? backoff, string deadLetterReason, CancellationToken cancellationToken)
     {
         if (message.IsHandled)
-            return;
+            return Task.CompletedTask;
 
-        if (message.Attempts >= config.MaxAttempts)
-        {
-            await message.DeadLetterAsync("handler-error", cancellationToken).AnyContext();
-            return;
-        }
+        if (message.Attempts >= maxAttempts)
+            return message.RejectAsync(new RejectOptions { Terminal = true, Reason = deadLetterReason }, cancellationToken);
 
-        TimeSpan? redeliveryDelay = config.RedeliveryBackoff?.Invoke(message.Attempts);
-        if (redeliveryDelay is { } delay && delay > TimeSpan.Zero && message is ISupportsDelayedMessageAbandon received)
-            await received.AbandonAsync(delay, cancellationToken).AnyContext();
-        else
-            await message.AbandonAsync(cancellationToken).AnyContext();
+        return message.RejectAsync(new RejectOptions { RedeliveryDelay = backoff?.Invoke(message.Attempts) }, cancellationToken);
     }
 
     private ReceivedMessage CreateReceivedMessage(TransportEntry entry, CancellationToken cancellationToken)
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
-        return new ReceivedMessage(_transport, entry, cancellationToken, _runtimeStore, _timeProvider);
+        return new ReceivedMessage(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
     }
 
     private async Task<IReceivedMessage<T>> CreateReceivedMessageAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
@@ -454,12 +476,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Message \"{entry.Id}\" deserialized to null.", null);
         }
 
-        return new ReceivedMessage<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider);
+        return new ReceivedMessage<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
     }
 
     private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken cancellationToken)
     {
-        return ReceivedMessage.DeadLetterAsync(_transport, entry, reason, cancellationToken);
+        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
+        return ReceivedMessage.DeadLetterOrDropAsync(_transport, entry, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
     }
 
     public string ResolveMessageType(Type messageType) => _router.ResolveMessageType(messageType);
@@ -540,14 +563,18 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private bool ShouldScheduleThroughRuntimeStore(TransportSendOptions options, out DateTimeOffset dueUtc)
     {
         dueUtc = options.DeliverAt.GetValueOrDefault();
-        if (options.DeliverAt is null || dueUtc <= _timeProvider.GetUtcNow())
+        var now = _timeProvider.GetUtcNow();
+        if (options.DeliverAt is null || dueUtc <= now)
             return false;
 
-        if (_transport is ISupportsDelayedDelivery)
+        // A transport can deliver natively only up to its advertised maximum; a delay longer than the broker supports
+        // (e.g. SQS caps DelaySeconds at 15 minutes) must route through the durable runtime store rather than be
+        // silently truncated to the broker's ceiling.
+        if (_transport is ISupportsDelayedDelivery delayed && (delayed.MaxDeliveryDelay is not { } max || dueUtc - now <= max))
             return false;
 
         if (_runtimeStore is null)
-            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" or a registered job runtime store.", null);
+            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.", null);
 
         return true;
     }
@@ -594,36 +621,258 @@ internal sealed class MessageClientCore : IAsyncDisposable
             ?? throw _exceptionFactory($"Transport \"{_transport.GetType().Name}\" does not support pull receive.", null);
     }
 
-    private void RemoveListener(string key, MessageListenerHandle handle)
+    private void RemoveSource(string source, SourceListener listener)
     {
-        _listeners.TryRemove(new KeyValuePair<string, MessageListenerHandle>(key, handle));
+        _sources.TryRemove(new KeyValuePair<string, SourceListener>(source, listener));
     }
 
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);
     }
+
+    private sealed class ConsumerRegistration
+    {
+        public required string Key { get; init; }
+        public required ListenerConfig Config { get; init; }
+        public required Func<TransportEntry, CancellationToken, Task> Dispatch { get; init; }
+        public required MessageListenerRegistration Info { get; init; }
+        public required bool IsCatchAll { get; init; }
+        public required string? TypeName { get; init; }
+    }
+
+    // One receive loop per source. Consumers register by message type; the loop reads the message-type header and
+    // dispatches each entry to a consumer for that type (round-robin when several share a type, so same-type consumers
+    // compete), to the catch-all group for unmapped types, or to HandleUnmatchedAsync when nothing claims the type.
+    // The loop runs while at least one consumer is attached and shuts down when the last one detaches.
+    private sealed class SourceListener
+    {
+        private readonly MessageClientCore _core;
+        private readonly string _source;
+        private readonly object _lock = new();
+        private readonly CancellationTokenSource _cancellationTokenSource = new();
+        private readonly ConcurrentDictionary<string, Registered> _consumers = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, ConsumerGroup> _byType = new(StringComparer.Ordinal);
+        private readonly ConsumerGroup _catchAll = new();
+        private int _maxConcurrency = 1;
+        private IPushSubscription? _pushSubscription;
+        private Task? _loop;
+        private bool _isDisposed;
+
+        public SourceListener(MessageClientCore core, string source)
+        {
+            _core = core;
+            _source = source;
+        }
+
+        public bool TryAddConsumer(ConsumerRegistration registration, out MessageListenerHandle handle, out bool created)
+        {
+            handle = null!;
+            created = false;
+
+            lock (_lock)
+            {
+                if (_isDisposed)
+                    return false;
+
+                if (_consumers.TryGetValue(registration.Key, out var existing))
+                {
+                    if (!existing.Registration.Info.Matches(registration.Info))
+                        throw new InvalidOperationException($"A consumer with key \"{registration.Key}\" is already registered with a different handler or options.");
+
+                    handle = existing.Handle; // idempotent re-registration
+                    return true;
+                }
+
+                int desired = Math.Max(1, registration.Config.MaxConcurrency);
+                if (_consumers.IsEmpty)
+                {
+                    _maxConcurrency = desired;
+                    created = true;
+                }
+                else if (desired != _maxConcurrency)
+                {
+                    throw new InvalidOperationException($"Source \"{_source}\" is already consumed with MaxConcurrency {_maxConcurrency}; a conflicting MaxConcurrency {desired} was requested. Consumers sharing a destination must use the same MaxConcurrency.");
+                }
+
+                handle = new MessageListenerHandle(registration.Config.Topic, registration.Config.Subscription, _source, registration.Key, () => RemoveConsumerAsync(registration.Key));
+                _consumers[registration.Key] = new Registered(registration, handle);
+                GroupFor(registration).Add(registration);
+
+                return true;
+            }
+        }
+
+        private ConsumerGroup GroupFor(ConsumerRegistration registration)
+        {
+            return registration.IsCatchAll ? _catchAll : _byType.GetOrAdd(registration.TypeName!, _ => new ConsumerGroup());
+        }
+
+        public async Task StartAsync(CancellationToken cancellationToken)
+        {
+            if (_core._transport is ISupportsPush push)
+            {
+                // Route the push callback through SafeProcessAsync so a throw (including an unmatched-type throw) is
+                // isolated to the message and never tears down the subscription.
+                _pushSubscription = await push.SubscribeAsync(_source, (entry, token) => _core.SafeProcessAsync(entry, DispatchAsync, _source, token), new PushOptions { MaxConcurrentMessages = Math.Max(1, _maxConcurrency) }, cancellationToken).AnyContext();
+                return;
+            }
+
+            if (_core._transport is not ISupportsPull pull)
+                throw _core._exceptionFactory($"Transport \"{_core._transport.GetType().Name}\" does not support receiving messages.", null);
+
+            _loop = _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, _cancellationTokenSource.Token);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            lock (_lock)
+            {
+                if (_isDisposed)
+                    return;
+
+                _isDisposed = true;
+            }
+
+            await ShutdownAsync().AnyContext();
+        }
+
+        private async ValueTask RemoveConsumerAsync(string key)
+        {
+            bool shutdown = false;
+            lock (_lock)
+            {
+                if (!_consumers.TryRemove(key, out var registered))
+                    return;
+
+                var registration = registered.Registration;
+                if (registration.IsCatchAll)
+                {
+                    _catchAll.Remove(registration);
+                }
+                else if (registration.TypeName is { } typeName && _byType.TryGetValue(typeName, out var group))
+                {
+                    group.Remove(registration);
+                    if (group.IsEmpty)
+                        _byType.TryRemove(new KeyValuePair<string, ConsumerGroup>(typeName, group));
+                }
+
+                if (_consumers.IsEmpty && !_isDisposed)
+                {
+                    _isDisposed = true;
+                    shutdown = true;
+                }
+            }
+
+            if (shutdown)
+                await ShutdownAsync().AnyContext();
+        }
+
+        private async Task ShutdownAsync()
+        {
+            await _cancellationTokenSource.CancelAsync().AnyContext();
+
+            if (_pushSubscription is not null)
+                await _pushSubscription.DisposeAsync().AnyContext();
+
+            if (_loop is not null)
+            {
+                try
+                {
+                    await _loop.AnyContext();
+                }
+                catch (OperationCanceledException) { }
+            }
+
+            _cancellationTokenSource.Dispose();
+            _core.RemoveSource(_source, this);
+        }
+
+        private async Task DispatchAsync(TransportEntry entry, CancellationToken token)
+        {
+            var registration = Resolve(entry);
+            if (registration is null)
+            {
+                await _core.HandleUnmatchedAsync(entry, _source, token).AnyContext();
+                return;
+            }
+
+            await registration.Dispatch(entry, token).AnyContext();
+        }
+
+        private ConsumerRegistration? Resolve(TransportEntry entry)
+        {
+            string? typeName = entry.Headers.GetValueOrDefault(KnownHeaders.MessageType);
+            if (typeName is not null && _byType.TryGetValue(typeName, out var group) && group.Next() is { } typed)
+                return typed;
+
+            return _catchAll.Next();
+        }
+
+        private sealed record Registered(ConsumerRegistration Registration, MessageListenerHandle Handle);
+
+        // Consumers sharing a message type (or the catch-all) on one source compete: each message is dispatched to one
+        // of them, round-robin. The registration array is swapped under the listener lock; Next() reads it lock-free.
+        private sealed class ConsumerGroup
+        {
+            private ConsumerRegistration[] _registrations = [];
+            private int _next;
+
+            public bool IsEmpty => Volatile.Read(ref _registrations).Length == 0;
+
+            public void Add(ConsumerRegistration registration)
+            {
+                var current = _registrations;
+                var updated = new ConsumerRegistration[current.Length + 1];
+                Array.Copy(current, updated, current.Length);
+                updated[^1] = registration;
+                Volatile.Write(ref _registrations, updated);
+            }
+
+            public void Remove(ConsumerRegistration registration)
+            {
+                var current = _registrations;
+                int index = Array.IndexOf(current, registration);
+                if (index < 0)
+                    return;
+
+                var updated = new ConsumerRegistration[current.Length - 1];
+                Array.Copy(current, 0, updated, 0, index);
+                Array.Copy(current, index + 1, updated, index, current.Length - index - 1);
+                Volatile.Write(ref _registrations, updated);
+            }
+
+            public ConsumerRegistration? Next()
+            {
+                var snapshot = Volatile.Read(ref _registrations);
+                if (snapshot.Length == 0)
+                    return null;
+                if (snapshot.Length == 1)
+                    return snapshot[0];
+
+                int index = (int)((uint)Interlocked.Increment(ref _next) % (uint)snapshot.Length);
+                return snapshot[index];
+            }
+        }
+    }
 }
 
-internal interface ISupportsDelayedMessageAbandon
-{
-    Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken cancellationToken = default);
-}
-
-internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbandon
+internal class ReceivedMessage : IReceivedMessage
 {
     private readonly IMessageTransport _transport;
     private readonly TransportEntry _entry;
     private readonly IJobRuntimeStore? _runtimeStore;
     private readonly TimeProvider _timeProvider;
+    private readonly string? _deadLetterDestination;
     private int _isHandled;
 
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
+    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
     {
         _transport = transport;
         _entry = entry;
         _runtimeStore = runtimeStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _deadLetterDestination = deadLetterDestination;
         CancellationToken = cancellationToken;
     }
 
@@ -652,30 +901,39 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         return _transport.CompleteAsync(_entry, cancellationToken);
     }
 
-    public Task AbandonAsync(CancellationToken cancellationToken = default)
-    {
-        if (!TryMarkHandled())
-            return Task.CompletedTask;
-
-        MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
-        return _transport.AbandonAsync(_entry, cancellationToken);
-    }
-
-    public async Task AbandonAsync(TimeSpan redeliveryDelay, CancellationToken cancellationToken = default)
+    public async Task RejectAsync(RejectOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (!TryMarkHandled())
             return;
 
+        options ??= new RejectOptions();
+
+        if (options.Terminal)
+        {
+            MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
+            await DeadLetterOrDropAsync(_transport, _entry, options.Reason, _deadLetterDestination, cancellationToken).AnyContext();
+            return;
+        }
+
         MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
 
-        if (_transport is ISupportsRedeliveryDelay redelivery)
+        if (options.RedeliveryDelay is not { } redeliveryDelay || redeliveryDelay <= TimeSpan.Zero)
+        {
+            await _transport.AbandonAsync(_entry, cancellationToken).AnyContext();
+            return;
+        }
+
+        // Honor an explicit redelivery delay natively when the transport can (within its advertised maximum); otherwise
+        // re-schedule the message through the runtime store and complete the original so the delay survives transports
+        // without native delayed redelivery.
+        if (_transport is ISupportsRedeliveryDelay redelivery && (redelivery.MaxRedeliveryDelay is not { } max || redeliveryDelay <= max))
         {
             await redelivery.AbandonAsync(_entry, redeliveryDelay, cancellationToken).AnyContext();
             return;
         }
 
         if (_runtimeStore is null)
-            throw new MessageQueueException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" or a registered job runtime store.");
+            throw new MessageQueueException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
 
         int nextAttempt = _entry.DeliveryCount + 1;
         var headers = _entry.Headers.ToBuilder()
@@ -696,15 +954,6 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         await _transport.CompleteAsync(_entry, cancellationToken).AnyContext();
     }
 
-    public async Task DeadLetterAsync(string? reason = null, CancellationToken cancellationToken = default)
-    {
-        if (!TryMarkHandled())
-            return;
-
-        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
-        await DeadLetterAsync(_transport, _entry, reason, cancellationToken).AnyContext();
-    }
-
     public Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default)
     {
         return _transport is ISupportsLockRenewal lockRenewal
@@ -717,12 +966,29 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
         throw new NotSupportedException("Message progress reporting requires tracked job execution and is not available for untracked queue or pub/sub messages.");
     }
 
-    internal static async Task DeadLetterAsync(IMessageTransport transport, TransportEntry entry, string? reason, CancellationToken cancellationToken)
+    // Terminal settlement. Prefer the transport's native dead-letter sink (preserves native DLQ tooling). When the
+    // transport has none, fall back to a configured core-managed dead-letter destination: copy the raw entry there
+    // (recording the reason) and complete the original. With neither, the message can't be parked, so it is completed
+    // (dropped) rather than throwing and stalling the consumer.
+    internal static async Task DeadLetterOrDropAsync(IMessageTransport transport, TransportEntry entry, string? reason, string? deadLetterDestination, CancellationToken cancellationToken)
     {
-        if (transport is not ISupportsDeadLetter deadLetter)
-            throw new NotSupportedException($"Transport \"{transport.GetType().Name}\" does not support dead-lettering.");
+        if (transport is ISupportsDeadLetter deadLetter)
+        {
+            await deadLetter.DeadLetterAsync(entry, reason, cancellationToken).AnyContext();
+            return;
+        }
 
-        await deadLetter.DeadLetterAsync(entry, reason, cancellationToken).AnyContext();
+        if (!String.IsNullOrEmpty(deadLetterDestination))
+        {
+            var headers = String.IsNullOrEmpty(reason)
+                ? entry.Headers
+                : entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
+            await transport.SendAsync(deadLetterDestination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.Id }], new TransportSendOptions(), cancellationToken).AnyContext();
+            await transport.CompleteAsync(entry, cancellationToken).AnyContext();
+            return;
+        }
+
+        await transport.CompleteAsync(entry, cancellationToken).AnyContext();
     }
 
     private bool TryMarkHandled()
@@ -740,8 +1006,8 @@ internal class ReceivedMessage : IReceivedMessage, ISupportsDelayedMessageAbando
 
 internal sealed class ReceivedMessage<T> : ReceivedMessage, IReceivedMessage<T> where T : class
 {
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null)
-        : base(transport, entry, cancellationToken, runtimeStore, timeProvider)
+    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
+        : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination)
     {
         Message = message;
     }
@@ -785,67 +1051,31 @@ internal static class MessageRoutingConventions
 /// </summary>
 internal sealed class MessageListenerHandle : IMessageConsumer, IMessageSubscription
 {
-    private readonly CancellationTokenSource _cancellationTokenSource = new();
-    private readonly Action<string, MessageListenerHandle> _remove;
-    private IPushSubscription? _pushSubscription;
-    private Task? _worker;
+    private readonly Func<ValueTask> _dispose;
     private int _isDisposed;
 
-    public MessageListenerHandle(string topic, string subscription, string source, string key, MessageListenerRegistration registration, Action<string, MessageListenerHandle> remove)
+    public MessageListenerHandle(string topic, string subscription, string source, string key, Func<ValueTask> dispose)
     {
         Topic = topic;
         Subscription = subscription;
         Source = source;
         Key = key;
-        Registration = registration;
-        _remove = remove;
+        _dispose = dispose;
     }
 
     public string Topic { get; }
     public string Subscription { get; }
     public string Source { get; }
     public string Key { get; }
-    public MessageListenerRegistration Registration { get; }
-    public CancellationToken CancellationToken => _cancellationTokenSource.Token;
-    public bool IsDisposed => Volatile.Read(ref _isDisposed) == 1;
 
-    public void ThrowIfConflicting(MessageListenerRegistration registration)
-    {
-        if (!Registration.Matches(registration))
-            throw new InvalidOperationException($"A listener with key \"{Key}\" is already registered with a different handler or options.");
-    }
-
-    public void SetPushSubscription(IPushSubscription subscription)
-    {
-        _pushSubscription = subscription;
-    }
-
-    public void Start(Task worker)
-    {
-        _worker = worker;
-    }
-
+    // Disposing a single consumer handle detaches just that consumer from its source listener; the underlying receive
+    // loop keeps running until its last consumer detaches.
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return;
 
-        await _cancellationTokenSource.CancelAsync().AnyContext();
-
-        if (_pushSubscription is not null)
-            await _pushSubscription.DisposeAsync().AnyContext();
-
-        if (_worker is not null)
-        {
-            try
-            {
-                await _worker.AnyContext();
-            }
-            catch (OperationCanceledException) { }
-        }
-
-        _cancellationTokenSource.Dispose();
-        _remove(Key, this);
+        await _dispose().AnyContext();
     }
 }
 
@@ -856,7 +1086,7 @@ internal sealed record MessageListenerRegistration
     public required Delegate Handler { get; init; }
     public required AckMode AckMode { get; init; }
     public required int MaxConcurrency { get; init; }
-    public required int MaxAttempts { get; init; }
+    public required int? MaxAttempts { get; init; }
     public required bool HasRedeliveryBackoff { get; init; }
 
     public static MessageListenerRegistration Create(Delegate handler, ListenerConfig config)

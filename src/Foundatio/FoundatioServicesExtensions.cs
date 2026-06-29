@@ -281,6 +281,21 @@ public class FoundatioBuilder : IFoundatioBuilder
             return this;
         }
 
+        // The core owns retry and dead-letter behavior so it is identical across transports. This configures the
+        // default policy applied to queue and pub/sub consumers; a consumer can still override MaxAttempts/backoff.
+        public MessagingBuilder ConfigureRetry(RetryPolicy policy)
+        {
+            ArgumentNullException.ThrowIfNull(policy);
+            _services.ReplaceSingleton(_ => policy);
+            return this;
+        }
+
+        public MessagingBuilder ConfigureRetry(Func<RetryPolicy, RetryPolicy> configure)
+        {
+            ArgumentNullException.ThrowIfNull(configure);
+            return ConfigureRetry(configure(new RetryPolicy()));
+        }
+
         public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
         {
             _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
@@ -364,6 +379,7 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
+                RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                 LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };
@@ -376,6 +392,7 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
+                RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
                 TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
                 LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
             };

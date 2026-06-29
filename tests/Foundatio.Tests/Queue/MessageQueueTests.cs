@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -73,7 +74,7 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task AbandonAsync_RedeliversAsync()
+    public async Task RejectAsync_NonTerminal_RedeliversAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var queue = new MessageQueue(new InMemoryMessageTransport());
@@ -82,7 +83,7 @@ public class MessageQueueTests
         var first = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
         Assert.NotNull(first);
 
-        await first.AbandonAsync(cancellationToken);
+        await first.RejectAsync(cancellationToken: cancellationToken);
 
         var second = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
         Assert.NotNull(second);
@@ -122,7 +123,7 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task DeadLetterAsync_DeadLettersAsync()
+    public async Task RejectAsync_Terminal_DeadLettersAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var transport = new InMemoryMessageTransport();
@@ -132,7 +133,7 @@ public class MessageQueueTests
         var message = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
         Assert.NotNull(message);
 
-        await message.DeadLetterAsync("validation", cancellationToken);
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
 
         var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
         Assert.Equal(1, stats.Deadletter);
@@ -265,6 +266,41 @@ public class MessageQueueTests
 
         await Assert.ThrowsAsync<MessageQueueException>(async () =>
             await queue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithDelay_RespectsTransportMaxDeliveryDelayAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // Within the transport's advertised maximum: delivered natively, never touches the runtime store.
+        var nativeStore = new InMemoryJobRuntimeStore();
+        await using var nativeTransport = new CappedDelayTransport(maxDeliveryDelay: TimeSpan.FromMinutes(15));
+        await using var nativeQueue = new MessageQueue(nativeTransport, new QueueOptions { RuntimeStore = nativeStore });
+        var nativeProcessor = CreateDispatchProcessor(nativeStore, nativeTransport);
+
+        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+
+        Assert.Equal(1, nativeTransport.SendCount);
+        Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
+        Assert.Equal(0, await nativeProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddYears(1), cancellationToken: cancellationToken));
+
+        // Beyond the transport's maximum: routed through the runtime store instead of being silently truncated.
+        var fallbackStore = new InMemoryJobRuntimeStore();
+        await using var fallbackTransport = new CappedDelayTransport(maxDeliveryDelay: TimeSpan.FromMinutes(15));
+        await using var fallbackQueue = new MessageQueue(fallbackTransport, new QueueOptions { RuntimeStore = fallbackStore });
+        var fallbackProcessor = CreateDispatchProcessor(fallbackStore, fallbackTransport);
+
+        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
+
+        Assert.Equal(0, fallbackTransport.SendCount);
+        Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, fallbackTransport.SendCount);
+
+        var delayed = await fallbackQueue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        Assert.NotNull(delayed);
+        Assert.Equal("later", delayed.Message.Data);
+        await delayed.CompleteAsync(cancellationToken);
     }
 
     [Fact]
@@ -514,6 +550,130 @@ public class MessageQueueTests
         Assert.Equal(1, finalStats.Completed);
     }
 
+    [Fact]
+    public async Task StartConsumerAsync_MultipleTypesOnOneDestination_DispatchByTypeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageQueue(new InMemoryMessageTransport());
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var aReceived = new List<string?>();
+        var bReceived = new List<string?>();
+        var aSignal = new AsyncCountdownEvent(1);
+        var bSignal = new AsyncCountdownEvent(1);
+
+        await using var consumerA = await queue.StartConsumerAsync<SharedAWorkItem>((message, _) =>
+        {
+            lock (aReceived)
+                aReceived.Add(message.Message.Data);
+            aSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        await using var consumerB = await queue.StartConsumerAsync<SharedBWorkItem>((message, _) =>
+        {
+            lock (bReceived)
+                bReceived.Add(message.Message.Data);
+            bSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // Both types route to the same destination, so they share one underlying receive loop that dispatches by type.
+        Assert.Equal(consumerA.Source, consumerB.Source);
+
+        await queue.EnqueueAsync(new SharedAWorkItem { Data = "a" }, cancellationToken: cts.Token);
+        await queue.EnqueueAsync(new SharedBWorkItem { Data = "b" }, cancellationToken: cts.Token);
+
+        await aSignal.WaitAsync(TimeSpan.FromSeconds(2));
+        await bSignal.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(new[] { "a" }, aReceived);
+        Assert.Equal(new[] { "b" }, bReceived);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_UnmatchedType_DeadLettersAndKeepsConsumingAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageQueue(transport, new QueueOptions { RetryPolicy = new RetryPolicy { UnmatchedMaxAttempts = 3 } });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+        var aSignal = new AsyncCountdownEvent(1);
+        await using var consumerA = await queue.StartConsumerAsync<SharedAWorkItem>((_, _) =>
+        {
+            aSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // SharedBWorkItem routes to the same destination but has no registered consumer on this node.
+        await queue.EnqueueAsync(new SharedBWorkItem { Data = "orphan" }, cancellationToken: cts.Token);
+
+        // It is retried and finally dead-lettered as "no-handler" once the configured unmatched budget is exhausted.
+        for (int i = 0; i < 400; i++)
+        {
+            if ((await transport.GetStatsAsync("shared-demux", cts.Token)).Deadletter == 1)
+                break;
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
+        }
+
+        Assert.Equal(1, (await transport.GetStatsAsync("shared-demux", cts.Token)).Deadletter);
+
+        // The loop survived the unmatched message and keeps consuming the type it does handle.
+        await queue.EnqueueAsync(new SharedAWorkItem { Data = "ok" }, cancellationToken: cts.Token);
+        await aSignal.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RejectAsync_Terminal_WithoutNativeDeadLetter_SendsToConfiguredDestinationAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new NoDeadLetterTransport();
+        await using var queue = new MessageQueue(transport, new QueueOptions { RetryPolicy = new RetryPolicy { DeadLetterDestination = "preview-dead-letter" } });
+
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
+        var message = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        Assert.NotNull(message);
+
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
+
+        // The transport has no native dead-letter sink, so core routes the terminal message to the configured destination.
+        var dead = await queue.ReceiveAsync(new QueueReceiveOptions { Source = "preview-dead-letter", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        Assert.NotNull(dead);
+        Assert.Equal("validation", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterReason));
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_UsesDefaultRetryPolicyMaxAttempts_WhenConsumerDoesNotOverrideAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageQueue(transport, new QueueOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+        int attempts = 0;
+        await using var consumer = await queue.StartConsumerAsync<PreviewWorkItem>((_, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("always fails");
+        }, cancellationToken: cts.Token); // no per-consumer MaxAttempts -> default RetryPolicy (2)
+
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "x" }, cancellationToken: cts.Token);
+
+        for (int i = 0; i < 400; i++)
+        {
+            if ((await transport.GetStatsAsync("preview-work-item", cts.Token)).Deadletter == 1)
+                break;
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
+        }
+
+        Assert.Equal(1, (await transport.GetStatsAsync("preview-work-item", cts.Token)).Deadletter);
+        Assert.Equal(2, attempts);
+    }
+
     private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
@@ -523,6 +683,18 @@ public class MessageQueueTests
 
     [MessageRoute("routed-work")]
     private sealed class RoutedWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    [MessageRoute("shared-demux")]
+    private sealed class SharedAWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    [MessageRoute("shared-demux")]
+    private sealed class SharedBWorkItem
     {
         public string? Data { get; set; }
     }
@@ -567,6 +739,83 @@ public class MessageQueueTests
 
         public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
         public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ISupportsDelayedDelivery
+    {
+        private readonly Queue<TransportEntry> _entries = new();
+
+        public CappedDelayTransport(TimeSpan? maxDeliveryDelay)
+        {
+            MaxDeliveryDelay = maxDeliveryDelay;
+        }
+
+        public TimeSpan? MaxDeliveryDelay { get; }
+        public int SendCount { get; private set; }
+        public TransportSendOptions? LastSendOptions { get; private set; }
+
+        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            SendCount += messages.Count;
+            LastSendOptions = options;
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+            {
+                string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
+                _entries.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
+                items[i] = new SendItemResult { MessageId = id, Success = true };
+            }
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<TransportEntry>>(_entries.Count > 0 ? [_entries.Dequeue()] : []);
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // A minimal multi-destination pull transport with NO native dead-letter sink, used to prove core-managed
+    // dead-lettering routes terminal messages to the configured RetryPolicy.DeadLetterDestination.
+    private sealed class NoDeadLetterTransport : IMessageTransport, ISupportsPull
+    {
+        private readonly ConcurrentDictionary<string, ConcurrentQueue<TransportEntry>> _queues = new(StringComparer.Ordinal);
+
+        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            var queue = _queues.GetOrAdd(destination, _ => new ConcurrentQueue<TransportEntry>());
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+            {
+                string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
+                queue.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
+                items[i] = new SendItemResult { MessageId = id, Success = true };
+            }
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        {
+            if (_queues.TryGetValue(source, out var queue) && queue.TryDequeue(out var entry))
+                return Task.FromResult<IReadOnlyList<TransportEntry>>([entry]);
+
+            return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
+        {
+            _queues.GetOrAdd(entry.Destination, _ => new ConcurrentQueue<TransportEntry>()).Enqueue(entry with { DeliveryCount = entry.DeliveryCount + 1 });
+            return Task.CompletedTask;
+        }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 }

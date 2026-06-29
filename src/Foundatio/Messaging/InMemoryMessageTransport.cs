@@ -41,6 +41,10 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     public int? MaxBatchSize => null;
     public long? MaxMessageBytes => null;
 
+    // The in-memory transport has no broker-imposed ceiling on visibility or redelivery delay.
+    public TimeSpan? MaxVisibilityTimeout => null;
+    public TimeSpan? MaxRedeliveryDelay => null;
+
     public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
         ThrowIfDisposed();
