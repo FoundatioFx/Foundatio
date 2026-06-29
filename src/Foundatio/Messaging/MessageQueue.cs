@@ -186,7 +186,7 @@ public sealed class MessageQueue : IQueue
         options ??= new QueueOptions();
         var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageQueue>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
-            static (message, inner) => inner is null ? new MessageQueueException(message) : new MessageQueueException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes);
+            static (message, inner) => inner is null ? new MessageQueueException(message) : new MessageQueueException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
     }
 
     public Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class

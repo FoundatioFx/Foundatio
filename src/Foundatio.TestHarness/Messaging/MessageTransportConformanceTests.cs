@@ -73,10 +73,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
 
             if (transport is ISupportsStats stats)
             {
-                MessageDestinationStats queueStats = await stats.GetStatsAsync("orders", TestCancellationToken);
-                Assert.Equal(0, queueStats.Queued);
-                Assert.Equal(0, queueStats.Working);
-                Assert.Equal(2, queueStats.Completed);
+                // Assert only the point-in-time gauges every broker can report, and tolerate eventual consistency
+                // (e.g. SQS ApproximateNumberOf* lag). Lifetime counters such as Completed are not universally
+                // available across transports, so they are not part of the shared contract.
+                await AssertQueueDrainedAsync(stats, "orders", TestCancellationToken);
             }
         }
         finally
@@ -192,9 +192,10 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
                 new DestinationDeclaration { Name = "orders-subscription-a", Role = DestinationRole.Subscription, Source = "orders-topic" },
                 new DestinationDeclaration { Name = "orders-subscription-b", Role = DestinationRole.Subscription, Source = "orders-topic" });
 
-            await transport.SendAsync("orders-topic", [CreateMessage("fanout")], new TransportSendOptions(), TestCancellationToken);
+            // The caller states the destination role; publishing to a topic must set DestinationRole.Topic.
+            await transport.SendAsync("orders-topic", [CreateMessage("fanout")], new TransportSendOptions { DestinationRole = DestinationRole.Topic }, TestCancellationToken);
 
-            var first = Assert.Single(await pull.ReceiveAsync("orders-subscription-a", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+            var first = Assert.Single(await pull.ReceiveAsync("orders-subscription-a", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
             var second = Assert.Single(await pull.ReceiveAsync("orders-subscription-b", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
 
             Assert.Equal("fanout", ReadBody(first));
@@ -350,16 +351,19 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await EnsureAsync(transport, new DestinationDeclaration { Name = "visibility", Role = DestinationRole.Queue });
             await transport.SendAsync("visibility", [CreateMessage("lease")], new TransportSendOptions(), TestCancellationToken);
 
-            var first = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(250), TestCancellationToken));
+            // Whole-second visibility window: real brokers (e.g. SQS) only support second-resolution visibility timeouts.
+            var visibilityWindow = TimeSpan.FromSeconds(2);
+            var first = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, visibilityWindow, TestCancellationToken));
             Assert.Equal(1, first.DeliveryCount);
 
             // Still within the visibility window: a competing receive must not see the in-flight message.
-            var hidden = await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TimeSpan.FromMilliseconds(250), TestCancellationToken);
+            var hidden = await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, visibilityWindow, TestCancellationToken);
             Assert.Empty(hidden);
 
-            // After the visibility window lapses without settlement, the message must be redelivered (at-least-once).
-            await Task.Delay(TimeSpan.FromMilliseconds(400), TestCancellationToken);
-            var second = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(250), TestCancellationToken));
+            // After the visibility window lapses without settlement the message must be redelivered (at-least-once). A
+            // long poll observes the lapse — a transport wakes a blocked receive when a visibility window expires — so
+            // this is robust to coarse/variable redelivery latency without a fixed sleep.
+            var second = Assert.Single(await visibility.ReceiveAsync("visibility", new ReceiveRequest { MaxWaitTime = visibilityWindow + TimeSpan.FromSeconds(5) }, visibilityWindow, TestCancellationToken));
             Assert.Equal(first.Id, second.Id);
             Assert.Equal(2, second.DeliveryCount);
 
@@ -385,17 +389,19 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await EnsureAsync(transport, new DestinationDeclaration { Name = "redelivery-delay", Role = DestinationRole.Queue });
             await transport.SendAsync("redelivery-delay", [CreateMessage("delay-me")], new TransportSendOptions(), TestCancellationToken);
 
-            var first = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+            var first = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
             Assert.Equal(1, first.DeliveryCount);
 
-            await redelivery.AbandonAsync(first, TimeSpan.FromMilliseconds(300), TestCancellationToken);
+            // Whole-second redelivery delay: SQS serves this via ChangeMessageVisibility, which is second-resolution.
+            var redeliveryDelay = TimeSpan.FromSeconds(2);
+            await redelivery.AbandonAsync(first, redeliveryDelay, TestCancellationToken);
 
             // Within the delay window the message must not be visible again.
-            var early = await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TestCancellationToken);
+            var early = await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, TestCancellationToken);
             Assert.Empty(early);
 
-            // After the delay lapses it is redelivered with an incremented delivery count.
-            var second = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
+            // After the delay lapses it is redelivered with an incremented delivery count. Long poll for robustness.
+            var second = Assert.Single(await pull.ReceiveAsync("redelivery-delay", new ReceiveRequest { MaxWaitTime = redeliveryDelay + TimeSpan.FromSeconds(5) }, TestCancellationToken));
             Assert.Equal(first.Id, second.Id);
             Assert.Equal(2, second.DeliveryCount);
             Assert.Equal("delay-me", ReadBody(second));
@@ -422,17 +428,20 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await EnsureAsync(transport, new DestinationDeclaration { Name = "lock-renewal", Role = DestinationRole.Queue });
             await transport.SendAsync("lock-renewal", [CreateMessage("hold")], new TransportSendOptions(), TestCancellationToken);
 
-            var first = Assert.Single(await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(1) }, TimeSpan.FromMilliseconds(300), TestCancellationToken));
+            // Whole-second windows so the test maps onto second-resolution brokers (e.g. SQS).
+            var originalWindow = TimeSpan.FromSeconds(2);
+            var renewedWindow = TimeSpan.FromSeconds(8);
+            var first = Assert.Single(await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, originalWindow, TestCancellationToken));
             Assert.Equal(1, first.DeliveryCount);
 
             // Renew before the original window lapses, extending it well past the original expiry.
-            await Task.Delay(TimeSpan.FromMilliseconds(150), TestCancellationToken);
-            await lockRenewal.RenewLockAsync(first, TimeSpan.FromSeconds(2), TestCancellationToken);
+            await Task.Delay(TimeSpan.FromSeconds(1), TestCancellationToken);
+            await lockRenewal.RenewLockAsync(first, renewedWindow, TestCancellationToken);
 
-            // Past the original 300ms window but inside the renewed window: the message must still be held, so a
-            // competing receive sees nothing rather than a premature redelivery.
-            await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
-            var held = await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, TimeSpan.FromMilliseconds(300), TestCancellationToken);
+            // Past the original window but inside the renewed window: the message must still be held, so a competing
+            // receive sees nothing rather than a premature redelivery.
+            await Task.Delay(originalWindow, TestCancellationToken);
+            var held = await visibility.ReceiveAsync("lock-renewal", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, originalWindow, TestCancellationToken);
             Assert.Empty(held);
 
             await transport.CompleteAsync(first, TestCancellationToken);
@@ -504,6 +513,21 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     {
         if (transport is not null)
             await CleanupTransportAsync(transport);
+    }
+
+    // Polls until the destination reports no queued or in-flight messages (the point-in-time gauges every broker can
+    // report), tolerating transports whose stats are only eventually consistent (e.g. SQS ApproximateNumberOf*).
+    private async Task AssertQueueDrainedAsync(ISupportsStats stats, string destination, CancellationToken cancellationToken)
+    {
+        var current = await stats.GetStatsAsync(destination, cancellationToken);
+        for (int attempt = 0; attempt < 50 && (current.Queued != 0 || current.Working != 0); attempt++)
+        {
+            await Task.Delay(100, cancellationToken);
+            current = await stats.GetStatsAsync(destination, cancellationToken);
+        }
+
+        Assert.Equal(0, current.Queued);
+        Assert.Equal(0, current.Working);
     }
 
     private static async Task EnsureAsync(IMessageTransport transport, params DestinationDeclaration[] declarations)

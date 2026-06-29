@@ -39,6 +39,13 @@ public sealed record TransportMessage
     public required ReadOnlyMemory<byte> Body { get; init; }
     public MessageHeaders Headers { get; init; } = MessageHeaders.Empty;
     public string? MessageId { get; init; }
+
+    /// <summary>
+    /// Content type of <see cref="Body"/> (e.g. <c>application/json</c>). A transport whose native wire format is text
+    /// (such as SQS/SNS) can store a text body directly when this indicates text, avoiding base64 overhead; null means
+    /// unknown, so a byte-safe encoding should be used.
+    /// </summary>
+    public string? ContentType { get; init; }
 }
 
 public sealed record TransportSendOptions
@@ -47,6 +54,13 @@ public sealed record TransportSendOptions
     public DateTimeOffset? DeliverAt { get; init; }
     public string? DeduplicationId { get; init; }
     public string? PartitionKey { get; init; }
+
+    /// <summary>
+    /// The role of the destination being sent to. Lets a transport route the send without inferring (for example, a
+    /// queue send to SQS vs. a topic publish to SNS) — the caller always knows whether it is sending to a queue or a
+    /// topic, so it states it rather than relying on prior provisioning.
+    /// </summary>
+    public DestinationRole DestinationRole { get; init; } = DestinationRole.Queue;
 }
 
 public sealed record TransportEntry
@@ -73,15 +87,20 @@ public sealed record ReceiveRequest
 
 public sealed record MessageDestinationStats
 {
+    // Point-in-time gauges every transport can report (may be approximate / eventually consistent on real brokers,
+    // e.g. SQS ApproximateNumberOf*).
     public long Queued { get; init; }
     public long Working { get; init; }
     public long Deadletter { get; init; }
-    public long Enqueued { get; init; }
-    public long Dequeued { get; init; }
-    public long Completed { get; init; }
-    public long Abandoned { get; init; }
-    public long Errors { get; init; }
-    public long Timeouts { get; init; }
+
+    // Lifetime counters. Not universally available — a transport that does not track a counter leaves it null (e.g.
+    // SQS exposes no lifetime "completed" count). Null means "not reported", distinct from a reported zero.
+    public long? Enqueued { get; init; }
+    public long? Dequeued { get; init; }
+    public long? Completed { get; init; }
+    public long? Abandoned { get; init; }
+    public long? Errors { get; init; }
+    public long? Timeouts { get; init; }
 }
 
 public sealed record SendItemResult
@@ -98,6 +117,11 @@ public sealed record SendResult
     public bool AllSucceeded => Items.All(i => i.Success);
 }
 
+/// <summary>
+/// Thrown when a transport settle operation is given a receipt that has expired or was already settled. Strict receipt
+/// validation is transport-specific: some brokers (e.g. SQS) treat settling with a stale receipt as idempotent and do
+/// not raise, so callers must not depend on this exception for correctness — it is a best-effort safety signal.
+/// </summary>
 public sealed class ReceiptExpiredException : Exception
 {
     public ReceiptExpiredException() : base("The transport receipt has expired or has already been settled.") { }

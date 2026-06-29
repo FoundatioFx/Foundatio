@@ -1,0 +1,10 @@
+services:
+  localstack:
+    # Pinned to the 3.x community edition: SQS/SNS run free, with no auth token (the rolling `latest`/Pro tag now
+    # requires a LocalStack license).
+    image: localstack/localstack:3
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sqs,sns
+      - DEBUG=0

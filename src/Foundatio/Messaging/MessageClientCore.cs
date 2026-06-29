@@ -77,12 +77,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly Func<string, Exception?, Exception> _exceptionFactory;
     private readonly RetryPolicy _retryPolicy;
     private readonly IMessageTypeRegistry _typeRegistry;
+    private readonly string? _contentType;
     private readonly bool _ownsTransport;
     private readonly ConcurrentDictionary<string, SourceListener> _sources = new(StringComparer.Ordinal);
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
-        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null)
+        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null, string? contentType = null)
     {
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _serializer = serializer;
@@ -93,6 +94,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         _exceptionFactory = exceptionFactory;
         _retryPolicy = retryPolicy ?? new RetryPolicy();
         _typeRegistry = typeRegistry ?? new MessageTypeRegistry();
+        _contentType = contentType;
         _ownsTransport = ownsTransport;
     }
 
@@ -110,7 +112,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         ThrowIfDisposed();
         ValidateCapabilities(options.Priority, options.TimeToLive);
 
-        var sendOptions = BuildSendOptions(options);
+        var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
         string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
         var transportMessage = CreateTransportMessage(message, messageType, options, messageId);
 
@@ -133,7 +135,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         ThrowIfDisposed();
         ValidateCapabilities(options.Priority, options.TimeToLive);
 
-        var sendOptions = BuildSendOptions(options);
+        var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
         var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
         int index = 0;
 
@@ -538,8 +540,16 @@ internal sealed class MessageClientCore : IAsyncDisposable
         {
             Body = _serializer.SerializeToBytes(message),
             Headers = headers.Build(),
-            MessageId = messageId
+            MessageId = messageId,
+            ContentType = _contentType
         };
+    }
+
+    // A pub/sub publish targets a topic; everything else targets a queue. Stating the role lets the transport route
+    // without inferring (e.g. SNS publish vs. SQS send).
+    private static DestinationRole RoleFor(ScheduledDispatchKind kind)
+    {
+        return kind == ScheduledDispatchKind.PubSubMessage ? DestinationRole.Topic : DestinationRole.Queue;
     }
 
     private TransportSendOptions BuildSendOptions(MessageEnvelopeOptions options)
