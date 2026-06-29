@@ -93,7 +93,7 @@ public sealed class PubSub : IPubSub
         options ??= new PubSubOptions();
         var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<PubSub>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
-            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes);
+            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
     }
 
     public Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class

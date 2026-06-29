@@ -52,6 +52,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
+        // Honor the caller-stated destination role so a publish fans out even if the topic was not provisioned first.
+        // TryAdd never clobbers an existing role (distinct names are used for queues vs. topics).
+        if (options.DestinationRole == DestinationRole.Topic)
+            _roles.TryAdd(destination, DestinationRole.Topic);
+
         if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
             throw new NotSupportedException($"Transport \"{GetType().Name}\" does not support native delayed delivery. Use the runtime-store scheduled dispatch fallback.");
 
@@ -210,6 +215,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         if (!state.InFlight.TryUpdate(receipt.LockToken, renewed, inFlight))
             throw new ReceiptExpiredException();
 
+        // Re-arm the reclaim wake for the extended window.
+        ScheduleReclaim(state, duration ?? _defaultLockRenewal);
         return Task.CompletedTask;
     }
 
@@ -486,6 +493,37 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             timer.Dispose();
     }
 
+    // Fires shortly after a visibility window lapses and reclaims any expired in-flight messages, which re-enqueues
+    // them and releases the destination's availability semaphore — waking a consumer blocked in a long receive.
+    // ReclaimExpired re-checks each message's current expiry, so a renewed or already-settled message is left alone.
+    private void ScheduleReclaim(DestinationState state, TimeSpan delay)
+    {
+        // Small buffer so the timer fires just after expiry rather than racing it (clock granularity).
+        var fireAfter = delay + TimeSpan.FromMilliseconds(50);
+
+        ITimer? timer = null;
+        timer = _timeProvider.CreateTimer(timerState =>
+        {
+            if (timer is not null && _redeliveryTimers.TryRemove(timer, out _))
+                timer.Dispose();
+
+            if (Volatile.Read(ref _isDisposed) == 1)
+                return;
+
+            try
+            {
+                state.ReclaimExpired(_timeProvider.GetUtcNow());
+            }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { } // destination was completed/deleted between scheduling and firing
+        }, null, fireAfter, Timeout.InfiniteTimeSpan);
+
+        _redeliveryTimers[timer] = 0;
+
+        if (Volatile.Read(ref _isDisposed) == 1 && _redeliveryTimers.TryRemove(timer, out _))
+            timer.Dispose();
+    }
+
     private bool TryReceive(string source, DestinationState state, TimeSpan? visibility, out TransportEntry entry)
     {
         while (state.TryDequeue(out var message))
@@ -500,6 +538,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             DateTimeOffset? visibilityExpiresUtc = visibility is { } window ? _timeProvider.GetUtcNow().Add(window) : null;
             state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
             Interlocked.Increment(ref state.Dequeued);
+
+            // Schedule a reclaim at the visibility expiry so a consumer blocked in a long receive wakes when the lease
+            // lapses (matching real brokers like SQS), rather than only being reclaimed at the next receive call.
+            if (visibility is { } visibilityWindow)
+                ScheduleReclaim(state, visibilityWindow);
 
             entry = new TransportEntry
             {
