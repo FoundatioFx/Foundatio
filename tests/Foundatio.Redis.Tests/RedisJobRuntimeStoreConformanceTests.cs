@@ -2,7 +2,6 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Tests.Jobs;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests;
@@ -14,26 +13,12 @@ namespace Foundatio.Redis.Tests;
 /// </summary>
 public class RedisJobRuntimeStoreConformanceTests : JobRuntimeStoreConformanceTests
 {
-    private static readonly Lazy<IConnectionMultiplexer?> SharedConnection = new(() =>
-    {
-        string? connectionString = Environment.GetEnvironmentVariable("FOUNDATIO_REDIS_CONNECTION_STRING");
-        return String.IsNullOrEmpty(connectionString) ? null : ConnectionMultiplexer.Connect(connectionString);
-    });
-
     public RedisJobRuntimeStoreConformanceTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IJobRuntimeStore? CreateStore(TimeProvider timeProvider)
-    {
-        if (SharedConnection.Value is not { } connection)
-            return null; // not configured -> the base suite skips every test
-
-        return new RedisJobRuntimeStore(new RedisJobRuntimeStoreOptions
-        {
-            ConnectionMultiplexer = connection,
-            KeyPrefix = $"fnd-conf:{Guid.NewGuid():N}:",
-            TimeProvider = timeProvider
-        });
-    }
+    protected override IJobRuntimeStore? CreateStore(TimeProvider timeProvider) =>
+        RedisTestConnection.Multiplexer is { } connection
+            ? RedisTestConnection.CreateStore(connection, timeProvider)
+            : null; // not configured -> the base suite skips every test
 
     [Fact]
     public override Task JobLifecycle_RoundTripsAndTransitionsAsync() => base.JobLifecycle_RoundTripsAndTransitionsAsync();
