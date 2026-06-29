@@ -110,19 +110,6 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task ReportProgressAsync_WhenUntracked_ThrowsAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        await using var queue = new MessageQueue(new InMemoryMessageTransport());
-
-        await queue.EnqueueAsync(new PreviewWorkItem { Data = "progress" }, cancellationToken: cancellationToken);
-        var message = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
-        Assert.NotNull(message);
-
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await message.ReportProgressAsync(50, "half", cancellationToken));
-    }
-
-    [Fact]
     public async Task RejectAsync_Terminal_DeadLettersAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -516,6 +503,47 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task StartConsumerAsync_WithGroupedInterfaceRoute_DeserializesConcreteTypeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .MapQueue("grouped-work", typeof(IGroupedWorkItem))
+            .Build();
+        await using var queue = new MessageQueue(new InMemoryMessageTransport(), new QueueOptions { Router = new DefaultMessageRouter(routing) });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var received = new ConcurrentDictionary<Type, string?>();
+        var signal = new AsyncCountdownEvent(2);
+
+        // An interface-typed consumer receives the concrete payload (assignable to the interface), not raw bytes —
+        // the core resolves the concrete type from the message-type header and deserializes that.
+        await using var consumer = await queue.StartConsumerAsync<IGroupedWorkItem>((message, _) =>
+        {
+            string? data = message.Message switch
+            {
+                PreviewWorkItem p => p.Data,
+                OtherWorkItem o => o.Data,
+                _ => null
+            };
+            received[message.Message.GetType()] = data;
+            signal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        await queue.EnqueueBatchAsync(new object[]
+        {
+            new PreviewWorkItem { Data = "one" },
+            new OtherWorkItem { Data = "two" }
+        }, cancellationToken: cts.Token);
+
+        await signal.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("one", received[typeof(PreviewWorkItem)]);
+        Assert.Equal("two", received[typeof(OtherWorkItem)]);
+    }
+
+    [Fact]
     public async Task ReceiveAsync_WithDefaultQueueRoute_ReturnsRawMessageAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -674,6 +702,44 @@ public class MessageQueueTests
         Assert.Equal(2, attempts);
     }
 
+    [Fact]
+    public async Task DisposeAsync_RespectsTransportOwnershipAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // Non-owning client (shared transport): disposing the client leaves the transport usable.
+        var shared = new InMemoryMessageTransport();
+        var nonOwning = new MessageQueue(shared, new QueueOptions { OwnsTransport = false });
+        await nonOwning.DisposeAsync();
+        await shared.SendAsync("still-alive", [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken);
+        await shared.DisposeAsync();
+
+        // Owning client (default): disposing the client disposes the transport.
+        var owned = new InMemoryMessageTransport();
+        var owning = new MessageQueue(owned);
+        await owning.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await owned.SendAsync("dead", [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken));
+    }
+
+    [Fact]
+    public async Task DiBuiltClients_ShareTransport_DisposedExactlyOnceAsync()
+    {
+        var transport = new DisposeCountingTransport();
+        var services = new ServiceCollection();
+        services.AddFoundatio().Messaging.UseTransport(transport);
+        await using var provider = services.BuildServiceProvider();
+
+        // Both clients resolve the same singleton transport.
+        _ = provider.GetRequiredService<Foundatio.Messaging.IQueue>();
+        _ = provider.GetRequiredService<IPubSub>();
+
+        await provider.DisposeAsync();
+
+        // The container owns the shared transport singleton; neither client disposes it, so it is disposed once.
+        Assert.Equal(1, transport.DisposeCount);
+    }
+
     private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
@@ -817,5 +883,23 @@ public class MessageQueueTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // Counts dispose calls without an idempotency guard, so a double-dispose (the bug item 6 fixes) would show as > 1.
+    private sealed class DisposeCountingTransport : IMessageTransport
+    {
+        public int DisposeCount { get; private set; }
+
+        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+            => Task.FromResult(new SendResult { Items = Array.Empty<SendItemResult>() });
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
     }
 }

@@ -80,8 +80,16 @@ public sealed record QueueOptions
     public ISerializer Serializer { get; init; } = DefaultSerializer.Instance;
     public string ContentType { get; init; } = "application/json";
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
+    public IMessageTypeRegistry MessageTypes { get; init; } = new MessageTypeRegistry();
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public RetryPolicy RetryPolicy { get; init; } = new();
+
+    /// <summary>
+    /// Whether disposing this queue also disposes the transport. True (default) for a transport this queue created or
+    /// solely uses; set false when the transport is a shared/externally-owned instance (e.g. a DI singleton also used
+    /// by a pub/sub client) so it is disposed exactly once by its owner.
+    /// </summary>
+    public bool OwnsTransport { get; init; } = true;
     public TimeProvider TimeProvider { get; init; } = TimeProvider.System;
     public ILoggerFactory? LoggerFactory { get; init; }
 }
@@ -157,7 +165,6 @@ public interface IReceivedMessage
     Task CompleteAsync(CancellationToken cancellationToken = default);
     Task RejectAsync(RejectOptions? options = null, CancellationToken cancellationToken = default);
     Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default);
-    Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default);
 }
 
 public interface IReceivedMessage<out T> : IReceivedMessage where T : class
@@ -179,7 +186,7 @@ public sealed class MessageQueue : IQueue
         options ??= new QueueOptions();
         var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageQueue>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
-            static (message, inner) => inner is null ? new MessageQueueException(message) : new MessageQueueException(message, inner), options.RetryPolicy);
+            static (message, inner) => inner is null ? new MessageQueueException(message) : new MessageQueueException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes);
     }
 
     public Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class

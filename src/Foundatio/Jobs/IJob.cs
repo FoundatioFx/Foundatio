@@ -32,6 +32,17 @@ public interface IJobWithOptions : IJob
     JobOptions? Options { get; set; }
 }
 
+/// <summary>
+/// A durable job that wants its <see cref="JobExecutionContext"/> — job id, attempt number, and store-backed progress,
+/// lease heartbeat, and cooperative cancellation checks. The durable runtime sets <see cref="ExecutionContext"/> on the
+/// job instance before invoking it. Jobs that use the context should be registered as transient (a fresh instance per
+/// run), since the context is per-run state, matching <see cref="IJobWithOptions"/>.
+/// </summary>
+public interface IJobWithExecutionContext : IJob
+{
+    JobExecutionContext? ExecutionContext { get; set; }
+}
+
 public static class JobExtensions
 {
     public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default)

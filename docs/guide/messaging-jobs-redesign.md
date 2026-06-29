@@ -80,7 +80,23 @@ await using var cancelled = await queue.StartConsumerAsync<OrderCancelled>(Handl
 // One loop on the shared destination. OrderSubmitted is dispatched to the first handler, OrderCancelled to the second.
 ```
 
-Consumers that share a message type compete: each message is dispatched to one of them, round-robin. The non-generic `StartConsumerAsync` (or a consumer whose route type is an interface/base type) is a catch-all that receives any type no exact-typed consumer claimed — the grouped/raw-envelope path. All consumers on one destination must agree on `MaxConcurrency` (it is a property of the shared loop). A message whose type has **no** registered consumer on this node is handled loudly — see [Unmatched message types](#unmatched-message-types).
+Consumers that share a message type compete: each message is dispatched to one of them, round-robin. All consumers on one destination must agree on `MaxConcurrency` (it is a property of the shared loop). A message whose type has **no** registered consumer on this node is handled loudly — see [Unmatched message types](#unmatched-message-types).
+
+A consumer whose route type is an interface or base type is a **grouped** consumer and receives the concrete payload (assignable to that type), not raw bytes:
+
+```csharp
+await using var all = await queue.StartConsumerAsync<IOrderMessage>(HandleAnyAsync);
+// HandleAnyAsync receives IReceivedMessage<IOrderMessage> whose Message is the concrete OrderSubmitted / OrderCancelled.
+```
+
+The concrete type is resolved from the `message.type` header through `IMessageTypeRegistry` and deserialized as the actual payload type. The registry is the stable wire discriminator in both directions — register stable names for types that may move between assemblies/namespaces; unregistered types fall back to `Type.FullName` (never `AssemblyQualifiedName`):
+
+```csharp
+services.AddFoundatio()
+    .Messaging.RegisterMessageType<OrderSubmitted>("order.submitted");
+```
+
+The raw-envelope path (non-generic `ReceiveAsync(new QueueReceiveOptions { RouteType = ... })`) remains for callers that want the bytes without deserialization.
 
 ## Pub/Sub
 
@@ -224,6 +240,18 @@ services.AddFoundatio()
 ```
 
 Unregistered jobs fall back to `Type.FullName`, not `AssemblyQualifiedName`.
+
+### Execution context
+
+A job that wants its runtime identity and store-backed operations implements `IJobWithExecutionContext`; the runtime sets `ExecutionContext` before invoking it. The context exposes `JobId`, `Attempt`, the cancellation token, and `ReportProgressAsync`, `RenewLeaseAsync` (heartbeat for long runs), and `IsCancellationRequestedAsync` — the parts of `IJobRuntimeStore` useful from inside job code. Jobs that use it should be registered transient (the context is per-run state). Untracked queue/pub-sub messages have no progress concept, so `IReceivedMessage` has no `ReportProgressAsync`.
+
+### Recovery
+
+The runtime pump reclaims jobs stuck in `Processing` past their lease (a worker that crashed mid-run), not just CRON occurrences: `IJobRuntimeStore.GetExpiredProcessingAsync` surfaces them and the worker re-queues them while attempts remain (`JobRuntimeServiceOptions.MaxJobAttempts`), otherwise dead-letters them. The status CAS serializes concurrent reclaimers.
+
+### CRON
+
+The redesigned durable CRON path materializes durable, recoverable occurrences through `IJobScheduler` → `JobScheduleProcessor` → the runtime store and pump. The legacy hosted `AddCronJob`/`AddJobScheduler` API still wires the in-process `ScheduledJobService` and is retained as **legacy/compat only**; routing the default hosted CRON API onto the durable scheduler is a planned follow-up (best validated alongside a real provider, since durable distributed CRON leans on the runtime store's transition semantics).
 
 ## Migration
 
