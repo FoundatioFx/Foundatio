@@ -16,6 +16,22 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
     }
 
     [Fact]
+    public void SubscriptionAddress_FormatsAndParsesTopicAndSubscription()
+    {
+        string destination = SubscriptionAddress.Format("orders", "sub-a");
+        Assert.Equal("orders/sub-a", destination);
+
+        Assert.True(SubscriptionAddress.TryParse(destination, out string topic, out string subscription));
+        Assert.Equal("orders", topic);
+        Assert.Equal("sub-a", subscription);
+
+        // A bare (non-subscription) destination is not a subscription address.
+        Assert.False(SubscriptionAddress.TryParse("orders", out string bareTopic, out string bareSubscription));
+        Assert.Equal("orders", bareTopic);
+        Assert.Equal("", bareSubscription);
+    }
+
+    [Fact]
     public void MessageHeaders_AreImmutableAndCaseInsensitive()
     {
         var source = new Dictionary<string, string>(StringComparer.Ordinal)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -343,9 +344,52 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         return response.TopicArn;
     }
 
-    // SQS queue names and SNS topic names allow alphanumerics, hyphens and underscores; the logical destination name
-    // already conforms, so we only prepend the configured prefix.
-    private string ResourceName(string logicalName) => _options.ResourcePrefix + logicalName;
+    // SQS queue / SNS topic names allow only [A-Za-z0-9_-] (max 80 chars). Most logical names already conform, but a
+    // pub/sub subscription's destination is the opaque "topic/subscription" key (see SubscriptionAddress) which
+    // contains '/'. Encode any illegal name deterministically and collision-free — sanitize, then append a short
+    // stable hash of the original — so EnsureAsync/ReceiveAsync/CompleteAsync all resolve the same queue from the same
+    // logical name. Legal names are returned unchanged (no behavior change for plain queues/topics).
+    private string ResourceName(string logicalName) => EncodeResourceName(_options.ResourcePrefix, logicalName);
+
+    private static string EncodeResourceName(string prefix, string logicalName)
+    {
+        string candidate = prefix + logicalName;
+        if (IsResourceNameLegal(candidate))
+            return candidate;
+
+        string suffix = "-" + StableHash(candidate);
+        string sanitized = SanitizeResourceName(candidate);
+        if (sanitized.Length > 80 - suffix.Length)
+            sanitized = sanitized[..(80 - suffix.Length)];
+        return sanitized + suffix;
+    }
+
+    private static bool IsResourceNameLegal(string name)
+    {
+        if (name.Length is 0 or > 80)
+            return false;
+        foreach (char c in name)
+        {
+            if (!(Char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string SanitizeResourceName(string name)
+    {
+        var builder = new StringBuilder(name.Length);
+        foreach (char c in name)
+            builder.Append(Char.IsAsciiLetterOrDigit(c) || c is '-' or '_' ? c : '-');
+        return builder.ToString();
+    }
+
+    private static string StableHash(string value)
+    {
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash, 0, 4).ToLowerInvariant(); // 8 hex chars
+    }
 
     private async Task<string> GetQueueArnAsync(string queueUrl, CancellationToken ct)
     {

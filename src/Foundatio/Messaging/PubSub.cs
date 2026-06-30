@@ -162,7 +162,7 @@ public sealed class PubSub : IPubSub
             Subscription = subscription,
             // The transport source is the topic-qualified subscription destination, not the bare subscription name, so
             // the same subscription identity used on two topics resolves to two distinct sources (and isolates).
-            Source = SubscriptionDestination(topic, subscription),
+            Source = SubscriptionAddress.Format(topic, subscription),
             Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{topic}:{subscription}:{routeType.FullName ?? routeType.Name}",
             MessageType = routeType,
             AckMode = options.AckMode,
@@ -183,13 +183,6 @@ public sealed class PubSub : IPubSub
             new DestinationDeclaration { Name = config.Topic, Role = DestinationRole.Topic },
             new DestinationDeclaration { Name = config.Source, Role = DestinationRole.Subscription, Source = config.Topic }
         ], cancellationToken);
-    }
-
-    // The topic-qualified subscription destination. The topic is part of the identity so the same subscription name on
-    // two topics does not collide on one transport source. (A provider can map this to its native subscription address.)
-    private static string SubscriptionDestination(string topic, string subscription)
-    {
-        return $"{topic}/{subscription}";
     }
 
     private string GetTopic(Type messageType, string? topic)
