@@ -9,5 +9,8 @@
 
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0" />
+    <!-- IHostedService/BackgroundService for the durable job-runtime pump that UseRuntimeStore registers, so a
+         configured runtime store actually drains (jobs run; the messaging delayed-delivery fallback fires). -->
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="8.0" />
   </ItemGroup>
 </Project>

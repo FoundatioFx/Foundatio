@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
@@ -9,6 +10,7 @@ using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio;
@@ -472,6 +474,14 @@ public class FoundatioBuilder : IFoundatioBuilder
                 sp.GetService<TimeProvider>(),
                 transport: sp.GetService<IMessageTransport>(),
                 jobTypes: sp.GetRequiredService<IJobTypeRegistry>()));
+
+            // A runtime store is inert without something draining it, so register the pump alongside the store: in a
+            // hosted process it runs jobs and the messaging delayed-delivery fallback automatically (no separate
+            // AddJobRuntimeService call); in a non-hosted process the IHostedService is simply never started. Guarded so
+            // repeated UseRuntimeStore/UseInMemoryRuntime calls don't stack multiple pumps. Options default unless
+            // AddJobRuntimeService (or a registered JobRuntimePumpOptions) overrides them.
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimePumpService)))
+                _services.AddSingleton<IHostedService, JobRuntimePumpService>();
         }
     }
 
