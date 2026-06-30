@@ -308,6 +308,79 @@ public class JobSchedulerTests
         Assert.Equal(1, probe.RunCount);
     }
 
+    [Fact]
+    public async Task RunQueuedAsync_DoesNotClaimScheduledOccurrencesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobSchedulerProbe();
+        await using var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+
+        // A CRON occurrence sitting in Queued (the scheduler transitioned it Scheduled->Queued) must NOT be claimed by
+        // the generic worker — only the scheduler runs occurrences, with its own retry/dead-letter accounting.
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = "nightly:20260101000000:global",
+            Name = "nightly",
+            JobType = typeof(ScheduledProbeJob).FullName,
+            Status = JobStatus.Queued,
+            ScheduledForUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)
+        }, cancellationToken);
+
+        Assert.Equal(0, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
+        Assert.Equal(0, probe.RunCount);
+        Assert.Equal(JobStatus.Queued, (await store.GetAsync("nightly:20260101000000:global", cancellationToken))!.Status);
+    }
+
+    [Fact]
+    public async Task RunDueOccurrencesAsync_WhenOccurrenceIsTerminal_RetiresDispatchInsteadOfReschedulingAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var scheduler = new InMemoryJobScheduler();
+        var store = new InMemoryJobRuntimeStore();
+        var processor = CreateProcessor(scheduler, store, "node-a");
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
+        const string jobId = "nightly:20260101000000:global";
+
+        await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "* * * * *", JobType = typeof(ScheduledProbeJob) }, cancellationToken);
+        // A worker completed the occurrence but crashed before retiring its dispatch: a terminal job with a live dispatch.
+        await store.CreateIfAbsentAsync(new JobState { JobId = jobId, Name = "nightly", Status = JobStatus.Completed, ScheduledForUtc = now.AddSeconds(-30) }, cancellationToken);
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState { DispatchId = jobId, Kind = ScheduledDispatchKind.JobOccurrence, Destination = "nightly", Body = Array.Empty<byte>(), DueUtc = now, JobId = jobId }, cancellationToken);
+
+        await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
+
+        // The dispatch for a terminal occurrence must be retired, not rescheduled +1min and re-claimed forever.
+        Assert.Empty(await store.ClaimDueDispatchesAsync(now.AddMinutes(5), 10, "node-b", TimeSpan.FromMinutes(5), cancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueDueOccurrencesAsync_PerNodeScope_WithDelimiterInNodeId_DoesNotCrossMatchAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var scheduler = new InMemoryJobScheduler();
+        var store = new InMemoryJobRuntimeStore();
+        // Node ids that are suffix-confusable under a naive EndsWith(":{scope}") check — the default NodeIdentity contains ':'.
+        var nodeXB = CreateProcessor(scheduler, store, "x:b");
+        var nodeB = CreateProcessor(scheduler, store, "b");
+        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
+
+        await scheduler.ScheduleAsync(new ScheduledJobDefinition
+        {
+            Name = "per-node",
+            Cron = "* * * * *",
+            JobType = typeof(ScheduledProbeJob),
+            Scope = ScheduledJobScope.PerNode // default Overlap = SkipIfRunning, which runs the active-occurrence check
+        }, cancellationToken);
+
+        Assert.Single(await nodeXB.EnqueueDueOccurrencesAsync(now, cancellationToken)); // creates "per-node:...:x:b"
+        // node "b" must still materialize its own occurrence; node "x:b"'s occurrence must not be mistaken for node "b"'s.
+        Assert.Single(await nodeB.EnqueueDueOccurrencesAsync(now, cancellationToken));  // creates "per-node:...:b"
+
+        var states = await store.QueryAsync(new JobQuery { Name = "per-node", Limit = 100 }, cancellationToken);
+        Assert.Equal(2, states.Count);
+    }
+
     private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
     {
         var serviceProvider = new ServiceCollection()
