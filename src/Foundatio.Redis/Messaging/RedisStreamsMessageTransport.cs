@@ -74,7 +74,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         {
             RedisValue id = await _db.StreamAddAsync(streamKey, BuildFields(message), messageId: null,
                 maxLength: _options.MaxStreamLength, useApproximateMaxLength: true).ConfigureAwait(false);
-            items.Add(new SendItemResult { MessageId = id.ToString(), Success = true });
+            items.Add(new SendItemResult { MessageId = id.ToString() });
         }
 
         return new SendResult { Items = items };
@@ -358,7 +358,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     private TransportEntry ToEntry(string destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
     {
         string? messageId = GetField(entry, "id");
-        var headers = DecodeHeaders(GetField(entry, "h"));
+        var headers = MessageHeaders.DeserializeFromJson(GetField(entry, "h"));
         Receipt receipt = resolved is null
             ? default
             : new Receipt { TransportState = new StreamReceipt(resolved.StreamKey.ToString(), resolved.Group, entry.Id.ToString(), token) };
@@ -384,7 +384,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         [
             new NameValueEntry("id", messageId ?? ""),
             new NameValueEntry("ct", contentType ?? ""),
-            new NameValueEntry("h", EncodeHeaders(headers)),
+            new NameValueEntry("h", MessageHeaders.SerializeToJson(headers)),
             new NameValueEntry("b", body.ToArray())
         ];
     }
@@ -411,21 +411,6 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         return ReadOnlyMemory<byte>.Empty;
     }
 
-    private static string EncodeHeaders(MessageHeaders headers)
-    {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var header in headers)
-            map[header.Key] = header.Value;
-        return JsonSerializer.Serialize(map);
-    }
-
-    private static MessageHeaders DecodeHeaders(string? json)
-    {
-        if (String.IsNullOrEmpty(json))
-            return MessageHeaders.Empty;
-        var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-        return map is null ? MessageHeaders.Empty : MessageHeaders.Create(map);
-    }
 
     // Stream ids are "<unix-ms>-<seq>"; the timestamp half is the broker enqueue time.
     private static DateTimeOffset? ParseStreamIdTime(RedisValue id)

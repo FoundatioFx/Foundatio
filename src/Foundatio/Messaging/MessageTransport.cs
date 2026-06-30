@@ -105,16 +105,21 @@ public sealed record MessageDestinationStats
 
 public sealed record SendItemResult
 {
+    /// <summary>The broker-assigned id of the accepted message.</summary>
     public string? MessageId { get; init; }
-    public required bool Success { get; init; }
-    public string? ErrorCode { get; init; }
-    public bool IsRetryable { get; init; }
 }
 
+/// <summary>
+/// The result of a successful <see cref="IMessageTransport.SendAsync"/>: the accepted messages' ids, in order.
+/// </summary>
+/// <remarks>
+/// Send is throw-on-failure: a transport throws for any failure rather than returning a failed item, so every item in
+/// <see cref="Items"/> was accepted. A multi-message send is NOT atomic — if a later message fails, earlier messages
+/// may already have been delivered before the exception propagates.
+/// </remarks>
 public sealed record SendResult
 {
     public required IReadOnlyList<SendItemResult> Items { get; init; }
-    public bool AllSucceeded => Items.All(i => i.Success);
 }
 
 /// <summary>

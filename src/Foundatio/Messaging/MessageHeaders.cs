@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Foundatio.Messaging;
 
@@ -39,6 +40,29 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
         return values.Count == 0
             ? Empty
             : new MessageHeaders(values.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The canonical on-the-wire encoding for headers (a JSON object). Transports should use this rather than rolling
+    /// their own so the round-trip semantics — notably case-insensitive keys (see <see cref="Create"/>) — are identical
+    /// and contractually guaranteed across providers.
+    /// </summary>
+    public static string SerializeToJson(MessageHeaders headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var header in headers)
+            map[header.Key] = header.Value;
+        return JsonSerializer.Serialize(map);
+    }
+
+    /// <summary>Reads headers from the canonical encoding produced by <see cref="SerializeToJson"/>.</summary>
+    public static MessageHeaders DeserializeFromJson(string? json)
+    {
+        if (String.IsNullOrEmpty(json))
+            return Empty;
+        var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        return map is null ? Empty : Create(map);
     }
 
     public bool ContainsKey(string key)

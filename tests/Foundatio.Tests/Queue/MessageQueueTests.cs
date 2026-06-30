@@ -833,7 +833,7 @@ public class MessageQueueTests
             SendBatchSizes.Add(messages.Count);
             var items = new SendItemResult[messages.Count];
             for (int i = 0; i < messages.Count; i++)
-                items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N"), Success = true };
+                items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N") };
 
             return Task.FromResult(new SendResult { Items = items });
         }
@@ -865,7 +865,7 @@ public class MessageQueueTests
             {
                 string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
                 _entries.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
-                items[i] = new SendItemResult { MessageId = id, Success = true };
+                items[i] = new SendItemResult { MessageId = id };
             }
 
             return Task.FromResult(new SendResult { Items = items });
@@ -895,7 +895,7 @@ public class MessageQueueTests
             {
                 string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
                 queue.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
-                items[i] = new SendItemResult { MessageId = id, Success = true };
+                items[i] = new SendItemResult { MessageId = id };
             }
 
             return Task.FromResult(new SendResult { Items = items });
