@@ -171,12 +171,12 @@ public interface IMessageTransport : IAsyncDisposable
 
 public interface ISupportsPull : IMessageTransport
 {
-    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct);
+    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct = default);
 }
 
 public interface ISupportsPush : IMessageTransport
 {
-    Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct);
+    Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default);
 }
 
 public interface ISupportsRedeliveryDelay : IMessageTransport
@@ -186,21 +186,21 @@ public interface ISupportsRedeliveryDelay : IMessageTransport
     // fallback instead of being silently clamped by the broker.
     TimeSpan? MaxRedeliveryDelay { get; }
 
-    Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct);
+    Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct = default);
 }
 
 public interface ISupportsDeadLetter : IMessageTransport
 {
-    Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct);
+    Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct = default);
 
     // Reads dead-lettered entries for a destination so callers can inspect raw payloads (including poison messages
     // that never deserialized) and the dead-letter reason header. Read entries are removed from the dead-letter store.
-    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct);
+    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct = default);
 }
 
 public interface ISupportsLockRenewal : IMessageTransport
 {
-    Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct);
+    Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct = default);
 }
 
 public interface ISupportsVisibilityTimeout : IMessageTransport
@@ -210,12 +210,12 @@ public interface ISupportsVisibilityTimeout : IMessageTransport
     // unsatisfiable rather than relying on a silently clamped value.
     TimeSpan? MaxVisibilityTimeout { get; }
 
-    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct);
+    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default);
 }
 
 public interface ISupportsStats : IMessageTransport
 {
-    Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct);
+    Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct = default);
 }
 
 public interface ISupportsPriority : IMessageTransport { }
@@ -232,9 +232,9 @@ public interface ISupportsExpiration : IMessageTransport { }
 
 public interface ISupportsProvisioning : IMessageTransport
 {
-    Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken ct);
-    Task DeleteAsync(string name, CancellationToken ct);
-    Task<bool> ExistsAsync(string name, CancellationToken ct);
+    Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken ct = default);
+    Task DeleteAsync(string name, CancellationToken ct = default);
+    Task<bool> ExistsAsync(string name, CancellationToken ct = default);
 }
 
 public interface IPushSubscription : IAsyncDisposable

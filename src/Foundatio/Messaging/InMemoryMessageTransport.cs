@@ -64,7 +64,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         for (int index = 0; index < messages.Count; index++)
         {
             var message = messages[index];
-            string messageId = message.MessageId ?? options.DeduplicationId ?? Guid.NewGuid().ToString("N");
+            // Each message gets a unique id. DeduplicationId is a dedup hint (no transport implements dedup yet), not an
+            // identity — using it as the message id gave distinct messages the same id and broke per-message settlement.
+            string messageId = message.MessageId ?? Guid.NewGuid().ToString("N");
             var stored = CreateStoredMessage(destination, messageId, message, options);
             EnqueueForDestination(destination, stored);
 
