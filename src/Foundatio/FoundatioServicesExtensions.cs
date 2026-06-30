@@ -460,6 +460,19 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
+        /// <summary>
+        /// Tunes the auto-registered runtime pump (cadence, batch size, or <see cref="JobRuntimePumpOptions.Enabled"/>
+        /// to opt out of automatic pumping and take manual control).
+        /// </summary>
+        public FoundatioBuilder ConfigureRuntimePump(Action<JobRuntimePumpOptions> configure)
+        {
+            ArgumentNullException.ThrowIfNull(configure);
+            var options = new JobRuntimePumpOptions();
+            configure(options);
+            _services.ReplaceSingleton(_ => options);
+            return _builder;
+        }
+
         private void RegisterJobServices()
         {
             _services.ReplaceSingleton<IJobTypeRegistry>(sp => new JobTypeRegistry(sp.GetServices<JobTypeRegistration>()));

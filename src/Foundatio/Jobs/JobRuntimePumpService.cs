@@ -11,6 +11,14 @@ namespace Foundatio.Jobs;
 /// <summary>Cadence and batch size for the durable job-runtime pump.</summary>
 public class JobRuntimePumpOptions
 {
+    /// <summary>
+    /// Whether the auto-registered runtime pump runs. Default true. Set false to take manual control of pumping (e.g.
+    /// drive <see cref="JobScheduleProcessor"/>/<see cref="IJobWorker"/> yourself, or run the pump on only some nodes);
+    /// the hosted service is then registered but does nothing. Configure via <c>AddFoundatio().Jobs.ConfigureRuntimePump</c>
+    /// or <c>AddJobRuntimeService</c>.
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>How often the pump materializes CRON occurrences, dispatches due work, and runs queued jobs. Default 1s.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(1);
 
@@ -47,6 +55,12 @@ public class JobRuntimePumpService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("Job runtime pump disabled (JobRuntimePumpOptions.Enabled = false); not pumping the runtime store");
+            return;
+        }
+
         _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
 
         while (!stoppingToken.IsCancellationRequested)

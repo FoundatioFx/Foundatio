@@ -416,6 +416,35 @@ public class JobSchedulerTests
         }
     }
 
+    [Fact]
+    public async Task ConfigureRuntimePump_Disabled_DoesNotPumpAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var probe = new JobSchedulerProbe();
+        var services = new ServiceCollection().AddSingleton(probe);
+        var foundatio = services.AddFoundatio();
+        foundatio.Jobs.UseInMemoryRuntime();
+        foundatio.Jobs.Register<ScheduledProbeJob>("probe");
+        foundatio.Jobs.ConfigureRuntimePump(o => o.Enabled = false); // opt out of automatic pumping
+        await using var provider = services.BuildServiceProvider();
+
+        var pump = Assert.Single(provider.GetServices<IHostedService>().OfType<JobRuntimePumpService>());
+        await pump.StartAsync(cancellationToken);
+        try
+        {
+            var handle = await provider.GetRequiredService<IJobClient>().EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
+
+            // With the pump disabled, the job is never claimed: it stays Queued and the job never runs.
+            await Task.Delay(300, cancellationToken);
+            Assert.Equal(JobStatus.Queued, (await handle.GetStateAsync(cancellationToken))!.Status);
+            Assert.Equal(0, probe.RunCount);
+        }
+        finally
+        {
+            await pump.StopAsync(cancellationToken);
+        }
+    }
+
     private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
     {
         var serviceProvider = new ServiceCollection()
