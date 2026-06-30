@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Xunit;
@@ -28,33 +27,4 @@ public class RedisStreamsTransportConformanceTests : MessageTransportConformance
         });
     }
 
-    [Fact]
-    public override Task CanSendAndReceiveBatchAsync() => base.CanSendAndReceiveBatchAsync();
-
-    [Fact]
-    public override Task AbandonAsync_RedeliversWithIncrementedDeliveryCountAsync() => base.AbandonAsync_RedeliversWithIncrementedDeliveryCountAsync();
-
-    [Fact]
-    public override Task CompleteAsync_WithExpiredReceipt_ThrowsReceiptExpiredExceptionAsync() => base.CompleteAsync_WithExpiredReceipt_ThrowsReceiptExpiredExceptionAsync();
-
-    [Fact]
-    public override Task SendAsync_ToTopic_FansOutToSubscriptionsAsync() => base.SendAsync_ToTopic_FansOutToSubscriptionsAsync();
-
-    [Fact]
-    public override Task ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync() => base.ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync();
-
-    [Fact]
-    public override Task AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync() => base.AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync();
-
-    [Fact]
-    public override Task RenewLockAsync_ExtendsVisibilityWindowAsync() => base.RenewLockAsync_ExtendsVisibilityWindowAsync();
-
-    [Fact]
-    public override Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync() => base.CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync();
-
-    [Fact]
-    public override Task DeadLetterAsync_MovesEntryToDeadletterStatsAsync() => base.DeadLetterAsync_MovesEntryToDeadletterStatsAsync();
-
-    [Fact]
-    public override Task ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync() => base.ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync();
 }

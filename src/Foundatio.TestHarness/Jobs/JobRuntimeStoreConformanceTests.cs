@@ -34,6 +34,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         return new JobState { JobId = id, Name = name, Status = status, CreatedUtc = now, LastUpdatedUtc = now };
     }
 
+    [Fact]
     public virtual async Task JobLifecycle_RoundTripsAndTransitionsAsync()
     {
         var time = new FakeTimeProvider();
@@ -120,6 +121,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.Null(await store.GetAsync("missing", ct));
     }
 
+    [Fact]
     public virtual async Task Query_FiltersByNameStatusAndLimitAsync()
     {
         var time = new FakeTimeProvider();
@@ -163,6 +165,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.Equal(new HashSet<string> { "a", "b" }, adHocAlpha.Select(j => j.JobId).ToHashSet()); // "d" excluded (occurrence)
     }
 
+    [Fact]
     public virtual async Task Leasing_ClaimRenewReleaseAndStealAsync()
     {
         var time = new FakeTimeProvider();
@@ -211,6 +214,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.Null(got.LeaseExpiresUtc);
     }
 
+    [Fact]
     public virtual async Task StaleRecovery_ReclaimsExpiredButNotLiveOrCronAsync()
     {
         var time = new FakeTimeProvider();
@@ -255,6 +259,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.Equal("node-b", (await store.GetAsync("reowned", ct))!.NodeId);
     }
 
+    [Fact]
     public virtual async Task ScheduledDispatches_ClaimCompleteAndRescheduleAsync()
     {
         var time = new FakeTimeProvider();
@@ -343,6 +348,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.Equal("node-c", rescheduled.ClaimOwner);
     }
 
+    [Fact]
     public virtual async Task Concurrency_OptimisticControlElectsSingleWinnerAsync()
     {
         var time = new FakeTimeProvider();
