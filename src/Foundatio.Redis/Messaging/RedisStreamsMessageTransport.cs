@@ -204,7 +204,11 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ThrowIfDisposed();
         var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
 
-        var headers = entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason ?? "").Build();
+        // Match the in-memory reference: record the reason header only when there's a reason (never an empty value).
+        var headerBuilder = entry.Headers.ToBuilder();
+        if (!String.IsNullOrEmpty(reason))
+            headerBuilder.Set(KnownHeaders.DeadLetterReason, reason);
+        var headers = headerBuilder.Build();
         await _db.StreamAddAsync(DeadKey(r.StreamKey), BuildFields(entry.Id, entry.Body, headers), messageId: null,
             maxLength: _options.MaxStreamLength, useApproximateMaxLength: true).ConfigureAwait(false);
 

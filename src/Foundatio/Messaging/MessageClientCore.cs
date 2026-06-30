@@ -339,12 +339,16 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     continue;
                 }
 
-                // Return any slots we claimed but didn't fill (empty receive or a partial batch).
-                ReleaseSlots(slots, claimed - entries.Count);
+                // We hold exactly `claimed` slots and release one per processed entry, so never process more than we
+                // claimed: a well-behaved transport returns <= MaxMessages, but a transport that ignores MaxMessages and
+                // over-returns would otherwise release more slots than acquired (breaching the cap / overflowing the
+                // semaphore). Any over-returned entries are left unsettled and redeliver after their visibility window.
+                int toProcess = Math.Min(entries.Count, claimed);
+                ReleaseSlots(slots, claimed - toProcess); // return slots we claimed but won't fill (always >= 0)
 
-                foreach (var entry in entries)
+                for (int index = 0; index < toProcess; index++)
                 {
-                    var task = ProcessAndReleaseSlotAsync(entry, onMessage, source, slots, cancellationToken);
+                    var task = ProcessAndReleaseSlotAsync(entries[index], onMessage, source, slots, cancellationToken);
                     if (!task.IsCompleted)
                     {
                         inFlight[task] = 0;
@@ -612,8 +616,21 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
+        var info = _transport as ITransportInfo;
+
+        // Enforce a transport-declared maximum message size up front with a clear error, rather than letting an opaque
+        // broker rejection surface mid-send (the limit is advertised, so honor it).
+        if (info?.MaxMessageBytes is { } maxBytes)
+        {
+            foreach (var message in messages)
+            {
+                if (message.Body.Length > maxBytes)
+                    throw _exceptionFactory($"Message of {message.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maxBytes} bytes for destination \"{destination}\".", null);
+            }
+        }
+
         // Respect a transport-declared maximum batch size by splitting oversized sends into chunks.
-        int? maxBatchSize = (_transport as ITransportInfo)?.MaxBatchSize;
+        int? maxBatchSize = info?.MaxBatchSize;
         if (maxBatchSize is not { } limit || limit <= 0 || messages.Count <= limit)
         {
             var result = await _transport.SendAsync(destination, messages, options, cancellationToken).AnyContext();

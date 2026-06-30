@@ -335,6 +335,19 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task EnqueueAsync_ExceedingTransportMaxMessageBytes_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // The transport advertises an 8-byte maximum; the core must enforce it up front with a clear error rather than
+        // let an opaque broker rejection surface mid-send.
+        await using var transport = new BatchLimitTransport(maxBatchSize: 10, maxMessageBytes: 8);
+        await using var queue = new MessageQueue(transport);
+
+        await Assert.ThrowsAsync<MessageQueueException>(async () =>
+            await queue.EnqueueAsync(new PreviewWorkItem { Data = "a payload well over eight bytes" }, cancellationToken: cancellationToken));
+    }
+
+    [Fact]
     public async Task RejectAsync_RuntimeStoreRedelivery_AdvancesAttemptCountEachCycleAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -816,9 +829,10 @@ public class MessageQueueTests
 
     private sealed class BatchLimitTransport : IMessageTransport, ITransportInfo
     {
-        public BatchLimitTransport(int maxBatchSize)
+        public BatchLimitTransport(int maxBatchSize, long? maxMessageBytes = null)
         {
             MaxBatchSize = maxBatchSize;
+            MaxMessageBytes = maxMessageBytes;
         }
 
         public List<int> SendBatchSizes { get; } = new();
@@ -826,7 +840,7 @@ public class MessageQueueTests
         public OrderingGuarantee Ordering => OrderingGuarantee.Fifo;
         public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
         public int? MaxBatchSize { get; }
-        public long? MaxMessageBytes => null;
+        public long? MaxMessageBytes { get; }
 
         public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
