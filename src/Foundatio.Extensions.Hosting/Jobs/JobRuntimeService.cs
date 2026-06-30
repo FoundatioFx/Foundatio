@@ -15,6 +15,9 @@ namespace Foundatio.Extensions.Hosting.Jobs;
 /// </summary>
 public class JobRuntimeServiceOptions
 {
+    /// <summary>Whether the runtime pump runs. Default true; set false to take manual control of pumping.</summary>
+    public bool Enabled { get; set; } = true;
+
     /// <summary>
     /// How often the runtime pump materializes CRON occurrences, dispatches due work, and runs queued jobs.
     /// Defaults to one second so sub-minute CRON schedules and short delays are honored.
@@ -57,6 +60,12 @@ public class JobRuntimeService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("Job runtime pump disabled (Enabled = false); not pumping the runtime store");
+            return;
+        }
+
         _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
 
         while (!stoppingToken.IsCancellationRequested)

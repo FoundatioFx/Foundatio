@@ -224,6 +224,7 @@ public static class JobHostExtensions
         {
             services.AddSingleton(new JobRuntimePumpOptions
             {
+                Enabled = options.Enabled,
                 PollInterval = options.PollInterval,
                 BatchSize = options.BatchSize,
                 MaxJobAttempts = options.MaxJobAttempts
