@@ -68,11 +68,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             var stored = CreateStoredMessage(destination, messageId, message, options);
             EnqueueForDestination(destination, stored);
 
-            results[index] = new SendItemResult
-            {
-                MessageId = messageId,
-                Success = true
-            };
+            results[index] = new SendItemResult { MessageId = messageId };
         }
 
         return Task.FromResult(new SendResult { Items = results });

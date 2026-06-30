@@ -32,6 +32,23 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
     }
 
     [Fact]
+    public void MessageHeaders_SerializeToJson_RoundTripsCaseInsensitively()
+    {
+        var headers = MessageHeaders.Create([
+            new KeyValuePair<string, string>("Message.Type", "order.created"),
+            new KeyValuePair<string, string>("tenant", "acme")
+        ]);
+
+        // The shared codec both transports use preserves the case-insensitive contract across the wire.
+        var roundTripped = MessageHeaders.DeserializeFromJson(MessageHeaders.SerializeToJson(headers));
+        Assert.Equal("order.created", roundTripped["MESSAGE.TYPE"]);
+        Assert.Equal("acme", roundTripped["tenant"]);
+
+        Assert.Empty(MessageHeaders.DeserializeFromJson(null));
+        Assert.Empty(MessageHeaders.DeserializeFromJson(""));
+    }
+
+    [Fact]
     public void MessageHeaders_AreImmutableAndCaseInsensitive()
     {
         var source = new Dictionary<string, string>(StringComparer.Ordinal)

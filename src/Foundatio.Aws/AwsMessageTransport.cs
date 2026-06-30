@@ -91,7 +91,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
                     MessageAttributes = BuildAttributes(message.Headers, encoding, static value => new SnsMessageAttributeValue { DataType = "String", StringValue = value })
                 }, ct).ConfigureAwait(false);
 
-                items.Add(new SendItemResult { MessageId = response.MessageId, Success = true });
+                items.Add(new SendItemResult { MessageId = response.MessageId });
             }
 
             return new SendResult { Items = items };
@@ -112,7 +112,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
                 request.DelaySeconds = delay;
 
             var response = await _sqs.Value.SendMessageAsync(request, ct).ConfigureAwait(false);
-            items.Add(new SendItemResult { MessageId = response.MessageId, Success = true });
+            items.Add(new SendItemResult { MessageId = response.MessageId });
         }
 
         return new SendResult { Items = items };
@@ -477,7 +477,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     {
         var attributes = new Dictionary<string, TAttribute>(StringComparer.Ordinal)
         {
-            [HeadersAttributeName] = stringAttribute(EncodeHeaders(headers)),
+            [HeadersAttributeName] = stringAttribute(MessageHeaders.SerializeToJson(headers)),
             [EncodingAttributeName] = stringAttribute(encoding)
         };
 
@@ -501,21 +501,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         if (attributes is null || !attributes.TryGetValue(HeadersAttributeName, out var value) || String.IsNullOrEmpty(value.StringValue))
             return MessageHeaders.Empty;
 
-        return DecodeHeaders(value.StringValue);
-    }
-
-    private static string EncodeHeaders(MessageHeaders headers)
-    {
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var header in headers)
-            map[header.Key] = header.Value;
-        return JsonSerializer.Serialize(map);
-    }
-
-    private static MessageHeaders DecodeHeaders(string json)
-    {
-        var map = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-        return map is null ? MessageHeaders.Empty : MessageHeaders.Create(map);
+        return MessageHeaders.DeserializeFromJson(value.StringValue);
     }
 
     private IAmazonSQS CreateSqsClient()

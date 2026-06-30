@@ -122,12 +122,10 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (await TryScheduleAsync(kind, destination, [transportMessage], sendOptions, cancellationToken).AnyContext())
             return messageId;
 
+        // Send is throw-on-failure: SendChunkedAsync propagates any transport error, so a returned result means the
+        // message was accepted. Fall back to the pre-assigned id if the transport reported none.
         var items = await SendChunkedAsync(destination, [transportMessage], sendOptions, cancellationToken).AnyContext();
-        var item = items.Count > 0 ? items[0] : null;
-        if (item is null || !item.Success)
-            throw _exceptionFactory($"Unable to send message to \"{destination}\": {item?.ErrorCode ?? "unknown error"}", null);
-
-        return item.MessageId ?? messageId;
+        return (items.Count > 0 ? items[0].MessageId : null) ?? messageId;
     }
 
     public async Task SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, string> resolveDestination, Func<string, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
@@ -164,10 +162,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
             if (await TryScheduleAsync(kind, group.Key, group.Value, sendOptions, cancellationToken).AnyContext())
                 continue;
 
-            var items = await SendChunkedAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext();
-            int failed = items.Count(i => !i.Success);
-            if (failed > 0)
-                throw _exceptionFactory($"Unable to send {failed} of {items.Count} messages to \"{group.Key}\".", null);
+            // Send is throw-on-failure (SendChunkedAsync propagates any transport error); a returned result means all
+            // messages in this destination group were accepted.
+            await SendChunkedAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext();
         }
     }
 
@@ -638,15 +635,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private static void RecordSent(string destination, IReadOnlyList<SendItemResult> items)
     {
-        int sent = 0;
-        for (int index = 0; index < items.Count; index++)
-        {
-            if (items[index].Success)
-                sent++;
-        }
-
-        if (sent > 0)
-            MessagingInstruments.Sent.Add(sent, new KeyValuePair<string, object?>("destination", destination));
+        // Every returned item was accepted (send is throw-on-failure).
+        if (items.Count > 0)
+            MessagingInstruments.Sent.Add(items.Count, new KeyValuePair<string, object?>("destination", destination));
     }
 
     private ISupportsPull RequirePull()

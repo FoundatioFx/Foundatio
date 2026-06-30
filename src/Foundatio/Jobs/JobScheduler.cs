@@ -284,7 +284,7 @@ public sealed class JobScheduleProcessor
         if (_transport is null)
             throw new InvalidOperationException("A message transport is required to materialize scheduled queue and pub/sub dispatches.");
 
-        var result = await _transport.SendAsync(dispatch.Destination, [
+        await _transport.SendAsync(dispatch.Destination, [
             new TransportMessage
             {
                 MessageId = dispatch.DispatchId,
@@ -293,9 +293,7 @@ public sealed class JobScheduleProcessor
             }
         ], dispatch.Options with { DeliverAt = null }, cancellationToken).ConfigureAwait(false);
 
-        if (!result.AllSucceeded)
-            throw new MessageBusException($"Unable to materialize scheduled dispatch \"{dispatch.DispatchId}\" to \"{dispatch.Destination}\".");
-
+        // SendAsync is throw-on-failure; reaching here means the dispatch was materialized, so retire it.
         await _store.CompleteDispatchAsync(dispatch.DispatchId, _nodeId, cancellationToken).ConfigureAwait(false);
     }
 

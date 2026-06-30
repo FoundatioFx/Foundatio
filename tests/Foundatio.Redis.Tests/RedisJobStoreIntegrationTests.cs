@@ -255,7 +255,7 @@ public class RedisJobStoreIntegrationTests
             {
                 string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
                 _entries.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
-                items[i] = new SendItemResult { MessageId = id, Success = true };
+                items[i] = new SendItemResult { MessageId = id };
             }
 
             return Task.FromResult(new SendResult { Items = items });

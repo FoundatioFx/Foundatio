@@ -29,7 +29,7 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
             string id = message.MessageId ?? options.DeduplicationId ?? Guid.NewGuid().ToString("N");
             dest.Ready.Enqueue(new StoredEntry(id, message.Body, message.Headers, DeliveryCount: 1));
             Interlocked.Increment(ref dest.Enqueued);
-            results[index] = new SendItemResult { MessageId = id, Success = true };
+            results[index] = new SendItemResult { MessageId = id };
         }
 
         return Task.FromResult(new SendResult { Items = results });
