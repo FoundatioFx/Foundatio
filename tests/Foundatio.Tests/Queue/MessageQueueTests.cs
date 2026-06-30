@@ -335,6 +335,41 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task RejectAsync_RuntimeStoreRedelivery_AdvancesAttemptCountEachCycleAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        // BasicQueueTransport resets DeliveryCount to 1 on every (re)send and has no native redelivery delay, so each
+        // delayed reject re-schedules through the runtime store. The reconciled Attempts must keep advancing across
+        // redeliveries (1 -> 2 -> 3); a regression that bases the next attempt on the reset DeliveryCount would pin it at
+        // 2 and redeliver forever (never reaching MaxAttempts / dead-letter).
+        await using var transport = new BasicQueueTransport();
+        await using var queue = new MessageQueue(transport, new QueueOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
+        var now = DateTimeOffset.UtcNow;
+
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "loop" }, cancellationToken: cancellationToken);
+
+        for (int expectedAttempt = 1; expectedAttempt <= 3; expectedAttempt++)
+        {
+            var received = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+            Assert.NotNull(received);
+            Assert.Equal(expectedAttempt, received.Attempts);
+            Assert.Equal("loop", received.Message.Data);
+
+            if (expectedAttempt < 3)
+            {
+                await received.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromMinutes(1) }, cancellationToken);
+                Assert.Equal(1, await processor.RunDueOccurrencesAsync(now.AddMinutes(expectedAttempt * 2), cancellationToken: cancellationToken));
+            }
+            else
+            {
+                await received.CompleteAsync(cancellationToken);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ReceiveAsync_WithExpiredMessage_DeadLettersAndReturnsNullAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

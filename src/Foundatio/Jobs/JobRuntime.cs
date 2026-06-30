@@ -84,6 +84,13 @@ public sealed record JobQuery
     public string? Name { get; init; }
     public JobStatus? Status { get; init; }
     public int Limit { get; init; } = 100;
+
+    /// <summary>
+    /// When true, CRON occurrences (jobs with <see cref="JobState.ScheduledForUtc"/> set) are excluded. The job
+    /// scheduler is the sole executor of occurrences, so the generic worker must not claim them — otherwise it would
+    /// run them without the per-definition retry/dead-letter accounting that lives in the scheduler.
+    /// </summary>
+    public bool ExcludeOccurrences { get; init; }
 }
 
 public sealed record ScheduledDispatchState
@@ -338,6 +345,9 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
 
         if (query.Status is { } status)
             results = results.Where(s => s.Status == status);
+
+        if (query.ExcludeOccurrences)
+            results = results.Where(s => s.ScheduledForUtc is null);
 
         return Task.FromResult<IReadOnlyList<JobState>>(results
             .OrderByDescending(s => s.LastUpdatedUtc)
@@ -716,7 +726,9 @@ public sealed class JobWorker : IJobWorker
         var queued = await _store.QueryAsync(new JobQuery
         {
             Status = JobStatus.Queued,
-            Limit = limit
+            Limit = limit,
+            // The scheduler owns CRON occurrences (retry/dead-letter accounting); the generic worker must skip them.
+            ExcludeOccurrences = true
         }, cancellationToken).ConfigureAwait(false);
 
         int completed = 0;
@@ -752,6 +764,11 @@ public sealed class JobWorker : IJobWorker
             // node and its lease is still expired, so a worker that renewed between the scan and here is not yanked out
             // from under itself (no double-run). Attempts are incremented per run, so a job that keeps crashing is
             // dead-lettered once it has consumed its attempt budget instead of being re-queued forever.
+            //
+            // Budget semantics for ad-hoc (IJobClient) jobs: `maxAttempts` is the TOTAL number of attempts, so
+            // dead-letter at Attempt >= maxAttempts. (CRON occurrences use a different knob — ScheduledJobDefinition
+            // .MaxRetries, the number of retries AFTER the first run, i.e. total runs = MaxRetries + 1 — and are
+            // excluded from this path via GetExpiredProcessingAsync; the scheduler owns their recovery.)
             bool transitioned = state.Attempt >= maxAttempts
                 ? await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.DeadLettered, new JobStatePatch
                 {

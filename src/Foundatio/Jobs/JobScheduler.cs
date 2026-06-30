@@ -230,7 +230,14 @@ public sealed class JobScheduleProcessor
             {
                 if (!await TryPrepareOccurrenceForRunAsync(jobId, definition, utcNow, cancellationToken).ConfigureAwait(false))
                 {
-                    await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
+                    // Retire (don't reschedule) the dispatch when the occurrence has reached a terminal state — e.g. it
+                    // was dead-lettered in TryPrepareOccurrenceForRunAsync, or a worker completed it but crashed before
+                    // CompleteDispatchAsync. Otherwise a terminal occurrence's dispatch would be re-claimed forever.
+                    var pending = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    if (pending is { Status: JobStatus.Completed or JobStatus.Cancelled or JobStatus.DeadLettered })
+                        await _store.CompleteDispatchAsync(dispatch.DispatchId, _nodeId, cancellationToken).ConfigureAwait(false);
+                    else
+                        await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -339,7 +346,21 @@ public sealed class JobScheduleProcessor
     private async Task<bool> HasActiveOccurrenceAsync(string name, string scopeKey, CancellationToken cancellationToken)
     {
         var states = await _store.QueryAsync(new JobQuery { Name = name, Limit = 1000 }, cancellationToken).ConfigureAwait(false);
-        return states.Any(s => s.JobId.EndsWith($":{scopeKey}", StringComparison.Ordinal) && s.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing);
+        return states.Any(s => OccurrenceMatchesScope(s.JobId, name, scopeKey) && s.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing);
+    }
+
+    // Exact scope match, not a JobId suffix test: an occurrence id is "{name}:{14-digit-timestamp}:{scopeKey}", and a
+    // scope key (a node id) can itself contain ':' (NodeIdentity.Current is "{machine}:{pid}:{token}"), so a naive
+    // EndsWith(":{scopeKey}") would let one node's occurrence count as another's. The query is already filtered to this
+    // name, so strip the literal "{name}:" prefix and the fixed-width timestamp, then compare the remainder exactly.
+    private static bool OccurrenceMatchesScope(string jobId, string name, string scopeKey)
+    {
+        string prefix = $"{name}:";
+        if (!jobId.StartsWith(prefix, StringComparison.Ordinal))
+            return false;
+
+        var rest = jobId.AsSpan(prefix.Length);
+        return rest.Length >= 15 && rest[14] == ':' && rest[15..].SequenceEqual(scopeKey);
     }
 
     private string GetScopeKey(ScheduledJobDefinition definition)

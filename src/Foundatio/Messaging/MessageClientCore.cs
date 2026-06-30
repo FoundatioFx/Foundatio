@@ -969,7 +969,10 @@ internal class ReceivedMessage : IReceivedMessage
         if (_runtimeStore is null)
             throw new MessageQueueException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
 
-        int nextAttempt = _entry.DeliveryCount + 1;
+        // Advance from the reconciled attempt count, not the raw transport DeliveryCount: the re-send produces a new
+        // transport message whose native DeliveryCount resets to 1, so basing the next attempt on DeliveryCount would
+        // pin it at 2 and redeliver forever. Attempts already takes the max of DeliveryCount and the carried header.
+        int nextAttempt = Attempts + 1;
         var headers = _entry.Headers.ToBuilder()
             .Set(KnownHeaders.Attempts, nextAttempt.ToString(CultureInfo.InvariantCulture))
             .Build();

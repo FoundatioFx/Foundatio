@@ -102,6 +102,8 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
 
         var states = await LoadAsync(ids).ConfigureAwait(false);
         return states
+            // ScheduledForUtc must be filtered after hydration (it isn't indexed), mirroring GetExpiredProcessingAsync.
+            .Where(s => !query.ExcludeOccurrences || s.ScheduledForUtc is null)
             .OrderByDescending(s => s.LastUpdatedUtc)
             .Take(Math.Max(1, query.Limit))
             .ToArray();
@@ -137,8 +139,19 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             return false;
 
         var tx = _db.CreateTransaction();
-        // Predicate on the owner we observed so a competing claim that lands first invalidates this one.
-        tx.AddCondition(String.IsNullOrEmpty(owner) ? Condition.HashNotExists(JobKey(jobId), "nodeId") : Condition.HashEqual(JobKey(jobId), "nodeId", owner));
+        if (String.IsNullOrEmpty(owner))
+        {
+            tx.AddCondition(Condition.HashNotExists(JobKey(jobId), "nodeId"));
+        }
+        else
+        {
+            // Stealing an expired lease: predicate on BOTH the observed owner and the exact lease value, so a
+            // concurrent renew by that owner (which rewrites leaseExpiresUtc) invalidates the steal and can't
+            // double-run. Mirrors TryReclaimExpiredAsync; the unguarded version could overwrite a freshly-renewed lease.
+            tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", owner));
+            if (!current[1].IsNullOrEmpty)
+                tx.AddCondition(Condition.HashEqual(JobKey(jobId), "leaseExpiresUtc", current[1]));
+        }
         _ = tx.HashSetAsync(JobKey(jobId),
         [
             new HashEntry("nodeId", nodeId),

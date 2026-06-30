@@ -153,6 +153,14 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         // Limit is honored against the newest-first ordering, so the most recently updated row wins.
         var limited = await store.QueryAsync(new JobQuery { Limit = 1 }, ct);
         Assert.Equal("c", Assert.Single(limited).JobId);
+
+        // ExcludeOccurrences filters out CRON occurrences (ScheduledForUtc set) so the generic worker's Queued query
+        // never claims scheduler-owned jobs.
+        await store.CreateIfAbsentAsync(NewJob(time, "d", "alpha", JobStatus.Queued) with { LastUpdatedUtc = t.AddSeconds(3), ScheduledForUtc = t }, ct);
+        var adHocQueued = await store.QueryAsync(new JobQuery { Status = JobStatus.Queued, ExcludeOccurrences = true }, ct);
+        Assert.Equal(new HashSet<string> { "a", "c" }, adHocQueued.Select(j => j.JobId).ToHashSet()); // "d" excluded (occurrence)
+        var adHocAlpha = await store.QueryAsync(new JobQuery { Name = "alpha", ExcludeOccurrences = true }, ct);
+        Assert.Equal(new HashSet<string> { "a", "b" }, adHocAlpha.Select(j => j.JobId).ToHashSet()); // "d" excluded (occurrence)
     }
 
     public virtual async Task Leasing_ClaimRenewReleaseAndStealAsync()
@@ -183,7 +191,14 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.True(await store.RenewClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(10), ct));
         Assert.Equal(time.GetUtcNow().AddMinutes(10), (await store.GetAsync("job-1", ct))!.LeaseExpiresUtc);
 
-        // Once the lease lapses, another node may steal the claim.
+        // A renewed lease is not stealable: after the lease would have lapsed the owner renews, so a competing steal
+        // must fail rather than act on a stale expired-lease observation (the steal CAS must see the renew → no double-run).
+        time.Advance(TimeSpan.FromMinutes(11));
+        Assert.True(await store.RenewClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(10), ct));
+        Assert.False(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(5), ct));
+        Assert.Equal("node-a", (await store.GetAsync("job-1", ct))!.NodeId);
+
+        // Once the renewed lease itself lapses, another node may steal the claim.
         time.Advance(TimeSpan.FromMinutes(11));
         Assert.True(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(5), ct));
         Assert.Equal("node-b", (await store.GetAsync("job-1", ct))!.NodeId);
