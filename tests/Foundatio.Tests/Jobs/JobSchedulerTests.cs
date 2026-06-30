@@ -1,9 +1,12 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -379,6 +382,38 @@ public class JobSchedulerTests
 
         var states = await store.QueryAsync(new JobQuery { Name = "per-node", Limit = 100 }, cancellationToken);
         Assert.Equal(2, states.Count);
+    }
+
+    [Fact]
+    public async Task AddFoundatio_WithRuntimeStore_AutoRegistersAndRunsPumpAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var probe = new JobSchedulerProbe();
+        var services = new ServiceCollection().AddSingleton(probe);
+        var foundatio = services.AddFoundatio();
+        foundatio.Jobs.UseInMemoryRuntime();
+        foundatio.Jobs.Register<ScheduledProbeJob>("probe");
+        await using var provider = services.BuildServiceProvider();
+
+        // Configuring a runtime store auto-registers the pump — no separate AddJobRuntimeService — so a hosted process
+        // runs IJobClient-submitted jobs (and drains delayed messaging) without extra wiring.
+        var pump = Assert.Single(provider.GetServices<IHostedService>().OfType<JobRuntimePumpService>());
+        await pump.StartAsync(cancellationToken);
+        try
+        {
+            var handle = await provider.GetRequiredService<IJobClient>().EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
+
+            JobState? state = null;
+            for (int i = 0; i < 100 && (state = await handle.GetStateAsync(cancellationToken))?.Status != JobStatus.Completed; i++)
+                await Task.Delay(50, cancellationToken);
+
+            Assert.Equal(JobStatus.Completed, state?.Status);
+            Assert.Equal(1, probe.RunCount);
+        }
+        finally
+        {
+            await pump.StopAsync(cancellationToken);
+        }
     }
 
     private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
