@@ -348,10 +348,10 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         if (_sources.TryGetValue(source, out var registered))
             return registered;
 
-        // PubSub facade sources are "topic/subscription"; a bare name is a queue on the default group.
-        int slash = source.IndexOf('/');
-        return slash > 0
-            ? new ResolvedSource(StreamKey(source[..slash]), source[(slash + 1)..], "$")
+        // PubSub facade sources are "topic/subscription" (a consumer group on the topic stream); a bare name is a queue
+        // on the default group. Parse via the shared convention rather than re-deriving the split.
+        return SubscriptionAddress.TryParse(source, out string topic, out string subscription)
+            ? new ResolvedSource(StreamKey(topic), subscription, "$")
             : new ResolvedSource(StreamKey(source), _options.DefaultConsumerGroup, "0");
     }
 
