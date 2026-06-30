@@ -24,6 +24,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         return transport.DisposeAsync();
     }
 
+    [Fact]
     public virtual async Task CanSendAndReceiveBatchAsync()
     {
         var transport = CreateTransport();
@@ -84,6 +85,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task AbandonAsync_RedeliversWithIncrementedDeliveryCountAsync()
     {
         var transport = CreateTransport();
@@ -116,6 +118,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task CompleteAsync_WithExpiredReceipt_ThrowsReceiptExpiredExceptionAsync()
     {
         var transport = CreateTransport();
@@ -142,6 +145,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task SubscribeAsync_DeliversPushMessagesAsync()
     {
         var transport = CreateTransport();
@@ -175,6 +179,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task SendAsync_ToTopic_FansOutToSubscriptionsAsync()
     {
         var transport = CreateTransport();
@@ -209,6 +214,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task ReceiveAsync_RespectsPriorityAsync()
     {
         var transport = CreateTransport();
@@ -245,6 +251,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task SendAsync_WithDeliverAt_DelaysVisibilityAsync()
     {
         var transport = CreateTransport();
@@ -275,6 +282,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task DeadLetterAsync_MovesEntryToDeadletterStatsAsync()
     {
         var transport = CreateTransport();
@@ -302,6 +310,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task ReceiveAsync_WithExpiredMessage_DeadlettersAndSkipsAsync()
     {
         var transport = CreateTransport();
@@ -336,6 +345,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await CleanupTransportIfNotNullAsync(transport);
         }
     }
+    [Fact]
     public virtual async Task ReceiveAsync_AfterVisibilityTimeout_RedeliversAsync()
     {
         var transport = CreateTransport();
@@ -374,6 +384,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task AbandonAsync_WithRedeliveryDelay_RedeliversAfterDelayAsync()
     {
         var transport = CreateTransport();
@@ -413,6 +424,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task RenewLockAsync_ExtendsVisibilityWindowAsync()
     {
         var transport = CreateTransport();
@@ -451,6 +463,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task CompetingConsumers_DoNotReceiveTheSameInFlightMessageAsync()
     {
         var transport = CreateTransport();
@@ -479,6 +492,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         }
     }
 
+    [Fact]
     public virtual async Task ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync()
     {
         var transport = CreateTransport();
@@ -501,6 +515,45 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             Assert.Equal("poison", ReadBody(deadLettered));
             Assert.Equal("acme", deadLettered.Headers["tenant"]);
             Assert.Equal("bad-payload", deadLettered.Headers[KnownHeaders.DeadLetterReason]);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    [Fact]
+    public virtual async Task SendAsync_PreservesBinaryBodyAndCaseInsensitiveHeadersAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
+            return;
+        }
+
+        try
+        {
+            await EnsureAsync(transport, new DestinationDeclaration { Name = "binary", Role = DestinationRole.Queue });
+
+            // Arbitrary, non-UTF-8 bytes with no content type must round-trip exactly (catches body-encoding bugs — a
+            // provider must not assume text), and header keys must round-trip case-insensitively across the wire.
+            byte[] payload = [0x00, 0x01, 0xFF, 0xFE, 0x10, 0x80, 0x7F];
+            await transport.SendAsync("binary", [new TransportMessage
+            {
+                Body = payload,
+                Headers = MessageHeaders.Create([
+                    new KeyValuePair<string, string>("tenant", "acme"),
+                    new KeyValuePair<string, string>("Mixed.Case", "x")
+                ])
+            }], new TransportSendOptions(), TestCancellationToken);
+
+            var entry = Assert.Single(await pull.ReceiveAsync("binary", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
+            Assert.Equal(payload, entry.Body.ToArray());
+            Assert.Equal("acme", entry.Headers["tenant"]);
+            Assert.Equal("x", entry.Headers["MIXED.CASE"]);
+
+            await transport.CompleteAsync(entry, TestCancellationToken);
         }
         finally
         {
