@@ -60,17 +60,10 @@ public class JobRuntimePumpService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
-        {
-            _logger.LogInformation("Job runtime pump disabled (JobRuntimePumpOptions.Enabled = false); not pumping the runtime store");
-            return;
-        }
-
-        _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
-
         // Schedule CRON jobs registered declaratively via AddFoundatio().Jobs.AddCronJob<T>() so users don't have to
-        // call IJobScheduler.ScheduleAsync themselves. Idempotent (schedule keyed by name), so every node registering
-        // the same schedules is fine.
+        // call IJobScheduler.ScheduleAsync themselves. Done before the Enabled check so the "scheduled automatically"
+        // contract holds even when this node's pump is disabled for manual control. Idempotent (schedule keyed by name),
+        // so every node registering the same schedules is fine.
         if (_scheduler is not null)
         {
             foreach (var definition in _scheduledJobs)
@@ -85,6 +78,14 @@ public class JobRuntimePumpService : BackgroundService
                 }
             }
         }
+
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("Job runtime pump disabled (JobRuntimePumpOptions.Enabled = false); not pumping the runtime store");
+            return;
+        }
+
+        _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
 
         while (!stoppingToken.IsCancellationRequested)
         {
