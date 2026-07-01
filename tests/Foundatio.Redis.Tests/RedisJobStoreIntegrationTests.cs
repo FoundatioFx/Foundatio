@@ -212,9 +212,9 @@ public class RedisJobStoreIntegrationTests
 
     private sealed class ProbeJob(Probe probe) : IJob
     {
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             probe.Record();
             return Task.FromResult(JobResult.Success);
         }
@@ -222,9 +222,9 @@ public class RedisJobStoreIntegrationTests
 
     private sealed class FailingJob : IJob
     {
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(JobResult.FromException(new InvalidOperationException("boom")));
         }
     }

@@ -21,6 +21,25 @@ public interface IJobWithOptions : IJob
 public static class LegacyJobExtensions
 {
     /// <summary>
+    /// Runs the job, converting cancellation and unhandled exceptions into a <see cref="JobResult"/> instead of throwing.
+    /// </summary>
+    public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await job.RunAsync(cancellationToken).AnyContext();
+        }
+        catch (OperationCanceledException)
+        {
+            return JobResult.Cancelled;
+        }
+        catch (Exception ex)
+        {
+            return JobResult.FromException(ex);
+        }
+    }
+
+    /// <summary>
     /// Runs the job continuously until the cancellation token is set or the iteration limit is reached.
     /// </summary>
     /// <returns>Returns the iteration count for normal jobs. For queue-based jobs this will be the number of items processed successfully.</returns>

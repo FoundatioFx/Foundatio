@@ -1,42 +1,34 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
 
 namespace Foundatio.Jobs;
 
 /// <summary>
-/// Represents a unit of background work that can be executed once or continuously.
-/// Implement this interface to create custom jobs for scheduled tasks, queue processing, or maintenance operations.
+/// Represents a unit of background work run by the durable job runtime. Every run is handed a
+/// <see cref="JobExecutionContext"/> carrying its cancellation token, identity, attempt number, and store-backed
+/// progress/heartbeat helpers — a job uses what it needs and ignores the rest.
 /// </summary>
 public interface IJob
 {
     /// <summary>
     /// Executes the job's work.
     /// </summary>
-    /// <param name="cancellationToken">Token to signal that the job should stop.</param>
+    /// <param name="context">The execution context for this run (cancellation, identity, progress, heartbeat).</param>
     /// <returns>A result indicating success, failure, or cancellation.</returns>
-    Task<JobResult> RunAsync(CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// A durable job that wants its <see cref="JobExecutionContext"/> — job id, attempt number, and store-backed progress,
-/// lease heartbeat, and cooperative cancellation checks. The durable runtime sets <see cref="ExecutionContext"/> on the
-/// job instance before invoking it. Jobs that use the context should be registered as transient (a fresh instance per
-/// run), since the context is per-run state.
-/// </summary>
-public interface IJobWithExecutionContext : IJob
-{
-    JobExecutionContext? ExecutionContext { get; set; }
+    Task<JobResult> RunAsync(JobExecutionContext context);
 }
 
 public static class JobExtensions
 {
-    public static async Task<JobResult> TryRunAsync(this IJob job, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Runs the job, converting cancellation and unhandled exceptions into a <see cref="JobResult"/> instead of throwing.
+    /// </summary>
+    public static async Task<JobResult> TryRunAsync(this IJob job, JobExecutionContext context)
     {
         try
         {
-            return await job.RunAsync(cancellationToken).AnyContext();
+            return await job.RunAsync(context).AnyContext();
         }
         catch (OperationCanceledException)
         {

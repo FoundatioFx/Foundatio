@@ -326,9 +326,9 @@ public class JobRuntimeTests
             _probe = probe;
         }
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             _probe.RecordRun();
             return Task.FromResult(JobResult.Success);
         }
@@ -343,13 +343,13 @@ public class JobRuntimeTests
             _probe = probe;
         }
 
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public async Task<JobResult> RunAsync(JobExecutionContext context)
         {
             _probe.Started.TrySetResult();
 
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
+                await Task.Delay(TimeSpan.FromMinutes(1), context.CancellationToken);
                 return JobResult.Success;
             }
             catch (OperationCanceledException)
@@ -360,14 +360,11 @@ public class JobRuntimeTests
         }
     }
 
-    private sealed class ProgressJob : IJobWithExecutionContext
+    private sealed class ProgressJob : IJob
     {
-        public JobExecutionContext? ExecutionContext { get; set; }
-
-        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public async Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            var context = ExecutionContext!;
-            await context.ReportProgressAsync(75, $"{context.JobId}:{context.Attempt}", cancellationToken);
+            await context.ReportProgressAsync(75, $"{context.JobId}:{context.Attempt}", context.CancellationToken);
             return JobResult.Success;
         }
     }
