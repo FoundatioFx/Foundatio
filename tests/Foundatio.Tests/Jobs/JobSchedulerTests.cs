@@ -491,9 +491,9 @@ public class JobSchedulerTests
             _probe = probe;
         }
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             _probe.RecordRun();
             return Task.FromResult(JobResult.FromException(new InvalidOperationException("failed")));
         }
@@ -508,9 +508,9 @@ public class JobSchedulerTests
             _probe = probe;
         }
 
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task<JobResult> RunAsync(JobExecutionContext context)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            context.CancellationToken.ThrowIfCancellationRequested();
             _probe.RecordRun();
             return Task.FromResult(JobResult.Success);
         }

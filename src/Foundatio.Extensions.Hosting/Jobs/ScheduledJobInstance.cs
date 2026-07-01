@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Cronos;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;

@@ -2,7 +2,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
-using Foundatio.Jobs;
 using Foundatio.Jobs.Legacy;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;

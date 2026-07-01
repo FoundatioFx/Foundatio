@@ -214,13 +214,14 @@ public sealed class JobHandle
 }
 
 /// <summary>
-/// Passed to a durable job that implements <see cref="IJobWithExecutionContext"/>. Gives the running job its identity
-/// and attempt number, plus store-backed progress reporting, lease heartbeat (for long runs), and cooperative
-/// cancellation checks — the parts of <see cref="IJobRuntimeStore"/> that are useful from inside job code.
+/// Passed to a job on each run. Gives the running job its identity and attempt number, plus store-backed progress
+/// reporting, lease heartbeat (for long runs), and cooperative cancellation checks — the parts of
+/// <see cref="IJobRuntimeStore"/> that are useful from inside job code. When a job is run outside the durable runtime
+/// (for example directly in a test), the store-backed helpers are no-ops and cancellation reflects the supplied token.
 /// </summary>
 public sealed class JobExecutionContext
 {
-    private readonly IJobRuntimeStore _store;
+    private readonly IJobRuntimeStore? _store;
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
 
@@ -234,19 +235,33 @@ public sealed class JobExecutionContext
         _lease = lease;
     }
 
+    /// <summary>
+    /// Creates a detached context for running a job outside the durable runtime (tests or one-off invocations).
+    /// Progress reporting and lease renewal are no-ops; cancellation reflects <paramref name="cancellationToken"/>.
+    /// </summary>
+    public JobExecutionContext(CancellationToken cancellationToken = default, string? jobId = null, int attempt = 1)
+    {
+        JobId = jobId ?? Guid.NewGuid().ToString("N");
+        Attempt = attempt;
+        CancellationToken = cancellationToken;
+        _store = null;
+        _nodeId = String.Empty;
+        _lease = TimeSpan.Zero;
+    }
+
     public string JobId { get; }
     public int Attempt { get; }
     public CancellationToken CancellationToken { get; }
 
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
-        => _store.SetProgressAsync(JobId, percent, message, cancellationToken);
+        => _store?.SetProgressAsync(JobId, percent, message, cancellationToken) ?? Task.CompletedTask;
 
     // Extends the worker's lease so a long-but-alive run is not reclaimed as stale.
     public Task<bool> RenewLeaseAsync(CancellationToken cancellationToken = default)
-        => _store.RenewClaimAsync(JobId, _nodeId, _lease, cancellationToken);
+        => _store?.RenewClaimAsync(JobId, _nodeId, _lease, cancellationToken) ?? Task.FromResult(true);
 
     public Task<bool> IsCancellationRequestedAsync(CancellationToken cancellationToken = default)
-        => _store.IsCancellationRequestedAsync(JobId, cancellationToken);
+        => _store?.IsCancellationRequestedAsync(JobId, cancellationToken) ?? Task.FromResult(CancellationToken.IsCancellationRequested);
 }
 
 public interface IJobMonitor
@@ -821,12 +836,11 @@ public sealed class JobWorker : IJobWorker
             var jobType = ResolveJobType(state);
             var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
 
-            // Hand the job its execution context (progress, heartbeat, cancellation, identity) when it opts in. The
-            // store was already incremented to this attempt by the Queued -> Processing transition above.
-            if (job is IJobWithExecutionContext contextual)
-                contextual.ExecutionContext = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease);
+            // Hand the job its execution context (identity, attempt, progress, heartbeat, cancellation). The store was
+            // already incremented to this attempt by the Queued -> Processing transition above.
+            var context = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease);
 
-            var result = await job.TryRunAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
+            var result = await job.TryRunAsync(context).ConfigureAwait(false);
             var completedAt = _timeProvider.GetUtcNow();
 
             if (result.IsCancelled)

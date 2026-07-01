@@ -1,7 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 
 namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
