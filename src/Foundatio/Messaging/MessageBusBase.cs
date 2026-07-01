@@ -13,7 +13,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 public abstract class MessageBusBase<TOptions> : IMessageBus, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider, IDisposable, IAsyncDisposable where TOptions : SharedMessageBusOptions
 {

@@ -10,6 +10,7 @@ using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Tests.Extensions;

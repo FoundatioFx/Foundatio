@@ -9,6 +9,7 @@ using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Foundatio.Xunit;

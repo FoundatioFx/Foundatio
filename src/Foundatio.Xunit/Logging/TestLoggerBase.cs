@@ -26,7 +26,7 @@ public abstract class TestLoggerBase : IClassFixture<TestLoggerFixture>, IAsyncL
 
     /// <summary>
     /// Gets a cancellation token that is cancelled when the current test completes.
-    /// Pass this token to <see cref="Foundatio.Messaging.IMessageSubscriber.SubscribeAsync{T}"/>
+    /// Pass this token to <see cref="Foundatio.Messaging.IPubSub.SubscribeAsync{T}"/>
     /// and other async operations to ensure automatic cleanup between tests.
     /// </summary>
     /// <remarks>
