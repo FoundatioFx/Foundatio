@@ -4,7 +4,7 @@ using Foundatio.Lock;
 using Foundatio.Queues;
 using Foundatio.Utility;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public class QueueEntryContext<T> : JobContext where T : class
 {

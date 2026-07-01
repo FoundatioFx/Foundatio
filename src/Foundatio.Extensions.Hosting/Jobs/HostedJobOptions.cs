@@ -2,7 +2,7 @@
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
-public class HostedJobOptions : JobOptions
+public class HostedJobOptions : Foundatio.Jobs.Legacy.JobOptions
 {
     public bool WaitForStartupActions { get; set; }
 }

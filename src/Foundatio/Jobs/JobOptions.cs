@@ -3,7 +3,7 @@ using System.Reflection;
 using Foundatio.Extensions;
 using Foundatio.Utility;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public class JobOptions
 {

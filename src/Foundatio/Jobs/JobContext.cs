@@ -2,7 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Lock;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public class JobContext
 {
