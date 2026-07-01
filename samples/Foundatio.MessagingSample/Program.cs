@@ -9,11 +9,12 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(new InstanceInfo(Guid.NewGuid().ToString("N")[..6]));
 
 builder.Services.AddFoundatio()
-    // Messaging on AWS (SQS/SNS). Handlers are registered declaratively; Foundatio hosts them and dispatches to them —
-    // no hand-written IHostedService. Swap UseAws() for UseRedis() to run messaging on Redis Streams instead.
+    // Messaging on AWS (SQS/SNS). Handlers carry no topology decision — the caller's verb decides delivery
+    // (bus.SendAsync = one instance across the fleet, bus.PublishAsync = once per subscribing service). Swap UseAws()
+    // for UseRedis() to run messaging on Redis Streams without touching any handler.
     .Messaging.UseAws()
-    .Messaging.AddQueueHandler<ProcessOrder, ProcessOrderHandler>()           // competing consumers: one instance per order
-    .Messaging.AddBroadcastHandler<Announcement, AnnouncementHandler>()       // fan-out: every instance gets each announcement
+    .Messaging.AddHandler<ProcessOrder, ProcessOrderHandler>()
+    .Messaging.AddHandler<Announcement, AnnouncementHandler>(o => o.PerInstance = true) // every replica shows the announcement
     // Durable jobs on Redis so any instance can claim them. The pump (auto-registered) runs submitted jobs and
     // materializes the CRON schedules below — no manual scheduling call.
     .Jobs.UseRedis()
@@ -26,14 +27,15 @@ var app = builder.Build();
 
 app.MapGet("/", (InstanceInfo instance) => Results.Ok(new { service = "Foundatio messaging sample", instance = instance.Id }));
 
-// QUEUE — competing consumers: exactly one instance processes each order (handled by ProcessOrderHandler).
-app.MapPost("/orders", async (ProcessOrder order, IQueue queue) =>
-    Results.Accepted(value: new { queued = await queue.EnqueueAsync(order) }));
+// SEND — a command / unit of work: exactly one instance processes each order (handled by ProcessOrderHandler).
+app.MapPost("/orders", async (ProcessOrder order, IMessageBus bus) =>
+    Results.Accepted(value: new { queued = await bus.SendAsync(order) }));
 
-// PUB/SUB — fan-out: every instance receives each announcement (handled by AnnouncementHandler).
-app.MapPost("/announcements", async (Announcement announcement, IPubSub pubSub) =>
+// PUBLISH — an event: subscribers receive it per their registration (AnnouncementHandler opts into PerInstance, so
+// every running replica logs each announcement).
+app.MapPost("/announcements", async (Announcement announcement, IMessageBus bus) =>
 {
-    await pubSub.PublishAsync(announcement);
+    await bus.PublishAsync(announcement);
     return Results.Accepted(value: new { published = announcement.Text });
 });
 

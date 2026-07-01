@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
-using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Resilience;
 using Foundatio.Utility;

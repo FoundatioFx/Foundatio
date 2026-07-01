@@ -11,8 +11,8 @@ namespace Foundatio.Messaging;
 
 /// <summary>
 /// One declarative message-handler registration: a description for logging and a factory that starts the underlying
-/// queue consumer or pub/sub subscription and returns it for disposal on shutdown. Built by the
-/// <c>AddQueueHandler</c>/<c>AddBroadcastHandler</c> builder methods, which bind the message type at compile time.
+/// queue consumer or pub/sub subscription and returns it for disposal on shutdown. Built by the <c>AddHandler</c>
+/// builder methods, which bind the message type at compile time (one registration per delivery verb).
 /// </summary>
 internal sealed class MessageHandlerRegistration
 {

@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
-using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Resilience;
 using Foundatio.Utility;

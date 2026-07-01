@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
-public sealed record PubSubMessageOptions
+public sealed record MessagePublishOptions
 {
     public MessagePriority Priority { get; init; } = MessagePriority.Normal;
     public TimeSpan? Delay { get; init; }
@@ -56,9 +56,9 @@ public sealed record PubSubOptions
 
 public interface IPubSub : IAsyncDisposable
 {
-    Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task PublishBatchAsync<T>(IEnumerable<T> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task PublishBatchAsync(IEnumerable<object> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default);
+    Task PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);
     Task<IMessageSubscription> SubscribeAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
     Task<IMessageSubscription> SubscribeAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task RunSubscriptionAsync(Func<IReceivedMessage, CancellationToken, Task> handler, PubSubSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
@@ -96,24 +96,24 @@ public sealed class PubSub : IPubSub
             static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
     }
 
-    public Task PublishAsync<T>(T message, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(message);
-        options ??= new PubSubMessageOptions();
+        options ??= new MessagePublishOptions();
         return _core.SendAsync(ScheduledDispatchKind.PubSubMessage, typeof(T), message, ToEnvelope(options), GetTopic(typeof(T), options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public Task PublishBatchAsync<T>(IEnumerable<T> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
-        options ??= new PubSubMessageOptions();
+        options ??= new MessagePublishOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public Task PublishBatchAsync(IEnumerable<object> messages, PubSubMessageOptions? options = null, CancellationToken cancellationToken = default)
+    public Task PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
-        options ??= new PubSubMessageOptions();
+        options ??= new MessagePublishOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages, null, ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
@@ -205,7 +205,7 @@ public sealed class PubSub : IPubSub
         });
     }
 
-    private static MessageEnvelopeOptions ToEnvelope(PubSubMessageOptions options)
+    private static MessageEnvelopeOptions ToEnvelope(MessagePublishOptions options)
     {
         return new MessageEnvelopeOptions
         {

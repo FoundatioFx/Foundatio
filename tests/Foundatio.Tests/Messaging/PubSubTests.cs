@@ -131,8 +131,8 @@ public class PubSubTests
 
         // Publish one message to each topic. Each subscriber must receive only its own topic's message — proving both
         // subscribers are live (not an always-broken one passing a negative-only assertion) and that they are isolated.
-        await pubSub.PublishAsync(new PreviewEvent { Data = "to-orders" }, new PubSubMessageOptions { Topic = "orders" }, cancellationToken);
-        await pubSub.PublishAsync(new PreviewEvent { Data = "to-payments" }, new PubSubMessageOptions { Topic = "payments" }, cancellationToken);
+        await pubSub.PublishAsync(new PreviewEvent { Data = "to-orders" }, new MessagePublishOptions { Topic = "orders" }, cancellationToken);
+        await pubSub.PublishAsync(new PreviewEvent { Data = "to-payments" }, new MessagePublishOptions { Topic = "payments" }, cancellationToken);
 
         await ordersSignal.WaitAsync(TimeSpan.FromSeconds(2));
         await paymentsSignal.WaitAsync(TimeSpan.FromSeconds(2));
@@ -186,7 +186,7 @@ public class PubSubTests
             return Task.CompletedTask;
         }, new PubSubSubscriptionOptions { Subscription = "metadata-subscription" }, cts.Token);
 
-        await pubSub.PublishAsync(new PreviewEvent { Data = "metadata" }, new PubSubMessageOptions
+        await pubSub.PublishAsync(new PreviewEvent { Data = "metadata" }, new MessagePublishOptions
         {
             CorrelationId = "corr-456",
             Priority = MessagePriority.High,
@@ -225,7 +225,7 @@ public class PubSubTests
             return Task.CompletedTask;
         }, new PubSubSubscriptionOptions { Subscription = "delayed-subscription" }, cts.Token);
 
-        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new PubSubMessageOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
+        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new MessagePublishOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
         await Assert.ThrowsAsync<TimeoutException>(async () => await received.WaitAsync(TimeSpan.FromMilliseconds(50)));
         Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));

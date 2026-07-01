@@ -65,9 +65,9 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
-        // The stream IS the queue/topic; subscriptions read it through their own group, so a send is always an XADD to
-        // the destination's stream regardless of role.
-        RedisKey streamKey = StreamKey(destination);
+        // The stream IS the queue/topic; subscriptions read it through their own group. The caller-stated role picks
+        // the stream namespace so a queue and a topic sharing a route name never cross-deliver.
+        RedisKey streamKey = options.DestinationRole == DestinationRole.Topic ? TopicStreamKey(destination) : QueueStreamKey(destination);
         var items = new List<SendItemResult>(messages.Count);
         foreach (var message in messages)
         {
@@ -222,7 +222,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(request);
 
-        RedisKey deadKey = DeadKey(StreamKey(destination));
+        RedisKey deadKey = DeadKey(Resolve(destination).StreamKey);
         var entries = await _db.StreamRangeAsync(deadKey, count: Math.Max(1, request.MaxMessages)).ConfigureAwait(false);
         if (entries.Length == 0)
             return [];
@@ -255,12 +255,12 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
                 case DestinationRole.Subscription:
                 case DestinationRole.Binding:
                     string topic = declaration.Source ?? declaration.Name;
-                    var sub = new ResolvedSource(StreamKey(topic), declaration.Name, "$");
+                    var sub = new ResolvedSource(TopicStreamKey(topic), declaration.Name, "$");
                     _sources[declaration.Name] = sub;
                     await EnsureGroupAsync(sub).ConfigureAwait(false);
                     break;
                 default:
-                    var queue = new ResolvedSource(StreamKey(declaration.Name), _options.DefaultConsumerGroup, "0");
+                    var queue = new ResolvedSource(QueueStreamKey(declaration.Name), _options.DefaultConsumerGroup, "0");
                     _sources[declaration.Name] = queue;
                     await EnsureGroupAsync(queue).ConfigureAwait(false);
                     break;
@@ -354,8 +354,8 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         // PubSub facade sources are "topic/subscription" (a consumer group on the topic stream); a bare name is a queue
         // on the default group. Parse via the shared convention rather than re-deriving the split.
         return SubscriptionAddress.TryParse(source, out string topic, out string subscription)
-            ? new ResolvedSource(StreamKey(topic), subscription, "$")
-            : new ResolvedSource(StreamKey(source), _options.DefaultConsumerGroup, "0");
+            ? new ResolvedSource(TopicStreamKey(topic), subscription, "$")
+            : new ResolvedSource(QueueStreamKey(source), _options.DefaultConsumerGroup, "0");
     }
 
     private TransportEntry ToEntry(string destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
@@ -442,7 +442,11 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         return bar >= 0 ? s[..bar] : s;
     }
 
-    private RedisKey StreamKey(string name) => $"{_prefix}{name}";
+    // Streams are namespaced by role ("q:" queue, "t:" topic) because an XADD lands on whichever stream the key names:
+    // without the split, a message type both sent and published would share one stream and cross-deliver (a publish
+    // consumed as queue work and vice versa). Subscriptions are consumer groups on the topic stream.
+    private RedisKey QueueStreamKey(string name) => $"{_prefix}q:{name}";
+    private RedisKey TopicStreamKey(string name) => $"{_prefix}t:{name}";
     private static RedisKey DeadKey(RedisKey streamKey) => streamKey.ToString() + ":dead";
     private static RedisKey LockKey(ResolvedSource r) => $"{r.StreamKey}:lock:{r.Group}";
     private static RedisKey MetaKey(ResolvedSource r) => $"{r.StreamKey}:meta:{r.Group}";

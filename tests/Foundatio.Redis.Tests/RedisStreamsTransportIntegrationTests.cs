@@ -156,8 +156,63 @@ public class RedisStreamsTransportIntegrationTests
         Assert.Equal("broadcast", await receivedByB.Task);
     }
 
+    [Fact]
+    public async Task MessageBus_SendAndPublishSameType_StayIsolatedAsync()
+    {
+        if (RedisTestConnection.Multiplexer is not { } connection)
+        {
+            Assert.Skip("FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+            return;
+        }
+
+        var ct = TestContext.Current.CancellationToken;
+        await using var transport = CreateTransport(connection, NewPrefix());
+
+        // The unified bus: Send targets the queue-role stream, Publish the topic-role stream. The same route name must
+        // never cross-deliver — a publish must not be consumed as queue work and vice versa.
+        await using var queue = new MessageQueue(transport, new QueueOptions { OwnsTransport = false });
+        await using var pubSub = new PubSub(transport, new PubSubOptions { OwnsTransport = false });
+        await using var bus = new MessageBus(queue, pubSub);
+
+        var sent = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var published = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        int sendCount = 0, publishCount = 0;
+
+        await using var consumer = await queue.StartConsumerAsync<DualItem>((message, _) =>
+        {
+            Interlocked.Increment(ref sendCount);
+            sent.TrySetResult(message.Message.Data ?? "");
+            return Task.CompletedTask;
+        }, cancellationToken: ct);
+
+        await using var subscription = await pubSub.SubscribeAsync<DualItem>((message, _) =>
+        {
+            Interlocked.Increment(ref publishCount);
+            published.TrySetResult(message.Message.Data ?? "");
+            return Task.CompletedTask;
+        }, cancellationToken: ct);
+
+        await bus.SendAsync(new DualItem { Data = "for-one" }, cancellationToken: ct);
+        await bus.PublishAsync(new DualItem { Data = "for-all" }, cancellationToken: ct);
+
+        await Task.WhenAll(sent.Task, published.Task).WaitAsync(TimeSpan.FromSeconds(30), ct);
+        Assert.Equal("for-one", await sent.Task);
+        Assert.Equal("for-all", await published.Task);
+
+        // Give any cross-delivery a moment to surface, then assert exactly one delivery per verb.
+        await Task.Delay(500, ct);
+        Assert.Equal(1, Volatile.Read(ref sendCount));
+        Assert.Equal(1, Volatile.Read(ref publishCount));
+    }
+
     private static TransportMessage Message(string body) =>
         new() { Body = System.Text.Encoding.UTF8.GetBytes(body) };
+
+    [MessageRoute("streams-dual")]
+    private sealed class DualItem
+    {
+        public string? Data { get; set; }
+    }
 
     [MessageRoute("streams-retry")]
     private sealed class RetryItem

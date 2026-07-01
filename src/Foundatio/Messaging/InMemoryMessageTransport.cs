@@ -52,13 +52,12 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
-        // Honor the caller-stated destination role so a publish fans out even if the topic was not provisioned first.
-        // TryAdd never clobbers an existing role (distinct names are used for queues vs. topics).
-        if (options.DestinationRole == DestinationRole.Topic)
-            _roles.TryAdd(destination, DestinationRole.Topic);
-
         if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
             throw new NotSupportedException($"Transport \"{GetType().Name}\" does not support native delayed delivery. Use the runtime-store scheduled dispatch fallback.");
+
+        // The caller-stated role picks the physical namespace, so a queue and a topic can share a route name (a message
+        // type that is both sent and published) without colliding or cross-delivering.
+        string key = options.DestinationRole == DestinationRole.Topic ? TopicKey(destination) : SourceKey(destination);
 
         var results = new SendItemResult[messages.Count];
         for (int index = 0; index < messages.Count; index++)
@@ -67,8 +66,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             // Each message gets a unique id. DeduplicationId is a dedup hint (no transport implements dedup yet), not an
             // identity — using it as the message id gave distinct messages the same id and broke per-message settlement.
             string messageId = message.MessageId ?? Guid.NewGuid().ToString("N");
-            var stored = CreateStoredMessage(destination, messageId, message, options);
-            EnqueueForDestination(destination, stored);
+            var stored = CreateStoredMessage(key, messageId, message, options);
+            EnqueueForDestination(key, stored);
 
             results[index] = new SendItemResult { MessageId = messageId };
         }
@@ -93,7 +92,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(source);
 
         int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
-        var state = GetOrAddDestination(source, DestinationRole.Queue);
+        var state = GetOrAddDestination(SourceKey(source));
         var entries = new List<TransportEntry>(maxMessages);
         DateTimeOffset? waitUntil = request.MaxWaitTime is { } waitTime && waitTime > TimeSpan.Zero
             ? _timeProvider.GetUtcNow().Add(waitTime)
@@ -241,7 +240,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!_destinations.TryGetValue(destination, out var state))
+        if (!_destinations.TryGetValue(SourceKey(destination), out var state))
             return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
 
         int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
@@ -282,7 +281,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ct.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrEmpty(destination);
 
-        if (!_destinations.TryGetValue(destination, out var state))
+        if (!_destinations.TryGetValue(SourceKey(destination), out var state))
             return Task.FromResult(new MessageDestinationStats());
 
         return Task.FromResult(new MessageDestinationStats
@@ -310,14 +309,14 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             switch (declaration.Role)
             {
                 case DestinationRole.Queue:
-                    GetOrAddDestination(declaration.Name, DestinationRole.Queue);
+                    GetOrAddDestination(QueueKey(declaration.Name));
                     break;
                 case DestinationRole.Topic:
-                    SetRole(declaration.Name, DestinationRole.Topic);
-                    _topicSubscriptions.GetOrAdd(declaration.Name, static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+                    _roles.TryAdd(TopicKey(declaration.Name), DestinationRole.Topic);
+                    _topicSubscriptions.GetOrAdd(TopicKey(declaration.Name), static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
                     break;
                 case DestinationRole.Subscription:
-                    GetOrAddDestination(declaration.Name, DestinationRole.Subscription);
+                    GetOrAddDestination(QueueKey(declaration.Name));
                     if (!String.IsNullOrEmpty(declaration.Source))
                         AddTopicSubscription(declaration.Source, declaration.Name);
                     break;
@@ -325,7 +324,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
                     if (String.IsNullOrEmpty(declaration.Source))
                         throw new ArgumentException("A binding declaration must specify a source topic.", nameof(declarations));
 
-                    GetOrAddDestination(declaration.Name, DestinationRole.Subscription);
+                    GetOrAddDestination(QueueKey(declaration.Name));
                     AddTopicSubscription(declaration.Source, declaration.Name);
                     break;
                 default:
@@ -342,13 +341,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ct.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        _roles.TryRemove(name, out _);
-        if (_destinations.TryRemove(name, out var removed))
-            removed.Complete();
-        _topicSubscriptions.TryRemove(name, out _);
+        foreach (string key in (string[])[QueueKey(name), TopicKey(name)])
+        {
+            _roles.TryRemove(key, out _);
+            if (_destinations.TryRemove(key, out var removed))
+                removed.Complete();
+            _topicSubscriptions.TryRemove(key, out _);
 
-        foreach (var subscriptions in _topicSubscriptions.Values)
-            subscriptions.TryRemove(name, out _);
+            foreach (var subscriptions in _topicSubscriptions.Values)
+                subscriptions.TryRemove(key, out _);
+        }
 
         return Task.CompletedTask;
     }
@@ -359,7 +361,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ct.ThrowIfCancellationRequested();
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        return Task.FromResult(_roles.ContainsKey(name));
+        return Task.FromResult(_roles.ContainsKey(QueueKey(name)) || _roles.ContainsKey(TopicKey(name)));
     }
 
     public ValueTask DisposeAsync()
@@ -435,12 +437,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         }
     }
 
-    private void EnqueueForDestination(string destination, StoredMessage message)
+    private void EnqueueForDestination(string key, StoredMessage message)
     {
-        var role = _roles.GetOrAdd(destination, DestinationRole.Queue);
-        if (role == DestinationRole.Topic)
+        // Topic sends fan out one copy per subscription; a topic with no subscriptions drops the message (real
+        // pub/sub semantics — subscriptions must exist before a publish can reach them).
+        if (key.StartsWith("t:", StringComparison.Ordinal))
         {
-            if (!_topicSubscriptions.TryGetValue(destination, out var subscriptions))
+            if (!_topicSubscriptions.TryGetValue(key, out var subscriptions))
                 return;
 
             foreach (string subscription in subscriptions.Keys)
@@ -449,17 +452,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             return;
         }
 
-        if (role is DestinationRole.Binding)
-            throw new InvalidOperationException($"Cannot send directly to binding destination \"{destination}\".");
-
-        EnqueueStoredMessage(destination, message);
+        EnqueueStoredMessage(key, message);
     }
 
-    private void EnqueueStoredMessage(string destination, StoredMessage message)
+    private void EnqueueStoredMessage(string key, StoredMessage message)
     {
-        var role = _roles.GetOrAdd(destination, DestinationRole.Queue);
-        var state = GetOrAddDestination(destination, role == DestinationRole.Topic ? DestinationRole.Queue : role);
-        state.Enqueue(message with { Destination = destination });
+        var state = GetOrAddDestination(key);
+        state.Enqueue(message with { Destination = key });
     }
 
     // Make an abandoned message invisible for the redelivery delay, then re-enqueue it. Re-enqueueing releases the
@@ -532,7 +531,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
                 continue;
             }
 
-            var receipt = new InMemoryReceipt(source, Guid.NewGuid().ToString("N"));
+            // The receipt carries the internal (role-qualified) key so settlement resolves the same state; the entry's
+            // Destination stays the caller-facing source name.
+            var receipt = new InMemoryReceipt(SourceKey(source), Guid.NewGuid().ToString("N"));
             DateTimeOffset? visibilityExpiresUtc = visibility is { } window ? _timeProvider.GetUtcNow().Add(window) : null;
             state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
             Interlocked.Increment(ref state.Dequeued);
@@ -596,43 +597,36 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             EnqueuedUtc: _timeProvider.GetUtcNow());
     }
 
-    private DestinationState GetOrAddDestination(string name, DestinationRole role)
+    // Internal state is keyed by role-qualified names: "t:" for topics, "q:" for every receivable destination (queues
+    // AND subscriptions — a subscription is a queue-shaped destination a topic fans into, exactly like an SNS-bound SQS
+    // queue). This gives a queue/subscription and a topic sharing a route name distinct namespaces, as real brokers do.
+    private static string QueueKey(string name) => "q:" + name;
+    private static string TopicKey(string name) => "t:" + name;
+    private static string SourceKey(string name) => QueueKey(name);
+
+    private static DestinationRole RoleForKey(string key) => key[0] == 't' ? DestinationRole.Topic : DestinationRole.Queue;
+
+    private DestinationState GetOrAddDestination(string key)
     {
-        SetRole(name, role);
-        return _destinations.GetOrAdd(name, static _ => new DestinationState());
+        _roles.TryAdd(key, RoleForKey(key));
+        return _destinations.GetOrAdd(key, static _ => new DestinationState());
     }
 
-    private DestinationState GetExistingDestination(string name)
+    private DestinationState GetExistingDestination(string key)
     {
-        if (_destinations.TryGetValue(name, out var destination))
+        if (_destinations.TryGetValue(key, out var destination))
             return destination;
 
-        throw new ReceiptExpiredException($"The destination \"{name}\" no longer exists.");
-    }
-
-    private void SetRole(string name, DestinationRole role)
-    {
-        _roles.AddOrUpdate(name, role, (_, existing) =>
-        {
-            if (existing == role)
-                return existing;
-
-            if (existing == DestinationRole.Queue && role == DestinationRole.Subscription)
-                return role;
-
-            if (existing == DestinationRole.Subscription && role == DestinationRole.Queue)
-                return existing;
-
-            throw new InvalidOperationException($"Destination \"{name}\" is already declared as {existing}.");
-        });
+        throw new ReceiptExpiredException($"The destination \"{key}\" no longer exists.");
     }
 
     private void AddTopicSubscription(string topic, string subscription)
     {
-        SetRole(topic, DestinationRole.Topic);
-        GetOrAddDestination(subscription, DestinationRole.Subscription);
-        var subscriptions = _topicSubscriptions.GetOrAdd(topic, static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
-        subscriptions[subscription] = 0;
+        string topicKey = TopicKey(topic);
+        _roles.TryAdd(topicKey, DestinationRole.Topic);
+        GetOrAddDestination(QueueKey(subscription));
+        var subscriptions = _topicSubscriptions.GetOrAdd(topicKey, static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+        subscriptions[QueueKey(subscription)] = 0;
     }
 
     private static MessagePriority NormalizePriority(MessagePriority priority)

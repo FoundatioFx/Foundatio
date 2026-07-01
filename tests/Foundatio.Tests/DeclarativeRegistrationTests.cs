@@ -15,7 +15,7 @@ namespace Foundatio.Tests;
 public class DeclarativeRegistrationTests
 {
     [Fact]
-    public async Task AddHandlers_HostAndDispatchQueueAndBroadcastMessagesAsync()
+    public async Task AddHandler_SendGoesToOneHandlerAndPublishReachesSubscriptionAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var probe = new HandlerProbe();
@@ -25,32 +25,78 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddQueueHandler<HandledOrder, OrderHandler>()                                    // class handler, competing
-            .Messaging.AddQueueHandler<HandledTask>((message, _) => { probe.Record($"task:{message.Message.Id}"); return Task.CompletedTask; }) // delegate handler
-            .Messaging.AddBroadcastHandler<HandledEvent, EventHandler>();                                // class handler, fan-out
+            .Messaging.AddHandler<HandledOrder, OrderHandler>()                                       // class handler
+            .Messaging.AddHandler<HandledTask>((message, _) => { probe.Record($"task:{message.Message.Id}"); return Task.CompletedTask; }); // delegate handler
 
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
-        Assert.Single(hosted); // exactly one auto-registered hosted service drives every handler
+        Assert.Single(hosted); // one auto-registered hosted service drives every handler
 
         foreach (var service in hosted)
             await service.StartAsync(cancellationToken);
 
         try
         {
-            await provider.GetRequiredService<Foundatio.Messaging.IQueue>().EnqueueAsync(new HandledOrder { Id = "o1" }, cancellationToken: cancellationToken);
-            await provider.GetRequiredService<Foundatio.Messaging.IQueue>().EnqueueAsync(new HandledTask { Id = "t1" }, cancellationToken: cancellationToken);
-            await provider.GetRequiredService<IPubSub>().PublishAsync(new HandledEvent { Id = "e1" }, cancellationToken: cancellationToken);
+            var bus = provider.GetRequiredService<IMessageBus>();
 
-            Assert.True(await probe.WaitForAsync(3, TimeSpan.FromSeconds(10)), $"handled: {string.Join(",", probe.Events)}");
-            Assert.Contains("order:o1", probe.Events);
+            // The caller's verb decides delivery; the same registration serves both.
+            await bus.SendAsync(new HandledOrder { Id = "sent" }, cancellationToken: cancellationToken);
+            await bus.PublishAsync(new HandledOrder { Id = "published" }, cancellationToken: cancellationToken);
+            await bus.SendAsync(new HandledTask { Id = "t1" }, cancellationToken: cancellationToken);
+
+            Assert.True(await probe.WaitForAsync(3, TimeSpan.FromSeconds(10)), $"handled: {String.Join(",", probe.Events)}");
+            Assert.Contains("order:sent", probe.Events);
+            Assert.Contains("order:published", probe.Events);
             Assert.Contains("task:t1", probe.Events);
-            Assert.Contains("event:e1", probe.Events);
+
+            // Same type sent AND published: exactly one delivery per verb — the queue and topic namespaces are
+            // segregated, so a send is never fanned out and a publish is never consumed as queue work.
+            Assert.Equal(3, probe.Events.Count);
         }
         finally
         {
             foreach (var service in hosted)
                 await service.StopAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task AddHandler_PublishIsOncePerServiceUnlessPerInstanceAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+
+        // Two service providers sharing one transport simulate two scaled instances of the same service.
+        var sharedProbe = new HandlerProbe();
+        var instanceA = BuildInstance(transport, sharedProbe);
+        var instanceB = BuildInstance(transport, sharedProbe);
+
+        await using (instanceA.Provider)
+        await using (instanceB.Provider)
+        {
+            await StartAsync(instanceA, cancellationToken);
+            await StartAsync(instanceB, cancellationToken);
+
+            try
+            {
+                var bus = instanceA.Provider.GetRequiredService<IMessageBus>();
+
+                // Default subscription = service identity, shared by both instances => they compete: one copy total.
+                await bus.PublishAsync(new HandledEvent { Id = "shared" }, cancellationToken: cancellationToken);
+                Assert.True(await sharedProbe.WaitForAsync(1, TimeSpan.FromSeconds(10)), $"handled: {String.Join(",", sharedProbe.Events)}");
+                await Task.Delay(250, cancellationToken);
+                Assert.Single(sharedProbe.Events, e => e.StartsWith("event:", StringComparison.Ordinal));
+
+                // PerInstance handlers each take a unique subscription => every instance receives its own copy.
+                await bus.PublishAsync(new HandledBroadcast { Id = "all" }, cancellationToken: cancellationToken);
+                Assert.True(await sharedProbe.WaitForAsync(3, TimeSpan.FromSeconds(10)), $"handled: {String.Join(",", sharedProbe.Events)}");
+                Assert.Equal(2, sharedProbe.Events.Count(e => e.StartsWith("broadcast:", StringComparison.Ordinal)));
+            }
+            finally
+            {
+                await StopAsync(instanceA, cancellationToken);
+                await StopAsync(instanceB, cancellationToken);
+            }
         }
     }
 
@@ -101,6 +147,32 @@ public class DeclarativeRegistrationTests
         }
     }
 
+    private static (ServiceProvider Provider, List<IHostedService> Hosted) BuildInstance(InMemoryMessageTransport transport, HandlerProbe probe)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(probe);
+        services.AddFoundatio()
+            .Messaging.UseTransport(transport)
+            .Messaging.AddHandler<HandledEvent, EventHandler>()
+            .Messaging.AddHandler<HandledBroadcast, BroadcastHandler>(o => o.PerInstance = true);
+
+        var provider = services.BuildServiceProvider();
+        return (provider, provider.GetServices<IHostedService>().ToList());
+    }
+
+    private static async Task StartAsync((ServiceProvider Provider, List<IHostedService> Hosted) instance, CancellationToken cancellationToken)
+    {
+        foreach (var service in instance.Hosted)
+            await service.StartAsync(cancellationToken);
+    }
+
+    private static async Task StopAsync((ServiceProvider Provider, List<IHostedService> Hosted) instance, CancellationToken cancellationToken)
+    {
+        foreach (var service in instance.Hosted)
+            await service.StopAsync(cancellationToken);
+    }
+
     private sealed class HandlerProbe
     {
         private readonly ConcurrentBag<string> _events = new();
@@ -129,6 +201,9 @@ public class DeclarativeRegistrationTests
     [MessageRoute("declarative-events")]
     public class HandledEvent { public string Id { get; set; } = ""; }
 
+    [MessageRoute("declarative-broadcasts")]
+    public class HandledBroadcast { public string Id { get; set; } = ""; }
+
     private sealed class OrderHandler(HandlerProbe probe) : IMessageHandler<HandledOrder>
     {
         public Task HandleAsync(IReceivedMessage<HandledOrder> message, CancellationToken cancellationToken)
@@ -143,6 +218,15 @@ public class DeclarativeRegistrationTests
         public Task HandleAsync(IReceivedMessage<HandledEvent> message, CancellationToken cancellationToken)
         {
             probe.Record($"event:{message.Message.Id}");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BroadcastHandler(HandlerProbe probe) : IMessageHandler<HandledBroadcast>
+    {
+        public Task HandleAsync(IReceivedMessage<HandledBroadcast> message, CancellationToken cancellationToken)
+        {
+            probe.Record($"broadcast:{message.Message.Id}");
             return Task.CompletedTask;
         }
     }

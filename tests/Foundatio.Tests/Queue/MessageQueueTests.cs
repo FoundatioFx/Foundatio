@@ -22,7 +22,7 @@ public class MessageQueueTests
         await using var transport = new InMemoryMessageTransport();
         await using var queue = new MessageQueue(transport);
 
-        string id = await queue.EnqueueAsync(new PreviewWorkItem { Data = "hello" }, new QueueMessageOptions
+        string id = await queue.EnqueueAsync(new PreviewWorkItem { Data = "hello" }, new MessageSendOptions
         {
             CorrelationId = "corr-123",
             Priority = MessagePriority.High,
@@ -59,7 +59,7 @@ public class MessageQueueTests
         await queue.EnqueueBatchAsync([
             new PreviewWorkItem { Data = "one" },
             new PreviewWorkItem { Data = "two" }
-        ], new QueueMessageOptions { Destination = "custom-work" }, cancellationToken);
+        ], new MessageSendOptions { Destination = "custom-work" }, cancellationToken);
 
         var first = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { Source = "custom-work", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
         var second = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { Source = "custom-work", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
@@ -232,7 +232,7 @@ public class MessageQueueTests
         await using var queue = new MessageQueue(transport, new QueueOptions { RuntimeStore = store });
         var processor = CreateDispatchProcessor(store, transport);
 
-        await queue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
         var immediate = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
         Assert.Null(immediate);
@@ -252,7 +252,7 @@ public class MessageQueueTests
         await using var queue = new MessageQueue(new InMemoryMessageTransport());
 
         await Assert.ThrowsAsync<MessageQueueException>(async () =>
-            await queue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken));
+            await queue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken));
     }
 
     [Fact]
@@ -266,7 +266,7 @@ public class MessageQueueTests
         await using var nativeQueue = new MessageQueue(nativeTransport, new QueueOptions { RuntimeStore = nativeStore });
         var nativeProcessor = CreateDispatchProcessor(nativeStore, nativeTransport);
 
-        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
 
         Assert.Equal(1, nativeTransport.SendCount);
         Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
@@ -278,7 +278,7 @@ public class MessageQueueTests
         await using var fallbackQueue = new MessageQueue(fallbackTransport, new QueueOptions { RuntimeStore = fallbackStore });
         var fallbackProcessor = CreateDispatchProcessor(fallbackStore, fallbackTransport);
 
-        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
+        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
 
         Assert.Equal(0, fallbackTransport.SendCount);
         Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
@@ -389,7 +389,7 @@ public class MessageQueueTests
         await using var transport = new InMemoryMessageTransport();
         await using var queue = new MessageQueue(transport);
 
-        await queue.EnqueueAsync(new PreviewWorkItem { Data = "expired" }, new QueueMessageOptions { TimeToLive = TimeSpan.FromMilliseconds(-1) }, cancellationToken);
+        await queue.EnqueueAsync(new PreviewWorkItem { Data = "expired" }, new MessageSendOptions { TimeToLive = TimeSpan.FromMilliseconds(-1) }, cancellationToken);
 
         var received = await queue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
         Assert.Null(received);

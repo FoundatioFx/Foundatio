@@ -38,7 +38,7 @@ public class RedisJobStoreIntegrationTests
         await using var nativeQueue = new MessageQueue(nativeTransport, new QueueOptions { RuntimeStore = nativeStore });
         var nativeProcessor = CreateProcessor(nativeStore, nativeTransport).Processor;
 
-        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new QueueMessageOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
         Assert.Equal(1, nativeTransport.SendCount);
         Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
         Assert.Equal(0, await nativeProcessor.RunDueOccurrencesAsync(now.AddYears(1), cancellationToken: cancellationToken));
@@ -49,7 +49,7 @@ public class RedisJobStoreIntegrationTests
         await using var fallbackQueue = new MessageQueue(fallbackTransport, new QueueOptions { RuntimeStore = fallbackStore });
         var fallbackProcessor = CreateProcessor(fallbackStore, fallbackTransport).Processor;
 
-        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new QueueMessageOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
+        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
         Assert.Equal(0, fallbackTransport.SendCount);
 
         // Durably parked in Redis and time-gated: a drain before the due time claims nothing; only when due does the

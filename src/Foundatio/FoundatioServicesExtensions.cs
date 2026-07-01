@@ -7,7 +7,7 @@ using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Foundatio.Messaging.Legacy;
+using Legacy = Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
@@ -262,19 +262,19 @@ public class FoundatioBuilder : IFoundatioBuilder
         IServiceCollection IFoundatioBuilder.Services => _services;
         FoundatioBuilder IFoundatioBuilder.Builder => _builder;
 
-        public FoundatioBuilder Use(IMessageBus messageBus)
+        public FoundatioBuilder Use(Legacy.IMessageBus messageBus)
         {
             _services.ReplaceSingleton(_ => messageBus);
-            _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-            _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             return _builder;
         }
 
-        public FoundatioBuilder Use(Func<IServiceProvider, IMessageBus> factory)
+        public FoundatioBuilder Use(Func<IServiceProvider, Legacy.IMessageBus> factory)
         {
             _services.ReplaceSingleton(factory);
-            _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-            _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             return _builder;
         }
 
@@ -311,20 +311,20 @@ public class FoundatioBuilder : IFoundatioBuilder
             return this;
         }
 
-        public FoundatioBuilder UseInMemory(InMemoryMessageBusOptions? options = null)
+        public FoundatioBuilder UseInMemory(Legacy.InMemoryMessageBusOptions? options = null)
         {
-            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(options.UseServices(sp)));
-            _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-            _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.InMemoryMessageBus(options.UseServices(sp)));
+            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemory(Builder<InMemoryMessageBusOptionsBuilder, InMemoryMessageBusOptions> config)
+        public FoundatioBuilder UseInMemory(Builder<Legacy.InMemoryMessageBusOptionsBuilder, Legacy.InMemoryMessageBusOptions> config)
         {
-            _services.ReplaceSingleton<IMessageBus>(sp => new InMemoryMessageBus(b => b.Configure(config).UseServices(sp)));
-            _services.ReplaceSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IMessageBus>());
-            _services.ReplaceSingleton<IMessageSubscriber>(sp => sp.GetRequiredService<IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.InMemoryMessageBus(b => b.Configure(config).UseServices(sp)));
+            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
+            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
             return _builder;
         }
@@ -343,61 +343,70 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
 
         /// <summary>
-        /// Registers a handler that processes messages of type <typeparamref name="TMessage"/> from its queue as
-        /// competing consumers — exactly one running instance handles each message. The handler is resolved from DI in
-        /// its own scope per message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter
-        /// policy. A hosted service starts and stops it automatically.
+        /// Registers a handler for messages of type <typeparamref name="TMessage"/>. Registration carries no topology
+        /// decision — the caller's verb on <see cref="IMessageBus"/> decides delivery: a <c>SendAsync</c> is processed
+        /// by exactly one handler instance across the fleet (competing consumers), and a <c>PublishAsync</c> is received
+        /// once per subscribing service (a scaled service's instances compete), or by every instance when
+        /// <see cref="MessageHandlerOptions.PerInstance"/> is set. The handler is resolved from DI in its own scope per
+        /// message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter policy. A single
+        /// hosted service starts and stops all registered handlers.
         /// </summary>
-        public FoundatioBuilder AddQueueHandler<TMessage, THandler>(QueueConsumerOptions? options = null)
+        public FoundatioBuilder AddHandler<TMessage, THandler>(Action<MessageHandlerOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
-            return AddHandler($"queue:{typeof(TMessage).Name} -> {typeof(THandler).Name}", async (sp, ct) =>
-                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>(
-                    (message, c) => DispatchAsync<TMessage, THandler>(sp, message, c), options, ct).ConfigureAwait(false));
+            return AddHandlerListeners<TMessage>(typeof(THandler).Name, static (sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct), configure);
         }
 
         /// <summary>
-        /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/> from its queue as competing
-        /// consumers. A hosted service starts and stops it automatically.
+        /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/>; see
+        /// <see cref="AddHandler{TMessage, THandler}"/> for the delivery semantics.
         /// </summary>
-        public FoundatioBuilder AddQueueHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, QueueConsumerOptions? options = null)
+        public FoundatioBuilder AddHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, Action<MessageHandlerOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
-            return AddHandler($"queue:{typeof(TMessage).Name}", async (sp, ct) =>
-                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>(handler, options, ct).ConfigureAwait(false));
+            return AddHandlerListeners<TMessage>(null, (_, message, ct) => handler(message, ct), configure);
         }
 
-        /// <summary>
-        /// Registers a handler that receives every message of type <typeparamref name="TMessage"/> published to its
-        /// topic — a per-instance subscription means every running instance gets its own copy (fan-out). Pass an explicit
-        /// <paramref name="subscription"/> to share a named subscription (load-balanced) instead. Resolved from DI per
-        /// message; a hosted service starts and stops it automatically.
-        /// </summary>
-        public FoundatioBuilder AddBroadcastHandler<TMessage, THandler>(string? subscription = null)
-            where TMessage : class where THandler : class, IMessageHandler<TMessage>
-        {
-            _services.TryAddScoped<THandler>();
-            string name = subscription ?? UniqueSubscriptionName();
-            return AddHandler($"broadcast:{typeof(TMessage).Name} -> {typeof(THandler).Name}", async (sp, ct) =>
-                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>(
-                    (message, c) => DispatchAsync<TMessage, THandler>(sp, message, c),
-                    new PubSubSubscriptionOptions { Subscription = name }, ct).ConfigureAwait(false));
-        }
-
-        /// <summary>
-        /// Registers a delegate handler that receives every message of type <typeparamref name="TMessage"/> published to
-        /// its topic (fan-out via a per-instance subscription). A hosted service starts and stops it automatically.
-        /// </summary>
-        public FoundatioBuilder AddBroadcastHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, string? subscription = null)
+        private FoundatioBuilder AddHandlerListeners<TMessage>(string? handlerName, Func<IServiceProvider, IReceivedMessage<TMessage>, CancellationToken, Task> dispatch, Action<MessageHandlerOptions>? configure)
             where TMessage : class
         {
-            ArgumentNullException.ThrowIfNull(handler);
-            string name = subscription ?? UniqueSubscriptionName();
-            return AddHandler($"broadcast:{typeof(TMessage).Name}", async (sp, ct) =>
-                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>(handler,
-                    new PubSubSubscriptionOptions { Subscription = name }, ct).ConfigureAwait(false));
+            var options = new MessageHandlerOptions();
+            configure?.Invoke(options);
+
+            if (options.PerInstance && !String.IsNullOrEmpty(options.Subscription))
+                throw new ArgumentException("PerInstance and Subscription are mutually exclusive: PerInstance derives a unique per-instance subscription.", nameof(configure));
+
+            string suffix = handlerName is null ? String.Empty : $" -> {handlerName}";
+
+            // Send target: competing consumers on the message type's queue destination — one handler instance across
+            // the fleet processes each SendAsync.
+            AddHandlerRegistration($"send:{typeof(TMessage).Name}{suffix}", async (sp, ct) =>
+                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>((message, c) => dispatch(sp, message, c), new QueueConsumerOptions
+                {
+                    AckMode = options.AckMode,
+                    MaxConcurrency = options.MaxConcurrency,
+                    MaxAttempts = options.MaxAttempts,
+                    RedeliveryBackoff = options.RedeliveryBackoff
+                }, ct).ConfigureAwait(false));
+
+            // Publish target: this service's subscription on the message type's topic. The default subscription
+            // identity is the service identity, so scaled instances share one subscription and compete — each service
+            // handles a published message once. PerInstance instead takes a unique per-instance subscription so every
+            // instance receives its own copy.
+            string? subscription = options.PerInstance ? UniqueSubscriptionName() : options.Subscription;
+            AddHandlerRegistration($"publish:{typeof(TMessage).Name}{suffix}", async (sp, ct) =>
+                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>((message, c) => dispatch(sp, message, c), new PubSubSubscriptionOptions
+                {
+                    Subscription = subscription,
+                    AckMode = options.AckMode,
+                    MaxConcurrency = options.MaxConcurrency,
+                    MaxAttempts = options.MaxAttempts,
+                    RedeliveryBackoff = options.RedeliveryBackoff
+                }, ct).ConfigureAwait(false));
+
+            return _builder;
         }
 
         private static async Task DispatchAsync<TMessage, THandler>(IServiceProvider serviceProvider, IReceivedMessage<TMessage> message, CancellationToken cancellationToken)
@@ -410,12 +419,11 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         private static string UniqueSubscriptionName() => $"{Environment.MachineName}-{Guid.NewGuid():N}";
 
-        private FoundatioBuilder AddHandler(string description, Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> start)
+        private void AddHandlerRegistration(string description, Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> start)
         {
             _services.AddSingleton(new MessageHandlerRegistration { Description = description, StartAsync = start });
             if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
                 _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
-            return _builder;
         }
 
         private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
@@ -462,6 +470,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IMessageTypeRegistry>(sp => new MessageTypeRegistry(sp.GetServices<MessageTypeRegistration>()));
             _services.ReplaceSingleton<Messaging.IQueue>(sp => new MessageQueue(sp.GetRequiredService<IMessageTransport>(), CreateQueueOptions(sp)));
             _services.ReplaceSingleton<IPubSub>(sp => new PubSub(sp.GetRequiredService<IMessageTransport>(), CreatePubSubOptions(sp)));
+            // The primary client: one bus, two verbs. The underlying queue/pub-sub clients stay resolvable for
+            // advanced scenarios (pull receive, programmatic consumers).
+            _services.ReplaceSingleton<IMessageBus>(sp => new MessageBus(sp.GetRequiredService<Messaging.IQueue>(), sp.GetRequiredService<IPubSub>()));
         }
 
         private static QueueOptions CreateQueueOptions(IServiceProvider serviceProvider)
@@ -679,7 +690,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<IMessageBus>(), // optional for more efficient lock release notifications
+                sp.GetService<Legacy.IMessageBus>(), // optional for more efficient lock release notifications
                 sp.GetService<TimeProvider>(),
                 sp.GetService<IResiliencePolicyProvider>(),
                 sp.GetService<ILoggerFactory>()

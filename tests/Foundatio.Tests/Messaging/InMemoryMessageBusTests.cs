@@ -1,7 +1,6 @@
 using System;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
-using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Tests.Extensions;
 using Xunit;

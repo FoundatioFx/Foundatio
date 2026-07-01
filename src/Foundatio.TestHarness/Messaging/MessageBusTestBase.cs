@@ -6,7 +6,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
-using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Serializer;
@@ -862,7 +861,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.DisposeAsync();
 
             // Act & Assert
-            await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(async () =>
                 await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }));
         }
         finally
@@ -873,7 +872,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     /// <summary>
     /// Verifies that cancellation is surfaced as OperationCanceledException, not swallowed
-    /// or wrapped in MessageBusException. This ensures callers can distinguish between
+    /// or wrapped in Foundatio.Messaging.MessageBusException. This ensures callers can distinguish between
     /// cancellation and actual publish failures.
     /// </summary>
     public virtual async Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
@@ -946,7 +945,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.SubscribeAsync<SimpleMessageA>(_ => { });
 
             // Act & Assert
-            await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(async () =>
                 await messageBus.PublishAsync(new SimpleMessageA { Data = "test" }, cancellationToken: TestCancellationToken));
         }
         finally
@@ -967,7 +966,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
             await messageBus.DisposeAsync();
 
             // Act & Assert
-            await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await Assert.ThrowsAsync<Foundatio.Messaging.MessageBusException>(async () =>
                 await messageBus.SubscribeAsync<SimpleMessageA>(_ => { }));
         }
         finally
@@ -1023,7 +1022,7 @@ public abstract class MessageBusTestBase : TestWithLoggingBase
 
     /// <summary>
     /// Verifies that cancellation is surfaced as OperationCanceledException, not swallowed
-    /// or wrapped in MessageBusException. This ensures callers can distinguish between
+    /// or wrapped in Foundatio.Messaging.MessageBusException. This ensures callers can distinguish between
     /// cancellation and actual subscribe failures.
     /// </summary>
     public virtual async Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
