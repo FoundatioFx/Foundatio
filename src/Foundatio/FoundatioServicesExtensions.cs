@@ -347,64 +347,53 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// decision — the caller's verb on <see cref="IMessageBus"/> decides delivery: a <c>SendAsync</c> is processed
         /// by exactly one handler instance across the fleet (competing consumers), and a <c>PublishAsync</c> is received
         /// once per subscribing service (a scaled service's instances compete), or by every instance when
-        /// <see cref="MessageHandlerOptions.PerInstance"/> is set. The handler is resolved from DI in its own scope per
-        /// message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter policy. A single
+        /// <see cref="MessageSubscriptionOptions.PerInstance"/> is set. The handler is resolved from DI in its own scope
+        /// per message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter policy. A single
         /// hosted service starts and stops all registered handlers.
         /// </summary>
-        public FoundatioBuilder AddHandler<TMessage, THandler>(Action<MessageHandlerOptions>? configure = null)
+        public FoundatioBuilder AddHandler<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
-            return AddHandlerListeners<TMessage>(typeof(THandler).Name, static (sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct), configure);
+            // Each handler class is its own subscriber group ("{service}.{handler}"), so every handler registered for
+            // an event type receives its own copy of each published message.
+            return AddHandlerRegistration<TMessage>(typeof(THandler).Name, static (sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct),
+                options =>
+                {
+                    configure?.Invoke(options);
+                    options.SubscriptionQualifier ??= typeof(THandler).Name;
+                });
         }
 
         /// <summary>
         /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/>; see
         /// <see cref="AddHandler{TMessage, THandler}"/> for the delivery semantics.
         /// </summary>
-        public FoundatioBuilder AddHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, Action<MessageHandlerOptions>? configure = null)
+        public FoundatioBuilder AddHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
-            return AddHandlerListeners<TMessage>(null, (_, message, ct) => handler(message, ct), configure);
+            return AddHandlerRegistration<TMessage>(null, (_, message, ct) => handler(message, ct), configure);
         }
 
-        private FoundatioBuilder AddHandlerListeners<TMessage>(string? handlerName, Func<IServiceProvider, IReceivedMessage<TMessage>, CancellationToken, Task> dispatch, Action<MessageHandlerOptions>? configure)
+        private FoundatioBuilder AddHandlerRegistration<TMessage>(string? handlerName, Func<IServiceProvider, IReceivedMessage<TMessage>, CancellationToken, Task> dispatch, Action<MessageSubscriptionOptions>? configure)
             where TMessage : class
         {
-            var options = new MessageHandlerOptions();
-            configure?.Invoke(options);
-
-            if (options.PerInstance && !String.IsNullOrEmpty(options.Subscription))
-                throw new ArgumentException("PerInstance and Subscription are mutually exclusive: PerInstance derives a unique per-instance subscription.", nameof(configure));
-
             string suffix = handlerName is null ? String.Empty : $" -> {handlerName}";
-
-            // Send target: competing consumers on the message type's queue destination — one handler instance across
-            // the fleet processes each SendAsync.
-            AddHandlerRegistration($"send:{typeof(TMessage).Name}{suffix}", async (sp, ct) =>
-                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>((message, c) => dispatch(sp, message, c), new QueueConsumerOptions
+            _services.AddSingleton(new MessageHandlerRegistration
+            {
+                Description = $"handler:{typeof(TMessage).Name}{suffix}",
+                StartAsync = async (sp, ct) =>
                 {
-                    AckMode = options.AckMode,
-                    MaxConcurrency = options.MaxConcurrency,
-                    MaxAttempts = options.MaxAttempts,
-                    RedeliveryBackoff = options.RedeliveryBackoff
-                }, ct).ConfigureAwait(false));
+                    var options = new MessageSubscriptionOptions();
+                    configure?.Invoke(options);
+                    return await sp.GetRequiredService<IMessageBus>()
+                        .SubscribeAsync<TMessage>((message, c) => dispatch(sp, message, c), options, ct).ConfigureAwait(false);
+                }
+            });
 
-            // Publish target: this service's subscription on the message type's topic. The default subscription
-            // identity is the service identity, so scaled instances share one subscription and compete — each service
-            // handles a published message once. PerInstance instead takes a unique per-instance subscription so every
-            // instance receives its own copy.
-            string? subscription = options.PerInstance ? UniqueSubscriptionName() : options.Subscription;
-            AddHandlerRegistration($"publish:{typeof(TMessage).Name}{suffix}", async (sp, ct) =>
-                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>((message, c) => dispatch(sp, message, c), new PubSubSubscriptionOptions
-                {
-                    Subscription = subscription,
-                    AckMode = options.AckMode,
-                    MaxConcurrency = options.MaxConcurrency,
-                    MaxAttempts = options.MaxAttempts,
-                    RedeliveryBackoff = options.RedeliveryBackoff
-                }, ct).ConfigureAwait(false));
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
+                _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
 
             return _builder;
         }
@@ -415,15 +404,6 @@ public class FoundatioBuilder : IFoundatioBuilder
             await using var scope = serviceProvider.CreateAsyncScope();
             var handler = scope.ServiceProvider.GetRequiredService<THandler>();
             await handler.HandleAsync(message, cancellationToken).ConfigureAwait(false);
-        }
-
-        private static string UniqueSubscriptionName() => $"{Environment.MachineName}-{Guid.NewGuid():N}";
-
-        private void AddHandlerRegistration(string description, Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> start)
-        {
-            _services.AddSingleton(new MessageHandlerRegistration { Description = description, StartAsync = start });
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
-                _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
         }
 
         private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
@@ -468,44 +448,18 @@ public class FoundatioBuilder : IFoundatioBuilder
         {
             RegisterRoutingServices();
             _services.ReplaceSingleton<IMessageTypeRegistry>(sp => new MessageTypeRegistry(sp.GetServices<MessageTypeRegistration>()));
-            _services.ReplaceSingleton<Messaging.IQueue>(sp => new MessageQueue(sp.GetRequiredService<IMessageTransport>(), CreateQueueOptions(sp)));
-            _services.ReplaceSingleton<IPubSub>(sp => new PubSub(sp.GetRequiredService<IMessageTransport>(), CreatePubSubOptions(sp)));
-            // The primary client: one bus, two verbs. The underlying queue/pub-sub clients stay resolvable for
-            // advanced scenarios (pull receive, programmatic consumers).
-            _services.ReplaceSingleton<IMessageBus>(sp => new MessageBus(sp.GetRequiredService<Messaging.IQueue>(), sp.GetRequiredService<IPubSub>()));
-        }
-
-        private static QueueOptions CreateQueueOptions(IServiceProvider serviceProvider)
-        {
-            return new QueueOptions
+            _services.ReplaceSingleton<IMessageBus>(sp => new MessageBus(sp.GetRequiredService<IMessageTransport>(), new MessageBusOptions
             {
-                Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
-                Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
-                MessageTypes = serviceProvider.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
-                RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
-                RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
-                // The transport is a shared DI singleton owned by the container; the queue must not dispose it (the
-                // pub/sub client uses the same instance).
+                Serializer = sp.GetService<ISerializer>() ?? DefaultSerializer.Instance,
+                Router = sp.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
+                MessageTypes = sp.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
+                RuntimeStore = sp.GetService<IJobRuntimeStore>(),
+                RetryPolicy = sp.GetService<RetryPolicy>() ?? new RetryPolicy(),
+                // The transport is a shared DI singleton owned by the container; the bus must not dispose it.
                 OwnsTransport = false,
-                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
-                LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
-            };
-        }
-
-        private static PubSubOptions CreatePubSubOptions(IServiceProvider serviceProvider)
-        {
-            return new PubSubOptions
-            {
-                Serializer = serviceProvider.GetService<ISerializer>() ?? DefaultSerializer.Instance,
-                Router = serviceProvider.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
-                MessageTypes = serviceProvider.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
-                RuntimeStore = serviceProvider.GetService<IJobRuntimeStore>(),
-                RetryPolicy = serviceProvider.GetService<RetryPolicy>() ?? new RetryPolicy(),
-                // Shared DI singleton transport; disposed once by the container, not by this client.
-                OwnsTransport = false,
-                TimeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System,
-                LoggerFactory = serviceProvider.GetService<ILoggerFactory>()
-            };
+                TimeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                LoggerFactory = sp.GetService<ILoggerFactory>()
+            }));
         }
     }
 

@@ -16,7 +16,7 @@ namespace Foundatio.Messaging;
 
 /// <summary>
 /// Core-owned messaging instruments. Counters and histograms are transport-agnostic and shared by every
-/// <see cref="MessageQueue"/> and <see cref="PubSub"/> instance so that send/receive/settlement volume and handler
+/// <see cref="MessageBus"/> instance so that send/receive/settlement volume and handler
 /// latency are observable regardless of which transport is plugged in.
 /// </summary>
 internal static class MessagingInstruments
@@ -62,7 +62,7 @@ internal sealed record ListenerConfig
 }
 
 /// <summary>
-/// Shared implementation behind <see cref="MessageQueue"/> and <see cref="PubSub"/>: serialization, header/trace
+/// Shared implementation behind <see cref="MessageBus"/>: serialization, header/trace
 /// construction, routing-agnostic send (with batch chunking and runtime-store scheduled dispatch), received-message
 /// creation with poison handling, auto/manual ack settlement, and the resilient consumer/subscription loop.
 /// </summary>
@@ -975,7 +975,7 @@ internal class ReceivedMessage : IReceivedMessage
         }
 
         if (_runtimeStore is null)
-            throw new MessageQueueException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
+            throw new MessageBusException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
 
         // Advance from the reconciled attempt count, not the raw transport DeliveryCount: the re-send produces a new
         // transport message whose native DeliveryCount resets to 1, so basing the next attempt on DeliveryCount would
@@ -1085,11 +1085,10 @@ internal static class MessageRoutingConventions
 }
 
 /// <summary>
-/// A started listener handle. A single type backs both the queue consumer and pub/sub subscription surfaces; queue
-/// callers observe it as <see cref="IMessageConsumer"/> (Source/Key), pub/sub callers as <see cref="IMessageSubscription"/>
-/// (Topic/Subscription/Key).
+/// A started listener handle for one channel (a send destination or a topic subscription); the bus composes one per
+/// channel into the <see cref="IMessageSubscription"/> it returns.
 /// </summary>
-internal sealed class MessageListenerHandle : IMessageConsumer, IMessageSubscription
+internal sealed class MessageListenerHandle : IAsyncDisposable
 {
     private readonly Func<ValueTask> _dispose;
     private int _isDisposed;

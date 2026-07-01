@@ -101,6 +101,48 @@ public class DeclarativeRegistrationTests
     }
 
     [Fact]
+    public async Task AddHandler_TwoHandlerClassesForOneType_EachGetsPublishedAndSendReachesOneAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var probe = new HandlerProbe();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(probe);
+        services.AddFoundatio()
+            .Messaging.UseInMemory()
+            .Messaging.AddHandler<HandledEvent, EventHandler>()
+            .Messaging.AddHandler<HandledEvent, SecondEventHandler>();
+
+        await using var provider = services.BuildServiceProvider();
+        var hosted = provider.GetServices<IHostedService>().ToList();
+        foreach (var service in hosted)
+            await service.StartAsync(cancellationToken);
+
+        try
+        {
+            var bus = provider.GetRequiredService<IMessageBus>();
+
+            // An event reaches EVERY handler class (each is its own subscriber group).
+            await bus.PublishAsync(new HandledEvent { Id = "e1" }, cancellationToken: cancellationToken);
+            Assert.True(await probe.WaitForAsync(2, TimeSpan.FromSeconds(10)), $"handled: {String.Join(",", probe.Events)}");
+            Assert.Contains("event:e1", probe.Events);
+            Assert.Contains("second:e1", probe.Events);
+
+            // A command reaches exactly ONE handler (competing consumers on the type's send channel).
+            await bus.SendAsync(new HandledEvent { Id = "s1" }, cancellationToken: cancellationToken);
+            Assert.True(await probe.WaitForAsync(3, TimeSpan.FromSeconds(10)), $"handled: {String.Join(",", probe.Events)}");
+            await Task.Delay(250, cancellationToken);
+            Assert.Equal(1, probe.Events.Count(e => e.EndsWith(":s1", StringComparison.Ordinal)));
+        }
+        finally
+        {
+            foreach (var service in hosted)
+                await service.StopAsync(cancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task AddCronJob_RegistersDefinitionAndSchedulesWhenPumpStartsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -218,6 +260,15 @@ public class DeclarativeRegistrationTests
         public Task HandleAsync(IReceivedMessage<HandledEvent> message, CancellationToken cancellationToken)
         {
             probe.Record($"event:{message.Message.Id}");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SecondEventHandler(HandlerProbe probe) : IMessageHandler<HandledEvent>
+    {
+        public Task HandleAsync(IReceivedMessage<HandledEvent> message, CancellationToken cancellationToken)
+        {
+            probe.Record($"second:{message.Message.Id}");
             return Task.CompletedTask;
         }
     }

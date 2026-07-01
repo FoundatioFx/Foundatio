@@ -170,7 +170,11 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
 
         long acked = await _db.StreamAcknowledgeAsync(r.StreamKey, r.Group, r.EntryId).ConfigureAwait(false);
-        await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
+        // Only a queue stream (single consumer group) may delete on complete. A topic stream is shared by every
+        // subscription group, so one group completing must not delete the entry before the others read it; topic
+        // entries are retained (bound by MaxStreamLength when configured).
+        if (!IsTopicStream(r.StreamKey))
+            await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
         await ClearTrackingAsync(r).ConfigureAwait(false);
 
         if (acked == 0)
@@ -212,7 +216,9 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
             maxLength: _options.MaxStreamLength, useApproximateMaxLength: true).ConfigureAwait(false);
 
         await _db.StreamAcknowledgeAsync(r.StreamKey, r.Group, r.EntryId).ConfigureAwait(false);
-        await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
+        // Same rule as CompleteAsync: other subscription groups on a topic stream may not have read this entry yet.
+        if (!IsTopicStream(r.StreamKey))
+            await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
         await ClearTrackingAsync(r).ConfigureAwait(false);
     }
 
@@ -250,7 +256,10 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
             switch (declaration.Role)
             {
                 case DestinationRole.Topic:
-                    // Topics are read through subscription groups; nothing to create until a subscription appears.
+                    // Topics are read through subscription groups; nothing to create until a subscription appears. The
+                    // name must NOT be registered in _sources: a queue can share the route name, and receive-side
+                    // resolution of the bare name must keep meaning the queue stream. Exists/delete are role-aware by
+                    // probing both namespaces instead.
                     break;
                 case DestinationRole.Subscription:
                 case DestinationRole.Binding:
@@ -273,23 +282,63 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        var resolved = Resolve(name);
-        await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved.StreamKey), LockKey(resolved), MetaKey(resolved)]).ConfigureAwait(false);
+        // A subscription address deletes only that group's state (never the shared topic stream); a bare name deletes
+        // the name in both role namespaces, mirroring the in-memory transport.
+        if (SubscriptionAddress.TryParse(name, out string topic, out string subscription))
+        {
+            var sub = new ResolvedSource(TopicStreamKey(topic), subscription, "$");
+            await _db.StreamDeleteConsumerGroupAsync(sub.StreamKey, sub.Group).ConfigureAwait(false);
+            await _db.KeyDeleteAsync([LockKey(sub), MetaKey(sub)]).ConfigureAwait(false);
+            _sources.TryRemove(name, out _);
+            _ensuredGroups.TryRemove(GroupKey(sub), out _);
+            return;
+        }
+
+        foreach (var resolved in (ResolvedSource[])
+        [
+            new ResolvedSource(QueueStreamKey(name), _options.DefaultConsumerGroup, "0"),
+            new ResolvedSource(TopicStreamKey(name), _options.DefaultConsumerGroup, "$")
+        ])
+        {
+            // Drop each consumer group's lease/meta state before the stream itself (topic streams can carry several).
+            if (await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
+            {
+                foreach (var group in await _db.StreamGroupInfoAsync(resolved.StreamKey).ConfigureAwait(false))
+                {
+                    var groupSource = resolved with { Group = group.Name };
+                    await _db.KeyDeleteAsync([LockKey(groupSource), MetaKey(groupSource)]).ConfigureAwait(false);
+                    _ensuredGroups.TryRemove(GroupKey(groupSource), out _);
+                }
+            }
+
+            await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved.StreamKey)]).ConfigureAwait(false);
+            _ensuredGroups.TryRemove(GroupKey(resolved), out _);
+        }
+
         _sources.TryRemove(name, out _);
-        _ensuredGroups.TryRemove(GroupKey(resolved), out _);
     }
 
-    public Task<bool> ExistsAsync(string name, CancellationToken ct)
+    public async Task<bool> ExistsAsync(string name, CancellationToken ct)
     {
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrEmpty(name);
-        return _db.KeyExistsAsync(Resolve(name).StreamKey);
+
+        if (SubscriptionAddress.TryParse(name, out string topic, out _))
+            return await _db.KeyExistsAsync(TopicStreamKey(topic)).ConfigureAwait(false);
+
+        return await _db.KeyExistsAsync(QueueStreamKey(name)).ConfigureAwait(false)
+            || await _db.KeyExistsAsync(TopicStreamKey(name)).ConfigureAwait(false);
     }
 
     public async Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         var resolved = Resolve(destination);
+
+        // Probing stats must not create phantom streams/groups; a destination that doesn't exist yet is simply empty.
+        if (!await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
+            return new MessageDestinationStats();
+
         await EnsureGroupAsync(resolved).ConfigureAwait(false);
 
         long length = await _db.StreamLengthAsync(resolved.StreamKey).ConfigureAwait(false);
@@ -447,6 +496,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     // consumed as queue work and vice versa). Subscriptions are consumer groups on the topic stream.
     private RedisKey QueueStreamKey(string name) => $"{_prefix}q:{name}";
     private RedisKey TopicStreamKey(string name) => $"{_prefix}t:{name}";
+    private bool IsTopicStream(string streamKey) => streamKey.StartsWith($"{_prefix}t:", StringComparison.Ordinal);
     private static RedisKey DeadKey(RedisKey streamKey) => streamKey.ToString() + ":dead";
     private static RedisKey LockKey(ResolvedSource r) => $"{r.StreamKey}:lock:{r.Group}";
     private static RedisKey MetaKey(ResolvedSource r) => $"{r.StreamKey}:meta:{r.Group}";
