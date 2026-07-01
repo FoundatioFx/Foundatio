@@ -22,7 +22,7 @@ public abstract class TestWithLoggingBase : IAsyncLifetime
     /// <summary>
     /// Gets a cancellation token that is cancelled when the current test completes or
     /// when the test run is aborted/timed out. Pass this token to
-    /// <see cref="Foundatio.Messaging.IMessageSubscriber.SubscribeAsync{T}"/>
+    /// <see cref="Foundatio.Messaging.IPubSub.SubscribeAsync{T}"/>
     /// and other async operations to ensure automatic cleanup between tests.
     /// </summary>
     /// <remarks>

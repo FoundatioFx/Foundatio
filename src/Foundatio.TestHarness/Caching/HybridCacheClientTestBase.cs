@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Tests.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit;

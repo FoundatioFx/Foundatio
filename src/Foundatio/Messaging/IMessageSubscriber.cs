@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 /// <summary>
 /// Subscribes to messages published on the message bus.

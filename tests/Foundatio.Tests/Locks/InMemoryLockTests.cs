@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Xunit;
 
 namespace Foundatio.Tests.Locks;

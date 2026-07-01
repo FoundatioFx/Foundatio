@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 /// <summary>
 /// Represents a message received from the message bus with metadata and raw payload.

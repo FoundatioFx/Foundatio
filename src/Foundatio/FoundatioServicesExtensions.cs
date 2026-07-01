@@ -5,6 +5,7 @@ using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Serializer;

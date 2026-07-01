@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;

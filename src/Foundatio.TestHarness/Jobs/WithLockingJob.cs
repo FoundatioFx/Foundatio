@@ -5,6 +5,7 @@ using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Microsoft.Extensions.Logging;
 using Xunit;
 

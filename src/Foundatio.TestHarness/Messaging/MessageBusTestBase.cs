@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Serializer;
 using Foundatio.Tests.Utility;

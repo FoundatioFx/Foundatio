@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 public class NullMessageBus : IMessageBus
 {

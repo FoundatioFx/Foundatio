@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
