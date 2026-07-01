@@ -13,7 +13,8 @@ public static class RedisFoundatioBuilderExtensions
     /// <summary>
     /// Backs the durable job runtime with Redis. Uses an <see cref="IConnectionMultiplexer"/> already registered in DI,
     /// otherwise connects using <paramref name="connectionString"/> or the "Redis" connection string from configuration
-    /// (falling back to localhost). The connection is shared with <see cref="UseRedis(FoundatioBuilder.MessagingBuilder, Action{RedisStreamsMessageTransportOptions}, string)"/>.
+    /// (falling back to localhost). When both messaging and jobs use Redis a single connection is shared, so the
+    /// connection string from the first <c>UseRedis</c> call wins (a differing string on the second call is ignored).
     /// </summary>
     public static FoundatioBuilder UseRedis(this FoundatioBuilder.JobsBuilder builder, Action<RedisJobRuntimeStoreOptions>? configure = null, string? connectionString = null)
     {
@@ -29,7 +30,8 @@ public static class RedisFoundatioBuilderExtensions
     /// <summary>
     /// Runs messaging (queues + pub/sub) over Redis Streams. Uses an <see cref="IConnectionMultiplexer"/> already
     /// registered in DI, otherwise connects using <paramref name="connectionString"/> or the "Redis" connection string
-    /// from configuration (falling back to localhost).
+    /// from configuration (falling back to localhost). When both messaging and jobs use Redis a single connection is
+    /// shared, so the connection string from the first <c>UseRedis</c> call wins (a differing string on the second is ignored).
     /// </summary>
     public static FoundatioBuilder UseRedis(this FoundatioBuilder.MessagingBuilder builder, Action<RedisStreamsMessageTransportOptions>? configure = null, string? connectionString = null)
     {

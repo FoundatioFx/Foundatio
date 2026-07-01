@@ -42,19 +42,47 @@ internal sealed class MessageHandlerHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        foreach (var registration in _registrations)
+        try
         {
-            var disposable = await registration.StartAsync(_serviceProvider, cancellationToken).AnyContext();
-            _started.Add(disposable);
-            _logger.LogInformation("Started message handler {Handler}", registration.Description);
+            foreach (var registration in _registrations)
+            {
+                var disposable = await registration.StartAsync(_serviceProvider, cancellationToken).AnyContext();
+                _started.Add(disposable);
+                _logger.LogInformation("Started message handler {Handler}", registration.Description);
+            }
+        }
+        catch
+        {
+            // A hosted service whose StartAsync throws is not sent StopAsync, so dispose whatever we already started
+            // rather than leaking those consumers' background receive loops.
+            await DisposeStartedAsync().AnyContext();
+            throw;
         }
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
-    {
-        foreach (var disposable in _started)
-            await disposable.DisposeAsync().AnyContext();
+    public Task StopAsync(CancellationToken cancellationToken) => DisposeStartedAsync();
 
-        _started.Clear();
+    private async Task DisposeStartedAsync()
+    {
+        try
+        {
+            // Dispose every started consumer even if one throws (e.g. a broker connection dropped mid-shutdown), so a
+            // single failure can't leak the rest.
+            foreach (var disposable in _started)
+            {
+                try
+                {
+                    await disposable.DisposeAsync().AnyContext();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error disposing message handler consumer: {Message}", ex.Message);
+                }
+            }
+        }
+        finally
+        {
+            _started.Clear();
+        }
     }
 }
