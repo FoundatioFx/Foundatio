@@ -15,6 +15,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Foundatio.HostingSample\Foundatio.HostingSample.csproj" />
+        <ProjectReference Include="..\Foundatio.MessagingSample\Foundatio.MessagingSample.csproj" />
     </ItemGroup>
 
 </Project>
