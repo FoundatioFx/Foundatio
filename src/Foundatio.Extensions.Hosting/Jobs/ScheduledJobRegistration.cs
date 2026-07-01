@@ -1,4 +1,4 @@
-﻿namespace Foundatio.Extensions.Hosting.Jobs;
+﻿namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class ScheduledJobRegistration
 {

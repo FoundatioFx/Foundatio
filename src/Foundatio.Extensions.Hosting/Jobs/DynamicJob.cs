@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Utility;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 internal class DynamicJob : IJob
 {

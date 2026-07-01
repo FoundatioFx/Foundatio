@@ -1,6 +1,6 @@
 ﻿using Foundatio.Jobs;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class HostedJobOptions : Foundatio.Jobs.Legacy.JobOptions
 {

@@ -15,7 +15,7 @@
 
 using System;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 /// <summary>
 /// Helper class that provides common values for the cron expressions.
