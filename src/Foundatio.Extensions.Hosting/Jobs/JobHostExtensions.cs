@@ -217,24 +217,17 @@ public static class JobHostExtensions
         var options = new JobRuntimeServiceOptions();
         configure?.Invoke(options);
 
-        // The core builder (AddFoundatio().Jobs.UseRuntimeStore()/UseInMemoryRuntime()) already registers the runtime
-        // pump when a store is configured. In that case carry these options onto the core pump rather than starting a
-        // second pump for the same store. This method then only needs to be called to tune the cadence/batch size.
-        if (services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimePumpService)))
+        // Registering a runtime store (AddFoundatio().Jobs.UseRuntimeStore()/UseInMemoryRuntime()) is the precondition
+        // for this call, and that already auto-registers the single runtime pump (JobRuntimePumpService). So this method
+        // only carries options onto that pump — it never starts a second pump — which keeps a single pump regardless of
+        // the order AddJobRuntimeService and UseRuntimeStore are called in.
+        services.AddSingleton(new JobRuntimePumpOptions
         {
-            services.AddSingleton(new JobRuntimePumpOptions
-            {
-                Enabled = options.Enabled,
-                PollInterval = options.PollInterval,
-                BatchSize = options.BatchSize,
-                MaxJobAttempts = options.MaxJobAttempts
-            });
-            return services;
-        }
-
-        services.AddSingleton(options);
-        if (!services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimeService)))
-            services.AddSingleton<IHostedService, JobRuntimeService>();
+            Enabled = options.Enabled,
+            PollInterval = options.PollInterval,
+            BatchSize = options.BatchSize,
+            MaxJobAttempts = options.MaxJobAttempts
+        });
 
         return services;
     }

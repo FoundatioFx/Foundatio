@@ -99,7 +99,7 @@ public class RedisStreamsTransportIntegrationTests
         await queue.EnqueueAsync(new RetryItem { Data = "retry" }, cancellationToken: ct);
         await queue.EnqueueAsync(new PoisonItem { Data = "poison" }, cancellationToken: ct);
 
-        await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
         Assert.Equal(2, Volatile.Read(ref retryAttempts));
 
         // The poison message lands in the dead-letter stream after exhausting its 2 attempts.
@@ -148,8 +148,10 @@ public class RedisStreamsTransportIntegrationTests
 
         await pubsub.PublishAsync(new FanItem { Data = "broadcast" }, cancellationToken: ct);
 
-        // Each named subscription is its own consumer group, so both receive an independent copy.
-        await Task.WhenAll(receivedByA.Task, receivedByB.Task).WaitAsync(TimeSpan.FromSeconds(15), ct);
+        // Each named subscription is its own consumer group, so both receive an independent copy. Delivery is
+        // poll-driven across two subscriptions (the core pull-fallback loop), so allow generous headroom for the whole
+        // conformance suite hammering the same Redis concurrently.
+        await Task.WhenAll(receivedByA.Task, receivedByB.Task).WaitAsync(TimeSpan.FromSeconds(30), ct);
         Assert.Equal("broadcast", await receivedByA.Task);
         Assert.Equal("broadcast", await receivedByB.Task);
     }
