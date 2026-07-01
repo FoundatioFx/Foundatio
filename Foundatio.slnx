@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="samples/Foundatio.MessagingSample/Foundatio.MessagingSample.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">

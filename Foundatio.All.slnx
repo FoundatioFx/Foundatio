@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Dequeue/Foundatio.AzureServiceBus.Dequeue.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
