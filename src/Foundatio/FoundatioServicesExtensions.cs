@@ -1,5 +1,7 @@
 using System;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions;
 using Foundatio.Jobs;
@@ -11,6 +13,7 @@ using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -339,6 +342,82 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
+        /// <summary>
+        /// Registers a handler that processes messages of type <typeparamref name="TMessage"/> from its queue as
+        /// competing consumers — exactly one running instance handles each message. The handler is resolved from DI in
+        /// its own scope per message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter
+        /// policy. A hosted service starts and stops it automatically.
+        /// </summary>
+        public FoundatioBuilder AddQueueHandler<TMessage, THandler>(QueueConsumerOptions? options = null)
+            where TMessage : class where THandler : class, IMessageHandler<TMessage>
+        {
+            _services.TryAddScoped<THandler>();
+            return AddHandler($"queue:{typeof(TMessage).Name} -> {typeof(THandler).Name}", async (sp, ct) =>
+                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>(
+                    (message, c) => DispatchAsync<TMessage, THandler>(sp, message, c), options, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/> from its queue as competing
+        /// consumers. A hosted service starts and stops it automatically.
+        /// </summary>
+        public FoundatioBuilder AddQueueHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, QueueConsumerOptions? options = null)
+            where TMessage : class
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            return AddHandler($"queue:{typeof(TMessage).Name}", async (sp, ct) =>
+                await sp.GetRequiredService<Messaging.IQueue>().StartConsumerAsync<TMessage>(handler, options, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// Registers a handler that receives every message of type <typeparamref name="TMessage"/> published to its
+        /// topic — a per-instance subscription means every running instance gets its own copy (fan-out). Pass an explicit
+        /// <paramref name="subscription"/> to share a named subscription (load-balanced) instead. Resolved from DI per
+        /// message; a hosted service starts and stops it automatically.
+        /// </summary>
+        public FoundatioBuilder AddBroadcastHandler<TMessage, THandler>(string? subscription = null)
+            where TMessage : class where THandler : class, IMessageHandler<TMessage>
+        {
+            _services.TryAddScoped<THandler>();
+            string name = subscription ?? UniqueSubscriptionName();
+            return AddHandler($"broadcast:{typeof(TMessage).Name} -> {typeof(THandler).Name}", async (sp, ct) =>
+                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>(
+                    (message, c) => DispatchAsync<TMessage, THandler>(sp, message, c),
+                    new PubSubSubscriptionOptions { Subscription = name }, ct).ConfigureAwait(false));
+        }
+
+        /// <summary>
+        /// Registers a delegate handler that receives every message of type <typeparamref name="TMessage"/> published to
+        /// its topic (fan-out via a per-instance subscription). A hosted service starts and stops it automatically.
+        /// </summary>
+        public FoundatioBuilder AddBroadcastHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, string? subscription = null)
+            where TMessage : class
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            string name = subscription ?? UniqueSubscriptionName();
+            return AddHandler($"broadcast:{typeof(TMessage).Name}", async (sp, ct) =>
+                await sp.GetRequiredService<IPubSub>().SubscribeAsync<TMessage>(handler,
+                    new PubSubSubscriptionOptions { Subscription = name }, ct).ConfigureAwait(false));
+        }
+
+        private static async Task DispatchAsync<TMessage, THandler>(IServiceProvider serviceProvider, IReceivedMessage<TMessage> message, CancellationToken cancellationToken)
+            where TMessage : class where THandler : class, IMessageHandler<TMessage>
+        {
+            await using var scope = serviceProvider.CreateAsyncScope();
+            var handler = scope.ServiceProvider.GetRequiredService<THandler>();
+            await handler.HandleAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static string UniqueSubscriptionName() => $"{Environment.MachineName}-{Guid.NewGuid():N}";
+
+        private FoundatioBuilder AddHandler(string description, Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> start)
+        {
+            _services.AddSingleton(new MessageHandlerRegistration { Description = description, StartAsync = start });
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
+                _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
+            return _builder;
+        }
+
         private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
         {
             _services.ReplaceSingleton(factory);
@@ -458,6 +537,37 @@ public class FoundatioBuilder : IFoundatioBuilder
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
             _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
+            return _builder;
+        }
+
+        /// <summary>
+        /// Registers a recurring (CRON) job. The schedule is materialized once into the shared runtime store per
+        /// occurrence, so <see cref="CronJobOptions.Scope"/> decides fan-out (Global = one instance per tick,
+        /// PerNode = every instance per tick). Scheduled automatically when the runtime pump starts — no manual
+        /// <see cref="IJobScheduler.ScheduleAsync"/> call needed. Requires a runtime store (<see cref="UseRuntimeStore(IJobRuntimeStore)"/>
+        /// / <see cref="UseInMemoryRuntime"/>).
+        /// </summary>
+        public FoundatioBuilder AddCronJob<TJob>(string cronSchedule, Action<CronJobOptions>? configure = null) where TJob : IJob
+        {
+            ArgumentException.ThrowIfNullOrEmpty(cronSchedule);
+
+            var options = new CronJobOptions();
+            configure?.Invoke(options);
+            string name = options.Name ?? typeof(TJob).Name;
+
+            _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
+            _services.AddSingleton(new ScheduledJobDefinition
+            {
+                Name = name,
+                Cron = cronSchedule,
+                JobType = typeof(TJob),
+                Scope = options.Scope,
+                Overlap = options.Overlap,
+                MisfireWindow = options.MisfireWindow,
+                MaxRetries = options.MaxRetries,
+                Enabled = options.Enabled,
+                TimeZone = options.TimeZone
+            });
             return _builder;
         }
 
