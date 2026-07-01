@@ -8,6 +8,7 @@ using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;

@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = true)]
 public class JobAttribute : Attribute

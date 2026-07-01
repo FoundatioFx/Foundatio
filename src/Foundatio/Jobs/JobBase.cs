@@ -6,7 +6,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public abstract class JobBase : IJob, IHaveLogger, IHaveLoggerFactory, IHaveTimeProvider, IHaveResiliencePolicyProvider
 {

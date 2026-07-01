@@ -1,7 +1,7 @@
 ﻿using Foundatio.Metrics;
 using Foundatio.Queues;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public class WorkItemData : IHaveSubMetricName, IHaveUniqueIdentifier
 {

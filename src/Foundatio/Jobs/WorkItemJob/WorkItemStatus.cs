@@ -1,4 +1,4 @@
-﻿namespace Foundatio.Jobs;
+﻿namespace Foundatio.Jobs.Legacy;
 
 public class WorkItemStatus
 {

@@ -5,7 +5,7 @@ using Foundatio.Queues;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 /// <summary>
 /// A job that processes items from a queue. Each invocation of <see cref="IJob.RunAsync"/>

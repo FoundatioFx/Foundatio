@@ -1,5 +1,6 @@
 ﻿using System;
 using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 

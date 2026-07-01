@@ -11,7 +11,7 @@ using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 [Job(Description = "Processes adhoc work item queues entries")]
 public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFactory

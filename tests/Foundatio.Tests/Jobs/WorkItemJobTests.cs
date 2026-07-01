@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
