@@ -445,6 +445,22 @@ public class JobSchedulerTests
         }
     }
 
+    [Fact]
+    public async Task AddJobRuntimeService_BeforeUseRuntimeStore_RegistersExactlyOnePumpAsync()
+    {
+        var services = new ServiceCollection().AddSingleton(new JobSchedulerProbe());
+        // Hosting-first ordering must not stack a second pump: AddJobRuntimeService only tunes the single core pump.
+        Foundatio.Extensions.Hosting.Jobs.JobHostExtensions.AddJobRuntimeService(services, o => o.PollInterval = TimeSpan.FromMilliseconds(25));
+        services.AddFoundatio().Jobs.UseInMemoryRuntime();
+        await using var provider = services.BuildServiceProvider();
+
+        var hostedServices = provider.GetServices<IHostedService>().ToList();
+        Assert.Single(hostedServices.OfType<JobRuntimePumpService>());
+        Assert.Empty(hostedServices.OfType<Foundatio.Extensions.Hosting.Jobs.JobRuntimeService>());
+        // The options passed to AddJobRuntimeService are carried onto that single pump.
+        Assert.Equal(TimeSpan.FromMilliseconds(25), provider.GetRequiredService<JobRuntimePumpOptions>().PollInterval);
+    }
+
     private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
     {
         var serviceProvider = new ServiceCollection()
