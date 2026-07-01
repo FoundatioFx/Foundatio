@@ -6,8 +6,9 @@ namespace Foundatio.MessagingSample;
 public sealed record InstanceInfo(string Id);
 
 /// <summary>
-/// Handles orders off the queue — registered with <c>AddQueueHandler</c>, so exactly one running instance processes
-/// each order (competing consumers). Resolved from DI per message; throwing would trigger retry/dead-letter.
+/// Handles orders. Registration carries no topology — orders arrive here because the endpoint calls
+/// <c>bus.SendAsync</c>, so exactly one running instance processes each order (competing consumers). Resolved from DI
+/// per message; throwing would trigger retry/dead-letter.
 /// </summary>
 public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOrderHandler> logger) : IMessageHandler<ProcessOrder>
 {
@@ -19,8 +20,8 @@ public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOr
 }
 
 /// <summary>
-/// Handles announcements — registered with <c>AddBroadcastHandler</c>, so every running instance receives its own copy
-/// (fan-out via a per-instance subscription).
+/// Handles announcements published via <c>bus.PublishAsync</c>. Registered with <c>PerInstance = true</c>, so every
+/// running replica receives its own copy — without it, the default is once per service (replicas compete).
 /// </summary>
 public sealed class AnnouncementHandler(InstanceInfo instance, ILogger<AnnouncementHandler> logger) : IMessageHandler<Announcement>
 {

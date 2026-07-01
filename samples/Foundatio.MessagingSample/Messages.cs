@@ -3,8 +3,9 @@ using Foundatio.Messaging;
 namespace Foundatio.MessagingSample;
 
 /// <summary>
-/// A unit of work processed off a queue. The <see cref="MessageRouteAttribute"/> names the destination ("orders");
-/// with competing consumers, each order is handled by exactly one running instance.
+/// A command / unit of work, delivered with <c>bus.SendAsync</c> — exactly one running instance handles each one.
+/// The <see cref="MessageRouteAttribute"/> names the destination ("orders"); without it the kebab-cased type name
+/// ("process-order") is used.
 /// </summary>
 [MessageRoute("orders")]
 public class ProcessOrder
@@ -14,8 +15,8 @@ public class ProcessOrder
 }
 
 /// <summary>
-/// A broadcast event published to a topic ("announcements"). With a per-instance subscription, every running instance
-/// receives its own copy.
+/// An event, delivered with <c>bus.PublishAsync</c> — each subscribing service receives one copy (and this sample's
+/// handler opts into PerInstance, so every replica gets its own).
 /// </summary>
 [MessageRoute("announcements")]
 public class Announcement

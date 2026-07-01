@@ -17,7 +17,7 @@ public enum AckMode
     Manual
 }
 
-public sealed record QueueMessageOptions
+public sealed record MessageSendOptions
 {
     public MessagePriority Priority { get; init; } = MessagePriority.Normal;
     public TimeSpan? Delay { get; init; }
@@ -96,9 +96,9 @@ public sealed record QueueOptions
 
 public interface IQueue : IAsyncDisposable
 {
-    Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task EnqueueBatchAsync<T>(IEnumerable<T> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task EnqueueBatchAsync(IEnumerable<object> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default);
+    Task<string> EnqueueAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task EnqueueBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task EnqueueBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default);
     Task<IReceivedMessage?> ReceiveAsync(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default);
     Task<IReceivedMessage<T>?> ReceiveAsync<T>(QueueReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task<IMessageConsumer> StartConsumerAsync(Func<IReceivedMessage, CancellationToken, Task> handler, QueueConsumerOptions? options = null, CancellationToken cancellationToken = default);
@@ -189,24 +189,24 @@ public sealed class MessageQueue : IQueue
             static (message, inner) => inner is null ? new MessageQueueException(message) : new MessageQueueException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
     }
 
-    public Task<string> EnqueueAsync<T>(T message, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<string> EnqueueAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(message);
-        options ??= new QueueMessageOptions();
+        options ??= new MessageSendOptions();
         return _core.SendAsync(ScheduledDispatchKind.QueueMessage, typeof(T), message, ToEnvelope(options), GetDestination(typeof(T), options.Destination), ensureDestination: null, cancellationToken);
     }
 
-    public Task EnqueueBatchAsync<T>(IEnumerable<T> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task EnqueueBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
-        options ??= new QueueMessageOptions();
+        options ??= new MessageSendOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetDestination(type, options.Destination), ensureDestination: null, cancellationToken);
     }
 
-    public Task EnqueueBatchAsync(IEnumerable<object> messages, QueueMessageOptions? options = null, CancellationToken cancellationToken = default)
+    public Task EnqueueBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
-        options ??= new QueueMessageOptions();
+        options ??= new MessageSendOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages, null, ToEnvelope(options), type => GetDestination(type, options.Destination), ensureDestination: null, cancellationToken);
     }
 
@@ -278,7 +278,7 @@ public sealed class MessageQueue : IQueue
         });
     }
 
-    private static MessageEnvelopeOptions ToEnvelope(QueueMessageOptions options)
+    private static MessageEnvelopeOptions ToEnvelope(MessageSendOptions options)
     {
         return new MessageEnvelopeOptions
         {
