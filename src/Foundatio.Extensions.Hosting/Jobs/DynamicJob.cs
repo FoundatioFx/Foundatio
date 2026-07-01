@@ -1,10 +1,10 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Utility;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 internal class DynamicJob : IJob
 {

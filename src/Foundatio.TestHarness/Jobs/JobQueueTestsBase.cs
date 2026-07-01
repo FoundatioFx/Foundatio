@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.Caching;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Lock;
 using Foundatio.Queues;
 using Foundatio.Xunit;

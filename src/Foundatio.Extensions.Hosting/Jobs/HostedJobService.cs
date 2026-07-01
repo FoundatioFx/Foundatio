@@ -2,13 +2,13 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Startup;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class HostedJobService : IHostedService, IJobStatus, IDisposable
 {

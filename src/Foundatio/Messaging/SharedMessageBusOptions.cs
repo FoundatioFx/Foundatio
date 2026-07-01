@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 public class SharedMessageBusOptions : SharedOptions
 {

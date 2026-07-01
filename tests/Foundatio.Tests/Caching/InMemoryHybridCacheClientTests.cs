@@ -1,6 +1,7 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;

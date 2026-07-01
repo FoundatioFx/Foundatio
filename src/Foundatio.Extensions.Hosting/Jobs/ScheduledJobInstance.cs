@@ -5,16 +5,17 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Extensions.Hosting.Cronos;
-using Foundatio.Jobs;
+using Foundatio.Cronos;
+using Foundatio.Jobs.Legacy;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 internal class ScheduledJobInstance
 {

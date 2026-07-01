@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+    <Project Path="samples/Foundatio.MessagingSample/Foundatio.MessagingSample.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
@@ -13,8 +13,14 @@
     <File Path="src/Directory.Build.props" />
     <File Path="tests/Directory.Build.props" />
   </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Foundatio.Aws/Foundatio.Aws.csproj" />
+    <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
+    <Project Path="tests/Foundatio.Aws.Tests/Foundatio.Aws.Tests.csproj" />
+    <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">

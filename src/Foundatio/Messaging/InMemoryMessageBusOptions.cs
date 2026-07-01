@@ -1,4 +1,4 @@
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 public class InMemoryMessageBusOptions : SharedMessageBusOptions { }
 

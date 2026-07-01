@@ -1,7 +1,7 @@
 ﻿using System;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class HostedJobOptionsBuilder
 {

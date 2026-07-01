@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Dequeue/Foundatio.AzureServiceBus.Dequeue.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
     <Project Path="../Foundatio.AzureServiceBus/samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
@@ -17,6 +16,9 @@
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Client/Foundatio.SampleApp.Client.csproj" />
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Server/Foundatio.SampleApp.Server.csproj" />
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Shared/Foundatio.SampleApp.Shared.csproj" />
+    <Project Path="samples/Foundatio.MessagingSample/Foundatio.MessagingSample.csproj" />
+    <Project Path="src/Foundatio.Aws/Foundatio.Aws.csproj" />
+    <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />

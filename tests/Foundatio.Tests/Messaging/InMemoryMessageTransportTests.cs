@@ -1,0 +1,75 @@
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Foundatio.Messaging;
+using Xunit;
+
+namespace Foundatio.Tests.Messaging;
+
+public class InMemoryMessageTransportTests : MessageTransportConformanceTests
+{
+    public InMemoryMessageTransportTests(ITestOutputHelper output) : base(output) { }
+
+    protected override IMessageTransport CreateTransport()
+    {
+        return new InMemoryMessageTransport();
+    }
+
+    [Fact]
+    public void SubscriptionAddress_FormatsAndParsesTopicAndSubscription()
+    {
+        string destination = SubscriptionAddress.Format("orders", "sub-a");
+        Assert.Equal("orders/sub-a", destination);
+
+        Assert.True(SubscriptionAddress.TryParse(destination, out string topic, out string subscription));
+        Assert.Equal("orders", topic);
+        Assert.Equal("sub-a", subscription);
+
+        // A bare (non-subscription) destination is not a subscription address.
+        Assert.False(SubscriptionAddress.TryParse("orders", out string bareTopic, out string bareSubscription));
+        Assert.Equal("orders", bareTopic);
+        Assert.Equal("", bareSubscription);
+    }
+
+    [Fact]
+    public void MessageHeaders_SerializeToJson_RoundTripsCaseInsensitively()
+    {
+        var headers = MessageHeaders.Create([
+            new KeyValuePair<string, string>("Message.Type", "order.created"),
+            new KeyValuePair<string, string>("tenant", "acme")
+        ]);
+
+        // The shared codec both transports use preserves the case-insensitive contract across the wire.
+        var roundTripped = MessageHeaders.DeserializeFromJson(MessageHeaders.SerializeToJson(headers));
+        Assert.Equal("order.created", roundTripped["MESSAGE.TYPE"]);
+        Assert.Equal("acme", roundTripped["tenant"]);
+
+        Assert.Empty(MessageHeaders.DeserializeFromJson(null));
+        Assert.Empty(MessageHeaders.DeserializeFromJson(""));
+    }
+
+    [Fact]
+    public void MessageHeaders_AreImmutableAndCaseInsensitive()
+    {
+        var source = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["message.type"] = "order.created"
+        };
+
+        var headers = MessageHeaders.Create(source);
+        source["message.type"] = "changed";
+
+        Assert.Equal("order.created", headers["MESSAGE.TYPE"]);
+        Assert.Equal("order.created", headers.GetValueOrDefault("Message.Type"));
+        Assert.True(headers.ContainsKey("MESSAGE.TYPE"));
+
+        var updated = headers.ToBuilder()
+            .Set("TraceParent", "00-123")
+            .SetIfMissing("traceparent", "ignored")
+            .Build();
+
+        Assert.Equal("00-123", updated["traceparent"]);
+        Assert.False(headers.ContainsKey("traceparent"));
+    }
+
+}

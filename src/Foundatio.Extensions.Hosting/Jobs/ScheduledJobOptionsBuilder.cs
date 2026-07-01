@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Jobs;
+using Foundatio.Jobs.Legacy;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class ScheduledJobOptionsBuilder
 {

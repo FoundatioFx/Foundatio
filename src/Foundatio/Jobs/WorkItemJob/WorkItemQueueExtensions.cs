@@ -5,7 +5,7 @@ using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 
-namespace Foundatio.Jobs;
+namespace Foundatio.Jobs.Legacy;
 
 public static class WorkItemQueueExtensions
 {

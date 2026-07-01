@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Resilience;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;

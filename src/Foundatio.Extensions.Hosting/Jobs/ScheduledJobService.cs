@@ -5,14 +5,20 @@ using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Extensions.Hosting.Startup;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Legacy;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
+/// <summary>
+/// Legacy/compat in-process CRON scheduler used by <see cref="LegacyJobHostExtensions.AddCronJob(IServiceCollection, ScheduledJobOptions)"/>.
+/// It runs occurrences in-process and does not materialize durable, recoverable occurrences. The redesigned runtime's
+/// durable scheduler (<c>JobScheduleProcessor</c> driven by <see cref="JobRuntimeService"/>) is the forward path.
+/// </summary>
 public class ScheduledJobService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
