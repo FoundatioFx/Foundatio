@@ -9,8 +9,10 @@ real, scaled-out setup. It runs under Aspire with **3 replicas**, so you can wat
   uses a per-instance subscription).
 - **Durable job** — `POST /reports` submits a job; whichever replica's runtime pump claims it runs it. Poll
   `GET /reports/{id}` to watch its status/progress.
-- **CRON job** — a `heartbeat` runs every minute; the shared runtime store dedupes occurrences so exactly one replica
-  runs each tick.
+- **CRON jobs** — scheduled recurring work, deduped through the shared runtime store so **scope** decides fan-out:
+  - `heartbeat` — Global, every minute → runs on **one** replica per tick (leader/singleton).
+  - `refresh-cache` — PerNode, every minute → runs on **every** replica per tick (per-instance maintenance).
+  - `sweep-stale-orders` — Global, every 2 minutes → a periodic maintenance sweep on one replica.
 
 Messaging runs on **AWS SQS/SNS** (via a LocalStack container) and durable jobs on **Redis** — both transports wired
 from one clean `AddFoundatio()` chain in [`Program.cs`](Program.cs). The transport is selected by `Messaging:Provider`

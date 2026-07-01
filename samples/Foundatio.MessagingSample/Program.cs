@@ -35,21 +35,21 @@ builder.Services.AddFoundatio()
         ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>()
     }))
     .Jobs.Register<GenerateReportJob>("generate-report")
-    .Jobs.Register<HeartbeatJob>("heartbeat");
+    .Jobs.Register<HeartbeatJob>("heartbeat")
+    .Jobs.Register<RefreshCacheJob>("refresh-cache")
+    .Jobs.Register<SweepStaleOrdersJob>("sweep-stale-orders");
 
 // Hosts this instance's queue consumer + pub/sub subscriber for the app lifetime.
 builder.Services.AddHostedService<MessagingWorkers>();
 
 var app = builder.Build();
 
-// Recurring job: every instance registers the same schedule, but the shared Redis store dedupes each occurrence, so
-// exactly one instance runs each tick.
-await app.Services.GetRequiredService<IJobScheduler>().ScheduleAsync(new ScheduledJobDefinition
-{
-    Name = "heartbeat",
-    Cron = "* * * * *", // every minute
-    JobType = typeof(HeartbeatJob)
-});
+// Recurring (CRON) jobs. Every instance registers the same schedules; the shared Redis store dedupes each occurrence,
+// so Scope decides how many instances run it — Global = one instance per tick, PerNode = every instance per tick.
+var scheduler = app.Services.GetRequiredService<IJobScheduler>();
+await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "heartbeat", Cron = "* * * * *", JobType = typeof(HeartbeatJob) });
+await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "refresh-cache", Cron = "* * * * *", Scope = ScheduledJobScope.PerNode, JobType = typeof(RefreshCacheJob) });
+await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "sweep-stale-orders", Cron = "*/2 * * * *", JobType = typeof(SweepStaleOrdersJob) });
 
 app.MapGet("/", (InstanceInfo i) => Results.Ok(new { service = "Foundatio messaging sample", instance = i.Id, transport }));
 
