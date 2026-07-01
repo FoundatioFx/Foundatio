@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 
-namespace Foundatio.Extensions.Hosting.Jobs;
+namespace Foundatio.Extensions.Hosting.Jobs.Legacy;
 
 public class ScheduledJobOptionsBuilder
 {
