@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Utility;
@@ -43,14 +44,18 @@ public class JobRuntimePumpService : BackgroundService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly JobRuntimePumpOptions _options;
+    private readonly IJobScheduler? _scheduler;
+    private readonly IEnumerable<ScheduledJobDefinition> _scheduledJobs;
 
-    public JobRuntimePumpService(JobScheduleProcessor processor, IJobWorker worker, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null, JobRuntimePumpOptions? options = null)
+    public JobRuntimePumpService(JobScheduleProcessor processor, IJobWorker worker, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null, JobRuntimePumpOptions? options = null, IJobScheduler? scheduler = null, IEnumerable<ScheduledJobDefinition>? scheduledJobs = null)
     {
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _worker = worker ?? throw new ArgumentNullException(nameof(worker));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<JobRuntimePumpService>();
         _options = options ?? new JobRuntimePumpOptions();
+        _scheduler = scheduler;
+        _scheduledJobs = scheduledJobs ?? Array.Empty<ScheduledJobDefinition>();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -62,6 +67,24 @@ public class JobRuntimePumpService : BackgroundService
         }
 
         _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
+
+        // Schedule CRON jobs registered declaratively via AddFoundatio().Jobs.AddCronJob<T>() so users don't have to
+        // call IJobScheduler.ScheduleAsync themselves. Idempotent (schedule keyed by name), so every node registering
+        // the same schedules is fine.
+        if (_scheduler is not null)
+        {
+            foreach (var definition in _scheduledJobs)
+            {
+                try
+                {
+                    await _scheduler.ScheduleAsync(definition, stoppingToken).AnyContext();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to schedule CRON job {JobName}: {Message}", definition.Name, ex.Message);
+                }
+            }
+        }
 
         while (!stoppingToken.IsCancellationRequested)
         {

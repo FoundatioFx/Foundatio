@@ -41,6 +41,34 @@ public sealed record ScheduledJobDefinition
     public bool Enabled { get; init; } = true;
 }
 
+/// <summary>
+/// Options for a declaratively-registered CRON job — <c>AddFoundatio().Jobs.AddCronJob&lt;TJob&gt;(cron, o =&gt; ...)</c>.
+/// The registered definitions are scheduled automatically when the runtime pump starts.
+/// </summary>
+public sealed class CronJobOptions
+{
+    /// <summary>Schedule name (must be unique across scheduled jobs). Defaults to the job type name.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Global (one instance per tick, the default) or PerNode (every instance runs it per tick).</summary>
+    public ScheduledJobScope Scope { get; set; } = ScheduledJobScope.Global;
+
+    /// <summary>Whether a new occurrence is skipped while a prior one is still running. Default SkipIfRunning.</summary>
+    public OverlapPolicy Overlap { get; set; } = OverlapPolicy.SkipIfRunning;
+
+    /// <summary>How late a missed occurrence may still fire. Null uses the scheduler default.</summary>
+    public TimeSpan? MisfireWindow { get; set; }
+
+    /// <summary>Maximum retry attempts for a failed occurrence. Default 3.</summary>
+    public int MaxRetries { get; set; } = 3;
+
+    /// <summary>Whether the schedule is active. Default true.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Time zone the CRON expression is evaluated in. Null uses the scheduler default (UTC).</summary>
+    public TimeZoneInfo? TimeZone { get; set; }
+}
+
 public interface IJobScheduler
 {
     Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default);

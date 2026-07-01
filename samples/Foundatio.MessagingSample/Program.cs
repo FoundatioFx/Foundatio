@@ -1,66 +1,36 @@
-using Amazon;
-using Amazon.Runtime;
 using Foundatio;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Foundatio.MessagingSample;
-using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // A short id so log lines make it obvious WHICH instance handled each message/job when scaled to multiple replicas.
-var instance = new InstanceInfo(Guid.NewGuid().ToString("N")[..6]);
-builder.Services.AddSingleton(instance);
-
-// One shared Redis connection: it backs the durable job runtime, and (when selected) the messaging transport too.
-string redisConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6399";
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
-
-// The messaging transport is chosen at startup — both AWS (SQS/SNS) and Redis (Streams) are wired, so you can flip
-// Messaging:Provider and compare them without touching a line of the queue/pub-sub code below.
-string transport = builder.Configuration["Messaging:Provider"] ?? "Redis";
+builder.Services.AddSingleton(new InstanceInfo(Guid.NewGuid().ToString("N")[..6]));
 
 builder.Services.AddFoundatio()
-    // Queues (competing consumers) and pub/sub (fan-out) both ride this single transport.
-    .Messaging.UseTransport(sp => transport.Equals("Aws", StringComparison.OrdinalIgnoreCase)
-        ? CreateAwsTransport(builder.Configuration)
-        : new RedisStreamsMessageTransport(new RedisStreamsMessageTransportOptions
-        {
-            ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>()
-        }))
-    // Durable jobs live in Redis so any instance can claim and run them. UseRuntimeStore also auto-registers the pump
-    // that materializes CRON occurrences, drains scheduled work, and runs submitted jobs.
-    .Jobs.UseRuntimeStore(sp => new RedisJobRuntimeStore(new RedisJobRuntimeStoreOptions
-    {
-        ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>()
-    }))
-    .Jobs.Register<GenerateReportJob>("generate-report")
-    .Jobs.Register<HeartbeatJob>("heartbeat")
-    .Jobs.Register<RefreshCacheJob>("refresh-cache")
-    .Jobs.Register<SweepStaleOrdersJob>("sweep-stale-orders");
-
-// Hosts this instance's queue consumer + pub/sub subscriber for the app lifetime.
-builder.Services.AddHostedService<MessagingWorkers>();
+    // Messaging on AWS (SQS/SNS). Handlers are registered declaratively; Foundatio hosts them and dispatches to them —
+    // no hand-written IHostedService. Swap UseAws() for UseRedis() to run messaging on Redis Streams instead.
+    .Messaging.UseAws()
+    .Messaging.AddQueueHandler<ProcessOrder, ProcessOrderHandler>()           // competing consumers: one instance per order
+    .Messaging.AddBroadcastHandler<Announcement, AnnouncementHandler>()       // fan-out: every instance gets each announcement
+    // Durable jobs on Redis so any instance can claim them. The pump (auto-registered) runs submitted jobs and
+    // materializes the CRON schedules below — no manual scheduling call.
+    .Jobs.UseRedis()
+    .Jobs.Register<GenerateReportJob>("generate-report")                      // on-demand, submitted via POST /reports
+    .Jobs.AddCronJob<HeartbeatJob>("* * * * *")                               // Global: one instance per tick
+    .Jobs.AddCronJob<RefreshCacheJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode) // every instance per tick
+    .Jobs.AddCronJob<SweepStaleOrdersJob>("*/2 * * * *");                     // Global: periodic sweep
 
 var app = builder.Build();
 
-// Recurring (CRON) jobs. Every instance registers the same schedules; the shared Redis store dedupes each occurrence,
-// so Scope decides how many instances run it — Global = one instance per tick, PerNode = every instance per tick.
-var scheduler = app.Services.GetRequiredService<IJobScheduler>();
-await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "heartbeat", Cron = "* * * * *", JobType = typeof(HeartbeatJob) });
-await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "refresh-cache", Cron = "* * * * *", Scope = ScheduledJobScope.PerNode, JobType = typeof(RefreshCacheJob) });
-await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "sweep-stale-orders", Cron = "*/2 * * * *", JobType = typeof(SweepStaleOrdersJob) });
+app.MapGet("/", (InstanceInfo instance) => Results.Ok(new { service = "Foundatio messaging sample", instance = instance.Id }));
 
-app.MapGet("/", (InstanceInfo i) => Results.Ok(new { service = "Foundatio messaging sample", instance = i.Id, transport }));
-
-// QUEUE — competing consumers: exactly one instance processes each order.
+// QUEUE — competing consumers: exactly one instance processes each order (handled by ProcessOrderHandler).
 app.MapPost("/orders", async (ProcessOrder order, IQueue queue) =>
-{
-    string id = await queue.EnqueueAsync(order);
-    return Results.Accepted(value: new { queued = id });
-});
+    Results.Accepted(value: new { queued = await queue.EnqueueAsync(order) }));
 
-// PUB/SUB — fan-out: every instance receives each announcement.
+// PUB/SUB — fan-out: every instance receives each announcement (handled by AnnouncementHandler).
 app.MapPost("/announcements", async (Announcement announcement, IPubSub pubSub) =>
 {
     await pubSub.PublishAsync(announcement);
@@ -83,17 +53,3 @@ app.MapGet("/reports/{id}", async (string id, IJobMonitor monitor) =>
 });
 
 app.Run();
-
-// LocalStack (provisioned by the AppHost) provides AWS SQS/SNS locally and accepts any credentials. AutoCreateDestinations
-// creates queues/topics on first use; ResourcePrefix keeps this sample's resources namespaced.
-static AwsMessageTransport CreateAwsTransport(IConfiguration configuration)
-{
-    return new AwsMessageTransport(new AwsMessageTransportOptions
-    {
-        ServiceUrl = configuration["Aws:ServiceUrl"] ?? "http://localhost:4566",
-        Region = RegionEndpoint.USEast1,
-        Credentials = new BasicAWSCredentials("test", "test"),
-        AutoCreateDestinations = true,
-        ResourcePrefix = "fnd-sample-"
-    });
-}
