@@ -35,10 +35,10 @@ public class RedisJobStoreIntegrationTests
         // Within the transport's advertised maximum: delivered natively, nothing is parked in Redis.
         var nativeStore = RedisTestConnection.CreateStore(connection);
         await using var nativeTransport = new CappedDelayTransport(TimeSpan.FromMinutes(15));
-        await using var nativeQueue = new MessageQueue(nativeTransport, new QueueOptions { RuntimeStore = nativeStore });
+        await using var nativeQueue = new MessageBus(nativeTransport, new MessageBusOptions { RuntimeStore = nativeStore });
         var nativeProcessor = CreateProcessor(nativeStore, nativeTransport).Processor;
 
-        await nativeQueue.EnqueueAsync(new PreviewWorkItem { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+        await nativeQueue.SendAsync(new PreviewWorkItem { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
         Assert.Equal(1, nativeTransport.SendCount);
         Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
         Assert.Equal(0, await nativeProcessor.RunDueOccurrencesAsync(now.AddYears(1), cancellationToken: cancellationToken));
@@ -46,10 +46,10 @@ public class RedisJobStoreIntegrationTests
         // Beyond the transport's maximum: routed into the Redis store rather than truncated to the broker ceiling.
         var fallbackStore = RedisTestConnection.CreateStore(connection);
         await using var fallbackTransport = new CappedDelayTransport(TimeSpan.FromMinutes(15));
-        await using var fallbackQueue = new MessageQueue(fallbackTransport, new QueueOptions { RuntimeStore = fallbackStore });
+        await using var fallbackQueue = new MessageBus(fallbackTransport, new MessageBusOptions { RuntimeStore = fallbackStore });
         var fallbackProcessor = CreateProcessor(fallbackStore, fallbackTransport).Processor;
 
-        await fallbackQueue.EnqueueAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
+        await fallbackQueue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
         Assert.Equal(0, fallbackTransport.SendCount);
 
         // Durably parked in Redis and time-gated: a drain before the due time claims nothing; only when due does the
@@ -60,7 +60,7 @@ public class RedisJobStoreIntegrationTests
         Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(now.AddHours(2), cancellationToken: cancellationToken));
         Assert.Equal(1, fallbackTransport.SendCount);
 
-        var delivered = await fallbackQueue.ReceiveAsync<PreviewWorkItem>(new QueueReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        var delivered = await fallbackQueue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
         Assert.NotNull(delivered);
         Assert.Equal("later", delivered.Message.Data);
         await delivered.CompleteAsync(cancellationToken);
@@ -235,7 +235,7 @@ public class RedisJobStoreIntegrationTests
     }
 
     // Minimal pull transport with a configurable native delayed-delivery ceiling, so a delay beyond the cap is forced
-    // through the runtime store (mirrors the fixture used by the in-memory MessageQueue tests).
+    // through the runtime store (mirrors the fixture used by the in-memory MessageBus tests).
     private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ISupportsDelayedDelivery
     {
         private readonly Queue<TransportEntry> _entries = new();

@@ -24,7 +24,7 @@ internal sealed class MessageHandlerRegistration
 /// Hosts every declaratively-registered message handler for the app's lifetime: on start it launches each handler's
 /// consumer/subscription; on stop it disposes them. Auto-registered when the first handler is added, so users register
 /// handlers in configuration and never hand-write a hosted service. Programmatic
-/// <see cref="IQueue.StartConsumerAsync{T}"/> / <see cref="IPubSub.SubscribeAsync{T}"/> remain available for dynamic use.
+/// <see cref="IMessageBus.SubscribeAsync{T}"/> remain available for dynamic use.
 /// </summary>
 internal sealed class MessageHandlerHostedService : IHostedService
 {

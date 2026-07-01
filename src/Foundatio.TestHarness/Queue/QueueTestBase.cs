@@ -9,7 +9,6 @@ using Foundatio.AsyncEx;
 using Foundatio.Caching;
 using Foundatio.Jobs.Legacy;
 using Foundatio.Lock;
-using Foundatio.Messaging;
 using Foundatio.Messaging.Legacy;
 using Foundatio.Queues;
 using Foundatio.Serializer;

@@ -9,7 +9,7 @@ namespace Foundatio.Redis.Tests;
 /// <summary>
 /// End-to-end tests for the Redis Streams transport that the cross-transport conformance suite can't express: at-least-once
 /// recovery across two consumer instances, the core's retry/dead-letter machinery driving the transport, and topic
-/// fan-out through the <see cref="PubSub"/> facade. Gated on <c>FOUNDATIO_REDIS_CONNECTION_STRING</c>; unique key prefix
+/// fan-out through the <see cref="MessageBus"/> facade. Gated on <c>FOUNDATIO_REDIS_CONNECTION_STRING</c>; unique key prefix
 /// per test.
 /// </summary>
 public class RedisStreamsTransportIntegrationTests
@@ -74,13 +74,13 @@ public class RedisStreamsTransportIntegrationTests
 
         var ct = TestContext.Current.CancellationToken;
         var transport = CreateTransport(connection, NewPrefix());
-        await using var queue = new MessageQueue(transport, new QueueOptions());
+        await using var queue = new MessageBus(transport, new MessageBusOptions());
 
         // (a) A handler that throws once is redelivered (via the transport) and succeeds on the second attempt — the
         // core's retry machinery works unchanged over Streams.
         int retryAttempts = 0;
         var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var retryConsumer = await queue.StartConsumerAsync<RetryItem>((message, _) =>
+        await using var retryConsumer = await queue.SubscribeAsync<RetryItem>((message, _) =>
         {
             int attempt = Interlocked.Increment(ref retryAttempts);
             if (attempt == 1)
@@ -89,15 +89,15 @@ public class RedisStreamsTransportIntegrationTests
             Assert.Equal(2, message.Attempts);
             succeeded.TrySetResult();
             return Task.CompletedTask;
-        }, new QueueConsumerOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(200) }, ct);
+        }, new MessageSubscriptionOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(200) }, ct);
 
         // (b) A handler that always throws is dead-lettered once its attempt budget is spent.
-        await using var poisonConsumer = await queue.StartConsumerAsync<PoisonItem>((_, _) =>
+        await using var poisonConsumer = await queue.SubscribeAsync<PoisonItem>((_, _) =>
             throw new InvalidOperationException("always fails"),
-            new QueueConsumerOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(100) }, ct);
+            new MessageSubscriptionOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(100) }, ct);
 
-        await queue.EnqueueAsync(new RetryItem { Data = "retry" }, cancellationToken: ct);
-        await queue.EnqueueAsync(new PoisonItem { Data = "poison" }, cancellationToken: ct);
+        await queue.SendAsync(new RetryItem { Data = "retry" }, cancellationToken: ct);
+        await queue.SendAsync(new PoisonItem { Data = "poison" }, cancellationToken: ct);
 
         await succeeded.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
         Assert.Equal(2, Volatile.Read(ref retryAttempts));
@@ -129,7 +129,7 @@ public class RedisStreamsTransportIntegrationTests
 
         var ct = TestContext.Current.CancellationToken;
         var transport = CreateTransport(connection, NewPrefix());
-        await using var pubsub = new PubSub(transport, new PubSubOptions());
+        await using var pubsub = new MessageBus(transport, new MessageBusOptions());
 
         var receivedByA = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var receivedByB = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -138,13 +138,13 @@ public class RedisStreamsTransportIntegrationTests
         {
             receivedByA.TrySetResult(message.Message.Data ?? "");
             return Task.CompletedTask;
-        }, new PubSubSubscriptionOptions { Subscription = "sub-a" }, ct);
+        }, new MessageSubscriptionOptions { Subscription = "sub-a" }, ct);
 
         await using var subB = await pubsub.SubscribeAsync<FanItem>((message, _) =>
         {
             receivedByB.TrySetResult(message.Message.Data ?? "");
             return Task.CompletedTask;
-        }, new PubSubSubscriptionOptions { Subscription = "sub-b" }, ct);
+        }, new MessageSubscriptionOptions { Subscription = "sub-b" }, ct);
 
         await pubsub.PublishAsync(new FanItem { Data = "broadcast" }, cancellationToken: ct);
 
@@ -166,29 +166,23 @@ public class RedisStreamsTransportIntegrationTests
         }
 
         var ct = TestContext.Current.CancellationToken;
-        await using var transport = CreateTransport(connection, NewPrefix());
+        var transport = CreateTransport(connection, NewPrefix());
+        await using var bus = new MessageBus(transport, new MessageBusOptions());
 
-        // The unified bus: Send targets the queue-role stream, Publish the topic-role stream. The same route name must
-        // never cross-deliver — a publish must not be consumed as queue work and vice versa.
-        await using var queue = new MessageQueue(transport, new QueueOptions { OwnsTransport = false });
-        await using var pubSub = new PubSub(transport, new PubSubOptions { OwnsTransport = false });
-        await using var bus = new MessageBus(queue, pubSub);
-
+        // One subscription listens on both of the type's channels. Send targets the queue-role stream and Publish the
+        // topic-role stream, so the same route name must never cross-deliver: exactly one delivery per verb. (A shared
+        // stream would deliver each message through BOTH channels — 4 deliveries instead of 2.)
         var sent = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var published = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        int sendCount = 0, publishCount = 0;
+        int deliveries = 0;
 
-        await using var consumer = await queue.StartConsumerAsync<DualItem>((message, _) =>
+        await using var subscription = await bus.SubscribeAsync<DualItem>((message, _) =>
         {
-            Interlocked.Increment(ref sendCount);
-            sent.TrySetResult(message.Message.Data ?? "");
-            return Task.CompletedTask;
-        }, cancellationToken: ct);
-
-        await using var subscription = await pubSub.SubscribeAsync<DualItem>((message, _) =>
-        {
-            Interlocked.Increment(ref publishCount);
-            published.TrySetResult(message.Message.Data ?? "");
+            Interlocked.Increment(ref deliveries);
+            if (message.Message.Data == "for-one")
+                sent.TrySetResult(message.Message.Data);
+            else
+                published.TrySetResult(message.Message.Data ?? "");
             return Task.CompletedTask;
         }, cancellationToken: ct);
 
@@ -201,9 +195,41 @@ public class RedisStreamsTransportIntegrationTests
 
         // Give any cross-delivery a moment to surface, then assert exactly one delivery per verb.
         await Task.Delay(500, ct);
-        Assert.Equal(1, Volatile.Read(ref sendCount));
-        Assert.Equal(1, Volatile.Read(ref publishCount));
+        Assert.Equal(2, Volatile.Read(ref deliveries));
     }
+
+    [Fact]
+    public async Task Publish_CompletedByOneGroup_StillDeliveredToSlowerGroupAsync()
+    {
+        if (RedisTestConnection.Multiplexer is not { } connection)
+        {
+            Assert.Skip("FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+            return;
+        }
+
+        var ct = TestCancellation();
+        await using var transport = CreateTransport(connection, NewPrefix());
+
+        await transport.EnsureAsync(
+        [
+            new DestinationDeclaration { Name = "iso-topic", Role = DestinationRole.Topic },
+            new DestinationDeclaration { Name = "iso-topic/sub-a", Role = DestinationRole.Subscription, Source = "iso-topic" },
+            new DestinationDeclaration { Name = "iso-topic/sub-b", Role = DestinationRole.Subscription, Source = "iso-topic" }
+        ], ct);
+
+        await transport.SendAsync("iso-topic", [Message("retained")], new TransportSendOptions { DestinationRole = DestinationRole.Topic }, ct);
+
+        // Group A reads and completes FIRST; the entry must remain on the topic stream for group B (completing must
+        // not delete a shared topic entry other groups haven't read yet).
+        var byA = Assert.Single(await transport.ReceiveAsync("iso-topic/sub-a", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
+        await transport.CompleteAsync(byA, ct);
+
+        var byB = Assert.Single(await transport.ReceiveAsync("iso-topic/sub-b", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
+        Assert.Equal("retained", System.Text.Encoding.UTF8.GetString(byB.Body.Span));
+        await transport.CompleteAsync(byB, ct);
+    }
+
+    private static CancellationToken TestCancellation() => TestContext.Current.CancellationToken;
 
     private static TransportMessage Message(string body) =>
         new() { Body = System.Text.Encoding.UTF8.GetBytes(body) };
