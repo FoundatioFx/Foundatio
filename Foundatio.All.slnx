@@ -17,6 +17,9 @@
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Client/Foundatio.SampleApp.Client.csproj" />
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Server/Foundatio.SampleApp.Server.csproj" />
     <Project Path="../Foundatio.Repositories/samples/Foundatio.SampleApp/Shared/Foundatio.SampleApp.Shared.csproj" />
+    <Project Path="samples/Foundatio.MessagingSample/Foundatio.MessagingSample.csproj" />
+    <Project Path="src/Foundatio.Aws/Foundatio.Aws.csproj" />
+    <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
