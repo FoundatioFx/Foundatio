@@ -60,8 +60,14 @@ public class RedisJobStoreIntegrationTests
         Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(now.AddHours(2), cancellationToken: cancellationToken));
         Assert.Equal(1, fallbackTransport.SendCount);
 
-        var delivered = await fallbackQueue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
-        Assert.NotNull(delivered);
+        var deliveredContext = new TaskCompletionSource<IMessageContext<PreviewWorkItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var subscription = await fallbackQueue.SubscribeAsync<PreviewWorkItem>((context, _) =>
+        {
+            deliveredContext.TrySetResult(context);
+            return Task.CompletedTask;
+        }, new MessageSubscriptionOptions { AckMode = AckMode.Manual }, cancellationToken);
+
+        var delivered = await deliveredContext.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
         Assert.Equal("later", delivered.Message.Data);
         await delivered.CompleteAsync(cancellationToken);
     }

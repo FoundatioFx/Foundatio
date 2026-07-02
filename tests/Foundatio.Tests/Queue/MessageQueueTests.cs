@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Channels;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio;
@@ -31,7 +32,8 @@ public class MessageQueueTests
             ])
         }, cancellationToken);
 
-        var received = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
         Assert.NotNull(received);
         Assert.Equal(id, received.Id);
@@ -61,8 +63,9 @@ public class MessageQueueTests
             new PreviewWorkItem { Data = "two" }
         ], new MessageSendOptions { Destination = "custom-work" }, cancellationToken);
 
-        var first = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { Source = "custom-work", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
-        var second = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { Source = "custom-work", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, destination: "custom-work", cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -80,12 +83,13 @@ public class MessageQueueTests
         await using var queue = new MessageBus(new InMemoryMessageTransport());
         await queue.SendAsync(new PreviewWorkItem { Data = "retry" }, cancellationToken: cancellationToken);
 
-        var first = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(first);
 
         await first.RejectAsync(cancellationToken: cancellationToken);
 
-        var second = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(second);
         Assert.Equal(first.Id, second.Id);
         Assert.Equal(2, second.Attempts);
@@ -103,7 +107,8 @@ public class MessageQueueTests
         await using var queue = new MessageBus(new BasicQueueTransport());
 
         await queue.SendAsync(new PreviewWorkItem { Data = "lock" }, cancellationToken: cancellationToken);
-        var message = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(message);
 
         await Assert.ThrowsAsync<NotSupportedException>(async () => await message.RenewLockAsync(cancellationToken: cancellationToken));
@@ -117,7 +122,8 @@ public class MessageQueueTests
         await using var queue = new MessageBus(transport);
 
         await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
-        var message = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(message);
 
         await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
@@ -234,12 +240,13 @@ public class MessageQueueTests
 
         await queue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
-        var immediate = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
-        Assert.Null(immediate);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var immediate = await collector.NextAsync(TimeSpan.FromMilliseconds(250), cancellationToken);
+        Assert.Null(immediate); // parked in the runtime store, not on the transport
 
         Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
 
-        var delayed = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        var delayed = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(delayed);
         Assert.Equal("later", delayed.Message.Data);
         await delayed.CompleteAsync(cancellationToken);
@@ -284,7 +291,8 @@ public class MessageQueueTests
         Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
         Assert.Equal(1, fallbackTransport.SendCount);
 
-        var delayed = await fallbackQueue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(fallbackQueue, cancellationToken: cancellationToken);
+        var delayed = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(delayed);
         Assert.Equal("later", delayed.Message.Data);
         await delayed.CompleteAsync(cancellationToken);
@@ -326,8 +334,10 @@ public class MessageQueueTests
         await queue.SendAsync(new PreviewWorkItem { Data = "retry" }, cancellationToken: cts.Token);
         await firstAttempt.WaitAsync(TimeSpan.FromSeconds(2));
 
-        var immediate = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
-        Assert.Null(immediate);
+        // The retry is parked in the runtime store: the still-attached consumer must NOT get a second attempt until
+        // the dispatch pump drains the store.
+        await Task.Delay(250, cancellationToken);
+        Assert.Equal(1, attempts);
 
         Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
         await secondAttempt.WaitAsync(TimeSpan.FromSeconds(2));
@@ -362,10 +372,11 @@ public class MessageQueueTests
         var now = DateTimeOffset.UtcNow;
 
         await queue.SendAsync(new PreviewWorkItem { Data = "loop" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
 
         for (int expectedAttempt = 1; expectedAttempt <= 3; expectedAttempt++)
         {
-            var received = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+            var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
             Assert.NotNull(received);
             Assert.Equal(expectedAttempt, received.Attempts);
             Assert.Equal("loop", received.Message.Data);
@@ -383,7 +394,7 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task ReceiveAsync_WithExpiredMessage_DeadLettersAndReturnsNullAsync()
+    public async Task SendAsync_WithExpiredMessage_IsDeadLetteredNotDeliveredAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var transport = new InMemoryMessageTransport();
@@ -391,36 +402,12 @@ public class MessageQueueTests
 
         await queue.SendAsync(new PreviewWorkItem { Data = "expired" }, new MessageSendOptions { TimeToLive = TimeSpan.FromMilliseconds(-1) }, cancellationToken);
 
-        var received = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
         Assert.Null(received);
 
         var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
         Assert.Equal(1, stats.Deadletter);
-    }
-
-    [Fact]
-    public async Task ReceiveAsync_WithPoisonPayload_DeadLettersAndThrowsMessageQueueExceptionAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        await using var transport = new InMemoryMessageTransport();
-        await using var queue = new MessageBus(transport);
-
-        await transport.SendAsync("preview-work-item", [
-            new TransportMessage
-            {
-                Body = "not-json"u8.ToArray(),
-                Headers = MessageHeaders.Create([
-                    new KeyValuePair<string, string>(KnownHeaders.MessageType, typeof(PreviewWorkItem).FullName!)
-                ])
-            }
-        ], new TransportSendOptions(), cancellationToken);
-
-        await Assert.ThrowsAsync<MessageBusException>(async () =>
-            await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken));
-
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
-        Assert.Equal(1, stats.Deadletter);
-        Assert.Equal(0, stats.Working);
     }
 
 
@@ -487,10 +474,12 @@ public class MessageQueueTests
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var queue = new MessageBus(new InMemoryMessageTransport());
 
+        await using var collector = await MessageCollector<RoutedWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        Assert.Equal("routed-work", collector.Destination); // the [MessageRoute] attribute names the send destination
+
         await queue.SendAsync(new RoutedWorkItem { Data = "route" }, cancellationToken: cancellationToken);
 
-        var received = await queue.ReceiveAsync<RoutedWorkItem>(new MessageReceiveOptions { Source = "routed-work", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
-
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(received);
         Assert.Equal("route", received.Message.Data);
         await received.CompleteAsync(cancellationToken);
@@ -551,8 +540,9 @@ public class MessageQueueTests
             new OtherWorkItem { Data = "two" }
         }, cancellationToken: cancellationToken);
 
-        var first = await queue.ReceiveAsync(new MessageReceiveOptions { RouteType = typeof(IGroupedWorkItem), MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
-        var second = await queue.ReceiveAsync(new MessageReceiveOptions { RouteType = typeof(IGroupedWorkItem), MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector.StartAsync(queue, routeType: typeof(IGroupedWorkItem), cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -616,7 +606,8 @@ public class MessageQueueTests
 
         await queue.SendAsync(new PreviewWorkItem { Data = "global" }, cancellationToken: cancellationToken);
 
-        var received = await queue.ReceiveAsync(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
         Assert.NotNull(received);
         Assert.Equal(typeof(PreviewWorkItem).FullName, received.MessageType);
@@ -638,6 +629,90 @@ public class MessageQueueTests
 
         var finalStats = await transport.GetStatsAsync(destination, cancellationToken);
         Assert.Equal(1, finalStats.Completed);
+    }
+
+    // Pull-style test helper over the subscription API: collects manually-acked contexts so tests can inspect and
+    // settle deliveries explicitly, now that the bus surface is subscription-only.
+    private sealed class MessageCollector<T> : IAsyncDisposable where T : class
+    {
+        private readonly Channel<IMessageContext<T>> _received = Channel.CreateUnbounded<IMessageContext<T>>();
+        private IMessageSubscription _subscription = null!;
+
+        public static async Task<MessageCollector<T>> StartAsync(IMessageBus bus, string? destination = null, CancellationToken cancellationToken = default)
+        {
+            var collector = new MessageCollector<T>();
+            collector._subscription = await bus.SubscribeAsync<T>((context, _) =>
+            {
+                collector._received.Writer.TryWrite(context);
+                return Task.CompletedTask;
+            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, Destination = destination }, cancellationToken);
+            return collector;
+        }
+
+        public string Destination => _subscription.Destination;
+
+        public async Task<IMessageContext<T>?> NextAsync(TimeSpan maxWait, CancellationToken cancellationToken = default)
+        {
+            // WaitToReadAsync + TryRead (not ReadAsync + WaitAsync): a timed-out WaitAsync abandons its ReadAsync,
+            // which would silently consume the next item.
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(maxWait);
+            try
+            {
+                while (await _received.Reader.WaitToReadAsync(cts.Token))
+                {
+                    if (_received.Reader.TryRead(out var context))
+                        return context;
+                }
+
+                return null;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+
+        public ValueTask DisposeAsync() => _subscription.DisposeAsync();
+    }
+
+    private sealed class MessageCollector : IAsyncDisposable
+    {
+        private readonly Channel<IMessageContext> _received = Channel.CreateUnbounded<IMessageContext>();
+        private IMessageSubscription _subscription = null!;
+
+        public static async Task<MessageCollector> StartAsync(IMessageBus bus, Type? routeType = null, string? destination = null, CancellationToken cancellationToken = default)
+        {
+            var collector = new MessageCollector();
+            collector._subscription = await bus.SubscribeAsync((context, _) =>
+            {
+                collector._received.Writer.TryWrite(context);
+                return Task.CompletedTask;
+            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, RouteType = routeType, Destination = destination }, cancellationToken);
+            return collector;
+        }
+
+        public async Task<IMessageContext?> NextAsync(TimeSpan maxWait, CancellationToken cancellationToken = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(maxWait);
+            try
+            {
+                while (await _received.Reader.WaitToReadAsync(cts.Token))
+                {
+                    if (_received.Reader.TryRead(out var context))
+                        return context;
+                }
+
+                return null;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+
+        public ValueTask DisposeAsync() => _subscription.DisposeAsync();
     }
 
     [Fact]
@@ -724,13 +799,15 @@ public class MessageQueueTests
         await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { DeadLetterDestination = "preview-dead-letter" } });
 
         await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
-        var message = await queue.ReceiveAsync<PreviewWorkItem>(new MessageReceiveOptions { MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(message);
 
         await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
 
         // The transport has no native dead-letter sink, so core routes the terminal message to the configured destination.
-        var dead = await queue.ReceiveAsync(new MessageReceiveOptions { Source = "preview-dead-letter", MaxWaitTime = TimeSpan.FromSeconds(1) }, cancellationToken);
+        await using var deadCollector = await MessageCollector.StartAsync(queue, destination: "preview-dead-letter", cancellationToken: cancellationToken);
+        var dead = await deadCollector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(dead);
         Assert.Equal("validation", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterReason));
     }
