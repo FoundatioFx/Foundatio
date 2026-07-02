@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Test harness for Foundatio messaging: run the real message bus over a recording in-memory transport, await quiescence, and assert on the messages that were sent, published, handled, retried, or dead-lettered.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
+</Project>

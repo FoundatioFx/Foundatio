@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\src\Foundatio.Extensions.Hosting\Foundatio.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.JsonNet\Foundatio.JsonNet.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Testing\Foundatio.Testing.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Utf8Json\Foundatio.Utf8Json.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.MessagePack\Foundatio.MessagePack.csproj" />
   </ItemGroup>
