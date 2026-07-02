@@ -30,6 +30,7 @@
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
+  <Project Path="src/Foundatio.Testing/Foundatio.Testing.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit.v3/Foundatio.Xunit.v3.csproj" />
   <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />
