@@ -103,7 +103,8 @@ public sealed class MessageSubscriptionOptions
 
     /// <summary>
     /// Consumer identity. Subscriptions sharing a key on the same channel form one consumer group and compete;
-    /// defaults to a per-channel key derived from the route.
+    /// defaults to a per-channel key derived from the route. Subscriptions sharing a key must configure identical
+    /// failure policies — only the presence of a backoff/DeadLetterWhen is verified, not the delegate itself.
     /// </summary>
     public string? Key { get; set; }
 
@@ -183,6 +184,12 @@ public sealed record MessageBusOptions
     public string ContentType { get; init; } = "application/json";
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
     public IMessageTypeRegistry MessageTypes { get; init; } = new MessageTypeRegistry();
+    /// <summary>
+    /// Enables durable scheduling: delayed sends beyond a transport ceiling and store-parked retry delays are written
+    /// here and drained by the job runtime pump. The DI builder registers the pump automatically with the store; when
+    /// wiring options by hand, ensure a pump (JobRuntimePumpService / JobScheduleProcessor) is running or parked
+    /// messages will never be dispatched.
+    /// </summary>
     public IJobRuntimeStore? RuntimeStore { get; init; }
     public RetryPolicy RetryPolicy { get; init; } = new();
 
@@ -361,7 +368,7 @@ public sealed class MessageBus : IMessageBus
     {
         _logger.LogInformation(
             "Subscribed {MessageType}: send={Destination}, publish={Topic}/{Subscription}, concurrency={MaxConcurrency}, attempts={MaxAttempts}, ack={AckMode}",
-            send.MessageType.Name, send.Source, publish.Topic, publish.Subscription, send.MaxConcurrency, send.MaxAttempts?.ToString() ?? "default", send.AckMode);
+            send.MessageType.Name, send.Source, publish.Topic, publish.Subscription, Math.Max(1, send.MaxConcurrency), send.MaxAttempts?.ToString() ?? "default", send.AckMode);
     }
 
     private Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)

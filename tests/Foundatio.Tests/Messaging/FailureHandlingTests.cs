@@ -78,7 +78,9 @@ public class FailureHandlingTests
         Assert.NotEmpty(dead.Headers[KnownHeaders.DeadLetterExceptionStackTrace]);
         Assert.Equal("failing-item", dead.Headers[KnownHeaders.DeadLetterOriginalDestination]);
         Assert.NotEmpty(dead.Headers[KnownHeaders.DeadLetterFailedAt]);
-        Assert.Equal("1", dead.Headers[KnownHeaders.Attempts]);
+        // The exhausted count is forensics-only: message.attempts is left alone so a replayed message starts fresh.
+        Assert.Equal("1", dead.Headers[KnownHeaders.DeadLetterAttempts]);
+        Assert.False(dead.Headers.ContainsKey(KnownHeaders.Attempts));
     }
 
     [Fact]

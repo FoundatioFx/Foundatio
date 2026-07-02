@@ -262,12 +262,18 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         var message = CreateMessageContext(entry, cancellationToken);
 
+        // Same WARN-while-retryable / ERROR-when-terminal convention as handler failures.
+        if (message.Attempts >= _retryPolicy.UnmatchedMaxAttempts)
+            _logger.LogError("No consumer registered for message type \"{MessageType}\" on \"{Source}\" (attempt {Attempt} of {MaxAttempts}); dead-lettering as no-handler", message.MessageType, source, message.Attempts, _retryPolicy.UnmatchedMaxAttempts);
+        else
+            _logger.LogWarning("No consumer registered for message type \"{MessageType}\" on \"{Source}\" (attempt {Attempt} of {MaxAttempts}); will retry", message.MessageType, source, message.Attempts, _retryPolicy.UnmatchedMaxAttempts);
+
         // Retry so a node that does handle this type can pick it up; dead-letter as "no-handler" once the lenient
         // budget is exhausted so a genuinely orphaned type cannot loop forever.
         await SettleFailedMessageAsync(message, unrecoverable: false, _retryPolicy.UnmatchedMaxAttempts, _retryPolicy.UnmatchedBackoff, deadLetterReason: "no-handler", exception: null, cancellationToken).AnyContext();
 
-        // Surface loudly. The throw is caught by the loop's per-message handling (SafeProcessAsync), so it never tears
-        // down the receive loop or the other type handlers sharing this source.
+        // Surface to direct callers. The throw is caught (and not re-logged) by the loop's per-message handling
+        // (SafeProcessAsync), so it never tears down the receive loop or the other type handlers sharing this source.
         throw new UnhandledMessageTypeException(message.MessageType, source);
     }
 
@@ -388,6 +394,11 @@ internal sealed class MessageClientCore : IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
+        catch (UnhandledMessageTypeException)
+        {
+            // Already settled AND classified (WARN-retryable / ERROR-terminal) by HandleUnmatchedAsync; re-logging
+            // here would emit an ERROR for every retryable attempt.
+        }
         catch (Exception ex)
         {
             // The message has already been settled (dead-lettered on deserialize failure, abandoned/dead-lettered on
@@ -412,6 +423,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
         catch (Exception ex)
         {
             activity?.SetErrorStatus(ex);
+
+            // The handler already settled (e.g. terminal-rejected a poison payload, then rethrew): the settle path
+            // will skip, so don't log a retry/dead-letter that won't happen.
+            if (message.IsHandled)
+            {
+                _logger.LogWarning(ex, "Handler threw after settling message \"{MessageId}\" from \"{Source}\"; no further settlement will occur: {Message}", message.Id, config.Source, ex.Message);
+                return;
+            }
+
             int maxAttempts = config.MaxAttempts ?? _retryPolicy.MaxAttempts;
             var backoff = config.RedeliveryBackoff ?? _retryPolicy.Backoff;
 
@@ -479,7 +499,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken)
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
-        return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
+        return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger);
     }
 
     private async Task<IMessageContext<T>> CreateMessageContextAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
@@ -520,14 +540,14 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Message \"{entry.Id}\" deserialized to null.", null);
         }
 
-        return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
+        return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger);
     }
 
     private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, Exception? exception, CancellationToken cancellationToken)
     {
         MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
         var enriched = entry with { Headers = MessageContext.BuildDeadLetterHeaders(entry, entry.DeliveryCount, exception, _timeProvider) };
-        return MessageContext.DeadLetterOrDropAsync(_transport, enriched, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
+        return MessageContext.DeadLetterOrDropAsync(_transport, enriched, reason, _retryPolicy.DeadLetterDestination, _logger, cancellationToken);
     }
 
 
@@ -925,15 +945,17 @@ internal class MessageContext : IMessageContext
     private readonly IJobRuntimeStore? _runtimeStore;
     private readonly TimeProvider _timeProvider;
     private readonly string? _deadLetterDestination;
+    private readonly ILogger _logger;
     private int _isHandled;
 
-    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
     {
         _transport = transport;
         _entry = entry;
         _runtimeStore = runtimeStore;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _deadLetterDestination = deadLetterDestination;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         CancellationToken = cancellationToken;
     }
 
@@ -973,7 +995,7 @@ internal class MessageContext : IMessageContext
         {
             MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
             var enriched = _entry with { Headers = BuildDeadLetterHeaders(_entry, Attempts, options.Exception, _timeProvider) };
-            await DeadLetterOrDropAsync(_transport, enriched, options.Reason, _deadLetterDestination, cancellationToken).AnyContext();
+            await DeadLetterOrDropAsync(_transport, enriched, options.Reason, _deadLetterDestination, _logger, cancellationToken).AnyContext();
             return;
         }
 
@@ -994,7 +1016,11 @@ internal class MessageContext : IMessageContext
             return;
         }
 
-        if (_runtimeStore is null)
+        // The runtime-store fallback re-sends the message as a plain queue send, which only makes sense for a
+        // queue-channel entry: a subscription-channel entry's Destination is the opaque topic-qualified address, and a
+        // queue send to that name would land where no subscription group reads.
+        bool isSubscriptionSource = SubscriptionAddress.TryParse(_entry.Destination, out _, out _);
+        if (_runtimeStore is null || isSubscriptionSource)
         {
             // A best-effort delay (the core retry policy) degrades to immediate redelivery; an explicit caller delay
             // stays strict because the caller is depending on the timing.
@@ -1004,7 +1030,7 @@ internal class MessageContext : IMessageContext
                 return;
             }
 
-            throw new MessageBusException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
+            throw new MessageBusException($"Delayed redelivery of \"{_entry.Destination}\" requires native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum){(isSubscriptionSource ? "" : " or a registered job runtime store")}.");
         }
 
         // Advance from the reconciled attempt count, not the raw transport DeliveryCount: the re-send produces a new
@@ -1039,8 +1065,9 @@ internal class MessageContext : IMessageContext
     // Terminal settlement. Prefer the transport's native dead-letter sink (preserves native DLQ tooling). When the
     // transport has none, copy the raw entry to the configured dead-letter destination — or the derived
     // "{source}.deadletter" when none is configured, so a dead message is always parked somewhere inspectable —
-    // recording the reason, then complete the original.
-    internal static async Task DeadLetterOrDropAsync(IMessageTransport transport, TransportEntry entry, string? reason, string? deadLetterDestination, CancellationToken cancellationToken)
+    // recording the reason, then complete the original. Parking is best-effort: a park failure logs and drops rather
+    // than throwing, because a terminal settle must never stall the consumer loop.
+    internal static async Task DeadLetterOrDropAsync(IMessageTransport transport, TransportEntry entry, string? reason, string? deadLetterDestination, ILogger logger, CancellationToken cancellationToken)
     {
         if (transport is ISupportsDeadLetter deadLetter)
         {
@@ -1052,16 +1079,26 @@ internal class MessageContext : IMessageContext
         var headers = String.IsNullOrEmpty(reason)
             ? entry.Headers
             : entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
-        await transport.SendAsync(destination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.Id }], new TransportSendOptions(), cancellationToken).AnyContext();
+
+        try
+        {
+            await transport.SendAsync(destination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.Id }], new TransportSendOptions(), cancellationToken).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to park dead-lettered message \"{MessageId}\" at \"{Destination}\"; dropping it: {Message}", entry.Id, destination, ex.Message);
+        }
+
         await transport.CompleteAsync(entry, cancellationToken).AnyContext();
     }
 
     // Stamps the dead-letter forensics contract (see KnownHeaders) so a dead message is triageable — exception details,
-    // reconciled attempt count, where it was consumed from, and when it died.
+    // reconciled attempt count, where it was consumed from, and when it died. The attempt count goes in a forensics
+    // header (never message.attempts) so a replayed message starts with a fresh retry budget.
     internal static MessageHeaders BuildDeadLetterHeaders(TransportEntry entry, int attempts, Exception? exception, TimeProvider timeProvider)
     {
         var headers = entry.Headers.ToBuilder()
-            .Set(KnownHeaders.Attempts, attempts.ToString(CultureInfo.InvariantCulture))
+            .Set(KnownHeaders.DeadLetterAttempts, attempts.ToString(CultureInfo.InvariantCulture))
             .Set(KnownHeaders.DeadLetterFailedAt, timeProvider.GetUtcNow().ToString("O", CultureInfo.InvariantCulture))
             .Set(KnownHeaders.DeadLetterOriginalDestination, entry.Destination);
 
@@ -1071,6 +1108,13 @@ internal class MessageContext : IMessageContext
             headers.Set(KnownHeaders.DeadLetterExceptionMessage, Truncate(exception.Message, 1024));
             if (exception.StackTrace is { } stack)
                 headers.Set(KnownHeaders.DeadLetterExceptionStackTrace, Truncate(stack, 4096));
+        }
+        else
+        {
+            // A death with no exception (no-handler, unresolved-type) must not carry stale forensics from a previous one.
+            headers.Remove(KnownHeaders.DeadLetterExceptionType);
+            headers.Remove(KnownHeaders.DeadLetterExceptionMessage);
+            headers.Remove(KnownHeaders.DeadLetterExceptionStackTrace);
         }
 
         return headers.Build();
@@ -1096,8 +1140,8 @@ internal class MessageContext : IMessageContext
 
 internal sealed class MessageContext<T> : MessageContext, IMessageContext<T> where T : class
 {
-    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
-        : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
+        : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination, logger)
     {
         Message = message;
     }

@@ -14,6 +14,7 @@ public static class KnownHeaders
 
     // Forensics stamped by the core when a message is dead-lettered, so a dead message is triageable with plain
     // transport tooling. These names are a compatibility contract; values are truncated to fit transport limits.
+    public const string DeadLetterAttempts = "message.dead_letter.attempts";
     public const string DeadLetterExceptionType = "message.dead_letter.exception_type";
     public const string DeadLetterExceptionMessage = "message.dead_letter.exception_message";
     public const string DeadLetterExceptionStackTrace = "message.dead_letter.exception_stack";
