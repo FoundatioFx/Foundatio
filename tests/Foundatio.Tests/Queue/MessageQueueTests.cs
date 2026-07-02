@@ -813,6 +813,63 @@ public class MessageQueueTests
     }
 
     [Fact]
+    public async Task RejectAsync_Terminal_WithoutNativeDeadLetterOrConfig_DerivesDeadLetterDestinationAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new NoDeadLetterTransport();
+        // No DeadLetterDestination configured: the terminal message must be parked at "{source}.deadletter", not dropped.
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(message);
+
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation", Exception = new InvalidOperationException("boom") }, cancellationToken);
+
+        await using var deadCollector = await MessageCollector.StartAsync(queue, destination: "preview-work-item.deadletter", cancellationToken: cancellationToken);
+        var dead = await deadCollector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(dead);
+        Assert.Equal("validation", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterReason));
+        Assert.Equal(typeof(InvalidOperationException).FullName, dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterExceptionType));
+        Assert.Equal("preview-work-item", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterOriginalDestination));
+    }
+
+    [Fact]
+    public async Task RetryPolicy_BackoffOnTransportWithoutDelaySupport_DegradesToImmediateRedeliveryAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // BasicQueueTransport has no native redelivery delay and no runtime store is registered, so the default
+        // backoff curve (10s+ after the second attempt) cannot be honored — the policy retry must degrade to
+        // immediate redelivery rather than failing the settle, and still reach dead-letter after MaxAttempts.
+        await using var transport = new BasicQueueTransport();
+        await using var queue = new MessageBus(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        int attempts = 0;
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((_, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("always fails");
+        }, new MessageSubscriptionOptions { MaxAttempts = 3 }, cts.Token);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "doomed" }, cancellationToken: cts.Token);
+
+        // All three attempts happen without a 10s stall, ending in the transport's native dead-letter sink.
+        var stats = await transport.GetStatsAsync("preview-work-item", cts.Token);
+        long deadline = Environment.TickCount64 + 10_000;
+        while (stats.Deadletter == 0 && Environment.TickCount64 < deadline)
+        {
+            await Task.Delay(25, cts.Token);
+            stats = await transport.GetStatsAsync("preview-work-item", cts.Token);
+        }
+
+        Assert.Equal(1, stats.Deadletter);
+        Assert.Equal(3, Volatile.Read(ref attempts));
+    }
+
+    [Fact]
     public async Task StartConsumerAsync_UsesDefaultRetryPolicyMaxAttempts_WhenConsumerDoesNotOverrideAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
