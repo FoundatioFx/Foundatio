@@ -75,7 +75,7 @@ public sealed record RejectOptions
     public TimeSpan? RedeliveryDelay { get; init; }
 }
 
-public interface IReceivedMessage
+public interface IMessageContext
 {
     string Id { get; }
     ReadOnlyMemory<byte> Body { get; }
@@ -91,7 +91,7 @@ public interface IReceivedMessage
     Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default);
 }
 
-public interface IReceivedMessage<out T> : IReceivedMessage where T : class
+public interface IMessageContext<out T> : IMessageContext where T : class
 {
     T Message { get; }
 }

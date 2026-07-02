@@ -156,12 +156,12 @@ public interface IMessageBus : IAsyncDisposable
     /// registration (<c>AddFoundatio().Messaging.AddHandler&lt;T, THandler&gt;()</c>) for handlers that live for the
     /// app's lifetime; use this for dynamic subscriptions.
     /// </summary>
-    Task<IMessageSubscription> SubscribeAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task<IMessageSubscription> SubscribeAsync(Func<IReceivedMessage, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
+    Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Pulls one sent message of type <typeparamref name="T"/>, or null when none arrives within the wait window.</summary>
-    Task<IReceivedMessage<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task<IReceivedMessage?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default);
+    Task<IMessageContext<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task<IMessageContext?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 public sealed record MessageBusOptions
@@ -241,7 +241,7 @@ public sealed class MessageBus : IMessageBus
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages, null, ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public async Task<IMessageSubscription> SubscribeAsync<T>(Func<IReceivedMessage<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public async Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
         var channels = BuildChannels(options, typeof(T));
@@ -259,7 +259,7 @@ public sealed class MessageBus : IMessageBus
         }
     }
 
-    public async Task<IMessageSubscription> SubscribeAsync(Func<IReceivedMessage, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
+    public async Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handler);
         var channels = BuildChannels(options, typeof(object));
@@ -277,13 +277,13 @@ public sealed class MessageBus : IMessageBus
         }
     }
 
-    public Task<IReceivedMessage<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IMessageContext<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         options ??= new MessageReceiveOptions();
         return _core.ReceiveAsync<T>(GetDestination(options.RouteType ?? typeof(T), options.Source), options.MaxWaitTime, cancellationToken);
     }
 
-    public Task<IReceivedMessage?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<IMessageContext?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default)
     {
         options ??= new MessageReceiveOptions();
         return _core.ReceiveAsync(GetDestination(options.RouteType ?? typeof(object), options.Source), options.MaxWaitTime, cancellationToken);

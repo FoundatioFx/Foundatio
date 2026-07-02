@@ -61,7 +61,7 @@ public class PubSubTests
         var received = new AsyncCountdownEvent(2);
         var deliveriesByMessageId = new ConcurrentDictionary<string, int>(StringComparer.Ordinal);
 
-        Func<IReceivedMessage<PreviewEvent>, CancellationToken, Task> handler = (message, _) =>
+        Func<IMessageContext<PreviewEvent>, CancellationToken, Task> handler = (message, _) =>
         {
             deliveriesByMessageId.AddOrUpdate(message.Id, 1, (_, count) => count + 1);
             received.Signal();
@@ -178,7 +178,7 @@ public class PubSubTests
         await using var pubSub = new MessageBus(new InMemoryMessageTransport());
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
-        var received = new TaskCompletionSource<IReceivedMessage<PreviewEvent>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new TaskCompletionSource<IMessageContext<PreviewEvent>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var subscription = await pubSub.SubscribeAsync<PreviewEvent>((message, _) =>
         {
@@ -272,7 +272,7 @@ public class PubSubTests
         await using var pubSub = new MessageBus(new InMemoryMessageTransport());
         int handled = 0;
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<IReceivedMessage<PreviewEvent>, CancellationToken, Task> handler = (_, _) =>
+        Func<IMessageContext<PreviewEvent>, CancellationToken, Task> handler = (_, _) =>
         {
             Interlocked.Increment(ref handled);
             received.TrySetResult();

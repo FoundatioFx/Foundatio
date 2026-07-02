@@ -503,7 +503,7 @@ public class MessageQueueTests
         await using var queue = new MessageBus(new InMemoryMessageTransport());
         int handled = 0;
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<IReceivedMessage<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) =>
+        Func<IMessageContext<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) =>
         {
             Interlocked.Increment(ref handled);
             received.TrySetResult();

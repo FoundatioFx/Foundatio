@@ -14,5 +14,5 @@ namespace Foundatio.Messaging;
 /// </summary>
 public interface IMessageHandler<T> where T : class
 {
-    Task HandleAsync(IReceivedMessage<T> message, CancellationToken cancellationToken);
+    Task HandleAsync(IMessageContext<T> context, CancellationToken cancellationToken);
 }
