@@ -80,7 +80,12 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>Every delivered message returned for redelivery (a retry).</summary>
     public IReadOnlyList<RecordedMessage> AbandonedMessages => _transport.Abandoned;
 
-    /// <summary>Every delivered message that settled terminally into the dead-letter sink.</summary>
+    /// <summary>
+    /// Every delivered message that settled terminally into the dead-letter sink. Records deaths made through the
+    /// transport API (the core's retry-exhausted/unrecoverable path); a broker-internal death — such as a message
+    /// whose TimeToLive lapsed before delivery — is visible in destination stats and ReceiveDeadLetteredAsync but
+    /// not recorded here.
+    /// </summary>
     public IReadOnlyList<RecordedMessage> DeadLetteredMessages => _transport.DeadLettered;
 
     /// <summary>The sent (queue-role) messages of type <typeparamref name="T"/>, deserialized.</summary>
@@ -92,19 +97,29 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <summary>The successfully handled messages of type <typeparamref name="T"/>, deserialized.</summary>
     public IReadOnlyList<T> Handled<T>() where T : class => Deserialize<T>(_transport.Handled);
 
+    /// <summary>The retried (abandoned for redelivery) messages of type <typeparamref name="T"/>, deserialized.</summary>
+    public IReadOnlyList<T> Abandoned<T>() where T : class => Deserialize<T>(_transport.Abandoned);
+
     /// <summary>The dead-lettered messages of type <typeparamref name="T"/>, deserialized.</summary>
     public IReadOnlyList<T> DeadLettered<T>() where T : class => Deserialize<T>(_transport.DeadLettered);
 
     /// <summary>
     /// Waits until the transport is quiescent — every known destination has nothing queued and nothing in flight —
     /// so assertions observe the final state. Returns quickly when already idle (fast negative assertions). Throws
-    /// <see cref="TimeoutException"/> naming the still-busy destinations when the timeout (default 30s) lapses.
+    /// <see cref="TimeoutException"/> naming the still-busy destinations when the timeout (default 30s) lapses;
+    /// <see cref="Timeout.InfiniteTimeSpan"/> waits until idle or cancellation.
     /// Store-parked work (delayed sends / delayed retries through a runtime store) is not transport activity; drain
     /// it explicitly via the job schedule processor before waiting.
     /// </summary>
     public async Task WaitForIdleAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
-        long deadline = Environment.TickCount64 + (long)(timeout ?? DefaultIdleTimeout).TotalMilliseconds;
+        var effectiveTimeout = timeout ?? DefaultIdleTimeout;
+        if (effectiveTimeout < TimeSpan.Zero && effectiveTimeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be non-negative or Timeout.InfiniteTimeSpan.");
+
+        long deadline = effectiveTimeout == Timeout.InfiniteTimeSpan
+            ? Int64.MaxValue
+            : Environment.TickCount64 + (long)effectiveTimeout.TotalMilliseconds;
         int stableChecks = 0;
 
         while (true)
