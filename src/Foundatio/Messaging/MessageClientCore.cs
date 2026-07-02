@@ -168,22 +168,6 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    public async Task<IMessageContext?> ReceiveAsync(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        var pull = RequirePull();
-        var entries = await pull.ReceiveAsync(source, new ReceiveRequest { MaxMessages = 1, MaxWaitTime = maxWaitTime }, cancellationToken).AnyContext();
-        return entries.Count == 0 ? null : CreateMessageContext(entries[0], cancellationToken);
-    }
-
-    public async Task<IMessageContext<T>?> ReceiveAsync<T>(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken) where T : class
-    {
-        ThrowIfDisposed();
-        var pull = RequirePull();
-        var entries = await pull.ReceiveAsync(source, new ReceiveRequest { MaxMessages = 1, MaxWaitTime = maxWaitTime }, cancellationToken).AnyContext();
-        return entries.Count == 0 ? null : await CreateMessageContextAsync<T>(entries[0], cancellationToken).AnyContext();
-    }
-
     public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IMessageContext, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -317,13 +301,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 while (claimed < maxConcurrency && await slots.WaitAsync(TimeSpan.Zero).AnyContext())
                     claimed++;
 
+                var pollWindow = TimeSpan.FromSeconds(1);
+                long pollStart = _timeProvider.GetTimestamp();
                 IReadOnlyList<TransportEntry> entries;
                 try
                 {
                     entries = await pull.ReceiveAsync(source, new ReceiveRequest
                     {
                         MaxMessages = claimed,
-                        MaxWaitTime = TimeSpan.FromSeconds(1)
+                        MaxWaitTime = pollWindow
                     }, cancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -345,6 +331,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 // semaphore). Any over-returned entries are left unsettled and redeliver after their visibility window.
                 int toProcess = Math.Min(entries.Count, claimed);
                 ReleaseSlots(slots, claimed - toProcess); // return slots we claimed but won't fill (always >= 0)
+
+                // An empty poll should have blocked for MaxWaitTime; a transport that returns empty early (or
+                // synchronously) would otherwise hot-spin this loop, so sleep out the remainder of the window.
+                if (toProcess == 0)
+                {
+                    var remaining = pollWindow - _timeProvider.GetElapsedTime(pollStart);
+                    if (remaining > TimeSpan.Zero)
+                        await _timeProvider.SafeDelay(remaining, cancellationToken).AnyContext();
+                }
 
                 for (int index = 0; index < toProcess; index++)
                 {
@@ -763,7 +758,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
             if (_core._transport is not ISupportsPull pull)
                 throw _core._exceptionFactory($"Transport \"{_core._transport.GetType().Name}\" does not support receiving messages.", null);
 
-            _loop = _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, _cancellationTokenSource.Token);
+            // Task.Run so a transport whose ReceiveAsync completes synchronously can never run the loop inline on the
+            // caller's thread and block the subscribe call from returning.
+            _loop = Task.Run(() => _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, _cancellationTokenSource.Token), CancellationToken.None);
         }
 
         public async ValueTask DisposeAsync()

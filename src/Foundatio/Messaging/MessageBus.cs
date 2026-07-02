@@ -37,14 +37,6 @@ public sealed record MessagePublishOptions
     public MessageHeaders? Headers { get; init; }
 }
 
-public sealed record MessageReceiveOptions
-{
-    /// <summary>Overrides the source to pull from; defaults to the message type's send destination.</summary>
-    public string? Source { get; init; }
-    public Type? RouteType { get; init; }
-    public TimeSpan? MaxWaitTime { get; init; } = TimeSpan.FromSeconds(30);
-}
-
 /// <summary>
 /// Options for attaching a handler to a message type — via <c>AddFoundatio().Messaging.AddHandler&lt;T, THandler&gt;(o =&gt; ...)</c>
 /// or programmatically via <see cref="IMessageBus.SubscribeAsync{T}"/>. A subscription listens on the type's two
@@ -158,10 +150,6 @@ public interface IMessageBus : IAsyncDisposable
     /// </summary>
     Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
-
-    /// <summary>Pulls one sent message of type <typeparamref name="T"/>, or null when none arrives within the wait window.</summary>
-    Task<IMessageContext<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task<IMessageContext?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 public sealed record MessageBusOptions
@@ -275,18 +263,6 @@ public sealed class MessageBus : IMessageBus
             await sent.DisposeAsync().AnyContext();
             throw;
         }
-    }
-
-    public Task<IMessageContext<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class
-    {
-        options ??= new MessageReceiveOptions();
-        return _core.ReceiveAsync<T>(GetDestination(options.RouteType ?? typeof(T), options.Source), options.MaxWaitTime, cancellationToken);
-    }
-
-    public Task<IMessageContext?> ReceiveAsync(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default)
-    {
-        options ??= new MessageReceiveOptions();
-        return _core.ReceiveAsync(GetDestination(options.RouteType ?? typeof(object), options.Source), options.MaxWaitTime, cancellationToken);
     }
 
     public ValueTask DisposeAsync()
