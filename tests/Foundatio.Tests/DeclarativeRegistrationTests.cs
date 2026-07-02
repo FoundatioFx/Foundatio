@@ -26,7 +26,7 @@ public class DeclarativeRegistrationTests
         services.AddFoundatio()
             .Messaging.UseInMemory()
             .Messaging.AddHandler<HandledOrder, OrderHandler>()                                       // class handler
-            .Messaging.AddHandler<HandledTask>((message, _) => { probe.Record($"task:{message.Message.Id}"); return Task.CompletedTask; }); // delegate handler
+            .Messaging.AddHandler<HandledTask>((context, _) => { probe.Record($"task:{context.Message.Id}"); return Task.CompletedTask; }); // delegate handler
 
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
@@ -248,36 +248,36 @@ public class DeclarativeRegistrationTests
 
     private sealed class OrderHandler(HandlerProbe probe) : IMessageHandler<HandledOrder>
     {
-        public Task HandleAsync(IReceivedMessage<HandledOrder> message, CancellationToken cancellationToken)
+        public Task HandleAsync(IMessageContext<HandledOrder> context, CancellationToken cancellationToken)
         {
-            probe.Record($"order:{message.Message.Id}");
+            probe.Record($"order:{context.Message.Id}");
             return Task.CompletedTask;
         }
     }
 
     private sealed class EventHandler(HandlerProbe probe) : IMessageHandler<HandledEvent>
     {
-        public Task HandleAsync(IReceivedMessage<HandledEvent> message, CancellationToken cancellationToken)
+        public Task HandleAsync(IMessageContext<HandledEvent> context, CancellationToken cancellationToken)
         {
-            probe.Record($"event:{message.Message.Id}");
+            probe.Record($"event:{context.Message.Id}");
             return Task.CompletedTask;
         }
     }
 
     private sealed class SecondEventHandler(HandlerProbe probe) : IMessageHandler<HandledEvent>
     {
-        public Task HandleAsync(IReceivedMessage<HandledEvent> message, CancellationToken cancellationToken)
+        public Task HandleAsync(IMessageContext<HandledEvent> context, CancellationToken cancellationToken)
         {
-            probe.Record($"second:{message.Message.Id}");
+            probe.Record($"second:{context.Message.Id}");
             return Task.CompletedTask;
         }
     }
 
     private sealed class BroadcastHandler(HandlerProbe probe) : IMessageHandler<HandledBroadcast>
     {
-        public Task HandleAsync(IReceivedMessage<HandledBroadcast> message, CancellationToken cancellationToken)
+        public Task HandleAsync(IMessageContext<HandledBroadcast> context, CancellationToken cancellationToken)
         {
-            probe.Record($"broadcast:{message.Message.Id}");
+            probe.Record($"broadcast:{context.Message.Id}");
             return Task.CompletedTask;
         }
     }

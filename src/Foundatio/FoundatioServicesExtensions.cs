@@ -369,14 +369,14 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/>; see
         /// <see cref="AddHandler{TMessage, THandler}"/> for the delivery semantics.
         /// </summary>
-        public FoundatioBuilder AddHandler<TMessage>(Func<IReceivedMessage<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
+        public FoundatioBuilder AddHandler<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
             return AddHandlerRegistration<TMessage>(null, (_, message, ct) => handler(message, ct), configure);
         }
 
-        private FoundatioBuilder AddHandlerRegistration<TMessage>(string? handlerName, Func<IServiceProvider, IReceivedMessage<TMessage>, CancellationToken, Task> dispatch, Action<MessageSubscriptionOptions>? configure)
+        private FoundatioBuilder AddHandlerRegistration<TMessage>(string? handlerName, Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, Action<MessageSubscriptionOptions>? configure)
             where TMessage : class
         {
             string suffix = handlerName is null ? String.Empty : $" -> {handlerName}";
@@ -398,7 +398,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        private static async Task DispatchAsync<TMessage, THandler>(IServiceProvider serviceProvider, IReceivedMessage<TMessage> message, CancellationToken cancellationToken)
+        private static async Task DispatchAsync<TMessage, THandler>(IServiceProvider serviceProvider, IMessageContext<TMessage> message, CancellationToken cancellationToken)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             await using var scope = serviceProvider.CreateAsyncScope();

@@ -168,38 +168,38 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    public async Task<IReceivedMessage?> ReceiveAsync(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken)
+    public async Task<IMessageContext?> ReceiveAsync(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         var pull = RequirePull();
         var entries = await pull.ReceiveAsync(source, new ReceiveRequest { MaxMessages = 1, MaxWaitTime = maxWaitTime }, cancellationToken).AnyContext();
-        return entries.Count == 0 ? null : CreateReceivedMessage(entries[0], cancellationToken);
+        return entries.Count == 0 ? null : CreateMessageContext(entries[0], cancellationToken);
     }
 
-    public async Task<IReceivedMessage<T>?> ReceiveAsync<T>(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken) where T : class
+    public async Task<IMessageContext<T>?> ReceiveAsync<T>(string source, TimeSpan? maxWaitTime, CancellationToken cancellationToken) where T : class
     {
         ThrowIfDisposed();
         var pull = RequirePull();
         var entries = await pull.ReceiveAsync(source, new ReceiveRequest { MaxMessages = 1, MaxWaitTime = maxWaitTime }, cancellationToken).AnyContext();
-        return entries.Count == 0 ? null : await CreateReceivedMessageAsync<T>(entries[0], cancellationToken).AnyContext();
+        return entries.Count == 0 ? null : await CreateMessageContextAsync<T>(entries[0], cancellationToken).AnyContext();
     }
 
-    public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IReceivedMessage, CancellationToken, Task> handler, CancellationToken cancellationToken)
+    public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IMessageContext, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(handler);
         return RegisterConsumerAsync(config, handler, async (entry, token) =>
         {
-            var received = CreateReceivedMessage(entry, token);
+            var received = CreateMessageContext(entry, token);
             await HandleMessageAsync(received, config, handler, token).AnyContext();
         }, cancellationToken);
     }
 
-    public Task<MessageListenerHandle> StartListenerAsync<T>(ListenerConfig config, Func<IReceivedMessage<T>, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
+    public Task<MessageListenerHandle> StartListenerAsync<T>(ListenerConfig config, Func<IMessageContext<T>, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
         return RegisterConsumerAsync(config, handler, async (entry, token) =>
         {
-            var received = await CreateReceivedMessageAsync<T>(entry, token).AnyContext();
+            var received = await CreateMessageContextAsync<T>(entry, token).AnyContext();
             await HandleMessageAsync(received, config, handler, token).AnyContext();
         }, cancellationToken);
     }
@@ -275,7 +275,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     {
         MessagingInstruments.Unhandled.Add(1, new KeyValuePair<string, object?>("source", source));
 
-        var message = CreateReceivedMessage(entry, cancellationToken);
+        var message = CreateMessageContext(entry, cancellationToken);
 
         // Retry so a node that does handle this type can pick it up; dead-letter as "no-handler" once the lenient
         // budget is exhausted so a genuinely orphaned type cannot loop forever.
@@ -400,7 +400,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    private async Task HandleMessageAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, Task> handler, CancellationToken cancellationToken) where TMessage : IReceivedMessage
+    private async Task HandleMessageAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, Task> handler, CancellationToken cancellationToken) where TMessage : IMessageContext
     {
         // Re-establish the producer's trace context on the consumer side so a cross-process trace continues here
         // instead of breaking at the transport boundary.
@@ -427,7 +427,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    private static Activity? StartProcessActivity(IReceivedMessage message, ListenerConfig config)
+    private static Activity? StartProcessActivity(IMessageContext message, ListenerConfig config)
     {
         string? traceParent = message.Headers.GetValueOrDefault(KnownHeaders.TraceParent);
         var activity = FoundatioDiagnostics.ActivitySource.StartActivity("ProcessMessage", ActivityKind.Consumer, traceParent);
@@ -449,7 +449,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return activity;
     }
 
-    private static Task SettleFailedMessageAsync(IReceivedMessage message, int maxAttempts, Func<int, TimeSpan>? backoff, string deadLetterReason, CancellationToken cancellationToken)
+    private static Task SettleFailedMessageAsync(IMessageContext message, int maxAttempts, Func<int, TimeSpan>? backoff, string deadLetterReason, CancellationToken cancellationToken)
     {
         if (message.IsHandled)
             return Task.CompletedTask;
@@ -460,13 +460,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return message.RejectAsync(new RejectOptions { RedeliveryDelay = backoff?.Invoke(message.Attempts) }, cancellationToken);
     }
 
-    private ReceivedMessage CreateReceivedMessage(TransportEntry entry, CancellationToken cancellationToken)
+    private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken)
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
-        return new ReceivedMessage(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
+        return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
     }
 
-    private async Task<IReceivedMessage<T>> CreateReceivedMessageAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
+    private async Task<IMessageContext<T>> CreateMessageContextAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
 
@@ -504,13 +504,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Message \"{entry.Id}\" deserialized to null.", null);
         }
 
-        return new ReceivedMessage<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
+        return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
     }
 
     private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken cancellationToken)
     {
         MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
-        return ReceivedMessage.DeadLetterOrDropAsync(_transport, entry, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
+        return MessageContext.DeadLetterOrDropAsync(_transport, entry, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
     }
 
 
@@ -899,7 +899,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     }
 }
 
-internal class ReceivedMessage : IReceivedMessage
+internal class MessageContext : IMessageContext
 {
     private readonly IMessageTransport _transport;
     private readonly TransportEntry _entry;
@@ -908,7 +908,7 @@ internal class ReceivedMessage : IReceivedMessage
     private readonly string? _deadLetterDestination;
     private int _isHandled;
 
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
     {
         _transport = transport;
         _entry = entry;
@@ -1044,9 +1044,9 @@ internal class ReceivedMessage : IReceivedMessage
     }
 }
 
-internal sealed class ReceivedMessage<T> : ReceivedMessage, IReceivedMessage<T> where T : class
+internal sealed class MessageContext<T> : MessageContext, IMessageContext<T> where T : class
 {
-    public ReceivedMessage(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null)
         : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination)
     {
         Message = message;

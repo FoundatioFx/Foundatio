@@ -12,9 +12,9 @@ public sealed record InstanceInfo(string Id);
 /// </summary>
 public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOrderHandler> logger) : IMessageHandler<ProcessOrder>
 {
-    public Task HandleAsync(IReceivedMessage<ProcessOrder> message, CancellationToken cancellationToken)
+    public Task HandleAsync(IMessageContext<ProcessOrder> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation("[{Instance}] processed order: {Quantity} x {Product}", instance.Id, message.Message.Quantity, message.Message.Product);
+        logger.LogInformation("[{Instance}] processed order: {Quantity} x {Product}", instance.Id, context.Message.Quantity, context.Message.Product);
         return Task.CompletedTask;
     }
 }
@@ -25,9 +25,9 @@ public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOr
 /// </summary>
 public sealed class AnnouncementHandler(InstanceInfo instance, ILogger<AnnouncementHandler> logger) : IMessageHandler<Announcement>
 {
-    public Task HandleAsync(IReceivedMessage<Announcement> message, CancellationToken cancellationToken)
+    public Task HandleAsync(IMessageContext<Announcement> context, CancellationToken cancellationToken)
     {
-        logger.LogInformation("[{Instance}] announcement: {Text}", instance.Id, message.Message.Text);
+        logger.LogInformation("[{Instance}] announcement: {Text}", instance.Id, context.Message.Text);
         return Task.CompletedTask;
     }
 }
