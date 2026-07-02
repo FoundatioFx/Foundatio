@@ -72,6 +72,8 @@ public class MessagingTestHarnessTests
         // The whole failure path is assertable: two retries, then terminal dead-letter with the reason and forensics.
         Assert.Equal(3, Volatile.Read(ref attempts));
         Assert.Equal(2, harness.AbandonedMessages.Count);
+        Assert.All(harness.Abandoned<HarnessOrder>(), m => Assert.Equal("poison", m.Id));
+        Assert.Equal(2, harness.Abandoned<HarnessOrder>().Count);
         var dead = Assert.Single(harness.DeadLetteredMessages);
         Assert.Equal("handler-error", dead.Reason);
         Assert.Equal(3, dead.Attempts);
@@ -101,6 +103,10 @@ public class MessagingTestHarnessTests
         await harness.WaitForIdleAsync(cancellationToken: cancellationToken);
         Assert.Equal(2, Volatile.Read(ref attempts));
         Assert.Single(harness.Handled<HarnessOrder>());
+
+        // Timeout.InfiniteTimeSpan means wait-until-idle; other negative timeouts are rejected up front.
+        await harness.WaitForIdleAsync(Timeout.InfiniteTimeSpan, cancellationToken);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(-2), cancellationToken));
 
         // A destination that never drains fails with the busy destinations named.
         await using var stuck = await bus.SubscribeAsync<HarnessOther>((_, handlerToken) => Task.Delay(Timeout.Infinite, handlerToken),
