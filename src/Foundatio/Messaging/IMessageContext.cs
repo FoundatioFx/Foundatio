@@ -21,14 +21,40 @@ public sealed record RetryPolicy
     /// <summary>Maximum delivery attempts for a failing handler before the message is dead-lettered. Default 5.</summary>
     public int MaxAttempts { get; init; } = 5;
 
-    /// <summary>Delay before each redelivery given the 1-based attempt number. Null defers to the transport's own redelivery timing.</summary>
-    public Func<int, TimeSpan>? Backoff { get; init; }
+    /// <summary>
+    /// Delay before each redelivery given the 1-based attempt number. Defaults to <see cref="DefaultBackoff"/>
+    /// (immediate first retry, then 10s/20s/30s with jitter). Set null to defer to the transport's own redelivery timing.
+    /// </summary>
+    public Func<int, TimeSpan>? Backoff { get; init; } = DefaultBackoff;
+
+    /// <summary>
+    /// Marks a handler failure as unrecoverable: when the predicate returns true the message is dead-lettered
+    /// immediately instead of retried (a poison message should not burn its attempt budget). Deserialization failures
+    /// are always unrecoverable regardless of this predicate. A subscription's
+    /// <see cref="MessageSubscriptionOptions.DeadLetterWhen"/> overrides this default.
+    /// </summary>
+    public Func<Exception, bool>? DeadLetterWhen { get; init; }
 
     /// <summary>
     /// Destination terminal (dead-lettered) messages are sent to when the transport has no native dead-letter sink.
-    /// Null drops terminal messages on such transports. Ignored when the transport supports native dead-lettering.
+    /// Null (default) derives "{source}.deadletter" per source. Ignored when the transport supports native dead-lettering.
     /// </summary>
     public string? DeadLetterDestination { get; init; }
+
+    /// <summary>
+    /// The default redelivery curve: an immediate first retry, then 10s/20s/30s (capped) with ±20% jitter — the delay
+    /// shape mature messaging stacks converged on. The attempt number is 1-based: the value is the delay applied after
+    /// that attempt failed.
+    /// </summary>
+    public static readonly Func<int, TimeSpan> DefaultBackoff = attempt =>
+    {
+        if (attempt <= 1)
+            return TimeSpan.Zero;
+
+        double seconds = Math.Min((attempt - 1) * 10, 30);
+        double jitter = 1 + (Random.Shared.NextDouble() * 0.4 - 0.2);
+        return TimeSpan.FromSeconds(seconds * jitter);
+    };
 
     /// <summary>Maximum attempts for a message whose type has no registered consumer before it is dead-lettered as "no-handler". Default 50.</summary>
     public int UnmatchedMaxAttempts { get; init; } = 50;
@@ -59,13 +85,19 @@ public sealed record RejectOptions
 {
     /// <summary>
     /// When false (default) the message is returned for redelivery (a retry). When true the message is terminal: it
-    /// is moved to the transport's dead-letter sink where one exists, otherwise dropped. Terminal messages are never
-    /// redelivered.
+    /// is moved to the transport's native dead-letter sink where one exists, otherwise sent to the configured or
+    /// derived ("{source}.deadletter") dead-letter destination. Terminal messages are never redelivered.
     /// </summary>
     public bool Terminal { get; init; }
 
-    /// <summary>Reason carried to the dead-letter sink (where the transport supports one) for a terminal reject.</summary>
+    /// <summary>Reason carried to the dead-letter sink for a terminal reject.</summary>
     public string? Reason { get; init; }
+
+    /// <summary>
+    /// The failure behind a terminal reject; its type/message/stack are stamped as forensics headers on the
+    /// dead-lettered message so a dead message is triageable with plain transport tooling.
+    /// </summary>
+    public Exception? Exception { get; init; }
 
     /// <summary>
     /// An explicit delay before the message is redelivered. Honored only for a non-terminal reject, served natively
@@ -73,6 +105,13 @@ public sealed record RejectOptions
     /// When null the transport's own redelivery timing applies.
     /// </summary>
     public TimeSpan? RedeliveryDelay { get; init; }
+
+    /// <summary>
+    /// When true, a <see cref="RedeliveryDelay"/> the transport cannot honor (no native support and no runtime store)
+    /// degrades to immediate redelivery instead of failing. The core's retry policy rejects with best-effort delays;
+    /// an explicit caller-specified delay defaults to strict.
+    /// </summary>
+    public bool BestEffortDelay { get; init; }
 }
 
 public interface IMessageContext

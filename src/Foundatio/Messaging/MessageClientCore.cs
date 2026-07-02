@@ -59,6 +59,7 @@ internal sealed record ListenerConfig
     // Null falls back to the client's default RetryPolicy.
     public int? MaxAttempts { get; init; }
     public Func<int, TimeSpan>? RedeliveryBackoff { get; init; }
+    public Func<Exception, bool>? DeadLetterWhen { get; init; }
 }
 
 /// <summary>
@@ -263,7 +264,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         // Retry so a node that does handle this type can pick it up; dead-letter as "no-handler" once the lenient
         // budget is exhausted so a genuinely orphaned type cannot loop forever.
-        await SettleFailedMessageAsync(message, _retryPolicy.UnmatchedMaxAttempts, _retryPolicy.UnmatchedBackoff, deadLetterReason: "no-handler", cancellationToken).AnyContext();
+        await SettleFailedMessageAsync(message, unrecoverable: false, _retryPolicy.UnmatchedMaxAttempts, _retryPolicy.UnmatchedBackoff, deadLetterReason: "no-handler", exception: null, cancellationToken).AnyContext();
 
         // Surface loudly. The throw is caught by the loop's per-message handling (SafeProcessAsync), so it never tears
         // down the receive loop or the other type handlers sharing this source.
@@ -413,8 +414,26 @@ internal sealed class MessageClientCore : IAsyncDisposable
             activity?.SetErrorStatus(ex);
             int maxAttempts = config.MaxAttempts ?? _retryPolicy.MaxAttempts;
             var backoff = config.RedeliveryBackoff ?? _retryPolicy.Backoff;
-            _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}): {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
-            await SettleFailedMessageAsync(message, maxAttempts, backoff, "handler-error", cancellationToken).AnyContext();
+
+            bool unrecoverable = false;
+            try
+            {
+                unrecoverable = (config.DeadLetterWhen ?? _retryPolicy.DeadLetterWhen)?.Invoke(ex) == true;
+            }
+            catch (Exception predicateEx)
+            {
+                _logger.LogError(predicateEx, "DeadLetterWhen predicate threw for message \"{MessageId}\"; treating the failure as retryable: {Message}", message.Id, predicateEx.Message);
+            }
+
+            // A retry that can still happen is a warning; the terminal decision (unrecoverable or attempts exhausted)
+            // is the error worth alerting on.
+            if (unrecoverable || message.Attempts >= maxAttempts)
+                _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}); dead-lettering: {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
+            else
+                _logger.LogWarning(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}); will retry: {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
+
+            string reason = unrecoverable ? $"unrecoverable:{ex.GetType().Name}" : "handler-error";
+            await SettleFailedMessageAsync(message, unrecoverable, maxAttempts, backoff, reason, ex, cancellationToken).AnyContext();
         }
         finally
         {
@@ -444,15 +463,17 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return activity;
     }
 
-    private static Task SettleFailedMessageAsync(IMessageContext message, int maxAttempts, Func<int, TimeSpan>? backoff, string deadLetterReason, CancellationToken cancellationToken)
+    private static Task SettleFailedMessageAsync(IMessageContext message, bool unrecoverable, int maxAttempts, Func<int, TimeSpan>? backoff, string deadLetterReason, Exception? exception, CancellationToken cancellationToken)
     {
         if (message.IsHandled)
             return Task.CompletedTask;
 
-        if (message.Attempts >= maxAttempts)
-            return message.RejectAsync(new RejectOptions { Terminal = true, Reason = deadLetterReason }, cancellationToken);
+        if (unrecoverable || message.Attempts >= maxAttempts)
+            return message.RejectAsync(new RejectOptions { Terminal = true, Reason = deadLetterReason, Exception = exception }, cancellationToken);
 
-        return message.RejectAsync(new RejectOptions { RedeliveryDelay = backoff?.Invoke(message.Attempts) }, cancellationToken);
+        // Policy-driven delays are best-effort: a transport that can't honor the delay redelivers immediately rather
+        // than failing the settle (an explicit caller-requested delay stays strict).
+        return message.RejectAsync(new RejectOptions { RedeliveryDelay = backoff?.Invoke(message.Attempts), BestEffortDelay = true }, cancellationToken);
     }
 
     private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken)
@@ -475,7 +496,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             var resolved = String.IsNullOrEmpty(typeName) ? null : _typeRegistry.Resolve(typeName);
             if (resolved is null || !typeof(T).IsAssignableFrom(resolved))
             {
-                await DeadLetterPoisonMessageAsync(entry, "unresolved-type", cancellationToken).AnyContext();
+                await DeadLetterPoisonMessageAsync(entry, "unresolved-type", exception: null, cancellationToken).AnyContext();
                 throw _exceptionFactory($"Unable to resolve a concrete type \"{typeName}\" assignable to \"{typeof(T).Name}\" for message \"{entry.Id}\".", null);
             }
 
@@ -489,23 +510,24 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            await DeadLetterPoisonMessageAsync(entry, "deserialize-failure", cancellationToken).AnyContext();
+            await DeadLetterPoisonMessageAsync(entry, "deserialize-failure", ex, cancellationToken).AnyContext();
             throw _exceptionFactory($"Unable to deserialize message \"{entry.Id}\".", ex);
         }
 
         if (message is null)
         {
-            await DeadLetterPoisonMessageAsync(entry, "deserialize-failure", cancellationToken).AnyContext();
+            await DeadLetterPoisonMessageAsync(entry, "deserialize-failure", exception: null, cancellationToken).AnyContext();
             throw _exceptionFactory($"Message \"{entry.Id}\" deserialized to null.", null);
         }
 
         return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination);
     }
 
-    private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, CancellationToken cancellationToken)
+    private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, Exception? exception, CancellationToken cancellationToken)
     {
         MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
-        return MessageContext.DeadLetterOrDropAsync(_transport, entry, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
+        var enriched = entry with { Headers = MessageContext.BuildDeadLetterHeaders(entry, entry.DeliveryCount, exception, _timeProvider) };
+        return MessageContext.DeadLetterOrDropAsync(_transport, enriched, reason, _retryPolicy.DeadLetterDestination, cancellationToken);
     }
 
 
@@ -950,7 +972,8 @@ internal class MessageContext : IMessageContext
         if (options.Terminal)
         {
             MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
-            await DeadLetterOrDropAsync(_transport, _entry, options.Reason, _deadLetterDestination, cancellationToken).AnyContext();
+            var enriched = _entry with { Headers = BuildDeadLetterHeaders(_entry, Attempts, options.Exception, _timeProvider) };
+            await DeadLetterOrDropAsync(_transport, enriched, options.Reason, _deadLetterDestination, cancellationToken).AnyContext();
             return;
         }
 
@@ -972,7 +995,17 @@ internal class MessageContext : IMessageContext
         }
 
         if (_runtimeStore is null)
+        {
+            // A best-effort delay (the core retry policy) degrades to immediate redelivery; an explicit caller delay
+            // stays strict because the caller is depending on the timing.
+            if (options.BestEffortDelay)
+            {
+                await _transport.AbandonAsync(_entry, cancellationToken).AnyContext();
+                return;
+            }
+
             throw new MessageBusException($"Delayed redelivery requires either native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.");
+        }
 
         // Advance from the reconciled attempt count, not the raw transport DeliveryCount: the re-send produces a new
         // transport message whose native DeliveryCount resets to 1, so basing the next attempt on DeliveryCount would
@@ -1004,9 +1037,9 @@ internal class MessageContext : IMessageContext
     }
 
     // Terminal settlement. Prefer the transport's native dead-letter sink (preserves native DLQ tooling). When the
-    // transport has none, fall back to a configured core-managed dead-letter destination: copy the raw entry there
-    // (recording the reason) and complete the original. With neither, the message can't be parked, so it is completed
-    // (dropped) rather than throwing and stalling the consumer.
+    // transport has none, copy the raw entry to the configured dead-letter destination — or the derived
+    // "{source}.deadletter" when none is configured, so a dead message is always parked somewhere inspectable —
+    // recording the reason, then complete the original.
     internal static async Task DeadLetterOrDropAsync(IMessageTransport transport, TransportEntry entry, string? reason, string? deadLetterDestination, CancellationToken cancellationToken)
     {
         if (transport is ISupportsDeadLetter deadLetter)
@@ -1015,17 +1048,37 @@ internal class MessageContext : IMessageContext
             return;
         }
 
-        if (!String.IsNullOrEmpty(deadLetterDestination))
+        string destination = !String.IsNullOrEmpty(deadLetterDestination) ? deadLetterDestination : $"{entry.Destination}.deadletter";
+        var headers = String.IsNullOrEmpty(reason)
+            ? entry.Headers
+            : entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
+        await transport.SendAsync(destination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.Id }], new TransportSendOptions(), cancellationToken).AnyContext();
+        await transport.CompleteAsync(entry, cancellationToken).AnyContext();
+    }
+
+    // Stamps the dead-letter forensics contract (see KnownHeaders) so a dead message is triageable — exception details,
+    // reconciled attempt count, where it was consumed from, and when it died.
+    internal static MessageHeaders BuildDeadLetterHeaders(TransportEntry entry, int attempts, Exception? exception, TimeProvider timeProvider)
+    {
+        var headers = entry.Headers.ToBuilder()
+            .Set(KnownHeaders.Attempts, attempts.ToString(CultureInfo.InvariantCulture))
+            .Set(KnownHeaders.DeadLetterFailedAt, timeProvider.GetUtcNow().ToString("O", CultureInfo.InvariantCulture))
+            .Set(KnownHeaders.DeadLetterOriginalDestination, entry.Destination);
+
+        if (exception is not null)
         {
-            var headers = String.IsNullOrEmpty(reason)
-                ? entry.Headers
-                : entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
-            await transport.SendAsync(deadLetterDestination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.Id }], new TransportSendOptions(), cancellationToken).AnyContext();
-            await transport.CompleteAsync(entry, cancellationToken).AnyContext();
-            return;
+            headers.Set(KnownHeaders.DeadLetterExceptionType, exception.GetType().FullName ?? exception.GetType().Name);
+            headers.Set(KnownHeaders.DeadLetterExceptionMessage, Truncate(exception.Message, 1024));
+            if (exception.StackTrace is { } stack)
+                headers.Set(KnownHeaders.DeadLetterExceptionStackTrace, Truncate(stack, 4096));
         }
 
-        await transport.CompleteAsync(entry, cancellationToken).AnyContext();
+        return headers.Build();
+    }
+
+    private static string Truncate(string value, int maxLength)
+    {
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 
     private bool TryMarkHandled()
@@ -1124,6 +1177,7 @@ internal sealed record MessageListenerRegistration
     public required int MaxConcurrency { get; init; }
     public required int? MaxAttempts { get; init; }
     public required bool HasRedeliveryBackoff { get; init; }
+    public required bool HasDeadLetterWhen { get; init; }
 
     public static MessageListenerRegistration Create(Delegate handler, ListenerConfig config)
     {
@@ -1135,7 +1189,8 @@ internal sealed record MessageListenerRegistration
             AckMode = config.AckMode,
             MaxConcurrency = Math.Max(1, config.MaxConcurrency),
             MaxAttempts = config.MaxAttempts,
-            HasRedeliveryBackoff = config.RedeliveryBackoff is not null
+            HasRedeliveryBackoff = config.RedeliveryBackoff is not null,
+            HasDeadLetterWhen = config.DeadLetterWhen is not null
         };
     }
 
@@ -1147,6 +1202,7 @@ internal sealed record MessageListenerRegistration
             && AckMode == other.AckMode
             && MaxConcurrency == other.MaxConcurrency
             && MaxAttempts == other.MaxAttempts
-            && HasRedeliveryBackoff == other.HasRedeliveryBackoff;
+            && HasRedeliveryBackoff == other.HasRedeliveryBackoff
+            && HasDeadLetterWhen == other.HasDeadLetterWhen;
     }
 }

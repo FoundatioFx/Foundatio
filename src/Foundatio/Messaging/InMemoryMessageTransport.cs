@@ -229,7 +229,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
-        DeadLetter(state, inFlight.Message, reason);
+        // Dead-letter with the caller's entry headers (which may carry forensics stamped by the core), not the
+        // originally-stored ones.
+        DeadLetter(state, inFlight.Message with { Headers = entry.Headers }, reason);
         return Task.CompletedTask;
     }
 

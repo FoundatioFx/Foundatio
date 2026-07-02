@@ -68,14 +68,26 @@ public sealed class MessageSubscriptionOptions
     /// </summary>
     public string? SubscriptionQualifier { get; set; }
 
-    /// <summary>Maximum messages this subscription processes concurrently per instance. Default 1.</summary>
+    /// <summary>
+    /// Maximum messages this subscription processes concurrently per instance. Default 1 — a deliberate divergence
+    /// from libraries that default higher: 1 is the only default that preserves per-handler ordering, each handler
+    /// already gets its own concurrent stream (10 handlers = 10 parallel consumers), and scaling out replicas scales
+    /// throughput without giving up ordering per instance. Raise it for handlers that are I/O-bound and order-agnostic.
+    /// </summary>
     public int MaxConcurrency { get; set; } = 1;
 
     /// <summary>Maximum delivery attempts before dead-lettering. Null uses the default <see cref="RetryPolicy"/>.</summary>
     public int? MaxAttempts { get; set; }
 
-    /// <summary>Delay before each redelivery given the 1-based attempt number. Null defers to the transport's timing.</summary>
+    /// <summary>Delay before each redelivery given the 1-based attempt number. Null uses the default <see cref="RetryPolicy"/>.</summary>
     public Func<int, TimeSpan>? RedeliveryBackoff { get; set; }
+
+    /// <summary>
+    /// Marks a handler failure as unrecoverable: when the predicate returns true the message is dead-lettered
+    /// immediately instead of retried. Null uses the default <see cref="RetryPolicy"/>. Prefer
+    /// <see cref="DeadLetterOn{TException}"/> for the common by-type case.
+    /// </summary>
+    public Func<Exception, bool>? DeadLetterWhen { get; set; }
 
     /// <summary>Whether messages auto-complete when the handler returns (default) or are settled manually.</summary>
     public AckMode AckMode { get; set; } = AckMode.Auto;
@@ -94,6 +106,19 @@ public sealed class MessageSubscriptionOptions
     /// defaults to a per-channel key derived from the route.
     /// </summary>
     public string? Key { get; set; }
+
+    /// <summary>
+    /// Dead-letters failures of type <typeparamref name="TException"/> immediately instead of retrying — for
+    /// exceptions a retry can never fix (validation, malformed data). Composes: call once per exception type.
+    /// </summary>
+    public MessageSubscriptionOptions DeadLetterOn<TException>() where TException : Exception
+    {
+        var existing = DeadLetterWhen;
+        DeadLetterWhen = existing is null
+            ? static ex => ex is TException
+            : ex => existing(ex) || ex is TException;
+        return this;
+    }
 }
 
 /// <summary>A started subscription; disposing detaches the handler from the message type's delivery channels.</summary>
@@ -177,13 +202,14 @@ public sealed record MessageBusOptions
 public sealed class MessageBus : IMessageBus
 {
     private readonly MessageClientCore _core;
+    private readonly ILogger _logger;
 
     public MessageBus(IMessageTransport transport, MessageBusOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
         options ??= new MessageBusOptions();
-        var logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageBus>();
-        _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, logger,
+        _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageBus>();
+        _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, _logger,
             static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
     }
 
@@ -238,6 +264,7 @@ public sealed class MessageBus : IMessageBus
         {
             await EnsureSubscriptionAsync(channels.Publish, cancellationToken).AnyContext();
             var published = await _core.StartListenerAsync(channels.Publish, handler, cancellationToken).AnyContext();
+            LogSubscription(channels.Send, channels.Publish);
             return new MessageSubscription(sent, published);
         }
         catch
@@ -256,6 +283,7 @@ public sealed class MessageBus : IMessageBus
         {
             await EnsureSubscriptionAsync(channels.Publish, cancellationToken).AnyContext();
             var published = await _core.StartListenerAsync(channels.Publish, handler, cancellationToken).AnyContext();
+            LogSubscription(channels.Send, channels.Publish);
             return new MessageSubscription(sent, published);
         }
         catch
@@ -295,7 +323,8 @@ public sealed class MessageBus : IMessageBus
             AckMode = options.AckMode,
             MaxConcurrency = options.MaxConcurrency,
             MaxAttempts = options.MaxAttempts,
-            RedeliveryBackoff = options.RedeliveryBackoff
+            RedeliveryBackoff = options.RedeliveryBackoff,
+            DeadLetterWhen = options.DeadLetterWhen
         };
 
         string topic = GetTopic(routeType, options.Topic);
@@ -314,7 +343,8 @@ public sealed class MessageBus : IMessageBus
             AckMode = options.AckMode,
             MaxConcurrency = options.MaxConcurrency,
             MaxAttempts = options.MaxAttempts,
-            RedeliveryBackoff = options.RedeliveryBackoff
+            RedeliveryBackoff = options.RedeliveryBackoff,
+            DeadLetterWhen = options.DeadLetterWhen
         };
 
         return (send, publish);
@@ -323,6 +353,15 @@ public sealed class MessageBus : IMessageBus
     private static string QualifySubscription(string identity, string? qualifier)
     {
         return String.IsNullOrEmpty(qualifier) ? identity : $"{identity}.{MessageRoutingConventions.ToKebabCase(qualifier)}";
+    }
+
+    // Delivery semantics must never be invisible: log each subscription's effective topology (which destination it
+    // consumes, which subscriber group it joins, and its retry posture) once at subscribe time.
+    private void LogSubscription(ListenerConfig send, ListenerConfig publish)
+    {
+        _logger.LogInformation(
+            "Subscribed {MessageType}: send={Destination}, publish={Topic}/{Subscription}, concurrency={MaxConcurrency}, attempts={MaxAttempts}, ack={AckMode}",
+            send.MessageType.Name, send.Source, publish.Topic, publish.Subscription, send.MaxConcurrency, send.MaxAttempts?.ToString() ?? "default", send.AckMode);
     }
 
     private Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)
