@@ -7,11 +7,13 @@ namespace Foundatio.Redis.Utility;
 
 internal sealed class RedisCapabilities
 {
+    private static readonly Version LMoveMinVersion = new(6, 2, 0);
     private static readonly Version MsetexMinVersion = new(8, 3, 224);
 
     private readonly IConnectionMultiplexer _muxer;
     private readonly ILogger _logger;
 
+    private int _lMove; // 0 = unknown, 1 = supported, -1 = not supported
     private int _msetex; // 0 = unknown, 1 = supported, -1 = not supported
 
     public RedisCapabilities(IConnectionMultiplexer muxer, ILogger logger)
@@ -23,10 +25,17 @@ internal sealed class RedisCapabilities
         _logger = logger;
     }
 
+    /// <summary>
+    /// LMOVE requires Redis 6.2+. Callers should fall back to the (functionally identical) RPOPLPUSH
+    /// variant when this returns <c>false</c>, e.g. against Azure Cache for Redis, which is pinned at 6.0.x.
+    /// </summary>
+    public bool SupportsLMove => CheckVersion(ref _lMove, LMoveMinVersion, "LMOVE");
+
     public bool SupportsMsetex => CheckVersion(ref _msetex, MsetexMinVersion, "MSETEX");
 
     public void Invalidate()
     {
+        Volatile.Write(ref _lMove, 0);
         Volatile.Write(ref _msetex, 0);
     }
 

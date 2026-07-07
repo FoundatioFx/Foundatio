@@ -22,6 +22,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     private readonly ISubscriber _subscriber;
     private readonly IConnectionMultiplexer _connectionMultiplexer;
     private readonly RedisCacheClient _cache;
+    private readonly RedisCapabilities _capabilities;
     private long _enqueuedCount;
     private long _dequeuedCount;
     private long _completedCount;
@@ -44,6 +45,8 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         _connectionMultiplexer = options.ConnectionMultiplexer;
 
         _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+
+        _capabilities = new RedisCapabilities(_connectionMultiplexer, _logger);
 
         _cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = _connectionMultiplexer, Serializer = _serializer, ReadMode = options.ReadMode, Database = options.Database });
 
@@ -655,6 +658,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     {
         _logger.LogInformation("Redis connection restored");
         _scriptsLoaded = false;
+        _capabilities.Invalidate();
         _autoResetEvent.Set();
     }
 
@@ -782,7 +786,9 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
             if (_scriptsLoaded)
                 return;
 
-            var dequeueId = LuaScript.Prepare(DequeueIdScript);
+            bool useLMove = _capabilities.SupportsLMove;
+            _logger.LogDebug("Loading DequeueId script using {Command} variant", useLMove ? "LMOVE" : "RPOPLPUSH");
+            var dequeueId = LuaScript.Prepare(useLMove ? DequeueIdScript : DequeueIdRpoplpushScript);
 
             foreach (var endpoint in _connectionMultiplexer.GetEndPoints())
             {
@@ -882,6 +888,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
     }
 
     private static readonly string DequeueIdScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.lua");
+    private static readonly string DequeueIdRpoplpushScript = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.DequeueId.Rpoplpush.lua");
 }
 
 public record RedisPayloadEnvelope<T>
