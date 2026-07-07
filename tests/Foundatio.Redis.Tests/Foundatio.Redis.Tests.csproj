@@ -1,4 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Every test is gated on FOUNDATIO_REDIS_CONNECTION_STRING; an all-skipped run must not fail (MTP exit code 8 = zero tests ran). -->
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --ignore-exit-code 8</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
