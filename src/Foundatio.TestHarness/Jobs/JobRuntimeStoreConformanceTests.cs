@@ -52,6 +52,8 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var job = NewJob(time, "job-1", "emailer") with
         {
             JobType = "Acme.EmailJob",
+            Payload = new byte[] { 1, 2, 3, 4 },
+            PayloadType = "Acme.EmailJobArgs",
             Progress = 10,
             ProgressMessage = "starting",
             Attempt = 1,
@@ -63,6 +65,9 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.NotNull(got);
         Assert.Equal("emailer", got.Name);
         Assert.Equal("Acme.EmailJob", got.JobType);
+        Assert.NotNull(got.Payload);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, got.Payload.Value.ToArray());
+        Assert.Equal("Acme.EmailJobArgs", got.PayloadType);
         Assert.Equal(JobStatus.Queued, got.Status);
         Assert.Equal(10, got.Progress);
         Assert.Equal("starting", got.ProgressMessage);

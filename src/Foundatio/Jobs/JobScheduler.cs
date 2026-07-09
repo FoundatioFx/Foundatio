@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Cronos;
+using Foundatio.Serializer;
 using Foundatio.Messaging;
 
 namespace Foundatio.Jobs;
@@ -38,6 +39,12 @@ public sealed record ScheduledJobDefinition
     /// </summary>
     public Func<int, TimeSpan>? RetryBackoff { get; init; }
 
+    /// <summary>
+    /// Typed arguments serialized into every occurrence's <see cref="JobState.Payload"/>; the job reads them via
+    /// <see cref="JobExecutionContext.GetArguments{TArgs}"/>. Null when the job takes none.
+    /// </summary>
+    public object? Arguments { get; init; }
+
     public bool Enabled { get; init; } = true;
 }
 
@@ -67,6 +74,9 @@ public sealed class CronJobOptions
 
     /// <summary>Time zone the CRON expression is evaluated in. Null uses the scheduler default (UTC).</summary>
     public TimeZoneInfo? TimeZone { get; set; }
+
+    /// <summary>Typed arguments serialized into every occurrence's payload (see <see cref="ScheduledJobDefinition.Arguments"/>).</summary>
+    public object? Arguments { get; set; }
 }
 
 public interface IJobScheduler
@@ -123,16 +133,18 @@ public sealed class JobScheduleProcessor
     private readonly IJobWorker _jobWorker;
     private readonly TimeProvider _timeProvider;
     private readonly IJobTypeRegistry _jobTypes;
+    private readonly ISerializer _serializer;
     private readonly string _nodeId;
     private readonly IMessageTransport? _transport;
 
-    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobWorker jobWorker, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null, IJobTypeRegistry? jobTypes = null)
+    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobWorker jobWorker, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null)
     {
         _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _jobWorker = jobWorker ?? throw new ArgumentNullException(nameof(jobWorker));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _serializer = serializer ?? DefaultSerializer.Instance;
         _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _transport = transport;
     }
@@ -191,6 +203,10 @@ public sealed class JobScheduleProcessor
                     JobId = jobId,
                     Name = definition.Name,
                     JobType = GetJobTypeName(definition.JobType),
+                    // Explicitly typed: the byte[] -> ReadOnlyMemory conversion maps a null array to an EMPTY memory,
+                    // which would make an argless occurrence look like it carries a zero-byte payload.
+                    Payload = definition.Arguments is null ? null : (ReadOnlyMemory<byte>?)_serializer.SerializeToBytes(definition.Arguments),
+                    PayloadType = definition.Arguments?.GetType().FullName,
                     Status = JobStatus.Scheduled,
                     CreatedUtc = utcNow,
                     LastUpdatedUtc = utcNow,

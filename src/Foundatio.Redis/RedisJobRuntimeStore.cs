@@ -409,6 +409,8 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
         };
 
         if (state.JobType is not null) entries.Add(new("jobType", state.JobType));
+        if (state.Payload is { } payload) entries.Add(new("payload", Convert.ToBase64String(payload.Span)));
+        if (state.PayloadType is not null) entries.Add(new("payloadType", state.PayloadType));
         if (state.Progress is { } progress) entries.Add(new("progress", progress));
         if (state.ProgressMessage is not null) entries.Add(new("progressMessage", state.ProgressMessage));
         if (state.NodeId is not null) entries.Add(new("nodeId", state.NodeId));
@@ -431,6 +433,8 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             JobId = (string)Get("jobId")!,
             Name = (string)Get("name")!,
             JobType = ToStringOrNull(Get("jobType")),
+            Payload = Get("payload").IsNullOrEmpty ? null : Convert.FromBase64String((string)Get("payload")!),
+            PayloadType = ToStringOrNull(Get("payloadType")),
             Status = Enum.Parse<JobStatus>((string)Get("status")!),
             Progress = Get("progress").IsNullOrEmpty ? null : (int)Get("progress"),
             ProgressMessage = ToStringOrNull(Get("progressMessage")),
