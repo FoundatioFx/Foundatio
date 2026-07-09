@@ -236,11 +236,12 @@ public sealed record MessageBusOptions
     public IMessageTypeRegistry MessageTypes { get; init; } = new MessageTypeRegistry();
     /// <summary>
     /// Enables durable scheduling: delayed sends beyond a transport ceiling and store-parked retry delays are written
-    /// here and drained by the job runtime pump. The DI builder registers the pump automatically with the store; when
-    /// wiring options by hand, ensure a pump (JobRuntimePumpService / JobScheduleProcessor) is running or parked
-    /// messages will never be dispatched.
+    /// here and drained by the job runtime pump. Messaging depends only on the dispatch-storage contract — any
+    /// <see cref="IJobRuntimeStore"/> satisfies it, but a provider can implement <see cref="IScheduledDispatchStore"/>
+    /// alone. The DI builder registers the pump automatically with the store; when wiring options by hand, ensure a
+    /// pump (JobRuntimePumpService / JobScheduleProcessor) is running or parked messages will never be dispatched.
     /// </summary>
-    public IJobRuntimeStore? RuntimeStore { get; init; }
+    public IScheduledDispatchStore? RuntimeStore { get; init; }
     public RetryPolicy RetryPolicy { get; init; } = new();
 
     /// <summary>

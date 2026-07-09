@@ -69,7 +69,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly IMessageTransport _transport;
     private readonly ISerializer _serializer;
     private readonly IMessageRouter _router;
-    private readonly IJobRuntimeStore? _runtimeStore;
+    private readonly IScheduledDispatchStore? _runtimeStore;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly Func<string, Exception?, Exception> _exceptionFactory;
@@ -83,7 +83,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
-        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null, string? contentType = null, TopologyMode topologyMode = TopologyMode.Ensure)
+        IScheduledDispatchStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null, string? contentType = null, TopologyMode topologyMode = TopologyMode.Ensure)
     {
         _topologyMode = topologyMode;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
@@ -981,13 +981,13 @@ internal class MessageContext : IMessageContext
 {
     private readonly IMessageTransport _transport;
     private readonly TransportEntry _entry;
-    private readonly IJobRuntimeStore? _runtimeStore;
+    private readonly IScheduledDispatchStore? _runtimeStore;
     private readonly TimeProvider _timeProvider;
     private readonly string? _deadLetterDestination;
     private readonly ILogger _logger;
     private int _isHandled;
 
-    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
     {
         _transport = transport;
         _entry = entry;
@@ -1181,7 +1181,7 @@ internal class MessageContext : IMessageContext
 
 internal sealed class MessageContext<T> : MessageContext, IMessageContext<T> where T : class
 {
-    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IJobRuntimeStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null)
         : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination, logger)
     {
         Message = message;

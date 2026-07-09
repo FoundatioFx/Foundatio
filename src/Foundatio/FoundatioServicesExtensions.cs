@@ -467,7 +467,7 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Serializer = sp.GetService<ISerializer>() ?? DefaultSerializer.Instance,
                 Router = sp.GetService<IMessageRouter>() ?? DefaultMessageRouter.Instance,
                 MessageTypes = sp.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
-                RuntimeStore = sp.GetService<IJobRuntimeStore>(),
+                RuntimeStore = sp.GetService<IScheduledDispatchStore>() ?? sp.GetService<IJobRuntimeStore>(),
                 RetryPolicy = sp.GetService<RetryPolicy>() ?? new RetryPolicy(),
                 Topology = sp.GetService<MessagingTopologyOptions>()?.Mode ?? TopologyMode.Ensure,
                 // The transport is a shared DI singleton owned by the container; the bus must not dispose it.
