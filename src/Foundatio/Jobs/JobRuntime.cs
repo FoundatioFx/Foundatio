@@ -292,7 +292,26 @@ public interface IJobWorker
     Task<int> RecoverStaleAsync(int maxAttempts, int limit = 100, CancellationToken cancellationToken = default);
 }
 
-public interface IJobRuntimeStore : IJobMonitor
+/// <summary>
+/// Durable storage for time-gated dispatches: delayed messages beyond a transport's native ceiling, store-parked
+/// retry delays, and CRON occurrence triggers. This is the only store contract the messaging client depends on —
+/// a provider that offers durable scheduling without the full job runtime implements just this.
+/// </summary>
+public interface IScheduledDispatchStore
+{
+    Task ScheduleDispatchAsync(ScheduledDispatchState dispatch, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ScheduledDispatchState>> ClaimDueDispatchesAsync(DateTimeOffset now, int limit, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
+    Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default);
+    Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// The full job runtime store: job state persistence, queries, lease/ownership management, cancellation signaling,
+/// and scheduled-dispatch storage. The state/lease/cancellation members are deliberately one contract — transitions
+/// verify ownership atomically (see <see cref="TryTransitionAsync"/> / <see cref="TryReclaimExpiredAsync"/>), so
+/// splitting them would break the compare-and-set semantics correctness depends on.
+/// </summary>
+public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore
 {
     Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default);
     // When expectedNodeId is non-null, the transition only succeeds if the job is currently owned by that node.
@@ -315,10 +334,6 @@ public interface IJobRuntimeStore : IJobMonitor
     Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
     Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken cancellationToken = default);
-    Task ScheduleDispatchAsync(ScheduledDispatchState dispatch, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<ScheduledDispatchState>> ClaimDueDispatchesAsync(DateTimeOffset now, int limit, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
-    Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default);
-    Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default);
 }
 
 public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
