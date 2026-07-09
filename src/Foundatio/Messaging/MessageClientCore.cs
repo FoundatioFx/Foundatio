@@ -78,11 +78,14 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly string? _contentType;
     private readonly bool _ownsTransport;
     private readonly ConcurrentDictionary<DestinationAddress, SourceListener> _sources = new();
+    private readonly TopologyMode _topologyMode;
+    private readonly ConcurrentDictionary<DestinationAddress, byte> _validatedDestinations = new();
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
-        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null, string? contentType = null)
+        IJobRuntimeStore? runtimeStore, TimeProvider timeProvider, ILogger logger, Func<string, Exception?, Exception> exceptionFactory, RetryPolicy? retryPolicy = null, bool ownsTransport = true, IMessageTypeRegistry? typeRegistry = null, string? contentType = null, TopologyMode topologyMode = TopologyMode.Ensure)
     {
+        _topologyMode = topologyMode;
         _transport = transport ?? throw new ArgumentNullException(nameof(transport));
         _serializer = serializer;
         _router = router;
@@ -107,9 +110,34 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     public Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
     {
-        return _transport is ISupportsProvisioning provisioning
-            ? provisioning.EnsureAsync(declarations, cancellationToken)
-            : Task.CompletedTask;
+        return _topologyMode switch
+        {
+            TopologyMode.None => Task.CompletedTask,
+            TopologyMode.Validate => ValidateDeclarationsAsync(declarations, cancellationToken),
+            _ => _transport is ISupportsProvisioning provisioning
+                ? provisioning.EnsureAsync(declarations, cancellationToken)
+                : Task.CompletedTask
+        };
+    }
+
+    // Validate never creates: each destination is checked once (successes are cached so steady-state publishes pay no
+    // exists round-trip) and a missing one fails loudly instead of being silently created on a broker the app is not
+    // supposed to administer.
+    private async Task ValidateDeclarationsAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
+    {
+        if (_transport is not ISupportsProvisioning provisioning)
+            throw new NotSupportedException($"{nameof(TopologyMode)}.{nameof(TopologyMode.Validate)} requires a transport that can check destination existence; \"{_transport.GetType().Name}\" does not support provisioning. Use {nameof(TopologyMode)}.{nameof(TopologyMode.None)} when the transport cannot inspect a pre-provisioned broker.");
+
+        foreach (var declaration in declarations)
+        {
+            if (_validatedDestinations.ContainsKey(declaration.Address))
+                continue;
+
+            if (!await provisioning.ExistsAsync(declaration.Address, cancellationToken).AnyContext())
+                throw _exceptionFactory($"Message topology destination {declaration.Address} does not exist and {nameof(TopologyMode)}.{nameof(TopologyMode.Validate)} never creates topology. Provision it out of band or use {nameof(TopologyMode)}.{nameof(TopologyMode.Ensure)}.", null);
+
+            _validatedDestinations.TryAdd(declaration.Address, 0);
+        }
     }
 
     public async Task<string> SendAsync(ScheduledDispatchKind kind, Type messageType, object message, MessageEnvelopeOptions options, DestinationAddress destination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)

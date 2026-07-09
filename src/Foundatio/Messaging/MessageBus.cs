@@ -203,8 +203,33 @@ public interface IMessageBus : IAsyncDisposable
     Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Governs the messaging client's topology-administration behavior. Publishing and subscribing never implicitly grant
+/// themselves more than this mode allows, so an app on a locked-down broker can state "validate only" or "never touch
+/// topology" instead of hoping implicit creation fails gracefully.
+/// </summary>
+/// <remarks>
+/// The mode governs the CORE's provisioning calls. A transport may still lazily create cheap local structures on its
+/// own paths (e.g. consumer groups on first receive); combine Validate/None with the transport's own knobs (such as
+/// <c>AwsMessageTransportOptions.AutoCreateDestinations = false</c>) for a fully locked-down broker.
+/// </remarks>
+public enum TopologyMode
+{
+    /// <summary>Create missing destinations on first use and at handler-host startup (default).</summary>
+    Ensure,
+
+    /// <summary>Never create. Verify each destination exists on first use (cached) and throw when missing.</summary>
+    Validate,
+
+    /// <summary>No topology calls at all; destinations are assumed pre-provisioned out of band.</summary>
+    None
+}
+
 public sealed record MessageBusOptions
 {
+    /// <summary>How the client administers topology (create on use, validate-only, or never touch). Default <see cref="TopologyMode.Ensure"/>.</summary>
+    public TopologyMode Topology { get; init; } = TopologyMode.Ensure;
+
     public ISerializer Serializer { get; init; } = DefaultSerializer.Instance;
     public string ContentType { get; init; } = "application/json";
     public IMessageRouter Router { get; init; } = DefaultMessageRouter.Instance;
@@ -242,7 +267,7 @@ public sealed class MessageBus : IMessageBus
         options ??= new MessageBusOptions();
         _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageBus>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, _logger,
-            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType);
+            static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType, options.Topology);
     }
 
     public Task<string> SendAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
