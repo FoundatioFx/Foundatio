@@ -29,7 +29,7 @@ public class FailureHandlingTests
         Assert.Equal(1, stats.Deadletter);
         Assert.Equal(1, Volatile.Read(ref attempts)); // never retried
 
-        var dead = Assert.Single(await transport.ReceiveDeadLetteredAsync("failing-item", new ReceiveRequest { MaxMessages = 10 }, cancellationToken));
+        var dead = Assert.Single(await transport.ReceiveDeadLetteredAsync(DestinationAddress.ForQueue("failing-item"), new ReceiveRequest { MaxMessages = 10 }, cancellationToken));
         Assert.Equal("unrecoverable:ArgumentException", dead.Headers[KnownHeaders.DeadLetterReason]);
     }
 
@@ -71,7 +71,7 @@ public class FailureHandlingTests
         await bus.SendAsync(new FailingItem { Data = "doomed" }, cancellationToken: cancellationToken);
 
         await WaitForDeadLetterAsync(transport, "failing-item", cancellationToken);
-        var dead = Assert.Single(await transport.ReceiveDeadLetteredAsync("failing-item", new ReceiveRequest { MaxMessages = 10 }, cancellationToken));
+        var dead = Assert.Single(await transport.ReceiveDeadLetteredAsync(DestinationAddress.ForQueue("failing-item"), new ReceiveRequest { MaxMessages = 10 }, cancellationToken));
 
         Assert.Equal(typeof(InvalidOperationException).FullName, dead.Headers[KnownHeaders.DeadLetterExceptionType]);
         Assert.Equal("the failure detail", dead.Headers[KnownHeaders.DeadLetterExceptionMessage]);
@@ -101,12 +101,13 @@ public class FailureHandlingTests
 
     private static async Task<MessageDestinationStats> WaitForDeadLetterAsync(InMemoryMessageTransport transport, string destination, CancellationToken cancellationToken)
     {
-        var stats = await transport.GetStatsAsync(destination, cancellationToken);
+        var address = DestinationAddress.ForQueue(destination);
+        var stats = await transport.GetStatsAsync(address, cancellationToken);
         long deadline = Environment.TickCount64 + 10_000;
         while (stats.Deadletter == 0 && Environment.TickCount64 < deadline)
         {
             await Task.Delay(25, cancellationToken);
-            stats = await transport.GetStatsAsync(destination, cancellationToken);
+            stats = await transport.GetStatsAsync(address, cancellationToken);
         }
 
         return stats;

@@ -46,7 +46,7 @@ public class MessageQueueTests
 
         await received.CompleteAsync(cancellationToken);
 
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
         Assert.Equal(1, stats.Completed);
         Assert.Equal(0, stats.Working);
     }
@@ -128,7 +128,7 @@ public class MessageQueueTests
 
         await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
 
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
         Assert.Equal(1, stats.Deadletter);
         Assert.Equal(0, stats.Working);
     }
@@ -176,7 +176,7 @@ public class MessageQueueTests
         await Task.Delay(200, cts.Token);
 
         // Manual ack: the handler ran but did not settle, so the message stays in flight and is not auto-completed.
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
         Assert.Equal(0, stats.Completed);
         Assert.Equal(1, stats.Working);
     }
@@ -200,7 +200,7 @@ public class MessageQueueTests
 
         // A poison (undeserializable) payload must be dead-lettered without tearing down the consumer loop, so the
         // subsequent valid message is still delivered.
-        await transport.SendAsync("preview-work-item", [
+        await transport.SendAsync(DestinationAddress.ForQueue("preview-work-item"), [
             new TransportMessage { Body = System.Text.Encoding.UTF8.GetBytes("}{ not json"), Headers = MessageHeaders.Empty }
         ], new TransportSendOptions(), cts.Token);
         await queue.SendAsync(new PreviewWorkItem { Data = "good" }, cancellationToken: cts.Token);
@@ -406,7 +406,7 @@ public class MessageQueueTests
         var received = await collector.NextAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
         Assert.Null(received);
 
-        var stats = await transport.GetStatsAsync("preview-work-item", cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
         Assert.Equal(1, stats.Deadletter);
     }
 
@@ -459,9 +459,9 @@ public class MessageQueueTests
 
         var topology = provider.GetRequiredService<IMessageTopology>();
         var declarations = topology.GetDeclarations();
-        Assert.Contains(declarations, d => d.Role == DestinationRole.Queue && d.Name == "all-work");
-        Assert.Contains(declarations, d => d.Role == DestinationRole.Topic && d.Name == "grouped-events");
-        Assert.Contains(declarations, d => d.Role == DestinationRole.Subscription && d.Name == "billing-service" && d.Source == "grouped-events");
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Queue && d.Address.Name == "all-work");
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Topic && d.Address.Name == "grouped-events");
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Subscription && d.Address.Name == "billing-service" && d.Address.Topic == "grouped-events");
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await topology.ValidateAsync(cancellationToken));
         await topology.EnsureAsync(cancellationToken);
@@ -617,17 +617,18 @@ public class MessageQueueTests
 
     private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, CancellationToken cancellationToken)
     {
+        var address = DestinationAddress.ForQueue(destination);
         var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            var stats = await transport.GetStatsAsync(destination, cancellationToken);
+            var stats = await transport.GetStatsAsync(address, cancellationToken);
             if (stats.Completed == 1)
                 return;
 
             await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
         }
 
-        var finalStats = await transport.GetStatsAsync(destination, cancellationToken);
+        var finalStats = await transport.GetStatsAsync(address, cancellationToken);
         Assert.Equal(1, finalStats.Completed);
     }
 
@@ -779,12 +780,12 @@ public class MessageQueueTests
         // It is retried and finally dead-lettered as "no-handler" once the configured unmatched budget is exhausted.
         for (int i = 0; i < 400; i++)
         {
-            if ((await transport.GetStatsAsync("shared-demux", cts.Token)).Deadletter == 1)
+            if ((await transport.GetStatsAsync(DestinationAddress.ForQueue("shared-demux"), cts.Token)).Deadletter == 1)
                 break;
             await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
         }
 
-        Assert.Equal(1, (await transport.GetStatsAsync("shared-demux", cts.Token)).Deadletter);
+        Assert.Equal(1, (await transport.GetStatsAsync(DestinationAddress.ForQueue("shared-demux"), cts.Token)).Deadletter);
 
         // The loop survived the unmatched message and keeps consuming the type it does handle.
         await queue.SendAsync(new SharedAWorkItem { Data = "ok" }, cancellationToken: cts.Token);
@@ -857,12 +858,12 @@ public class MessageQueueTests
         await queue.SendAsync(new PreviewWorkItem { Data = "doomed" }, cancellationToken: cts.Token);
 
         // All three attempts happen without a 10s stall, ending in the transport's native dead-letter sink.
-        var stats = await transport.GetStatsAsync("preview-work-item", cts.Token);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token);
         long deadline = Environment.TickCount64 + 10_000;
         while (stats.Deadletter == 0 && Environment.TickCount64 < deadline)
         {
             await Task.Delay(25, cts.Token);
-            stats = await transport.GetStatsAsync("preview-work-item", cts.Token);
+            stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token);
         }
 
         Assert.Equal(1, stats.Deadletter);
@@ -889,12 +890,12 @@ public class MessageQueueTests
 
         for (int i = 0; i < 400; i++)
         {
-            if ((await transport.GetStatsAsync("preview-work-item", cts.Token)).Deadletter == 1)
+            if ((await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token)).Deadletter == 1)
                 break;
             await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
         }
 
-        Assert.Equal(1, (await transport.GetStatsAsync("preview-work-item", cts.Token)).Deadletter);
+        Assert.Equal(1, (await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token)).Deadletter);
         Assert.Equal(2, attempts);
     }
 
@@ -907,7 +908,7 @@ public class MessageQueueTests
         var shared = new InMemoryMessageTransport();
         var nonOwning = new MessageBus(shared, new MessageBusOptions { OwnsTransport = false });
         await nonOwning.DisposeAsync();
-        await shared.SendAsync("still-alive", [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken);
+        await shared.SendAsync(DestinationAddress.ForQueue("still-alive"), [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken);
         await shared.DisposeAsync();
 
         // Owning client (default): disposing the client disposes the transport.
@@ -915,7 +916,7 @@ public class MessageQueueTests
         var owning = new MessageBus(owned);
         await owning.DisposeAsync();
         await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
-            await owned.SendAsync("dead", [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken));
+            await owned.SendAsync(DestinationAddress.ForQueue("dead"), [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken));
     }
 
     [Fact]
@@ -990,7 +991,7 @@ public class MessageQueueTests
         public TransportCapabilities GetCapabilities(DestinationRole role) =>
             new() { Ordering = OrderingGuarantee.Fifo, MaxBatchSize = MaxBatchSize, MaxMessageBytes = MaxMessageBytes };
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
             SendBatchSizes.Add(messages.Count);
             var items = new SendItemResult[messages.Count];
@@ -1024,7 +1025,7 @@ public class MessageQueueTests
         public TransportCapabilities GetCapabilities(DestinationRole role) =>
             new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
             SendCount += messages.Count;
             LastSendOptions = options;
@@ -1039,7 +1040,7 @@ public class MessageQueueTests
             return Task.FromResult(new SendResult { Items = items });
         }
 
-        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
         {
             return Task.FromResult<IReadOnlyList<TransportEntry>>(_entries.Count > 0 ? [_entries.Dequeue()] : []);
         }
@@ -1055,9 +1056,9 @@ public class MessageQueueTests
     {
         private readonly ConcurrentDictionary<string, ConcurrentQueue<TransportEntry>> _queues = new(StringComparer.Ordinal);
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
-            var queue = _queues.GetOrAdd(destination, _ => new ConcurrentQueue<TransportEntry>());
+            var queue = _queues.GetOrAdd(destination.Key, _ => new ConcurrentQueue<TransportEntry>());
             var items = new SendItemResult[messages.Count];
             for (int i = 0; i < messages.Count; i++)
             {
@@ -1069,9 +1070,9 @@ public class MessageQueueTests
             return Task.FromResult(new SendResult { Items = items });
         }
 
-        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
         {
-            if (_queues.TryGetValue(source, out var queue) && queue.TryDequeue(out var entry))
+            if (_queues.TryGetValue(source.Key, out var queue) && queue.TryDequeue(out var entry))
                 return Task.FromResult<IReadOnlyList<TransportEntry>>([entry]);
 
             return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
@@ -1081,7 +1082,7 @@ public class MessageQueueTests
 
         public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
         {
-            _queues.GetOrAdd(entry.Destination, _ => new ConcurrentQueue<TransportEntry>()).Enqueue(entry with { DeliveryCount = entry.DeliveryCount + 1 });
+            _queues.GetOrAdd(entry.Destination.Key, _ => new ConcurrentQueue<TransportEntry>()).Enqueue(entry with { DeliveryCount = entry.DeliveryCount + 1 });
             return Task.CompletedTask;
         }
 
@@ -1093,7 +1094,7 @@ public class MessageQueueTests
     {
         public int DisposeCount { get; private set; }
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
             => Task.FromResult(new SendResult { Items = Array.Empty<SendItemResult>() });
 
         public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;

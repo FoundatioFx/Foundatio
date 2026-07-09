@@ -274,14 +274,14 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var t = time.GetUtcNow();
 
         var headers = MessageHeaders.Create(new Dictionary<string, string> { ["message.type"] = "order.created", ["tenant"] = "acme" });
-        var options = new TransportSendOptions { DestinationRole = DestinationRole.Topic, Priority = MessagePriority.High };
+        var options = new TransportSendOptions { Priority = MessagePriority.High };
         byte[] body = [0x01, 0x02, 0xFF, 0x00, 0x10];
 
         var due = new ScheduledDispatchState
         {
             DispatchId = "d1",
             Kind = ScheduledDispatchKind.JobOccurrence,
-            Destination = "jobs",
+            JobName = "jobs",
             Body = body,
             Headers = headers,
             Options = options,
@@ -292,25 +292,24 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         {
             DispatchId = "d2",
             Kind = ScheduledDispatchKind.QueueMessage,
-            Destination = "later",
+            Destination = DestinationAddress.ForQueue("later"),
             Body = body,
             DueUtc = t.AddHours(1)
         };
         await store.ScheduleDispatchAsync(due, ct);
         await store.ScheduleDispatchAsync(future, ct);
-        // Re-scheduling the same id is a no-op (must not overwrite the destination).
-        await store.ScheduleDispatchAsync(due with { Destination = "overwritten" }, ct);
+        // Re-scheduling the same id is a no-op (must not overwrite the dispatch).
+        await store.ScheduleDispatchAsync(due with { JobName = "overwritten" }, ct);
 
         // Only the due dispatch is claimed; the full payload round-trips and the attempt counter increments.
         var claimed = await store.ClaimDueDispatchesAsync(t, 100, "node-a", TimeSpan.FromMinutes(5), ct);
         var d = Assert.Single(claimed);
         Assert.Equal("d1", d.DispatchId);
         Assert.Equal(ScheduledDispatchKind.JobOccurrence, d.Kind);
-        Assert.Equal("jobs", d.Destination);
+        Assert.Equal("jobs", d.JobName);
         Assert.Equal(body, d.Body.ToArray());
         Assert.Equal("acme", d.Headers["tenant"]);
         Assert.Equal("order.created", d.Headers["message.type"]);
-        Assert.Equal(DestinationRole.Topic, d.Options.DestinationRole);
         Assert.Equal(MessagePriority.High, d.Options.Priority);
         Assert.Equal("node-a", d.ClaimOwner);
         Assert.Equal(1, d.Attempts);
@@ -333,7 +332,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         {
             DispatchId = "d3",
             Kind = ScheduledDispatchKind.JobOccurrence,
-            Destination = "cron",
+            JobName = "cron",
             Body = body,
             DueUtc = t.AddMinutes(20)
         };
@@ -382,7 +381,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         await store.ScheduleDispatchAsync(new ScheduledDispatchState
         {
             DispatchId = "dispatch-race",
-            Destination = "q",
+            Destination = DestinationAddress.ForQueue("q"),
             Body = new byte[] { 1 },
             DueUtc = time.GetUtcNow().AddMinutes(-1)
         }, ct);

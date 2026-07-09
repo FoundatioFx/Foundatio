@@ -184,7 +184,7 @@ public class RedisJobStoreIntegrationTests
         {
             DispatchId = jobId,
             Kind = ScheduledDispatchKind.JobOccurrence,
-            Destination = "nightly",
+            JobName = "nightly",
             Body = Array.Empty<byte>(),
             DueUtc = now,
             JobId = jobId
@@ -258,7 +258,7 @@ public class RedisJobStoreIntegrationTests
         public TransportCapabilities GetCapabilities(DestinationRole role) =>
             new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
             SendCount += messages.Count;
             LastSendOptions = options;
@@ -273,7 +273,7 @@ public class RedisJobStoreIntegrationTests
             return Task.FromResult(new SendResult { Items = items });
         }
 
-        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TransportEntry>>(_entries.Count > 0 ? [_entries.Dequeue()] : []);
 
         public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;

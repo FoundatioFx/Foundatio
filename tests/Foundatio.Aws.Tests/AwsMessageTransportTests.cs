@@ -32,13 +32,13 @@ public class AwsMessageTransportTests
 
         // Non-ASCII JSON exercises UTF-8 round-trip through the SQS string body (the text-content path that avoids base64).
         string json = "{\"greeting\":\"héllo wörld\",\"n\":42}";
-        await transport.EnsureAsync([new DestinationDeclaration { Name = "text-body", Role = DestinationRole.Queue }], cancellationToken);
+        await transport.EnsureAsync([new DestinationDeclaration { Address = DestinationAddress.ForQueue("text-body") }], cancellationToken);
 
-        await transport.SendAsync("text-body",
+        await transport.SendAsync(DestinationAddress.ForQueue("text-body"),
             [new TransportMessage { Body = Encoding.UTF8.GetBytes(json), ContentType = "application/json" }],
             new TransportSendOptions(), cancellationToken);
 
-        var entries = await transport.ReceiveAsync("text-body", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        var entries = await transport.ReceiveAsync(DestinationAddress.ForQueue("text-body"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal(json, Encoding.UTF8.GetString(entry.Body.Span));
         await transport.CompleteAsync(entry, cancellationToken);
@@ -57,13 +57,13 @@ public class AwsMessageTransportTests
 
         // Non-UTF-8 bytes must still round-trip (via base64) when no text content type is declared.
         byte[] payload = [0x00, 0x01, 0xFF, 0xFE, 0x10, 0x80];
-        await transport.EnsureAsync([new DestinationDeclaration { Name = "binary-body", Role = DestinationRole.Queue }], cancellationToken);
+        await transport.EnsureAsync([new DestinationDeclaration { Address = DestinationAddress.ForQueue("binary-body") }], cancellationToken);
 
-        await transport.SendAsync("binary-body",
+        await transport.SendAsync(DestinationAddress.ForQueue("binary-body"),
             [new TransportMessage { Body = payload }],
             new TransportSendOptions(), cancellationToken);
 
-        var entries = await transport.ReceiveAsync("binary-body", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
+        var entries = await transport.ReceiveAsync(DestinationAddress.ForQueue("binary-body"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, cancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal(payload, entry.Body.ToArray());
         await transport.CompleteAsync(entry, cancellationToken);

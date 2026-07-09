@@ -16,19 +16,19 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
     }
 
     [Fact]
-    public void SubscriptionAddress_FormatsAndParsesTopicAndSubscription()
+    public void DestinationAddress_KeyEncodesTopicAndSubscription()
     {
-        string destination = SubscriptionAddress.Format("orders", "sub-a");
-        Assert.Equal("orders/sub-a", destination);
+        var destination = DestinationAddress.ForSubscription("orders", "sub-a");
+        Assert.Equal("orders/sub-a", destination.Key);
+        Assert.Equal("orders", destination.Topic);
+        Assert.Equal("sub-a", destination.Name);
+        Assert.Equal(DestinationRole.Subscription, destination.Role);
 
-        Assert.True(SubscriptionAddress.TryParse(destination, out string topic, out string subscription));
-        Assert.Equal("orders", topic);
-        Assert.Equal("sub-a", subscription);
-
-        // A bare (non-subscription) destination is not a subscription address.
-        Assert.False(SubscriptionAddress.TryParse("orders", out string bareTopic, out string bareSubscription));
-        Assert.Equal("orders", bareTopic);
-        Assert.Equal("", bareSubscription);
+        // A bare (non-subscription) destination has no topic and a bare key.
+        var bare = DestinationAddress.ForQueue("orders");
+        Assert.Null(bare.Topic);
+        Assert.Equal("orders", bare.Key);
+        Assert.NotEqual(destination, bare);
     }
 
     [Fact]

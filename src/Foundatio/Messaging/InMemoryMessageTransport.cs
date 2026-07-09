@@ -53,19 +53,19 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     public TimeSpan? MaxVisibilityTimeout => null;
     public TimeSpan? MaxRedeliveryDelay => null;
 
-    public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+    public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
         if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
             throw new NotSupportedException($"Transport \"{GetType().Name}\" does not support native delayed delivery. Use the runtime-store scheduled dispatch fallback.");
 
-        // The caller-stated role picks the physical namespace, so a queue and a topic can share a route name (a message
+        // The address role picks the physical namespace, so a queue and a topic can share a route name (a message
         // type that is both sent and published) without colliding or cross-delivering.
-        string key = options.DestinationRole == DestinationRole.Topic ? TopicKey(destination) : SourceKey(destination);
+        string key = StorageKey(destination);
 
         var results = new SendItemResult[messages.Count];
         for (int index = 0; index < messages.Count; index++)
@@ -82,24 +82,24 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.FromResult(new SendResult { Items = results });
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
     {
         return ReceiveAsync(source, request, visibility: null, ct);
     }
 
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
     {
         return await ReceiveAsync(source, request, (TimeSpan?)visibility, ct).AnyContext();
     }
 
-    private async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan? visibility, CancellationToken ct)
+    private async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan? visibility, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(source);
+        ArgumentNullException.ThrowIfNull(source);
 
         int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
-        var state = GetOrAddDestination(SourceKey(source));
+        var state = GetOrAddDestination(ReceivableKey(source));
         var entries = new List<TransportEntry>(maxMessages);
         DateTimeOffset? waitUntil = request.MaxWaitTime is { } waitTime && waitTime > TimeSpan.Zero
             ? _timeProvider.GetUtcNow().Add(waitTime)
@@ -242,14 +242,14 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!_destinations.TryGetValue(SourceKey(destination), out var state))
+        if (!_destinations.TryGetValue(ReceivableKey(destination), out var state))
             return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
 
         int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
@@ -271,11 +271,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
     }
 
-    public Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct)
+    public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(source);
+        ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(onMessage);
         ArgumentNullException.ThrowIfNull(options);
 
@@ -284,13 +284,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.FromResult<IPushSubscription>(subscription);
     }
 
-    public Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
+    public Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        if (!_destinations.TryGetValue(SourceKey(destination), out var state))
+        if (!_destinations.TryGetValue(ReceivableKey(destination), out var state))
             return Task.FromResult(new MessageDestinationStats());
 
         return Task.FromResult(new MessageDestinationStats
@@ -313,64 +313,63 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         foreach (var declaration in declarations)
         {
-            ArgumentException.ThrowIfNullOrEmpty(declaration.Name);
+            var address = declaration.Address;
+            ArgumentNullException.ThrowIfNull(address);
 
-            switch (declaration.Role)
+            switch (address.Role)
             {
                 case DestinationRole.Queue:
-                    GetOrAddDestination(QueueKey(declaration.Name));
+                    GetOrAddDestination(StorageKey(address));
                     break;
                 case DestinationRole.Topic:
-                    _roles.TryAdd(TopicKey(declaration.Name), DestinationRole.Topic);
-                    _topicSubscriptions.GetOrAdd(TopicKey(declaration.Name), static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+                    _roles.TryAdd(StorageKey(address), DestinationRole.Topic);
+                    _topicSubscriptions.GetOrAdd(StorageKey(address), static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
                     break;
                 case DestinationRole.Subscription:
-                    GetOrAddDestination(QueueKey(declaration.Name));
-                    if (!String.IsNullOrEmpty(declaration.Source))
-                        AddTopicSubscription(declaration.Source, declaration.Name);
+                    if (String.IsNullOrEmpty(address.Topic))
+                        throw new ArgumentException("A subscription declaration must specify its owning topic.", nameof(declarations));
+
+                    AddTopicSubscription(address.Topic, StorageKey(address));
                     break;
                 case DestinationRole.Binding:
-                    if (String.IsNullOrEmpty(declaration.Source))
+                    if (String.IsNullOrEmpty(address.Topic))
                         throw new ArgumentException("A binding declaration must specify a source topic.", nameof(declarations));
 
-                    GetOrAddDestination(QueueKey(declaration.Name));
-                    AddTopicSubscription(declaration.Source, declaration.Name);
+                    AddTopicSubscription(address.Topic, StorageKey(address));
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException(nameof(declarations), declaration.Role, "Unsupported destination role.");
+                    throw new ArgumentOutOfRangeException(nameof(declarations), address.Role, "Unsupported destination role.");
             }
         }
 
         return Task.CompletedTask;
     }
 
-    public Task DeleteAsync(string name, CancellationToken ct)
+    public Task DeleteAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        foreach (string key in (string[])[QueueKey(name), TopicKey(name)])
-        {
-            _roles.TryRemove(key, out _);
-            if (_destinations.TryRemove(key, out var removed))
-                removed.Complete();
-            _topicSubscriptions.TryRemove(key, out _);
+        string key = StorageKey(destination);
+        _roles.TryRemove(key, out _);
+        if (_destinations.TryRemove(key, out var removed))
+            removed.Complete();
+        _topicSubscriptions.TryRemove(key, out _);
 
-            foreach (var subscriptions in _topicSubscriptions.Values)
-                subscriptions.TryRemove(key, out _);
-        }
+        foreach (var subscriptions in _topicSubscriptions.Values)
+            subscriptions.TryRemove(key, out _);
 
         return Task.CompletedTask;
     }
 
-    public Task<bool> ExistsAsync(string name, CancellationToken ct)
+    public Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         ct.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        return Task.FromResult(_roles.ContainsKey(QueueKey(name)) || _roles.ContainsKey(TopicKey(name)));
+        return Task.FromResult(_roles.ContainsKey(StorageKey(destination)));
     }
 
     public ValueTask DisposeAsync()
@@ -393,7 +392,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return ValueTask.CompletedTask;
     }
 
-    private async Task RunPushSubscriptionAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken subscriptionCancellationToken)
+    private async Task RunPushSubscriptionAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken subscriptionCancellationToken)
     {
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(subscriptionCancellationToken, _disposeCancellationTokenSource.Token);
         var token = linkedCancellationTokenSource.Token;
@@ -530,7 +529,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             timer.Dispose();
     }
 
-    private bool TryReceive(string source, DestinationState state, TimeSpan? visibility, out TransportEntry entry)
+    private bool TryReceive(DestinationAddress source, DestinationState state, TimeSpan? visibility, out TransportEntry entry)
     {
         while (state.TryDequeue(out var message))
         {
@@ -541,8 +540,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             }
 
             // The receipt carries the internal (role-qualified) key so settlement resolves the same state; the entry's
-            // Destination stays the caller-facing source name.
-            var receipt = new InMemoryReceipt(SourceKey(source), Guid.NewGuid().ToString("N"));
+            // Destination stays the caller-facing source address.
+            var receipt = new InMemoryReceipt(ReceivableKey(source), Guid.NewGuid().ToString("N"));
             DateTimeOffset? visibilityExpiresUtc = visibility is { } window ? _timeProvider.GetUtcNow().Add(window) : null;
             state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
             Interlocked.Increment(ref state.Dequeued);
@@ -606,12 +605,15 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             EnqueuedUtc: _timeProvider.GetUtcNow());
     }
 
-    // Internal state is keyed by role-qualified names: "t:" for topics, "q:" for every receivable destination (queues
-    // AND subscriptions — a subscription is a queue-shaped destination a topic fans into, exactly like an SNS-bound SQS
-    // queue). This gives a queue/subscription and a topic sharing a route name distinct namespaces, as real brokers do.
-    private static string QueueKey(string name) => "q:" + name;
-    private static string TopicKey(string name) => "t:" + name;
-    private static string SourceKey(string name) => QueueKey(name);
+    // Internal state is keyed by role-qualified names derived from the canonical address: "t:" for topics, "q:" for
+    // every receivable destination (queues AND subscriptions — a subscription is a queue-shaped destination a topic
+    // fans into, exactly like an SNS-bound SQS queue, keyed by its topic-qualified address key). This gives a
+    // queue/subscription and a topic sharing a route name distinct namespaces, as real brokers do.
+    private static string StorageKey(DestinationAddress address) =>
+        address.Role == DestinationRole.Topic ? "t:" + address.Name : "q:" + address.Key;
+
+    // Receive-path keys are always queue-shaped; receive/stats/dead-letter reads never target a topic.
+    private static string ReceivableKey(DestinationAddress address) => "q:" + address.Key;
 
     private static DestinationRole RoleForKey(string key) => key[0] == 't' ? DestinationRole.Topic : DestinationRole.Queue;
 
@@ -629,13 +631,13 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         throw new ReceiptExpiredException($"The destination \"{key}\" no longer exists.");
     }
 
-    private void AddTopicSubscription(string topic, string subscription)
+    private void AddTopicSubscription(string topic, string subscriptionStorageKey)
     {
-        string topicKey = TopicKey(topic);
+        string topicKey = "t:" + topic;
         _roles.TryAdd(topicKey, DestinationRole.Topic);
-        GetOrAddDestination(QueueKey(subscription));
+        GetOrAddDestination(subscriptionStorageKey);
         var subscriptions = _topicSubscriptions.GetOrAdd(topicKey, static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
-        subscriptions[QueueKey(subscription)] = 0;
+        subscriptions[subscriptionStorageKey] = 0;
     }
 
     private static MessagePriority NormalizePriority(MessagePriority priority)
@@ -795,12 +797,12 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         private Task? _worker;
 
-        public PushSubscription(string source)
+        public PushSubscription(DestinationAddress source)
         {
             Source = source;
         }
 
-        public string Source { get; }
+        public DestinationAddress Source { get; }
         public CancellationToken CancellationToken => _cancellationTokenSource.Token;
 
         public void Start(Task worker)

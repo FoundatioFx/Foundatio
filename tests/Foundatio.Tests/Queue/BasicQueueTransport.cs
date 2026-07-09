@@ -19,9 +19,9 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
 {
     private readonly ConcurrentDictionary<string, Destination> _destinations = new(StringComparer.OrdinalIgnoreCase);
 
-    public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+    public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
-        var dest = _destinations.GetOrAdd(destination, static _ => new Destination());
+        var dest = _destinations.GetOrAdd(destination.Key, static _ => new Destination());
         var results = new SendItemResult[messages.Count];
         for (int index = 0; index < messages.Count; index++)
         {
@@ -35,9 +35,9 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
         return Task.FromResult(new SendResult { Items = results });
     }
 
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
     {
-        var dest = _destinations.GetOrAdd(source, static _ => new Destination());
+        var dest = _destinations.GetOrAdd(source.Key, static _ => new Destination());
         int max = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
         DateTimeOffset? deadline = request.MaxWaitTime is { } wait && wait > TimeSpan.Zero ? DateTimeOffset.UtcNow.Add(wait) : null;
         var entries = new List<TransportEntry>(max);
@@ -56,7 +56,7 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
                     Body = stored.Body,
                     Headers = stored.Headers,
                     DeliveryCount = stored.DeliveryCount,
-                    Receipt = new Receipt { TransportState = new BasicReceipt(source, token) }
+                    Receipt = new Receipt { TransportState = new BasicReceipt(source.Key, token) }
                 });
             }
 
@@ -99,10 +99,10 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
     {
         var entries = new List<TransportEntry>();
-        if (_destinations.TryGetValue(destination, out var dest))
+        if (_destinations.TryGetValue(destination.Key, out var dest))
         {
             int max = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
             while (entries.Count < max && dest.Dead.TryDequeue(out var stored))
@@ -122,9 +122,9 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
         return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
     }
 
-    public Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
+    public Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
     {
-        if (!_destinations.TryGetValue(destination, out var dest))
+        if (!_destinations.TryGetValue(destination.Key, out var dest))
             return Task.FromResult(new MessageDestinationStats());
 
         return Task.FromResult(new MessageDestinationStats
