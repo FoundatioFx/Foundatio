@@ -201,7 +201,7 @@ public sealed class JobScheduleProcessor
                 {
                     DispatchId = jobId,
                     Kind = ScheduledDispatchKind.JobOccurrence,
-                    Destination = definition.Name,
+                    JobName = definition.Name,
                     Body = Array.Empty<byte>(),
                     Headers = CreateOccurrenceHeaders(definition, occurrence, scopeKey),
                     DueUtc = utcNow,
@@ -246,7 +246,7 @@ public sealed class JobScheduleProcessor
                 continue;
             }
 
-            if (!definitions.TryGetValue(dispatch.Destination, out var definition) || !definition.Enabled || definition.JobType is null)
+            if (dispatch.JobName is null || !definitions.TryGetValue(dispatch.JobName, out var definition) || !definition.Enabled || definition.JobType is null)
             {
                 await _store.ReleaseDispatchAsync(dispatch.DispatchId, _nodeId, utcNow.AddMinutes(1), cancellationToken).ConfigureAwait(false);
                 continue;
@@ -311,6 +311,9 @@ public sealed class JobScheduleProcessor
     {
         if (_transport is null)
             throw new InvalidOperationException("A message transport is required to materialize scheduled queue and pub/sub dispatches.");
+
+        if (dispatch.Destination is null)
+            throw new InvalidOperationException($"Scheduled {dispatch.Kind} dispatch \"{dispatch.DispatchId}\" has no destination address.");
 
         await _transport.SendAsync(dispatch.Destination, [
             new TransportMessage

@@ -44,8 +44,8 @@ public class PubSubTests
 
         await firstReceived.WaitAsync(TimeSpan.FromSeconds(2));
         await secondReceived.WaitAsync(TimeSpan.FromSeconds(2));
-        var firstStats = await transport.GetStatsAsync(first.Source, cancellationToken);
-        var secondStats = await transport.GetStatsAsync(second.Source, cancellationToken);
+        var firstStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(first.Topic, first.Subscription), cancellationToken);
+        var secondStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(second.Topic, second.Subscription), cancellationToken);
         Assert.Equal(1, firstStats.Completed);
         Assert.Equal(1, secondStats.Completed);
     }
@@ -85,7 +85,7 @@ public class PubSubTests
         ], cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        await WaitForCompletedAsync(transport, first.Source, 2, cancellationToken);
+        await WaitForCompletedAsync(transport, DestinationAddress.ForSubscription(first.Topic, first.Subscription), 2, cancellationToken);
 
         Assert.Equal(first.Topic, second.Topic);
         Assert.Equal(first.Subscription, second.Subscription);
@@ -167,7 +167,7 @@ public class PubSubTests
         ], cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        var stats = await transport.GetStatsAsync(subscription.Source, cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
         Assert.Equal(2, stats.Completed);
     }
 
@@ -259,7 +259,7 @@ public class PubSubTests
         await pubSub.PublishAsync(new PreviewEvent { Data = "retry" }, cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        var stats = await transport.GetStatsAsync(subscription.Source, cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
         Assert.Equal(1, stats.Completed);
         Assert.Equal(1, stats.Abandoned);
     }
@@ -343,7 +343,7 @@ public class PubSubTests
         Assert.Contains(typeof(PreviewEvent).FullName!, messageTypes);
         Assert.Contains(typeof(OtherEvent).FullName!, messageTypes);
 
-        var stats = await transport.GetStatsAsync(subscription.Source, cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
         Assert.Equal(2, stats.Completed);
     }
 
@@ -366,7 +366,7 @@ public class PubSubTests
         Assert.Equal(0, transport.SendCount);
         Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(10), cancellationToken: cancellationToken));
         Assert.Equal(1, transport.SendCount);
-        Assert.Equal(DestinationRole.Topic, transport.LastSendOptions?.DestinationRole);
+        Assert.Equal(DestinationRole.Topic, transport.LastDestination?.Role);
         Assert.Null(transport.LastSendOptions?.DeliverAt); // the store dispatches it as due; the delay is spent, not forwarded
 
         // A delayed QUEUE send within the same transport's queue ceiling still uses the native path.
@@ -375,7 +375,7 @@ public class PubSubTests
         Assert.NotNull(transport.LastSendOptions?.DeliverAt);
     }
 
-    private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, long expected, CancellationToken cancellationToken)
+    private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, DestinationAddress destination, long expected, CancellationToken cancellationToken)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
         while (DateTimeOffset.UtcNow < deadline)
@@ -408,6 +408,7 @@ public class PubSubTests
 
         public int SendCount { get; private set; }
         public TransportSendOptions? LastSendOptions { get; private set; }
+        public DestinationAddress? LastDestination { get; private set; }
 
         public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
         public IReadOnlySet<DestinationRole> SupportedRoles =>
@@ -417,13 +418,14 @@ public class PubSubTests
             ? TransportCapabilities.None
             : new TransportCapabilities { DelayedDelivery = true, MaxDeliveryDelay = _queueMaxDelay };
 
-        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
-            if (options.DestinationRole == DestinationRole.Topic && options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
+            if (destination.Role == DestinationRole.Topic && options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
                 throw new NotSupportedException("Topics have no native delayed delivery.");
 
             SendCount += messages.Count;
             LastSendOptions = options;
+            LastDestination = destination;
             var items = new SendItemResult[messages.Count];
             for (int i = 0; i < messages.Count; i++)
                 items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N") };
@@ -431,7 +433,7 @@ public class PubSubTests
             return Task.FromResult(new SendResult { Items = items });
         }
 
-        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<TransportEntry>>([]);
 
         public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;

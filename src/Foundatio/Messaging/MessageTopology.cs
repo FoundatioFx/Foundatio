@@ -54,18 +54,11 @@ public sealed class MessageTopology : IMessageTopology
         var missing = new List<DestinationDeclaration>();
         foreach (var declaration in declarations)
         {
-            if (!await provisioning.ExistsAsync(declaration.Name, cancellationToken).AnyContext())
+            if (!await provisioning.ExistsAsync(declaration.Address, cancellationToken).AnyContext())
                 missing.Add(declaration);
         }
 
         if (missing.Count > 0)
-            throw new InvalidOperationException($"Message topology is missing: {String.Join(", ", missing.Select(FormatDeclaration))}.");
-    }
-
-    private static string FormatDeclaration(DestinationDeclaration declaration)
-    {
-        return String.IsNullOrEmpty(declaration.Source)
-            ? $"{declaration.Role} '{declaration.Name}'"
-            : $"{declaration.Role} '{declaration.Name}' from '{declaration.Source}'";
+            throw new InvalidOperationException($"Message topology is missing: {String.Join(", ", missing.Select(d => d.Address.ToString()))}.");
     }
 }

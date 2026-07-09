@@ -97,7 +97,13 @@ public sealed record ScheduledDispatchState
 {
     public required string DispatchId { get; init; }
     public ScheduledDispatchKind Kind { get; init; }
-    public required string Destination { get; init; }
+
+    /// <summary>The transport destination for queue/pub-sub message dispatches; null for job occurrences.</summary>
+    public DestinationAddress? Destination { get; init; }
+
+    /// <summary>The scheduled job definition name for <see cref="ScheduledDispatchKind.JobOccurrence"/> dispatches; null for message dispatches.</summary>
+    public string? JobName { get; init; }
+
     public required ReadOnlyMemory<byte> Body { get; init; }
     public MessageHeaders Headers { get; init; } = MessageHeaders.Empty;
     public TransportSendOptions Options { get; init; } = new();

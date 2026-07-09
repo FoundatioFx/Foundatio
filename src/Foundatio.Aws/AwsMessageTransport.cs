@@ -47,7 +47,6 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     private readonly Lazy<IAmazonSimpleNotificationService> _sns;
     private readonly ConcurrentDictionary<string, string> _queueUrls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _topicArns = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, DestinationRole> _roles = new(StringComparer.Ordinal);
     private int _isDisposed;
 
     public AwsMessageTransport(AwsMessageTransportOptions options)
@@ -83,17 +82,17 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     public TimeSpan? MaxRedeliveryDelay => TimeSpan.FromHours(12); // SQS ChangeMessageVisibility maximum
     public TimeSpan? MaxVisibilityTimeout => TimeSpan.FromHours(12); // SQS visibility maximum
 
-    public async Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+    public async Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
         var items = new List<SendItemResult>(messages.Count);
 
-        // The caller states the destination role, so route without inferring: a topic publishes to SNS, anything else
+        // The address states the destination role, so route without inferring: a topic publishes to SNS, anything else
         // sends to an SQS queue.
-        if (options.DestinationRole == DestinationRole.Topic)
+        if (destination.Role == DestinationRole.Topic)
         {
             // SNS has no native delayed publish. The core routes delayed topic publishes through the runtime-store
             // fallback (topic capabilities advertise no DelayedDelivery), so a DeliverAt reaching here is a contract
@@ -101,7 +100,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
             if (options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
                 throw new NotSupportedException($"Transport \"{nameof(AwsMessageTransport)}\" does not support delayed delivery for Topic destinations (SNS has no native delay). Register a job runtime store so delayed publishes use the scheduled-dispatch fallback.");
 
-            string topicArn = await ResolveTopicArnAsync(destination, ct).ConfigureAwait(false);
+            string topicArn = await ResolveTopicArnAsync(destination.Name, ct).ConfigureAwait(false);
             foreach (var message in messages)
             {
                 var (body, encoding) = EncodeBody(message);
@@ -139,15 +138,15 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         return new SendResult { Items = items };
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
     {
         return ReceiveAsync(source, request, _options.DefaultVisibilityTimeout, ct);
     }
 
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(source);
+        ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(request);
 
         string queueUrl = await ResolveQueueUrlAsync(source, ct).ConfigureAwait(false);
@@ -219,51 +218,50 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
         foreach (var declaration in declarations)
         {
-            switch (declaration.Role)
+            switch (declaration.Address.Role)
             {
                 case DestinationRole.Topic:
-                    await ResolveTopicArnAsync(declaration.Name, ct).ConfigureAwait(false);
+                    await ResolveTopicArnAsync(declaration.Address.Name, ct).ConfigureAwait(false);
                     break;
                 case DestinationRole.Subscription:
                 case DestinationRole.Binding:
-                    await EnsureSubscriptionAsync(declaration.Name, declaration.Source, ct).ConfigureAwait(false);
+                    await EnsureSubscriptionAsync(declaration.Address, ct).ConfigureAwait(false);
                     break;
                 default:
-                    await ResolveQueueUrlAsync(declaration.Name, ct).ConfigureAwait(false);
+                    await ResolveQueueUrlAsync(declaration.Address, ct).ConfigureAwait(false);
                     break;
             }
         }
     }
 
-    public async Task DeleteAsync(string name, CancellationToken ct)
+    public async Task DeleteAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        if (_roles.TryGetValue(name, out var role) && role == DestinationRole.Topic)
+        if (destination.Role == DestinationRole.Topic)
         {
-            if (_topicArns.TryRemove(name, out string? arn))
+            if (_topicArns.TryRemove(destination.Name, out string? arn))
                 await _sns.Value.DeleteTopicAsync(arn, ct).ConfigureAwait(false);
-        }
-        else if (_queueUrls.TryRemove(name, out string? url))
-        {
-            await _sqs.Value.DeleteQueueAsync(url, ct).ConfigureAwait(false);
+            return;
         }
 
-        _roles.TryRemove(name, out _);
+        // Queue and subscription destinations are both backed by an SQS queue named from the address key.
+        if (_queueUrls.TryRemove(destination.Key, out string? url))
+            await _sqs.Value.DeleteQueueAsync(url, ct).ConfigureAwait(false);
     }
 
-    public async Task<bool> ExistsAsync(string name, CancellationToken ct)
+    public async Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        if (_roles.TryGetValue(name, out var role) && role == DestinationRole.Topic)
-            return _topicArns.ContainsKey(name);
+        if (destination.Role == DestinationRole.Topic)
+            return _topicArns.ContainsKey(destination.Name);
 
         try
         {
-            await _sqs.Value.GetQueueUrlAsync(ResourceName(name), ct).ConfigureAwait(false);
+            await _sqs.Value.GetQueueUrlAsync(ResourceName(destination.Key), ct).ConfigureAwait(false);
             return true;
         }
         catch (QueueDoesNotExistException)
@@ -272,7 +270,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         }
     }
 
-    public async Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
+    public async Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         string queueUrl = await ResolveQueueUrlAsync(destination, ct).ConfigureAwait(false);
@@ -302,15 +300,14 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
-    private async Task EnsureSubscriptionAsync(string subscriptionName, string? topicName, CancellationToken ct)
+    private async Task EnsureSubscriptionAsync(DestinationAddress address, CancellationToken ct)
     {
-        string queueUrl = await ResolveQueueUrlAsync(subscriptionName, ct).ConfigureAwait(false);
-        _roles[subscriptionName] = DestinationRole.Subscription;
+        string queueUrl = await ResolveQueueUrlAsync(address, ct).ConfigureAwait(false);
 
-        if (String.IsNullOrEmpty(topicName))
+        if (String.IsNullOrEmpty(address.Topic))
             return;
 
-        string topicArn = await ResolveTopicArnAsync(topicName, ct).ConfigureAwait(false);
+        string topicArn = await ResolveTopicArnAsync(address.Topic, ct).ConfigureAwait(false);
         string queueArn = await GetQueueArnAsync(queueUrl, ct).ConfigureAwait(false);
 
         // Allow the topic to deliver to the queue, then subscribe with raw delivery so the SQS body/attributes match a
@@ -331,24 +328,26 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         }, ct).ConfigureAwait(false);
     }
 
-    private async Task<string> ResolveQueueUrlAsync(string name, CancellationToken ct)
+    // Queue and subscription destinations are both backed by an SQS queue whose logical name is the address key
+    // (Name for queues, "topic/subscription" for subscriptions), so provisioning and every runtime path resolve the
+    // same physical queue from the same address.
+    private async Task<string> ResolveQueueUrlAsync(DestinationAddress address, CancellationToken ct)
     {
-        if (_queueUrls.TryGetValue(name, out string? cached))
+        string key = address.Key;
+        if (_queueUrls.TryGetValue(key, out string? cached))
             return cached;
 
-        string resourceName = ResourceName(name);
+        string resourceName = ResourceName(key);
         try
         {
             var response = await _sqs.Value.GetQueueUrlAsync(resourceName, ct).ConfigureAwait(false);
-            _queueUrls[name] = response.QueueUrl;
-            _roles.TryAdd(name, DestinationRole.Queue);
+            _queueUrls[key] = response.QueueUrl;
             return response.QueueUrl;
         }
         catch (QueueDoesNotExistException) when (_options.AutoCreateDestinations)
         {
             var response = await _sqs.Value.CreateQueueAsync(new CreateQueueRequest { QueueName = resourceName }, ct).ConfigureAwait(false);
-            _queueUrls[name] = response.QueueUrl;
-            _roles.TryAdd(name, DestinationRole.Queue);
+            _queueUrls[key] = response.QueueUrl;
             return response.QueueUrl;
         }
     }
@@ -361,15 +360,14 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         // CreateTopic is idempotent and returns the ARN of an existing topic with the same name.
         var response = await _sns.Value.CreateTopicAsync(new CreateTopicRequest { Name = ResourceName(name) }, ct).ConfigureAwait(false);
         _topicArns[name] = response.TopicArn;
-        _roles[name] = DestinationRole.Topic;
         return response.TopicArn;
     }
 
     // SQS queue / SNS topic names allow only [A-Za-z0-9_-] (max 80 chars). Most logical names already conform, but a
-    // pub/sub subscription's destination is the opaque "topic/subscription" key (see SubscriptionAddress) which
-    // contains '/'. Encode any illegal name deterministically and collision-free — sanitize, then append a short
-    // stable hash of the original — so EnsureAsync/ReceiveAsync/CompleteAsync all resolve the same queue from the same
-    // logical name. Legal names are returned unchanged (no behavior change for plain queues/topics).
+    // subscription's key (see DestinationAddress.Key) is the opaque "topic/subscription" form which contains '/'.
+    // Encode any illegal name deterministically and collision-free — sanitize, then append a short stable hash of the
+    // original — so EnsureAsync/ReceiveAsync/CompleteAsync all resolve the same queue from the same logical name.
+    // Legal names are returned unchanged (no behavior change for plain queues/topics).
     private string ResourceName(string logicalName) => EncodeResourceName(_options.ResourcePrefix, logicalName);
 
     private static string EncodeResourceName(string prefix, string logicalName)

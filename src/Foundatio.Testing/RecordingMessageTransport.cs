@@ -29,8 +29,8 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     private readonly ConcurrentQueue<RecordedMessage> _handled = new();
     private readonly ConcurrentQueue<RecordedMessage> _abandoned = new();
     private readonly ConcurrentQueue<RecordedMessage> _deadLettered = new();
-    private readonly ConcurrentDictionary<string, byte> _knownNames = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<Guid, (string Destination, DateTimeOffset DueAt)> _pendingRedeliveries = new();
+    private readonly ConcurrentDictionary<DestinationAddress, byte> _knownNames = new();
+    private readonly ConcurrentDictionary<Guid, (DestinationAddress Destination, DateTimeOffset DueAt)> _pendingRedeliveries = new();
 
     public RecordingMessageTransport(TimeProvider? timeProvider = null)
     {
@@ -50,18 +50,18 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     public TimeSpan? MaxVisibilityTimeout => _inner.MaxVisibilityTimeout;
     public TimeSpan? MaxRedeliveryDelay => _inner.MaxRedeliveryDelay;
 
-    public async Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+    public async Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
         var result = await _inner.SendAsync(destination, messages, options, ct).ConfigureAwait(false);
 
         _knownNames.TryAdd(destination, 0);
-        var recordings = options.DestinationRole == DestinationRole.Topic ? _published : _sent;
+        var recordings = destination.Role == DestinationRole.Topic ? _published : _sent;
         foreach (var message in messages)
         {
             recordings.Enqueue(new RecordedMessage
             {
-                Destination = destination,
-                Role = options.DestinationRole,
+                Destination = destination.Key,
+                Role = destination.Role,
                 MessageType = message.Headers.GetValueOrDefault(KnownHeaders.MessageType),
                 Body = message.Body,
                 Headers = message.Headers
@@ -71,19 +71,19 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         return result;
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct = default)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
         return _inner.ReceiveAsync(source, request, ct);
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
         return _inner.ReceiveAsync(source, request, visibility, ct);
     }
 
-    public Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default)
+    public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
         return _inner.SubscribeAsync(source, onMessage, options, ct);
@@ -126,25 +126,25 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         _deadLettered.Enqueue(Record(entry) with { Reason = reason });
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct = default)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct = default)
         => _inner.ReceiveDeadLetteredAsync(destination, request, ct);
 
     public Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct = default)
         => _inner.RenewLockAsync(entry, duration, ct);
 
-    public Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct = default)
+    public Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct = default)
         => _inner.GetStatsAsync(destination, ct);
 
     public Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken ct = default)
     {
         foreach (var declaration in declarations)
-            _knownNames.TryAdd(declaration.Name, 0);
+            _knownNames.TryAdd(declaration.Address, 0);
         return _inner.EnsureAsync(declarations, ct);
     }
 
-    public Task DeleteAsync(string name, CancellationToken ct = default) => _inner.DeleteAsync(name, ct);
+    public Task DeleteAsync(DestinationAddress destination, CancellationToken ct = default) => _inner.DeleteAsync(destination, ct);
 
-    public Task<bool> ExistsAsync(string name, CancellationToken ct = default) => _inner.ExistsAsync(name, ct);
+    public Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct = default) => _inner.ExistsAsync(destination, ct);
 
     public ValueTask DisposeAsync() => _inner.DisposeAsync();
 
@@ -153,7 +153,7 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     public async Task<IReadOnlyList<(string Name, long Queued, long Working)>> GetPendingAsync(CancellationToken ct = default)
     {
         var now = _timeProvider.GetUtcNow();
-        var scheduled = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        var scheduled = new Dictionary<DestinationAddress, long>();
         foreach (var redelivery in _pendingRedeliveries)
         {
             if (now >= redelivery.Value.DueAt + _redeliveryGrace)
@@ -163,12 +163,12 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         }
 
         var pending = new List<(string, long, long)>();
-        foreach (string name in _knownNames.Keys.OrderBy(n => n, StringComparer.Ordinal))
+        foreach (var address in _knownNames.Keys.OrderBy(a => a.Key, StringComparer.Ordinal))
         {
-            var stats = await _inner.GetStatsAsync(name, ct).ConfigureAwait(false);
-            long queued = stats.Queued + scheduled.GetValueOrDefault(name);
+            var stats = await _inner.GetStatsAsync(address, ct).ConfigureAwait(false);
+            long queued = stats.Queued + scheduled.GetValueOrDefault(address);
             if (queued > 0 || stats.Working > 0)
-                pending.Add((name, queued, stats.Working));
+                pending.Add((address.Key, queued, stats.Working));
         }
 
         return pending;
@@ -176,7 +176,7 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
 
     private static RecordedMessage Record(TransportEntry entry) => new()
     {
-        Destination = entry.Destination,
+        Destination = entry.Destination.Key,
         Role = DestinationRole.Queue,
         MessageType = entry.Headers.GetValueOrDefault(KnownHeaders.MessageType),
         Body = entry.Body,

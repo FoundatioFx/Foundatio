@@ -41,24 +41,24 @@ public class RedisStreamsTransportIntegrationTests
         await using var nodeA = CreateTransport(connection, prefix, "node-a");
         await using var nodeB = CreateTransport(connection, prefix, "node-b");
 
-        await nodeA.EnsureAsync([new DestinationDeclaration { Name = "work", Role = DestinationRole.Queue }], ct);
-        await nodeA.SendAsync("work", [Message("survive-me")], new TransportSendOptions(), ct);
+        await nodeA.EnsureAsync([new DestinationDeclaration { Address = DestinationAddress.ForQueue("work") }], ct);
+        await nodeA.SendAsync(DestinationAddress.ForQueue("work"), [Message("survive-me")], new TransportSendOptions(), ct);
 
         // node-a receives and then "crashes" — it never settles the message.
-        var heldByA = Assert.Single(await nodeA.ReceiveAsync("work", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, visibility, ct));
+        var heldByA = Assert.Single(await nodeA.ReceiveAsync(DestinationAddress.ForQueue("work"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, visibility, ct));
         Assert.Equal(1, heldByA.DeliveryCount);
 
         // While node-a's lease is live, node-b must not see it.
-        Assert.Empty(await nodeB.ReceiveAsync("work", new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, visibility, ct));
+        Assert.Empty(await nodeB.ReceiveAsync(DestinationAddress.ForQueue("work"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromMilliseconds(100) }, visibility, ct));
 
         // After the lease lapses, node-b reclaims the in-flight message (lease state lives in Redis) and completes it.
-        var reclaimedByB = Assert.Single(await nodeB.ReceiveAsync("work", new ReceiveRequest { MaxWaitTime = visibility + TimeSpan.FromSeconds(5) }, visibility, ct));
+        var reclaimedByB = Assert.Single(await nodeB.ReceiveAsync(DestinationAddress.ForQueue("work"), new ReceiveRequest { MaxWaitTime = visibility + TimeSpan.FromSeconds(5) }, visibility, ct));
         Assert.Equal(heldByA.Id, reclaimedByB.Id);
         Assert.Equal(2, reclaimedByB.DeliveryCount);
         Assert.Equal("survive-me", System.Text.Encoding.UTF8.GetString(reclaimedByB.Body.Span));
         await nodeB.CompleteAsync(reclaimedByB, ct);
 
-        var stats = await nodeB.GetStatsAsync("work", ct);
+        var stats = await nodeB.GetStatsAsync(DestinationAddress.ForQueue("work"), ct);
         Assert.Equal(0, stats.Queued);
         Assert.Equal(0, stats.Working);
     }
@@ -103,18 +103,18 @@ public class RedisStreamsTransportIntegrationTests
         Assert.Equal(2, Volatile.Read(ref retryAttempts));
 
         // The poison message lands in the dead-letter stream after exhausting its 2 attempts.
-        MessageDestinationStats stats = await transport.GetStatsAsync("streams-poison", ct);
+        MessageDestinationStats stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("streams-poison"), ct);
         for (int i = 0; i < 100 && stats.Deadletter == 0; i++)
         {
             await Task.Delay(100, ct);
-            stats = await transport.GetStatsAsync("streams-poison", ct);
+            stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("streams-poison"), ct);
         }
 
         Assert.Equal(1, stats.Deadletter);
         Assert.Equal(0, stats.Working);
 
         // The poison payload is inspectable in the dead-letter stream with a reason recorded by the core.
-        var deadLettered = Assert.Single(await transport.ReceiveDeadLetteredAsync("streams-poison", new ReceiveRequest { MaxMessages = 10 }, ct));
+        var deadLettered = Assert.Single(await transport.ReceiveDeadLetteredAsync(DestinationAddress.ForQueue("streams-poison"), new ReceiveRequest { MaxMessages = 10 }, ct));
         Assert.NotEmpty(deadLettered.Headers[KnownHeaders.DeadLetterReason]);
     }
 
@@ -212,19 +212,19 @@ public class RedisStreamsTransportIntegrationTests
 
         await transport.EnsureAsync(
         [
-            new DestinationDeclaration { Name = "iso-topic", Role = DestinationRole.Topic },
-            new DestinationDeclaration { Name = "iso-topic/sub-a", Role = DestinationRole.Subscription, Source = "iso-topic" },
-            new DestinationDeclaration { Name = "iso-topic/sub-b", Role = DestinationRole.Subscription, Source = "iso-topic" }
+            new DestinationDeclaration { Address = DestinationAddress.ForTopic("iso-topic") },
+            new DestinationDeclaration { Address = DestinationAddress.ForSubscription("iso-topic", "sub-a") },
+            new DestinationDeclaration { Address = DestinationAddress.ForSubscription("iso-topic", "sub-b") }
         ], ct);
 
-        await transport.SendAsync("iso-topic", [Message("retained")], new TransportSendOptions { DestinationRole = DestinationRole.Topic }, ct);
+        await transport.SendAsync(DestinationAddress.ForTopic("iso-topic"), [Message("retained")], new TransportSendOptions(), ct);
 
         // Group A reads and completes FIRST; the entry must remain on the topic stream for group B (completing must
         // not delete a shared topic entry other groups haven't read yet).
-        var byA = Assert.Single(await transport.ReceiveAsync("iso-topic/sub-a", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
+        var byA = Assert.Single(await transport.ReceiveAsync(DestinationAddress.ForSubscription("iso-topic", "sub-a"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
         await transport.CompleteAsync(byA, ct);
 
-        var byB = Assert.Single(await transport.ReceiveAsync("iso-topic/sub-b", new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
+        var byB = Assert.Single(await transport.ReceiveAsync(DestinationAddress.ForSubscription("iso-topic", "sub-b"), new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, ct));
         Assert.Equal("retained", System.Text.Encoding.UTF8.GetString(byB.Body.Span));
         await transport.CompleteAsync(byB, ct);
     }

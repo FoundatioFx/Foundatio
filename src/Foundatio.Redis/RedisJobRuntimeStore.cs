@@ -457,7 +457,6 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
         {
             new("dispatchId", dispatch.DispatchId),
             new("kind", dispatch.Kind.ToString()),
-            new("destination", dispatch.Destination),
             new("body", Convert.ToBase64String(dispatch.Body.Span)),
             new("headers", JsonSerializer.Serialize(headers)),
             new("options", JsonSerializer.Serialize(dispatch.Options)),
@@ -465,6 +464,10 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             new("attempts", dispatch.Attempts)
         };
 
+        // Destination (message dispatches) and JobName (job occurrences) are mutually exclusive; only the populated
+        // side is written so the read side can distinguish them by field presence.
+        if (dispatch.Destination is not null) entries.Add(new("destination", JsonSerializer.Serialize(dispatch.Destination)));
+        if (dispatch.JobName is not null) entries.Add(new("jobName", dispatch.JobName));
         if (dispatch.ClaimOwner is not null) entries.Add(new("claimOwner", dispatch.ClaimOwner));
         if (dispatch.ClaimExpiresUtc is { } claimExpires) entries.Add(new("claimExpiresUtc", Ticks(claimExpires)));
         if (dispatch.JobId is not null) entries.Add(new("jobId", dispatch.JobId));
@@ -480,12 +483,14 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
         string headersJson = (string?)Get("headers") ?? "{}";
         var headerMap = JsonSerializer.Deserialize<Dictionary<string, string>>(headersJson) ?? [];
         var options = JsonSerializer.Deserialize<TransportSendOptions>((string?)Get("options") ?? "{}") ?? new TransportSendOptions();
+        var destination = Get("destination");
 
         return new ScheduledDispatchState
         {
             DispatchId = (string)Get("dispatchId")!,
             Kind = Enum.Parse<ScheduledDispatchKind>((string)Get("kind")!),
-            Destination = (string)Get("destination")!,
+            Destination = destination.IsNullOrEmpty ? null : JsonSerializer.Deserialize<DestinationAddress>((string)destination!),
+            JobName = ToStringOrNull(Get("jobName")),
             Body = Get("body").IsNullOrEmpty ? ReadOnlyMemory<byte>.Empty : Convert.FromBase64String((string)Get("body")!),
             Headers = MessageHeaders.Create(headerMap),
             Options = options,

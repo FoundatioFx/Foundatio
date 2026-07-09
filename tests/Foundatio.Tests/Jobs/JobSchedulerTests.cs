@@ -207,7 +207,7 @@ public class JobSchedulerTests
         {
             DispatchId = "delayed-message",
             Kind = ScheduledDispatchKind.QueueMessage,
-            Destination = "work",
+            Destination = DestinationAddress.ForQueue("work"),
             Body = "hello"u8.ToArray(),
             DueUtc = now
         }, cancellationToken);
@@ -216,7 +216,7 @@ public class JobSchedulerTests
 
         Assert.Equal(1, completed);
         var pull = Assert.IsAssignableFrom<ISupportsPull>(transport);
-        var entries = await pull.ReceiveAsync("work", new ReceiveRequest { MaxMessages = 1, MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
+        var entries = await pull.ReceiveAsync(DestinationAddress.ForQueue("work"), new ReceiveRequest { MaxMessages = 1, MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
         var entry = Assert.Single(entries);
         Assert.Equal("delayed-message", entry.Id);
         Assert.Equal("hello"u8.ToArray(), entry.Body.ToArray());
@@ -296,7 +296,7 @@ public class JobSchedulerTests
         {
             DispatchId = jobId,
             Kind = ScheduledDispatchKind.JobOccurrence,
-            Destination = "nightly",
+            JobName = "nightly",
             Body = Array.Empty<byte>(),
             DueUtc = now,
             JobId = jobId
@@ -349,7 +349,7 @@ public class JobSchedulerTests
         await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "* * * * *", JobType = typeof(ScheduledProbeJob) }, cancellationToken);
         // A worker completed the occurrence but crashed before retiring its dispatch: a terminal job with a live dispatch.
         await store.CreateIfAbsentAsync(new JobState { JobId = jobId, Name = "nightly", Status = JobStatus.Completed, ScheduledForUtc = now.AddSeconds(-30) }, cancellationToken);
-        await store.ScheduleDispatchAsync(new ScheduledDispatchState { DispatchId = jobId, Kind = ScheduledDispatchKind.JobOccurrence, Destination = "nightly", Body = Array.Empty<byte>(), DueUtc = now, JobId = jobId }, cancellationToken);
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState { DispatchId = jobId, Kind = ScheduledDispatchKind.JobOccurrence, JobName = "nightly", Body = Array.Empty<byte>(), DueUtc = now, JobId = jobId }, cancellationToken);
 
         await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
 

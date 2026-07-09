@@ -181,7 +181,7 @@ public class JobRuntimeTests
         {
             DispatchId = "dispatch-1",
             Kind = ScheduledDispatchKind.QueueMessage,
-            Destination = "work",
+            Destination = DestinationAddress.ForQueue("work"),
             Body = "hello"u8.ToArray(),
             DueUtc = now.AddSeconds(-1)
         }, cancellationToken);
@@ -190,7 +190,7 @@ public class JobRuntimeTests
         {
             DispatchId = "dispatch-2",
             Kind = ScheduledDispatchKind.QueueMessage,
-            Destination = "work",
+            Destination = DestinationAddress.ForQueue("work"),
             Body = "later"u8.ToArray(),
             DueUtc = now.AddHours(1)
         }, cancellationToken);

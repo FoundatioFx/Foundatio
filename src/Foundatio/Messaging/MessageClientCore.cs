@@ -48,11 +48,9 @@ internal sealed record MessageEnvelopeOptions
 /// </summary>
 internal sealed record ListenerConfig
 {
-    public required string Source { get; init; }
+    public required DestinationAddress Source { get; init; }
     public required string Key { get; init; }
     public required Type MessageType { get; init; }
-    public string Topic { get; init; } = "";
-    public string Subscription { get; init; } = "";
     public AckMode AckMode { get; init; } = AckMode.Auto;
     public int MaxConcurrency { get; init; } = 1;
     // Null falls back to the client's default RetryPolicy.
@@ -79,7 +77,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private readonly IMessageTypeRegistry _typeRegistry;
     private readonly string? _contentType;
     private readonly bool _ownsTransport;
-    private readonly ConcurrentDictionary<string, SourceListener> _sources = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<DestinationAddress, SourceListener> _sources = new();
     private int _isDisposed;
 
     public MessageClientCore(IMessageTransport transport, ISerializer serializer, IMessageRouter router,
@@ -107,12 +105,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
             : Task.CompletedTask;
     }
 
-    public async Task<string> SendAsync(ScheduledDispatchKind kind, Type messageType, object message, MessageEnvelopeOptions options, string destination, Func<string, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
+    public async Task<string> SendAsync(ScheduledDispatchKind kind, Type messageType, object message, MessageEnvelopeOptions options, DestinationAddress destination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        ValidateCapabilities(RoleFor(kind), options.Priority, options.TimeToLive);
+        ValidateCapabilities(destination.Role, options.Priority, options.TimeToLive);
 
-        var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
+        var sendOptions = BuildSendOptions(options);
         string messageId = Guid.NewGuid().ToString("N");
         var transportMessage = CreateTransportMessage(message, messageType, options, messageId);
 
@@ -128,19 +126,19 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return (items.Count > 0 ? items[0].MessageId : null) ?? messageId;
     }
 
-    public async Task SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, string> resolveDestination, Func<string, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
+    public async Task SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, DestinationAddress> resolveDestination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         ValidateCapabilities(RoleFor(kind), options.Priority, options.TimeToLive);
 
-        var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
-        var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
+        var sendOptions = BuildSendOptions(options);
+        var grouped = new Dictionary<DestinationAddress, List<TransportMessage>>();
 
         foreach (var message in messages)
         {
             ArgumentNullException.ThrowIfNull(message);
             Type messageType = declaredType ?? message.GetType();
-            string destination = resolveDestination(messageType);
+            var destination = resolveDestination(messageType);
 
             if (!grouped.TryGetValue(destination, out var transportMessages))
             {
@@ -241,7 +239,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             }
 
             // The listener was disposing as its last consumer detached; drop our stale reference and retry.
-            _sources.TryRemove(new KeyValuePair<string, SourceListener>(config.Source, listener));
+            _sources.TryRemove(new KeyValuePair<DestinationAddress, SourceListener>(config.Source, listener));
         }
     }
 
@@ -252,7 +250,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return messageType == typeof(object) || messageType.IsInterface || messageType.IsAbstract;
     }
 
-    private async Task HandleUnmatchedAsync(TransportEntry entry, string source, CancellationToken cancellationToken)
+    private async Task HandleUnmatchedAsync(TransportEntry entry, DestinationAddress source, CancellationToken cancellationToken)
     {
         MessagingInstruments.Unhandled.Add(1, new KeyValuePair<string, object?>("source", source));
 
@@ -270,7 +268,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         // Surface to direct callers. The throw is caught (and not re-logged) by the loop's per-message handling
         // (SafeProcessAsync), so it never tears down the receive loop or the other type handlers sharing this source.
-        throw new UnhandledMessageTypeException(message.MessageType, source);
+        throw new UnhandledMessageTypeException(message.MessageType, source.Key);
     }
 
     // MaxConcurrency bounds the number of in-flight messages. A slot is held from receive until the message settles
@@ -278,7 +276,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     // (no head-of-line blocking) and steady-state utilization stays at the configured concurrency. A failure while
     // receiving or while processing a single entry (including a poison message that was already dead-lettered) must
     // never tear down the loop, otherwise one bad message or a transient transport blip silently stops consumption.
-    private async Task RunPullLoopAsync(string source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken)
+    private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken)
     {
         maxConcurrency = Math.Max(1, maxConcurrency);
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
@@ -363,7 +361,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    private async Task ProcessAndReleaseSlotAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string source, SemaphoreSlim slots, CancellationToken cancellationToken)
+    private async Task ProcessAndReleaseSlotAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, SemaphoreSlim slots, CancellationToken cancellationToken)
     {
         try
         {
@@ -381,7 +379,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             slots.Release(count);
     }
 
-    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, string source, CancellationToken cancellationToken)
+    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, CancellationToken cancellationToken)
     {
         try
         {
@@ -453,7 +451,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         finally
         {
-            MessagingInstruments.HandlerTime.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds, new KeyValuePair<string, object?>("source", config.Source));
+            MessagingInstruments.HandlerTime.Record(Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds, new KeyValuePair<string, object?>("source", config.Source.Key));
         }
     }
 
@@ -472,7 +470,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         if (activity.IsAllDataRequested)
         {
-            activity.SetTag("messaging.source", config.Source);
+            activity.SetTag("messaging.source", config.Source.Key);
             activity.SetTag("messaging.message.id", message.Id);
         }
 
@@ -494,13 +492,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken)
     {
-        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
+        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
         return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger);
     }
 
     private async Task<IMessageContext<T>> CreateMessageContextAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
     {
-        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
+        MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
 
         // For an interface/base route the body cannot be deserialized as T directly. Resolve the concrete payload type
         // from the message-type header via the registry and deserialize that, then hand it back as T (the concrete
@@ -541,7 +539,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, Exception? exception, CancellationToken cancellationToken)
     {
-        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination));
+        MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
         var enriched = entry with { Headers = MessageContext.BuildDeadLetterHeaders(entry, entry.DeliveryCount, exception, _timeProvider) };
         return MessageContext.DeadLetterOrDropAsync(_transport, enriched, reason, _retryPolicy.DeadLetterDestination, _logger, cancellationToken);
     }
@@ -613,9 +611,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message expiration for {role} destinations.");
     }
 
-    private async Task<bool> TryScheduleAsync(ScheduledDispatchKind kind, string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
+    private async Task<bool> TryScheduleAsync(ScheduledDispatchKind kind, DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        if (!ShouldScheduleThroughRuntimeStore(options, out var dueUtc))
+        if (!ShouldScheduleThroughRuntimeStore(destination.Role, options, out var dueUtc))
             return false;
 
         foreach (var message in messages)
@@ -636,7 +634,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return true;
     }
 
-    private bool ShouldScheduleThroughRuntimeStore(TransportSendOptions options, out DateTimeOffset dueUtc)
+    private bool ShouldScheduleThroughRuntimeStore(DestinationRole role, TransportSendOptions options, out DateTimeOffset dueUtc)
     {
         dueUtc = options.DeliverAt.GetValueOrDefault();
         var now = _timeProvider.GetUtcNow();
@@ -647,19 +645,19 @@ internal sealed class MessageClientCore : IAsyncDisposable
         // (e.g. SQS caps DelaySeconds at 15 minutes) must route through the durable runtime store rather than be
         // silently truncated to the broker's ceiling. The check is per destination role: a transport whose queues take
         // a native delay may still have topics that cannot (SQS vs. SNS), and those publishes must fall back too.
-        var capabilities = CapabilitiesFor(options.DestinationRole);
+        var capabilities = CapabilitiesFor(role);
         if (capabilities.DelayedDelivery && (capabilities.MaxDeliveryDelay is not { } max || dueUtc - now <= max))
             return false;
 
         if (_runtimeStore is null)
-            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {options.DestinationRole} destinations (within its supported maximum) or a registered job runtime store.", null);
+            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {role} destinations (within its supported maximum) or a registered job runtime store.", null);
 
         return true;
     }
 
-    private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        var capabilities = CapabilitiesFor(options.DestinationRole);
+        var capabilities = CapabilitiesFor(destination.Role);
 
         // Enforce a transport-declared maximum message size up front with a clear error, rather than letting an opaque
         // broker rejection surface mid-send (the limit is advertised, so honor it).
@@ -693,11 +691,11 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return items;
     }
 
-    private static void RecordSent(string destination, IReadOnlyList<SendItemResult> items)
+    private static void RecordSent(DestinationAddress destination, IReadOnlyList<SendItemResult> items)
     {
         // Every returned item was accepted (send is throw-on-failure).
         if (items.Count > 0)
-            MessagingInstruments.Sent.Add(items.Count, new KeyValuePair<string, object?>("destination", destination));
+            MessagingInstruments.Sent.Add(items.Count, new KeyValuePair<string, object?>("destination", destination.Key));
     }
 
     private ISupportsPull RequirePull()
@@ -706,9 +704,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
             ?? throw _exceptionFactory($"Transport \"{_transport.GetType().Name}\" does not support pull receive.", null);
     }
 
-    private void RemoveSource(string source, SourceListener listener)
+    private void RemoveSource(DestinationAddress source, SourceListener listener)
     {
-        _sources.TryRemove(new KeyValuePair<string, SourceListener>(source, listener));
+        _sources.TryRemove(new KeyValuePair<DestinationAddress, SourceListener>(source, listener));
     }
 
     private void ThrowIfDisposed()
@@ -733,7 +731,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private sealed class SourceListener
     {
         private readonly MessageClientCore _core;
-        private readonly string _source;
+        private readonly DestinationAddress _source;
         private readonly object _lock = new();
         private readonly CancellationTokenSource _cancellationTokenSource = new();
         private readonly ConcurrentDictionary<string, Registered> _consumers = new(StringComparer.Ordinal);
@@ -744,7 +742,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         private Task? _loop;
         private bool _isDisposed;
 
-        public SourceListener(MessageClientCore core, string source)
+        public SourceListener(MessageClientCore core, DestinationAddress source)
         {
             _core = core;
             _source = source;
@@ -780,7 +778,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     throw new InvalidOperationException($"Source \"{_source}\" is already consumed with MaxConcurrency {_maxConcurrency}; a conflicting MaxConcurrency {desired} was requested. Consumers sharing a destination must use the same MaxConcurrency.");
                 }
 
-                handle = new MessageListenerHandle(registration.Config.Topic, registration.Config.Subscription, _source, registration.Key, () => RemoveConsumerAsync(registration.Key));
+                handle = new MessageListenerHandle(_source, registration.Key, () => RemoveConsumerAsync(registration.Key));
                 _consumers[registration.Key] = new Registered(registration, handle);
                 GroupFor(registration).Add(registration);
 
@@ -986,7 +984,7 @@ internal class MessageContext : IMessageContext
         if (!TryMarkHandled())
             return Task.CompletedTask;
 
-        MessagingInstruments.Completed.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
+        MessagingInstruments.Completed.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination.Key));
         return _transport.CompleteAsync(_entry, cancellationToken);
     }
 
@@ -999,13 +997,13 @@ internal class MessageContext : IMessageContext
 
         if (options.Terminal)
         {
-            MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
+            MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination.Key));
             var enriched = _entry with { Headers = BuildDeadLetterHeaders(_entry, Attempts, options.Exception, _timeProvider) };
             await DeadLetterOrDropAsync(_transport, enriched, options.Reason, _deadLetterDestination, _logger, cancellationToken).AnyContext();
             return;
         }
 
-        MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination));
+        MessagingInstruments.Abandoned.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination.Key));
 
         if (options.RedeliveryDelay is not { } redeliveryDelay || redeliveryDelay <= TimeSpan.Zero)
         {
@@ -1023,9 +1021,9 @@ internal class MessageContext : IMessageContext
         }
 
         // The runtime-store fallback re-sends the message as a plain queue send, which only makes sense for a
-        // queue-channel entry: a subscription-channel entry's Destination is the opaque topic-qualified address, and a
-        // queue send to that name would land where no subscription group reads.
-        bool isSubscriptionSource = SubscriptionAddress.TryParse(_entry.Destination, out _, out _);
+        // queue-channel entry: a subscription-channel entry would need to be re-sent into its subscription group, and
+        // a queue send to that address would land where no subscription group reads.
+        bool isSubscriptionSource = _entry.Destination.Role == DestinationRole.Subscription;
         if (_runtimeStore is null || isSubscriptionSource)
         {
             // A best-effort delay (the core retry policy) degrades to immediate redelivery; an explicit caller delay
@@ -1036,7 +1034,7 @@ internal class MessageContext : IMessageContext
                 return;
             }
 
-            throw new MessageBusException($"Delayed redelivery of \"{_entry.Destination}\" requires native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum){(isSubscriptionSource ? "" : " or a registered job runtime store")}.");
+            throw new MessageBusException($"Delayed redelivery of \"{_entry.Destination.Key}\" requires native redelivery-delay support from transport \"{_transport.GetType().Name}\" (within its supported maximum){(isSubscriptionSource ? "" : " or a registered job runtime store")}.");
         }
 
         // Advance from the reconciled attempt count, not the raw transport DeliveryCount: the re-send produces a new
@@ -1081,7 +1079,9 @@ internal class MessageContext : IMessageContext
             return;
         }
 
-        string destination = !String.IsNullOrEmpty(deadLetterDestination) ? deadLetterDestination : $"{entry.Destination}.deadletter";
+        var destination = !String.IsNullOrEmpty(deadLetterDestination)
+            ? DestinationAddress.ForQueue(deadLetterDestination)
+            : DestinationAddress.ForQueue($"{entry.Destination.Key}.deadletter");
         var headers = String.IsNullOrEmpty(reason)
             ? entry.Headers
             : entry.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
@@ -1092,7 +1092,7 @@ internal class MessageContext : IMessageContext
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to park dead-lettered message \"{MessageId}\" at \"{Destination}\"; dropping it: {Message}", entry.Id, destination, ex.Message);
+            logger.LogError(ex, "Failed to park dead-lettered message \"{MessageId}\" at \"{Destination}\"; dropping it: {Message}", entry.Id, destination.Key, ex.Message);
         }
 
         await transport.CompleteAsync(entry, cancellationToken).AnyContext();
@@ -1106,7 +1106,7 @@ internal class MessageContext : IMessageContext
         var headers = entry.Headers.ToBuilder()
             .Set(KnownHeaders.DeadLetterAttempts, attempts.ToString(CultureInfo.InvariantCulture))
             .Set(KnownHeaders.DeadLetterFailedAt, timeProvider.GetUtcNow().ToString("O", CultureInfo.InvariantCulture))
-            .Set(KnownHeaders.DeadLetterOriginalDestination, entry.Destination);
+            .Set(KnownHeaders.DeadLetterOriginalDestination, entry.Destination.Key);
 
         if (exception is not null)
         {
@@ -1193,18 +1193,16 @@ internal sealed class MessageListenerHandle : IAsyncDisposable
     private readonly Func<ValueTask> _dispose;
     private int _isDisposed;
 
-    public MessageListenerHandle(string topic, string subscription, string source, string key, Func<ValueTask> dispose)
+    public MessageListenerHandle(DestinationAddress source, string key, Func<ValueTask> dispose)
     {
-        Topic = topic;
-        Subscription = subscription;
         Source = source;
         Key = key;
         _dispose = dispose;
     }
 
-    public string Topic { get; }
-    public string Subscription { get; }
-    public string Source { get; }
+    public DestinationAddress Source { get; }
+    public string Topic => Source.Topic ?? "";
+    public string Subscription => Source.Role == DestinationRole.Subscription ? Source.Name : "";
     public string Key { get; }
 
     // Disposing a single consumer handle detaches just that consumer from its source listener; the underlying receive
@@ -1221,7 +1219,7 @@ internal sealed class MessageListenerHandle : IAsyncDisposable
 internal sealed record MessageListenerRegistration
 {
     public required Type MessageType { get; init; }
-    public required string Source { get; init; }
+    public required DestinationAddress Source { get; init; }
     public required Delegate Handler { get; init; }
     public required AckMode AckMode { get; init; }
     public required int MaxConcurrency { get; init; }
@@ -1247,7 +1245,7 @@ internal sealed record MessageListenerRegistration
     public bool Matches(MessageListenerRegistration other)
     {
         return MessageType == other.MessageType
-            && String.Equals(Source, other.Source, StringComparison.Ordinal)
+            && Source == other.Source
             && Handler == other.Handler
             && AckMode == other.AckMode
             && MaxConcurrency == other.MaxConcurrency

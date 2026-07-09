@@ -34,6 +34,51 @@ public enum DestinationRole
     Binding
 }
 
+/// <summary>
+/// The canonical identity of a transport destination: a name, the role that names the physical namespace it lives in,
+/// and — for subscriptions — the owning topic. Every transport API (send, receive, subscribe, stats, settlement,
+/// provisioning) uses this one value, so the same logical destination can never be spelled two ways on two paths.
+/// </summary>
+/// <remarks>
+/// <see cref="Key"/> is the destination's opaque string form (<c>"{topic}/{name}"</c> for subscriptions, <c>Name</c>
+/// otherwise) for logging, metrics tags, and dictionary keys. Because a subscription key contains <c>'/'</c>, a
+/// transport must NOT assume it is a legal broker resource name (e.g. an SQS queue name) — map it to native resources
+/// during <see cref="ISupportsProvisioning.EnsureAsync"/> and treat it as a lookup key thereafter. Topic and
+/// subscription names must not contain <c>'/'</c>.
+/// </remarks>
+public sealed record DestinationAddress
+{
+    public required string Name { get; init; }
+    public DestinationRole Role { get; init; } = DestinationRole.Queue;
+
+    /// <summary>The owning topic when <see cref="Role"/> is <see cref="DestinationRole.Subscription"/>; null otherwise.</summary>
+    public string? Topic { get; init; }
+
+    /// <summary>The canonical opaque string form: <c>"{topic}/{name}"</c> for subscriptions, <c>Name</c> otherwise.</summary>
+    public string Key => Topic is { Length: > 0 } topic ? $"{topic}/{Name}" : Name;
+
+    public override string ToString() => $"{Role}:{Key}";
+
+    public static DestinationAddress ForQueue(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        return new DestinationAddress { Name = name, Role = DestinationRole.Queue };
+    }
+
+    public static DestinationAddress ForTopic(string name)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        return new DestinationAddress { Name = name, Role = DestinationRole.Topic };
+    }
+
+    public static DestinationAddress ForSubscription(string topic, string subscription)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(topic);
+        ArgumentException.ThrowIfNullOrEmpty(subscription);
+        return new DestinationAddress { Name = subscription, Role = DestinationRole.Subscription, Topic = topic };
+    }
+}
+
 public sealed record TransportMessage
 {
     public required ReadOnlyMemory<byte> Body { get; init; }
@@ -52,19 +97,12 @@ public sealed record TransportSendOptions
 {
     public MessagePriority Priority { get; init; } = MessagePriority.Normal;
     public DateTimeOffset? DeliverAt { get; init; }
-
-    /// <summary>
-    /// The role of the destination being sent to. Lets a transport route the send without inferring (for example, a
-    /// queue send to SQS vs. a topic publish to SNS) — the caller always knows whether it is sending to a queue or a
-    /// topic, so it states it rather than relying on prior provisioning.
-    /// </summary>
-    public DestinationRole DestinationRole { get; init; } = DestinationRole.Queue;
 }
 
 public sealed record TransportEntry
 {
     public required string Id { get; init; }
-    public required string Destination { get; init; }
+    public required DestinationAddress Destination { get; init; }
     public required ReadOnlyMemory<byte> Body { get; init; }
     public MessageHeaders Headers { get; init; } = MessageHeaders.Empty;
     public int DeliveryCount { get; init; } = 1;
@@ -136,9 +174,9 @@ public sealed class ReceiptExpiredException : Exception
 
 public sealed record DestinationDeclaration
 {
-    public required string Name { get; init; }
-    public DestinationRole Role { get; init; } = DestinationRole.Queue;
-    public string? Source { get; init; }
+    /// <summary>The canonical identity of the destination to provision — the SAME address the runtime later sends to,
+    /// receives from, and asks stats for, so provisioning and runtime can never disagree on a destination's identity.</summary>
+    public required DestinationAddress Address { get; init; }
 
     // Provider-specific creation arguments for transports that provision destinations (e.g. RabbitMQ queue arguments).
     // Retry and dead-letter behavior is owned by the core RetryPolicy, not declared here, so destinations stay simple.
@@ -203,19 +241,19 @@ public interface ITransportInfo
 
 public interface IMessageTransport : IAsyncDisposable
 {
-    Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default);
+    Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default);
     Task CompleteAsync(TransportEntry entry, CancellationToken ct = default);
     Task AbandonAsync(TransportEntry entry, CancellationToken ct = default);
 }
 
 public interface ISupportsPull : IMessageTransport
 {
-    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct = default);
 }
 
 public interface ISupportsPush : IMessageTransport
 {
-    Task<IPushSubscription> SubscribeAsync(string source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default);
+    Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default);
 }
 
 public interface ISupportsRedeliveryDelay : IMessageTransport
@@ -234,7 +272,7 @@ public interface ISupportsDeadLetter : IMessageTransport
 
     // Reads dead-lettered entries for a destination so callers can inspect raw payloads (including poison messages
     // that never deserialized) and the dead-letter reason header. Read entries are removed from the dead-letter store.
-    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct = default);
 }
 
 public interface ISupportsLockRenewal : IMessageTransport
@@ -249,22 +287,22 @@ public interface ISupportsVisibilityTimeout : IMessageTransport
     // unsatisfiable rather than relying on a silently clamped value.
     TimeSpan? MaxVisibilityTimeout { get; }
 
-    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default);
+    Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default);
 }
 
 public interface ISupportsStats : IMessageTransport
 {
-    Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct = default);
+    Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct = default);
 }
 
 public interface ISupportsProvisioning : IMessageTransport
 {
     Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken ct = default);
-    Task DeleteAsync(string name, CancellationToken ct = default);
-    Task<bool> ExistsAsync(string name, CancellationToken ct = default);
+    Task DeleteAsync(DestinationAddress destination, CancellationToken ct = default);
+    Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct = default);
 }
 
 public interface IPushSubscription : IAsyncDisposable
 {
-    string Source { get; }
+    DestinationAddress Source { get; }
 }

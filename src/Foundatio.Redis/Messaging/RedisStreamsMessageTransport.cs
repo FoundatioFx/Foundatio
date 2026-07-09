@@ -36,8 +36,6 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     private readonly TimeProvider _timeProvider;
     private readonly string _prefix;
     private readonly string _consumer;
-    // Logical destination name -> resolved (stream key, consumer group, group-create position). Populated by EnsureAsync.
-    private readonly ConcurrentDictionary<string, ResolvedSource> _sources = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _ensuredGroups = new(StringComparer.Ordinal);
     private int _isDisposed;
 
@@ -61,10 +59,10 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     public TimeSpan? MaxRedeliveryDelay => null; // lease is tracked in Redis, so any delay is honored
     public TimeSpan? MaxVisibilityTimeout => null;
 
-    public async Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+    public async Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
 
         // Streams have no native delayed delivery; the core routes delayed sends through the runtime-store fallback
@@ -73,9 +71,9 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
             throw new NotSupportedException($"Transport \"{nameof(RedisStreamsMessageTransport)}\" does not support native delayed delivery. Register a job runtime store so delayed sends use the scheduled-dispatch fallback.");
 
-        // The stream IS the queue/topic; subscriptions read it through their own group. The caller-stated role picks
-        // the stream namespace so a queue and a topic sharing a route name never cross-deliver.
-        RedisKey streamKey = options.DestinationRole == DestinationRole.Topic ? TopicStreamKey(destination) : QueueStreamKey(destination);
+        // The stream IS the queue/topic; subscriptions read it through their own group. The address role picks the
+        // stream namespace so a queue and a topic sharing a route name never cross-deliver.
+        RedisKey streamKey = destination.Role == DestinationRole.Topic ? TopicStreamKey(destination.Name) : QueueStreamKey(destination.Name);
         var items = new List<SendItemResult>(messages.Count);
         foreach (var message in messages)
         {
@@ -87,13 +85,13 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         return new SendResult { Items = items };
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
         => ReceiveAsync(source, request, _options.DefaultVisibilityTimeout, ct);
 
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(source);
+        ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(request);
 
         var resolved = Resolve(source);
@@ -118,7 +116,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         }
     }
 
-    private async Task<List<TransportEntry>> PollOnceAsync(string source, ResolvedSource resolved, int max, long visibilityMs, CancellationToken ct)
+    private async Task<List<TransportEntry>> PollOnceAsync(DestinationAddress source, ResolvedSource resolved, int max, long visibilityMs, CancellationToken ct)
     {
         var result = new List<TransportEntry>(max);
         long nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
@@ -164,7 +162,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
     // Records the lease (sorted set) + owner token & delivery count (hash) for a just-delivered entry and projects it
     // into a TransportEntry whose Receipt carries everything needed to settle it.
-    private async Task<TransportEntry> TrackAsync(string source, ResolvedSource resolved, StreamEntry entry, int deliveries, long nowMs, long visibilityMs)
+    private async Task<TransportEntry> TrackAsync(DestinationAddress source, ResolvedSource resolved, StreamEntry entry, int deliveries, long nowMs, long visibilityMs)
     {
         string token = Guid.NewGuid().ToString("N");
         await _db.HashSetAsync(MetaKey(resolved), entry.Id, $"{token}|{deliveries}").ConfigureAwait(false);
@@ -230,10 +228,10 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         await ClearTrackingAsync(r).ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(string destination, ReceiveRequest request, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(destination);
+        ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(request);
 
         RedisKey deadKey = DeadKey(Resolve(destination).StreamKey);
@@ -261,86 +259,80 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
         foreach (var declaration in declarations)
         {
-            switch (declaration.Role)
+            switch (declaration.Address.Role)
             {
                 case DestinationRole.Topic:
-                    // Topics are read through subscription groups; nothing to create until a subscription appears. The
-                    // name must NOT be registered in _sources: a queue can share the route name, and receive-side
-                    // resolution of the bare name must keep meaning the queue stream. Exists/delete are role-aware by
-                    // probing both namespaces instead.
-                    break;
-                case DestinationRole.Subscription:
-                case DestinationRole.Binding:
-                    string topic = declaration.Source ?? declaration.Name;
-                    var sub = new ResolvedSource(TopicStreamKey(topic), declaration.Name, "$");
-                    _sources[declaration.Name] = sub;
-                    await EnsureGroupAsync(sub).ConfigureAwait(false);
+                    // Topics are read through subscription groups; nothing to create until a subscription appears.
                     break;
                 default:
-                    var queue = new ResolvedSource(QueueStreamKey(declaration.Name), _options.DefaultConsumerGroup, "0");
-                    _sources[declaration.Name] = queue;
-                    await EnsureGroupAsync(queue).ConfigureAwait(false);
+                    // Queue, subscription, and binding declarations all materialize as a consumer group on the stream
+                    // the address resolves to.
+                    await EnsureGroupAsync(Resolve(declaration.Address)).ConfigureAwait(false);
                     break;
             }
         }
     }
 
-    public async Task DeleteAsync(string name, CancellationToken ct)
+    public async Task DeleteAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        // A subscription address deletes only that group's state (never the shared topic stream); a bare name deletes
-        // the name in both role namespaces, mirroring the in-memory transport.
-        if (SubscriptionAddress.TryParse(name, out string topic, out string subscription))
+        // A subscription deletes only that group's state (never the shared topic stream — other subscriptions still
+        // read it); a queue or topic deletes its own stream and everything scoped to it.
+        if (destination.Role is DestinationRole.Subscription or DestinationRole.Binding)
         {
-            var sub = new ResolvedSource(TopicStreamKey(topic), subscription, "$");
+            var sub = Resolve(destination);
             await _db.StreamDeleteConsumerGroupAsync(sub.StreamKey, sub.Group).ConfigureAwait(false);
             await _db.KeyDeleteAsync([LockKey(sub), MetaKey(sub)]).ConfigureAwait(false);
-            _sources.TryRemove(name, out _);
             _ensuredGroups.TryRemove(GroupKey(sub), out _);
             return;
         }
 
-        foreach (var resolved in (ResolvedSource[])
-        [
-            new ResolvedSource(QueueStreamKey(name), _options.DefaultConsumerGroup, "0"),
-            new ResolvedSource(TopicStreamKey(name), _options.DefaultConsumerGroup, "$")
-        ])
-        {
-            // Drop each consumer group's lease/meta state before the stream itself (topic streams can carry several).
-            if (await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
-            {
-                foreach (var group in await _db.StreamGroupInfoAsync(resolved.StreamKey).ConfigureAwait(false))
-                {
-                    var groupSource = resolved with { Group = group.Name };
-                    await _db.KeyDeleteAsync([LockKey(groupSource), MetaKey(groupSource)]).ConfigureAwait(false);
-                    _ensuredGroups.TryRemove(GroupKey(groupSource), out _);
-                }
-            }
+        var resolved = Resolve(destination);
 
-            await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved.StreamKey)]).ConfigureAwait(false);
-            _ensuredGroups.TryRemove(GroupKey(resolved), out _);
+        // Drop each consumer group's lease/meta state before the stream itself (topic streams can carry several).
+        if (await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
+        {
+            foreach (var group in await _db.StreamGroupInfoAsync(resolved.StreamKey).ConfigureAwait(false))
+            {
+                var groupSource = resolved with { Group = group.Name };
+                await _db.KeyDeleteAsync([LockKey(groupSource), MetaKey(groupSource)]).ConfigureAwait(false);
+                _ensuredGroups.TryRemove(GroupKey(groupSource), out _);
+            }
         }
 
-        _sources.TryRemove(name, out _);
+        await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved.StreamKey)]).ConfigureAwait(false);
+        _ensuredGroups.TryRemove(GroupKey(resolved), out _);
     }
 
-    public async Task<bool> ExistsAsync(string name, CancellationToken ct)
+    public async Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
-        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(destination);
 
-        if (SubscriptionAddress.TryParse(name, out string topic, out _))
-            return await _db.KeyExistsAsync(TopicStreamKey(topic)).ConfigureAwait(false);
+        var resolved = Resolve(destination);
+        if (!await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
+            return false;
 
-        return await _db.KeyExistsAsync(QueueStreamKey(name)).ConfigureAwait(false)
-            || await _db.KeyExistsAsync(TopicStreamKey(name)).ConfigureAwait(false);
+        // A subscription exists when its consumer group exists on the topic stream; a queue/topic exists when its
+        // stream key does.
+        if (destination.Role is not (DestinationRole.Subscription or DestinationRole.Binding))
+            return true;
+
+        foreach (var group in await _db.StreamGroupInfoAsync(resolved.StreamKey).ConfigureAwait(false))
+        {
+            if (String.Equals(group.Name, resolved.Group, StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 
-    public async Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct)
+    public async Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
         var resolved = Resolve(destination);
 
         // Probing stats must not create phantom streams/groups; a destination that doesn't exist yet is simply empty.
@@ -403,19 +395,18 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         }
     }
 
-    private ResolvedSource Resolve(string source)
+    // The address is structural, so the physical mapping is derived from it directly — topology declarations and the
+    // runtime resolve the SAME address to the SAME stream/group, with no registration cache to drift. A subscription is
+    // a consumer group on its owning topic's stream: the group is named by the bare subscription name and scoped by the
+    // topic stream key. A queue is its own stream read through the shared default group (competing consumers).
+    private ResolvedSource Resolve(DestinationAddress address) => address.Role switch
     {
-        if (_sources.TryGetValue(source, out var registered))
-            return registered;
+        DestinationRole.Topic => new ResolvedSource(TopicStreamKey(address.Name), _options.DefaultConsumerGroup, "$"),
+        DestinationRole.Subscription or DestinationRole.Binding => new ResolvedSource(TopicStreamKey(address.Topic ?? address.Name), address.Name, "$"),
+        _ => new ResolvedSource(QueueStreamKey(address.Name), _options.DefaultConsumerGroup, "0")
+    };
 
-        // PubSub facade sources are "topic/subscription" (a consumer group on the topic stream); a bare name is a queue
-        // on the default group. Parse via the shared convention rather than re-deriving the split.
-        return SubscriptionAddress.TryParse(source, out string topic, out string subscription)
-            ? new ResolvedSource(TopicStreamKey(topic), subscription, "$")
-            : new ResolvedSource(QueueStreamKey(source), _options.DefaultConsumerGroup, "0");
-    }
-
-    private TransportEntry ToEntry(string destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
+    private TransportEntry ToEntry(DestinationAddress destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
     {
         string? messageId = GetField(entry, "id");
         var headers = MessageHeaders.DeserializeFromJson(GetField(entry, "h"));

@@ -57,14 +57,8 @@ public sealed class MessageRoutingOptions
     internal void Declare(DestinationDeclaration declaration)
     {
         ArgumentNullException.ThrowIfNull(declaration);
-        ArgumentException.ThrowIfNullOrEmpty(declaration.Name);
 
-        bool exists = TopologyDeclarations.Any(d =>
-            String.Equals(d.Name, declaration.Name, StringComparison.Ordinal)
-            && d.Role == declaration.Role
-            && String.Equals(d.Source, declaration.Source, StringComparison.Ordinal));
-
-        if (!exists)
+        if (!TopologyDeclarations.Any(d => d.Address == declaration.Address))
             TopologyDeclarations.Add(declaration);
     }
 
@@ -191,18 +185,18 @@ public sealed class MessageRoutingOptionsBuilder
 
     private void DeclareQueue(string destination)
     {
-        _options.Declare(new DestinationDeclaration { Name = destination, Role = DestinationRole.Queue });
+        _options.Declare(new DestinationDeclaration { Address = DestinationAddress.ForQueue(destination) });
     }
 
     private void DeclareTopic(string topic)
     {
-        _options.Declare(new DestinationDeclaration { Name = topic, Role = DestinationRole.Topic });
+        _options.Declare(new DestinationDeclaration { Address = DestinationAddress.ForTopic(topic) });
         DeclareSubscription(topic);
     }
 
     private void RebuildSubscriptionDeclarations()
     {
-        _options.RemoveDeclarations(d => d.Role == DestinationRole.Subscription);
+        _options.RemoveDeclarations(d => d.Address.Role == DestinationRole.Subscription);
 
         if (!String.IsNullOrEmpty(_options.DefaultPubSubTopic))
             DeclareSubscription(_options.DefaultPubSubTopic);
@@ -227,7 +221,10 @@ public sealed class MessageRoutingOptionsBuilder
 
     private void DeclareSubscription(string topic, string subscription)
     {
-        _options.Declare(new DestinationDeclaration { Name = subscription, Role = DestinationRole.Subscription, Source = topic });
+        // The SAME canonical address the runtime subscribe path ensures and receives from — declaring the bare
+        // subscription name here while the runtime used a topic-qualified string is exactly the topology-vs-runtime
+        // identity mismatch DestinationAddress exists to prevent.
+        _options.Declare(new DestinationDeclaration { Address = DestinationAddress.ForSubscription(topic, subscription) });
     }
 }
 

@@ -319,11 +319,11 @@ public sealed class MessageBus : IMessageBus
         // its own subscriber group for published ones. An explicit Key opts subscriptions into one shared group.
         string uniqueKey = Guid.NewGuid().ToString("N");
 
-        string destination = GetDestination(routeType, options.Destination);
+        var destination = GetDestination(routeType, options.Destination);
         var send = new ListenerConfig
         {
             Source = destination,
-            Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{destination}:{uniqueKey}",
+            Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{destination.Key}:{uniqueKey}",
             MessageType = routeType,
             AckMode = options.AckMode,
             MaxConcurrency = options.MaxConcurrency,
@@ -332,18 +332,16 @@ public sealed class MessageBus : IMessageBus
             DeadLetterWhen = options.DeadLetterWhen
         };
 
-        string topic = GetTopic(routeType, options.Topic);
+        var topic = GetTopic(routeType, options.Topic);
         string subscription = options.PerInstance
             ? $"{Environment.MachineName}-{Guid.NewGuid():N}"
-            : options.Subscription ?? QualifySubscription(GetSubscription(routeType, topic, null), options.SubscriptionQualifier);
+            : options.Subscription ?? QualifySubscription(GetSubscription(routeType, topic.Name, null), options.SubscriptionQualifier);
         var publish = new ListenerConfig
         {
-            Topic = topic,
-            Subscription = subscription,
-            // The transport source is the topic-qualified subscription destination, not the bare subscription name, so
-            // the same subscription identity used on two topics resolves to two distinct sources (and isolates).
-            Source = SubscriptionAddress.Format(topic, subscription),
-            Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{topic}:{subscription}:{uniqueKey}",
+            // The source is the topic-qualified subscription address, not the bare subscription name, so the same
+            // subscription identity used on two topics resolves to two distinct sources (and isolates).
+            Source = DestinationAddress.ForSubscription(topic.Name, subscription),
+            Key = !String.IsNullOrEmpty(options.Key) ? options.Key : $"{topic.Name}:{subscription}:{uniqueKey}",
             MessageType = routeType,
             AckMode = options.AckMode,
             MaxConcurrency = options.MaxConcurrency,
@@ -365,41 +363,41 @@ public sealed class MessageBus : IMessageBus
     private void LogSubscription(ListenerConfig send, ListenerConfig publish)
     {
         _logger.LogInformation(
-            "Subscribed {MessageType}: send={Destination}, publish={Topic}/{Subscription}, concurrency={MaxConcurrency}, attempts={MaxAttempts}, ack={AckMode}",
-            send.MessageType.Name, send.Source, publish.Topic, publish.Subscription, Math.Max(1, send.MaxConcurrency), send.MaxAttempts?.ToString() ?? "default", send.AckMode);
+            "Subscribed {MessageType}: send={Destination}, publish={Subscription}, concurrency={MaxConcurrency}, attempts={MaxAttempts}, ack={AckMode}",
+            send.MessageType.Name, send.Source.Key, publish.Source.Key, Math.Max(1, send.MaxConcurrency), send.MaxAttempts?.ToString() ?? "default", send.AckMode);
     }
 
-    private Task EnsureTopicAsync(string topic, CancellationToken cancellationToken)
+    private Task EnsureTopicAsync(DestinationAddress topic, CancellationToken cancellationToken)
     {
-        return _core.EnsureAsync([new DestinationDeclaration { Name = topic, Role = DestinationRole.Topic }], cancellationToken);
+        return _core.EnsureAsync([new DestinationDeclaration { Address = topic }], cancellationToken);
     }
 
     private Task EnsureSubscriptionAsync(ListenerConfig config, CancellationToken cancellationToken)
     {
         return _core.EnsureAsync([
-            new DestinationDeclaration { Name = config.Topic, Role = DestinationRole.Topic },
-            new DestinationDeclaration { Name = config.Source, Role = DestinationRole.Subscription, Source = config.Topic }
+            new DestinationDeclaration { Address = DestinationAddress.ForTopic(config.Source.Topic!) },
+            new DestinationDeclaration { Address = config.Source }
         ], cancellationToken);
     }
 
-    private string GetDestination(Type messageType, string? destination)
+    private DestinationAddress GetDestination(Type messageType, string? destination)
     {
-        return _core.Router.ResolveRoute(new MessageRouteContext
+        return DestinationAddress.ForQueue(_core.Router.ResolveRoute(new MessageRouteContext
         {
             MessageType = messageType,
             Role = MessageRouteRole.QueueDestination,
             OperationOverride = destination
-        });
+        }));
     }
 
-    private string GetTopic(Type messageType, string? topic)
+    private DestinationAddress GetTopic(Type messageType, string? topic)
     {
-        return _core.Router.ResolveRoute(new MessageRouteContext
+        return DestinationAddress.ForTopic(_core.Router.ResolveRoute(new MessageRouteContext
         {
             MessageType = messageType,
             Role = MessageRouteRole.PubSubTopic,
             OperationOverride = topic
-        });
+        }));
     }
 
     private string GetSubscription(Type messageType, string topic, string? subscription)
@@ -450,10 +448,10 @@ public sealed class MessageBus : IMessageBus
         }
 
         public string Key => _sent.Key;
-        public string Destination => _sent.Source;
+        public string Destination => _sent.Source.Key;
         public string Topic => _published.Topic;
         public string Subscription => _published.Subscription;
-        public string Source => _published.Source;
+        public string Source => _published.Source.Key;
 
         public async ValueTask DisposeAsync()
         {
