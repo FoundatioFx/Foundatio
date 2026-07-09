@@ -546,7 +546,8 @@ public class FoundatioBuilder : IFoundatioBuilder
                 MisfireWindow = options.MisfireWindow,
                 MaxRetries = options.MaxRetries,
                 Enabled = options.Enabled,
-                TimeZone = options.TimeZone
+                TimeZone = options.TimeZone,
+                Arguments = options.Arguments
             });
             return _builder;
         }
@@ -568,8 +569,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         {
             _services.ReplaceSingleton<IJobTypeRegistry>(sp => new JobTypeRegistry(sp.GetServices<JobTypeRegistration>()));
             _services.ReplaceSingleton<IJobMonitor>(sp => sp.GetRequiredService<IJobRuntimeStore>());
-            _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>()));
-            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>()));
+            _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>()));
+            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>(), serializer: sp.GetService<ISerializer>()));
             _services.ReplaceSingleton<IJobScheduler, InMemoryJobScheduler>();
             _services.ReplaceSingleton(sp => new JobScheduleProcessor(
                 sp.GetRequiredService<IJobScheduler>(),
@@ -577,7 +578,8 @@ public class FoundatioBuilder : IFoundatioBuilder
                 sp.GetRequiredService<IJobWorker>(),
                 sp.GetService<TimeProvider>(),
                 transport: sp.GetService<IMessageTransport>(),
-                jobTypes: sp.GetRequiredService<IJobTypeRegistry>()));
+                jobTypes: sp.GetRequiredService<IJobTypeRegistry>(),
+                serializer: sp.GetService<ISerializer>()));
 
             // A runtime store is inert without something draining it, so register the pump alongside the store: in a
             // hosted process it runs jobs and the messaging delayed-delivery fallback automatically (no separate

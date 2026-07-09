@@ -310,10 +310,81 @@ public class JobRuntimeTests
         public TaskCompletionSource Cancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int RunCount => Volatile.Read(ref _runCount);
+        public string? LastMessage { get; private set; }
 
-        public void RecordRun()
+        public void RecordRun(string? message = null)
         {
             Interlocked.Increment(ref _runCount);
+            LastMessage = message;
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithTypedArguments_JobReceivesDeserializedPayloadAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobRuntimeProbe();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(probe)
+            .BuildServiceProvider();
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+
+        var handle = await client.EnqueueAsync<ArgsConsumingJob, ResizeArgs>(new ResizeArgs { Path = "/img/1.png", Width = 640 }, cancellationToken: cancellationToken);
+
+        // The payload and its discriminator are durable state, not in-process context.
+        var state = await store.GetAsync(handle.JobId, cancellationToken);
+        Assert.NotNull(state?.Payload);
+        Assert.Equal(typeof(ResizeArgs).FullName, state.PayloadType);
+
+        Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
+        Assert.Equal("/img/1.png:640", probe.LastMessage);
+        Assert.Equal(JobStatus.Completed, (await handle.GetStateAsync(cancellationToken))!.Status);
+    }
+
+    [Fact]
+    public async Task GetArguments_WhenEnqueuedWithout_ThrowsDescriptiveErrorAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobRuntimeProbe();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(probe)
+            .BuildServiceProvider();
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+
+        // The args-requiring job was enqueued via the argless API: the run fails (job faults) rather than silently
+        // executing with defaults, and the error names the fix.
+        var handle = await client.EnqueueAsync<ArgsConsumingJob>(cancellationToken: cancellationToken);
+        Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
+
+        var state = await handle.GetStateAsync(cancellationToken);
+        Assert.Equal(JobStatus.Failed, state!.Status);
+        Assert.Contains("without arguments", state.Error);
+    }
+
+    private sealed class ResizeArgs
+    {
+        public string? Path { get; set; }
+        public int Width { get; set; }
+    }
+
+    private sealed class ArgsConsumingJob : IJob
+    {
+        private readonly JobRuntimeProbe _probe;
+
+        public ArgsConsumingJob(JobRuntimeProbe probe)
+        {
+            _probe = probe;
+        }
+
+        public Task<JobResult> RunAsync(JobExecutionContext context)
+        {
+            var args = context.GetArguments<ResizeArgs>();
+            _probe.RecordRun($"{args.Path}:{args.Width}");
+            return Task.FromResult(JobResult.Success);
         }
     }
 

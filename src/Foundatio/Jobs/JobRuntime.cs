@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
+using Foundatio.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Foundatio.Jobs;
@@ -46,6 +47,12 @@ public sealed record JobState
     public required string JobId { get; init; }
     public required string Name { get; init; }
     public string? JobType { get; init; }
+
+    /// <summary>Serialized per-invocation arguments (see <see cref="IJobClient.EnqueueAsync{TJob, TArgs}"/>); null when the job takes none.</summary>
+    public ReadOnlyMemory<byte>? Payload { get; init; }
+
+    /// <summary>Discriminator for the payload type (the argument type's full name), stored for forensics and mismatch diagnostics.</summary>
+    public string? PayloadType { get; init; }
     public JobStatus Status { get; init; } = JobStatus.Queued;
     public int? Progress { get; init; }
     public string? ProgressMessage { get; init; }
@@ -230,8 +237,12 @@ public sealed class JobExecutionContext
     private readonly IJobRuntimeStore? _store;
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
+    private readonly ReadOnlyMemory<byte>? _payload;
+    private readonly string? _payloadType;
+    private readonly ISerializer? _serializer;
+    private readonly object? _detachedArguments;
 
-    internal JobExecutionContext(string jobId, int attempt, CancellationToken cancellationToken, IJobRuntimeStore store, string nodeId, TimeSpan lease)
+    internal JobExecutionContext(string jobId, int attempt, CancellationToken cancellationToken, IJobRuntimeStore store, string nodeId, TimeSpan lease, ReadOnlyMemory<byte>? payload = null, string? payloadType = null, ISerializer? serializer = null)
     {
         JobId = jobId;
         Attempt = attempt;
@@ -239,13 +250,17 @@ public sealed class JobExecutionContext
         _store = store;
         _nodeId = nodeId;
         _lease = lease;
+        _payload = payload;
+        _payloadType = payloadType;
+        _serializer = serializer;
     }
 
     /// <summary>
     /// Creates a detached context for running a job outside the durable runtime (tests or one-off invocations).
-    /// Progress reporting and lease renewal are no-ops; cancellation reflects <paramref name="cancellationToken"/>.
+    /// Progress reporting and lease renewal are no-ops; cancellation reflects <paramref name="cancellationToken"/>;
+    /// <paramref name="arguments"/> surfaces through <see cref="GetArguments{TArgs}"/> without serialization.
     /// </summary>
-    public JobExecutionContext(CancellationToken cancellationToken = default, string? jobId = null, int attempt = 1)
+    public JobExecutionContext(CancellationToken cancellationToken = default, string? jobId = null, int attempt = 1, object? arguments = null)
     {
         JobId = jobId ?? Guid.NewGuid().ToString("N");
         Attempt = attempt;
@@ -253,11 +268,45 @@ public sealed class JobExecutionContext
         _store = null;
         _nodeId = String.Empty;
         _lease = TimeSpan.Zero;
+        _detachedArguments = arguments;
     }
 
     public string JobId { get; }
     public int Attempt { get; }
     public CancellationToken CancellationToken { get; }
+
+    /// <summary>Whether this invocation carries typed arguments (see <see cref="IJobClient.EnqueueAsync{TJob, TArgs}"/>).</summary>
+    public bool HasArguments => _detachedArguments is not null || _payload is not null;
+
+    /// <summary>
+    /// The typed per-invocation arguments this job was enqueued with. Throws a descriptive
+    /// <see cref="InvalidOperationException"/> when the job was enqueued without arguments or the payload cannot be
+    /// read as <typeparamref name="TArgs"/> (the stored discriminator is included for triage).
+    /// </summary>
+    public TArgs GetArguments<TArgs>() where TArgs : class
+    {
+        if (_detachedArguments is not null)
+        {
+            return _detachedArguments as TArgs
+                ?? throw new InvalidOperationException($"Job \"{JobId}\" arguments are of type \"{_detachedArguments.GetType().FullName}\", not the requested \"{typeof(TArgs).FullName}\".");
+        }
+
+        if (_payload is not { } payload)
+            throw new InvalidOperationException($"Job \"{JobId}\" was enqueued without arguments. Use EnqueueAsync<TJob, TArgs>(args) to supply a typed payload.");
+
+        var serializer = _serializer ?? DefaultSerializer.Instance;
+        TArgs? args;
+        try
+        {
+            args = serializer.Deserialize(payload, typeof(TArgs)) as TArgs;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Unable to deserialize job \"{JobId}\" arguments (stored type \"{_payloadType}\") as \"{typeof(TArgs).FullName}\".", ex);
+        }
+
+        return args ?? throw new InvalidOperationException($"Job \"{JobId}\" arguments (stored type \"{_payloadType}\") deserialized to null as \"{typeof(TArgs).FullName}\".");
+    }
 
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
         => _store?.SetProgressAsync(JobId, percent, message, cancellationToken) ?? Task.CompletedTask;
@@ -279,6 +328,14 @@ public interface IJobMonitor
 public interface IJobClient
 {
     Task<JobHandle> EnqueueAsync<TJob>(JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
+
+    /// <summary>
+    /// Enqueues a job with typed per-invocation arguments. The args are serialized into the durable
+    /// <see cref="JobState.Payload"/> via the runtime's serializer and surface to the job through
+    /// <see cref="JobExecutionContext.GetArguments{TArgs}"/>.
+    /// </summary>
+    Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob where TArgs : class;
+
     Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
 }
@@ -666,20 +723,33 @@ public sealed class JobClient : IJobClient
     private readonly IJobRuntimeStore _store;
     private readonly TimeProvider _timeProvider;
     private readonly IJobTypeRegistry _jobTypes;
+    private readonly ISerializer _serializer;
 
-    public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null, IJobTypeRegistry? jobTypes = null)
+    public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _serializer = serializer ?? DefaultSerializer.Instance;
     }
 
     public Task<JobHandle> EnqueueAsync<TJob>(JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
     {
-        return EnqueueAsync(typeof(TJob), options, cancellationToken);
+        return EnqueueCoreAsync(typeof(TJob), args: null, options, cancellationToken);
     }
 
-    public async Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob where TArgs : class
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        return EnqueueCoreAsync(typeof(TJob), args, options, cancellationToken);
+    }
+
+    public Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default)
+    {
+        return EnqueueCoreAsync(jobType, args: null, options, cancellationToken);
+    }
+
+    private async Task<JobHandle> EnqueueCoreAsync(Type jobType, object? args, JobRequestOptions? options, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(jobType);
         if (!typeof(IJob).IsAssignableFrom(jobType))
@@ -695,6 +765,10 @@ public sealed class JobClient : IJobClient
             JobId = jobId,
             Name = name,
             JobType = _jobTypes.GetName(jobType),
+            // Explicitly typed: the byte[] -> ReadOnlyMemory conversion maps a null array to an EMPTY memory, which
+            // would make an argless job look like it carries a zero-byte payload.
+            Payload = args is null ? null : (ReadOnlyMemory<byte>?)_serializer.SerializeToBytes(args),
+            PayloadType = args?.GetType().FullName,
             Status = JobStatus.Queued,
             CreatedUtc = now,
             LastUpdatedUtc = now
@@ -737,16 +811,18 @@ public sealed class JobWorker : IJobWorker
     private readonly IServiceProvider _serviceProvider;
     private readonly TimeProvider _timeProvider;
     private readonly IJobTypeRegistry _jobTypes;
+    private readonly ISerializer _serializer;
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
     private readonly TimeSpan _cancellationPollInterval;
 
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null)
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null, ISerializer? serializer = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _serializer = serializer ?? DefaultSerializer.Instance;
         _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _lease = lease ?? DefaultLease;
 
@@ -857,9 +933,9 @@ public sealed class JobWorker : IJobWorker
             var jobType = ResolveJobType(state);
             var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
 
-            // Hand the job its execution context (identity, attempt, progress, heartbeat, cancellation). The store was
-            // already incremented to this attempt by the Queued -> Processing transition above.
-            var context = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease);
+            // Hand the job its execution context (identity, attempt, typed payload, progress, heartbeat, cancellation).
+            // The store was already incremented to this attempt by the Queued -> Processing transition above.
+            var context = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease, state.Payload, state.PayloadType, _serializer);
 
             var result = await job.TryRunAsync(context).ConfigureAwait(false);
             var completedAt = _timeProvider.GetUtcNow();
