@@ -221,14 +221,14 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
             switch (declaration.Address.Role)
             {
                 case DestinationRole.Topic:
-                    await ResolveTopicArnAsync(declaration.Address.Name, ct).ConfigureAwait(false);
+                    await ResolveTopicArnAsync(declaration.Address.Name, allowCreate: true, ct).ConfigureAwait(false);
                     break;
                 case DestinationRole.Subscription:
                 case DestinationRole.Binding:
                     await EnsureSubscriptionAsync(declaration.Address, ct).ConfigureAwait(false);
                     break;
                 default:
-                    await ResolveQueueUrlAsync(declaration.Address, ct).ConfigureAwait(false);
+                    await ResolveQueueUrlAsync(declaration.Address, allowCreate: true, ct).ConfigureAwait(false);
                     break;
             }
         }
@@ -302,12 +302,12 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
     private async Task EnsureSubscriptionAsync(DestinationAddress address, CancellationToken ct)
     {
-        string queueUrl = await ResolveQueueUrlAsync(address, ct).ConfigureAwait(false);
+        string queueUrl = await ResolveQueueUrlAsync(address, allowCreate: true, ct).ConfigureAwait(false);
 
         if (String.IsNullOrEmpty(address.Topic))
             return;
 
-        string topicArn = await ResolveTopicArnAsync(address.Topic, ct).ConfigureAwait(false);
+        string topicArn = await ResolveTopicArnAsync(address.Topic, allowCreate: true, ct).ConfigureAwait(false);
         string queueArn = await GetQueueArnAsync(queueUrl, ct).ConfigureAwait(false);
 
         // Allow the topic to deliver to the queue, then subscribe with raw delivery so the SQS body/attributes match a
@@ -331,7 +331,10 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     // Queue and subscription destinations are both backed by an SQS queue whose logical name is the address key
     // (Name for queues, "topic/subscription" for subscriptions), so provisioning and every runtime path resolve the
     // same physical queue from the same address.
-    private async Task<string> ResolveQueueUrlAsync(DestinationAddress address, CancellationToken ct)
+    private Task<string> ResolveQueueUrlAsync(DestinationAddress address, CancellationToken ct) =>
+        ResolveQueueUrlAsync(address, allowCreate: _options.AutoCreateDestinations, ct);
+
+    private async Task<string> ResolveQueueUrlAsync(DestinationAddress address, bool allowCreate, CancellationToken ct)
     {
         string key = address.Key;
         if (_queueUrls.TryGetValue(key, out string? cached))
@@ -344,7 +347,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
             _queueUrls[key] = response.QueueUrl;
             return response.QueueUrl;
         }
-        catch (QueueDoesNotExistException) when (_options.AutoCreateDestinations)
+        catch (QueueDoesNotExistException) when (allowCreate)
         {
             var response = await _sqs.Value.CreateQueueAsync(new CreateQueueRequest { QueueName = resourceName }, ct).ConfigureAwait(false);
             _queueUrls[key] = response.QueueUrl;
@@ -352,15 +355,32 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         }
     }
 
-    private async Task<string> ResolveTopicArnAsync(string name, CancellationToken ct)
+    // Implicit resolution (send/receive paths) honors AutoCreateDestinations; explicit provisioning via EnsureAsync
+    // always creates — that call IS the administrative intent the option exists to withhold from the data paths.
+    private Task<string> ResolveTopicArnAsync(string name, CancellationToken ct) =>
+        ResolveTopicArnAsync(name, allowCreate: _options.AutoCreateDestinations, ct);
+
+    private async Task<string> ResolveTopicArnAsync(string name, bool allowCreate, CancellationToken ct)
     {
         if (_topicArns.TryGetValue(name, out string? cached))
             return cached;
 
-        // CreateTopic is idempotent and returns the ARN of an existing topic with the same name.
-        var response = await _sns.Value.CreateTopicAsync(new CreateTopicRequest { Name = ResourceName(name) }, ct).ConfigureAwait(false);
-        _topicArns[name] = response.TopicArn;
-        return response.TopicArn;
+        if (allowCreate)
+        {
+            // CreateTopic is idempotent and returns the ARN of an existing topic with the same name.
+            var response = await _sns.Value.CreateTopicAsync(new CreateTopicRequest { Name = ResourceName(name) }, ct).ConfigureAwait(false);
+            _topicArns[name] = response.TopicArn;
+            return response.TopicArn;
+        }
+
+        // Auto-create is disabled (locked-down broker): look the topic up instead of creating it, and fail loudly when
+        // it has not been provisioned out of band.
+        var existing = await _sns.Value.FindTopicAsync(ResourceName(name)).ConfigureAwait(false);
+        if (existing is null)
+            throw new InvalidOperationException($"SNS topic \"{ResourceName(name)}\" does not exist and {nameof(AwsMessageTransportOptions.AutoCreateDestinations)} is disabled. Provision it out of band or enable auto-creation.");
+
+        _topicArns[name] = existing.TopicArn;
+        return existing.TopicArn;
     }
 
     // SQS queue / SNS topic names allow only [A-Za-z0-9_-] (max 80 chars). Most logical names already conform, but a

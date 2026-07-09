@@ -20,6 +20,9 @@ internal sealed class MessageHandlerRegistration
     public required Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> StartAsync { get; init; }
 }
 
+/// <summary>The DI-selected <see cref="TopologyMode"/>, applied by the handler host at startup and by the message clients on use.</summary>
+internal sealed record MessagingTopologyOptions(TopologyMode Mode);
+
 /// <summary>
 /// Hosts every declaratively-registered message handler for the app's lifetime: on start it launches each handler's
 /// consumer/subscription; on stop it disposes them. Auto-registered when the first handler is added, so users register
@@ -42,6 +45,8 @@ internal sealed class MessageHandlerHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        await ApplyTopologyAsync(cancellationToken).AnyContext();
+
         try
         {
             foreach (var registration in _registrations)
@@ -57,6 +62,37 @@ internal sealed class MessageHandlerHostedService : IHostedService
             // rather than leaking those consumers' background receive loops.
             await DisposeStartedAsync().AnyContext();
             throw;
+        }
+    }
+
+    // Apply the app's declared topology before any handler starts consuming: Ensure creates what the routing config
+    // declares, Validate proves it exists and fails startup when it doesn't (a missing destination should stop the app
+    // at boot, not surface as runtime send errors), and None trusts out-of-band provisioning entirely.
+    private async Task ApplyTopologyAsync(CancellationToken cancellationToken)
+    {
+        var mode = (_serviceProvider.GetService(typeof(MessagingTopologyOptions)) as MessagingTopologyOptions)?.Mode ?? TopologyMode.Ensure;
+        if (mode == TopologyMode.None)
+            return;
+
+        if (_serviceProvider.GetService(typeof(IMessageTopology)) is not IMessageTopology topology)
+            return;
+
+        if (mode == TopologyMode.Validate)
+        {
+            await topology.ValidateAsync(cancellationToken).AnyContext();
+            _logger.LogInformation("Validated declared message topology");
+            return;
+        }
+
+        try
+        {
+            await topology.EnsureAsync(cancellationToken).AnyContext();
+            _logger.LogInformation("Ensured declared message topology");
+        }
+        catch (NotSupportedException)
+        {
+            // The transport cannot provision; the runtime use-time paths no-op the same way, so startup should not fail.
+            _logger.LogDebug("Transport does not support topology provisioning; skipping startup ensure");
         }
     }
 

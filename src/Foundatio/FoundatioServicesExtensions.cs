@@ -252,11 +252,23 @@ public class FoundatioBuilder : IFoundatioBuilder
         private readonly IServiceCollection _services;
         private bool _routingServicesRegistered;
         private bool _topologyServicesRegistered;
+        private TopologyMode _topologyMode = TopologyMode.Ensure;
 
         internal MessagingBuilder(IFoundatioBuilder builder)
         {
             _builder = builder.Builder;
             _services = builder.Services;
+        }
+
+        /// <summary>
+        /// Selects how the messaging client administers topology: <see cref="TopologyMode.Ensure"/> creates missing
+        /// destinations on use and at handler-host startup (default), <see cref="TopologyMode.Validate"/> only checks
+        /// they exist and throws when missing, and <see cref="TopologyMode.None"/> never touches topology.
+        /// </summary>
+        public MessagingBuilder ConfigureTopology(TopologyMode mode)
+        {
+            _topologyMode = mode;
+            return this;
         }
 
         IServiceCollection IFoundatioBuilder.Services => _services;
@@ -409,6 +421,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         private void RegisterMessagingRuntime(Func<IServiceProvider, IMessageTransport> factory)
         {
             _services.ReplaceSingleton(factory);
+            // Resolved lazily so ConfigureTopology can be called before or after the Use* transport registration.
+            _services.ReplaceSingleton(_ => new MessagingTopologyOptions(_topologyMode));
             RegisterMessageTopology();
             RegisterMessageClients();
         }
@@ -455,6 +469,7 @@ public class FoundatioBuilder : IFoundatioBuilder
                 MessageTypes = sp.GetService<IMessageTypeRegistry>() ?? new MessageTypeRegistry(),
                 RuntimeStore = sp.GetService<IJobRuntimeStore>(),
                 RetryPolicy = sp.GetService<RetryPolicy>() ?? new RetryPolicy(),
+                Topology = sp.GetService<MessagingTopologyOptions>()?.Mode ?? TopologyMode.Ensure,
                 // The transport is a shared DI singleton owned by the container; the bus must not dispose it.
                 OwnsTransport = false,
                 TimeProvider = sp.GetService<TimeProvider>() ?? TimeProvider.System,
