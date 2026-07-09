@@ -98,6 +98,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     public IMessageRouter Router => _router;
 
+    // A transport that does not advertise ITransportInfo is assumed to support every role (test doubles, minimal
+    // providers); one that does advertise is held to its declaration.
+    public bool SupportsRole(DestinationRole role)
+    {
+        return _transport is not ITransportInfo info || info.SupportedRoles.Contains(role);
+    }
+
     public Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
     {
         return _transport is ISupportsProvisioning provisioning

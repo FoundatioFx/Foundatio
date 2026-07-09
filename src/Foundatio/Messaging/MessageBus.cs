@@ -36,13 +36,37 @@ public sealed record MessagePublishOptions
 }
 
 /// <summary>
+/// The delivery channels a subscription consumes. By default a handler listens on both of its type's channels; a
+/// handler that only ever consumes commands (or only events) states that intent so no idle listener is wired — and so
+/// a queue-only or topic-only transport can serve it.
+/// </summary>
+[Flags]
+public enum MessageDeliveries
+{
+    /// <summary>Sent commands from the type's queue-role destination (competing consumers).</summary>
+    Sent = 1,
+
+    /// <summary>Published events, delivered via this subscriber's group on the type's topic.</summary>
+    Published = 2,
+
+    Both = Sent | Published
+}
+
+/// <summary>
 /// Options for attaching a handler to a message type — via <c>AddFoundatio().Messaging.AddHandler&lt;T, THandler&gt;(o =&gt; ...)</c>
-/// or programmatically via <see cref="IMessageBus.SubscribeAsync{T}"/>. A subscription listens on the type's two
-/// delivery channels: sent messages (one handler instance across the fleet processes each) and published messages
-/// (delivered per the subscription identity below).
+/// or programmatically via <see cref="IMessageBus.SubscribeAsync{T}"/>. By default a subscription listens on the
+/// type's two delivery channels — sent messages (one handler instance across the fleet processes each) and published
+/// messages (delivered per the subscription identity below) — narrowed by <see cref="Deliveries"/>.
 /// </summary>
 public sealed class MessageSubscriptionOptions
 {
+    /// <summary>
+    /// Which delivery channels this subscription consumes. Default <see cref="MessageDeliveries.Both"/>: on a
+    /// transport that supports only one channel's roles, the unsupported channel is skipped (logged at debug).
+    /// Explicitly requesting a single channel the transport cannot serve throws <see cref="NotSupportedException"/>.
+    /// </summary>
+    public MessageDeliveries Deliveries { get; set; } = MessageDeliveries.Both;
+
     /// <summary>
     /// When true, published messages are received by EVERY running instance (each takes a unique subscription),
     /// instead of once per service. For per-instance local state — cache invalidation, config reload. Mutually
@@ -120,7 +144,10 @@ public sealed class MessageSubscriptionOptions
     }
 }
 
-/// <summary>A started subscription; disposing detaches the handler from the message type's delivery channels.</summary>
+/// <summary>
+/// A started subscription; disposing detaches the handler from the message type's delivery channels. Channel-specific
+/// properties are empty when that channel was not wired (see <see cref="MessageSubscriptionOptions.Deliveries"/>).
+/// </summary>
 public interface IMessageSubscription : IAsyncDisposable
 {
     /// <summary>Consumer identity; subscriptions sharing a key on a channel form one competing group.</summary>
@@ -260,40 +287,70 @@ public sealed class MessageBus : IMessageBus
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages, null, ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public async Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IMessageSubscription> SubscribeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
-        var channels = BuildChannels(options, typeof(T));
-        var sent = await _core.StartListenerAsync(channels.Send, handler, cancellationToken).AnyContext();
-        try
-        {
-            await EnsureSubscriptionAsync(channels.Publish, cancellationToken).AnyContext();
-            var published = await _core.StartListenerAsync(channels.Publish, handler, cancellationToken).AnyContext();
-            LogSubscription(channels.Send, channels.Publish);
-            return new MessageSubscription(sent, published);
-        }
-        catch
-        {
-            await sent.DisposeAsync().AnyContext();
-            throw;
-        }
+        return SubscribeCoreAsync(options, typeof(T), (config, token) => _core.StartListenerAsync(config, handler, token), cancellationToken);
     }
 
-    public async Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<IMessageSubscription> SubscribeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageSubscriptionOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        var channels = BuildChannels(options, typeof(object));
-        var sent = await _core.StartListenerAsync(channels.Send, handler, cancellationToken).AnyContext();
+        return SubscribeCoreAsync(options, typeof(object), (config, token) => _core.StartListenerAsync(config, handler, token), cancellationToken);
+    }
+
+    private async Task<IMessageSubscription> SubscribeCoreAsync(MessageSubscriptionOptions? options, Type fallbackType, Func<ListenerConfig, CancellationToken, Task<MessageListenerHandle>> start, CancellationToken cancellationToken)
+    {
+        var deliveries = options?.Deliveries ?? MessageDeliveries.Both;
+        if ((deliveries & MessageDeliveries.Both) == 0)
+            throw new ArgumentException("Deliveries must include at least one delivery channel.", nameof(options));
+
+        bool wantSent = deliveries.HasFlag(MessageDeliveries.Sent);
+        bool wantPublished = deliveries.HasFlag(MessageDeliveries.Published);
+        bool canSend = _core.SupportsRole(DestinationRole.Queue);
+        bool canPublish = _core.SupportsRole(DestinationRole.Topic) && _core.SupportsRole(DestinationRole.Subscription);
+
+        // An explicit single-channel request the transport cannot serve is a configuration error and must fail loudly;
+        // the default Both narrows to whatever the transport supports (a queue-only transport still serves commands)
+        // but a transport that can serve neither channel is always an error.
+        if (deliveries != MessageDeliveries.Both)
+        {
+            if (wantSent && !canSend)
+                throw new NotSupportedException($"Subscription requests {nameof(MessageDeliveries.Sent)} deliveries, but the transport does not support {DestinationRole.Queue} destinations.");
+            if (wantPublished && !canPublish)
+                throw new NotSupportedException($"Subscription requests {nameof(MessageDeliveries.Published)} deliveries, but the transport does not support {DestinationRole.Topic} and {DestinationRole.Subscription} destinations.");
+        }
+        else if (!canSend && !canPublish)
+        {
+            throw new NotSupportedException("The transport supports neither queue nor topic/subscription destinations; no delivery channel can be wired.");
+        }
+
+        bool wireSent = wantSent && canSend;
+        bool wirePublished = wantPublished && canPublish;
+
+        if (wantSent && !wireSent)
+            _logger.LogDebug("Skipping the sent-message channel for {MessageType}: the transport does not support {Role} destinations", fallbackType.Name, DestinationRole.Queue);
+        if (wantPublished && !wirePublished)
+            _logger.LogDebug("Skipping the published-message channel for {MessageType}: the transport does not support {TopicRole}/{SubscriptionRole} destinations", fallbackType.Name, DestinationRole.Topic, DestinationRole.Subscription);
+
+        var channels = BuildChannels(options, fallbackType);
+        MessageListenerHandle? sent = wireSent ? await start(channels.Send, cancellationToken).AnyContext() : null;
         try
         {
-            await EnsureSubscriptionAsync(channels.Publish, cancellationToken).AnyContext();
-            var published = await _core.StartListenerAsync(channels.Publish, handler, cancellationToken).AnyContext();
-            LogSubscription(channels.Send, channels.Publish);
+            MessageListenerHandle? published = null;
+            if (wirePublished)
+            {
+                await EnsureSubscriptionAsync(channels.Publish, cancellationToken).AnyContext();
+                published = await start(channels.Publish, cancellationToken).AnyContext();
+            }
+
+            LogSubscription(channels.Send, channels.Publish, wireSent, wirePublished);
             return new MessageSubscription(sent, published);
         }
         catch
         {
-            await sent.DisposeAsync().AnyContext();
+            if (sent is not null)
+                await sent.DisposeAsync().AnyContext();
             throw;
         }
     }
@@ -360,11 +417,11 @@ public sealed class MessageBus : IMessageBus
 
     // Delivery semantics must never be invisible: log each subscription's effective topology (which destination it
     // consumes, which subscriber group it joins, and its retry posture) once at subscribe time.
-    private void LogSubscription(ListenerConfig send, ListenerConfig publish)
+    private void LogSubscription(ListenerConfig send, ListenerConfig publish, bool sentWired, bool publishedWired)
     {
         _logger.LogInformation(
             "Subscribed {MessageType}: send={Destination}, publish={Subscription}, concurrency={MaxConcurrency}, attempts={MaxAttempts}, ack={AckMode}",
-            send.MessageType.Name, send.Source.Key, publish.Source.Key, Math.Max(1, send.MaxConcurrency), send.MaxAttempts?.ToString() ?? "default", send.AckMode);
+            send.MessageType.Name, sentWired ? send.Source.Key : "(none)", publishedWired ? publish.Source.Key : "(none)", Math.Max(1, send.MaxConcurrency), send.MaxAttempts?.ToString() ?? "default", send.AckMode);
     }
 
     private Task EnsureTopicAsync(DestinationAddress topic, CancellationToken cancellationToken)
@@ -438,25 +495,27 @@ public sealed class MessageBus : IMessageBus
 
     private sealed class MessageSubscription : IMessageSubscription
     {
-        private readonly MessageListenerHandle _sent;
-        private readonly MessageListenerHandle _published;
+        private readonly MessageListenerHandle? _sent;
+        private readonly MessageListenerHandle? _published;
 
-        public MessageSubscription(MessageListenerHandle sent, MessageListenerHandle published)
+        public MessageSubscription(MessageListenerHandle? sent, MessageListenerHandle? published)
         {
             _sent = sent;
             _published = published;
         }
 
-        public string Key => _sent.Key;
-        public string Destination => _sent.Source.Key;
-        public string Topic => _published.Topic;
-        public string Subscription => _published.Subscription;
-        public string Source => _published.Source.Key;
+        public string Key => (_sent ?? _published)!.Key;
+        public string Destination => _sent?.Source.Key ?? "";
+        public string Topic => _published?.Topic ?? "";
+        public string Subscription => _published?.Subscription ?? "";
+        public string Source => _published?.Source.Key ?? "";
 
         public async ValueTask DisposeAsync()
         {
-            await _sent.DisposeAsync().AnyContext();
-            await _published.DisposeAsync().AnyContext();
+            if (_sent is not null)
+                await _sent.DisposeAsync().AnyContext();
+            if (_published is not null)
+                await _published.DisposeAsync().AnyContext();
         }
     }
 }
