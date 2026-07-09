@@ -24,12 +24,13 @@ namespace Foundatio.Messaging;
 /// </summary>
 /// <remarks>
 /// Capability mapping: pull receive (SQS long poll), visibility timeout, redelivery delay (ChangeMessageVisibility,
-/// 12h cap), delayed delivery (SQS DelaySeconds, 15-minute cap), provisioning, and stats. SQS has no per-message
+/// 12h cap), delayed delivery on queues only (SQS DelaySeconds, 15-minute cap — SNS topics have no native delay, so
+/// delayed publishes route through the runtime-store fallback), provisioning, and stats. SQS has no per-message
 /// priority, per-message TTL, or push delivery, and no transport-native dead-letter that the core controls the timing
 /// of, so those capabilities are intentionally not implemented (the core owns retry/dead-lettering).
 /// </remarks>
 public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
-    ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsDelayedDelivery, ISupportsProvisioning, ISupportsStats, ITransportInfo
+    ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsProvisioning, ISupportsStats, ITransportInfo
 {
     private const string HeadersAttributeName = "fnd.headers";
     private const string EncodingAttributeName = "fnd.encoding";
@@ -58,13 +59,27 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
     public AwsMessageTransport(string connectionString) : this(AwsMessageTransportOptions.FromConnectionString(connectionString)) { }
 
-    public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
-    public OrderingGuarantee Ordering => OrderingGuarantee.None;
-    public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
-    public int? MaxBatchSize => null; // sends are issued per message
-    public long? MaxMessageBytes => 262144; // 256 KB SQS/SNS limit
+    // Capabilities differ by role: SQS queues take a native DelaySeconds (15-minute cap), SNS topics have no native
+    // delay at all — a delayed publish must route through the runtime-store fallback, never silently drop the delay.
+    // The 256 KB body limit applies to both services.
+    private static readonly TransportCapabilities _queueCapabilities = new()
+    {
+        DelayedDelivery = true,
+        MaxDeliveryDelay = TimeSpan.FromMinutes(15), // SQS DelaySeconds maximum
+        MaxMessageBytes = 262144 // 256 KB SQS limit
+    };
 
-    public TimeSpan? MaxDeliveryDelay => TimeSpan.FromMinutes(15); // SQS DelaySeconds maximum
+    private static readonly TransportCapabilities _topicCapabilities = new()
+    {
+        MaxMessageBytes = 262144 // 256 KB SNS limit
+    };
+
+    public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+    public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
+
+    public TransportCapabilities GetCapabilities(DestinationRole role) =>
+        role == DestinationRole.Topic ? _topicCapabilities : _queueCapabilities;
+
     public TimeSpan? MaxRedeliveryDelay => TimeSpan.FromHours(12); // SQS ChangeMessageVisibility maximum
     public TimeSpan? MaxVisibilityTimeout => TimeSpan.FromHours(12); // SQS visibility maximum
 
@@ -80,6 +95,12 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         // sends to an SQS queue.
         if (options.DestinationRole == DestinationRole.Topic)
         {
+            // SNS has no native delayed publish. The core routes delayed topic publishes through the runtime-store
+            // fallback (topic capabilities advertise no DelayedDelivery), so a DeliverAt reaching here is a contract
+            // violation — refuse loudly rather than publish immediately and silently drop the delay.
+            if (options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
+                throw new NotSupportedException($"Transport \"{nameof(AwsMessageTransport)}\" does not support delayed delivery for Topic destinations (SNS has no native delay). Register a job runtime store so delayed publishes use the scheduled-dispatch fallback.");
+
             string topicArn = await ResolveTopicArnAsync(destination, ct).ConfigureAwait(false);
             foreach (var message in messages)
             {

@@ -151,13 +151,54 @@ public sealed record PushOptions
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(1);
 }
 
+/// <summary>
+/// The capability and limit facts a transport advertises for one <see cref="DestinationRole"/>. Capabilities vary by
+/// role on real brokers (SQS queues take DelaySeconds; SNS topics have no native delay), so the core asks per role
+/// via <see cref="ITransportInfo.GetCapabilities"/> rather than reading transport-wide flags. Anything not advertised
+/// here is treated as unsupported: the core validates, falls back, or throws instead of letting the broker silently
+/// drop a requested behavior.
+/// </summary>
+public sealed record TransportCapabilities
+{
+    /// <summary>Capabilities of a transport (or role) that advertises nothing: every feature routes through core fallbacks or fails validation.</summary>
+    public static readonly TransportCapabilities None = new();
+
+    /// <summary>The destination honors <see cref="TransportSendOptions.DeliverAt"/> natively.</summary>
+    public bool DelayedDelivery { get; init; }
+
+    /// <summary>
+    /// The longest delivery delay honored natively when <see cref="DelayedDelivery"/> is true (e.g. SQS caps
+    /// DelaySeconds at 15 minutes); null means unbounded. A send scheduled further out is routed through the
+    /// runtime-store fallback instead of being silently truncated to the broker's ceiling.
+    /// </summary>
+    public TimeSpan? MaxDeliveryDelay { get; init; }
+
+    /// <summary>The destination honors <see cref="TransportSendOptions.Priority"/>.</summary>
+    public bool Priority { get; init; }
+
+    /// <summary>The destination honors per-message expiration (<see cref="KnownHeaders.Expiration"/>).</summary>
+    public bool Expiration { get; init; }
+
+    public OrderingGuarantee Ordering { get; init; } = OrderingGuarantee.None;
+
+    /// <summary>Maximum messages per <see cref="IMessageTransport.SendAsync"/> call; null means unbounded. The core chunks larger sends.</summary>
+    public int? MaxBatchSize { get; init; }
+
+    /// <summary>Maximum message body size in bytes; null means unbounded. The core rejects oversized messages up front.</summary>
+    public long? MaxMessageBytes { get; init; }
+}
+
 public interface ITransportInfo
 {
     DeliveryGuarantee DeliveryGuarantee { get; }
-    OrderingGuarantee Ordering { get; }
     IReadOnlySet<DestinationRole> SupportedRoles { get; }
-    int? MaxBatchSize { get; }
-    long? MaxMessageBytes { get; }
+
+    /// <summary>
+    /// The capabilities and limits this transport honors for destinations of the given role. Must be side-effect free
+    /// and cheap; the core consults it on every send-path decision (native delay vs. runtime-store fallback,
+    /// priority/expiration validation, size and batch limits).
+    /// </summary>
+    TransportCapabilities GetCapabilities(DestinationRole role);
 }
 
 public interface IMessageTransport : IAsyncDisposable
@@ -215,18 +256,6 @@ public interface ISupportsStats : IMessageTransport
 {
     Task<MessageDestinationStats> GetStatsAsync(string destination, CancellationToken ct = default);
 }
-
-public interface ISupportsPriority : IMessageTransport { }
-
-public interface ISupportsDelayedDelivery : IMessageTransport
-{
-    // The longest delivery delay the transport can honor natively (e.g. SQS caps DelaySeconds at 15 minutes).
-    // Null means unbounded. A send scheduled further out than this is routed through the runtime-store fallback
-    // instead of being silently truncated to the broker's maximum.
-    TimeSpan? MaxDeliveryDelay { get; }
-}
-
-public interface ISupportsExpiration : IMessageTransport { }
 
 public interface ISupportsProvisioning : IMessageTransport
 {

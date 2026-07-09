@@ -110,7 +110,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public async Task<string> SendAsync(ScheduledDispatchKind kind, Type messageType, object message, MessageEnvelopeOptions options, string destination, Func<string, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        ValidateCapabilities(options.Priority, options.TimeToLive);
+        ValidateCapabilities(RoleFor(kind), options.Priority, options.TimeToLive);
 
         var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
         string messageId = Guid.NewGuid().ToString("N");
@@ -131,7 +131,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public async Task SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, string> resolveDestination, Func<string, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        ValidateCapabilities(options.Priority, options.TimeToLive);
+        ValidateCapabilities(RoleFor(kind), options.Priority, options.TimeToLive);
 
         var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
         var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
@@ -595,13 +595,22 @@ internal sealed class MessageClientCore : IAsyncDisposable
         };
     }
 
-    private void ValidateCapabilities(MessagePriority priority, TimeSpan? timeToLive)
+    // Capabilities are role-aware: the same transport can honor a feature on queues but not topics (SQS DelaySeconds
+    // vs. SNS publish), so every send-path decision asks for the destination role it is actually targeting.
+    private TransportCapabilities CapabilitiesFor(DestinationRole role)
     {
-        if (priority != MessagePriority.Normal && _transport is not ISupportsPriority)
-            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message priority.");
+        return _transport is ITransportInfo info ? info.GetCapabilities(role) : TransportCapabilities.None;
+    }
 
-        if (timeToLive is not null && _transport is not ISupportsExpiration)
-            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message expiration.");
+    private void ValidateCapabilities(DestinationRole role, MessagePriority priority, TimeSpan? timeToLive)
+    {
+        var capabilities = CapabilitiesFor(role);
+
+        if (priority != MessagePriority.Normal && !capabilities.Priority)
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message priority for {role} destinations.");
+
+        if (timeToLive is not null && !capabilities.Expiration)
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message expiration for {role} destinations.");
     }
 
     private async Task<bool> TryScheduleAsync(ScheduledDispatchKind kind, string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
@@ -634,25 +643,27 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (options.DeliverAt is null || dueUtc <= now)
             return false;
 
-        // A transport can deliver natively only up to its advertised maximum; a delay longer than the broker supports
+        // A destination can deliver natively only up to its advertised maximum; a delay longer than the broker supports
         // (e.g. SQS caps DelaySeconds at 15 minutes) must route through the durable runtime store rather than be
-        // silently truncated to the broker's ceiling.
-        if (_transport is ISupportsDelayedDelivery delayed && (delayed.MaxDeliveryDelay is not { } max || dueUtc - now <= max))
+        // silently truncated to the broker's ceiling. The check is per destination role: a transport whose queues take
+        // a native delay may still have topics that cannot (SQS vs. SNS), and those publishes must fall back too.
+        var capabilities = CapabilitiesFor(options.DestinationRole);
+        if (capabilities.DelayedDelivery && (capabilities.MaxDeliveryDelay is not { } max || dueUtc - now <= max))
             return false;
 
         if (_runtimeStore is null)
-            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" (within its supported maximum) or a registered job runtime store.", null);
+            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {options.DestinationRole} destinations (within its supported maximum) or a registered job runtime store.", null);
 
         return true;
     }
 
     private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        var info = _transport as ITransportInfo;
+        var capabilities = CapabilitiesFor(options.DestinationRole);
 
         // Enforce a transport-declared maximum message size up front with a clear error, rather than letting an opaque
         // broker rejection surface mid-send (the limit is advertised, so honor it).
-        if (info?.MaxMessageBytes is { } maxBytes)
+        if (capabilities.MaxMessageBytes is { } maxBytes)
         {
             foreach (var message in messages)
             {
@@ -662,7 +673,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
 
         // Respect a transport-declared maximum batch size by splitting oversized sends into chunks.
-        int? maxBatchSize = info?.MaxBatchSize;
+        int? maxBatchSize = capabilities.MaxBatchSize;
         if (maxBatchSize is not { } limit || limit <= 0 || messages.Count <= limit)
         {
             var result = await _transport.SendAsync(destination, messages, options, cancellationToken).AnyContext();

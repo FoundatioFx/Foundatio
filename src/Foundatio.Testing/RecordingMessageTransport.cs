@@ -14,8 +14,8 @@ namespace Foundatio.Messaging.Testing;
 /// <see cref="MessagingTestHarness.WaitForIdleAsync"/> can detect quiescence.
 /// </summary>
 internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout,
-    ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsPriority,
-    ISupportsExpiration, ISupportsProvisioning, ITransportInfo
+    ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats,
+    ISupportsProvisioning, ITransportInfo
 {
     // A delayed redelivery lives only in the inner transport's timer until it fires — neither queued nor in flight —
     // so idle detection would report quiescent while a retry is pending. Give the timer this long past its due time to
@@ -45,10 +45,8 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     public IReadOnlyList<RecordedMessage> DeadLettered => [.. _deadLettered];
 
     public DeliveryGuarantee DeliveryGuarantee => _inner.DeliveryGuarantee;
-    public OrderingGuarantee Ordering => _inner.Ordering;
     public IReadOnlySet<DestinationRole> SupportedRoles => _inner.SupportedRoles;
-    public int? MaxBatchSize => _inner.MaxBatchSize;
-    public long? MaxMessageBytes => _inner.MaxMessageBytes;
+    public TransportCapabilities GetCapabilities(DestinationRole role) => _inner.GetCapabilities(role);
     public TimeSpan? MaxVisibilityTimeout => _inner.MaxVisibilityTimeout;
     public TimeSpan? MaxRedeliveryDelay => _inner.MaxRedeliveryDelay;
 

@@ -983,10 +983,12 @@ public class MessageQueueTests
 
         public List<int> SendBatchSizes { get; } = new();
         public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
-        public OrderingGuarantee Ordering => OrderingGuarantee.Fifo;
         public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
         public int? MaxBatchSize { get; }
         public long? MaxMessageBytes { get; }
+
+        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+            new() { Ordering = OrderingGuarantee.Fifo, MaxBatchSize = MaxBatchSize, MaxMessageBytes = MaxMessageBytes };
 
         public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
@@ -1003,7 +1005,7 @@ public class MessageQueueTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ISupportsDelayedDelivery
+    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ITransportInfo
     {
         private readonly Queue<TransportEntry> _entries = new();
 
@@ -1015,6 +1017,12 @@ public class MessageQueueTests
         public TimeSpan? MaxDeliveryDelay { get; }
         public int SendCount { get; private set; }
         public TransportSendOptions? LastSendOptions { get; private set; }
+
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
+
+        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+            new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
         public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
