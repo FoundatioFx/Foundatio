@@ -52,8 +52,6 @@ public sealed record TransportSendOptions
 {
     public MessagePriority Priority { get; init; } = MessagePriority.Normal;
     public DateTimeOffset? DeliverAt { get; init; }
-    public string? DeduplicationId { get; init; }
-    public string? PartitionKey { get; init; }
 
     /// <summary>
     /// The role of the destination being sent to. Lets a transport route the send without inferring (for example, a

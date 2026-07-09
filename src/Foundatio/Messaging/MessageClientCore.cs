@@ -40,7 +40,6 @@ internal sealed record MessageEnvelopeOptions
     public DateTimeOffset? DeliverAt { get; init; }
     public TimeSpan? TimeToLive { get; init; }
     public string? CorrelationId { get; init; }
-    public string? DeduplicationId { get; init; }
     public MessageHeaders? Headers { get; init; }
 }
 
@@ -114,7 +113,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         ValidateCapabilities(options.Priority, options.TimeToLive);
 
         var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
-        string messageId = options.DeduplicationId ?? Guid.NewGuid().ToString("N");
+        string messageId = Guid.NewGuid().ToString("N");
         var transportMessage = CreateTransportMessage(message, messageType, options, messageId);
 
         if (ensureDestination is not null)
@@ -136,15 +135,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         var sendOptions = BuildSendOptions(options) with { DestinationRole = RoleFor(kind) };
         var grouped = new Dictionary<string, List<TransportMessage>>(StringComparer.Ordinal);
-        int index = 0;
 
         foreach (var message in messages)
         {
             ArgumentNullException.ThrowIfNull(message);
             Type messageType = declaredType ?? message.GetType();
             string destination = resolveDestination(messageType);
-            string? messageId = options.DeduplicationId is null ? null : $"{options.DeduplicationId}:{index}";
-            index++;
 
             if (!grouped.TryGetValue(destination, out var transportMessages))
             {
@@ -152,7 +148,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 grouped.Add(destination, transportMessages);
             }
 
-            transportMessages.Add(CreateTransportMessage(message, messageType, options, messageId));
+            transportMessages.Add(CreateTransportMessage(message, messageType, options, messageId: null));
         }
 
         foreach (var group in grouped)
@@ -595,8 +591,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return new TransportSendOptions
         {
             Priority = options.Priority,
-            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? _timeProvider.GetUtcNow().Add(delay) : null),
-            DeduplicationId = options.DeduplicationId
+            DeliverAt = options.DeliverAt ?? (options.Delay is { } delay ? _timeProvider.GetUtcNow().Add(delay) : null)
         };
     }
 
