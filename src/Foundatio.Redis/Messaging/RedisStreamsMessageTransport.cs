@@ -51,11 +51,13 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         _consumer = !String.IsNullOrEmpty(options.ConsumerName) ? options.ConsumerName : $"c-{Guid.NewGuid():N}"[..16];
     }
 
+    // Streams append FIFO; there is no native priority, per-message expiration, or delayed delivery (delays route
+    // through the runtime-store fallback), and no broker-imposed size or batch limits.
+    private static readonly TransportCapabilities _capabilities = new() { Ordering = OrderingGuarantee.Fifo };
+
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
-    public OrderingGuarantee Ordering => OrderingGuarantee.Fifo;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
-    public int? MaxBatchSize => null;
-    public long? MaxMessageBytes => null;
+    public TransportCapabilities GetCapabilities(DestinationRole role) => _capabilities;
     public TimeSpan? MaxRedeliveryDelay => null; // lease is tracked in Redis, so any delay is honored
     public TimeSpan? MaxVisibilityTimeout => null;
 
@@ -64,6 +66,12 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ThrowIfDisposed();
         ArgumentException.ThrowIfNullOrEmpty(destination);
         ArgumentNullException.ThrowIfNull(messages);
+
+        // Streams have no native delayed delivery; the core routes delayed sends through the runtime-store fallback
+        // (no DelayedDelivery capability is advertised), so a future DeliverAt reaching here is a contract violation —
+        // refuse loudly rather than deliver immediately and silently drop the delay.
+        if (options.DeliverAt is { } deliverAt && deliverAt > _timeProvider.GetUtcNow())
+            throw new NotSupportedException($"Transport \"{nameof(RedisStreamsMessageTransport)}\" does not support native delayed delivery. Register a job runtime store so delayed sends use the scheduled-dispatch fallback.");
 
         // The stream IS the queue/topic; subscriptions read it through their own group. The caller-stated role picks
         // the stream namespace so a queue and a topic sharing a route name never cross-deliver.

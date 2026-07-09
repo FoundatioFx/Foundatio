@@ -10,9 +10,18 @@ using Foundatio.Utility;
 
 namespace Foundatio.Messaging;
 
-public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsPriority, ISupportsExpiration, ISupportsProvisioning, ITransportInfo
+public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsProvisioning, ITransportInfo
 {
     private static readonly TimeSpan _defaultLockRenewal = TimeSpan.FromMinutes(1);
+
+    // Priority and expiration are honored on every role; there is no native delayed delivery (delays route through
+    // the runtime-store fallback) and no broker-imposed size or batch limits.
+    private static readonly TransportCapabilities _capabilities = new()
+    {
+        Priority = true,
+        Expiration = true,
+        Ordering = OrderingGuarantee.Fifo
+    };
 
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles = new HashSet<DestinationRole>
     {
@@ -36,10 +45,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     }
 
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
-    public OrderingGuarantee Ordering => OrderingGuarantee.Fifo;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
-    public int? MaxBatchSize => null;
-    public long? MaxMessageBytes => null;
+
+    public TransportCapabilities GetCapabilities(DestinationRole role) => _capabilities;
 
     // The in-memory transport has no broker-imposed ceiling on visibility or redelivery delay.
     public TimeSpan? MaxVisibilityTimeout => null;

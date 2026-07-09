@@ -348,6 +348,33 @@ public class PubSubTests
     }
 
 
+    [Fact]
+    public async Task PublishAsync_WithDelay_OnTopicWithoutNativeDelay_RoutesThroughRuntimeStoreAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // The AWS SQS/SNS shape: queues honor a native delay (15-minute cap) but topics have none. A delayed publish
+        // within the QUEUE ceiling must still route through the runtime store — deciding by transport-wide capability
+        // would take the native path and the broker would silently drop the delay.
+        var store = new InMemoryJobRuntimeStore();
+        await using var transport = new RoleSplitDelayTransport(queueMaxDelay: TimeSpan.FromMinutes(15));
+        await using var pubSub = new MessageBus(transport, new MessageBusOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
+
+        await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new MessagePublishOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+
+        Assert.Equal(0, transport.SendCount);
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(10), cancellationToken: cancellationToken));
+        Assert.Equal(1, transport.SendCount);
+        Assert.Equal(DestinationRole.Topic, transport.LastSendOptions?.DestinationRole);
+        Assert.Null(transport.LastSendOptions?.DeliverAt); // the store dispatches it as due; the delay is spent, not forwarded
+
+        // A delayed QUEUE send within the same transport's queue ceiling still uses the native path.
+        await pubSub.SendAsync(new PreviewEvent { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+        Assert.Equal(2, transport.SendCount);
+        Assert.NotNull(transport.LastSendOptions?.DeliverAt);
+    }
+
     private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, long expected, CancellationToken cancellationToken)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
@@ -369,6 +396,47 @@ public class PubSubTests
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
         return new JobScheduleProcessor(new InMemoryJobScheduler(), store, worker, nodeId: "node-a", transport: transport);
+    }
+
+    // Mirrors AWS SQS/SNS: native delayed delivery on queues only. Topic sends with a future DeliverAt throw, so a
+    // silent delay drop cannot hide.
+    private sealed class RoleSplitDelayTransport : IMessageTransport, ISupportsPull, ITransportInfo
+    {
+        private readonly TimeSpan _queueMaxDelay;
+
+        public RoleSplitDelayTransport(TimeSpan queueMaxDelay) => _queueMaxDelay = queueMaxDelay;
+
+        public int SendCount { get; private set; }
+        public TransportSendOptions? LastSendOptions { get; private set; }
+
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public IReadOnlySet<DestinationRole> SupportedRoles =>
+            new HashSet<DestinationRole> { DestinationRole.Queue, DestinationRole.Topic, DestinationRole.Subscription };
+
+        public TransportCapabilities GetCapabilities(DestinationRole role) => role == DestinationRole.Topic
+            ? TransportCapabilities.None
+            : new TransportCapabilities { DelayedDelivery = true, MaxDeliveryDelay = _queueMaxDelay };
+
+        public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            if (options.DestinationRole == DestinationRole.Topic && options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
+                throw new NotSupportedException("Topics have no native delayed delivery.");
+
+            SendCount += messages.Count;
+            LastSendOptions = options;
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+                items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N") };
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(string source, ReceiveRequest request, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<TransportEntry>>([]);
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
     private interface IGroupedEvent

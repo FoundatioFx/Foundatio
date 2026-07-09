@@ -12,7 +12,7 @@ namespace Foundatio.Redis.Tests;
 /// <summary>
 /// End-to-end tests that wire the real messaging core / CRON scheduler on top of the Redis <see cref="IJobRuntimeStore"/>
 /// and exercise the two paths the store exists to support but that the primitive-level conformance suite does not cover:
-/// (1) a delayed send whose delay exceeds the transport's <see cref="ISupportsDelayedDelivery.MaxDeliveryDelay"/> being
+/// (1) a delayed send whose delay exceeds the transport's <see cref="TransportCapabilities.MaxDeliveryDelay"/> being
 /// durably stored in Redis and drained by the dispatch pump when due, and (2) CRON occurrences being materialized, run,
 /// retried/dead-lettered, and stale-reclaimed through Redis.
 ///
@@ -242,7 +242,7 @@ public class RedisJobStoreIntegrationTests
 
     // Minimal pull transport with a configurable native delayed-delivery ceiling, so a delay beyond the cap is forced
     // through the runtime store (mirrors the fixture used by the in-memory MessageBus tests).
-    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ISupportsDelayedDelivery
+    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ITransportInfo
     {
         private readonly Queue<TransportEntry> _entries = new();
 
@@ -251,6 +251,12 @@ public class RedisJobStoreIntegrationTests
         public TimeSpan? MaxDeliveryDelay { get; }
         public int SendCount { get; private set; }
         public TransportSendOptions? LastSendOptions { get; private set; }
+
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
+
+        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+            new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
         public Task<SendResult> SendAsync(string destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {
