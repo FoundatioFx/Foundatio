@@ -815,8 +815,9 @@ public sealed class JobWorker : IJobWorker
     private readonly string _nodeId;
     private readonly TimeSpan _lease;
     private readonly TimeSpan _cancellationPollInterval;
+    private readonly int _maxConcurrency;
 
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null, ISerializer? serializer = null)
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null, ISerializer? serializer = null, int maxConcurrency = 1)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -825,6 +826,10 @@ public sealed class JobWorker : IJobWorker
         _serializer = serializer ?? DefaultSerializer.Instance;
         _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
         _lease = lease ?? DefaultLease;
+
+        // Default 1 preserves per-node ordering and today's behavior; raise for I/O-bound jobs. Each in-flight job
+        // still gets its own DI scope, lease renewal, and cancellation watcher.
+        _maxConcurrency = Math.Max(1, maxConcurrency);
 
         // Cooperative cancellation is observed by polling the runtime store. The default is intentionally
         // conservative (one poll per second per running job) so a real store isn't hammered when many jobs run
@@ -843,13 +848,42 @@ public sealed class JobWorker : IJobWorker
             ExcludeOccurrences = true
         }, cancellationToken).ConfigureAwait(false);
 
-        int completed = 0;
-        foreach (var state in queued)
+        if (_maxConcurrency <= 1)
         {
-            if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
-                completed++;
+            int sequentialCompleted = 0;
+            foreach (var state in queued)
+            {
+                if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
+                    sequentialCompleted++;
+            }
+
+            return sequentialCompleted;
         }
 
+        // Bounded pool: at most _maxConcurrency jobs in flight; a slot frees the moment a job settles, so one slow
+        // job never idles the rest of the batch. Claims are TryTransition-guarded, so concurrency cannot double-run.
+        int completed = 0;
+        using var slots = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
+        var inFlight = new List<Task>(queued.Count);
+
+        foreach (var state in queued)
+        {
+            await slots.WaitAsync(cancellationToken).ConfigureAwait(false);
+            inFlight.Add(Task.Run(async () =>
+            {
+                try
+                {
+                    if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
+                        Interlocked.Increment(ref completed);
+                }
+                finally
+                {
+                    slots.Release();
+                }
+            }, CancellationToken.None));
+        }
+
+        await Task.WhenAll(inFlight).ConfigureAwait(false);
         return completed;
     }
 
@@ -931,13 +965,12 @@ public sealed class JobWorker : IJobWorker
         try
         {
             var jobType = ResolveJobType(state);
-            var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
 
             // Hand the job its execution context (identity, attempt, typed payload, progress, heartbeat, cancellation).
             // The store was already incremented to this attempt by the Queued -> Processing transition above.
             var context = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease, state.Payload, state.PayloadType, _serializer);
 
-            var result = await job.TryRunAsync(context).ConfigureAwait(false);
+            var result = await ExecuteJobAsync(jobType, context).ConfigureAwait(false);
             var completedAt = _timeProvider.GetUtcNow();
 
             if (result.IsCancelled)
@@ -995,6 +1028,22 @@ public sealed class JobWorker : IJobWorker
             JobInstruments.RunTime.Record((failedAt - now).TotalMilliseconds, jobTag);
             throw;
         }
+    }
+
+    // Every execution gets its own async DI scope, owned for exactly the run: scoped services (DbContexts, units of
+    // work) resolve per run and are disposed when it ends, instead of silently resolving as effective singletons from
+    // the root container. A bare provider without scope support (custom IServiceProvider) runs unscoped.
+    private async Task<JobResult> ExecuteJobAsync(Type jobType, JobExecutionContext context)
+    {
+        if (_serviceProvider.GetService(typeof(IServiceScopeFactory)) is IServiceScopeFactory scopeFactory)
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(scope.ServiceProvider, jobType);
+            return await job.TryRunAsync(context).ConfigureAwait(false);
+        }
+
+        var unscoped = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
+        return await unscoped.TryRunAsync(context).ConfigureAwait(false);
     }
 
     private Type ResolveJobType(JobState state)

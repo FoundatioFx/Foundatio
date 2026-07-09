@@ -365,6 +365,113 @@ public class JobRuntimeTests
         Assert.Contains("without arguments", state.Error);
     }
 
+    [Fact]
+    public async Task RunJob_ResolvesScopedServicesPerExecutionAndDisposesThemAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var tracker = new ScopedLifetimeTracker();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(tracker)
+            .AddScoped<ScopedDependency>()
+            .AddTransient<ScopedConsumingJob>()
+            .BuildServiceProvider();
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+
+        var first = await client.EnqueueAsync<ScopedConsumingJob>(cancellationToken: cancellationToken);
+        var second = await client.EnqueueAsync<ScopedConsumingJob>(cancellationToken: cancellationToken);
+        Assert.True(await worker.RunAsync(first.JobId, cancellationToken));
+        Assert.True(await worker.RunAsync(second.JobId, cancellationToken));
+
+        // Two runs -> two scoped instances (not one root-container singleton), each disposed when its run ended.
+        Assert.Equal(2, tracker.Created);
+        Assert.Equal(2, tracker.Disposed);
+    }
+
+    [Fact]
+    public async Task RunQueuedAsync_WithMaxConcurrency_RespectsCapAndRunsInParallelAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var gauge = new ConcurrencyGauge();
+        await using var serviceProvider = new ServiceCollection()
+            .AddSingleton(gauge)
+            .BuildServiceProvider();
+        var client = new JobClient(store);
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", maxConcurrency: 2);
+
+        for (int i = 0; i < 6; i++)
+            await client.EnqueueAsync<ConcurrencyProbeJob>(cancellationToken: cancellationToken);
+
+        Assert.Equal(6, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
+        Assert.True(gauge.MaxObserved <= 2, $"expected at most 2 in-flight jobs, observed {gauge.MaxObserved}");
+        Assert.True(gauge.MaxObserved > 1, "expected the pool to actually run jobs in parallel");
+    }
+
+    private sealed class ScopedLifetimeTracker
+    {
+        private int _created;
+        private int _disposed;
+        public int Created => Volatile.Read(ref _created);
+        public int Disposed => Volatile.Read(ref _disposed);
+        public void RecordCreated() => Interlocked.Increment(ref _created);
+        public void RecordDisposed() => Interlocked.Increment(ref _disposed);
+    }
+
+    private sealed class ScopedDependency : IDisposable
+    {
+        private readonly ScopedLifetimeTracker _tracker;
+
+        public ScopedDependency(ScopedLifetimeTracker tracker)
+        {
+            _tracker = tracker;
+            _tracker.RecordCreated();
+        }
+
+        public void Dispose() => _tracker.RecordDisposed();
+    }
+
+    private sealed class ScopedConsumingJob : IJob
+    {
+        // The dependency's usefulness is its lifetime tracking; resolving it is the test.
+        public ScopedConsumingJob(ScopedDependency dependency) => _ = dependency;
+
+        public Task<JobResult> RunAsync(JobExecutionContext context) => Task.FromResult(JobResult.Success);
+    }
+
+    private sealed class ConcurrencyGauge
+    {
+        private int _inFlight;
+        private int _maxObserved;
+
+        public int MaxObserved => Volatile.Read(ref _maxObserved);
+
+        public async Task TrackAsync()
+        {
+            int current = Interlocked.Increment(ref _inFlight);
+            int max;
+            while (current > (max = Volatile.Read(ref _maxObserved)))
+                Interlocked.CompareExchange(ref _maxObserved, current, max);
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+            Interlocked.Decrement(ref _inFlight);
+        }
+    }
+
+    private sealed class ConcurrencyProbeJob : IJob
+    {
+        private readonly ConcurrencyGauge _gauge;
+
+        public ConcurrencyProbeJob(ConcurrencyGauge gauge) => _gauge = gauge;
+
+        public async Task<JobResult> RunAsync(JobExecutionContext context)
+        {
+            await _gauge.TrackAsync();
+            return JobResult.Success;
+        }
+    }
+
     private sealed class ResizeArgs
     {
         public string? Path { get; set; }

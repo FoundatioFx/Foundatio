@@ -247,14 +247,22 @@ public sealed class JobScheduleProcessor
         var dispatches = await _store.ClaimDueDispatchesAsync(utcNow, limit, _nodeId, lease ?? DefaultLease, cancellationToken).ConfigureAwait(false);
         int completed = 0;
 
+        // Materialize delayed/scheduled MESSAGES before running any job occurrence: message dispatch is cheap and
+        // latency-sensitive (it is the messaging delayed-delivery fallback), so it must never wait behind a long job
+        // run that happened to be claimed earlier in the same batch.
         foreach (var dispatch in dispatches)
         {
             if (dispatch.Kind is ScheduledDispatchKind.QueueMessage or ScheduledDispatchKind.PubSubMessage)
             {
                 await MaterializeMessageDispatchAsync(dispatch, cancellationToken).ConfigureAwait(false);
                 completed++;
-                continue;
             }
+        }
+
+        foreach (var dispatch in dispatches)
+        {
+            if (dispatch.Kind is ScheduledDispatchKind.QueueMessage or ScheduledDispatchKind.PubSubMessage)
+                continue;
 
             if (dispatch.Kind != ScheduledDispatchKind.JobOccurrence)
             {
