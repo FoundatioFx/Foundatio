@@ -18,7 +18,6 @@ public sealed record MessageSendOptions
     public DateTimeOffset? DeliverAt { get; init; }
     public TimeSpan? TimeToLive { get; init; }
     public string? CorrelationId { get; init; }
-    public string? DeduplicationId { get; init; }
     /// <summary>Overrides the routed destination for this send.</summary>
     public string? Destination { get; init; }
     public MessageHeaders? Headers { get; init; }
@@ -31,7 +30,6 @@ public sealed record MessagePublishOptions
     public DateTimeOffset? DeliverAt { get; init; }
     public TimeSpan? TimeToLive { get; init; }
     public string? CorrelationId { get; init; }
-    public string? DeduplicationId { get; init; }
     /// <summary>Overrides the routed topic for this publish.</summary>
     public string? Topic { get; init; }
     public MessageHeaders? Headers { get; init; }
@@ -423,7 +421,6 @@ public sealed class MessageBus : IMessageBus
             DeliverAt = options.DeliverAt,
             TimeToLive = options.TimeToLive,
             CorrelationId = options.CorrelationId,
-            DeduplicationId = options.DeduplicationId,
             Headers = options.Headers
         };
     }
@@ -437,7 +434,6 @@ public sealed class MessageBus : IMessageBus
             DeliverAt = options.DeliverAt,
             TimeToLive = options.TimeToLive,
             CorrelationId = options.CorrelationId,
-            DeduplicationId = options.DeduplicationId,
             Headers = options.Headers
         };
     }
