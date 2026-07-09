@@ -28,6 +28,12 @@ public class JobRuntimePumpOptions
 
     /// <summary>Maximum processing attempts for an ad-hoc job before a stale (lease-expired) instance is dead-lettered. Default 3.</summary>
     public int MaxJobAttempts { get; set; } = 3;
+
+    /// <summary>
+    /// Maximum queued jobs the worker executes concurrently per node. Default 1, which preserves per-node run
+    /// ordering; raise it for I/O-bound jobs. Every in-flight job gets its own DI scope, lease, and cancellation watcher.
+    /// </summary>
+    public int WorkerConcurrency { get; set; } = 1;
 }
 
 /// <summary>
@@ -85,7 +91,14 @@ public class JobRuntimePumpService : BackgroundService
             return;
         }
 
-        _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize})", _options.PollInterval, _options.BatchSize);
+        _logger.LogInformation("Job runtime pump starting (poll interval {PollInterval}, batch size {BatchSize}, worker concurrency {WorkerConcurrency})", _options.PollInterval, _options.BatchSize, _options.WorkerConcurrency);
+
+        // Execution (dispatching due work and running jobs) is an overlapped pass: the scheduling stage below keeps
+        // its cadence every poll even while a long job runs, so CRON materialization and the messaging delayed-
+        // delivery fallback are never head-of-line blocked by job duration. At most one pass is in flight; if the
+        // prior pass is still running when the loop comes around, this tick only materializes. Overlap-adjacent races
+        // are safe: dispatch claims are leased and job claims are TryTransition-guarded, so nothing double-runs.
+        var executionPass = Task.CompletedTask;
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -96,15 +109,8 @@ public class JobRuntimePumpService : BackgroundService
                 // Materialize CRON occurrences due within the misfire window (deduped, idempotent).
                 await _processor.EnqueueDueOccurrencesAsync(now, stoppingToken).AnyContext();
 
-                // Claim and run due dispatches: CRON occurrences plus delayed queue/pub-sub messages, recovering
-                // occurrences whose processing lease expired and applying retry/dead-letter.
-                await _processor.RunDueOccurrencesAsync(now, _options.BatchSize, lease: null, stoppingToken).AnyContext();
-
-                // Recover ad-hoc (non-CRON) jobs whose processing lease expired (a worker crash mid-run).
-                await _worker.RecoverStaleAsync(_options.MaxJobAttempts, _options.BatchSize, stoppingToken).AnyContext();
-
-                // Run jobs submitted via IJobClient sitting in the Queued state.
-                await _worker.RunQueuedAsync(_options.BatchSize, stoppingToken).AnyContext();
+                if (executionPass.IsCompleted)
+                    executionPass = Task.Run(() => RunExecutionPassAsync(now, stoppingToken), CancellationToken.None);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -125,6 +131,36 @@ public class JobRuntimePumpService : BackgroundService
             }
         }
 
+        // Drain the in-flight pass so shutdown does not abandon running jobs mid-settlement.
+        try
+        {
+            await executionPass.AnyContext();
+        }
+        catch (OperationCanceledException) { }
+
         _logger.LogInformation("Job runtime pump stopped");
+    }
+
+    private async Task RunExecutionPassAsync(DateTimeOffset now, CancellationToken stoppingToken)
+    {
+        try
+        {
+            // Claim and run due dispatches: delayed queue/pub-sub messages first, then CRON occurrences, recovering
+            // occurrences whose processing lease expired and applying retry/dead-letter.
+            await _processor.RunDueOccurrencesAsync(now, _options.BatchSize, lease: null, stoppingToken).AnyContext();
+
+            // Recover ad-hoc (non-CRON) jobs whose processing lease expired (a worker crash mid-run).
+            await _worker.RecoverStaleAsync(_options.MaxJobAttempts, _options.BatchSize, stoppingToken).AnyContext();
+
+            // Run jobs submitted via IJobClient sitting in the Queued state.
+            await _worker.RunQueuedAsync(_options.BatchSize, stoppingToken).AnyContext();
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error running job runtime execution pass: {Message}", ex.Message);
+        }
     }
 }
