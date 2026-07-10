@@ -126,7 +126,8 @@ public sealed class MessageSubscriptionOptions
     /// <summary>
     /// Consumer identity. Subscriptions sharing a key on the same channel form one consumer group and compete;
     /// defaults to a per-channel key derived from the route. Subscriptions sharing a key must configure identical
-    /// failure policies — only the presence of a backoff/DeadLetterWhen is verified, not the delegate itself.
+    /// failure policies — the backoff/DeadLetterWhen DELEGATES are compared by identity, so share the same delegate
+    /// instances (a lambda recreated per subscription will be rejected as a conflicting registration).
     /// </summary>
     public string? Key { get; set; }
 

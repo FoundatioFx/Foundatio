@@ -306,6 +306,32 @@ public class PubSubTests
     }
 
     [Fact]
+    public async Task SubscribeAsync_WithSameKeyAndDifferentFailurePolicy_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var pubSub = new MessageBus(new InMemoryMessageTransport());
+        Func<IMessageContext<PreviewEvent>, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
+
+        await using var first = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
+        {
+            Subscription = "same-key",
+            Key = "shared",
+            DeadLetterWhen = static ex => ex is InvalidOperationException
+        }, cancellationToken);
+
+        // Shared-key subscriptions form ONE competing group; members with different retry/dead-letter LOGIC would
+        // settle the same message differently depending on who received it, so a divergent policy must be rejected —
+        // by delegate identity, not by mere has-a-policy presence.
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
+            {
+                Subscription = "same-key",
+                Key = "shared",
+                DeadLetterWhen = static ex => ex is ArgumentException
+            }, cancellationToken));
+    }
+
+    [Fact]
     public async Task SubscribeAsync_WithGroupedTopicAndSubscriptionIdentity_ReceivesRawMessagesAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;

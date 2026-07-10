@@ -1259,8 +1259,8 @@ internal sealed record MessageListenerRegistration
     public required AckMode AckMode { get; init; }
     public required int MaxConcurrency { get; init; }
     public required int? MaxAttempts { get; init; }
-    public required bool HasRedeliveryBackoff { get; init; }
-    public required bool HasDeadLetterWhen { get; init; }
+    public required Func<int, TimeSpan>? RedeliveryBackoff { get; init; }
+    public required Func<Exception, bool>? DeadLetterWhen { get; init; }
 
     public static MessageListenerRegistration Create(Delegate handler, ListenerConfig config)
     {
@@ -1272,20 +1272,24 @@ internal sealed record MessageListenerRegistration
             AckMode = config.AckMode,
             MaxConcurrency = Math.Max(1, config.MaxConcurrency),
             MaxAttempts = config.MaxAttempts,
-            HasRedeliveryBackoff = config.RedeliveryBackoff is not null,
-            HasDeadLetterWhen = config.DeadLetterWhen is not null
+            RedeliveryBackoff = config.RedeliveryBackoff,
+            DeadLetterWhen = config.DeadLetterWhen
         };
     }
 
     public bool Matches(MessageListenerRegistration other)
     {
+        // Failure policies are compared by delegate identity, not mere presence: subscriptions sharing a consumer Key
+        // form ONE competing group, and two members whose retry/dead-letter LOGIC differs would settle the same
+        // message differently depending on which member happened to receive it. Callers sharing a Key must share the
+        // actual delegate instances.
         return MessageType == other.MessageType
             && Source == other.Source
             && Handler == other.Handler
             && AckMode == other.AckMode
             && MaxConcurrency == other.MaxConcurrency
             && MaxAttempts == other.MaxAttempts
-            && HasRedeliveryBackoff == other.HasRedeliveryBackoff
-            && HasDeadLetterWhen == other.HasDeadLetterWhen;
+            && Equals(RedeliveryBackoff, other.RedeliveryBackoff)
+            && Equals(DeadLetterWhen, other.DeadLetterWhen);
     }
 }
