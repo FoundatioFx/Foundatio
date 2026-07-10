@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
+using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Foundatio.Jobs;
@@ -959,8 +960,12 @@ public sealed class JobWorker : IJobWorker
         JobInstruments.Started.Add(1, jobTag);
 
         using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using var cancellationWatcher = WatchCancellation(state.JobId, linkedCancellationTokenSource);
-        using var leaseRenewer = RenewLeasePeriodically(state.JobId, linkedCancellationTokenSource);
+
+        // Lease renewal and cancellation polling are supervised loops owned by this run — started here, stopped and
+        // awaited when the run ends — not fire-and-forget timers whose failures would vanish unobserved.
+        using var supervisionCancellationTokenSource = new CancellationTokenSource();
+        var leaseLoop = Task.Run(() => RunLeaseRenewalLoopAsync(state.JobId, linkedCancellationTokenSource, supervisionCancellationTokenSource.Token), CancellationToken.None);
+        var cancellationLoop = Task.Run(() => RunCancellationPollLoopAsync(state.JobId, linkedCancellationTokenSource, supervisionCancellationTokenSource.Token), CancellationToken.None);
 
         try
         {
@@ -1028,6 +1033,13 @@ public sealed class JobWorker : IJobWorker
             JobInstruments.RunTime.Record((failedAt - now).TotalMilliseconds, jobTag);
             throw;
         }
+        finally
+        {
+            // Stop and await the supervision loops so no renewal/poll outlives its run (and so their final state is
+            // observed rather than dropped on the floor). The loops never throw; they classify failures themselves.
+            await supervisionCancellationTokenSource.CancelAsync().ConfigureAwait(false);
+            await Task.WhenAll(leaseLoop, cancellationLoop).ConfigureAwait(false);
+        }
     }
 
     // Every execution gets its own async DI scope, owned for exactly the run: scoped services (DbContexts, units of
@@ -1061,47 +1073,78 @@ public sealed class JobWorker : IJobWorker
         }
     }
 
-    private IDisposable WatchCancellation(string jobId, CancellationTokenSource cancellationTokenSource)
-    {
-        return new Timer(_ => _ = PollCancellationAsync(jobId, cancellationTokenSource), null, _cancellationPollInterval, _cancellationPollInterval);
-    }
-
-    private IDisposable RenewLeasePeriodically(string jobId, CancellationTokenSource cancellationTokenSource)
+    // Lease renewal supervises its own failures. A clean "renewal denied" means the lease was lost to another node.
+    // Renewal that keeps THROWING (a store outage) is treated the same once the lease window passes without one
+    // success — the lease has lapsed on the broker's clock too, so another node may already have reclaimed the job,
+    // and letting this run continue would double-execute its side effects. Both paths cancel the run; the terminal
+    // transition (guarded by expectedNodeId) then cannot overwrite the new owner's state.
+    private async Task RunLeaseRenewalLoopAsync(string jobId, CancellationTokenSource jobCancellation, CancellationToken supervision)
     {
         // Renew well before the lease elapses so a slow-but-alive worker keeps ownership and is not reclaimed.
         var interval = TimeSpan.FromMilliseconds(Math.Max(250, _lease.TotalMilliseconds / 3));
-        return new Timer(_ => _ = RenewLeaseAsync(jobId, cancellationTokenSource), null, interval, interval);
+        long lastSuccessTimestamp = _timeProvider.GetTimestamp();
+
+        while (!supervision.IsCancellationRequested)
+        {
+            await _timeProvider.SafeDelay(interval, supervision).ConfigureAwait(false);
+            if (supervision.IsCancellationRequested)
+                return;
+
+            try
+            {
+                if (!await _store.RenewClaimAsync(jobId, _nodeId, _lease, CancellationToken.None).ConfigureAwait(false))
+                {
+                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
+                    return;
+                }
+
+                lastSuccessTimestamp = _timeProvider.GetTimestamp();
+            }
+            catch (Exception)
+            {
+                // Transient store failure: retry next tick — but never outlive the lease on hope.
+                if (_timeProvider.GetElapsedTime(lastSuccessTimestamp) >= _lease)
+                {
+                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
+                    return;
+                }
+            }
+        }
     }
 
-    private async Task RenewLeaseAsync(string jobId, CancellationTokenSource cancellationTokenSource)
+    // Cancellation polling keeps polling through store failures (a missed poll only delays cooperative cancellation,
+    // it cannot double-run anything), and stops when the run ends or cancellation is observed.
+    private async Task RunCancellationPollLoopAsync(string jobId, CancellationTokenSource jobCancellation, CancellationToken supervision)
     {
-        if (cancellationTokenSource.IsCancellationRequested)
-            return;
+        while (!supervision.IsCancellationRequested)
+        {
+            await _timeProvider.SafeDelay(_cancellationPollInterval, supervision).ConfigureAwait(false);
+            if (supervision.IsCancellationRequested)
+                return;
 
+            try
+            {
+                if (await _store.IsCancellationRequestedAsync(jobId, CancellationToken.None).ConfigureAwait(false))
+                {
+                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
+                    return;
+                }
+            }
+            catch (Exception)
+            {
+            }
+        }
+    }
+
+    private static async Task CancelRunAsync(CancellationTokenSource jobCancellation)
+    {
         try
         {
-            // If renewal fails the lease was lost to another node; cancel the run so this worker stops and
-            // its terminal transition (guarded by expectedNodeId) cannot overwrite the new owner's state.
-            if (!await _store.RenewClaimAsync(jobId, _nodeId, _lease, CancellationToken.None).ConfigureAwait(false))
-                await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
+            await jobCancellation.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {
-        }
-    }
-
-    private async Task PollCancellationAsync(string jobId, CancellationTokenSource cancellationTokenSource)
-    {
-        if (cancellationTokenSource.IsCancellationRequested)
-            return;
-
-        try
-        {
-            if (await _store.IsCancellationRequestedAsync(jobId, CancellationToken.None).ConfigureAwait(false))
-                await cancellationTokenSource.CancelAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
+            // The run already completed and disposed its token source; nothing left to cancel.
         }
     }
 }
