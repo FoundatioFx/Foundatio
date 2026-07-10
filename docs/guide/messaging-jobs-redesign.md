@@ -1,301 +1,224 @@
 # Messaging and Jobs Redesign
 
-The new messaging API is app-facing and type-driven. Queue, pub/sub, received-message, headers, options, and common message abstractions live under `Foundatio.Messaging`; folders may separate queue, pub/sub, and provider contracts, but application code should start with `IQueue` and `IPubSub`.
+The redesigned messaging API is one client — `IMessageBus` in `Foundatio.Messaging` — with two verbs. The caller's verb carries the delivery semantic, and handlers are registered without any topology decision:
 
-Provider-facing transport contracts such as `IMessageTransport`, `ISupportsPull`, `ISupportsPush`, and `ISupportsDeadLetter` are still public so external providers can implement them. They are infrastructure contracts, not the primary application surface.
+- `SendAsync` — a **command** / unit of work: exactly one handler instance across the fleet processes it (competing consumers).
+- `PublishAsync` — an **event**: every subscribing service receives one copy (a scaled service's instances compete for it), or every instance when the subscription opts into `PerInstance`.
+
+```csharp
+await bus.SendAsync(new ResizeImage(id));        // one handler instance, somewhere, does the work
+await bus.PublishAsync(new OrderSubmitted(id));  // every subscribing service hears about it
+```
+
+`SendBatchAsync` and `PublishBatchAsync` batch both verbs; the non-generic `IEnumerable<object>` overloads accept heterogeneous batches and group by resolved route. Per-operation options are `MessageSendOptions` and `MessagePublishOptions` (priority, delay/`DeliverAt`, TTL, correlation id, headers, and a `Destination`/`Topic` override as the escape hatch).
+
+The legacy publish/subscribe `IMessageBus` and job APIs remain shipped under the `Foundatio.Messaging.Legacy` and `Foundatio.Jobs.Legacy` namespaces while consumers migrate.
 
 ## The core owns behavior; transports stay simple
 
-The division of responsibility is deliberate: **the core owns behavior, transports stay thin.** A transport is bytes in, bytes out plus a few primitives — send, receive, complete, abandon, and (optionally) a dead-letter sink. Everything that defines *how messaging behaves* — serialization, content types, routing, multi-type dispatch, priority, back-pressure, tracing, metrics, and especially **retry and dead-lettering** — lives in the core and is therefore identical across every transport. A provider only advertises which primitives it supports through small capability interfaces (`ISupportsPull`, `ISupportsPush`, `ISupportsDeadLetter`, `ISupportsDelayedDelivery`, `ISupportsRedeliveryDelay`, …); it never owns policy.
+The division of responsibility is deliberate: **the core owns behavior, transports stay thin.** A transport is bytes in, bytes out plus a few primitives — `IMessageTransport` is `SendAsync`, `CompleteAsync`, `AbandonAsync`, and small opt-in operation interfaces (`ISupportsPull`, `ISupportsPush`, `ISupportsDeadLetter`, `ISupportsRedeliveryDelay`, `ISupportsVisibilityTimeout`, `ISupportsLockRenewal`, `ISupportsStats`, `ISupportsProvisioning`). Everything that defines *how messaging behaves* — serialization, routing, multi-type dispatch, settlement, scheduling, and especially **retry and dead-lettering** — lives in the core and is therefore identical across every transport. There is exactly one retry authority (the core), never a tug-of-war between core policy and a broker-native redrive policy.
 
-This keeps providers small and hard to get subtly wrong, and keeps behavior portable: code verified against the in-memory transport behaves the same on a real broker. It also avoids a split-brain retry model — there is exactly one authority (the core), never a tug-of-war between the core's `MaxAttempts` and a broker-native redrive policy. See [Retry and dead-lettering](#retry-and-dead-lettering).
+Every transport API takes the same canonical identity: `DestinationAddress` (`Name`, `Role` — `Queue`/`Topic`/`Subscription`/`Binding` — and, for subscriptions, the owning `Topic`; created via `ForQueue`/`ForTopic`/`ForSubscription`). `Key` is its opaque string form (`"{topic}/{name}"` for subscriptions), so the same logical destination can never be spelled two ways on the send path versus the provisioning path.
+
+Facts a transport advertises are **role-aware**: the core asks `ITransportInfo.GetCapabilities(DestinationRole)` and gets a `TransportCapabilities` record (`DelayedDelivery`, `MaxDeliveryDelay`, `Priority`, `Expiration`, `Ordering`, `MaxBatchSize`, `MaxMessageBytes`). Capabilities genuinely differ by role on real brokers — the AWS transport's queue role has a native 15-minute `MaxDeliveryDelay` (SQS `DelaySeconds`) while its topic role has no native delay at all. Anything not advertised is treated as unsupported: the core validates, falls back to the runtime store, or fails loudly — a broker never silently drops a requested behavior.
 
 ## Setup
 
-Register the in-memory messaging transport, central routing policy, and durable job runtime through DI:
-
 ```csharp
 services.AddFoundatio()
-    .Messaging.ConfigureRouting(r => r
-        .MapQueue<OrderSubmitted>("orders")
-        .MapTopic("order-events", typeof(IOrderEvent))
-        .UseSubscriptionIdentity("billing-service"))
-    .UseInMemory()
+    .Messaging
+        .ConfigureRouting(r => r
+            .UseServiceIdentity("billing")
+            .MapQueue<OrderSubmitted>("orders")
+            .MapTopic("order-events", typeof(IOrderEvent)))
+        .ConfigureRetry(p => p with { MaxAttempts = 5 })
+        .ConfigureTopology(TopologyMode.Ensure)
+        .RegisterMessageType<OrderSubmitted>("order.submitted")
+        .UseInMemory()
+    .Messaging.AddHandler<OrderSubmitted, SendConfirmationHandler>()
     .Jobs.UseInMemoryRuntime()
     .Jobs.Register<RebuildSearchIndexJob>("search.rebuild");
 ```
 
-Application code should depend on `Foundatio.Messaging.IQueue`, `IPubSub`, `IJobClient`, `IJobMonitor`, and `IJobWorker` instead of constructing `InMemoryMessageTransport`, `MessageQueue`, `PubSub`, or `JobClient` directly. Deployment or admin code can depend on `IMessageTopology` to inspect, create, or validate the destinations implied by routing configuration.
+Swap providers by swapping one line: `.Messaging.UseRedis()` (Redis Streams), `.Messaging.UseAws()` (SQS/SNS), `.Jobs.UseRedis()`, or `.Messaging.UseTransport(...)` / `.Jobs.UseRuntimeStore(...)` for anything custom. Application code depends on `IMessageBus`, `IJobClient`, and `IJobMonitor`; deployment or admin code can depend on `IMessageTopology`.
 
-## Queue
+`RegisterMessageType<T>(name)` gives a type a stable wire discriminator so payloads survive assembly/namespace moves; unregistered types fall back to `Type.FullName` (never `AssemblyQualifiedName`). `.Jobs.Register<TJob>(name)` does the same for persisted job types.
 
-The default queue model is send or receive this message type:
+## Handlers
 
-```csharp
-await queue.EnqueueAsync(new OrderSubmitted(id));
-
-IReceivedMessage<OrderSubmitted>? received = await queue.ReceiveAsync<OrderSubmitted>();
-```
-
-Destination and source are advanced operation overrides:
+Handlers are topology-free. A handler implements `IMessageHandler<T>` and is registered declaratively; it never decides queue-vs-topic — the sender's verb does:
 
 ```csharp
-await queue.EnqueueAsync(message, new QueueMessageOptions {
-    Destination = "orders-high-priority"
-});
+public class SendConfirmationHandler : IMessageHandler<OrderSubmitted>
+{
+    public Task HandleAsync(IMessageContext<OrderSubmitted> context, CancellationToken cancellationToken)
+        => _email.SendConfirmationAsync(context.Message.OrderId, cancellationToken);
+}
 
-IReceivedMessage<OrderSubmitted>? received = await queue.ReceiveAsync<OrderSubmitted>(new QueueReceiveOptions {
-    Source = "orders-high-priority"
-});
-```
-
-Grouped or default queues can be consumed through the raw envelope path:
-
-```csharp
-IReceivedMessage? received = await queue.ReceiveAsync(new QueueReceiveOptions {
-    RouteType = typeof(IOrderMessage)
-});
-
-await queue.EnqueueBatchAsync(new object[] {
-    new OrderSubmitted(id),
-    new OrderCancelled(id)
-});
-```
-
-Consumers return handles and do not block unexpectedly:
-
-```csharp
-await using IMessageConsumer consumer = await queue.StartConsumerAsync<OrderSubmitted>(HandleAsync);
-```
-
-Use `RunConsumerAsync` when the desired behavior is a blocking lifetime loop. Starting the same consumer key with the same handler and options is idempotent; starting the same key with conflicting handler/options throws.
-
-### Multiple message types on one destination
-
-Several message types can share a single destination. Start one typed consumer per type; they attach to a single underlying receive loop that dispatches each message to the consumer registered for its type (read from the `message.type` header):
-
-```csharp
-await using var submitted = await queue.StartConsumerAsync<OrderSubmitted>(HandleSubmittedAsync);
-await using var cancelled = await queue.StartConsumerAsync<OrderCancelled>(HandleCancelledAsync);
-// One loop on the shared destination. OrderSubmitted is dispatched to the first handler, OrderCancelled to the second.
-```
-
-Consumers that share a message type compete: each message is dispatched to one of them, round-robin. All consumers on one destination must agree on `MaxConcurrency` (it is a property of the shared loop). A message whose type has **no** registered consumer on this node is handled loudly — see [Unmatched message types](#unmatched-message-types).
-
-A consumer whose route type is an interface or base type is a **grouped** consumer and receives the concrete payload (assignable to that type), not raw bytes:
-
-```csharp
-await using var all = await queue.StartConsumerAsync<IOrderMessage>(HandleAnyAsync);
-// HandleAnyAsync receives IReceivedMessage<IOrderMessage> whose Message is the concrete OrderSubmitted / OrderCancelled.
-```
-
-The concrete type is resolved from the `message.type` header through `IMessageTypeRegistry` and deserialized as the actual payload type. The registry is the stable wire discriminator in both directions — register stable names for types that may move between assemblies/namespaces; unregistered types fall back to `Type.FullName` (never `AssemblyQualifiedName`):
-
-```csharp
 services.AddFoundatio()
-    .Messaging.RegisterMessageType<OrderSubmitted>("order.submitted");
-```
-
-The raw-envelope path (non-generic `ReceiveAsync(new QueueReceiveOptions { RouteType = ... })`) remains for callers that want the bytes without deserialization.
-
-## Pub/Sub
-
-Pub/sub follows the same type-driven publishing pattern:
-
-```csharp
-await pubsub.PublishAsync(new OrderSubmitted(id));
-
-await using IMessageSubscription subscription = await pubsub.SubscribeAsync<OrderSubmitted>(HandleAsync);
-```
-
-Topic routing and subscription identity are separate. The topic answers where the event is published. The subscription answers which logical service or consumer group receives it. Multiple instances using the same subscription compete on the same transport subscription; different subscriptions on the same topic receive fan-out copies:
-
-```csharp
-services.AddFoundatio()
-    .Messaging.ConfigureRouting(r => r
-        .MapTopic("order-events", typeof(IOrderEvent))
-        .UseSubscriptionIdentity("billing-service"));
-```
-
-Advanced operation overrides remain available:
-
-```csharp
-await pubsub.PublishAsync(message, new PubSubMessageOptions {
-    Topic = "order-events-replay"
-});
-
-await using IMessageSubscription subscription = await pubsub.SubscribeAsync<OrderSubmitted>(
-    HandleAsync,
-    new PubSubSubscriptionOptions {
-        Topic = "order-events-replay",
-        Subscription = "billing-replay"
+    .Messaging.AddHandler<OrderSubmitted, SendConfirmationHandler>(o =>
+    {
+        o.MaxConcurrency = 4;
+        o.DeadLetterOn<ValidationException>();
     });
 ```
 
-`PubSubMessageOptions` mirrors queue send options where concepts overlap: priority, delay, TTL, correlation id, deduplication id, headers, and topic override. `PubSubSubscriptionOptions.Key` is only the local duplicate-listener key; `Subscription` is the transport consumer group identity. `PublishBatchAsync(IEnumerable<object>)` supports heterogeneous event batches and groups sends by resolved topic.
+Each message is dispatched to the handler in its own DI scope (scoped dependencies work), and a single auto-registered hosted service (`MessageHandlerHostedService`) starts every registered handler at app start and disposes them at shutdown. Throwing from `HandleAsync` triggers the core retry/dead-letter policy. Each handler class defaults to its own subscriber group (the `SubscriptionQualifier` is set to the handler type name), so every handler registered for an event type receives its own copy of each published message.
 
-## Routing
+For dynamic subscriptions, `IMessageBus.SubscribeAsync<T>(handler, options)` returns an `IMessageSubscription` handle (`Key`, `Destination`, `Topic`, `Subscription`, `Source`); disposing it detaches the handler.
 
-Default route precedence is:
+### Subscription options
+
+A subscription listens on the type's two delivery channels — sent commands and published events — and `MessageSubscriptionOptions` declares its intent:
+
+- **`Deliveries`** — `MessageDeliveries.Sent`, `Published`, or `Both` (default). A handler that only ever consumes commands (or only events) states that so no idle listener is wired — and so a queue-only or topic-only transport can serve it. The default `Both` quietly narrows to what the transport supports; explicitly requesting a single channel the transport cannot serve throws `NotSupportedException`.
+- **`Subscription`** — the subscriber-group identity for published messages. Defaults to the service identity, so all instances of a service share one subscription and compete. **`SubscriptionQualifier`** distinguishes groups within one service (`"{service-identity}.{qualifier}"`). **`PerInstance`** gives every running instance its own unique subscription (cache invalidation, config reload) and is mutually exclusive with `Subscription`.
+- **`MaxConcurrency`** — messages processed concurrently per instance. Default 1: the only default that preserves per-handler ordering, and each handler already gets its own concurrent stream (10 handlers = 10 parallel consumers). Raise it for I/O-bound, order-agnostic handlers.
+- **`MaxAttempts`**, **`RedeliveryBackoff`**, **`DeadLetterWhen`** — per-subscription retry overrides; null inherits the default `RetryPolicy`. **`DeadLetterOn<TException>()`** is the by-type shorthand for `DeadLetterWhen` and composes (call once per exception type).
+- **`AckMode`** — `Auto` (default) or `Manual`.
+- **`RouteType`**, **`Destination`**, **`Topic`** — grouped/interface consumption and per-subscription route overrides.
+- **`Key`** — consumer identity. Subscriptions sharing a `Key` on the same channel form one competing group and must configure identical failure policies; the backoff/`DeadLetterWhen` **delegates are compared by identity**, so share the same delegate instances — a lambda recreated per subscription is rejected as a conflicting registration.
+
+Delivery semantics are never invisible: each subscription logs its effective topology (destination, subscriber group, concurrency, retry posture) once at subscribe time.
+
+## Routing and topology
+
+`IMessageRouter` resolves the queue destination and topic for a message type. The default router's precedence:
 
 ```text
-operation override > explicit route map > interface/base-type map > MessageRouteAttribute > configured default/convention
+operation override > exact type map > interface/base-type map > MessageRouteAttribute > configured default > convention > kebab-cased type name
 ```
 
-`IMessageRouter` is shared by queues and pub/sub. Configure routes once with `MessageRoutingOptionsBuilder`:
+Configure routes once with `ConfigureRouting` (a `MessageRoutingOptionsBuilder`): `UseDefaultQueue`, `UseDefaultTopic`, `MapQueue<T>` / `MapQueue(destination, params Type[])`, `MapTopic<T>` / `MapTopic(topic, params Type[])`, `UseServiceIdentity`, `UseSubscriptionIdentity`, and `UseConvention`. `UseServiceIdentity` names the service (the default subscriber-group identity); when unset it falls back to the `FOUNDATIO_SUBSCRIPTION_ID` / `FOUNDATIO_SERVICE_ID` environment variables, then the kebab-cased app name.
 
-```csharp
-services.AddFoundatio()
-    .Messaging.ConfigureRouting(r => r
-        .UseDefaultQueue("all-work")
-        .UseDefaultTopic("all-events")
-        .MapQueue<OrderSubmitted>("orders")
-        .MapQueue("orders", typeof(OrderSubmitted), typeof(OrderCancelled))
-        .MapQueue("order-work", typeof(IOrderMessage))
-        .MapTopic("order-events", typeof(IOrderEvent))
-        .UseConvention(ctx => $"app-{ctx.MessageType.Name.ToLowerInvariant()}"));
-```
-
-`QueueMessageOptions.Destination`, `QueueReceiveOptions.Source`, `PubSubMessageOptions.Topic`, and `PubSubSubscriptionOptions.Topic`/`Subscription` are final escape hatches for one operation. Attribute routing remains available for type-local defaults, but central routing should be the normal path.
-
-Routing configuration is also the topology declaration source. `UseDefaultQueue`, `UseDefaultTopic`, `MapQueue`, and `MapTopic` declare the queue destinations or topics they name; `UseSubscriptionIdentity` declares subscriptions for configured topics. Operation-level overrides are intentionally not part of startup topology because they are exceptional one-off routes.
+**Routing configuration is also the topology declaration source.** `UseDefaultQueue`, `UseDefaultTopic`, `MapQueue`, and `MapTopic` declare the destinations they name, and setting a service/subscription identity declares the subscription on each configured topic — as `DestinationDeclaration` values carrying the *same* canonical `DestinationAddress` the runtime later sends to and receives from, so provisioning and runtime can never disagree on identity. Per-operation overrides are deliberately excluded: they are exceptional one-off routes.
 
 ```csharp
 IMessageTopology topology = provider.GetRequiredService<IMessageTopology>();
 IReadOnlyList<DestinationDeclaration> declarations = topology.GetDeclarations();
 await topology.EnsureAsync();   // deploy/admin process with create permissions
-await topology.ValidateAsync(); // app startup check without creating destinations
+await topology.ValidateAsync(); // check-only; throws naming what is missing
 ```
 
-## Delivery Settlement
+`TopologyMode` (via `ConfigureTopology`) governs how the client administers topology at runtime and at startup:
 
-Received messages settle with two verbs — the same for queue and pub/sub:
+- **`Ensure`** (default) — create missing destinations on first use, and the handler host ensures the declared topology before any handler starts consuming.
+- **`Validate`** — never create; verify each destination exists and throw when missing. Startup fails at boot instead of surfacing as runtime send errors.
+- **`None`** — no topology calls at all; everything is pre-provisioned out of band.
+
+The mode governs the core's provisioning calls; combine `Validate`/`None` with transport knobs such as `AwsMessageTransportOptions.AutoCreateDestinations = false` for a fully locked-down broker.
+
+## Delivery settlement
+
+Received messages surface as `IMessageContext` / `IMessageContext<T>` (id, body, headers, correlation id, priority, `Attempts`) and settle with two verbs:
 
 ```csharp
-await message.CompleteAsync();                                              // handled successfully
-await message.RejectAsync();                                               // retry, transport-timed redelivery
-await message.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromSeconds(30) }); // retry after a delay
-await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" });     // do not retry
-await message.RenewLockAsync();
+await context.CompleteAsync();                                                   // handled successfully
+await context.RejectAsync();                                                     // retry (redelivery)
+await context.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromSeconds(30) });
+await context.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation", Exception = ex });
+await context.RenewLockAsync();                                                  // long handler heartbeat
 ```
 
-`RejectAsync` replaces the separate abandon and dead-letter verbs. A non-terminal reject returns the message for redelivery (optionally after `RedeliveryDelay`); `Terminal = true` means "never redeliver" and routes the message to the dead-letter sink, falling back to a configured destination or a drop (see below).
+A non-terminal reject returns the message for redelivery (optionally after `RedeliveryDelay`); `Terminal = true` means "never redeliver" and routes the message to the dead-letter sink with the `Reason` and `Exception` forensics attached. `RejectOptions.BestEffortDelay` lets a delay the transport cannot honor degrade to immediate redelivery instead of failing (the core's own retry policy uses best-effort delays; an explicit caller delay defaults to strict).
 
-Auto-ack is the default: a handler that returns without settling is completed automatically, and a handler that throws is rejected according to the [retry policy](#retry-and-dead-lettering). Manual ack is opt-in with `AckMode.Manual` on the consumer options.
-
-Unsupported capabilities fail clearly with `NotSupportedException` or a validation exception — there are no silent no-ops for lock renewal, priority, expiration, or delayed delivery. Terminal reject is the one deliberate exception: a transport with no dead-letter sink does not throw, it drops the message (at-most-once for terminal messages), which is the honest behavior for an ack-less/broadcast transport.
+Auto-ack is the default: a handler that returns without settling is completed, and a handler that throws is rejected per the retry policy. Manual settlement is opt-in with `AckMode.Manual`.
 
 ## Retry and dead-lettering
 
-The core owns retry and dead-lettering, so behavior is identical on every transport (see [The core owns behavior](#the-core-owns-behavior-transports-stay-simple)). A transport only has to redeliver an abandoned message and, optionally, expose a dead-letter sink; the core decides how many times to retry, how long to wait between attempts, and when to give up. The broker's own delivery count is used as a crash-safe attempt counter, so the core owns the *policy* without owning durable retry *state*.
+The core owns retry and dead-lettering, so behavior is identical on every transport. A transport only redelivers abandoned messages and optionally exposes a dead-letter sink; the core decides how many times to retry, how long to wait, and when to give up — using the broker's own delivery count as the crash-safe attempt counter, so the core owns the *policy* without owning durable retry *state*.
 
-Configure a default policy and override it per consumer:
+The default `RetryPolicy`: `MaxAttempts` 5, and `RetryPolicy.DefaultBackoff` — an immediate first retry, then 10s/20s/30s (capped) with ±20% jitter, the delay shape mature messaging stacks converged on. Configure the default and override per subscription:
 
 ```csharp
 services.AddFoundatio()
-    .Messaging.ConfigureRetry(r => r with {
+    .Messaging.ConfigureRetry(p => p with
+    {
         MaxAttempts = 5,
         Backoff = attempt => TimeSpan.FromSeconds(Math.Min(30, Math.Pow(2, attempt))),
-        DeadLetterDestination = "orders-dead-letter"
+        DeadLetterWhen = ex => ex is ValidationException,   // unrecoverable: dead-letter immediately
+        DeadLetterDestination = "orders-dead-letter"        // null derives "{source}.deadletter"
     });
-
-await queue.StartConsumerAsync<OrderSubmitted>(HandleAsync, new QueueConsumerOptions {
-    MaxAttempts = 10 // per-consumer override; null inherits the default policy
-});
 ```
 
-When a handler throws, the message is retried (abandoned for redelivery, with the configured backoff) until `MaxAttempts` is reached, then dead-lettered. Where a dead-lettered message lands, in order of preference:
+Deserialization failures are always treated as unrecoverable. Where a dead-lettered message lands, in order of preference: the transport's native dead-letter sink (`ISupportsDeadLetter`), otherwise the configured or derived (`"{source}.deadletter"`) dead-letter destination written by the core. Dead-lettered messages carry forensics headers — `message.dead_letter.reason`, `.attempts`, `.exception_type`, `.exception_message`, `.exception_stack`, `.failed_at`, and `.original_destination` (`KnownHeaders.DeadLetter*`) — so a dead message is triageable with plain transport tooling, and `ISupportsDeadLetter.ReceiveDeadLetteredAsync` reads raw entries back (including poison payloads that never deserialized).
 
-1. the transport's native dead-letter sink, when it has one (`ISupportsDeadLetter`) — preserving native DLQ tooling;
-2. otherwise the configured `RetryPolicy.DeadLetterDestination`, which the core writes to directly (a normal queue on the same transport), recording the reason in the `message.dead_letter.reason` header;
-3. otherwise the message is dropped (at-most-once) — the honest outcome when there is nowhere durable to park it.
+We deliberately do **not** configure broker-native redrive policies (SQS `maxReceiveCount`, Azure Service Bus `MaxDeliveryCount`, RabbitMQ DLX): that would split authority between broker and core and make behavior transport-specific. A destination's structural creation knobs, if any, are limited to `DestinationDeclaration.ProviderArguments`.
 
-We deliberately do **not** configure broker-native redrive policies (SQS `maxReceiveCount`, Azure Service Bus `MaxDeliveryCount`, RabbitMQ DLX). That would split authority between the broker and the core and make behavior transport-specific. The core is always authoritative; transports stay simple. A destination's structural creation knobs, if any, are limited to `DestinationDeclaration.ProviderArguments`.
+### Delays and the runtime-store fallback
 
-### Delayed redelivery and capability bounds
-
-An explicit `RedeliveryDelay` (or a configured `Backoff`) is served natively when the transport supports it within its advertised limit — `ISupportsRedeliveryDelay.MaxRedeliveryDelay` and `ISupportsDelayedDelivery.MaxDeliveryDelay`. A delay longer than the broker can honor — for example beyond SQS's 15-minute delivery delay or 12-hour visibility window — is routed through the durable job runtime store instead of being silently truncated. If neither native support nor a runtime store is available, the operation fails loudly rather than dropping the delay.
+A send delay or redelivery backoff is served natively when the transport supports it within its advertised ceiling (`TransportCapabilities.MaxDeliveryDelay`, `ISupportsRedeliveryDelay.MaxRedeliveryDelay`). A delay the broker cannot honor — beyond SQS's 15-minute delivery delay, or any delayed publish on SNS — is parked in the durable runtime store instead of being silently truncated: `MessageBusOptions.RuntimeStore` takes an `IScheduledDispatchStore` (any `IJobRuntimeStore` satisfies it; the DI builder wires it automatically when a runtime store is configured), and the job runtime pump dispatches parked messages when due. If neither native support nor a store is available, the operation fails loudly rather than dropping the delay.
 
 ### Unmatched message types
 
-A message that arrives on a destination but whose type has no registered consumer on this node — for example a newer message type during a rolling deploy, before every node has been updated — is surfaced loudly rather than quietly swallowed. It increments the `foundatio.messaging.unhandled` metric and throws `UnhandledMessageTypeException`, isolated to that one message so the receive loop and the other type handlers keep running. The message is retried so a node that *does* handle the type can pick it up, and is finally dead-lettered as `"no-handler"` once `RetryPolicy.UnmatchedMaxAttempts` (default 50) is exhausted — so a genuinely orphaned type cannot loop forever.
+A message arriving on a shared destination whose type has no registered consumer on this node — a newer message type mid rolling-deploy, or a misconfiguration — is surfaced loudly: it increments the `foundatio.messaging.unhandled` metric and throws `UnhandledMessageTypeException`, isolated to that one message so the receive loop and the other type handlers keep running. It is retried so a node that *does* handle the type can pick it up, and finally dead-lettered as `"no-handler"` after `RetryPolicy.UnmatchedMaxAttempts` (default 50) — a genuinely orphaned type cannot loop forever.
 
 ## Jobs
 
-`IJobClient` submits durable work and returns a `JobHandle`; it does not execute jobs synchronously:
+`IJobClient` submits durable work and returns a `JobHandle`; `IJobWorker` claims and executes; `IJobMonitor` queries state; `IJobRuntimeStore` persists all of it. Jobs implement `IJob`:
 
 ```csharp
-JobHandle handle = await jobs.EnqueueAsync<RebuildSearchIndexJob>();
+public class RebuildSearchIndexJob : IJob
+{
+    public async Task<JobResult> RunAsync(JobExecutionContext context)
+    {
+        var args = context.GetArguments<RebuildSearchIndexArgs>();
+        await context.ReportProgressAsync(50, "halfway");
+        return JobResult.Success;
+    }
+}
+
+JobHandle handle = await jobs.EnqueueAsync<RebuildSearchIndexJob, RebuildSearchIndexArgs>(new RebuildSearchIndexArgs { Index = "orders" });
 JobState? state = await handle.GetStateAsync();
+await handle.RequestCancellationAsync();
 ```
 
-Execution belongs to `IJobWorker`, which claims queued jobs from `IJobRuntimeStore`. State and operational queries belong to `IJobMonitor`. Scheduled occurrences are created by `IJobScheduler` and materialized by `JobScheduleProcessor` through the runtime store.
+**Typed payloads.** `EnqueueAsync<TJob, TArgs>(args)` serializes the arguments into the durable `JobState.Payload` (with `PayloadType` stored as a discriminator for forensics); the job reads them via `JobExecutionContext.GetArguments<TArgs>()`, guarded by `HasArguments`. Mismatches throw a descriptive exception naming the stored type.
 
-Persisted job type names come from `IJobTypeRegistry`. Register stable names for jobs that may move between assemblies or namespaces:
+**Execution context.** `JobExecutionContext` carries `JobId`, `Attempt`, and the `CancellationToken`, plus the store-backed helpers useful inside job code: `ReportProgressAsync`, `RenewLeaseAsync` (heartbeat for long runs), and `IsCancellationRequestedAsync` (cooperative cancellation). Its public constructor creates a *detached* context for tests — helpers no-op, and an `arguments` object surfaces through `GetArguments` without serialization.
+
+**The worker.** Every run gets its own async DI scope (scoped services resolve per run, not as accidental singletons). `JobWorker` runs a bounded pool — at most `maxConcurrency` jobs in flight, a slot freeing the moment a job settles — and claims are compare-and-set guarded so concurrency cannot double-run. Lease renewal is a supervised loop, not a fire-and-forget timer: a run is cancelled when its lease is lost to another node *or* when renewal keeps failing past the lease window (the lease has lapsed on the broker's clock too, so continuing would risk double-executing side effects); the terminal state transition is ownership-guarded so a stale worker cannot overwrite the new owner's state. Stale `Processing` jobs (a worker crash mid-run) are reclaimed and re-queued while attempts remain, then dead-lettered.
+
+### CRON scheduling
 
 ```csharp
 services.AddFoundatio()
-    .Jobs.Register<RebuildSearchIndexJob>("search.rebuild")
-    .Jobs.UseInMemoryRuntime();
+    .Jobs.UseInMemoryRuntime()
+    .Jobs.AddCronJob<NightlyExportJob>("0 2 * * *", o =>
+    {
+        o.MaxRetries = 3;
+        o.Arguments = new ExportArgs { Format = "csv" };
+    });
 ```
 
-Unregistered jobs fall back to `Type.FullName`, not `AssemblyQualifiedName`.
+`AddCronJob<TJob>(cron, o => ...)` registers a `ScheduledJobDefinition`; `CronJobOptions` covers `Name`, `Scope` (`Global` = one instance per tick, `PerNode` = every instance), `Overlap` (`SkipIfRunning` default), `MisfireWindow`, `MaxRetries`, `TimeZone`, `Enabled`, and typed `Arguments` serialized into every occurrence's payload. Definitions are scheduled automatically when the pump starts — no manual `IJobScheduler.ScheduleAsync` call. The scheduler materializes every occurrence due within the misfire window (not just the latest) as durable, deduplicated store entries, and owns occurrence recovery with its own per-definition retry/dead-letter budget.
 
-### Execution context
+### The runtime pump
 
-A job that wants its runtime identity and store-backed operations implements `IJobWithExecutionContext`; the runtime sets `ExecutionContext` before invoking it. The context exposes `JobId`, `Attempt`, the cancellation token, and `ReportProgressAsync`, `RenewLeaseAsync` (heartbeat for long runs), and `IsCancellationRequestedAsync` — the parts of `IJobRuntimeStore` useful from inside job code. Jobs that use it should be registered transient (the context is per-run state). Untracked queue/pub-sub messages have no progress concept, so `IReceivedMessage` has no `ReportProgressAsync`.
+`JobRuntimePumpService` is registered automatically with any runtime store, so a configured store can never silently accumulate work that nothing drains. Each poll it materializes CRON occurrences, then runs an **overlapped execution pass** — dispatching due work (message dispatches before job occurrences, so the messaging delayed-delivery fallback is never head-of-line blocked by a long job), recovering stale jobs, and running queued jobs. Scheduling keeps its cadence even while a long pass runs. Tune with `ConfigureRuntimePump`: `JobRuntimePumpOptions.Enabled` (false = manual control), `PollInterval` (1s), `BatchSize` (100), `MaxJobAttempts` (3), and `WorkerConcurrency` (1; every in-flight job still gets its own DI scope, lease, and cancellation watcher).
 
-### Recovery
+## Testing
 
-The runtime pump reclaims jobs stuck in `Processing` past their lease (a worker that crashed mid-run), not just CRON occurrences: `IJobRuntimeStore.GetExpiredProcessingAsync` surfaces them and the worker re-queues them while attempts remain (`JobRuntimeServiceOptions.MaxJobAttempts`), otherwise dead-letters them. The status CAS serializes concurrent reclaimers.
-
-### CRON
-
-The redesigned durable CRON path materializes durable, recoverable occurrences through `IJobScheduler` → `JobScheduleProcessor` → the runtime store and pump. The legacy hosted `AddCronJob`/`AddJobScheduler` API still wires the in-process `ScheduledJobService` and is retained as **legacy/compat only**; routing the default hosted CRON API onto the durable scheduler is a planned follow-up (best validated alongside a real provider, since durable distributed CRON leans on the runtime store's transition semantics).
-
-## Migration
-
-Legacy queue code usually moves from one queue instance per payload type to one app-facing queue plus routing:
+`Foundatio.Testing` runs the real bus over a recording in-memory transport for deterministic, sleep-free tests:
 
 ```csharp
-// Legacy
-await queue.EnqueueAsync(new OrderSubmitted(id)); // IQueue<OrderSubmitted>
+services.AddFoundatio()
+    .Messaging.UseTestHarness()
+    .Messaging.AddHandler<OrderPlaced, SendConfirmationHandler>();
 
-// New
-await queue.EnqueueAsync(new OrderSubmitted(id)); // Foundatio.Messaging.IQueue
+// start hosted services, then:
+await bus.PublishAsync(new OrderPlaced(42));
+await harness.WaitForIdleAsync();
+Assert.Single(harness.Published<OrderPlaced>());
+Assert.Empty(harness.DeadLetteredMessages);
 ```
 
-Legacy `IMessageBus` publish/subscribe code maps to `IPubSub` with explicit subscription identity:
+Resolve `MessagingTestHarness` from the container. `WaitForIdleAsync` blocks until every destination has nothing queued and nothing in flight (throws a `TimeoutException` naming the still-busy destinations). Recordings cover every movement — `SentMessages`, `PublishedMessages`, `HandledMessages`, `AbandonedMessages`, `DeadLetteredMessages`, with typed accessors `Sent<T>()` / `Published<T>()` / `Handled<T>()` / `Abandoned<T>()` / `DeadLettered<T>()` — so the core retry/dead-letter path is directly assertable: a message redelivered N times and then dead-lettered shows up as N abandonments plus one dead-letter.
 
-```csharp
-// Legacy
-await messageBus.PublishAsync(new OrderSubmitted(id));
-await messageBus.SubscribeAsync<OrderSubmitted>(HandleAsync);
+## Providers
 
-// New
-await pubsub.PublishAsync(new OrderSubmitted(id));
-await using var subscription = await pubsub.SubscribeAsync<OrderSubmitted>(HandleAsync);
-```
+- **In-memory** (`InMemoryMessageTransport`, `InMemoryJobRuntimeStore`) — the reference implementation for local dev and tests; supports every operation interface.
+- **Redis** (`Foundatio.Redis`) — `RedisStreamsMessageTransport` (FIFO streams; delays route through the runtime store) and `RedisJobRuntimeStore`, wired via `.Messaging.UseRedis()` / `.Jobs.UseRedis()` over one shared connection.
+- **AWS** (`Foundatio.Aws`) — `AwsMessageTransport` (queues on SQS, pub/sub on SNS+SQS) via `.Messaging.UseAws()`; role-aware capabilities as above, `AutoCreateDestinations` to control implicit resource creation, and LocalStack support via `ServiceUrl`.
 
-For per-type routing, register each type. For grouped routing, map an interface or base type. For default/global-style routing, set one default queue destination or topic for otherwise unmapped messages. Operation-level overrides should be reserved for exceptional paths such as replays or priority lanes.
-
-### `IQueue` name collision during migration
-
-Two public `IQueue` types coexist while the legacy queue is still shipped:
-
-- `Foundatio.Queues.IQueue` / `IQueue<T>` — the legacy one-type-per-queue API.
-- `Foundatio.Messaging.IQueue` — the new app-facing queue.
-
-A file that has `using` directives for both namespaces will get a `CS0104` ambiguous-reference error on the bare name `IQueue`. Until the legacy API is removed, disambiguate per file with a `using` alias rather than fully qualifying every usage:
-
-```csharp
-using IQueue = Foundatio.Messaging.IQueue;       // new code
-// or, while finishing a migration:
-// using LegacyQueue = Foundatio.Queues.IQueue<MyMessage>;
-```
-
-New application code should depend on `Foundatio.Messaging.IQueue`; the alias keeps call sites clean without dropping the legacy namespace a file may still need mid-migration.
-
-## Rollout Notes
-
-The in-memory transport proves the API shape and conformance coverage for local development. Before locking this as a stable public API, validate at least one external provider against the same routing, topic/subscription, delayed delivery, dead-letter, TTL, priority, and batch constraints.
+A new provider is validated against the shared conformance suites in `Foundatio.TestHarness`: `MessageTransportConformanceTests` (send/receive, settlement, redelivery, dead-letter, visibility, provisioning — tests skip per unimplemented operation interface) and `JobRuntimeStoreConformanceTests` (state round-trips, CAS transitions, leases, stale recovery including the renew-during-reclaim race, and scheduled-dispatch claiming, driven by a fake time provider).
