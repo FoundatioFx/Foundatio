@@ -24,6 +24,17 @@ public enum OverlapPolicy
 
 public sealed record ScheduledJobDefinition
 {
+    /// <summary>
+    /// The schedule name a job type gets when none is given explicitly (the type's simple name). This is the single
+    /// home of the convention shared by <c>AddCronJob&lt;TJob&gt;</c> and the generic
+    /// <see cref="IScheduledJobManager"/> overloads, so type-addressed management always finds type-registered schedules.
+    /// </summary>
+    public static string DefaultNameFor(Type jobType)
+    {
+        ArgumentNullException.ThrowIfNull(jobType);
+        return jobType.Name;
+    }
+
     public required string Name { get; init; }
     public required string Cron { get; init; }
     public Type? JobType { get; init; }
@@ -120,6 +131,36 @@ public interface IScheduledJobManager
     /// deliberate operator action. Throws when the schedule does not exist, is disabled, or has no job type.
     /// </summary>
     Task<JobHandle> TriggerAsync(string name, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Type-addressed conveniences over <see cref="IScheduledJobManager"/>: they resolve the schedule name from the job
+/// type via <see cref="ScheduledJobDefinition.DefaultNameFor"/> — the same default <c>AddCronJob&lt;TJob&gt;</c> uses —
+/// so a schedule registered without an explicit name is manageable by its type alone. Schedules registered under a
+/// custom <see cref="ScheduledJobDefinition.Name"/> are addressed with the string overloads.
+/// </summary>
+public static class ScheduledJobManagerExtensions
+{
+    public static Task<ScheduledJobDefinition?> GetScheduleAsync<TJob>(this IScheduledJobManager manager, CancellationToken cancellationToken = default) where TJob : IJob
+        => Manager(manager).GetScheduleAsync(ScheduledJobDefinition.DefaultNameFor(typeof(TJob)), cancellationToken);
+
+    public static Task<JobHandle> TriggerAsync<TJob>(this IScheduledJobManager manager, CancellationToken cancellationToken = default) where TJob : IJob
+        => Manager(manager).TriggerAsync(ScheduledJobDefinition.DefaultNameFor(typeof(TJob)), cancellationToken);
+
+    public static Task<bool> RescheduleAsync<TJob>(this IScheduledJobManager manager, string cronSchedule, CancellationToken cancellationToken = default) where TJob : IJob
+        => Manager(manager).RescheduleAsync(ScheduledJobDefinition.DefaultNameFor(typeof(TJob)), cronSchedule, cancellationToken);
+
+    public static Task<bool> SetEnabledAsync<TJob>(this IScheduledJobManager manager, bool enabled, CancellationToken cancellationToken = default) where TJob : IJob
+        => Manager(manager).SetEnabledAsync(ScheduledJobDefinition.DefaultNameFor(typeof(TJob)), enabled, cancellationToken);
+
+    public static Task UnscheduleAsync<TJob>(this IScheduledJobManager manager, CancellationToken cancellationToken = default) where TJob : IJob
+        => Manager(manager).UnscheduleAsync(ScheduledJobDefinition.DefaultNameFor(typeof(TJob)), cancellationToken);
+
+    private static IScheduledJobManager Manager(IScheduledJobManager manager)
+    {
+        ArgumentNullException.ThrowIfNull(manager);
+        return manager;
+    }
 }
 
 public sealed class ScheduledJobManager : IScheduledJobManager

@@ -210,6 +210,12 @@ await cron.SetEnabledAsync("tenant-report", true);            // resume
 
 JobHandle run = await cron.TriggerAsync("tenant-report");     // run NOW, independent of the cron
 var state = await run.GetStateAsync();                        // watch it like any durable job
+
+// Type-addressed overloads resolve the schedule name from the job type — the same
+// default AddCronJob<TJob> uses when no explicit name is given:
+var schedule = await cron.GetScheduleAsync<NightlyExportJob>();
+await cron.SetEnabledAsync<NightlyExportJob>(false);
+JobHandle manual = await cron.TriggerAsync<NightlyExportJob>();
 ```
 
 `TriggerAsync` materializes a durable manual occurrence (unique `"{name}:manual:…"` id, never deduplicated) that the pump claims and executes with the definition's `Arguments` and retry/dead-letter budget, returning a `JobHandle` for progress watching and cancellation. Manual runs bypass `Overlap` accounting — the trigger is a deliberate operator action — and a disabled schedule refuses to trigger (enable it first). `GetSchedulesAsync`/`GetScheduleAsync`/`UnscheduleAsync` round out the surface.

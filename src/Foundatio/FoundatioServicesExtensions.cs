@@ -533,7 +533,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
             var options = new CronJobOptions();
             configure?.Invoke(options);
-            string name = options.Name ?? typeof(TJob).Name;
+            string name = options.Name ?? ScheduledJobDefinition.DefaultNameFor(typeof(TJob));
 
             _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
             _services.AddSingleton(new ScheduledJobDefinition
