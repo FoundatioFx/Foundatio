@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Caching;
-using Foundatio.Messaging.Legacy;
+using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -18,7 +18,7 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
     public HybridCacheClientTestBase(ITestOutputHelper output) : base(output)
     {
         _distributedCache = new InMemoryCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(true).LoggerFactory(Log));
-        _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        _messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { LoggerFactory = Log });
     }
 
     /// <summary>
@@ -593,6 +593,6 @@ public class HybridCacheClientTestBase : CacheClientTestsBase, IDisposable
     public void Dispose()
     {
         _distributedCache.Dispose();
-        _messageBus.Dispose();
+        _messageBus.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

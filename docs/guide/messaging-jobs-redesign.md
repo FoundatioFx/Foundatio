@@ -12,7 +12,7 @@ await bus.PublishAsync(new OrderSubmitted(id));  // every subscribing service he
 
 `SendBatchAsync` and `PublishBatchAsync` batch both verbs; the non-generic `IEnumerable<object>` overloads accept heterogeneous batches and group by resolved route. Per-operation options are `MessageSendOptions` and `MessagePublishOptions` (priority, delay/`DeliverAt`, TTL, correlation id, headers, and a `Destination`/`Topic` override as the escape hatch).
 
-The legacy publish/subscribe `IMessageBus` and job APIs remain shipped under the `Foundatio.Messaging.Legacy` and `Foundatio.Jobs.Legacy` namespaces while consumers migrate.
+The legacy implementations are gone. What remains for migration is a thin, opt-in bridge: the old `IMessageBus`/`IMessagePublisher`/`IMessageSubscriber` interface definitions plus `LegacyMessageBusAdapter`, registered with `Messaging.AddLegacyAdapter()`, which maps old-style publish/subscribe calls onto the new bus (see the Migration section).
 
 ## The core owns behavior; transports stay simple
 
@@ -241,6 +241,24 @@ Assert.Empty(harness.DeadLetteredMessages);
 ```
 
 Resolve `MessagingTestHarness` from the container. `WaitForIdleAsync` blocks until every destination has nothing queued and nothing in flight (throws a `TimeoutException` naming the still-busy destinations). Recordings cover every movement — `SentMessages`, `PublishedMessages`, `HandledMessages`, `AbandonedMessages`, `DeadLetteredMessages`, with typed accessors `Sent<T>()` / `Published<T>()` / `Handled<T>()` / `Abandoned<T>()` / `DeadLettered<T>()` — so the core retry/dead-letter path is directly assertable: a message redelivered N times and then dead-lettered shows up as N abandonments plus one dead-letter.
+
+## Migrating from the previous APIs
+
+The old implementations (`InMemoryMessageBus`, `QueueBase`/`InMemoryQueue`, `JobBase`/`QueueJobBase`/`JobWithLockBase`/`JobRunner`, `WorkItemJob`, and the hosted `AddJob`/`AddDistributedCronJob` infrastructure) were removed. The mappings:
+
+| Old | New |
+|---|---|
+| `IQueue<T>.EnqueueAsync(item)` | `IMessageBus.SendAsync(item)` — competing consumers, ack/retry/dead-letter are core-owned |
+| `IQueue<T>.DequeueAsync` + worker loop | `AddHandler<T, THandler>()` — the hosted handler consumes; no polling code |
+| `QueueJobBase<T>.ProcessQueueEntryAsync` | `IMessageHandler<T>.HandleAsync(IMessageContext<T>, ct)` |
+| `IMessageBus.PublishAsync(msg, delay)` | `IMessageBus.PublishAsync(msg, new MessagePublishOptions { Delay = ... })` — delays are durable via the runtime store |
+| `IMessageSubscriber.SubscribeAsync<T>(Func<T, ct, Task>)` | `SubscribeAsync<T>((ctx, ct) => ... ctx.Message ...)`, or keep the old code compiling with `Messaging.AddLegacyAdapter()` |
+| `JobBase.RunAsync(CancellationToken)` / old `IJob` | `IJob.RunAsync(JobExecutionContext)` — use `context.CancellationToken`; `JobResult` is unchanged |
+| `JobWithLockBase` | The durable runtime's lease already guarantees single ownership; `AddCronJob` scope `Global` covers scheduled exclusivity |
+| `WorkItemJob` + `WorkItemHandlers` | `EnqueueAsync<TJob, TArgs>(args)` with `context.GetArguments<TArgs>()` and `context.ReportProgressAsync(...)` |
+| `AddDistributedCronJob<TJob>(cron)` | `.Jobs.AddCronJob<TJob>(cron, o => ...)` — durable occurrences with retry/dead-letter, manageable via `IScheduledJobManager` |
+
+**The messaging bridge**: `Messaging.AddLegacyAdapter()` registers the retained `Foundatio.Messaging.Legacy` interfaces (`IMessageBus`/`IMessagePublisher`/`IMessageSubscriber`) as a thin adapter over the new bus, so old consuming code compiles and interoperates with migrated code on the same transport. Old-style subscriptions map to per-instance, published-only subscriptions (the old fan-out semantics); `MessageOptions.UniqueId` is ignored (no broker dedup exists), and the old raw-envelope `IMessage` tap has no adapter path (the new bus is destination-scoped). Delete the `AddLegacyAdapter()` call when the last old-style call site is gone.
 
 ## Providers
 

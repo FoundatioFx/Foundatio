@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
-using Foundatio.Messaging.Legacy;
+using Foundatio.Messaging;
 using Xunit;
 
 namespace Foundatio.Tests.Locks;
@@ -15,7 +15,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     public InMemoryLockTests(ITestOutputHelper output) : base(output)
     {
         _cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
-        _messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        _messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { LoggerFactory = Log });
     }
 
     protected override ILockProvider GetThrottlingLockProvider(int maxHits, TimeSpan period)
@@ -151,6 +151,6 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     public void Dispose()
     {
         _cache.Dispose();
-        _messageBus.Dispose();
+        _messageBus.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
