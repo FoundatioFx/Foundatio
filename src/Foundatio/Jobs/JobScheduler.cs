@@ -86,6 +86,151 @@ public interface IJobScheduler
     Task<IReadOnlyList<ScheduledJobDefinition>> GetSchedulesAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Runtime management surface for scheduled (CRON) jobs: list and inspect schedules, add or replace definitions,
+/// change a schedule's cron expression, enable/disable, and trigger an immediate occurrence. Declaratively-registered
+/// jobs (<c>AddCronJob&lt;TJob&gt;</c>) and definitions added here share the same <see cref="IJobScheduler"/> store,
+/// so both are manageable through this interface.
+/// </summary>
+public interface IScheduledJobManager
+{
+    Task<IReadOnlyList<ScheduledJobDefinition>> GetSchedulesAsync(CancellationToken cancellationToken = default);
+    Task<ScheduledJobDefinition?> GetScheduleAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds a new schedule or replaces the existing definition with the same name.</summary>
+    Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default);
+
+    Task UnscheduleAsync(string name, CancellationToken cancellationToken = default);
+
+    /// <summary>Changes an existing schedule's cron expression (validated). Returns false when no schedule has that name.</summary>
+    Task<bool> RescheduleAsync(string name, string cronSchedule, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Enables or disables a schedule. A disabled schedule materializes no occurrences (and cannot be triggered)
+    /// until re-enabled. Returns false when no schedule has that name.
+    /// </summary>
+    Task<bool> SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Triggers an immediate occurrence of the named schedule, independent of its cron expression, and returns a
+    /// <see cref="JobHandle"/> for watching or cancelling the run. The occurrence is durable (materialized into the
+    /// runtime store and executed by the pump) and uses the definition's retry/dead-letter budget and
+    /// <see cref="ScheduledJobDefinition.Arguments"/>. Manual occurrences run regardless of
+    /// <see cref="ScheduledJobDefinition.Overlap"/> and are not counted by SkipIfRunning accounting — the trigger is a
+    /// deliberate operator action. Throws when the schedule does not exist, is disabled, or has no job type.
+    /// </summary>
+    Task<JobHandle> TriggerAsync(string name, CancellationToken cancellationToken = default);
+}
+
+public sealed class ScheduledJobManager : IScheduledJobManager
+{
+    private readonly IJobScheduler _scheduler;
+    private readonly IJobRuntimeStore _store;
+    private readonly IJobTypeRegistry _jobTypes;
+    private readonly ISerializer _serializer;
+    private readonly TimeProvider _timeProvider;
+
+    public ScheduledJobManager(IJobScheduler scheduler, IJobRuntimeStore store, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null, TimeProvider? timeProvider = null)
+    {
+        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+        _store = store ?? throw new ArgumentNullException(nameof(store));
+        _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _serializer = serializer ?? DefaultSerializer.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    public Task<IReadOnlyList<ScheduledJobDefinition>> GetSchedulesAsync(CancellationToken cancellationToken = default)
+        => _scheduler.GetSchedulesAsync(cancellationToken);
+
+    public async Task<ScheduledJobDefinition?> GetScheduleAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        var schedules = await _scheduler.GetSchedulesAsync(cancellationToken).ConfigureAwait(false);
+        return schedules.FirstOrDefault(s => String.Equals(s.Name, name, StringComparison.Ordinal));
+    }
+
+    public Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default)
+        => _scheduler.ScheduleAsync(definition, cancellationToken);
+
+    public Task UnscheduleAsync(string name, CancellationToken cancellationToken = default)
+        => _scheduler.UnscheduleAsync(name, cancellationToken);
+
+    public async Task<bool> RescheduleAsync(string name, string cronSchedule, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(cronSchedule);
+        JobScheduleProcessor.ValidateCron(cronSchedule);
+
+        var definition = await GetScheduleAsync(name, cancellationToken).ConfigureAwait(false);
+        if (definition is null)
+            return false;
+
+        await _scheduler.ScheduleAsync(definition with { Cron = cronSchedule }, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    public async Task<bool> SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken = default)
+    {
+        var definition = await GetScheduleAsync(name, cancellationToken).ConfigureAwait(false);
+        if (definition is null)
+            return false;
+
+        if (definition.Enabled != enabled)
+            await _scheduler.ScheduleAsync(definition with { Enabled = enabled }, cancellationToken).ConfigureAwait(false);
+
+        return true;
+    }
+
+    public async Task<JobHandle> TriggerAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var definition = await GetScheduleAsync(name, cancellationToken).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"No scheduled job named \"{name}\" is registered.");
+
+        if (definition.JobType is null)
+            throw new InvalidOperationException($"Scheduled job \"{name}\" has no job type and cannot be triggered.");
+
+        // The occurrence-run path releases (and endlessly re-claims) dispatches whose definition is disabled, so a
+        // trigger of a disabled schedule would park forever rather than run — refuse it up front instead.
+        if (!definition.Enabled)
+            throw new InvalidOperationException($"Scheduled job \"{name}\" is disabled. Enable it before triggering (SetEnabledAsync(\"{name}\", true)).");
+
+        var now = _timeProvider.GetUtcNow();
+
+        // Unique id: manual runs are deliberate, so they never dedupe against each other or against cron occurrences
+        // (whose deterministic "{name}:{timestamp}:{scope}" ids exist precisely to dedupe scheduler ticks).
+        string jobId = $"{name}:manual:{Guid.NewGuid():N}";
+
+        await _store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = jobId,
+            Name = definition.Name,
+            JobType = _jobTypes.GetName(definition.JobType),
+            Payload = definition.Arguments is null ? null : (ReadOnlyMemory<byte>?)_serializer.SerializeToBytes(definition.Arguments),
+            PayloadType = definition.Arguments?.GetType().FullName,
+            Status = JobStatus.Scheduled,
+            CreatedUtc = now,
+            LastUpdatedUtc = now,
+            ScheduledForUtc = now
+        }, cancellationToken).ConfigureAwait(false);
+
+        await _store.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = jobId,
+            Kind = ScheduledDispatchKind.JobOccurrence,
+            JobName = definition.Name,
+            Body = Array.Empty<byte>(),
+            Headers = MessageHeaders.Create([
+                new KeyValuePair<string, string>("job.name", definition.Name),
+                new KeyValuePair<string, string>("job.scheduled_for", now.UtcDateTime.ToString("O")),
+                new KeyValuePair<string, string>("job.trigger", "manual")
+            ]),
+            DueUtc = now,
+            JobId = jobId
+        }, cancellationToken).ConfigureAwait(false);
+
+        return new JobHandle(jobId, _store, _store.RequestCancellationAsync);
+    }
+}
+
 public sealed class InMemoryJobScheduler : IJobScheduler
 {
     private readonly ConcurrentDictionary<string, ScheduledJobDefinition> _definitions = new(StringComparer.Ordinal);

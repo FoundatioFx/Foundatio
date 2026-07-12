@@ -573,6 +573,12 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>(), serializer: sp.GetService<ISerializer>(),
                 maxConcurrency: sp.GetService<JobRuntimePumpOptions>()?.WorkerConcurrency ?? 1));
             _services.ReplaceSingleton<IJobScheduler, InMemoryJobScheduler>();
+            _services.ReplaceSingleton<IScheduledJobManager>(sp => new ScheduledJobManager(
+                sp.GetRequiredService<IJobScheduler>(),
+                sp.GetRequiredService<IJobRuntimeStore>(),
+                sp.GetRequiredService<IJobTypeRegistry>(),
+                sp.GetService<ISerializer>(),
+                sp.GetService<TimeProvider>()));
             _services.ReplaceSingleton(sp => new JobScheduleProcessor(
                 sp.GetRequiredService<IJobScheduler>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
