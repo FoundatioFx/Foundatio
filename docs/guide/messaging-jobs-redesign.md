@@ -193,6 +193,27 @@ services.AddFoundatio()
 
 `AddCronJob<TJob>(cron, o => ...)` registers a `ScheduledJobDefinition`; `CronJobOptions` covers `Name`, `Scope` (`Global` = one instance per tick, `PerNode` = every instance), `Overlap` (`SkipIfRunning` default), `MisfireWindow`, `MaxRetries`, `TimeZone`, `Enabled`, and typed `Arguments` serialized into every occurrence's payload. Definitions are scheduled automatically when the pump starts — no manual `IJobScheduler.ScheduleAsync` call. The scheduler materializes every occurrence due within the misfire window (not just the latest) as durable, deduplicated store entries, and owns occurrence recovery with its own per-definition retry/dead-letter budget.
 
+### Managing schedules at runtime
+
+`IScheduledJobManager` (registered with the runtime) manages schedules while the app runs — both declaratively-registered CRON jobs and ones added on the fly share the same scheduler store:
+
+```csharp
+var cron = provider.GetRequiredService<IScheduledJobManager>();
+
+await cron.ScheduleAsync(new ScheduledJobDefinition {         // add, or replace by name
+    Name = "tenant-report", Cron = "0 6 * * *", JobType = typeof(TenantReportJob),
+    Arguments = new ReportArgs { TenantId = tenantId } });
+
+await cron.RescheduleAsync("tenant-report", "0 7 * * *");     // change just the schedule
+await cron.SetEnabledAsync("tenant-report", false);           // pause (no occurrences materialize)
+await cron.SetEnabledAsync("tenant-report", true);            // resume
+
+JobHandle run = await cron.TriggerAsync("tenant-report");     // run NOW, independent of the cron
+var state = await run.GetStateAsync();                        // watch it like any durable job
+```
+
+`TriggerAsync` materializes a durable manual occurrence (unique `"{name}:manual:…"` id, never deduplicated) that the pump claims and executes with the definition's `Arguments` and retry/dead-letter budget, returning a `JobHandle` for progress watching and cancellation. Manual runs bypass `Overlap` accounting — the trigger is a deliberate operator action — and a disabled schedule refuses to trigger (enable it first). `GetSchedulesAsync`/`GetScheduleAsync`/`UnscheduleAsync` round out the surface.
+
 ### The runtime pump
 
 `JobRuntimePumpService` is registered automatically with any runtime store, so a configured store can never silently accumulate work that nothing drains. Each poll it materializes CRON occurrences, then runs an **overlapped execution pass** — dispatching due work (message dispatches before job occurrences, so the messaging delayed-delivery fallback is never head-of-line blocked by a long job), recovering stale jobs, and running queued jobs. Scheduling keeps its cadence even while a long pass runs. Tune with `ConfigureRuntimePump`: `JobRuntimePumpOptions.Enabled` (false = manual control), `PollInterval` (1s), `BatchSize` (100), `MaxJobAttempts` (3), and `WorkerConcurrency` (1; every in-flight job still gets its own DI scope, lease, and cancellation watcher).
