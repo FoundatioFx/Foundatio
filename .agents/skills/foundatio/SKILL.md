@@ -37,7 +37,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 - CRON: `.Jobs.AddCronJob<TJob>("0 */6 * * *", o => ...)` with `CronJobOptions` (`Scope` Global/PerNode, `Overlap`, `MisfireWindow`, `MaxRetries`, `TimeZone`, typed `Arguments`). Scheduled automatically when the runtime pump starts. Tune the pump with `.Jobs.ConfigureRuntimePump(o => ...)` (`JobRuntimePumpOptions`: `Enabled`, `PollInterval`, `BatchSize`, `MaxJobAttempts`, `WorkerConcurrency`).
 - Runtime schedule management: `IScheduledJobManager` (DI-registered with the runtime) lists/inspects schedules, adds or replaces `ScheduledJobDefinition`s on the fly, `RescheduleAsync(name, cron)` changes just the schedule, `SetEnabledAsync(name, bool)` pauses/resumes materialization, and `TriggerAsync(name)` runs an immediate durable occurrence (definition's `Arguments` + retry budget) returning a `JobHandle`. Triggering a disabled schedule throws; manual occurrences never dedupe and bypass `Overlap` accounting. Generic overloads (`GetScheduleAsync<TJob>()`, `TriggerAsync<TJob>()`, `RescheduleAsync<TJob>(cron)`, `SetEnabledAsync<TJob>(bool)`, `UnscheduleAsync<TJob>()`) resolve the schedule name via `ScheduledJobDefinition.DefaultNameFor(type)` — the same default `AddCronJob<TJob>` uses when no explicit name is given.
 - Stable wire names: `.Messaging.RegisterMessageType<T>("name")` and `.Jobs.Register<TJob>("name")` so persisted discriminators survive assembly/namespace moves; unregistered types fall back to `Type.FullName`.
-- Legacy APIs still ship under the `Foundatio.Messaging.Legacy` (old `IMessageBus`/`InMemoryMessageBus`) and `Foundatio.Jobs.Legacy` (`JobBase`, `QueueJobBase`, `JobWithLockBase`, `JobRunner`) namespaces for migration. Prefer the current API in new code.
+- Legacy implementations were removed. For migration, `Messaging.AddLegacyAdapter()` registers the old `IMessageBus`/`IMessagePublisher`/`IMessageSubscriber` interfaces as a thin adapter over the new bus (old handler code compiles unchanged; delete the call when migrated). Old jobs migrate mechanically: `RunAsync(CancellationToken)` becomes `RunAsync(JobExecutionContext)` (use `context.CancellationToken`), `QueueJobBase<T>`/`IQueue<T>` become `IMessageHandler<T>` + `SendAsync`, and `WorkItemJob` becomes `EnqueueAsync<TJob, TArgs>(args)` with `ReportProgressAsync`.
 
 ## Core Interfaces
 
@@ -229,9 +229,9 @@ services.AddFoundatio()
 
 Occurrences are materialized durably through the runtime store (deduplicated across nodes and misfire windows) and executed by the auto-registered `JobRuntimePumpService`.
 
-### Legacy Jobs
+### Migrating old jobs
 
-`JobBase`, `QueueJobBase<T>`, and `JobWithLockBase` live in `Foundatio.Jobs.Legacy` (hosted via `Foundatio.Extensions.Hosting`'s `AddJob` / `AddCronJob` / `AddDistributedCronJob`). They still work but are the previous model; prefer `IJob` + the durable runtime for new code.
+`JobBase`/`QueueJobBase<T>`/`JobWithLockBase`/`JobRunner`/`WorkItemJob` and the hosted `AddJob`/`AddDistributedCronJob` infrastructure were removed. The mappings are mechanical: an old job's `RunAsync(CancellationToken)` becomes `RunAsync(JobExecutionContext)` (use `context.CancellationToken`; `JobResult` is unchanged); a `QueueJobBase<T>` becomes an `IMessageHandler<T>` fed by `SendAsync`; a `WorkItemJob` handler becomes a job enqueued with `EnqueueAsync<TJob, TArgs>(args)` reporting progress via `context.ReportProgressAsync`; distributed CRON is `.Jobs.AddCronJob<TJob>(cron)` on the durable runtime.
 
 ## Testing
 
@@ -282,7 +282,7 @@ Validate a custom transport or job store against the shared conformance suites i
 - **Cache stampede**: serialize regeneration of hot keys with `CacheLockProvider` (lock on the cache key, double-check after acquiring). See the [Cache Stampede Protection](https://foundatio.readthedocs.io/guide/caching.html#cache-stampede-protection) docs.
 - **Register as singletons**: infrastructure services (`ICacheClient`, `IMessageBus`, `IFileStorage`, `ILockProvider`) maintain internal state and connections; the `AddFoundatio()` builder does this for you.
 - **In-memory for tests**: in-memory implementations are functionally equivalent to production providers and run the same conformance suites -- swap via DI for fast, isolated tests.
-- **Legacy name collisions during migration**: old and new APIs coexist (`Foundatio.Messaging.Legacy.IMessageBus` vs `Foundatio.Messaging.IMessageBus`; `Foundatio.Jobs.Legacy.IJob` vs `Foundatio.Jobs.IJob`). Disambiguate with a `using` alias in files that reference both namespaces.
+- **Legacy name collision during migration**: with `AddLegacyAdapter()`, `Foundatio.Messaging.Legacy.IMessageBus` and `Foundatio.Messaging.IMessageBus` coexist. Disambiguate with a `using` alias in files that reference both namespaces.
 
 ## NuGet Packages
 
@@ -291,7 +291,7 @@ Validate a custom transport or job store against the shared conformance suites i
 | Package | Provides |
 | ------- | -------- |
 | `Foundatio` | Core interfaces, in-memory implementations, messaging + durable job runtime, resilience, `SystemTextJsonSerializer` |
-| `Foundatio.Extensions.Hosting` | `AddJobRuntimeService`, startup actions, legacy `AddJob`/`AddCronJob`/`AddDistributedCronJob` |
+| `Foundatio.Extensions.Hosting` | `AddJobRuntimeService`, startup actions |
 
 ### Serializers
 

@@ -1,6 +1,6 @@
 using System.Threading.Tasks;
 using Foundatio.Caching;
-using Foundatio.Messaging.Legacy;
+using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -729,6 +729,6 @@ public class InMemoryHybridCacheClient : HybridCacheClient
     {
         base.Dispose();
         _distributedCache.Dispose();
-        _messageBus.Dispose();
+        _messageBus.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }

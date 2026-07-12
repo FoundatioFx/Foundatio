@@ -8,7 +8,6 @@ using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
 using Legacy = Foundatio.Messaging.Legacy;
-using Foundatio.Queues;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Storage;
@@ -42,7 +41,6 @@ public class FoundatioBuilder : IFoundatioBuilder
         Caching = new CachingBuilder(this);
         Storage = new StorageBuilder(this);
         Messaging = new MessagingBuilder(this);
-        Queueing = new QueueingBuilder(this);
         Jobs = new JobsBuilder(this);
         Locking = new LockingBuilder(this);
     }
@@ -64,11 +62,6 @@ public class FoundatioBuilder : IFoundatioBuilder
     /// Configure messaging services for Foundatio.
     /// </summary>
     public MessagingBuilder Messaging { get; }
-
-    /// <summary>
-    /// Configure queueing services for Foundatio.
-    /// </summary>
-    public QueueingBuilder Queueing { get; }
 
     /// <summary>
     /// Configure background job runtime services for Foundatio.
@@ -274,17 +267,15 @@ public class FoundatioBuilder : IFoundatioBuilder
         IServiceCollection IFoundatioBuilder.Services => _services;
         FoundatioBuilder IFoundatioBuilder.Builder => _builder;
 
-        public FoundatioBuilder Use(Legacy.IMessageBus messageBus)
+        /// <summary>
+        /// Registers the legacy <see cref="Legacy.IMessageBus"/>/<see cref="Legacy.IMessagePublisher"/>/
+        /// <see cref="Legacy.IMessageSubscriber"/> interfaces as a thin adapter over the redesigned
+        /// <see cref="IMessageBus"/>, so existing consuming code keeps compiling while it migrates. There is no
+        /// legacy bus behind it — remove this call once call sites are on the new API.
+        /// </summary>
+        public FoundatioBuilder AddLegacyAdapter()
         {
-            _services.ReplaceSingleton(_ => messageBus);
-            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            return _builder;
-        }
-
-        public FoundatioBuilder Use(Func<IServiceProvider, Legacy.IMessageBus> factory)
-        {
-            _services.ReplaceSingleton(factory);
+            _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.LegacyMessageBusAdapter(sp.GetRequiredService<IMessageBus>()));
             _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             return _builder;
@@ -323,20 +314,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return this;
         }
 
-        public FoundatioBuilder UseInMemory(Legacy.InMemoryMessageBusOptions? options = null)
+        /// <summary>Uses the in-memory transport — the all-defaults setup for development and tests.</summary>
+        public FoundatioBuilder UseInMemory()
         {
-            _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.InMemoryMessageBus(options.UseServices(sp)));
-            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
-            return _builder;
-        }
-
-        public FoundatioBuilder UseInMemory(Builder<Legacy.InMemoryMessageBusOptionsBuilder, Legacy.InMemoryMessageBusOptions> config)
-        {
-            _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.InMemoryMessageBus(b => b.Configure(config).UseServices(sp)));
-            _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
             return _builder;
         }
@@ -598,45 +578,6 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
     }
 
-    public class QueueingBuilder : IFoundatioBuilder
-    {
-        private readonly FoundatioBuilder _builder;
-        private readonly IServiceCollection _services;
-
-        internal QueueingBuilder(IFoundatioBuilder builder)
-        {
-            _builder = builder.Builder;
-            _services = builder.Services;
-        }
-
-        IServiceCollection IFoundatioBuilder.Services => _services;
-        FoundatioBuilder IFoundatioBuilder.Builder => _builder;
-
-        public FoundatioBuilder Use<T>(IQueue<T> storage) where T : class
-        {
-            _services.ReplaceSingleton(_ => storage);
-            return _builder;
-        }
-
-        public FoundatioBuilder Use<T>(Func<IServiceProvider, IQueue<T>> factory) where T : class
-        {
-            _services.ReplaceSingleton(factory);
-            return _builder;
-        }
-
-        public FoundatioBuilder UseInMemory<T>(InMemoryQueueOptions<T>? options = null) where T : class
-        {
-            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>(options.UseServices(sp)));
-            return _builder;
-        }
-
-        public FoundatioBuilder UseInMemory<T>(Builder<InMemoryQueueOptionsBuilder<T>, InMemoryQueueOptions<T>> config) where T : class
-        {
-            _services.ReplaceSingleton<IQueue<T>>(sp => new InMemoryQueue<T>(b => b.Configure(config).UseServices(sp)));
-            return _builder;
-        }
-    }
-
     public class LockingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
@@ -668,7 +609,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // gets all services from the ICacheClient instance
             _services.ReplaceSingleton<ILockProvider>(sp => new CacheLockProvider(
                 sp.GetRequiredService<ICacheClient>(),
-                sp.GetService<Legacy.IMessageBus>(), // optional for more efficient lock release notifications
+                sp.GetService<IMessageBus>(), // optional for more efficient lock release notifications
                 sp.GetService<TimeProvider>(),
                 sp.GetService<IResiliencePolicyProvider>(),
                 sp.GetService<ILoggerFactory>()
