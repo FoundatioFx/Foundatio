@@ -94,6 +94,41 @@ public class ScheduledJobManagerTests
     }
 
     [Fact]
+    public async Task GenericOverloads_ResolveTheTypeDefaultNameAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var (manager, processor, probe) = CreateRuntime();
+
+        // Registered the way AddCronJob<TJob> does when no explicit name is given: the type's default name.
+        await manager.ScheduleAsync(new ScheduledJobDefinition
+        {
+            Name = ScheduledJobDefinition.DefaultNameFor(typeof(ProbeJob)),
+            Cron = "0 0 1 1 *",
+            JobType = typeof(ProbeJob)
+        }, cancellationToken);
+
+        var found = await manager.GetScheduleAsync<ProbeJob>(cancellationToken);
+        Assert.NotNull(found);
+        Assert.Equal(nameof(ProbeJob), found.Name);
+
+        Assert.True(await manager.RescheduleAsync<ProbeJob>("*/10 * * * *", cancellationToken));
+        Assert.Equal("*/10 * * * *", (await manager.GetScheduleAsync<ProbeJob>(cancellationToken))!.Cron);
+
+        Assert.True(await manager.SetEnabledAsync<ProbeJob>(false, cancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.TriggerAsync<ProbeJob>(cancellationToken));
+        Assert.True(await manager.SetEnabledAsync<ProbeJob>(true, cancellationToken));
+
+        var handle = await manager.TriggerAsync<ProbeJob>(cancellationToken);
+        Assert.StartsWith($"{nameof(ProbeJob)}:manual:", handle.JobId);
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow, cancellationToken: cancellationToken));
+        Assert.Equal(1, probe.RunCount);
+        Assert.Equal(JobStatus.Completed, (await handle.GetStateAsync(cancellationToken))!.Status);
+
+        await manager.UnscheduleAsync<ProbeJob>(cancellationToken);
+        Assert.Null(await manager.GetScheduleAsync<ProbeJob>(cancellationToken));
+    }
+
+    [Fact]
     public async Task TriggerAsync_UnknownOrDisabled_ThrowsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
