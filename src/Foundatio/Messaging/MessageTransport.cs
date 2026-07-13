@@ -99,17 +99,43 @@ public sealed record TransportSendOptions
     public DateTimeOffset? DeliverAt { get; init; }
 }
 
+/// <summary>
+/// One delivered message: the payload and metadata a receive/subscribe hands to the consumer, plus the
+/// <see cref="Receipt"/> that settles it (<see cref="IMessageTransport.CompleteAsync"/> /
+/// <see cref="IMessageTransport.AbandonAsync(TransportEntry, CancellationToken)"/>).
+/// </summary>
+/// <remarks>
+/// Provider authors: future contract growth only ever adds OPTIONAL init members to this record (never new required
+/// ones), so provider code constructing entries stays source-compatible across core upgrades.
+/// </remarks>
 public sealed record TransportEntry
 {
+    /// <summary>The broker-assigned message id — stable across redeliveries of the same message.</summary>
     public required string Id { get; init; }
+
+    /// <summary>The source address the entry was received from (the queue or subscription, never the owning topic).</summary>
     public required DestinationAddress Destination { get; init; }
+
     public required ReadOnlyMemory<byte> Body { get; init; }
+
+    /// <summary>The sent message's headers, which must round-trip byte-for-byte through the transport.</summary>
     public MessageHeaders Headers { get; init; } = MessageHeaders.Empty;
+
+    /// <summary>How many times this message has been delivered, INCLUDING this delivery — starts at 1, never 0.</summary>
     public int DeliveryCount { get; init; } = 1;
+
     public DateTimeOffset? EnqueuedUtc { get; init; }
+
+    /// <summary>The settlement token for this delivery; see <see cref="Receipt"/>.</summary>
     public required Receipt Receipt { get; init; }
 }
 
+/// <summary>
+/// The transport's opaque settlement token for one delivery. Everything the transport needs to settle the entry later
+/// (complete/abandon/dead-letter) must live in <see cref="TransportState"/> — not in transport instance state keyed by
+/// entry identity alone — because the same message can be in flight again (a redelivery) by the time a stale receipt
+/// is settled, and per-delivery state is what keeps the two from aliasing.
+/// </summary>
 public readonly struct Receipt
 {
     public object? TransportState { get; init; }
@@ -241,20 +267,60 @@ public interface ITransportInfo
     TransportCapabilities GetCapabilities(DestinationAddress destination);
 }
 
+/// <summary>
+/// The provider SPI every transport implements: send messages and settle deliveries. Everything else (pull, push,
+/// dead-letter, delays, stats, provisioning) is an optional <c>ISupports*</c> capability interface the core detects
+/// at runtime — implement only what the broker actually offers and the core validates or falls back for the rest.
+/// </summary>
 public interface IMessageTransport : IAsyncDisposable
 {
+    /// <summary>
+    /// Delivers the messages to the destination. Throw-on-failure: any failure throws rather than returning a failed
+    /// item, so every item in the returned <see cref="SendResult"/> was accepted. A multi-message send is NOT atomic —
+    /// earlier messages may already be delivered when a later one throws.
+    /// </summary>
+    /// <remarks>
+    /// A future <see cref="TransportSendOptions.DeliverAt"/> the transport cannot honor natively must be refused with
+    /// <see cref="NotSupportedException"/>, never accepted and delivered immediately (a silently dropped delay); the
+    /// core only routes a delayed send here when the destination advertises the
+    /// <see cref="TransportCapabilities.DelayedDelivery"/> capability. A topic send with zero subscriptions is
+    /// dropped — real pub/sub semantics: subscriptions must exist before a publish can reach them.
+    /// </remarks>
     Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default);
+
+    /// <summary>
+    /// Permanently removes the delivered entry — the terminal success settlement. Settling with a stale or
+    /// already-settled receipt SHOULD throw <see cref="ReceiptExpiredException"/>, but that signal is best-effort:
+    /// some brokers (e.g. SQS) treat stale settlement as idempotent, so callers must not depend on it for correctness.
+    /// </summary>
     Task CompleteAsync(TransportEntry entry, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the delivered entry to its source for redelivery with <see cref="TransportEntry.DeliveryCount"/>
+    /// incremented. Same stale-receipt semantics as <see cref="CompleteAsync"/>.
+    /// </summary>
     Task AbandonAsync(TransportEntry entry, CancellationToken ct = default);
 }
 
 public interface ISupportsPull : IMessageTransport
 {
+    /// <summary>
+    /// Receives up to <see cref="ReceiveRequest.MaxMessages"/> entries (a ceiling — fewer, including zero, is valid).
+    /// <see cref="ReceiveRequest.MaxWaitTime"/> is a long-poll window: return as soon as any messages arrive, block up
+    /// to the window when none are available, and return empty when it lapses. Returned entries carry the source
+    /// address as their <see cref="TransportEntry.Destination"/>.
+    /// </summary>
     Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct = default);
 }
 
 public interface ISupportsPush : IMessageTransport
 {
+    /// <summary>
+    /// Attaches a callback that is invoked for each entry delivered from the source until the returned subscription is
+    /// disposed. The callback (or the core wrapping it) settles each entry; a callback that throws without settling
+    /// must result in the entry being abandoned for redelivery, never lost. At most
+    /// <see cref="PushOptions.MaxConcurrentMessages"/> callbacks run concurrently per subscription.
+    /// </summary>
     Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default);
 }
 

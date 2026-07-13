@@ -49,6 +49,12 @@ public sealed record RecordedMessage
 /// Assert.Single(harness.Published&lt;OrderPlaced&gt;());
 /// Assert.Empty(harness.DeadLetteredMessages);
 /// </code>
+/// The harness waits in REAL time: <see cref="WaitForIdleAsync"/>, <see cref="WaitForHandledAsync{T}"/>, and
+/// <see cref="WaitForDeadLetteredAsync{T}"/> poll on a real 25ms cadence regardless of any injected
+/// <see cref="TimeProvider"/>. Delayed redeliveries and backoffs, however, execute on the injected TimeProvider —
+/// so a test that injects a fake TimeProvider must advance it itself or the retry never fires and the wait times
+/// out. For sleep-free retry tests prefer <c>RedeliveryBackoff = _ =&gt; TimeSpan.Zero</c> on the subscription
+/// instead of faking the clock.
 /// </summary>
 public sealed class MessagingTestHarness : IAsyncDisposable
 {
@@ -104,6 +110,41 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public IReadOnlyList<T> DeadLettered<T>() where T : class => Deserialize<T>(_transport.DeadLettered);
 
     /// <summary>
+    /// Destination keys that received sends/publishes but were never received from or subscribed to — the usual
+    /// reason a test is "idle immediately and Handled is empty": the message went to a destination nothing consumes
+    /// (no handler registered, hosted services never started, or a topic published before any subscription existed).
+    /// </summary>
+    public IReadOnlyList<string> DestinationsWithNoConsumer => _transport.DestinationsWithNoConsumer;
+
+    /// <summary>
+    /// Waits (polling in real time) until at least <paramref name="count"/> recorded HANDLED messages deserialize to
+    /// <typeparamref name="T"/>, then returns them — so a test can await one outcome without draining the whole bus.
+    /// Throws <see cref="TimeoutException"/> describing everything that WAS recorded when the timeout (default 30s)
+    /// lapses first.
+    /// </summary>
+    public Task<IReadOnlyList<T>> WaitForHandledAsync<T>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where T : class
+    {
+        return WaitForRecordedAsync(() => Handled<T>(), count, timeout, "handled", typeof(T), cancellationToken);
+    }
+
+    /// <summary>
+    /// Waits (polling in real time) until at least <paramref name="count"/> recorded dead-lettered messages carry a
+    /// MessageType header matching <typeparamref name="T"/> (its registered name or full name), then returns the raw
+    /// <see cref="RecordedMessage"/>s so the caller can assert <see cref="RecordedMessage.Reason"/> and
+    /// <see cref="RecordedMessage.Attempts"/>. Throws <see cref="TimeoutException"/> describing everything that WAS
+    /// recorded when the timeout (default 30s) lapses first.
+    /// </summary>
+    public Task<IReadOnlyList<RecordedMessage>> WaitForDeadLetteredAsync<T>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where T : class
+    {
+        string registeredName = _typeRegistry.GetName(typeof(T));
+        string? fullName = typeof(T).FullName;
+        return WaitForRecordedAsync(() => _transport.DeadLettered
+            .Where(r => String.Equals(r.MessageType, registeredName, StringComparison.Ordinal)
+                || String.Equals(r.MessageType, fullName, StringComparison.Ordinal))
+            .ToList(), count, timeout, "dead-lettered", typeof(T), cancellationToken);
+    }
+
+    /// <summary>
     /// Waits until the transport is quiescent — every known destination has nothing queued and nothing in flight —
     /// so assertions observe the final state. Returns quickly when already idle (fast negative assertions). Throws
     /// <see cref="TimeoutException"/> naming the still-busy destinations when the timeout (default 30s) lapses;
@@ -151,6 +192,41 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => _transport.DisposeAsync();
+
+    private async Task<IReadOnlyList<TRecord>> WaitForRecordedAsync<TRecord>(Func<IReadOnlyList<TRecord>> snapshot, int count, TimeSpan? timeout, string outcome, Type messageType, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(count, 1);
+        var effectiveTimeout = timeout ?? DefaultIdleTimeout;
+        if (effectiveTimeout < TimeSpan.Zero && effectiveTimeout != Timeout.InfiniteTimeSpan)
+            throw new ArgumentOutOfRangeException(nameof(timeout), timeout, "Timeout must be non-negative or Timeout.InfiniteTimeSpan.");
+
+        long deadline = effectiveTimeout == Timeout.InfiniteTimeSpan
+            ? Int64.MaxValue
+            : Environment.TickCount64 + (long)effectiveTimeout.TotalMilliseconds;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var matches = snapshot();
+            if (matches.Count >= count)
+                return matches;
+
+            if (Environment.TickCount64 >= deadline)
+            {
+                // Name what WAS recorded: the usual failure is the message settling some other way (or reaching a
+                // destination nothing consumes), and these counts point straight at which.
+                var detail = new StringBuilder();
+                detail.Append($"Timed out waiting for {count} {outcome} message(s) of type {messageType.Name}; observed {matches.Count}. ");
+                detail.Append($"Recorded so far: sent={_transport.Sent.Count}, published={_transport.Published.Count}, handled={_transport.Handled.Count}, abandoned={_transport.Abandoned.Count}, deadLettered={_transport.DeadLettered.Count}.");
+                var unconsumed = _transport.DestinationsWithNoConsumer;
+                if (unconsumed.Count > 0)
+                    detail.Append($" Destinations with no consumer: {String.Join(", ", unconsumed)}.");
+                throw new TimeoutException(detail.ToString());
+            }
+
+            await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     private IReadOnlyList<T> Deserialize<T>(IReadOnlyList<RecordedMessage> recordings) where T : class
     {

@@ -87,6 +87,75 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     }
 
     [Fact]
+    public virtual async Task SendAsync_ReturnsOneAcceptedIdPerMessageAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is null)
+        {
+            Assert.Skip("No transport configured.");
+            return;
+        }
+
+        try
+        {
+            var queue = DestinationAddress.ForQueue("send-ids");
+            await EnsureAsync(transport, new DestinationDeclaration { Address = queue });
+
+            var result = await transport.SendAsync(queue, [
+                CreateMessage("a"),
+                CreateMessage("b"),
+                CreateMessage("c")
+            ], new TransportSendOptions(), TestCancellationToken);
+
+            // One accepted id per message, positionally aligned (see SendResult): every id present and distinct, so
+            // per-message settlement and tracing can never alias two messages from one batch.
+            Assert.Equal(3, result.Items.Count);
+            var ids = result.Items.Select(i => i.MessageId).ToList();
+            Assert.All(ids, id => Assert.False(String.IsNullOrEmpty(id)));
+            Assert.Equal(3, ids.Distinct(StringComparer.Ordinal).Count());
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    [Fact]
+    public virtual async Task TextContentType_RoundTripsBodyAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport does not support pull receive (ISupportsPull).");
+            return;
+        }
+
+        try
+        {
+            var queue = DestinationAddress.ForQueue("text-content");
+            await EnsureAsync(transport, new DestinationDeclaration { Address = queue });
+
+            // A text ContentType lets text-native transports (SQS/SNS) store the body directly instead of base64;
+            // whichever encoding the provider picks, the bytes must round-trip exactly.
+            byte[] body = Encoding.UTF8.GetBytes("""{"hello":"wörld"}""");
+            await transport.SendAsync(queue, [new TransportMessage
+            {
+                Body = body,
+                ContentType = "application/json"
+            }], new TransportSendOptions(), TestCancellationToken);
+
+            var entry = Assert.Single(await pull.ReceiveAsync(queue, new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
+            Assert.Equal(body, entry.Body.ToArray());
+
+            await transport.CompleteAsync(entry, TestCancellationToken);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    [Fact]
     public virtual async Task AbandonAsync_RedeliversWithIncrementedDeliveryCountAsync()
     {
         var transport = CreateTransport();
@@ -189,7 +258,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsProvisioning)
         {
-            Assert.Skip("Transport does not support pull receive and provisioning (ISupportsPull + ISupportsProvisioning).");
+            Assert.Skip("Fan-out verification requires pull receive plus provisioning (ISupportsPull + ISupportsProvisioning) to create the topic's subscriptions up front. A transport that supports topics without ISupportsProvisioning (subscriptions created out of band) must cover fan-out in its own tests.");
             return;
         }
 
@@ -617,6 +686,9 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             Assert.Equal("poison", ReadBody(deadLettered));
             Assert.Equal("acme", deadLettered.Headers["tenant"]);
             Assert.Equal("bad-payload", deadLettered.Headers[KnownHeaders.DeadLetterReason]);
+
+            // Reading the dead-letter backlog consumes it: a second read must return empty, not the same entries.
+            Assert.Empty(await deadLetter.ReceiveDeadLetteredAsync(queue, new ReceiveRequest { MaxMessages = 10 }, TestCancellationToken));
         }
         finally
         {

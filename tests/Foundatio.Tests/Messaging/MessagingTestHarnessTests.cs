@@ -7,6 +7,7 @@ using Foundatio.Messaging;
 using Foundatio.Messaging.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -115,6 +116,115 @@ public class MessagingTestHarnessTests
 
         var timeout = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromSeconds(2), cancellationToken));
         Assert.Contains("harness-other", timeout.Message);
+    }
+
+    [Fact]
+    public async Task WaitForHandled_ReturnsMatchesAndTimesOutWithDiagnosticsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var harness = new MessagingTestHarness();
+        await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
+
+        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
+
+        await bus.SendAsync(new HarnessOrder { Id = "one" }, cancellationToken: cancellationToken);
+        await bus.SendAsync(new HarnessOrder { Id = "two" }, cancellationToken: cancellationToken);
+
+        // Awaits just the outcome under test — no full-bus drain needed before asserting.
+        var handled = await harness.WaitForHandledAsync<HarnessOrder>(2, cancellationToken: cancellationToken);
+        Assert.Equal(2, handled.Count);
+        Assert.Contains(handled, m => m.Id == "one");
+        Assert.Contains(handled, m => m.Id == "two");
+
+        // A type that never settles fails fast, naming everything that WAS recorded.
+        var timeout = await Assert.ThrowsAsync<TimeoutException>(() =>
+            harness.WaitForHandledAsync<HarnessOther>(timeout: TimeSpan.FromMilliseconds(200), cancellationToken: cancellationToken));
+        Assert.Contains("sent=2", timeout.Message);
+        Assert.Contains("handled=2", timeout.Message);
+        Assert.Contains("deadLettered=0", timeout.Message);
+    }
+
+    [Fact]
+    public async Task WaitForDeadLettered_WithZeroBackoff_IsSleepFreeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var harness = new MessagingTestHarness();
+        await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
+
+        // Zero backoff makes the whole retry cycle run without any wall-clock delay — the sleep-free way to test the
+        // retry/dead-letter path (no fake clock to advance).
+        int attempts = 0;
+        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("always fails");
+        }, new MessageSubscriptionOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.Zero }, cancellationToken);
+
+        await bus.SendAsync(new HarnessOrder { Id = "poison" }, cancellationToken: cancellationToken);
+
+        // The raw records surface the terminal forensics: the reason and the exhausted attempt count.
+        var dead = Assert.Single(await harness.WaitForDeadLetteredAsync<HarnessOrder>(cancellationToken: cancellationToken));
+        Assert.Equal("handler-error", dead.Reason);
+        Assert.Equal(3, dead.Attempts);
+        Assert.Equal(3, Volatile.Read(ref attempts));
+        Assert.Empty(harness.HandledMessages);
+    }
+
+    [Fact]
+    public async Task FakeTimeProvider_AdvancingTheClockFiresDelayedRedeliveryAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // With an injected fake TimeProvider the harness still WAITS in real time, but delayed redeliveries execute
+        // on the fake clock — the test must advance it itself or the retry never fires.
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var harness = new MessagingTestHarness(timeProvider: timeProvider);
+        await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false, TimeProvider = timeProvider });
+
+        int attempts = 0;
+        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        {
+            if (Interlocked.Increment(ref attempts) == 1)
+                throw new InvalidOperationException("fails once");
+            return Task.CompletedTask;
+        }, new MessageSubscriptionOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMinutes(5) }, cancellationToken);
+
+        await bus.SendAsync(new HarnessOrder { Id = "clockwork" }, cancellationToken: cancellationToken);
+
+        // Advance only after the failed attempt settles — the redelivery timer is armed by the abandon.
+        while (harness.AbandonedMessages.Count == 0)
+            await Task.Delay(10, cancellationToken);
+        Assert.Empty(harness.HandledMessages);
+
+        timeProvider.Advance(TimeSpan.FromMinutes(5));
+
+        Assert.Equal("clockwork", Assert.Single(await harness.WaitForHandledAsync<HarnessOrder>(cancellationToken: cancellationToken)).Id);
+        Assert.Equal(2, Volatile.Read(ref attempts));
+    }
+
+    [Fact]
+    public async Task DestinationsWithNoConsumer_NamesTheDestinationsNothingConsumesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var harness = new MessagingTestHarness();
+        await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
+
+        // The newcomer's first failing test: sent/published fine, idle immediately, Handled empty — because nothing
+        // consumes the destination. This property names the culprit.
+        await bus.SendAsync(new HarnessOther { Id = "orphan" }, cancellationToken: cancellationToken);
+        await bus.PublishAsync(new HarnessOrder { Id = "dropped" }, cancellationToken: cancellationToken);
+
+        Assert.Contains("harness-other", harness.DestinationsWithNoConsumer);
+        Assert.Contains("harness-orders", harness.DestinationsWithNoConsumer);
+
+        // Once a subscriber attaches (and drains the parked command), the queue is no longer unconsumed; the topic
+        // publish stays listed — it was dropped for having zero subscriptions at publish time.
+        await using var subscription = await bus.SubscribeAsync<HarnessOther>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
+        await harness.WaitForIdleAsync(cancellationToken: cancellationToken);
+
+        Assert.Single(harness.Handled<HarnessOther>());
+        Assert.DoesNotContain("harness-other", harness.DestinationsWithNoConsumer);
+        Assert.Contains("harness-orders", harness.DestinationsWithNoConsumer);
     }
 
     [Fact]
