@@ -3,17 +3,17 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
-public class JobResult
+/// <summary>
+/// The outcome of one job run. Immutable — the shared <see cref="Success"/>/<see cref="Cancelled"/> instances are
+/// safe to return from any job; use the <c>*WithMessage</c>/<see cref="FromException"/> factories (or a
+/// <c>with</c>-expression) to attach details.
+/// </summary>
+public sealed record JobResult
 {
-    public bool IsCancelled { get; set; }
-    public Exception? Error { get; set; }
-    public string Message { get; set; } = String.Empty;
-    public bool IsSuccess { get; set; }
-
-    public static readonly JobResult None = new()
-    {
-        IsSuccess = true
-    };
+    public bool IsCancelled { get; init; }
+    public Exception? Error { get; init; }
+    public string Message { get; init; } = String.Empty;
+    public bool IsSuccess { get; init; }
 
     public static readonly JobResult Cancelled = new()
     {

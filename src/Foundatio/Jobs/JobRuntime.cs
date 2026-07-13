@@ -295,6 +295,11 @@ public sealed class JobExecutionContext
         if (_payload is not { } payload)
             throw new InvalidOperationException($"Job \"{JobId}\" was enqueued without arguments. Use EnqueueAsync<TJob, TArgs>(args) to supply a typed payload.");
 
+        // The stored discriminator is a guard, not just forensics: deserializing type A's payload as a structurally
+        // similar type B usually SUCCEEDS with silently-wrong data, so a mismatch must fail before deserialization.
+        if (_payloadType is not null && !String.Equals(_payloadType, typeof(TArgs).FullName, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Job \"{JobId}\" arguments were stored as \"{_payloadType}\" but were requested as \"{typeof(TArgs).FullName}\". Request the type the job was enqueued with.");
+
         var serializer = _serializer ?? DefaultSerializer.Instance;
         TArgs? args;
         try
@@ -312,7 +317,11 @@ public sealed class JobExecutionContext
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
         => _store?.SetProgressAsync(JobId, percent, message, cancellationToken) ?? Task.CompletedTask;
 
-    // Extends the worker's lease so a long-but-alive run is not reclaimed as stale.
+    /// <summary>
+    /// Forces an immediate lease renewal. Long-running jobs do NOT need to call this — the worker renews the lease
+    /// automatically on a supervised loop for the entire run (and cancels the run if the lease is lost). Use it only
+    /// to observe lease health explicitly (a false return means another node now owns the job).
+    /// </summary>
     public Task<bool> RenewLeaseAsync(CancellationToken cancellationToken = default)
         => _store?.RenewClaimAsync(JobId, _nodeId, _lease, cancellationToken) ?? Task.FromResult(true);
 

@@ -101,11 +101,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     public IMessageRouter Router => _router;
 
-    // A transport that does not advertise ITransportInfo is assumed to support every role (test doubles, minimal
-    // providers); one that does advertise is held to its declaration.
+    // A transport that advertises ITransportInfo is held to its declaration. One that does not is assumed to be a
+    // minimal QUEUE-ONLY transport — assuming every role would let a queue-only provider silently accept topic
+    // publishes it can never fan out, which contradicts the "anything not advertised is unsupported" capability
+    // philosophy. Real providers should implement ITransportInfo and state their roles.
     public bool SupportsRole(DestinationRole role)
     {
-        return _transport is not ITransportInfo info || info.SupportedRoles.Contains(role);
+        return _transport is ITransportInfo info ? info.SupportedRoles.Contains(role) : role == DestinationRole.Queue;
     }
 
     public Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
@@ -148,6 +150,10 @@ internal sealed class MessageClientCore : IAsyncDisposable
         var sendOptions = BuildSendOptions(options);
         string messageId = Guid.NewGuid().ToString("N");
         var transportMessage = CreateTransportMessage(message, messageType, options, messageId);
+
+        // Produce-side routing visibility: the consume side logs its effective topology at subscribe time, and this
+        // is its counterpart for "where did my message actually go" debugging.
+        _logger.LogDebug("Sending {MessageType} to {Destination}", messageType.Name, destination);
 
         if (ensureDestination is not null)
             await ensureDestination(destination, cancellationToken).AnyContext();
@@ -316,6 +322,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         maxConcurrency = Math.Max(1, maxConcurrency);
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         var inFlight = new ConcurrentDictionary<Task, byte>();
+        int consecutiveReceiveFailures = 0;
 
         try
         {
@@ -356,10 +363,22 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 catch (Exception ex)
                 {
                     ReleaseSlots(slots, claimed);
-                    _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
+
+                    // The first failure of an outage is the alert; repeats at 1/s would be a firehose, so they
+                    // de-escalate to WARN (with a running count) until a receive succeeds again.
+                    consecutiveReceiveFailures++;
+                    if (consecutiveReceiveFailures == 1)
+                        _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
+                    else
+                        _logger.LogWarning(ex, "Error receiving from \"{Source}\" ({ConsecutiveFailures} consecutive); retrying: {Message}", source, consecutiveReceiveFailures, ex.Message);
+
                     await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
                     continue;
                 }
+
+                if (consecutiveReceiveFailures > 1)
+                    _logger.LogInformation("Receiving from \"{Source}\" recovered after {ConsecutiveFailures} consecutive failures", source, consecutiveReceiveFailures);
+                consecutiveReceiveFailures = 0;
 
                 // We hold exactly `claimed` slots and release one per processed entry, so never process more than we
                 // claimed: a well-behaved transport returns <= MaxMessages, but a transport that ignores MaxMessages and
@@ -637,6 +656,11 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private void ValidateCapabilities(DestinationRole role, MessagePriority priority, TimeSpan? timeToLive)
     {
+        // Sends are role-enforced too: a topic publish on a queue-only transport must fail loudly here rather than
+        // be accepted into a namespace nothing can ever fan out.
+        if (!SupportsRole(role))
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support {role} destinations.");
+
         var capabilities = CapabilitiesFor(role);
 
         if (priority != MessagePriority.Normal && !capabilities.Priority)
@@ -796,7 +820,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 if (_consumers.TryGetValue(registration.Key, out var existing))
                 {
                     if (!existing.Registration.Info.Matches(registration.Info))
-                        throw new InvalidOperationException($"A consumer with key \"{registration.Key}\" is already registered with a different handler or options.");
+                        throw new InvalidOperationException($"A consumer with key \"{registration.Key}\" is already registered with a different handler or options. Subscriptions sharing a Key must use the same handler and the SAME delegate instances for RedeliveryBackoff/DeadLetterWhen — they are compared by identity, so a lambda recreated per subscription counts as a different policy.");
 
                     handle = existing.Handle; // idempotent re-registration
                     return true;

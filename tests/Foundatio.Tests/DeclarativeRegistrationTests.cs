@@ -30,7 +30,9 @@ public class DeclarativeRegistrationTests
 
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
-        Assert.Single(hosted); // one auto-registered hosted service drives every handler
+        // Auto-registered: startup topology, ONE handler host driving every handler, and the misconfiguration validator.
+        Assert.Equal(3, hosted.Count);
+        Assert.Single(hosted.OfType<MessageHandlerHostedService>());
 
         foreach (var service in hosted)
             await service.StartAsync(cancellationToken);

@@ -317,7 +317,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// <summary>Uses the in-memory transport — the all-defaults setup for development and tests.</summary>
         public FoundatioBuilder UseInMemory()
         {
-            RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
+            RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>(), sp.GetService<ILoggerFactory>()));
             return _builder;
         }
 
@@ -341,7 +341,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// once per subscribing service (a scaled service's instances compete), or by every instance when
         /// <see cref="MessageSubscriptionOptions.PerInstance"/> is set. The handler is resolved from DI in its own scope
         /// per message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter policy. A single
-        /// hosted service starts and stops all registered handlers.
+        /// hosted service starts and stops all registered handlers — a running generic host (WebApplication/Host) is
+        /// REQUIRED; in a process that never starts hosted services the handlers never attach.
         /// </summary>
         public FoundatioBuilder AddHandler<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
@@ -384,6 +385,10 @@ public class FoundatioBuilder : IFoundatioBuilder
                 }
             });
 
+            // The validator must precede the handler host so a missing transport fails with the actionable message,
+            // not the handler host's bare unresolved-service error.
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(FoundatioStartupValidationService)))
+                _services.AddSingleton<IHostedService, FoundatioStartupValidationService>();
             if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
                 _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
 
@@ -405,6 +410,11 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton(_ => new MessagingTopologyOptions(_topologyMode));
             RegisterMessageTopology();
             RegisterMessageClients();
+
+            // Startup topology (Ensure/Validate) must run for publish-only apps too, so it is its own hosted service
+            // rather than riding the handler host.
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessagingTopologyStartupService)))
+                _services.AddSingleton<IHostedService, MessagingTopologyStartupService>();
         }
 
         private void RegisterRoutingServices()
@@ -515,6 +525,14 @@ public class FoundatioBuilder : IFoundatioBuilder
             configure?.Invoke(options);
             string name = options.Name ?? ScheduledJobDefinition.DefaultNameFor(typeof(TJob));
 
+            // Fail at registration, not at pump start: a cron typo otherwise costs one scrolled-past ERROR line and a
+            // job that silently never fires.
+            JobScheduleProcessor.ValidateCron(cronSchedule);
+
+            // Duplicate schedule names silently last-win at the scheduler; catch them here where both call sites are visible.
+            if (_services.Any(d => d.ImplementationInstance is ScheduledJobDefinition existing && String.Equals(existing.Name, name, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"A CRON job named \"{name}\" is already registered. Give one of them an explicit CronJobOptions.Name.");
+
             _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
             _services.AddSingleton(new ScheduledJobDefinition
             {
@@ -529,6 +547,10 @@ public class FoundatioBuilder : IFoundatioBuilder
                 TimeZone = options.TimeZone,
                 Arguments = options.Arguments
             });
+
+            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(FoundatioStartupValidationService)))
+                _services.AddSingleton<IHostedService, FoundatioStartupValidationService>();
+
             return _builder;
         }
 
