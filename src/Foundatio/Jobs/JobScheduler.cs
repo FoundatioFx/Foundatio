@@ -42,7 +42,9 @@ public sealed record ScheduledJobDefinition
     public ScheduledJobScope Scope { get; init; } = ScheduledJobScope.Global;
     public OverlapPolicy Overlap { get; init; } = OverlapPolicy.SkipIfRunning;
     public TimeSpan? MisfireWindow { get; init; }
-    public int MaxRetries { get; init; } = 3;
+    /// <summary>Maximum TOTAL run attempts for a failed occurrence before it is dead-lettered (same semantics as the
+    /// messaging RetryPolicy and pump MaxJobAttempts). Default 3.</summary>
+    public int MaxAttempts { get; init; } = 3;
 
     /// <summary>
     /// Computes the delay before a failed occurrence is retried, given the attempt number (1-based).
@@ -77,8 +79,8 @@ public sealed class CronJobOptions
     /// <summary>How late a missed occurrence may still fire. Null uses the scheduler default.</summary>
     public TimeSpan? MisfireWindow { get; set; }
 
-    /// <summary>Maximum retry attempts for a failed occurrence. Default 3.</summary>
-    public int MaxRetries { get; set; } = 3;
+    /// <summary>Maximum TOTAL run attempts for a failed occurrence before dead-lettering. Default 3.</summary>
+    public int MaxAttempts { get; set; } = 3;
 
     /// <summary>Whether the schedule is active. Default true.</summary>
     public bool Enabled { get; set; } = true;
@@ -90,7 +92,11 @@ public sealed class CronJobOptions
     public object? Arguments { get; set; }
 }
 
-public interface IJobScheduler
+/// <summary>
+/// Storage contract for scheduled (CRON) job definitions. Implementations persist the definitions themselves;
+/// <see cref="IScheduledJobManager"/> is the user-facing management API layered on top of this store.
+/// </summary>
+public interface IScheduledJobStore
 {
     Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default);
     Task UnscheduleAsync(string name, CancellationToken cancellationToken = default);
@@ -100,7 +106,7 @@ public interface IJobScheduler
 /// <summary>
 /// Runtime management surface for scheduled (CRON) jobs: list and inspect schedules, add or replace definitions,
 /// change a schedule's cron expression, enable/disable, and trigger an immediate occurrence. Declaratively-registered
-/// jobs (<c>AddCronJob&lt;TJob&gt;</c>) and definitions added here share the same <see cref="IJobScheduler"/> store,
+/// jobs (<c>AddCronJob&lt;TJob&gt;</c>) and definitions added here share the same <see cref="IScheduledJobStore"/> store,
 /// so both are manageable through this interface.
 /// </summary>
 public interface IScheduledJobManager
@@ -165,15 +171,15 @@ public static class ScheduledJobManagerExtensions
 
 public sealed class ScheduledJobManager : IScheduledJobManager
 {
-    private readonly IJobScheduler _scheduler;
+    private readonly IScheduledJobStore _scheduleStore;
     private readonly IJobRuntimeStore _store;
     private readonly IJobTypeRegistry _jobTypes;
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
-    public ScheduledJobManager(IJobScheduler scheduler, IJobRuntimeStore store, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null, TimeProvider? timeProvider = null)
+    public ScheduledJobManager(IScheduledJobStore scheduleStore, IJobRuntimeStore store, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null, TimeProvider? timeProvider = null)
     {
-        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+        _scheduleStore = scheduleStore ?? throw new ArgumentNullException(nameof(scheduleStore));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _jobTypes = jobTypes ?? new JobTypeRegistry();
         _serializer = serializer ?? DefaultSerializer.Instance;
@@ -181,20 +187,20 @@ public sealed class ScheduledJobManager : IScheduledJobManager
     }
 
     public Task<IReadOnlyList<ScheduledJobDefinition>> GetSchedulesAsync(CancellationToken cancellationToken = default)
-        => _scheduler.GetSchedulesAsync(cancellationToken);
+        => _scheduleStore.GetSchedulesAsync(cancellationToken);
 
     public async Task<ScheduledJobDefinition?> GetScheduleAsync(string name, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);
-        var schedules = await _scheduler.GetSchedulesAsync(cancellationToken).ConfigureAwait(false);
+        var schedules = await _scheduleStore.GetSchedulesAsync(cancellationToken).ConfigureAwait(false);
         return schedules.FirstOrDefault(s => String.Equals(s.Name, name, StringComparison.Ordinal));
     }
 
     public Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default)
-        => _scheduler.ScheduleAsync(definition, cancellationToken);
+        => _scheduleStore.ScheduleAsync(definition, cancellationToken);
 
     public Task UnscheduleAsync(string name, CancellationToken cancellationToken = default)
-        => _scheduler.UnscheduleAsync(name, cancellationToken);
+        => _scheduleStore.UnscheduleAsync(name, cancellationToken);
 
     public async Task<bool> RescheduleAsync(string name, string cronSchedule, CancellationToken cancellationToken = default)
     {
@@ -205,7 +211,7 @@ public sealed class ScheduledJobManager : IScheduledJobManager
         if (definition is null)
             return false;
 
-        await _scheduler.ScheduleAsync(definition with { Cron = cronSchedule }, cancellationToken).ConfigureAwait(false);
+        await _scheduleStore.ScheduleAsync(definition with { Cron = cronSchedule }, cancellationToken).ConfigureAwait(false);
         return true;
     }
 
@@ -216,7 +222,7 @@ public sealed class ScheduledJobManager : IScheduledJobManager
             return false;
 
         if (definition.Enabled != enabled)
-            await _scheduler.ScheduleAsync(definition with { Enabled = enabled }, cancellationToken).ConfigureAwait(false);
+            await _scheduleStore.ScheduleAsync(definition with { Enabled = enabled }, cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -224,15 +230,15 @@ public sealed class ScheduledJobManager : IScheduledJobManager
     public async Task<JobHandle> TriggerAsync(string name, CancellationToken cancellationToken = default)
     {
         var definition = await GetScheduleAsync(name, cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"No scheduled job named \"{name}\" is registered.");
+            ?? throw new ScheduledJobNotFoundException(name);
 
         if (definition.JobType is null)
-            throw new InvalidOperationException($"Scheduled job \"{name}\" has no job type and cannot be triggered.");
+            throw new JobException($"Scheduled job \"{name}\" has no job type and cannot be triggered.");
 
         // The occurrence-run path releases (and endlessly re-claims) dispatches whose definition is disabled, so a
         // trigger of a disabled schedule would park forever rather than run — refuse it up front instead.
         if (!definition.Enabled)
-            throw new InvalidOperationException($"Scheduled job \"{name}\" is disabled. Enable it before triggering (SetEnabledAsync(\"{name}\", true)).");
+            throw new ScheduledJobDisabledException(name);
 
         var now = _timeProvider.GetUtcNow();
 
@@ -272,7 +278,7 @@ public sealed class ScheduledJobManager : IScheduledJobManager
     }
 }
 
-public sealed class InMemoryJobScheduler : IJobScheduler
+public sealed class InMemoryScheduledJobStore : IScheduledJobStore
 {
     private readonly ConcurrentDictionary<string, ScheduledJobDefinition> _definitions = new(StringComparer.Ordinal);
 
@@ -283,8 +289,8 @@ public sealed class InMemoryJobScheduler : IJobScheduler
         ArgumentException.ThrowIfNullOrEmpty(definition.Cron);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (definition.MaxRetries < 0)
-            throw new ArgumentOutOfRangeException(nameof(definition), definition.MaxRetries, "MaxRetries must be greater than or equal to zero.");
+        if (definition.MaxAttempts < 1)
+            throw new ArgumentOutOfRangeException(nameof(definition), definition.MaxAttempts, "MaxAttempts must be at least 1 (it is the TOTAL number of run attempts).");
 
         if (definition.JobType is not null && !typeof(IJob).IsAssignableFrom(definition.JobType))
             throw new ArgumentException("JobType must implement IJob.", nameof(definition));
@@ -309,12 +315,25 @@ public sealed class InMemoryJobScheduler : IJobScheduler
     }
 }
 
+/// <summary>
+/// Optional dependencies for <see cref="JobScheduleProcessor"/>. Prefer the options-taking constructor when
+/// hand-wiring a processor; unset properties fall back to the same defaults as the full constructor.
+/// </summary>
+public sealed record JobScheduleProcessorOptions
+{
+    public TimeProvider? TimeProvider { get; init; }
+    public string? NodeId { get; init; }
+    public IMessageTransport? Transport { get; init; }
+    public IJobTypeRegistry? JobTypes { get; init; }
+    public ISerializer? Serializer { get; init; }
+}
+
 public sealed class JobScheduleProcessor
 {
     private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DefaultMisfireWindow = TimeSpan.FromMinutes(1);
 
-    private readonly IJobScheduler _scheduler;
+    private readonly IScheduledJobStore _scheduleStore;
     private readonly IJobRuntimeStore _store;
     private readonly IJobWorker _jobWorker;
     private readonly TimeProvider _timeProvider;
@@ -323,9 +342,15 @@ public sealed class JobScheduleProcessor
     private readonly string _nodeId;
     private readonly IMessageTransport? _transport;
 
-    public JobScheduleProcessor(IJobScheduler scheduler, IJobRuntimeStore store, IJobWorker jobWorker, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null)
+    /// <summary>Preferred overload for hand-wiring: the optional dependencies come in as one options record.</summary>
+    public JobScheduleProcessor(IScheduledJobStore scheduleStore, IJobRuntimeStore store, IJobWorker jobWorker, JobScheduleProcessorOptions? options = null)
+        : this(scheduleStore, store, jobWorker, options?.TimeProvider, options?.NodeId, options?.Transport, options?.JobTypes, options?.Serializer)
     {
-        _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+    }
+
+    public JobScheduleProcessor(IScheduledJobStore scheduleStore, IJobRuntimeStore store, IJobWorker jobWorker, TimeProvider? timeProvider = null, string? nodeId = null, IMessageTransport? transport = null, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null)
+    {
+        _scheduleStore = scheduleStore ?? throw new ArgumentNullException(nameof(scheduleStore));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _jobWorker = jobWorker ?? throw new ArgumentNullException(nameof(jobWorker));
         _timeProvider = timeProvider ?? TimeProvider.System;
@@ -345,7 +370,7 @@ public sealed class JobScheduleProcessor
         cancellationToken.ThrowIfCancellationRequested();
 
         var scheduled = new List<ScheduledDispatchState>();
-        var definitions = await _scheduler.GetSchedulesAsync(cancellationToken).ConfigureAwait(false);
+        var definitions = await _scheduleStore.GetSchedulesAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var definition in definitions)
         {
@@ -427,7 +452,7 @@ public sealed class JobScheduleProcessor
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var definitions = (await _scheduler.GetSchedulesAsync(cancellationToken).ConfigureAwait(false))
+        var definitions = (await _scheduleStore.GetSchedulesAsync(cancellationToken).ConfigureAwait(false))
             .ToDictionary(d => d.Name, StringComparer.Ordinal);
 
         var dispatches = await _store.ClaimDueDispatchesAsync(utcNow, limit, _nodeId, lease ?? DefaultLease, cancellationToken).ConfigureAwait(false);
@@ -484,7 +509,7 @@ public sealed class JobScheduleProcessor
                 var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
                 if (state?.Status == JobStatus.Failed)
                 {
-                    if (state.Attempt <= definition.MaxRetries)
+                    if (state.Attempt < definition.MaxAttempts)
                     {
                         await _store.TryTransitionAsync(jobId, JobStatus.Failed, JobStatus.Scheduled, new JobStatePatch
                         {
@@ -547,7 +572,7 @@ public sealed class JobScheduleProcessor
         if (state?.Status != JobStatus.Processing || state.LeaseExpiresUtc is null || state.LeaseExpiresUtc > utcNow)
             return false;
 
-        if (state.Attempt > definition.MaxRetries)
+        if (state.Attempt >= definition.MaxAttempts)
         {
             await _store.TryTransitionAsync(jobId, JobStatus.Processing, JobStatus.DeadLettered, new JobStatePatch
             {

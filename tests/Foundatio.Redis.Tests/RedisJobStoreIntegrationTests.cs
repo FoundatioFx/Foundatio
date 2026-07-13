@@ -83,7 +83,7 @@ public class RedisJobStoreIntegrationTests
 
         var cancellationToken = TestContext.Current.CancellationToken;
         var store = RedisTestConnection.CreateStore(connection);
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var (processor, probe) = CreateProcessor(store, scheduler);
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
@@ -134,7 +134,7 @@ public class RedisJobStoreIntegrationTests
 
         var cancellationToken = TestContext.Current.CancellationToken;
         var store = RedisTestConnection.CreateStore(connection);
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var (processor, probe) = CreateProcessor(store, scheduler);
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
@@ -144,7 +144,7 @@ public class RedisJobStoreIntegrationTests
             Name = "flaky",
             Cron = "* * * * *",
             JobType = typeof(FailingJob),
-            MaxRetries = 1
+            MaxAttempts = 2
         }, cancellationToken);
         var flaky = Assert.Single(await processor.EnqueueDueOccurrencesAsync(now, cancellationToken));
 
@@ -168,7 +168,7 @@ public class RedisJobStoreIntegrationTests
             Name = "nightly",
             Cron = "* * * * *",
             JobType = typeof(ProbeJob),
-            MaxRetries = 1
+            MaxAttempts = 2
         }, cancellationToken);
         await store.CreateIfAbsentAsync(new JobState
         {
@@ -199,9 +199,9 @@ public class RedisJobStoreIntegrationTests
     }
 
     private static (JobScheduleProcessor Processor, Probe Probe) CreateProcessor(IJobRuntimeStore store, IMessageTransport? transport = null)
-        => CreateProcessor(store, new InMemoryJobScheduler(), transport);
+        => CreateProcessor(store, new InMemoryScheduledJobStore(), transport);
 
-    private static (JobScheduleProcessor Processor, Probe Probe) CreateProcessor(IJobRuntimeStore store, IJobScheduler scheduler, IMessageTransport? transport = null)
+    private static (JobScheduleProcessor Processor, Probe Probe) CreateProcessor(IJobRuntimeStore store, IScheduledJobStore scheduler, IMessageTransport? transport = null)
     {
         var probe = new Probe();
         var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
@@ -255,7 +255,7 @@ public class RedisJobStoreIntegrationTests
         public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
         public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
 
-        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
             new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
         public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)

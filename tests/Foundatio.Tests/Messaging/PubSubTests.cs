@@ -421,7 +421,7 @@ public class PubSubTests
     {
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        return new JobScheduleProcessor(new InMemoryJobScheduler(), store, worker, nodeId: "node-a", transport: transport);
+        return new JobScheduleProcessor(new InMemoryScheduledJobStore(), store, worker, nodeId: "node-a", transport: transport);
     }
 
     // Mirrors AWS SQS/SNS: native delayed delivery on queues only. Topic sends with a future DeliverAt throw, so a
@@ -440,7 +440,7 @@ public class PubSubTests
         public IReadOnlySet<DestinationRole> SupportedRoles =>
             new HashSet<DestinationRole> { DestinationRole.Queue, DestinationRole.Topic, DestinationRole.Subscription };
 
-        public TransportCapabilities GetCapabilities(DestinationRole role) => role == DestinationRole.Topic
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) => destination.Role == DestinationRole.Topic
             ? TransportCapabilities.None
             : new TransportCapabilities { DelayedDelivery = true, MaxDeliveryDelay = _queueMaxDelay };
 

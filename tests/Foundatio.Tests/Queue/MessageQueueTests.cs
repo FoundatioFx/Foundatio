@@ -418,7 +418,7 @@ public class MessageQueueTests
 
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Jobs.UseInMemoryRuntime();
+            .Jobs.UseInMemory();
 
         await using var provider = services.BuildServiceProvider();
 
@@ -939,7 +939,7 @@ public class MessageQueueTests
     {
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        return new JobScheduleProcessor(new InMemoryJobScheduler(), store, worker, nodeId: "node-a", transport: transport);
+        return new JobScheduleProcessor(new InMemoryScheduledJobStore(), store, worker, nodeId: "node-a", transport: transport);
     }
 
     [MessageRoute("routed-work")]
@@ -988,7 +988,7 @@ public class MessageQueueTests
         public int? MaxBatchSize { get; }
         public long? MaxMessageBytes { get; }
 
-        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
             new() { Ordering = OrderingGuarantee.Fifo, MaxBatchSize = MaxBatchSize, MaxMessageBytes = MaxMessageBytes };
 
         public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
@@ -1022,7 +1022,7 @@ public class MessageQueueTests
         public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
         public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
 
-        public TransportCapabilities GetCapabilities(DestinationRole role) =>
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
             new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
 
         public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)

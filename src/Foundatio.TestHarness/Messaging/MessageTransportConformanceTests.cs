@@ -60,7 +60,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
 
             // Only assert positional FIFO order when the transport actually guarantees ordering; a best-effort
             // (OrderingGuarantee.None) transport may legitimately deliver out of order.
-            if (GetCapabilities(transport, DestinationRole.Queue).Ordering != OrderingGuarantee.None)
+            if (GetCapabilities(transport, queue).Ordering != OrderingGuarantee.None)
             {
                 Assert.Equal("one", ReadBody(entries[0]));
                 Assert.Equal("two", ReadBody(entries[1]));
@@ -285,7 +285,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             return;
         }
 
-        if (GetCapabilities(transport, DestinationRole.Topic).DelayedDelivery)
+        if (GetCapabilities(transport, DestinationAddress.ForTopic("delayed-topic")).DelayedDelivery)
         {
             Assert.Skip("Transport honors delayed delivery natively for topics; nothing to refuse.");
             return;
@@ -311,7 +311,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     public virtual async Task ReceiveAsync_RespectsPriorityAsync()
     {
         var transport = CreateTransport();
-        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationRole.Queue).Priority)
+        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationAddress.ForQueue("priority")).Priority)
         {
             Assert.Skip("Transport does not support pull receive with queue priority (ISupportsPull + Priority capability).");
             return;
@@ -349,7 +349,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     public virtual async Task SendAsync_WithDeliverAt_DelaysVisibilityAsync()
     {
         var transport = CreateTransport();
-        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationRole.Queue).DelayedDelivery)
+        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationAddress.ForQueue("delayed")).DelayedDelivery)
         {
             Assert.Skip("Transport does not support pull receive with native queue delayed delivery (ISupportsPull + DelayedDelivery capability).");
             return;
@@ -410,7 +410,7 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     public virtual async Task ReceiveAsync_WithExpiredMessage_DeadlettersAndSkipsAsync()
     {
         var transport = CreateTransport();
-        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationRole.Queue).Expiration || transport is not ISupportsStats stats)
+        if (transport is not ISupportsPull pull || !GetCapabilities(transport, DestinationAddress.ForQueue("expiration")).Expiration || transport is not ISupportsStats stats)
         {
             Assert.Skip("Transport does not support pull receive with expiration and stats (ISupportsPull + Expiration capability + ISupportsStats).");
             return;
@@ -685,9 +685,9 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
         Assert.Equal(0, current.Working);
     }
 
-    private static TransportCapabilities GetCapabilities(IMessageTransport transport, DestinationRole role)
+    private static TransportCapabilities GetCapabilities(IMessageTransport transport, DestinationAddress destination)
     {
-        return transport is ITransportInfo info ? info.GetCapabilities(role) : TransportCapabilities.None;
+        return transport is ITransportInfo info ? info.GetCapabilities(destination) : TransportCapabilities.None;
     }
 
     private static async Task EnsureAsync(IMessageTransport transport, params DestinationDeclaration[] declarations)

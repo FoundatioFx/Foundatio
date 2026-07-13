@@ -232,11 +232,13 @@ public interface ITransportInfo
     IReadOnlySet<DestinationRole> SupportedRoles { get; }
 
     /// <summary>
-    /// The capabilities and limits this transport honors for destinations of the given role. Must be side-effect free
-    /// and cheap; the core consults it on every send-path decision (native delay vs. runtime-store fallback,
-    /// priority/expiration validation, size and batch limits).
+    /// The capabilities and limits this transport honors for the given destination. Most transports vary only by
+    /// <see cref="DestinationAddress.Role"/> (SQS queues take a native delay; SNS topics do not), but the full address
+    /// is the key so a routing/composite transport can answer per destination. Must be side-effect free and cheap;
+    /// the core consults it on every send-path decision (native delay vs. runtime-store fallback, priority/expiration
+    /// validation, size and batch limits).
     /// </summary>
-    TransportCapabilities GetCapabilities(DestinationRole role);
+    TransportCapabilities GetCapabilities(DestinationAddress destination);
 }
 
 public interface IMessageTransport : IAsyncDisposable

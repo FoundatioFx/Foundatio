@@ -76,8 +76,8 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
 
-    public TransportCapabilities GetCapabilities(DestinationRole role) =>
-        role == DestinationRole.Topic ? _topicCapabilities : _queueCapabilities;
+    public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
+        destination.Role == DestinationRole.Topic ? _topicCapabilities : _queueCapabilities;
 
     public TimeSpan? MaxRedeliveryDelay => TimeSpan.FromHours(12); // SQS ChangeMessageVisibility maximum
     public TimeSpan? MaxVisibilityTimeout => TimeSpan.FromHours(12); // SQS visibility maximum

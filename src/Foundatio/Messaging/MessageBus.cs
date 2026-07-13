@@ -40,6 +40,8 @@ public sealed record MessagePublishOptions
 /// handler that only ever consumes commands (or only events) states that intent so no idle listener is wired — and so
 /// a queue-only or topic-only transport can serve it.
 /// </summary>
+/// <remarks><see cref="Both"/> is the complete set of channels; a future delivery channel would extend the flags
+/// (and <see cref="Both"/> with it).</remarks>
 [Flags]
 public enum MessageDeliveries
 {
@@ -56,7 +58,9 @@ public enum MessageDeliveries
 /// Options for attaching a handler to a message type — via <c>AddFoundatio().Messaging.AddHandler&lt;T, THandler&gt;(o =&gt; ...)</c>
 /// or programmatically via <see cref="IMessageBus.SubscribeAsync{T}"/>. By default a subscription listens on the
 /// type's two delivery channels — sent messages (one handler instance across the fleet processes each) and published
-/// messages (delivered per the subscription identity below) — narrowed by <see cref="Deliveries"/>.
+/// messages (delivered per the subscription identity below) — narrowed by <see cref="Deliveries"/>. Unlike the
+/// send/publish option records, this is a mutable class: it doubles as the <c>Action&lt;T&gt;</c>-configured builder
+/// options for <c>AddHandler</c> and carries fluent mutators such as <see cref="DeadLetterOn{TException}"/>.
 /// </summary>
 public sealed class MessageSubscriptionOptions
 {
@@ -185,10 +189,12 @@ public interface IMessageSubscription : IAsyncDisposable
 /// </summary>
 public interface IMessageBus : IAsyncDisposable
 {
-    /// <summary>Sends a command / unit of work; exactly one handler instance across the fleet processes it.</summary>
+    /// <summary>Sends a command / unit of work; exactly one handler instance across the fleet processes it. Returns the message id.</summary>
     Task<string> SendAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default);
+
+    /// <summary>Sends a batch of commands. Returns the message ids in input order.</summary>
+    Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task<IReadOnlyList<string>> SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Publishes an event; each subscribing service receives one copy (its instances compete). Real pub/sub drop
@@ -196,9 +202,11 @@ public interface IMessageBus : IAsyncDisposable
     /// when handlers subscribe (or via topology provisioning), so subscribers must exist before the publish. Contrast
     /// with <see cref="SendAsync{T}"/>, whose queue holds the message durably until a handler consumes it.
     /// </summary>
-    Task PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    Task PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);
+    Task<string> PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+
+    /// <summary>Publishes a batch of events (drop semantics per <see cref="PublishAsync{T}"/>). Returns the message ids in input order.</summary>
+    Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    Task<IReadOnlyList<string>> PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Attaches a handler to the message type's delivery channels (sent and published messages). Prefer declarative
@@ -284,35 +292,35 @@ public sealed class MessageBus : IMessageBus
         return _core.SendAsync(ScheduledDispatchKind.QueueMessage, typeof(T), message, ToEnvelope(options), GetDestination(typeof(T), options.Destination), ensureDestination: null, cancellationToken);
     }
 
-    public Task SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
         options ??= new MessageSendOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetDestination(type, options.Destination), ensureDestination: null, cancellationToken);
     }
 
-    public Task SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<string>> SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
         options ??= new MessageSendOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages, null, ToEnvelope(options), type => GetDestination(type, options.Destination), ensureDestination: null, cancellationToken);
     }
 
-    public Task PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<string> PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(message);
         options ??= new MessagePublishOptions();
         return _core.SendAsync(ScheduledDispatchKind.PubSubMessage, typeof(T), message, ToEnvelope(options), GetTopic(typeof(T), options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public Task PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(messages);
         options ??= new MessagePublishOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureTopicAsync, cancellationToken);
     }
 
-    public Task PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<string>> PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
         options ??= new MessagePublishOptions();

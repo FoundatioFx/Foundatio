@@ -152,7 +152,7 @@ public class DeclarativeRegistrationTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddFoundatio()
-            .Jobs.UseInMemoryRuntime()
+            .Jobs.UseInMemory()
             .Jobs.AddCronJob<CronProbeJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode);
 
         await using var provider = services.BuildServiceProvider();
@@ -170,7 +170,7 @@ public class DeclarativeRegistrationTests
 
         try
         {
-            var scheduler = provider.GetRequiredService<IJobScheduler>();
+            var scheduler = provider.GetRequiredService<IScheduledJobStore>();
             ScheduledJobDefinition? scheduled = null;
             long deadline = Environment.TickCount64 + 10_000;
             while (Environment.TickCount64 < deadline)

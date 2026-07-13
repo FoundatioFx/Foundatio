@@ -46,7 +46,7 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
 
     public DeliveryGuarantee DeliveryGuarantee => _inner.DeliveryGuarantee;
     public IReadOnlySet<DestinationRole> SupportedRoles => _inner.SupportedRoles;
-    public TransportCapabilities GetCapabilities(DestinationRole role) => _inner.GetCapabilities(role);
+    public TransportCapabilities GetCapabilities(DestinationAddress destination) => _inner.GetCapabilities(destination);
     public TimeSpan? MaxVisibilityTimeout => _inner.MaxVisibilityTimeout;
     public TimeSpan? MaxRedeliveryDelay => _inner.MaxRedeliveryDelay;
 

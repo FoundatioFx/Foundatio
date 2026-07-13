@@ -65,7 +65,7 @@ public class StartupValidationTests
         services.AddFoundatio()
             .Messaging.UseInMemory()
             .Messaging.AddHandler<Ping>((_, _) => Task.CompletedTask)
-            .Jobs.UseInMemoryRuntime()
+            .Jobs.UseInMemory()
             .Jobs.AddCronJob<NoopJob>("0 3 * * *");
 
         await using var provider = services.BuildServiceProvider();

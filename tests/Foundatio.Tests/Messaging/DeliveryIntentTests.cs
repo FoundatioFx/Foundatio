@@ -126,7 +126,7 @@ public class DeliveryIntentTests
 
         public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
         public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
-        public TransportCapabilities GetCapabilities(DestinationRole role) => TransportCapabilities.None;
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) => TransportCapabilities.None;
 
         public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
         {

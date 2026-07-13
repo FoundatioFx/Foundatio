@@ -18,7 +18,7 @@ builder.Services.AddFoundatio()
     // Durable jobs on Redis so any instance can claim them. The pump (auto-registered) runs submitted jobs and
     // materializes the CRON schedules below — no manual scheduling call.
     .Jobs.UseRedis()
-    .Jobs.Register<GenerateReportJob>("generate-report")                      // on-demand, submitted via POST /reports
+    .Jobs.AddJobType<GenerateReportJob>("generate-report")                      // on-demand, submitted via POST /reports
     .Jobs.AddCronJob<HeartbeatJob>("* * * * *")                               // Global: one instance per tick
     .Jobs.AddCronJob<RefreshCacheJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode) // every instance per tick
     .Jobs.AddCronJob<SweepStaleOrdersJob>("*/2 * * * *");                     // Global: periodic sweep

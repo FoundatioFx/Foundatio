@@ -145,7 +145,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public async Task<string> SendAsync(ScheduledDispatchKind kind, Type messageType, object message, MessageEnvelopeOptions options, DestinationAddress destination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        ValidateCapabilities(destination.Role, options.Priority, options.TimeToLive);
+        ValidateCapabilities(destination, options.Priority, options.TimeToLive);
 
         var sendOptions = BuildSendOptions(options);
         string messageId = Guid.NewGuid().ToString("N");
@@ -167,13 +167,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return (items.Count > 0 ? items[0].MessageId : null) ?? messageId;
     }
 
-    public async Task SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, DestinationAddress> resolveDestination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<string>> SendBatchAsync(ScheduledDispatchKind kind, IEnumerable<object> messages, Type? declaredType, MessageEnvelopeOptions options, Func<Type, DestinationAddress> resolveDestination, Func<DestinationAddress, CancellationToken, Task>? ensureDestination, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        ValidateCapabilities(RoleFor(kind), options.Priority, options.TimeToLive);
 
         var sendOptions = BuildSendOptions(options);
-        var grouped = new Dictionary<DestinationAddress, List<TransportMessage>>();
+        var grouped = new Dictionary<DestinationAddress, List<(int InputIndex, TransportMessage Message)>>();
+        var messageIds = new List<string>();
 
         foreach (var message in messages)
         {
@@ -187,21 +187,37 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 grouped.Add(destination, transportMessages);
             }
 
-            transportMessages.Add(CreateTransportMessage(message, messageType, options, messageId: null));
+            // Pre-assign each id so the returned list is complete and in INPUT order even though sends are grouped
+            // per destination; a transport-reported (broker) id replaces the pre-assigned one below.
+            string messageId = Guid.NewGuid().ToString("N");
+            messageIds.Add(messageId);
+            transportMessages.Add((messageIds.Count - 1, CreateTransportMessage(message, messageType, options, messageId)));
         }
 
         foreach (var group in grouped)
         {
+            // Per destination, not once per batch: a mixed-type batch can resolve to destinations with different
+            // capabilities (and a composite transport can differ per destination even within one role).
+            ValidateCapabilities(group.Key, options.Priority, options.TimeToLive);
+
             if (ensureDestination is not null)
                 await ensureDestination(group.Key, cancellationToken).AnyContext();
 
-            if (await TryScheduleAsync(kind, group.Key, group.Value, sendOptions, cancellationToken).AnyContext())
+            var transportMessages = group.Value.Select(item => item.Message).ToList();
+            if (await TryScheduleAsync(kind, group.Key, transportMessages, sendOptions, cancellationToken).AnyContext())
                 continue;
 
             // Send is throw-on-failure (SendChunkedAsync propagates any transport error); a returned result means all
             // messages in this destination group were accepted.
-            await SendChunkedAsync(group.Key, group.Value, sendOptions, cancellationToken).AnyContext();
+            var items = await SendChunkedAsync(group.Key, transportMessages, sendOptions, cancellationToken).AnyContext();
+            for (int index = 0; index < group.Value.Count && index < items.Count; index++)
+            {
+                if (items[index].MessageId is { } brokerId)
+                    messageIds[group.Value[index].InputIndex] = brokerId;
+            }
         }
+
+        return messageIds;
     }
 
     public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IMessageContext, CancellationToken, Task> handler, CancellationToken cancellationToken)
@@ -647,32 +663,33 @@ internal sealed class MessageClientCore : IAsyncDisposable
         };
     }
 
-    // Capabilities are role-aware: the same transport can honor a feature on queues but not topics (SQS DelaySeconds
-    // vs. SNS publish), so every send-path decision asks for the destination role it is actually targeting.
-    private TransportCapabilities CapabilitiesFor(DestinationRole role)
+    // Capabilities are destination-aware: the same transport can honor a feature on queues but not topics (SQS
+    // DelaySeconds vs. SNS publish) — and a routing/composite transport can differ per destination — so every
+    // send-path decision asks for the destination it is actually targeting.
+    private TransportCapabilities CapabilitiesFor(DestinationAddress destination)
     {
-        return _transport is ITransportInfo info ? info.GetCapabilities(role) : TransportCapabilities.None;
+        return _transport is ITransportInfo info ? info.GetCapabilities(destination) : TransportCapabilities.None;
     }
 
-    private void ValidateCapabilities(DestinationRole role, MessagePriority priority, TimeSpan? timeToLive)
+    private void ValidateCapabilities(DestinationAddress destination, MessagePriority priority, TimeSpan? timeToLive)
     {
         // Sends are role-enforced too: a topic publish on a queue-only transport must fail loudly here rather than
         // be accepted into a namespace nothing can ever fan out.
-        if (!SupportsRole(role))
-            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support {role} destinations.");
+        if (!SupportsRole(destination.Role))
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support {destination.Role} destinations.");
 
-        var capabilities = CapabilitiesFor(role);
+        var capabilities = CapabilitiesFor(destination);
 
         if (priority != MessagePriority.Normal && !capabilities.Priority)
-            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message priority for {role} destinations.");
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message priority for {destination.Role} destinations.");
 
         if (timeToLive is not null && !capabilities.Expiration)
-            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message expiration for {role} destinations.");
+            throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support message expiration for {destination.Role} destinations.");
     }
 
     private async Task<bool> TryScheduleAsync(ScheduledDispatchKind kind, DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        if (!ShouldScheduleThroughRuntimeStore(destination.Role, options, out var dueUtc))
+        if (!ShouldScheduleThroughRuntimeStore(destination, options, out var dueUtc))
             return false;
 
         foreach (var message in messages)
@@ -693,7 +710,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return true;
     }
 
-    private bool ShouldScheduleThroughRuntimeStore(DestinationRole role, TransportSendOptions options, out DateTimeOffset dueUtc)
+    private bool ShouldScheduleThroughRuntimeStore(DestinationAddress destination, TransportSendOptions options, out DateTimeOffset dueUtc)
     {
         dueUtc = options.DeliverAt.GetValueOrDefault();
         var now = _timeProvider.GetUtcNow();
@@ -704,19 +721,19 @@ internal sealed class MessageClientCore : IAsyncDisposable
         // (e.g. SQS caps DelaySeconds at 15 minutes) must route through the durable runtime store rather than be
         // silently truncated to the broker's ceiling. The check is per destination role: a transport whose queues take
         // a native delay may still have topics that cannot (SQS vs. SNS), and those publishes must fall back too.
-        var capabilities = CapabilitiesFor(role);
+        var capabilities = CapabilitiesFor(destination);
         if (capabilities.DelayedDelivery && (capabilities.MaxDeliveryDelay is not { } max || dueUtc - now <= max))
             return false;
 
         if (_runtimeStore is null)
-            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {role} destinations (within its supported maximum) or a registered job runtime store.", null);
+            throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {destination.Role} destinations (within its supported maximum) or a registered job runtime store.", null);
 
         return true;
     }
 
     private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        var capabilities = CapabilitiesFor(destination.Role);
+        var capabilities = CapabilitiesFor(destination);
 
         // Enforce a transport-declared maximum message size up front with a clear error, rather than letting an opaque
         // broker rejection surface mid-send (the limit is advertised, so honor it).
