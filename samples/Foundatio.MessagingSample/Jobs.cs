@@ -2,15 +2,21 @@ using Foundatio.Jobs;
 
 namespace Foundatio.MessagingSample;
 
+/// <summary>Typed arguments for <see cref="GenerateReportJob"/>, serialized into the durable job payload.</summary>
+public sealed record ReportArgs(string Format, string RequestedBy);
+
 /// <summary>
-/// A durable, on-demand job (submitted via <c>POST /reports</c>). It runs on whichever instance's runtime pump claims
-/// it, and reports progress through its <see cref="JobExecutionContext"/> so <c>GET /reports/{id}</c> can observe it.
+/// A durable, on-demand job (submitted via <c>POST /reports</c> with typed <see cref="ReportArgs"/>). It runs on
+/// whichever instance's runtime pump claims it, reads its arguments back with
+/// <c>context.GetArguments&lt;ReportArgs&gt;()</c>, and reports progress through its
+/// <see cref="JobExecutionContext"/> so <c>GET /reports/{id}</c> can observe it.
 /// </summary>
 public sealed class GenerateReportJob(InstanceInfo instance, ILogger<GenerateReportJob> logger) : IJob
 {
     public async Task<JobResult> RunAsync(JobExecutionContext context)
     {
-        logger.LogInformation("[{Instance}] generating report {JobId}", instance.Id, context.JobId);
+        var args = context.GetArguments<ReportArgs>();
+        logger.LogInformation("[{Instance}] generating {Format} report {JobId} for {RequestedBy}", instance.Id, args.Format, context.JobId, args.RequestedBy);
 
         for (int percent = 25; percent <= 100; percent += 25)
         {

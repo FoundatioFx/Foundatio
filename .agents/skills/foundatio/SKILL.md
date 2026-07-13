@@ -25,16 +25,19 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 
 ## Messaging and Jobs (current API)
 
-- One messaging client: `IMessageBus` in `Foundatio.Messaging`. The caller's verb decides delivery -- `SendAsync` is a command processed by exactly one handler instance across the fleet (competing consumers); `PublishAsync` is an event received once per subscribing service (a scaled service's instances compete), or by every instance when the subscription sets `PerInstance`. `SendBatchAsync` / `PublishBatchAsync` batch both verbs. Per-operation options: `MessageSendOptions` / `MessagePublishOptions` (priority, `Delay`/`DeliverAt`, TTL, correlation id, headers, `Destination`/`Topic` override).
+- One messaging client: `IMessageBus` in `Foundatio.Messaging`. The caller's verb decides delivery -- `SendAsync` is a command processed by exactly one handler instance across the fleet (competing consumers); `PublishAsync` is an event received once per subscribing service (a scaled service's instances compete), or by every instance when the subscription sets `PerInstance`. Every verb returns the accepted message id(s): `SendAsync`/`PublishAsync` return the message id and `SendBatchAsync` / `PublishBatchAsync` return `IReadOnlyList<string>` in input order. Per-operation options: `MessageSendOptions` / `MessagePublishOptions` (priority, `Delay`/`DeliverAt`, TTL, correlation id, headers, `Destination`/`Topic` override).
+- Publish has real pub/sub DROP semantics: a publish to a topic with no existing subscriptions is dropped (subscriptions are created when handlers subscribe or via topology provisioning -- subscribers must exist before the publish). A sent command waits durably on its queue instead. The in-memory transport warns once per topic on zero-subscription drops, and the core logs every produce at debug.
 - Handlers are topology-free. Implement `IMessageHandler<T>` and register with `.Messaging.AddHandler<TMessage, THandler>(o => ...)`; a hosted service (`MessageHandlerHostedService`) starts them all and each message is dispatched in its own DI scope. `IMessageBus.SubscribeAsync<T>` is the dynamic path and returns an `IMessageSubscription` handle.
 - `MessageSubscriptionOptions` declares delivery intent: `Deliveries` (`MessageDeliveries.Sent`/`Published`/`Both`, default `Both`), `Subscription` / `SubscriptionQualifier` / `PerInstance` for subscriber-group identity, `MaxConcurrency` (default 1, preserves per-handler ordering), `MaxAttempts` / `RedeliveryBackoff` / `DeadLetterWhen` (+ `DeadLetterOn<TException>()` shorthand) retry overrides, `AckMode` (`Auto` default / `Manual`), and `Key` (subscriptions sharing a key form one competing group; their backoff/dead-letter DELEGATES are compared by identity, so share delegate instances).
 - Routing is central: `.Messaging.ConfigureRouting(r => r.UseDefaultQueue(...).UseDefaultTopic(...).MapQueue<T>(...).MapTopic(...).UseServiceIdentity(...).UseSubscriptionIdentity(...).UseConvention(...))`. Precedence: operation override > exact map > interface/base-type map > `MessageRouteAttribute` > configured default > convention > kebab-cased type name.
-- Routing config doubles as topology declarations (`DestinationDeclaration` with a canonical `DestinationAddress` -- `ForQueue`/`ForTopic`/`ForSubscription`). `IMessageTopology` exposes `GetDeclarations()` / `EnsureAsync()` / `ValidateAsync()`. `.Messaging.ConfigureTopology(TopologyMode.Ensure | Validate | None)` picks whether the client creates missing destinations (default), only verifies they exist (throws at startup when missing), or never touches topology; the handler host applies the mode at startup.
+- Routing config doubles as topology declarations (`DestinationDeclaration` with a canonical `DestinationAddress` -- `ForQueue`/`ForTopic`/`ForSubscription`). `IMessageTopology` exposes `GetDeclarations()` / `EnsureAsync()` / `ValidateAsync()`. `.Messaging.ConfigureTopology(TopologyMode.Ensure | Validate | None)` picks whether the client creates missing destinations (default), only verifies they exist (throws at startup when missing), or never touches topology; startup topology (Ensure/Validate) runs as its own hosted service for EVERY app with a transport -- publish-only apps included.
 - The CORE owns retry/dead-lettering identically on every transport: default `RetryPolicy` is `MaxAttempts` 5 with immediate-then-10s/20s/30s backoff (+/-20% jitter); configure via `.Messaging.ConfigureRetry(p => p with { ... })`. Dead-lettered messages go to the transport's native sink or a derived `"{source}.deadletter"` destination, stamped with `message.dead_letter.*` forensics headers (`KnownHeaders.DeadLetter*`). Never configure broker-native redrive policies.
 - Message settlement: `IMessageContext` / `IMessageContext<T>` with `CompleteAsync()`, `RejectAsync(RejectOptions)` (non-terminal = retry, optionally with `RedeliveryDelay`; `Terminal = true` = dead-letter with `Reason`/`Exception`), and `RenewLockAsync()`. Auto-ack is the default.
-- Transports advertise role-aware capabilities: `ITransportInfo.GetCapabilities(DestinationRole)` returns `TransportCapabilities` (e.g. the AWS transport's queue role has a native 15-minute `MaxDeliveryDelay`; its topic role has none). Delays beyond a ceiling and store-parked retries fall back to the durable runtime store (`IScheduledDispatchStore`, satisfied by any `IJobRuntimeStore`) and are drained by the job runtime pump -- never silently truncated.
-- Durable jobs: implement `IJob` (`Task<JobResult> RunAsync(JobExecutionContext context)`). `IJobClient.EnqueueAsync<TJob>()` / `EnqueueAsync<TJob, TArgs>(args)` (typed payloads) returns a `JobHandle`; `IJobMonitor` queries state; `IJobWorker` executes with per-run DI scopes, bounded concurrency, and supervised lease renewal. `JobExecutionContext` gives `JobId`/`Attempt`/`CancellationToken`, `GetArguments<TArgs>()`, `ReportProgressAsync`, `RenewLeaseAsync`, `IsCancellationRequestedAsync`; its public constructor makes a detached context for tests.
-- CRON: `.Jobs.AddCronJob<TJob>("0 */6 * * *", o => ...)` with `CronJobOptions` (`Scope` Global/PerNode, `Overlap`, `MisfireWindow`, `MaxRetries`, `TimeZone`, typed `Arguments`). Scheduled automatically when the runtime pump starts. Tune the pump with `.Jobs.ConfigureRuntimePump(o => ...)` (`JobRuntimePumpOptions`: `Enabled`, `PollInterval`, `BatchSize`, `MaxJobAttempts`, `WorkerConcurrency`).
+- Transports advertise per-destination capabilities: `ITransportInfo.GetCapabilities(destination)` takes the `DestinationAddress` in question (most transports answer by its role) and returns `TransportCapabilities` (e.g. the AWS transport's queue role has a native 15-minute `MaxDeliveryDelay`; its topic role has none). Delays beyond a ceiling and store-parked retries fall back to the durable runtime store (`IScheduledDispatchStore`, satisfied by any `IJobRuntimeStore`) and are drained by the job runtime pump -- never silently truncated.
+- Durable jobs: implement `IJob` (`Task<JobResult> RunAsync(JobExecutionContext context)`). `JobResult` is an immutable record -- return the shared `JobResult.Success`/`JobResult.Cancelled` statics or the `SuccessWithMessage`/`FailedWithMessage`/`CancelledWithMessage`/`FromException` factories (there is no `None`). `IJobClient.EnqueueAsync<TJob>()` / `EnqueueAsync<TJob, TArgs>(args)` (typed payloads) returns a `JobHandle`; `IJobMonitor` queries state; `IJobWorker` executes with per-run DI scopes, bounded concurrency, and supervised lease renewal. `JobExecutionContext` gives `JobId`/`Attempt`/`CancellationToken`, `GetArguments<TArgs>()`, `ReportProgressAsync`, `RenewLeaseAsync`, `IsCancellationRequestedAsync`; its public constructor makes a detached context for tests. `GetArguments<TArgs>` enforces the stored payload-type discriminator: requesting a different type than the job was enqueued with throws before deserialization. Hand-wiring outside DI: `JobWorker`/`JobScheduleProcessor` take `JobWorkerOptions`/`JobScheduleProcessorOptions` records for their optional dependencies.
+- CRON: `.Jobs.AddCronJob<TJob>("0 */6 * * *", o => ...)` with `CronJobOptions` (`Scope` Global/PerNode, `Overlap`, `MisfireWindow`, `MaxAttempts` -- the TOTAL run attempts per failed occurrence, default 3 -- `TimeZone`, typed `Arguments`). An invalid cron expression or duplicate schedule name throws at the `AddCronJob` call itself. Scheduled automatically when the runtime pump starts. Tune the pump with `.Jobs.ConfigureRuntimePump(o => ...)` (`JobRuntimePumpOptions`: `Enabled`, `PollInterval`, `BatchSize`, `MaxJobAttempts`, `WorkerConcurrency`).
+- Startup validation fails fast at boot with actionable messages: CRON jobs registered without a runtime store, or handlers registered without a transport, throw when the host starts (add `.Jobs.UseInMemory()` / `.Messaging.UseInMemory()` or the production `Use*`).
+- Jobs exceptions on the trigger/resolve paths: `ScheduledJobNotFoundException` (unknown schedule name), `ScheduledJobDisabledException` (triggering a disabled schedule), and `JobException` (unresolvable job type); all derive from `JobException` : `InvalidOperationException`.
 - Runtime schedule management: `IScheduledJobManager` (DI-registered with the runtime) lists/inspects schedules, adds or replaces `ScheduledJobDefinition`s on the fly, `RescheduleAsync(name, cron)` changes just the schedule, `SetEnabledAsync(name, bool)` pauses/resumes materialization, and `TriggerAsync(name)` runs an immediate durable occurrence (definition's `Arguments` + retry budget) returning a `JobHandle`. Triggering a disabled schedule throws; manual occurrences never dedupe and bypass `Overlap` accounting. Generic overloads (`GetScheduleAsync<TJob>()`, `TriggerAsync<TJob>()`, `RescheduleAsync<TJob>(cron)`, `SetEnabledAsync<TJob>(bool)`, `UnscheduleAsync<TJob>()`) resolve the schedule name via `ScheduledJobDefinition.DefaultNameFor(type)` — the same default `AddCronJob<TJob>` uses when no explicit name is given.
 - Stable wire names: `.Messaging.AddMessageType<T>("name")` and `.Jobs.AddJobType<TJob>("name")` so persisted discriminators survive assembly/namespace moves; unregistered types fall back to `Type.FullName`.
 - Legacy implementations were removed. For migration, `Messaging.AddLegacyAdapter()` registers the old `IMessageBus`/`IMessagePublisher`/`IMessageSubscriber` interfaces as a thin adapter over the new bus (old handler code compiles unchanged; delete the call when migrated). Old jobs migrate mechanically: `RunAsync(CancellationToken)` becomes `RunAsync(JobExecutionContext)` (use `context.CancellationToken`), `QueueJobBase<T>`/`IQueue<T>` become `IMessageHandler<T>` + `SendAsync`, and `WorkItemJob` becomes `EnqueueAsync<TJob, TArgs>(args)` with `ReportProgressAsync`.
@@ -46,7 +49,6 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `ICacheClient` | Key-value caching with TTL | `InMemoryCacheClient` | Redis, Hybrid |
 | `IMessageBus` | Commands (`SendAsync`) + events (`PublishAsync`) over one client | `InMemoryMessageTransport` | Redis Streams, AWS SQS/SNS |
 | `IJobClient` / `IJobMonitor` | Submit and observe durable background jobs | `InMemoryJobRuntimeStore` | `RedisJobRuntimeStore` |
-| `IQueue<T>` | Work-item queue (classic API) | `InMemoryQueue<T>` | Redis, SQS, Azure |
 | `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob, Minio |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
@@ -87,7 +89,7 @@ builder.Services.AddFoundatio()
     .Messaging.UseAws(o => o.ResourcePrefix = "myapp");
 ```
 
-Custom providers plug in via `.Messaging.UseTransport(...)` (any `IMessageTransport`) and `.Jobs.UseRuntimeStore(...)` (any `IJobRuntimeStore`).
+Custom providers plug in via `.Messaging.UseTransport(...)` (any `IMessageTransport`) and `.Jobs.UseRuntimeStore(...)` (any `IJobRuntimeStore`). The zero-dependency starting point is `samples/Foundatio.QuickstartSample` in the Foundatio repo -- a generic-host console app running messaging and jobs fully in-memory with plain `dotnet run`.
 
 ## Usage Patterns
 
@@ -222,7 +224,7 @@ services.AddFoundatio()
     .Jobs.AddCronJob<NightlyExportJob>("0 2 * * *", o =>
     {
         o.Scope = ScheduledJobScope.Global;   // one instance per tick (default); PerNode = every instance
-        o.MaxRetries = 3;
+        o.MaxAttempts = 3;                    // TOTAL run attempts per failed occurrence
         o.Arguments = new ExportArgs { Format = "csv" };
     });
 ```
@@ -253,9 +255,25 @@ Assert.Single(harness.Handled<OrderPlaced>());
 Assert.Empty(harness.DeadLetteredMessages);
 ```
 
-Recordings: `SentMessages` / `PublishedMessages` / `HandledMessages` / `AbandonedMessages` (retries) / `DeadLetteredMessages`, with typed accessors `Sent<T>()`, `Published<T>()`, `Handled<T>()`, `Abandoned<T>()`, `DeadLettered<T>()`.
+Recordings: `SentMessages` / `PublishedMessages` / `HandledMessages` / `AbandonedMessages` (retries) / `DeadLetteredMessages`, with typed accessors `Sent<T>()`, `Published<T>()`, `Handled<T>()`, `Abandoned<T>()`, `DeadLettered<T>()`. To await one outcome without draining the whole bus: `WaitForHandledAsync<T>(count)` (returns the handled messages) and `WaitForDeadLetteredAsync<T>(count)` (returns raw `RecordedMessage`s -- assert `Reason`/`Attempts`). `DestinationsWithNoConsumer` lists destinations that received messages nothing consumed -- the usual reason a test is "idle immediately and Handled is empty".
 
-For jobs, `new JobExecutionContext(cancellationToken, arguments: myArgs)` builds a detached context to run an `IJob` directly -- progress/lease helpers no-op and `GetArguments<T>()` returns the supplied object.
+The harness polls in REAL time (25ms cadence) regardless of any injected `TimeProvider`, while delayed redeliveries execute on the injected `TimeProvider` -- a faked clock must be advanced manually or waits time out. For sleep-free retry tests prefer `RedeliveryBackoff = _ => TimeSpan.Zero` on the subscription instead of faking the clock.
+
+### Jobs: JobsTestHarness
+
+`.Jobs.UseTestHarness()` registers `JobsTestHarness`: the real in-memory job runtime with the auto pump disabled, so the test decides exactly when work runs.
+
+```csharp
+services.AddFoundatio().Jobs.UseTestHarness();
+var harness = provider.GetRequiredService<JobsTestHarness>();
+
+var handle = await harness.Client.EnqueueAsync<SendWelcomeEmailJob>();
+await harness.RunAllQueuedAsync();                 // runs every queued job to a settled state
+await harness.RunDueAsync(fixedNow);               // one deterministic scheduler tick (CRON + scheduled messages)
+var state = await harness.RunToCompletionAsync(handle); // drives one job to its terminal state
+```
+
+`Client` (`IJobClient`), `Schedules` (`IScheduledJobManager`), and `Monitor` (`IJobMonitor`) expose the enqueue/manage/assert surface. For running an `IJob` directly without any runtime, `new JobExecutionContext(cancellationToken, arguments: myArgs)` builds a detached context -- progress/lease helpers no-op and `GetArguments<T>()` returns the supplied object.
 
 ### Test logging via Foundatio.Xunit.v3
 
@@ -266,7 +284,9 @@ Two base classes:
 
 ### Custom providers
 
-Validate a custom transport or job store against the shared conformance suites in `Foundatio.TestHarness`: inherit `MessageTransportConformanceTests` (override `CreateTransport`) and `JobRuntimeStoreConformanceTests` (override `CreateStore`). Tests skip automatically for unimplemented optional interfaces or unavailable backends.
+The transport contract is documented on the interfaces themselves (`IMessageTransport` + `ISupports*`): settle semantics (stale receipts SHOULD throw `ReceiptExpiredException`, but the signal is best-effort), the per-delivery `Receipt` token (never settle by entry identity alone), and the growth rule that contract changes only ever add optional init members.
+
+Validate a custom transport or job store against the shared conformance suites in `Foundatio.TestHarness`: inherit `MessageTransportConformanceTests` (override `CreateTransport`) and `JobRuntimeStoreConformanceTests` (override `CreateStore`). Tests skip automatically for unimplemented optional interfaces or unavailable backends. The suites pin per-message ids (distinct, positionally aligned in batch results), content-type round-trip, and that reading the dead-letter backlog consumes it.
 
 ## Gotchas
 
