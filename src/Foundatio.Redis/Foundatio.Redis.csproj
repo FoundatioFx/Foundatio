@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Redis-backed durable job runtime store (IJobRuntimeStore) for Foundatio. Temporary in-repo provider for validating the redesigned job runtime against a real distributed store.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="StackExchange.Redis" Version="2.9.32" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,7 +1,8 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
-    <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+    <Project Path="samples/Foundatio.MessagingSample/Foundatio.MessagingSample.csproj" />
+    <Project Path="samples/Foundatio.QuickstartSample/Foundatio.QuickstartSample.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
@@ -13,8 +14,14 @@
     <File Path="src/Directory.Build.props" />
     <File Path="tests/Directory.Build.props" />
   </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Foundatio.Aws/Foundatio.Aws.csproj" />
+    <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
+    <Project Path="tests/Foundatio.Aws.Tests/Foundatio.Aws.Tests.csproj" />
+    <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">
@@ -24,6 +31,7 @@
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
+  <Project Path="src/Foundatio.Testing/Foundatio.Testing.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit.v3/Foundatio.Xunit.v3.csproj" />
   <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />

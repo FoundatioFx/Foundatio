@@ -458,7 +458,7 @@ public class ResiliencePolicyTests : TestWithLoggingBase
                 return Task.FromResult(true);
             });
 
-        var lockProvider = new CacheLockProvider(mockCacheClient.Object, new InMemoryMessageBus());
+        var lockProvider = new CacheLockProvider(mockCacheClient.Object, new MessageBus(new InMemoryMessageTransport()));
 
         var l = await lockProvider.TryAcquireAsync("test", TimeSpan.FromSeconds(1), TimeSpan.Zero);
         Assert.NotNull(l);

@@ -1,0 +1,6 @@
+services:
+  redis:
+    image: redis:7-alpine
+    # Mapped to 6399 to avoid clashing with a local Redis on the default 6379.
+    ports:
+      - "6399:6379"

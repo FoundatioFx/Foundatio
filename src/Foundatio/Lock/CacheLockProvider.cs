@@ -69,7 +69,10 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
                 return;
 
             _logger.LogTrace("Subscribing to cache lock released");
-            await _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleasedAsync).AnyContext();
+            // Lock-released notifications are events every waiting node must see: published-only and per-instance.
+            await _messageBus.SubscribeAsync<CacheLockReleased>(
+                (context, token) => OnLockReleasedAsync(context.Message, token),
+                new MessageSubscriptionOptions { PerInstance = true, Deliveries = MessageDeliveries.Published }).AnyContext();
             _isSubscribed = true;
             _logger.LogTrace("Subscribed to cache lock released");
         }

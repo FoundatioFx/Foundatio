@@ -1,0 +1,1109 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Threading.Channels;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio;
+using Foundatio.AsyncEx;
+using Foundatio.Jobs;
+using Foundatio.Messaging;
+using Foundatio.Tests.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace Foundatio.Tests.Queue;
+
+public class MessageQueueTests
+{
+    [Fact]
+    public async Task EnqueueAsync_WithOptions_CanReceiveAndCompleteAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+
+        string id = await queue.SendAsync(new PreviewWorkItem { Data = "hello" }, new MessageSendOptions
+        {
+            CorrelationId = "corr-123",
+            Priority = MessagePriority.High,
+            Headers = MessageHeaders.Create([
+                new KeyValuePair<string, string>("tenant", "acme")
+            ])
+        }, cancellationToken);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+
+        Assert.NotNull(received);
+        Assert.Equal(id, received.Id);
+        Assert.Equal("hello", received.Message.Data);
+        Assert.Equal("corr-123", received.CorrelationId);
+        Assert.Equal(MessagePriority.High, received.Priority);
+        Assert.Equal(1, received.Attempts);
+        Assert.Equal("acme", received.Headers["tenant"]);
+        Assert.Equal(typeof(PreviewWorkItem).FullName, received.MessageType);
+
+        await received.CompleteAsync(cancellationToken);
+
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
+        Assert.Equal(1, stats.Completed);
+        Assert.Equal(0, stats.Working);
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_UsesDestinationOverrideAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendBatchAsync([
+            new PreviewWorkItem { Data = "one" },
+            new PreviewWorkItem { Data = "two" }
+        ], new MessageSendOptions { Destination = "custom-work" }, cancellationToken);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, destination: "custom-work", cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal("one", first.Message.Data);
+        Assert.Equal("two", second.Message.Data);
+
+        await first.CompleteAsync(cancellationToken);
+        await second.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task RejectAsync_NonTerminal_RedeliversAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+        await queue.SendAsync(new PreviewWorkItem { Data = "retry" }, cancellationToken: cancellationToken);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(first);
+
+        await first.RejectAsync(cancellationToken: cancellationToken);
+
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(second);
+        Assert.Equal(first.Id, second.Id);
+        Assert.Equal(2, second.Attempts);
+        Assert.Equal("retry", second.Message.Data);
+
+        await second.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task RenewLockAsync_WhenUnsupported_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // BasicQueueTransport intentionally does not implement ISupportsLockRenewal, so the core must surface the
+        // unsupported capability rather than silently no-op.
+        await using var queue = new MessageBus(new BasicQueueTransport());
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "lock" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(message);
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await message.RenewLockAsync(cancellationToken: cancellationToken));
+    }
+
+    [Fact]
+    public async Task RejectAsync_Terminal_DeadLettersAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(message);
+
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
+
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
+        Assert.Equal(1, stats.Deadletter);
+        Assert.Equal(0, stats.Working);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithAutoAck_CompletesMessageAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var handled = new AsyncCountdownEvent(1);
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        {
+            Assert.Equal("work", message.Message.Data);
+            handled.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "work" }, cancellationToken: cts.Token);
+        await handled.WaitAsync(TimeSpan.FromSeconds(2));
+        await WaitForCompletedAsync(transport, "preview-work-item", cancellationToken);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithManualAck_DoesNotAutoCompleteAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var handled = new AsyncCountdownEvent(1);
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        {
+            handled.Signal();
+            return Task.CompletedTask; // intentionally does NOT settle the message
+        }, new MessageSubscriptionOptions { AckMode = AckMode.Manual }, cts.Token);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "manual" }, cancellationToken: cts.Token);
+        await handled.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(200, cts.Token);
+
+        // Manual ack: the handler ran but did not settle, so the message stays in flight and is not auto-completed.
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Working);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithPoisonMessage_DeadLettersAndKeepsConsumingAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var handled = new AsyncCountdownEvent(1);
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        {
+            Assert.Equal("good", message.Message.Data);
+            handled.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // A poison (undeserializable) payload must be dead-lettered without tearing down the consumer loop, so the
+        // subsequent valid message is still delivered.
+        await transport.SendAsync(DestinationAddress.ForQueue("preview-work-item"), [
+            new TransportMessage { Body = System.Text.Encoding.UTF8.GetBytes("}{ not json"), Headers = MessageHeaders.Empty }
+        ], new TransportSendOptions(), cts.Token);
+        await queue.SendAsync(new PreviewWorkItem { Data = "good" }, cancellationToken: cts.Token);
+
+        await handled.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, handled.CurrentCount);
+    }
+
+    [Fact]
+    public async Task EnqueueBatchAsync_RespectsTransportMaxBatchSizeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var transport = new BatchLimitTransport(maxBatchSize: 2);
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendBatchAsync(new[]
+        {
+            new PreviewWorkItem { Data = "1" },
+            new PreviewWorkItem { Data = "2" },
+            new PreviewWorkItem { Data = "3" },
+            new PreviewWorkItem { Data = "4" },
+            new PreviewWorkItem { Data = "5" }
+        }, cancellationToken: cancellationToken);
+
+        // Five messages to one destination with MaxBatchSize=2 must be split into chunks of 2, 2, 1.
+        Assert.Equal(new[] { 2, 2, 1 }, transport.SendBatchSizes);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithDelay_SchedulesThroughRuntimeStoreAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var immediate = await collector.NextAsync(TimeSpan.FromMilliseconds(250), cancellationToken);
+        Assert.Null(immediate); // parked in the runtime store, not on the transport
+
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
+
+        var delayed = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(delayed);
+        Assert.Equal("later", delayed.Message.Data);
+        await delayed.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithDelayAndNoRuntimeStore_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await queue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithDelay_RespectsTransportMaxDeliveryDelayAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // Within the transport's advertised maximum: delivered natively, never touches the runtime store.
+        var nativeStore = new InMemoryJobRuntimeStore();
+        await using var nativeTransport = new CappedDelayTransport(maxDeliveryDelay: TimeSpan.FromMinutes(15));
+        await using var nativeQueue = new MessageBus(nativeTransport, new MessageBusOptions { RuntimeStore = nativeStore });
+        var nativeProcessor = CreateDispatchProcessor(nativeStore, nativeTransport);
+
+        await nativeQueue.SendAsync(new PreviewWorkItem { Data = "soon" }, new MessageSendOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
+
+        Assert.Equal(1, nativeTransport.SendCount);
+        Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
+        Assert.Equal(0, await nativeProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddYears(1), cancellationToken: cancellationToken));
+
+        // Beyond the transport's maximum: routed through the runtime store instead of being silently truncated.
+        var fallbackStore = new InMemoryJobRuntimeStore();
+        await using var fallbackTransport = new CappedDelayTransport(maxDeliveryDelay: TimeSpan.FromMinutes(15));
+        await using var fallbackQueue = new MessageBus(fallbackTransport, new MessageBusOptions { RuntimeStore = fallbackStore });
+        var fallbackProcessor = CreateDispatchProcessor(fallbackStore, fallbackTransport);
+
+        await fallbackQueue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
+
+        Assert.Equal(0, fallbackTransport.SendCount);
+        Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, fallbackTransport.SendCount);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(fallbackQueue, cancellationToken: cancellationToken);
+        var delayed = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(delayed);
+        Assert.Equal("later", delayed.Message.Data);
+        await delayed.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithRedeliveryBackoff_SchedulesRetryThroughRuntimeStoreAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        // BasicQueueTransport lacks native redelivery delay, so the backoff routes through the runtime store. It also
+        // never seeds the delivery count from the message.attempts header, proving the core reconciles the attempt
+        // count from the header itself (second attempt must observe Attempts == 2, not a reset-to-1 loop).
+        await using var transport = new BasicQueueTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+        var firstAttempt = new AsyncCountdownEvent(1);
+        var secondAttempt = new AsyncCountdownEvent(1);
+        int attempts = 0;
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        {
+            attempts++;
+            if (attempts == 1)
+            {
+                Assert.Equal(1, message.Attempts);
+                firstAttempt.Signal();
+                throw new InvalidOperationException("try again later");
+            }
+
+            Assert.Equal(2, message.Attempts);
+            Assert.Equal("retry", message.Message.Data);
+            secondAttempt.Signal();
+            return Task.CompletedTask;
+        }, new MessageSubscriptionOptions { RedeliveryBackoff = _ => TimeSpan.FromMinutes(1), MaxAttempts = 3 }, cts.Token);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "retry" }, cancellationToken: cts.Token);
+        await firstAttempt.WaitAsync(TimeSpan.FromSeconds(2));
+
+        // The retry is parked in the runtime store: the still-attached consumer must NOT get a second attempt until
+        // the dispatch pump drains the store.
+        await Task.Delay(250, cancellationToken);
+        Assert.Equal(1, attempts);
+
+        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
+        await secondAttempt.WaitAsync(TimeSpan.FromSeconds(2));
+
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ExceedingTransportMaxMessageBytes_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // The transport advertises an 8-byte maximum; the core must enforce it up front with a clear error rather than
+        // let an opaque broker rejection surface mid-send.
+        await using var transport = new BatchLimitTransport(maxBatchSize: 10, maxMessageBytes: 8);
+        await using var queue = new MessageBus(transport);
+
+        await Assert.ThrowsAsync<MessageBusException>(async () =>
+            await queue.SendAsync(new PreviewWorkItem { Data = "a payload well over eight bytes" }, cancellationToken: cancellationToken));
+    }
+
+    [Fact]
+    public async Task RejectAsync_RuntimeStoreRedelivery_AdvancesAttemptCountEachCycleAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        // BasicQueueTransport resets DeliveryCount to 1 on every (re)send and has no native redelivery delay, so each
+        // delayed reject re-schedules through the runtime store. The reconciled Attempts must keep advancing across
+        // redeliveries (1 -> 2 -> 3); a regression that bases the next attempt on the reset DeliveryCount would pin it at
+        // 2 and redeliver forever (never reaching MaxAttempts / dead-letter).
+        await using var transport = new BasicQueueTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RuntimeStore = store });
+        var processor = CreateDispatchProcessor(store, transport);
+        var now = DateTimeOffset.UtcNow;
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "loop" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+
+        for (int expectedAttempt = 1; expectedAttempt <= 3; expectedAttempt++)
+        {
+            var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+            Assert.NotNull(received);
+            Assert.Equal(expectedAttempt, received.Attempts);
+            Assert.Equal("loop", received.Message.Data);
+
+            if (expectedAttempt < 3)
+            {
+                await received.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromMinutes(1) }, cancellationToken);
+                Assert.Equal(1, await processor.RunDueOccurrencesAsync(now.AddMinutes(expectedAttempt * 2), cancellationToken: cancellationToken));
+            }
+            else
+            {
+                await received.CompleteAsync(cancellationToken);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SendAsync_WithExpiredMessage_IsDeadLetteredNotDeliveredAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "expired" }, new MessageSendOptions { TimeToLive = TimeSpan.FromMilliseconds(-1) }, cancellationToken);
+
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromMilliseconds(500), cancellationToken);
+        Assert.Null(received);
+
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cancellationToken);
+        Assert.Equal(1, stats.Deadletter);
+    }
+
+
+    [Fact]
+    public async Task AddFoundatio_WithInMemoryMessagingAndJobs_RegistersAppFacingServices()
+    {
+        var services = new ServiceCollection();
+
+        services.AddFoundatio()
+            .Messaging.UseInMemory()
+            .Jobs.UseInMemory();
+
+        await using var provider = services.BuildServiceProvider();
+
+        Assert.NotNull(provider.GetRequiredService<IMessageBus>());
+        Assert.NotNull(provider.GetRequiredService<IMessageRouter>());
+        Assert.NotNull(provider.GetRequiredService<IMessageTopology>());
+        Assert.NotNull(provider.GetRequiredService<IJobClient>());
+        Assert.NotNull(provider.GetRequiredService<IJobMonitor>());
+        Assert.NotNull(provider.GetRequiredService<IJobWorker>());
+    }
+
+    [Fact]
+    public async Task AddFoundatio_WithRouting_RegistersRouterAndTopologyAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var services = new ServiceCollection();
+
+        services.AddFoundatio()
+            .Messaging.ConfigureRouting(r => r
+                .UseDefaultQueue("all-work")
+                .MapTopic("grouped-events", typeof(IGroupedWorkItem))
+                .UseServiceIdentity("billing-service"))
+            .UseInMemory();
+
+        await using var provider = services.BuildServiceProvider();
+
+        var router = provider.GetRequiredService<IMessageRouter>();
+        Assert.Equal("all-work", router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = typeof(PreviewWorkItem),
+            Role = MessageRouteRole.QueueDestination
+        }));
+        Assert.Equal("grouped-events", router.ResolveRoute(new MessageRouteContext
+        {
+            MessageType = typeof(OtherWorkItem),
+            Role = MessageRouteRole.PubSubTopic
+        }));
+
+        var topology = provider.GetRequiredService<IMessageTopology>();
+        var declarations = topology.GetDeclarations();
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Queue && d.Address.Name == "all-work");
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Topic && d.Address.Name == "grouped-events");
+        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Subscription && d.Address.Name == "billing-service" && d.Address.Topic == "grouped-events");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () => await topology.ValidateAsync(cancellationToken));
+        await topology.EnsureAsync(cancellationToken);
+        await topology.ValidateAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithRouteAttribute_UsesAttributedDestinationAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+
+        await using var collector = await MessageCollector<RoutedWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        Assert.Equal("routed-work", collector.Destination); // the [MessageRoute] attribute names the send destination
+
+        await queue.SendAsync(new RoutedWorkItem { Data = "route" }, cancellationToken: cancellationToken);
+
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(received);
+        Assert.Equal("route", received.Message.Data);
+        await received.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithSameKeyAndSameRegistration_SharesTheUnderlyingConsumerAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+        int handled = 0;
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Func<IMessageContext<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) =>
+        {
+            Interlocked.Increment(ref handled);
+            received.TrySetResult();
+            return Task.CompletedTask;
+        };
+
+        // Registering the same key + handler + options twice is idempotent: both handles refer to the one underlying
+        // consumer, so a sent message is handled exactly once.
+        await using var first = await queue.SubscribeAsync(handler, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
+        await using var second = await queue.SubscribeAsync(handler, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
+
+        Assert.Equal(first.Key, second.Key);
+        Assert.Equal(first.Destination, second.Destination);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "once" }, cancellationToken: cancellationToken);
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+        await Task.Delay(250, cancellationToken);
+        Assert.Equal(1, Volatile.Read(ref handled));
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithSameKeyAndDifferentHandler_ThrowsAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+
+        await using var first = await queue.SubscribeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await queue.SubscribeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WithGroupedInterfaceRoute_ReturnsRawMessagesAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .MapQueue("grouped-work", typeof(IGroupedWorkItem))
+            .Build();
+        await using var queue = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Router = new DefaultMessageRouter(routing) });
+
+        await queue.SendBatchAsync(new object[]
+        {
+            new PreviewWorkItem { Data = "one" },
+            new OtherWorkItem { Data = "two" }
+        }, cancellationToken: cancellationToken);
+
+        await using var collector = await MessageCollector.StartAsync(queue, routeType: typeof(IGroupedWorkItem), cancellationToken: cancellationToken);
+        var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotEmpty(first.Body.ToArray());
+        Assert.Equal(typeof(PreviewWorkItem).FullName, first.MessageType);
+        Assert.Equal(typeof(OtherWorkItem).FullName, second.MessageType);
+
+        await first.CompleteAsync(cancellationToken);
+        await second.CompleteAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_WithGroupedInterfaceRoute_DeserializesConcreteTypeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .MapQueue("grouped-work", typeof(IGroupedWorkItem))
+            .Build();
+        await using var queue = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Router = new DefaultMessageRouter(routing) });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var received = new ConcurrentDictionary<Type, string?>();
+        var signal = new AsyncCountdownEvent(2);
+
+        // An interface-typed consumer receives the concrete payload (assignable to the interface), not raw bytes —
+        // the core resolves the concrete type from the message-type header and deserializes that.
+        await using var consumer = await queue.SubscribeAsync<IGroupedWorkItem>((message, _) =>
+        {
+            string? data = message.Message switch
+            {
+                PreviewWorkItem p => p.Data,
+                OtherWorkItem o => o.Data,
+                _ => null
+            };
+            received[message.Message.GetType()] = data;
+            signal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        await queue.SendBatchAsync(new object[]
+        {
+            new PreviewWorkItem { Data = "one" },
+            new OtherWorkItem { Data = "two" }
+        }, cancellationToken: cts.Token);
+
+        await signal.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal("one", received[typeof(PreviewWorkItem)]);
+        Assert.Equal("two", received[typeof(OtherWorkItem)]);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WithDefaultQueueRoute_ReturnsRawMessageAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var routing = new MessageRoutingOptionsBuilder()
+            .UseDefaultQueue("all-work")
+            .Build();
+        await using var queue = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Router = new DefaultMessageRouter(routing) });
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "global" }, cancellationToken: cancellationToken);
+
+        await using var collector = await MessageCollector.StartAsync(queue, cancellationToken: cancellationToken);
+        var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+
+        Assert.NotNull(received);
+        Assert.Equal(typeof(PreviewWorkItem).FullName, received.MessageType);
+        await received.CompleteAsync(cancellationToken);
+    }
+
+
+    private static async Task WaitForCompletedAsync(InMemoryMessageTransport transport, string destination, CancellationToken cancellationToken)
+    {
+        var address = DestinationAddress.ForQueue(destination);
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var stats = await transport.GetStatsAsync(address, cancellationToken);
+            if (stats.Completed == 1)
+                return;
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
+        }
+
+        var finalStats = await transport.GetStatsAsync(address, cancellationToken);
+        Assert.Equal(1, finalStats.Completed);
+    }
+
+    // Pull-style test helper over the subscription API: collects manually-acked contexts so tests can inspect and
+    // settle deliveries explicitly, now that the bus surface is subscription-only.
+    private sealed class MessageCollector<T> : IAsyncDisposable where T : class
+    {
+        private readonly Channel<IMessageContext<T>> _received = Channel.CreateUnbounded<IMessageContext<T>>();
+        private IMessageSubscription _subscription = null!;
+
+        public static async Task<MessageCollector<T>> StartAsync(IMessageBus bus, string? destination = null, CancellationToken cancellationToken = default)
+        {
+            var collector = new MessageCollector<T>();
+            collector._subscription = await bus.SubscribeAsync<T>((context, _) =>
+            {
+                collector._received.Writer.TryWrite(context);
+                return Task.CompletedTask;
+            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, Destination = destination }, cancellationToken);
+            return collector;
+        }
+
+        public string Destination => _subscription.Destination;
+
+        public async Task<IMessageContext<T>?> NextAsync(TimeSpan maxWait, CancellationToken cancellationToken = default)
+        {
+            // WaitToReadAsync + TryRead (not ReadAsync + WaitAsync): a timed-out WaitAsync abandons its ReadAsync,
+            // which would silently consume the next item.
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(maxWait);
+            try
+            {
+                while (await _received.Reader.WaitToReadAsync(cts.Token))
+                {
+                    if (_received.Reader.TryRead(out var context))
+                        return context;
+                }
+
+                return null;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+
+        public ValueTask DisposeAsync() => _subscription.DisposeAsync();
+    }
+
+    private sealed class MessageCollector : IAsyncDisposable
+    {
+        private readonly Channel<IMessageContext> _received = Channel.CreateUnbounded<IMessageContext>();
+        private IMessageSubscription _subscription = null!;
+
+        public static async Task<MessageCollector> StartAsync(IMessageBus bus, Type? routeType = null, string? destination = null, CancellationToken cancellationToken = default)
+        {
+            var collector = new MessageCollector();
+            collector._subscription = await bus.SubscribeAsync((context, _) =>
+            {
+                collector._received.Writer.TryWrite(context);
+                return Task.CompletedTask;
+            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, RouteType = routeType, Destination = destination }, cancellationToken);
+            return collector;
+        }
+
+        public async Task<IMessageContext?> NextAsync(TimeSpan maxWait, CancellationToken cancellationToken = default)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(maxWait);
+            try
+            {
+                while (await _received.Reader.WaitToReadAsync(cts.Token))
+                {
+                    if (_received.Reader.TryRead(out var context))
+                        return context;
+                }
+
+                return null;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                return null;
+            }
+        }
+
+        public ValueTask DisposeAsync() => _subscription.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_MultipleTypesOnOneDestination_DispatchByTypeAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var queue = new MessageBus(new InMemoryMessageTransport());
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        var aReceived = new List<string?>();
+        var bReceived = new List<string?>();
+        var aSignal = new AsyncCountdownEvent(1);
+        var bSignal = new AsyncCountdownEvent(1);
+
+        await using var consumerA = await queue.SubscribeAsync<SharedAWorkItem>((message, _) =>
+        {
+            lock (aReceived)
+                aReceived.Add(message.Message.Data);
+            aSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        await using var consumerB = await queue.SubscribeAsync<SharedBWorkItem>((message, _) =>
+        {
+            lock (bReceived)
+                bReceived.Add(message.Message.Data);
+            bSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // Both types route to the same destination, so they share one underlying receive loop that dispatches by type.
+        Assert.Equal(consumerA.Source, consumerB.Source);
+
+        await queue.SendAsync(new SharedAWorkItem { Data = "a" }, cancellationToken: cts.Token);
+        await queue.SendAsync(new SharedBWorkItem { Data = "b" }, cancellationToken: cts.Token);
+
+        await aSignal.WaitAsync(TimeSpan.FromSeconds(2));
+        await bSignal.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(new[] { "a" }, aReceived);
+        Assert.Equal(new[] { "b" }, bReceived);
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_UnmatchedType_DeadLettersAndKeepsConsumingAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { UnmatchedMaxAttempts = 3 } });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+        var aSignal = new AsyncCountdownEvent(1);
+        await using var consumerA = await queue.SubscribeAsync<SharedAWorkItem>((_, _) =>
+        {
+            aSignal.Signal();
+            return Task.CompletedTask;
+        }, cancellationToken: cts.Token);
+
+        // SharedBWorkItem routes to the same destination but has no registered consumer on this node.
+        await queue.SendAsync(new SharedBWorkItem { Data = "orphan" }, cancellationToken: cts.Token);
+
+        // It is retried and finally dead-lettered as "no-handler" once the configured unmatched budget is exhausted.
+        for (int i = 0; i < 400; i++)
+        {
+            if ((await transport.GetStatsAsync(DestinationAddress.ForQueue("shared-demux"), cts.Token)).Deadletter == 1)
+                break;
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
+        }
+
+        Assert.Equal(1, (await transport.GetStatsAsync(DestinationAddress.ForQueue("shared-demux"), cts.Token)).Deadletter);
+
+        // The loop survived the unmatched message and keeps consuming the type it does handle.
+        await queue.SendAsync(new SharedAWorkItem { Data = "ok" }, cancellationToken: cts.Token);
+        await aSignal.WaitAsync(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task RejectAsync_Terminal_WithoutNativeDeadLetter_SendsToConfiguredDestinationAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new NoDeadLetterTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { DeadLetterDestination = "preview-dead-letter" } });
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(message);
+
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation" }, cancellationToken);
+
+        // The transport has no native dead-letter sink, so core routes the terminal message to the configured destination.
+        await using var deadCollector = await MessageCollector.StartAsync(queue, destination: "preview-dead-letter", cancellationToken: cancellationToken);
+        var dead = await deadCollector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(dead);
+        Assert.Equal("validation", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterReason));
+    }
+
+    [Fact]
+    public async Task RejectAsync_Terminal_WithoutNativeDeadLetterOrConfig_DerivesDeadLetterDestinationAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new NoDeadLetterTransport();
+        // No DeadLetterDestination configured: the terminal message must be parked at "{source}.deadletter", not dropped.
+        await using var queue = new MessageBus(transport);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "bad" }, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
+        var message = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(message);
+
+        await message.RejectAsync(new RejectOptions { Terminal = true, Reason = "validation", Exception = new InvalidOperationException("boom") }, cancellationToken);
+
+        await using var deadCollector = await MessageCollector.StartAsync(queue, destination: "preview-work-item.deadletter", cancellationToken: cancellationToken);
+        var dead = await deadCollector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(dead);
+        Assert.Equal("validation", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterReason));
+        Assert.Equal(typeof(InvalidOperationException).FullName, dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterExceptionType));
+        Assert.Equal("preview-work-item", dead.Headers.GetValueOrDefault(KnownHeaders.DeadLetterOriginalDestination));
+    }
+
+    [Fact]
+    public async Task RetryPolicy_BackoffOnTransportWithoutDelaySupport_DegradesToImmediateRedeliveryAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // BasicQueueTransport has no native redelivery delay and no runtime store is registered, so the default
+        // backoff curve (10s+ after the second attempt) cannot be honored — the policy retry must degrade to
+        // immediate redelivery rather than failing the settle, and still reach dead-letter after MaxAttempts.
+        await using var transport = new BasicQueueTransport();
+        await using var queue = new MessageBus(transport);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        int attempts = 0;
+
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((_, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("always fails");
+        }, new MessageSubscriptionOptions { MaxAttempts = 3 }, cts.Token);
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "doomed" }, cancellationToken: cts.Token);
+
+        // All three attempts happen without a 10s stall, ending in the transport's native dead-letter sink.
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token);
+        long deadline = Environment.TickCount64 + 10_000;
+        while (stats.Deadletter == 0 && Environment.TickCount64 < deadline)
+        {
+            await Task.Delay(25, cts.Token);
+            stats = await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token);
+        }
+
+        Assert.Equal(1, stats.Deadletter);
+        Assert.Equal(3, Volatile.Read(ref attempts));
+    }
+
+    [Fact]
+    public async Task StartConsumerAsync_UsesDefaultRetryPolicyMaxAttempts_WhenConsumerDoesNotOverrideAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 2 } });
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(20));
+
+        int attempts = 0;
+        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((_, _) =>
+        {
+            Interlocked.Increment(ref attempts);
+            throw new InvalidOperationException("always fails");
+        }, cancellationToken: cts.Token); // no per-consumer MaxAttempts -> default RetryPolicy (2)
+
+        await queue.SendAsync(new PreviewWorkItem { Data = "x" }, cancellationToken: cts.Token);
+
+        for (int i = 0; i < 400; i++)
+        {
+            if ((await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token)).Deadletter == 1)
+                break;
+            await Task.Delay(TimeSpan.FromMilliseconds(25), cts.Token);
+        }
+
+        Assert.Equal(1, (await transport.GetStatsAsync(DestinationAddress.ForQueue("preview-work-item"), cts.Token)).Deadletter);
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_RespectsTransportOwnershipAsync()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        // Non-owning client (shared transport): disposing the client leaves the transport usable.
+        var shared = new InMemoryMessageTransport();
+        var nonOwning = new MessageBus(shared, new MessageBusOptions { OwnsTransport = false });
+        await nonOwning.DisposeAsync();
+        await shared.SendAsync(DestinationAddress.ForQueue("still-alive"), [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken);
+        await shared.DisposeAsync();
+
+        // Owning client (default): disposing the client disposes the transport.
+        var owned = new InMemoryMessageTransport();
+        var owning = new MessageBus(owned);
+        await owning.DisposeAsync();
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+            await owned.SendAsync(DestinationAddress.ForQueue("dead"), [new TransportMessage { Body = ReadOnlyMemory<byte>.Empty }], new TransportSendOptions(), cancellationToken));
+    }
+
+    [Fact]
+    public async Task DiBuiltClients_ShareTransport_DisposedExactlyOnceAsync()
+    {
+        var transport = new DisposeCountingTransport();
+        var services = new ServiceCollection();
+        services.AddFoundatio().Messaging.UseTransport(transport);
+        await using var provider = services.BuildServiceProvider();
+
+        _ = provider.GetRequiredService<IMessageBus>();
+
+        await provider.DisposeAsync();
+
+        // The container owns the shared transport singleton; the bus does not dispose it, so it is disposed once.
+        Assert.Equal(1, transport.DisposeCount);
+    }
+
+    private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
+    {
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        return new JobScheduleProcessor(new InMemoryScheduledJobStore(), store, worker, nodeId: "node-a", transport: transport);
+    }
+
+    [MessageRoute("routed-work")]
+    private sealed class RoutedWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    [MessageRoute("shared-demux")]
+    private sealed class SharedAWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    [MessageRoute("shared-demux")]
+    private sealed class SharedBWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    private interface IGroupedWorkItem
+    {
+    }
+
+    private sealed class PreviewWorkItem : IGroupedWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    private sealed class OtherWorkItem : IGroupedWorkItem
+    {
+        public string? Data { get; set; }
+    }
+
+    private sealed class BatchLimitTransport : IMessageTransport, ITransportInfo
+    {
+        public BatchLimitTransport(int maxBatchSize, long? maxMessageBytes = null)
+        {
+            MaxBatchSize = maxBatchSize;
+            MaxMessageBytes = maxMessageBytes;
+        }
+
+        public List<int> SendBatchSizes { get; } = new();
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
+        public int? MaxBatchSize { get; }
+        public long? MaxMessageBytes { get; }
+
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
+            new() { Ordering = OrderingGuarantee.Fifo, MaxBatchSize = MaxBatchSize, MaxMessageBytes = MaxMessageBytes };
+
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            SendBatchSizes.Add(messages.Count);
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+                items[i] = new SendItemResult { MessageId = messages[i].MessageId ?? Guid.NewGuid().ToString("N") };
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CappedDelayTransport : IMessageTransport, ISupportsPull, ITransportInfo
+    {
+        private readonly Queue<TransportEntry> _entries = new();
+
+        public CappedDelayTransport(TimeSpan? maxDeliveryDelay)
+        {
+            MaxDeliveryDelay = maxDeliveryDelay;
+        }
+
+        public TimeSpan? MaxDeliveryDelay { get; }
+        public int SendCount { get; private set; }
+        public TransportSendOptions? LastSendOptions { get; private set; }
+
+        public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
+        public IReadOnlySet<DestinationRole> SupportedRoles => new HashSet<DestinationRole> { DestinationRole.Queue };
+
+        public TransportCapabilities GetCapabilities(DestinationAddress destination) =>
+            new() { DelayedDelivery = true, MaxDeliveryDelay = MaxDeliveryDelay };
+
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            SendCount += messages.Count;
+            LastSendOptions = options;
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+            {
+                string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
+                _entries.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
+                items[i] = new SendItemResult { MessageId = id };
+            }
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
+        {
+            return Task.FromResult<IReadOnlyList<TransportEntry>>(_entries.Count > 0 ? [_entries.Dequeue()] : []);
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // A minimal multi-destination pull transport with NO native dead-letter sink, used to prove core-managed
+    // dead-lettering routes terminal messages to the configured RetryPolicy.DeadLetterDestination.
+    private sealed class NoDeadLetterTransport : IMessageTransport, ISupportsPull
+    {
+        private readonly ConcurrentDictionary<string, ConcurrentQueue<TransportEntry>> _queues = new(StringComparer.Ordinal);
+
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+        {
+            var queue = _queues.GetOrAdd(destination.Key, _ => new ConcurrentQueue<TransportEntry>());
+            var items = new SendItemResult[messages.Count];
+            for (int i = 0; i < messages.Count; i++)
+            {
+                string id = messages[i].MessageId ?? Guid.NewGuid().ToString("N");
+                queue.Enqueue(new TransportEntry { Id = id, Destination = destination, Body = messages[i].Body, Headers = messages[i].Headers, Receipt = new Receipt() });
+                items[i] = new SendItemResult { MessageId = id };
+            }
+
+            return Task.FromResult(new SendResult { Items = items });
+        }
+
+        public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
+        {
+            if (_queues.TryGetValue(source.Key, out var queue) && queue.TryDequeue(out var entry))
+                return Task.FromResult<IReadOnlyList<TransportEntry>>([entry]);
+
+            return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
+        }
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
+        {
+            _queues.GetOrAdd(entry.Destination.Key, _ => new ConcurrentQueue<TransportEntry>()).Enqueue(entry with { DeliveryCount = entry.DeliveryCount + 1 });
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    // Counts dispose calls without an idempotency guard, so a double-dispose (the bug item 6 fixes) would show as > 1.
+    private sealed class DisposeCountingTransport : IMessageTransport
+    {
+        public int DisposeCount { get; private set; }
+
+        public Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
+            => Task.FromResult(new SendResult { Items = Array.Empty<SendItemResult>() });
+
+        public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+        public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => Task.CompletedTask;
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+}

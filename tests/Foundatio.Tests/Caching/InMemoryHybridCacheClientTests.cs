@@ -729,6 +729,6 @@ public class InMemoryHybridCacheClient : HybridCacheClient
     {
         base.Dispose();
         _distributedCache.Dispose();
-        _messageBus.Dispose();
+        _messageBus.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
