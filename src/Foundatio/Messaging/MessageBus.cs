@@ -190,7 +190,12 @@ public interface IMessageBus : IAsyncDisposable
     Task SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Publishes an event; each subscribing service receives one copy (its instances compete).</summary>
+    /// <summary>
+    /// Publishes an event; each subscribing service receives one copy (its instances compete). Real pub/sub drop
+    /// semantics apply: a publish to a topic with no existing subscriptions is DROPPED — subscriptions are created
+    /// when handlers subscribe (or via topology provisioning), so subscribers must exist before the publish. Contrast
+    /// with <see cref="SendAsync{T}"/>, whose queue holds the message durably until a handler consumes it.
+    /// </summary>
     Task PublishAsync<T>(T message, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);

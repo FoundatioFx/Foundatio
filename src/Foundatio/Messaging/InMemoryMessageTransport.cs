@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using System.Threading.Channels;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
@@ -35,13 +37,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     private readonly ConcurrentDictionary<string, DestinationRole> _roles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _topicSubscriptions = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<ITimer, byte> _redeliveryTimers = new();
+    private readonly ConcurrentDictionary<string, byte> _warnedDroppedTopics = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
     private readonly CancellationTokenSource _disposeCancellationTokenSource = new();
     private int _isDisposed;
 
-    public InMemoryMessageTransport(TimeProvider? timeProvider = null)
+    public InMemoryMessageTransport(TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _logger = loggerFactory?.CreateLogger<InMemoryMessageTransport>() ?? NullLogger<InMemoryMessageTransport>.Instance;
     }
 
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
@@ -448,11 +453,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     private void EnqueueForDestination(string key, StoredMessage message)
     {
         // Topic sends fan out one copy per subscription; a topic with no subscriptions drops the message (real
-        // pub/sub semantics — subscriptions must exist before a publish can reach them).
+        // pub/sub semantics — subscriptions must exist before a publish can reach them). The drop is the single
+        // most confusing beginner outcome ("I published and nothing happened"), so it is warned once per topic.
         if (key.StartsWith("t:", StringComparison.Ordinal))
         {
-            if (!_topicSubscriptions.TryGetValue(key, out var subscriptions))
+            if (!_topicSubscriptions.TryGetValue(key, out var subscriptions) || subscriptions.IsEmpty)
+            {
+                if (_warnedDroppedTopics.TryAdd(key, 0))
+                    _logger.LogWarning("Message published to topic \"{Topic}\" was dropped: no subscriptions exist. Subscriptions are created when a handler subscribes (or via topology provisioning); publish after they exist. Further drops on this topic will not be logged", key[2..]);
                 return;
+            }
 
             foreach (string subscription in subscriptions.Keys)
                 EnqueueStoredMessage(subscription, message with { Destination = subscription });
