@@ -33,16 +33,16 @@ services.AddFoundatio()
             .MapTopic("order-events", typeof(IOrderEvent)))
         .ConfigureRetry(p => p with { MaxAttempts = 5 })
         .ConfigureTopology(TopologyMode.Ensure)
-        .RegisterMessageType<OrderSubmitted>("order.submitted")
+        .AddMessageType<OrderSubmitted>("order.submitted")
         .UseInMemory()
     .Messaging.AddHandler<OrderSubmitted, SendConfirmationHandler>()
-    .Jobs.UseInMemoryRuntime()
-    .Jobs.Register<RebuildSearchIndexJob>("search.rebuild");
+    .Jobs.UseInMemory()
+    .Jobs.AddJobType<RebuildSearchIndexJob>("search.rebuild");
 ```
 
 Swap providers by swapping one line: `.Messaging.UseRedis()` (Redis Streams), `.Messaging.UseAws()` (SQS/SNS), `.Jobs.UseRedis()`, or `.Messaging.UseTransport(...)` / `.Jobs.UseRuntimeStore(...)` for anything custom. Application code depends on `IMessageBus`, `IJobClient`, and `IJobMonitor`; deployment or admin code can depend on `IMessageTopology`.
 
-`RegisterMessageType<T>(name)` gives a type a stable wire discriminator so payloads survive assembly/namespace moves; unregistered types fall back to `Type.FullName` (never `AssemblyQualifiedName`). `.Jobs.Register<TJob>(name)` does the same for persisted job types.
+`AddMessageType<T>(name)` gives a type a stable wire discriminator so payloads survive assembly/namespace moves; unregistered types fall back to `Type.FullName` (never `AssemblyQualifiedName`). `.Jobs.AddJobType<TJob>(name)` does the same for persisted job types.
 
 ## Handlers
 
@@ -183,7 +183,7 @@ await handle.RequestCancellationAsync();
 
 ```csharp
 services.AddFoundatio()
-    .Jobs.UseInMemoryRuntime()
+    .Jobs.UseInMemory()
     .Jobs.AddCronJob<NightlyExportJob>("0 2 * * *", o =>
     {
         o.MaxRetries = 3;
@@ -191,7 +191,7 @@ services.AddFoundatio()
     });
 ```
 
-`AddCronJob<TJob>(cron, o => ...)` registers a `ScheduledJobDefinition`; `CronJobOptions` covers `Name`, `Scope` (`Global` = one instance per tick, `PerNode` = every instance), `Overlap` (`SkipIfRunning` default), `MisfireWindow`, `MaxRetries`, `TimeZone`, `Enabled`, and typed `Arguments` serialized into every occurrence's payload. Definitions are scheduled automatically when the pump starts — no manual `IJobScheduler.ScheduleAsync` call. The scheduler materializes every occurrence due within the misfire window (not just the latest) as durable, deduplicated store entries, and owns occurrence recovery with its own per-definition retry/dead-letter budget.
+`AddCronJob<TJob>(cron, o => ...)` registers a `ScheduledJobDefinition`; `CronJobOptions` covers `Name`, `Scope` (`Global` = one instance per tick, `PerNode` = every instance), `Overlap` (`SkipIfRunning` default), `MisfireWindow`, `MaxAttempts`, `TimeZone`, `Enabled`, and typed `Arguments` serialized into every occurrence's payload. Definitions are scheduled automatically when the pump starts — no manual `IScheduledJobStore.ScheduleAsync` call. The scheduler materializes every occurrence due within the misfire window (not just the latest) as durable, deduplicated store entries, and owns occurrence recovery with its own per-definition retry/dead-letter budget.
 
 ### Managing schedules at runtime
 

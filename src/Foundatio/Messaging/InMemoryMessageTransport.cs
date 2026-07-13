@@ -52,7 +52,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
 
-    public TransportCapabilities GetCapabilities(DestinationRole role) => _capabilities;
+    public TransportCapabilities GetCapabilities(DestinationAddress destination) => _capabilities;
 
     // The in-memory transport has no broker-imposed ceiling on visibility or redelivery delay.
     public TimeSpan? MaxVisibilityTimeout => null;

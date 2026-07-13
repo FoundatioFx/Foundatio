@@ -17,7 +17,7 @@ public class JobSchedulerTests
     public async Task EnqueueDueOccurrencesAsync_WhenOccurrenceIsDue_CreatesSingleGlobalOccurrenceAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var processor = CreateProcessor(scheduler, store, "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
@@ -48,7 +48,7 @@ public class JobSchedulerTests
     public async Task EnqueueDueOccurrencesAsync_WithAllowConcurrent_MaterializesEveryMissedOccurrenceAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var processor = CreateProcessor(scheduler, store, "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 5, 30, TimeSpan.Zero);
@@ -79,7 +79,7 @@ public class JobSchedulerTests
         var probe = new JobSchedulerProbe();
         var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
         var store = new InMemoryJobRuntimeStore();
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var registry = new JobTypeRegistry([new JobTypeRegistration("probe", typeof(ScheduledProbeJob))]);
         var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", jobTypes: registry);
         var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a", jobTypes: registry);
@@ -110,7 +110,7 @@ public class JobSchedulerTests
     public async Task RunDueOccurrencesAsync_WhenOccurrenceIsDue_RunsConfiguredJobAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var probe = new JobSchedulerProbe();
         await using var serviceProvider = new ServiceCollection()
@@ -144,7 +144,7 @@ public class JobSchedulerTests
     public async Task EnqueueDueOccurrencesAsync_WithPerNodeScope_CreatesOccurrencePerNodeAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var nodeA = CreateProcessor(scheduler, store, "node-a");
         var nodeB = CreateProcessor(scheduler, store, "node-b");
@@ -172,7 +172,7 @@ public class JobSchedulerTests
     public async Task EnqueueDueOccurrencesAsync_WithMisfireWindow_CatchesRecentMissedOccurrenceAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var processor = CreateProcessor(scheduler, store, "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 5, 0, TimeSpan.Zero);
@@ -197,7 +197,7 @@ public class JobSchedulerTests
     public async Task RunDueOccurrencesAsync_WhenDispatchIsQueueMessage_MaterializesItAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         await using var transport = new InMemoryMessageTransport();
         var processor = CreateProcessor(scheduler, store, "node-a", transport);
@@ -226,7 +226,7 @@ public class JobSchedulerTests
     public async Task RunDueOccurrencesAsync_WhenJobFails_RetriesThenDeadLettersAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var probe = new JobSchedulerProbe();
         await using var serviceProvider = new ServiceCollection()
@@ -241,7 +241,7 @@ public class JobSchedulerTests
             Name = "nightly",
             Cron = "* * * * *",
             JobType = typeof(FailingScheduledJob),
-            MaxRetries = 1
+            MaxAttempts = 2
         }, cancellationToken);
         var scheduled = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
         var dispatch = Assert.Single(scheduled);
@@ -264,7 +264,7 @@ public class JobSchedulerTests
     public async Task RunDueOccurrencesAsync_WhenProcessingLeaseExpired_ReclaimsAndRunsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var probe = new JobSchedulerProbe();
         await using var serviceProvider = new ServiceCollection()
@@ -280,7 +280,7 @@ public class JobSchedulerTests
             Name = "nightly",
             Cron = "* * * * *",
             JobType = typeof(ScheduledProbeJob),
-            MaxRetries = 1
+            MaxAttempts = 2
         }, cancellationToken);
         await store.CreateIfAbsentAsync(new JobState
         {
@@ -340,7 +340,7 @@ public class JobSchedulerTests
     public async Task RunDueOccurrencesAsync_WhenOccurrenceIsTerminal_RetiresDispatchInsteadOfReschedulingAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         var processor = CreateProcessor(scheduler, store, "node-a");
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
@@ -361,7 +361,7 @@ public class JobSchedulerTests
     public async Task EnqueueDueOccurrencesAsync_PerNodeScope_WithDelimiterInNodeId_DoesNotCrossMatchAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         // Node ids that are suffix-confusable under a naive EndsWith(":{scope}") check — the default NodeIdentity contains ':'.
         var nodeXB = CreateProcessor(scheduler, store, "x:b");
@@ -391,8 +391,8 @@ public class JobSchedulerTests
         var probe = new JobSchedulerProbe();
         var services = new ServiceCollection().AddSingleton(probe);
         var foundatio = services.AddFoundatio();
-        foundatio.Jobs.UseInMemoryRuntime();
-        foundatio.Jobs.Register<ScheduledProbeJob>("probe");
+        foundatio.Jobs.UseInMemory();
+        foundatio.Jobs.AddJobType<ScheduledProbeJob>("probe");
         await using var provider = services.BuildServiceProvider();
 
         // Configuring a runtime store auto-registers the pump — no separate AddJobRuntimeService — so a hosted process
@@ -423,8 +423,8 @@ public class JobSchedulerTests
         var probe = new JobSchedulerProbe();
         var services = new ServiceCollection().AddSingleton(probe);
         var foundatio = services.AddFoundatio();
-        foundatio.Jobs.UseInMemoryRuntime();
-        foundatio.Jobs.Register<ScheduledProbeJob>("probe");
+        foundatio.Jobs.UseInMemory();
+        foundatio.Jobs.AddJobType<ScheduledProbeJob>("probe");
         foundatio.Jobs.ConfigureRuntimePump(o => o.Enabled = false); // opt out of automatic pumping
         await using var provider = services.BuildServiceProvider();
 
@@ -451,7 +451,7 @@ public class JobSchedulerTests
         var services = new ServiceCollection().AddSingleton(new JobSchedulerProbe());
         // Hosting-first ordering must not stack a second pump: AddJobRuntimeService only tunes the single core pump.
         Foundatio.Extensions.Hosting.Jobs.JobHostExtensions.AddJobRuntimeService(services, o => o.PollInterval = TimeSpan.FromMilliseconds(25));
-        services.AddFoundatio().Jobs.UseInMemoryRuntime();
+        services.AddFoundatio().Jobs.UseInMemory();
         await using var provider = services.BuildServiceProvider();
 
         var hostedServices = provider.GetServices<IHostedService>().ToList();
@@ -461,7 +461,7 @@ public class JobSchedulerTests
         Assert.Equal(TimeSpan.FromMilliseconds(25), provider.GetRequiredService<JobRuntimePumpOptions>().PollInterval);
     }
 
-    private static JobScheduleProcessor CreateProcessor(IJobScheduler scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
+    private static JobScheduleProcessor CreateProcessor(IScheduledJobStore scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
     {
         var serviceProvider = new ServiceCollection()
             .AddSingleton(new JobSchedulerProbe())

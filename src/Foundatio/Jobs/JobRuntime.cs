@@ -69,6 +69,10 @@ public sealed record JobState
     public DateTimeOffset? ScheduledForUtc { get; init; }
 }
 
+/// <summary>
+/// Store-author SPI: consumed by <see cref="IJobRuntimeStore"/> implementations to apply atomic state transitions;
+/// application code never constructs one.
+/// </summary>
 public sealed record JobStatePatch
 {
     public JobStatus? Status { get; init; }
@@ -180,7 +184,7 @@ public sealed class JobTypeRegistry : IJobTypeRegistry
         }
 
         if (jobType is null || !typeof(IJob).IsAssignableFrom(jobType))
-            throw new InvalidOperationException($"Job type \"{name}\" could not be resolved to an IJob implementation.");
+            throw new JobException($"Job type \"{name}\" could not be resolved to an IJob implementation.");
 
         return jobType;
     }
@@ -367,6 +371,9 @@ public interface IJobWorker
 public interface IScheduledDispatchStore
 {
     Task ScheduleDispatchAsync(ScheduledDispatchState dispatch, CancellationToken cancellationToken = default);
+    // Claiming must be atomic per dispatch — in a relational store, a single conditional statement (e.g.
+    // SELECT ... FOR UPDATE SKIP LOCKED, or UPDATE ... WHERE due and unclaimed/lease-expired), never read-then-write —
+    // so concurrent nodes never claim the same dispatch.
     Task<IReadOnlyList<ScheduledDispatchState>> ClaimDueDispatchesAsync(DateTimeOffset now, int limit, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
     Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default);
     Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default);
@@ -383,10 +390,17 @@ public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore
     Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default);
     // When expectedNodeId is non-null, the transition only succeeds if the job is currently owned by that node.
     // Worker terminal transitions pass their node id so a stale worker whose lease was reclaimed cannot overwrite
-    // the new owner's state.
+    // the new owner's state. Relational stores implement this as one atomic conditional statement
+    // (UPDATE ... WHERE status = expected AND owner matches), never a read followed by a write.
     Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default);
+    // Claim only when unowned or lease-expired — a single atomic conditional statement in a relational store
+    // (UPDATE ... WHERE owner IS NULL OR lease expired), never read-then-write.
     Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
+    // Renew only while still owned by nodeId — a single atomic conditional statement in a relational store
+    // (UPDATE ... WHERE owner = nodeId), never read-then-write.
     Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
+    // Release only while still owned by nodeId — a single atomic conditional statement in a relational store
+    // (UPDATE ... WHERE owner = nodeId), never read-then-write.
     Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default);
     // Returns plain (non-CRON-occurrence) jobs in Processing whose lease has expired as of <paramref name="now"/>
     // (their owning worker is presumed dead), so the runtime can reclaim them. CRON occurrences are excluded — the
@@ -395,7 +409,8 @@ public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore
     // Atomically reclaims a stale Processing job: the transition applies only if the job is STILL owned by
     // <paramref name="expectedNodeId"/> and its lease is STILL expired as of <paramref name="now"/>. This closes the
     // race where the owning worker renews its lease between a stale scan and the reclaim (which would otherwise
-    // re-queue a live job and double-run it).
+    // re-queue a live job and double-run it). Relational stores implement this as one atomic conditional statement
+    // (UPDATE ... WHERE owner = expected AND lease expired), never read-then-write.
     Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default);
     Task SetProgressAsync(string jobId, int? percent = null, string? message = null, CancellationToken cancellationToken = default);
     Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default);
@@ -812,6 +827,21 @@ internal static class NodeIdentity
     }
 }
 
+/// <summary>
+/// Optional dependencies and tuning for <see cref="JobWorker"/>. Prefer the options-taking constructor when
+/// hand-wiring a worker; unset properties fall back to the same defaults as the full constructor.
+/// </summary>
+public sealed record JobWorkerOptions
+{
+    public TimeProvider? TimeProvider { get; init; }
+    public string? NodeId { get; init; }
+    public TimeSpan? Lease { get; init; }
+    public IJobTypeRegistry? JobTypes { get; init; }
+    public TimeSpan? CancellationPollInterval { get; init; }
+    public ISerializer? Serializer { get; init; }
+    public int MaxConcurrency { get; init; } = 1;
+}
+
 public sealed class JobWorker : IJobWorker
 {
     private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
@@ -826,6 +856,12 @@ public sealed class JobWorker : IJobWorker
     private readonly TimeSpan _lease;
     private readonly TimeSpan _cancellationPollInterval;
     private readonly int _maxConcurrency;
+
+    /// <summary>Preferred overload for hand-wiring: the optional dependencies come in as one options record.</summary>
+    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, JobWorkerOptions? options = null)
+        : this(store, serviceProvider, options?.TimeProvider, options?.NodeId, options?.Lease, options?.JobTypes, options?.CancellationPollInterval, options?.Serializer, options?.MaxConcurrency ?? 1)
+    {
+    }
 
     public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null, ISerializer? serializer = null, int maxConcurrency = 1)
     {
@@ -921,10 +957,9 @@ public sealed class JobWorker : IJobWorker
             // from under itself (no double-run). Attempts are incremented per run, so a job that keeps crashing is
             // dead-lettered once it has consumed its attempt budget instead of being re-queued forever.
             //
-            // Budget semantics for ad-hoc (IJobClient) jobs: `maxAttempts` is the TOTAL number of attempts, so
-            // dead-letter at Attempt >= maxAttempts. (CRON occurrences use a different knob — ScheduledJobDefinition
-            // .MaxRetries, the number of retries AFTER the first run, i.e. total runs = MaxRetries + 1 — and are
-            // excluded from this path via GetExpiredProcessingAsync; the scheduler owns their recovery.)
+            // Budget semantics: `maxAttempts` is the TOTAL number of attempts, so dead-letter at
+            // Attempt >= maxAttempts. (CRON occurrences use ScheduledJobDefinition.MaxAttempts with the SAME total
+            // semantics and are excluded from this path via GetExpiredProcessingAsync; the scheduler owns their recovery.)
             bool transitioned = state.Attempt >= maxAttempts
                 ? await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.DeadLettered, new JobStatePatch
                 {
@@ -1070,7 +1105,7 @@ public sealed class JobWorker : IJobWorker
     private Type ResolveJobType(JobState state)
     {
         if (String.IsNullOrEmpty(state.JobType))
-            throw new InvalidOperationException($"Job \"{state.JobId}\" does not have a job type and cannot be executed by a worker.");
+            throw new JobException($"Job \"{state.JobId}\" does not have a job type and cannot be executed by a worker.");
 
         try
         {
@@ -1078,7 +1113,7 @@ public sealed class JobWorker : IJobWorker
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
-            throw new InvalidOperationException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.", ex);
+            throw new JobException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.", ex);
         }
     }
 

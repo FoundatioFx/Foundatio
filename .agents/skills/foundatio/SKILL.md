@@ -36,7 +36,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 - Durable jobs: implement `IJob` (`Task<JobResult> RunAsync(JobExecutionContext context)`). `IJobClient.EnqueueAsync<TJob>()` / `EnqueueAsync<TJob, TArgs>(args)` (typed payloads) returns a `JobHandle`; `IJobMonitor` queries state; `IJobWorker` executes with per-run DI scopes, bounded concurrency, and supervised lease renewal. `JobExecutionContext` gives `JobId`/`Attempt`/`CancellationToken`, `GetArguments<TArgs>()`, `ReportProgressAsync`, `RenewLeaseAsync`, `IsCancellationRequestedAsync`; its public constructor makes a detached context for tests.
 - CRON: `.Jobs.AddCronJob<TJob>("0 */6 * * *", o => ...)` with `CronJobOptions` (`Scope` Global/PerNode, `Overlap`, `MisfireWindow`, `MaxRetries`, `TimeZone`, typed `Arguments`). Scheduled automatically when the runtime pump starts. Tune the pump with `.Jobs.ConfigureRuntimePump(o => ...)` (`JobRuntimePumpOptions`: `Enabled`, `PollInterval`, `BatchSize`, `MaxJobAttempts`, `WorkerConcurrency`).
 - Runtime schedule management: `IScheduledJobManager` (DI-registered with the runtime) lists/inspects schedules, adds or replaces `ScheduledJobDefinition`s on the fly, `RescheduleAsync(name, cron)` changes just the schedule, `SetEnabledAsync(name, bool)` pauses/resumes materialization, and `TriggerAsync(name)` runs an immediate durable occurrence (definition's `Arguments` + retry budget) returning a `JobHandle`. Triggering a disabled schedule throws; manual occurrences never dedupe and bypass `Overlap` accounting. Generic overloads (`GetScheduleAsync<TJob>()`, `TriggerAsync<TJob>()`, `RescheduleAsync<TJob>(cron)`, `SetEnabledAsync<TJob>(bool)`, `UnscheduleAsync<TJob>()`) resolve the schedule name via `ScheduledJobDefinition.DefaultNameFor(type)` — the same default `AddCronJob<TJob>` uses when no explicit name is given.
-- Stable wire names: `.Messaging.RegisterMessageType<T>("name")` and `.Jobs.Register<TJob>("name")` so persisted discriminators survive assembly/namespace moves; unregistered types fall back to `Type.FullName`.
+- Stable wire names: `.Messaging.AddMessageType<T>("name")` and `.Jobs.AddJobType<TJob>("name")` so persisted discriminators survive assembly/namespace moves; unregistered types fall back to `Type.FullName`.
 - Legacy implementations were removed. For migration, `Messaging.AddLegacyAdapter()` registers the old `IMessageBus`/`IMessagePublisher`/`IMessageSubscriber` interfaces as a thin adapter over the new bus (old handler code compiles unchanged; delete the call when migrated). Old jobs migrate mechanically: `RunAsync(CancellationToken)` becomes `RunAsync(JobExecutionContext)` (use `context.CancellationToken`), `QueueJobBase<T>`/`IQueue<T>` become `IMessageHandler<T>` + `SendAsync`, and `WorkItemJob` becomes `EnqueueAsync<TJob, TArgs>(args)` with `ReportProgressAsync`.
 
 ## Core Interfaces
@@ -71,8 +71,8 @@ builder.Services.AddFoundatio()
         .ConfigureRetry(p => p with { MaxAttempts = 5 })
         .UseInMemory()
     .Messaging.AddHandler<OrderSubmitted, SendConfirmationHandler>()
-    .Jobs.UseInMemoryRuntime()
-    .Jobs.Register<RebuildSearchIndexJob>("search.rebuild");
+    .Jobs.UseInMemory()
+    .Jobs.AddJobType<RebuildSearchIndexJob>("search.rebuild");
 ```
 
 Swap to production by changing only the provider lines:
@@ -218,7 +218,7 @@ The worker gives every run its own DI scope, claims jobs with compare-and-set tr
 
 ```csharp
 services.AddFoundatio()
-    .Jobs.UseInMemoryRuntime()
+    .Jobs.UseInMemory()
     .Jobs.AddCronJob<NightlyExportJob>("0 2 * * *", o =>
     {
         o.Scope = ScheduledJobScope.Global;   // one instance per tick (default); PerNode = every instance

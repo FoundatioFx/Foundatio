@@ -307,7 +307,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         // Registers a stable wire name for a message type so the discriminator survives assembly/namespace moves and
         // grouped/interface consumers can resolve and deserialize the concrete payload type.
-        public MessagingBuilder RegisterMessageType<T>(string name) where T : class
+        public MessagingBuilder AddMessageType<T>(string name) where T : class
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
             _services.AddSingleton(new MessageTypeRegistration(name, typeof(T)));
@@ -496,14 +496,15 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder UseInMemoryRuntime()
+        /// <summary>Uses the in-memory job runtime — the all-defaults setup for development and tests.</summary>
+        public FoundatioBuilder UseInMemory()
         {
             _services.ReplaceSingleton<IJobRuntimeStore>(sp => new InMemoryJobRuntimeStore(sp.GetService<TimeProvider>()));
             RegisterJobServices();
             return _builder;
         }
 
-        public FoundatioBuilder Register<TJob>(string name) where TJob : IJob
+        public FoundatioBuilder AddJobType<TJob>(string name) where TJob : IJob
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
             _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
@@ -514,8 +515,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// Registers a recurring (CRON) job. The schedule is materialized once into the shared runtime store per
         /// occurrence, so <see cref="CronJobOptions.Scope"/> decides fan-out (Global = one instance per tick,
         /// PerNode = every instance per tick). Scheduled automatically when the runtime pump starts — no manual
-        /// <see cref="IJobScheduler.ScheduleAsync"/> call needed. Requires a runtime store (<see cref="UseRuntimeStore(IJobRuntimeStore)"/>
-        /// / <see cref="UseInMemoryRuntime"/>).
+        /// <see cref="IScheduledJobStore.ScheduleAsync"/> call needed. Requires a runtime store (<see cref="UseRuntimeStore(IJobRuntimeStore)"/>
+        /// / <see cref="UseInMemory"/>).
         /// </summary>
         public FoundatioBuilder AddCronJob<TJob>(string cronSchedule, Action<CronJobOptions>? configure = null) where TJob : IJob
         {
@@ -542,7 +543,7 @@ public class FoundatioBuilder : IFoundatioBuilder
                 Scope = options.Scope,
                 Overlap = options.Overlap,
                 MisfireWindow = options.MisfireWindow,
-                MaxRetries = options.MaxRetries,
+                MaxAttempts = options.MaxAttempts,
                 Enabled = options.Enabled,
                 TimeZone = options.TimeZone,
                 Arguments = options.Arguments
@@ -574,15 +575,15 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>()));
             _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>(), serializer: sp.GetService<ISerializer>(),
                 maxConcurrency: sp.GetService<JobRuntimePumpOptions>()?.WorkerConcurrency ?? 1));
-            _services.ReplaceSingleton<IJobScheduler, InMemoryJobScheduler>();
+            _services.ReplaceSingleton<IScheduledJobStore, InMemoryScheduledJobStore>();
             _services.ReplaceSingleton<IScheduledJobManager>(sp => new ScheduledJobManager(
-                sp.GetRequiredService<IJobScheduler>(),
+                sp.GetRequiredService<IScheduledJobStore>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
                 sp.GetRequiredService<IJobTypeRegistry>(),
                 sp.GetService<ISerializer>(),
                 sp.GetService<TimeProvider>()));
             _services.ReplaceSingleton(sp => new JobScheduleProcessor(
-                sp.GetRequiredService<IJobScheduler>(),
+                sp.GetRequiredService<IScheduledJobStore>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
                 sp.GetRequiredService<IJobWorker>(),
                 sp.GetService<TimeProvider>(),
@@ -593,7 +594,7 @@ public class FoundatioBuilder : IFoundatioBuilder
             // A runtime store is inert without something draining it, so register the pump alongside the store: in a
             // hosted process it runs jobs and the messaging delayed-delivery fallback automatically (no separate
             // AddJobRuntimeService call); in a non-hosted process the IHostedService is simply never started. Guarded so
-            // repeated UseRuntimeStore/UseInMemoryRuntime calls don't stack multiple pumps. Options default unless
+            // repeated UseRuntimeStore/UseInMemory calls don't stack multiple pumps. Options default unless
             // AddJobRuntimeService (or a registered JobRuntimePumpOptions) overrides them.
             if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimePumpService)))
                 _services.AddSingleton<IHostedService, JobRuntimePumpService>();

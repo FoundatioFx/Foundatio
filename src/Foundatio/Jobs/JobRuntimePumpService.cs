@@ -40,7 +40,7 @@ public class JobRuntimePumpOptions
 /// Drives the durable job runtime (<see cref="IJobRuntimeStore"/>): materializes CRON occurrences, dispatches
 /// delayed/scheduled work (including the messaging delayed-delivery fallback), recovers stale occurrences, and runs
 /// jobs submitted via <see cref="IJobClient"/>. Registered automatically whenever a runtime store is configured
-/// (<c>AddFoundatio().Jobs.UseInMemoryRuntime()</c> / <c>UseRuntimeStore()</c>) so a configured store can never
+/// (<c>AddFoundatio().Jobs.UseInMemory()</c> / <c>UseRuntimeStore()</c>) so a configured store can never
 /// silently accumulate work that nothing drains. In a non-hosted process (no generic host) it is simply never started.
 /// </summary>
 public class JobRuntimePumpService : BackgroundService
@@ -50,33 +50,33 @@ public class JobRuntimePumpService : BackgroundService
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly JobRuntimePumpOptions _options;
-    private readonly IJobScheduler? _scheduler;
+    private readonly IScheduledJobStore? _scheduleStore;
     private readonly IEnumerable<ScheduledJobDefinition> _scheduledJobs;
 
-    public JobRuntimePumpService(JobScheduleProcessor processor, IJobWorker worker, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null, JobRuntimePumpOptions? options = null, IJobScheduler? scheduler = null, IEnumerable<ScheduledJobDefinition>? scheduledJobs = null)
+    public JobRuntimePumpService(JobScheduleProcessor processor, IJobWorker worker, TimeProvider? timeProvider = null, ILoggerFactory? loggerFactory = null, JobRuntimePumpOptions? options = null, IScheduledJobStore? scheduleStore = null, IEnumerable<ScheduledJobDefinition>? scheduledJobs = null)
     {
         _processor = processor ?? throw new ArgumentNullException(nameof(processor));
         _worker = worker ?? throw new ArgumentNullException(nameof(worker));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<JobRuntimePumpService>();
         _options = options ?? new JobRuntimePumpOptions();
-        _scheduler = scheduler;
+        _scheduleStore = scheduleStore;
         _scheduledJobs = scheduledJobs ?? Array.Empty<ScheduledJobDefinition>();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Schedule CRON jobs registered declaratively via AddFoundatio().Jobs.AddCronJob<T>() so users don't have to
-        // call IJobScheduler.ScheduleAsync themselves. Done before the Enabled check so the "scheduled automatically"
+        // call IScheduledJobStore.ScheduleAsync themselves. Done before the Enabled check so the "scheduled automatically"
         // contract holds even when this node's pump is disabled for manual control. Idempotent (schedule keyed by name),
         // so every node registering the same schedules is fine.
-        if (_scheduler is not null)
+        if (_scheduleStore is not null)
         {
             foreach (var definition in _scheduledJobs)
             {
                 try
                 {
-                    await _scheduler.ScheduleAsync(definition, stoppingToken).AnyContext();
+                    await _scheduleStore.ScheduleAsync(definition, stoppingToken).AnyContext();
                 }
                 catch (Exception ex)
                 {

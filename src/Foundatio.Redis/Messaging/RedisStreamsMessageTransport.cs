@@ -55,7 +55,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
-    public TransportCapabilities GetCapabilities(DestinationRole role) => _capabilities;
+    public TransportCapabilities GetCapabilities(DestinationAddress destination) => _capabilities;
     public TimeSpan? MaxRedeliveryDelay => null; // lease is tracked in Redis, so any delay is honored
     public TimeSpan? MaxVisibilityTimeout => null;
 

@@ -20,10 +20,10 @@ public class ScheduledJobManagerTests
         Assert.Equal("0 3 * * *", (await manager.GetScheduleAsync("nightly", cancellationToken))!.Cron);
 
         // Re-scheduling the same name replaces the whole definition (runtime add/update, no restart).
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 4 * * *", JobType = typeof(ProbeJob), MaxRetries = 7 }, cancellationToken);
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 4 * * *", JobType = typeof(ProbeJob), MaxAttempts = 7 }, cancellationToken);
         var updated = await manager.GetScheduleAsync("nightly", cancellationToken);
         Assert.Equal("0 4 * * *", updated!.Cron);
-        Assert.Equal(7, updated.MaxRetries);
+        Assert.Equal(7, updated.MaxAttempts);
         Assert.Single(await manager.GetSchedulesAsync(cancellationToken));
     }
 
@@ -32,12 +32,12 @@ public class ScheduledJobManagerTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var (manager, _, _) = CreateRuntime();
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob), MaxRetries = 5 }, cancellationToken);
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob), MaxAttempts = 5 }, cancellationToken);
 
         Assert.True(await manager.RescheduleAsync("nightly", "*/5 * * * *", cancellationToken));
         var updated = await manager.GetScheduleAsync("nightly", cancellationToken);
         Assert.Equal("*/5 * * * *", updated!.Cron);
-        Assert.Equal(5, updated.MaxRetries); // only the cron changed; the rest of the definition is preserved
+        Assert.Equal(5, updated.MaxAttempts); // only the cron changed; the rest of the definition is preserved
 
         Assert.False(await manager.RescheduleAsync("unknown", "*/5 * * * *", cancellationToken));
         await Assert.ThrowsAnyAsync<Exception>(() => manager.RescheduleAsync("nightly", "not-a-cron", cancellationToken));
@@ -115,7 +115,7 @@ public class ScheduledJobManagerTests
         Assert.Equal("*/10 * * * *", (await manager.GetScheduleAsync<ProbeJob>(cancellationToken))!.Cron);
 
         Assert.True(await manager.SetEnabledAsync<ProbeJob>(false, cancellationToken));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.TriggerAsync<ProbeJob>(cancellationToken));
+        await Assert.ThrowsAsync<ScheduledJobDisabledException>(() => manager.TriggerAsync<ProbeJob>(cancellationToken));
         Assert.True(await manager.SetEnabledAsync<ProbeJob>(true, cancellationToken));
 
         var handle = await manager.TriggerAsync<ProbeJob>(cancellationToken);
@@ -134,17 +134,19 @@ public class ScheduledJobManagerTests
         var cancellationToken = TestContext.Current.CancellationToken;
         var (manager, _, _) = CreateRuntime();
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.TriggerAsync("unknown", cancellationToken));
+        var notFound = await Assert.ThrowsAsync<ScheduledJobNotFoundException>(() => manager.TriggerAsync("unknown", cancellationToken));
+        Assert.Equal("unknown", notFound.Name);
 
         await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "off", Cron = "* * * * *", JobType = typeof(ProbeJob), Enabled = false }, cancellationToken);
-        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => manager.TriggerAsync("off", cancellationToken));
+        var ex = await Assert.ThrowsAsync<ScheduledJobDisabledException>(() => manager.TriggerAsync("off", cancellationToken));
         Assert.Contains("disabled", ex.Message);
+        Assert.Equal("off", ex.Name);
     }
 
     private static (IScheduledJobManager Manager, JobScheduleProcessor Processor, RegionProbe Probe) CreateRuntime()
     {
         var store = new InMemoryJobRuntimeStore();
-        var scheduler = new InMemoryJobScheduler();
+        var scheduler = new InMemoryScheduledJobStore();
         var probe = new RegionProbe();
         var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
         var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
