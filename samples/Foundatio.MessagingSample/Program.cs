@@ -39,10 +39,11 @@ app.MapPost("/announcements", async (Announcement announcement, IMessageBus bus)
     return Results.Accepted(value: new { published = announcement.Text });
 });
 
-// DURABLE JOB — submitted here, executed on whichever instance's runtime pump claims it.
+// DURABLE JOB — submitted here with typed arguments (persisted in the job payload; the job reads them back with
+// context.GetArguments<ReportArgs>()), executed on whichever instance's runtime pump claims it.
 app.MapPost("/reports", async (IJobClient jobs) =>
 {
-    var handle = await jobs.EnqueueAsync<GenerateReportJob>();
+    var handle = await jobs.EnqueueAsync<GenerateReportJob, ReportArgs>(new ReportArgs("pdf", "sample-user"));
     return Results.Accepted($"/reports/{handle.JobId}", new { jobId = handle.JobId });
 });
 
