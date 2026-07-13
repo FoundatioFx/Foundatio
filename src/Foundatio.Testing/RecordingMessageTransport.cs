@@ -30,6 +30,8 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     private readonly ConcurrentQueue<RecordedMessage> _abandoned = new();
     private readonly ConcurrentQueue<RecordedMessage> _deadLettered = new();
     private readonly ConcurrentDictionary<DestinationAddress, byte> _knownNames = new();
+    private readonly ConcurrentDictionary<DestinationAddress, byte> _sendDestinations = new();
+    private readonly ConcurrentDictionary<DestinationAddress, byte> _consumeSources = new();
     private readonly ConcurrentDictionary<Guid, (DestinationAddress Destination, DateTimeOffset DueAt)> _pendingRedeliveries = new();
 
     public RecordingMessageTransport(TimeProvider? timeProvider = null)
@@ -55,6 +57,7 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         var result = await _inner.SendAsync(destination, messages, options, ct).ConfigureAwait(false);
 
         _knownNames.TryAdd(destination, 0);
+        _sendDestinations.TryAdd(destination, 0);
         var recordings = destination.Role == DestinationRole.Topic ? _published : _sent;
         foreach (var message in messages)
         {
@@ -74,18 +77,21 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
+        _consumeSources.TryAdd(source, 0);
         return _inner.ReceiveAsync(source, request, ct);
     }
 
     public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
+        _consumeSources.TryAdd(source, 0);
         return _inner.ReceiveAsync(source, request, visibility, ct);
     }
 
     public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default)
     {
         _knownNames.TryAdd(source, 0);
+        _consumeSources.TryAdd(source, 0);
         return _inner.SubscribeAsync(source, onMessage, options, ct);
     }
 
@@ -147,6 +153,33 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
     public Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct = default) => _inner.ExistsAsync(destination, ct);
 
     public ValueTask DisposeAsync() => _inner.DisposeAsync();
+
+    // Destinations that received sends/publishes but were never received from or subscribed to. A topic publish
+    // counts as consumed when anything consumes one of the topic's subscriptions; a topic with none is exactly the
+    // zero-subscription publish the inner transport drops (real pub/sub semantics), so it is included here.
+    public IReadOnlyList<string> DestinationsWithNoConsumer
+    {
+        get
+        {
+            var consumers = _consumeSources.Keys.ToArray();
+            return _sendDestinations.Keys
+                .Where(sent => !consumers.Any(consumer => Consumes(consumer, sent)))
+                .Select(sent => sent.Key)
+                .OrderBy(key => key, StringComparer.Ordinal)
+                .ToList();
+        }
+    }
+
+    private static bool Consumes(DestinationAddress consumer, DestinationAddress sent)
+    {
+        if (consumer == sent)
+            return true;
+
+        // A topic is consumed through its subscriptions, which carry the owning topic in their address.
+        return sent.Role == DestinationRole.Topic
+            && consumer.Role is DestinationRole.Subscription or DestinationRole.Binding
+            && String.Equals(consumer.Topic, sent.Name, StringComparison.Ordinal);
+    }
 
     // Aggregate pending work across every destination/source this transport has seen; idle means nothing queued,
     // nothing in flight, and no delayed redelivery still waiting on its timer.
