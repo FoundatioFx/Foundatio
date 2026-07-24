@@ -534,18 +534,56 @@ var options = new ConfigurationOptions
 var redis = await ConnectionMultiplexer.ConnectAsync(options);
 ```
 
+### Connection Lifetime & Graceful Shutdown
+
+Foundatio's Redis providers (`RedisCacheClient`, `RedisQueue<T>`, `RedisMessageBus`, `RedisFileStorage`, `CacheLockProvider`) all **borrow** an `IConnectionMultiplexer` you supply -- they never own or close it. This is intentional: the same multiplexer is typically shared across cache, queue, message bus, and locks, so a single provider closing it on `Dispose()` would break the others. Closing the connection is your application's responsibility.
+
+This matters most in **cluster mode**, where a single multiplexer opens a connection to *every* shard. If your process is killed (scale-in, deploy, crash) without cleanly closing that connection, each shard is left holding a socket with output buffers still queued for a client that will never read them again. Because Redis/Valkey's event loop is single-threaded, a pile-up of these stale sockets can pin a node's CPU at 100% until the connection is cleared.
+
+Two complementary mitigations:
+
+**1. Let the DI container dispose the multiplexer on graceful shutdown.** Register it with a factory (not a pre-built instance) so `IServiceProvider` disposal -- triggered by `IHostApplicationLifetime.ApplicationStopping` during `SIGTERM`/`SIGINT` -- closes it and sends a clean `FIN`:
+
+```csharp
+// ✅ Factory registration: container creates it, so container disposes it
+services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect(connectionString));
+```
+
+If you must keep a pre-built instance around, dispose it explicitly:
+
+```csharp
+var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+lifetime.ApplicationStopping.Register(() => redis.Dispose());
+```
+
+**2. Configure a server-side backstop for hard kills** (`SIGKILL`, scale-in via orchestration, ungraceful crashes) where no client-side shutdown code runs at all. Set these on your Redis/Valkey server or parameter group:
+
+- `timeout` -- e.g. `300` (seconds). Forces the server to drop a connection that has been completely idle for this long.
+- `tcp-keepalive` -- e.g. `300` or lower. Has the OS send low-level TCP probes to detect and reap dead sockets.
+
+StackExchange.Redis's own `KeepAlive` option defaults to `60` seconds, which is lower than the settings above, so healthy connections won't be culled by the server-side timeout.
+
 ## Best Practices
 
 ### 1. Connection Management
 
 ```csharp
-// ✅ Singleton connection
+// ✅ Singleton connection, registered as a factory so the DI container
+// owns and disposes it (sends a clean FIN on shutdown)
+services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect("redis:6379"));
+
+// ❌ Registering a pre-built instance -- the container only disposes
+// objects it creates, so this connection is never closed on shutdown
 services.AddSingleton<IConnectionMultiplexer>(
     ConnectionMultiplexer.Connect("redis:6379"));
 
-// ❌ Creating new connections
+// ❌ Creating new connections per use
 var redis = ConnectionMultiplexer.Connect("redis:6379");
 ```
+
+See [Connection Lifetime & Graceful Shutdown](#connection-lifetime-graceful-shutdown) for why the registration style matters.
 
 ### 2. Key Naming
 
