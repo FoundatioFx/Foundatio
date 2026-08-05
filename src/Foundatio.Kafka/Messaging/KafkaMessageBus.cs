@@ -262,12 +262,6 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
                         while (!DisposedCancellationToken.IsCancellationRequested)
                         {
                             var consumeResult = consumer.Consume(DisposedCancellationToken);
-                            if (consumeResult.IsPartitionEOF)
-                            {
-                                _logger.LogTrace("Reached end of partition: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
-                                continue;
-                            }
-
                             await OnMessageAsync(consumer, consumeResult).AnyContext();
                         }
                     }
@@ -614,7 +608,7 @@ public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMes
         if (_options.BatchSize.HasValue) producerConfig.BatchSize = _options.BatchSize;
         if (_options.CompressionLevel.HasValue) producerConfig.CompressionLevel = _options.CompressionLevel;
         if (_options.CompressionType.HasValue) producerConfig.CompressionType = _options.CompressionType;
-        if (!String.IsNullOrEmpty(_options.DeliveryReportFields)) producerConfig.DeliveryReportFields = _options.DeliveryReportFields;
+        if (!String.IsNullOrEmpty(_options.DeliveryReportFields)) producerConfig.DeliveryReportFields = _options.DeliveryReportFields; // TODO: Producer config throws exception with this property
         if (_options.EnableBackgroundPoll.HasValue) producerConfig.EnableBackgroundPoll = _options.EnableBackgroundPoll;
         if (_options.EnableDeliveryReports.HasValue) producerConfig.EnableDeliveryReports = _options.EnableDeliveryReports;
         if (_options.EnableGaplessGuarantee.HasValue) producerConfig.EnableGaplessGuarantee = _options.EnableGaplessGuarantee;
