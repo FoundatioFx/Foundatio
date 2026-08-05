@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
@@ -269,5 +270,42 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
         cts.Dispose();
 
         await CleanupMessageBusAsync(messageBus2);
+    }
+
+    [Fact]
+    public async Task CanReceiveMessagesWithPartitionEofEnabled_WhenPartitionReachesEof_DoesNotLogErrorsAsync()
+    {
+        // Arrange
+        using var messageBus = new KafkaMessageBus(o => o
+            .BootstrapServers("127.0.0.1:9092")
+            .Topic(Topic)
+            .TopicReplicationFactor(1)
+            .TopicNumberOfPartitions(1)
+            .GroupId(GroupId)
+            .AllowAutoCreateTopics(true)
+            .EnablePartitionEof(true)
+            .LoggerFactory(Log)
+        );
+
+        var countdownEvent = new AsyncCountdownEvent(1);
+        await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+        {
+            _logger.LogInformation("Got message: {Message}", msg.Data);
+            countdownEvent.Signal();
+        }, TestCancellationToken);
+
+        // Act
+        await messageBus.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+        await countdownEvent.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Give the consumer time to reach end of partition after the message is consumed
+        await Task.Delay(TimeSpan.FromSeconds(1), TestCancellationToken);
+
+        // Assert
+        Assert.Equal(0, countdownEvent.CurrentCount);
+        var errorEntries = Log.LogEntries.Where(e => e.LogLevel == LogLevel.Error).ToList();
+        Assert.Empty(errorEntries);
+
+        await CleanupMessageBusAsync(messageBus);
     }
 }
