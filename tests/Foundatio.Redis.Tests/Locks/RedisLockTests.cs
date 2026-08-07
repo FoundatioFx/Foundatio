@@ -6,7 +6,6 @@ using Foundatio.Messaging;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Locks;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Locks;
@@ -16,16 +15,10 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     private readonly string _topic = $"test-lock-{Guid.NewGuid().ToString("N")[..10]}";
     private readonly ICacheClient _cache;
     private readonly IMessageBus _messageBus;
-    private readonly RedisProtocol? _protocol;
 
-    protected virtual RedisProtocol? Protocol => _protocol;
-
-    public RedisLockTests(ITestOutputHelper output) : this(output, null) { }
-
-    protected RedisLockTests(ITestOutputHelper output, RedisProtocol? protocol) : base(output)
+    public RedisLockTests(ITestOutputHelper output) : base(output)
     {
-        _protocol = protocol;
-        var muxer = SharedConnection.GetMuxer(Log, _protocol)
+        var muxer = SharedConnection.GetMuxer(Log)
             ?? throw new InvalidOperationException("Redis connection is not configured. Set the RedisConnectionString environment variable.");
 
         _cache = new RedisCacheClient(o => o.ConnectionMultiplexer(muxer).LoggerFactory(Log));
@@ -34,7 +27,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 
     protected override ILockProvider? GetThrottlingLockProvider(int maxHits, TimeSpan period)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -43,7 +36,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
 
     protected override ILockProvider? GetLockProvider()
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -156,7 +149,7 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -169,9 +162,4 @@ public class RedisLockTests : LockTestBase, IDisposable, IAsyncLifetime
         _logger.LogDebug("Disposing");
         Dispose();
     }
-}
-
-public class RedisLockResp3Tests : RedisLockTests
-{
-    public RedisLockResp3Tests(ITestOutputHelper output) : base(output, RedisProtocol.Resp3) { }
 }

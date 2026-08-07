@@ -26,15 +26,13 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
 {
     private readonly string _topic = $"test-queue-{Guid.NewGuid().ToString("N")[..10]}";
 
-    protected virtual RedisProtocol? Protocol => null;
-
     public RedisQueueTests(ITestOutputHelper output) : base(output)
     {
     }
 
     protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -245,7 +243,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     [RetryFact]
     public override async Task CanDequeueWithLockingAsync()
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -258,7 +256,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     [Fact]
     public override async Task CanHaveMultipleQueueInstancesWithLockingAsync()
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -301,7 +299,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
 
         using (queue)
         {
-            var muxer = SharedConnection.GetMuxer(Log, Protocol);
+            var muxer = SharedConnection.GetMuxer(Log);
             if (muxer is null)
                 return;
 
@@ -360,7 +358,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
             return;
 
         using RedisQueue<SimpleWorkItem> redisQueue = queue;
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -435,7 +433,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
             return;
 
         using RedisQueue<SimpleWorkItem> redisQueue = queue;
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -503,7 +501,7 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
             return;
 
         using RedisQueue<SimpleWorkItem> redisQueue = queue;
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -589,17 +587,13 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     // test to reproduce issue #64 - https://github.com/FoundatioFx/Foundatio.Redis/issues/64
     //[Fact(Skip ="This test needs to simulate database timeout which makes the runtime ~5 sec which might be too big to be run automatically")]
     [RetryFact]
-    public virtual async Task DatabaseTimeoutDuringDequeueHandledCorrectly()
+    public async Task DatabaseTimeoutDuringDequeueHandledCorrectly()
     {
         // not using GetQueue() here because I need to change the ops timeout in the redis connection string
         const int OPS_TIMEOUT_MS = 100;
         string connectionString =
             $"{Configuration.GetConnectionString("RedisConnectionString")},syncTimeout={OPS_TIMEOUT_MS},asyncTimeout={OPS_TIMEOUT_MS}";
-        var muxer = await ConnectionMultiplexer.ConnectAsync(connectionString, o =>
-        {
-            if (Protocol >= RedisProtocol.Resp3)
-                o.Protocol = RedisProtocol.Resp3;
-        });
+        var muxer = await ConnectionMultiplexer.ConnectAsync(connectionString);
 
         const string QUEUE_NAME = "test-timeout";
         var queue = new RedisQueue<SimpleWorkItem>(o => o
@@ -715,7 +709,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         Assert.Equal(workItemCount, stats.Completed + stats.Deadletter);
         Assert.Equal(0, stats.Queued);
 
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -762,7 +756,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         Assert.Equal(workItemCount, stats.Completed);
         Assert.Equal(0, stats.Queued);
 
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -811,7 +805,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         Assert.Equal(workItemCount, stats.Completed);
         Assert.Equal(0, stats.Queued);
 
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -874,7 +868,7 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
         if (allQueuesTheSameName)
             name = "cmd";
 
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null!;
 
@@ -931,20 +925,11 @@ while ((((tonumber(redis.call(""time"")[1]) - now))) < {DELAY_TIME_SEC}) do end"
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
         await muxer.FlushAllAsync();
     }
 
-}
-
-public class RedisQueueResp3Tests : RedisQueueTests
-{
-    public RedisQueueResp3Tests(ITestOutputHelper output) : base(output) { }
-    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
-
-    [RetryFact(Skip = "Blocks entire Redis server for 5s; already covered by RESP2 variant")]
-    public override Task DatabaseTimeoutDuringDequeueHandledCorrectly() => Task.CompletedTask;
 }

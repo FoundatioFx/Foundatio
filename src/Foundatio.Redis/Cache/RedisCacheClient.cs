@@ -74,9 +74,15 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        var expectedValue = expected.ToRedisValue(_options.Serializer);
+
+        // DELEX ... IFEQ (via ValueCondition) is an exact semantic match for this Lua script - delete only if
+        // the current value equals expected. See RedisCapabilities.SupportsCompareAndDelete for availability.
+        if (_capabilities.SupportsCompareAndDelete)
+            return await Database.StringDeleteAsync(key, ValueCondition.Equal(expectedValue)).AnyContext();
+
         await LoadScriptsAsync().AnyContext();
 
-        var expectedValue = expected.ToRedisValue(_options.Serializer);
         var redisResult = await Database.ScriptEvaluateAsync(GetScript(_removeIfEqual), new { key = (RedisKey)key, expected = expectedValue }).AnyContext();
         int result = (int)redisResult;
 
@@ -683,10 +689,19 @@ public sealed class RedisCacheClient : ICacheClient, IHaveSerializer
             return false;
         }
 
-        await LoadScriptsAsync().AnyContext();
-
         var redisValue = value.ToRedisValue(_options.Serializer);
         var expectedValue = expected.ToRedisValue(_options.Serializer);
+
+        // SET key value IFEQ expected (via ValueCondition) is an exact semantic match for this Lua script -
+        // replace only if the current value equals expected. See RedisCapabilities.SupportsCompareAndSwap.
+        if (_capabilities.SupportsCompareAndSwap)
+        {
+            var normalizedExpiry = NormalizeExpiration(expiresIn);
+            var expiration = normalizedExpiry.HasValue ? new Expiration(normalizedExpiry.Value) : Expiration.Default;
+            return await Database.StringSetAsync(key, redisValue, expiration, ValueCondition.Equal(expectedValue)).AnyContext();
+        }
+
+        await LoadScriptsAsync().AnyContext();
 
         var expiresMs = GetExpirationMilliseconds(expiresIn);
         var expiresArg = expiresMs.HasValue ? (RedisValue)expiresMs.Value : RedisValue.EmptyString;

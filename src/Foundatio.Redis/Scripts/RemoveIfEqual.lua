@@ -1,5 +1,5 @@
-﻿-- NOTE: When Redis 8.4+ becomes the minimum supported version, this script can be replaced
--- with native CAS/CAD: DEL @key IFEQ @expected (SE.Redis 2.10.1+ supports this via ValueCondition).
+﻿-- Fallback for pre-8.4 Redis servers and other forks (e.g. Valkey), where native
+-- DELEX @key IFEQ @expected (SE.Redis 2.10.1+ ValueCondition) is unavailable. See RedisCapabilities.SupportsCompareAndDelete.
 if redis.call('get', @key) == @expected then
   return redis.call('del', @key)
 else

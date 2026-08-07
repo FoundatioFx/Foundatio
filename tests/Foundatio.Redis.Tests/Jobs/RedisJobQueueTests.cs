@@ -4,22 +4,19 @@ using Foundatio.Queues;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Jobs;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Jobs;
 
 public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
 {
-    protected virtual RedisProtocol? Protocol => null;
-
     public RedisJobQueueTests(ITestOutputHelper output) : base(output)
     {
     }
 
     protected override IQueue<SampleQueueWorkItem> GetSampleWorkItemQueue(int retries, TimeSpan retryDelay)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null!;
 
@@ -65,7 +62,7 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -77,10 +74,4 @@ public class RedisJobQueueTests : JobQueueTestsBase, IAsyncLifetime
         await base.DisposeAsync();
         _logger.LogDebug("Disposing");
     }
-}
-
-public class RedisJobQueueResp3Tests : RedisJobQueueTests
-{
-    public RedisJobQueueResp3Tests(ITestOutputHelper output) : base(output) { }
-    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }

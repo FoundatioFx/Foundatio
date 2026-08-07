@@ -3,22 +3,19 @@ using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Storage;
 using Foundatio.Tests.Storage;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Storage;
 
 public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
 {
-    protected virtual RedisProtocol? Protocol => null;
-
     public RedisFileStorageTests(ITestOutputHelper output) : base(output)
     {
     }
 
     protected override IFileStorage? GetStorage()
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -197,7 +194,7 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -209,10 +206,4 @@ public class RedisFileStorageTests : FileStorageTestsBase, IAsyncLifetime
         await base.DisposeAsync();
         _logger.LogDebug("Disposing");
     }
-}
-
-public class RedisFileStorageResp3Tests : RedisFileStorageTests
-{
-    public RedisFileStorageResp3Tests(ITestOutputHelper output) : base(output) { }
-    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }

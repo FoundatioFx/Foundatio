@@ -10,7 +10,6 @@ using Foundatio.Tests.Extensions;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Queue;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Messaging;
@@ -19,15 +18,13 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
 {
     private readonly string _topic = $"test-messages-{Guid.NewGuid().ToString("N")[..10]}";
 
-    protected virtual RedisProtocol? Protocol => null;
-
     public RedisMessageBusTests(ITestOutputHelper output) : base(output)
     {
     }
 
     protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -256,7 +253,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     [Fact]
     public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -307,7 +304,7 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -319,10 +316,4 @@ public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
         await base.DisposeAsync();
         _logger.LogDebug("Disposing");
     }
-}
-
-public class RedisMessageBusResp3Tests : RedisMessageBusTests
-{
-    public RedisMessageBusResp3Tests(ITestOutputHelper output) : base(output) { }
-    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }

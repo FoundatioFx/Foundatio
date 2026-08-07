@@ -3,20 +3,17 @@ using Foundatio.Caching;
 using Foundatio.Redis.Tests.Extensions;
 using Foundatio.Tests.Caching;
 using Microsoft.Extensions.Logging;
-using StackExchange.Redis;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Caching;
 
 public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsyncLifetime
 {
-    protected virtual RedisProtocol? Protocol => null;
-
     public ScopedRedisHybridCacheClientTests(ITestOutputHelper output) : base(output) { }
 
     protected override ICacheClient? GetCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
@@ -30,7 +27,7 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
 
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
     {
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null!;
 
@@ -709,7 +706,7 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
     {
         await base.InitializeAsync();
         _logger.LogDebug("Initializing");
-        var muxer = SharedConnection.GetMuxer(Log, Protocol);
+        var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return;
 
@@ -722,10 +719,4 @@ public class ScopedRedisHybridCacheClientTests : HybridCacheClientTestBase, IAsy
         _logger.LogDebug("Disposing");
         Dispose();
     }
-}
-
-public class ScopedRedisHybridCacheClientResp3Tests : ScopedRedisHybridCacheClientTests
-{
-    public ScopedRedisHybridCacheClientResp3Tests(ITestOutputHelper output) : base(output) { }
-    protected override RedisProtocol? Protocol => RedisProtocol.Resp3;
 }
