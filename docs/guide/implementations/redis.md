@@ -538,11 +538,11 @@ var redis = await ConnectionMultiplexer.ConnectAsync(options);
 
 Foundatio's Redis providers (`RedisCacheClient`, `RedisQueue<T>`, `RedisMessageBus`, `RedisFileStorage`, `CacheLockProvider`) all **borrow** an `IConnectionMultiplexer` you supply -- they never own or close it. This is intentional: the same multiplexer is typically shared across cache, queue, message bus, and locks, so a single provider closing it on `Dispose()` would break the others. Closing the connection is your application's responsibility.
 
-This matters most in **cluster mode**, where a single multiplexer opens a connection to *every* shard. If your process is killed (scale-in, deploy, crash) without cleanly closing that connection, each shard is left holding a socket with output buffers still queued for a client that will never read them again. Because Redis/Valkey's event loop is single-threaded, a pile-up of these stale sockets can pin a node's CPU at 100% until the connection is cleared.
+This matters most when a host or network failure prevents Redis from receiving a normal close. In **cluster mode**, a single multiplexer opens a connection to *every* shard, so a lost host can leave each shard with a half-open socket and output buffers queued for a client that will never read them again. Because Redis/Valkey's event loop is single-threaded, a pile-up of these stale sockets can pin a node's CPU at 100% until the connections are cleared. If a process exits on a live host -- even via `SIGKILL` -- the operating system normally closes its TCP descriptors and Redis observes a `FIN` or reset; graceful shutdown is still useful because it lets hosted work drain and closes the multiplexer deliberately.
 
 Two complementary mitigations:
 
-**1. Let the DI container dispose the multiplexer on graceful shutdown.** Register it with a factory (not a pre-built instance) so `IServiceProvider` disposal -- triggered by `IHostApplicationLifetime.ApplicationStopping` during `SIGTERM`/`SIGINT` -- closes it and sends a clean `FIN`:
+**1. Let the DI container dispose the multiplexer on graceful shutdown.** Register it with a factory (not a pre-built instance) so the host-owned service provider disposes it during shutdown and sends a clean `FIN`:
 
 ```csharp
 // ✅ Factory registration: container creates it, so container disposes it
@@ -554,10 +554,10 @@ If you must keep a pre-built instance around, dispose it explicitly:
 
 ```csharp
 var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-lifetime.ApplicationStopping.Register(() => redis.Dispose());
+lifetime.ApplicationStopped.Register(() => redis.Dispose());
 ```
 
-**2. Configure a server-side backstop for hard kills** (`SIGKILL`, scale-in via orchestration, ungraceful crashes) where no client-side shutdown code runs at all. Set these on your Redis/Valkey server or parameter group:
+**2. Configure server-side backstops for host or network failures** (for example, a lost node or network partition) where no client-side shutdown code can run. Set these on your Redis/Valkey server or parameter group:
 
 - `timeout` -- e.g. `300` (seconds). Forces the server to drop a connection that has been completely idle for this long.
 - `tcp-keepalive` -- e.g. `300` or lower. Has the OS send low-level TCP probes to detect and reap dead sockets.

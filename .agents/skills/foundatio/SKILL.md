@@ -67,24 +67,26 @@ builder.Services.AddSingleton<ILockProvider>(sp =>
 Swap to production by changing only DI registration:
 
 ```csharp
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
+// DI owns and disposes the shared multiplexer during host shutdown.
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect("localhost:6379"));
 
 builder.Services.AddSingleton<ICacheClient>(sp =>
     new RedisCacheClient(o =>
     {
-        o.ConnectionMultiplexer = redis;
+        o.ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>();
         o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
     }));
 builder.Services.AddSingleton<IMessageBus>(sp =>
     new RedisMessageBus(o =>
     {
-        o.Subscriber = redis.GetSubscriber();
+        o.Subscriber = sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber();
         o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
     }));
 builder.Services.AddSingleton<IQueue<OrderWorkItem>>(sp =>
     new RedisQueue<OrderWorkItem>(o =>
     {
-        o.ConnectionMultiplexer = redis;
+        o.ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>();
         o.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
     }));
 ```
