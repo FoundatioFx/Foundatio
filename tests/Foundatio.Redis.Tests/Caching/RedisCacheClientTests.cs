@@ -466,24 +466,9 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public async Task RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse()
+    public override Task RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse()
     {
-        // Arrange
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // Act
-            bool result = await cache.RemoveIfEqualAsync("remove-if-equal-nonexistent", "123");
-
-            // Assert
-            Assert.False(result);
-            Assert.False(await cache.ExistsAsync("remove-if-equal-nonexistent"));
-        }
+        return base.RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse();
     }
 
     [Fact]
@@ -535,24 +520,9 @@ public class RedisCacheClientTests : CacheClientTestsBase, IAsyncLifetime
     }
 
     [Fact]
-    public async Task ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
+    public override Task ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
     {
-        // Arrange
-        var cache = GetCacheClient();
-        if (cache is null)
-            return;
-
-        using (cache)
-        {
-            await cache.RemoveAllAsync();
-
-            // Act
-            bool result = await cache.ReplaceIfEqualAsync("replace-if-equal-nonexistent", "new-value", "old-value");
-
-            // Assert
-            Assert.False(result);
-            Assert.False(await cache.ExistsAsync("replace-if-equal-nonexistent"));
-        }
+        return base.ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey();
     }
 
     [Fact(Skip = "Performance Test")]
