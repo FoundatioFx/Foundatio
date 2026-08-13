@@ -4,8 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="8.0.28" />
-    <!-- Override transitive System.Security.Cryptography.Xml 8.0.3 pulled in by Microsoft.AspNetCore.DataProtection to remediate GHSA-23rf-6693-g89p and related advisories -->
-    <PackageReference Include="System.Security.Cryptography.Xml" Version="8.0.4" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
