@@ -562,6 +562,8 @@ lifetime.ApplicationStopping.Register(() => redis.Dispose());
 - `timeout` -- e.g. `300` (seconds). Forces the server to drop a connection that has been completely idle for this long.
 - `tcp-keepalive` -- e.g. `300` or lower. Has the OS send low-level TCP probes to detect and reap dead sockets.
 
+The `timeout` setting applies to normal clients, not clients in Pub/Sub mode. If you use `RedisMessageBus` (or another provider with a subscribed connection), also configure `tcp-keepalive` and an appropriate `client-output-buffer-limit pubsub` so Redis can disconnect dead or stalled subscribers. Graceful shutdown should still dispose the shared multiplexer explicitly, since server-side backstops cannot replace client cleanup.
+
 StackExchange.Redis's own `KeepAlive` option defaults to `60` seconds, which is lower than the settings above, so healthy connections won't be culled by the server-side timeout.
 
 ## Best Practices
