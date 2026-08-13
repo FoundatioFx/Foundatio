@@ -87,18 +87,19 @@ if (builder.Environment.IsDevelopment())
 }
 else
 {
-    // Redis for production
-    var redis = ConnectionMultiplexer.Connect(
-        builder.Configuration.GetConnectionString("Redis")
-    );
-
-    builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+    // Container-owned Redis connection for production
+    builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+        ConnectionMultiplexer.Connect(
+            builder.Configuration.GetConnectionString("Redis")
+        ));
 
     builder.Services.AddSingleton<ICacheClient>(sp =>
-        new RedisCacheClient(o => o.ConnectionMultiplexer = redis));
+        new RedisCacheClient(o => o.ConnectionMultiplexer =
+            sp.GetRequiredService<IConnectionMultiplexer>()));
 
     builder.Services.AddSingleton<IMessageBus>(sp =>
-        new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber()));
+        new RedisMessageBus(o => o.Subscriber =
+            sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber()));
 
     builder.Services.AddSingleton<IFileStorage>(sp =>
         new AzureFileStorage(o => {

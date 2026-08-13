@@ -137,21 +137,24 @@ using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure Redis connection
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+// Configure a container-owned Redis connection
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect("localhost:6379"));
 
 // Use Redis implementations
 builder.Services.AddSingleton<ICacheClient>(sp =>
-    new RedisCacheClient(o => o.ConnectionMultiplexer = redis)
+    new RedisCacheClient(o => o.ConnectionMultiplexer =
+        sp.GetRequiredService<IConnectionMultiplexer>())
 );
 
 builder.Services.AddSingleton<IMessageBus>(sp =>
-    new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber())
+    new RedisMessageBus(o => o.Subscriber =
+        sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber())
 );
 
 builder.Services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new RedisQueue<WorkItem>(o => o.ConnectionMultiplexer = redis)
+    new RedisQueue<WorkItem>(o => o.ConnectionMultiplexer =
+        sp.GetRequiredService<IConnectionMultiplexer>())
 );
 ```
 
