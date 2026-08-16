@@ -59,7 +59,10 @@ public class RetryTestCase : XunitTestCase, ISelfExecutingXunitTestCase
         IMessageBus messageBus,
         object?[] constructorArguments,
         ExceptionAggregator aggregator,
-        CancellationTokenSource cancellationTokenSource)
+        CancellationTokenSource cancellationTokenSource,
+        ParallelMode parallelMode,
+        ExecutionScheduler scheduler,
+        FixtureMappingManager methodFixtureMappings)
     {
         var runCount = 0;
 
@@ -76,10 +79,13 @@ public class RetryTestCase : XunitTestCase, ISelfExecutingXunitTestCase
                 delayedMessageBus,
                 testAggregator,
                 cancellationTokenSource,
+                parallelMode,
+                scheduler,
                 TestMethod.TestClass.Class.Name,
                 TestMethod.TestClass.Class.Name,
                 explicitOption,
-                constructorArguments);
+                constructorArguments,
+                methodFixtureMappings);
 
             if (testAggregator.HasExceptions || summary.Failed == 0 || ++runCount >= _maxRetries)
             {
