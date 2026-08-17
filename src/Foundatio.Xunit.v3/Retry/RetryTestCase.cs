@@ -72,20 +72,16 @@ public class RetryTestCase : XunitTestCase, ISelfExecutingXunitTestCase
             using var delayedMessageBus = new DelayedMessageBus(messageBus);
             var testAggregator = new ExceptionAggregator();
 
-            var tests = await CreateTests();
-            var summary = await XunitTestCaseRunner.Instance.Run(
-                this,
-                tests,
-                delayedMessageBus,
-                testAggregator,
-                cancellationTokenSource,
-                parallelMode,
-                scheduler,
-                TestMethod.TestClass.Class.Name,
-                TestMethod.TestClass.Class.Name,
-                explicitOption,
-                constructorArguments,
-                methodFixtureMappings);
+            var summary = await XunitRunnerHelper.RunXunitTestCase(
+                testCase: this,
+                messageBus: delayedMessageBus,
+                cancellationTokenSource: cancellationTokenSource,
+                parallelMode: parallelMode,
+                scheduler: scheduler,
+                aggregator: testAggregator,
+                explicitOption: explicitOption,
+                constructorArguments: constructorArguments,
+                methodFixtureMappings: methodFixtureMappings);
 
             if (testAggregator.HasExceptions || summary.Failed == 0 || ++runCount >= _maxRetries)
             {
