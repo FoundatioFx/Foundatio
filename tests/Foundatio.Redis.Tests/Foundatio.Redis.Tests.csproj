@@ -3,9 +3,9 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
-    <PackageReference Include="xunit.v3.mtp-v2" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit.v3.mtp-v2" Version="4.0.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageReference Include="GitHubActionsTestLogger" Version="3.0.5" PrivateAssets="All" />
 
     <PackageReference Include="Foundatio.TestHarness" Version="13.0.3-preview.0.5" Condition="'$(ReferenceFoundatioSource)' == '' OR '$(ReferenceFoundatioSource)' == 'false'" />
