@@ -99,7 +99,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
         return base.CanCancelSubscriptionAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Kafka is a durable log; pre-subscribe messages are retained. See CanPersistAndNotLoseMessages.")]
     public override Task WontKeepMessagesWithNoSubscribersAsync()
     {
         return base.WontKeepMessagesWithNoSubscribersAsync();
