@@ -13,6 +13,72 @@ namespace Foundatio.Tests.Messaging;
 
 public class WireContractTests
 {
+    [Theory]
+    [InlineData(false, 0)]
+    [InlineData(false, 1)]
+    [InlineData(false, 2)]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    public async Task SendAsync_WithInterfaceContract_PreservesConcreteWireType(bool publish, int batchKind)
+    {
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        var registry = new MessageTypeRegistry([new("changed.v1", typeof(Changed))]);
+        await using var bus = new MessageBus(transport, new() { MessageTypes = registry, OwnsTransport = false });
+        var received = new TaskCompletionSource<IChange>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var listener = publish
+            ? await bus.SubscribeAsync<IChange>((m, _) => { received.TrySetResult(m.Message); return Task.CompletedTask; }, new() { Topic = "changes", Subscription = "audit" }, token)
+            : await bus.ConsumeAsync<IChange>((m, _) => { received.TrySetResult(m.Message); return Task.CompletedTask; }, new() { Destination = "changes" }, token);
+        IChange change = new Changed(42);
+        if (publish)
+        {
+            var options = new MessagePublishOptions { Topic = "changes" };
+            if (batchKind == 0) await bus.PublishAsync(change, options, token);
+            else if (batchKind == 1) await bus.PublishBatchAsync<IChange>([change], options, token);
+            else await bus.PublishBatchAsync<IChange>([new MessageBatchItem<IChange>(change, "change-42")], options, token);
+        }
+        else
+        {
+            var options = new MessageSendOptions { Destination = "changes" };
+            if (batchKind == 0) await bus.SendAsync(change, options, token);
+            else if (batchKind == 1) await bus.SendBatchAsync<IChange>([change], options, token);
+            else await bus.SendBatchAsync<IChange>([new MessageBatchItem<IChange>(change, "change-42")], options, token);
+        }
+
+        Assert.Equal(42, Assert.IsType<Changed>(await received.Task.WaitAsync(TimeSpan.FromSeconds(2), token)).Id);
+    }
+
+    public interface IChange { int Id { get; } }
+    public sealed record Changed(int Id) : IChange;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReceiveAsync_WithObjectContract_ResolvesRegisteredConcreteType(bool listener)
+    {
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var bus = new MessageBus(transport, new()
+        {
+            OwnsTransport = false,
+            MessageTypes = new MessageTypeRegistry([new("changed.v1", typeof(Changed))])
+        });
+        await bus.SendAsync(new Changed(42), new() { Destination = "changes" }, token);
+        if (listener)
+        {
+            var received = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using var subscription = await bus.ConsumeAsync<object>((m, _) => { received.TrySetResult(m.Message); return Task.CompletedTask; }, new() { Destination = "changes" }, token);
+            Assert.Equal(42, Assert.IsType<Changed>(await received.Task.WaitAsync(TimeSpan.FromSeconds(2), token)).Id);
+        }
+        else
+        {
+            await using var received = await bus.ReceiveAsync<object>(new() { Destination = "changes" }, token);
+            Assert.Equal(42, Assert.IsType<Changed>(received!.Message).Id);
+            await received.CompleteAsync(token);
+        }
+    }
+
     [Fact]
     public void MessageTypeRegistry_ResolvesOnlyExplicitlyRegisteredTypes()
     {

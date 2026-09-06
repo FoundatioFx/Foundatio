@@ -10,6 +10,23 @@ namespace Foundatio.Tests.Jobs;
 
 public class ScheduledJobManagerTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScheduleAsync_WithUnregisteredType_RejectsBeforePersisting(bool typed)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var schedules = new InMemoryScheduledJobStore();
+        var manager = new ScheduledJobManager(schedules, new InMemoryJobRuntimeStore(), new JobTypeRegistry());
+
+        var error = await Assert.ThrowsAsync<JobException>(() => typed
+            ? manager.ScheduleAsync<ProbeJob>("* * * * *", cancellationToken: token)
+            : manager.ScheduleAsync(new ScheduledJobDefinition { Name = "unknown", Cron = "* * * * *", JobType = typeof(ProbeJob).FullName! }, token));
+
+        Assert.Contains("AddJobType", error.Message);
+        Assert.Empty(await schedules.GetSchedulesAsync(cancellationToken: token));
+    }
+
     private static JobTypeRegistry CreateJobRegistry() => new(typeof(ScheduledJobManagerTests).GetNestedTypes(System.Reflection.BindingFlags.NonPublic)
         .Where(t => t.IsClass && !t.IsAbstract && typeof(IJob).IsAssignableFrom(t))
         .Select(t => new JobTypeRegistration(t.FullName!, t)));

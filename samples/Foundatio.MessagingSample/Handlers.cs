@@ -7,7 +7,7 @@ public sealed record InstanceInfo(string Id);
 
 /// <summary>
 /// Handles orders. Registration carries no topology — orders arrive here because the endpoint calls
-/// <c>bus.SendAsync</c>, so exactly one running instance processes each order (competing consumers). Resolved from DI
+/// <c>bus.SendAsync</c>, and running instances compete for deliveries. Resolved from DI
 /// per message; throwing would trigger retry/dead-letter.
 /// </summary>
 public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOrderHandler> logger) : IMessageHandler<ProcessOrder>
@@ -20,8 +20,8 @@ public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOr
 }
 
 /// <summary>
-/// Handles announcements published via <c>bus.PublishAsync</c>. Registered in the durable announcements group; one competing
-/// running replica receives its own copy — without it, the default is once per service (replicas compete).
+/// Handles announcements published via <c>bus.PublishAsync</c>. The service name supplies the durable subscription
+/// identity; this service's replicas compete for each delivery.
 /// </summary>
 public sealed class AnnouncementHandler(InstanceInfo instance, ILogger<AnnouncementHandler> logger) : IMessageHandler<Announcement>
 {

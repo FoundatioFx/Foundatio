@@ -155,7 +155,7 @@ public interface IMessageBus : IAsyncDisposable
 
     /// <summary>Publishes events and returns their IDs in input order. Batches are not atomic.</summary>
     Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
-    /// <summary>Publishs per-input application IDs and headers, preserving outcome order.</summary>
+    /// <summary>Publishes per-input application IDs and headers, preserving outcome order.</summary>
     Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<MessageBatchItem<T>> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task<IReadOnlyList<string>> PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);
 

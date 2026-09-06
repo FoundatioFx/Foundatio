@@ -1,6 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -130,7 +130,8 @@ public interface IScheduledJobStore
 /// Runtime management surface for scheduled (CRON) jobs: list and inspect schedules, add or replace definitions,
 /// change a schedule's cron expression, enable/disable, and trigger an immediate occurrence. Declaratively-registered
 /// jobs (<c>AddCronJob&lt;TJob&gt;</c>) and definitions added here share the same <see cref="IScheduledJobStore"/> store,
-/// so both are manageable through this interface.
+/// so both are manageable through this interface. The DI-configured manager requires job types to be registered
+/// with <c>Jobs.AddJobType&lt;TJob&gt;()</c> before adding schedules.
 /// </summary>
 public interface IScheduledJobManager
 {
@@ -203,6 +204,7 @@ public sealed class ScheduledJobManager : IScheduledJobManager
     private readonly IScheduledJobStore _scheduleStore;
     private readonly IJobRuntimeStore _store;
     private readonly IJobTypeRegistry _jobTypes;
+    private readonly bool _requireRegisteredTypes;
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
@@ -212,6 +214,7 @@ public sealed class ScheduledJobManager : IScheduledJobManager
         _scheduleStore = scheduleStore ?? throw new ArgumentNullException(nameof(scheduleStore));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _requireRegisteredTypes = jobTypes is not null;
         _serializer = serializer ?? DefaultSerializer.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
@@ -223,7 +226,12 @@ public sealed class ScheduledJobManager : IScheduledJobManager
         => _scheduleStore.GetScheduleAsync(name, cancellationToken);
 
     public Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken cancellationToken = default)
-        => _scheduleStore.ScheduleAsync(definition, cancellationToken);
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        if (_requireRegisteredTypes && definition.JobType is not null)
+            _jobTypes.Resolve(definition.JobType);
+        return _scheduleStore.ScheduleAsync(definition, cancellationToken);
+    }
 
     public Task ScheduleAsync<TJob>(string cron, Action<CronJobOptions>? configure = null, CancellationToken cancellationToken = default) where TJob : IJob
         => ScheduleAsync(typeof(TJob), cron, null, configure, cancellationToken);
