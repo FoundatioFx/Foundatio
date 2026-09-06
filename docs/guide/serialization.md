@@ -105,8 +105,7 @@ var jsonOptions = new JsonSerializerOptions
 var serializer = new SystemTextJsonSerializer(jsonOptions);
 
 var cache = new InMemoryCacheClient(o => o.Serializer = serializer);
-var queue = new InMemoryQueue<WorkItem>(o => o.Serializer = serializer);
-var messageBus = new InMemoryMessageBus(o => o.Serializer = serializer);
+var messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Serializer = serializer });
 ```
 
 ## Global Default Serializer
@@ -119,7 +118,7 @@ DefaultSerializer.Instance = new SystemTextJsonSerializer(myJsonOptions);
 
 // Now all new instances use your custom serializer
 var cache = new InMemoryCacheClient(); // Uses your custom serializer
-var queue = new InMemoryQueue<WorkItem>(); // Uses your custom serializer
+var messageBus = new MessageBus(new InMemoryMessageTransport()); // Uses your custom serializer
 ```
 
 **How it works:**
@@ -254,11 +253,8 @@ var serializer = new MessagePackSerializer();
 // Caching
 var cache = new InMemoryCacheClient(o => o.Serializer = serializer);
 
-// Queues
-var queue = new InMemoryQueue<WorkItem>(o => o.Serializer = serializer);
-
-// Messaging
-var messageBus = new InMemoryMessageBus(o => o.Serializer = serializer);
+// Queued work and pub/sub
+var messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Serializer = serializer });
 
 // Storage (for metadata serialization)
 var storage = new InMemoryFileStorage(o => o.Serializer = serializer);

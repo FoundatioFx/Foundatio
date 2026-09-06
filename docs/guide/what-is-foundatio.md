@@ -16,7 +16,7 @@ Foundatio was built with several key principles in mind:
 
 ### Abstract Interfaces
 
-All core functionality is exposed through clean interfaces (`ICacheClient`, `IQueue<T>`, `ILockProvider`, `IMessageBus`, `IFileStorage`). This allows you to:
+All core functionality is exposed through clean interfaces (`ICacheClient`, `IJobClient`, `ILockProvider`, `IMessageBus`, `IFileStorage`). This allows you to:
 
 - **Swap implementations** without changing application code
 - **Test easily** using in-memory implementations
@@ -28,7 +28,7 @@ Every component is designed to work seamlessly with Microsoft.Extensions.Depende
 
 ```csharp
 services.AddSingleton<ICacheClient>(sp => new InMemoryCacheClient());
-services.AddSingleton<IMessageBus>(sp => new InMemoryMessageBus());
+services.AddSingleton<IMessageBus>(sp => new MessageBus(new InMemoryMessageTransport()));
 services.AddSingleton<ILockProvider>(sp => new CacheLockProvider(
     sp.GetRequiredService<ICacheClient>(),
     sp.GetRequiredService<IMessageBus>()
@@ -73,9 +73,9 @@ var cached = await cache.GetAsync<User>("user:123");
 Reliable message delivery with at-least-once semantics:
 
 ```csharp
-IQueue<WorkItem> queue = new InMemoryQueue<WorkItem>();
-await queue.EnqueueAsync(new WorkItem { Id = 1 });
-var entry = await queue.DequeueAsync();
+await using var bus = new MessageBus(new InMemoryMessageTransport());
+await bus.SendAsync(new WorkItem { Id = 1 });
+await using var entry = await bus.ReceiveAsync<WorkItem>();
 if (entry != null)
 {
     // Process and complete
@@ -105,8 +105,8 @@ if (lck != null)
 Publish/subscribe messaging:
 
 ```csharp
-IMessageBus bus = new InMemoryMessageBus();
-await bus.SubscribeAsync<OrderCreated>(msg => ProcessOrder(msg));
+IMessageBus bus = new MessageBus(new InMemoryMessageTransport());
+await using var subscription = await bus.SubscribeAsync<OrderCreated>((context, token) => ProcessOrder(context.Message));
 await bus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
 
@@ -129,9 +129,9 @@ var file = await storage.GetFileStreamAsync("reports/2024/report.pdf", StreamMod
 Background job processing:
 
 ```csharp
-public class MyJob : JobBase
+public class MyJob : IJob
 {
-    protected override Task<JobResult> RunInternalAsync(JobContext context)
+    public Task<JobResult> RunAsync(JobExecutionContext context)
     {
         // Do work
         return Task.FromResult(JobResult.Success);

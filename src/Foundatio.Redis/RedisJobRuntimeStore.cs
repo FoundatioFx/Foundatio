@@ -11,17 +11,10 @@ using StackExchange.Redis;
 namespace Foundatio.Jobs;
 
 /// <summary>
-/// A Redis-backed <see cref="IJobRuntimeStore"/>. Temporary in-repo provider used to validate the durable job runtime
-/// (state transitions, leases/claims, scheduled dispatches) against a real distributed store.
+/// A Redis-backed durable job and scheduled-dispatch store. Admission, claims, and ownership-guarded mutations
+/// are atomic. Sorted indexes bound monitoring pages, due claims, and terminal retention cleanup.
 /// </summary>
-/// <remarks>
-/// Job state is a hash at <c>{prefix}job:{id}</c>; status and name indexes are sets; due dispatches are a sorted set
-/// scored by due time. Conditional transitions use Redis transactions with hash-field conditions (optimistic
-/// concurrency), so a state change only commits if the fields it was predicated on are unchanged — including a
-/// lease-value condition that makes reclaim safe against a concurrent renew. Times are stored as UTC ticks for
-/// unambiguous numeric comparison.
-/// </remarks>
-public sealed class RedisJobRuntimeStore : IJobRuntimeStore
+public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
 {
     private const string ClaimDueScript = """
         local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, tonumber(ARGV[2]))
@@ -34,8 +27,11 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
                 if (not owner or owner == '') or (expires and expires ~= '' and tonumber(expires) <= tonumber(ARGV[1])) then
                     redis.call('HSET', dkey, 'claimOwner', ARGV[3], 'claimExpiresUtc', ARGV[4])
                     redis.call('HINCRBY', dkey, 'attempts', 1)
-                    table.insert(claimed, id)
+                    redis.call('ZADD', KEYS[1], ARGV[4], id)
+                    table.insert(claimed, redis.call('HGETALL', dkey))
                 end
+            else
+                redis.call('ZREM', KEYS[1], id)
             end
         end
         return claimed
@@ -44,11 +40,14 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
     private readonly IDatabase _db;
     private readonly string _prefix;
     private readonly TimeProvider _timeProvider;
+    private readonly int _maxJobs;
 
     public RedisJobRuntimeStore(RedisJobRuntimeStoreOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxJobs, 1);
+        _maxJobs = options.MaxJobs;
         _db = options.ConnectionMultiplexer.GetDatabase();
         _prefix = options.KeyPrefix ?? "";
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
@@ -57,25 +56,34 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
     public RedisJobRuntimeStore(IConnectionMultiplexer connectionMultiplexer, string keyPrefix = "fnd:jobs:", TimeProvider? timeProvider = null)
         : this(new RedisJobRuntimeStoreOptions { ConnectionMultiplexer = connectionMultiplexer, KeyPrefix = keyPrefix, TimeProvider = timeProvider }) { }
 
-    public Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default)
+    public async Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(initial);
         cancellationToken.ThrowIfCancellationRequested();
-
         var now = _timeProvider.GetUtcNow();
-        var state = initial with
-        {
-            CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc,
-            LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc
-        };
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.KeyNotExists(JobKey(state.JobId)));
-        _ = tx.HashSetAsync(JobKey(state.JobId), ToHash(state));
-        _ = tx.SetAddAsync(StatusKey(state.Status), state.JobId);
-        _ = tx.SetAddAsync(NameKey(state.Name), state.JobId);
-        _ = tx.SetAddAsync(AllKey, state.JobId);
-        return tx.ExecuteAsync(); // result ignored: false => already present; create-if-absent is a no-op
+        var state = initial with { CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc, LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc };
+        const string script = """
+            if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
+            if redis.call('ZCARD', KEYS[2]) >= tonumber(ARGV[2]) then return -1 end
+            redis.call('HSET', KEYS[1], unpack(ARGV, 5))
+            redis.call('ZADD', KEYS[2], 0, ARGV[1])
+            redis.call('ZADD', KEYS[3], 0, ARGV[1])
+            redis.call('ZADD', KEYS[4], 0, ARGV[1])
+            local ready = redis.call('HGET', KEYS[1], 'readyKey')
+            local active = redis.call('HGET', KEYS[1], 'activeScheduleKey')
+            if ARGV[4] == '1' then
+                if ready then redis.call('ZADD', ready, ARGV[3], ARGV[1]) end
+                if active then redis.call('SADD', active, ARGV[1]) end
+            else
+                local completed = redis.call('HGET', KEYS[1], 'completedUtc')
+                if completed then redis.call('ZADD', KEYS[5], completed, ARGV[1]) end
+            end
+            return 1
+            """;
+        var args = new List<RedisValue> { state.JobId, _maxJobs, Ticks(state.Status == JobStatus.Processing ? state.LeaseExpiresUtc ?? now : state.AvailableUtc ?? state.CreatedUtc), state.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing ? "1" : "0" };
+        foreach (var field in ToHash(state)) { args.Add(field.Name); args.Add(field.Value); }
+        var result = await _db.ScriptEvaluateAsync(script, new RedisKey[] { JobKey(state.JobId), AllKey, StatusKey(state.Status), NameKey(state.Name), TerminalKey }, args.ToArray()).ConfigureAwait(false);
+        if ((long)result == -1) throw new JobException($"Job storage capacity ({_maxJobs}) reached. Run cleanup or increase capacity before enqueueing more work.");
     }
 
     public async Task<JobState?> GetAsync(string jobId, CancellationToken cancellationToken = default)
@@ -85,180 +93,88 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
         return entries.Length == 0 ? null : FromHash(entries);
     }
 
-    public async Task<IReadOnlyList<JobState>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+    public async Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        query.Validate();
         cancellationToken.ThrowIfCancellationRequested();
-
-        RedisValue[] ids;
-        if (query.Status is { } status && !String.IsNullOrEmpty(query.Name))
-            ids = await _db.SetCombineAsync(SetOperation.Intersect, StatusKey(status), NameKey(query.Name)).ConfigureAwait(false);
-        else if (query.Status is { } onlyStatus)
-            ids = await _db.SetMembersAsync(StatusKey(onlyStatus)).ConfigureAwait(false);
-        else if (!String.IsNullOrEmpty(query.Name))
-            ids = await _db.SetMembersAsync(NameKey(query.Name)).ConfigureAwait(false);
-        else
-            ids = await _db.SetMembersAsync(AllKey).ConfigureAwait(false);
-
-        var states = await LoadAsync(ids).ConfigureAwait(false);
-        return states
-            // ScheduledForUtc must be filtered after hydration (it isn't indexed), mirroring GetExpiredProcessingAsync.
-            .Where(s => !query.ExcludeOccurrences || s.ScheduledForUtc is null)
-            .OrderByDescending(s => s.LastUpdatedUtc)
-            .Take(Math.Max(1, query.Limit))
-            .ToArray();
+        var index = query.Name is not null ? NameKey(query.Name) : query.Status is { } status ? StatusKey(status) : AllKey;
+        const string script = """
+            local ids = redis.call('ZRANGEBYLEX', KEYS[1], ARGV[1], '+', 'LIMIT', 0, 1001)
+            local result, cursor = {}, ''
+            for i = 1, math.min(#ids, 1000) do
+                local id = ids[i]
+                local job = ARGV[2] .. id
+                if ARGV[3] == '' or redis.call('HGET', job, 'status') == ARGV[3] then
+                    table.insert(result, redis.call('HGETALL', job))
+                end
+                if #result >= tonumber(ARGV[4]) or i == 1000 then
+                    if i < #ids then cursor = id end
+                    break
+                end
+            end
+            return {cursor, result}
+            """;
+        var raw = (RedisResult[])(await _db.ScriptEvaluateAsync(script, new RedisKey[] { index }, new RedisValue[] { query.AfterJobId is null ? "-" : "(" + query.AfterJobId, $"{_prefix}job:", query.Status?.ToString() ?? "", query.Limit }).ConfigureAwait(false))!;
+        var states = ((RedisResult[])raw[1]!).Select(ReadJobSnapshot).ToArray();
+        string? cursor = (string?)raw[0];
+        return new JobPage(states, String.IsNullOrEmpty(cursor) ? null : cursor);
     }
 
-    public Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default)
+    private static JobState ReadJobSnapshot(RedisResult snapshot)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "status", expectedStatus.ToString()));
-        if (expectedNodeId is not null)
-            tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", expectedNodeId));
-
-        ApplyTransition(tx, jobId, expectedStatus, newStatus, patch);
-        return tx.ExecuteAsync();
+        var values = (RedisValue[])snapshot!;
+        var fields = new HashEntry[values.Length / 2];
+        for (int i = 0; i < fields.Length; i++) fields[i] = new HashEntry(values[i * 2], values[i * 2 + 1]);
+        return FromHash(fields);
     }
 
-    public async Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default)
+    public async Task<int> CleanupAsync(int limit = 1000, CancellationToken cancellationToken = default)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
         cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(nodeId);
-
-        var now = _timeProvider.GetUtcNow();
-        var current = await _db.HashGetAsync(JobKey(jobId), ["nodeId", "leaseExpiresUtc"]).ConfigureAwait(false);
-        if (!await _db.KeyExistsAsync(JobKey(jobId)).ConfigureAwait(false))
-            return false;
-
-        string? owner = ToStringOrNull(current[0]);
-        var leaseExpires = ParseTime(current[1]);
-        bool heldByOther = !String.IsNullOrEmpty(owner) && owner != nodeId && leaseExpires is { } e && e > now;
-        if (heldByOther)
-            return false;
-
-        var tx = _db.CreateTransaction();
-        if (String.IsNullOrEmpty(owner))
-        {
-            tx.AddCondition(Condition.HashNotExists(JobKey(jobId), "nodeId"));
-        }
-        else
-        {
-            // Stealing an expired lease: predicate on BOTH the observed owner and the exact lease value, so a
-            // concurrent renew by that owner (which rewrites leaseExpiresUtc) invalidates the steal and can't
-            // double-run. Mirrors TryReclaimExpiredAsync; the unguarded version could overwrite a freshly-renewed lease.
-            tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", owner));
-            if (!current[1].IsNullOrEmpty)
-                tx.AddCondition(Condition.HashEqual(JobKey(jobId), "leaseExpiresUtc", current[1]));
-        }
-        _ = tx.HashSetAsync(JobKey(jobId),
-        [
-            new HashEntry("nodeId", nodeId),
-            new HashEntry("leaseExpiresUtc", Ticks(now.Add(lease))),
-            new HashEntry("lastUpdatedUtc", Ticks(now))
-        ]);
-        return await tx.ExecuteAsync().ConfigureAwait(false);
+        const string script = """
+            local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+            for _, id in ipairs(ids) do
+                local job = ARGV[3] .. 'job:' .. id
+                local status = redis.call('HGET', job, 'status')
+                local name = redis.call('HGET', job, 'name')
+                if status then redis.call('ZREM', ARGV[3] .. 'status:' .. status, id) end
+                if name then redis.call('ZREM', ARGV[3] .. 'name:' .. name, id) end
+                redis.call('ZREM', KEYS[2], id)
+                redis.call('ZREM', KEYS[1], id)
+                redis.call('DEL', job)
+            end
+            return #ids
+            """;
+        return (int)(await _db.ScriptEvaluateAsync(script, new RedisKey[] { TerminalKey, AllKey }, new RedisValue[] { Ticks(_timeProvider.GetUtcNow().AddDays(-7)), limit, _prefix }).ConfigureAwait(false));
     }
 
-    public Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default)
+    public async Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = _timeProvider.GetUtcNow();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", nodeId));
-        _ = tx.HashSetAsync(JobKey(jobId),
-        [
-            new HashEntry("leaseExpiresUtc", Ticks(now.Add(lease))),
-            new HashEntry("lastUpdatedUtc", Ticks(now))
-        ]);
-        return tx.ExecuteAsync();
-    }
-
-    public Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", nodeId));
-        _ = tx.HashDeleteAsync(JobKey(jobId), ["nodeId", "leaseExpiresUtc"]);
-        _ = tx.HashSetAsync(JobKey(jobId), "lastUpdatedUtc", Ticks(_timeProvider.GetUtcNow()));
-        return tx.ExecuteAsync();
-    }
-
-    public async Task<IReadOnlyList<JobState>> GetExpiredProcessingAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var ids = await _db.SetMembersAsync(StatusKey(JobStatus.Processing)).ConfigureAwait(false);
-        var states = await LoadAsync(ids).ConfigureAwait(false);
-        return states
-            // Exclude CRON occurrences (ScheduledForUtc set): the scheduler owns their recovery.
-            .Where(s => s.ScheduledForUtc is null && s.LeaseExpiresUtc is { } lease && lease <= now)
-            .OrderBy(s => s.LeaseExpiresUtc)
-            .Take(Math.Max(1, limit))
-            .ToArray();
-    }
-
-    public async Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(expectedNodeId);
-
-        var state = await GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        if (state is null || state.Status != JobStatus.Processing || !String.Equals(state.NodeId, expectedNodeId, StringComparison.Ordinal))
-            return false;
-        if (state.LeaseExpiresUtc is not { } lease || lease > now)
-            return false;
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "status", JobStatus.Processing.ToString()));
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "nodeId", expectedNodeId));
-        // Predicate on the exact lease we read; a concurrent renew changes it and invalidates the reclaim.
-        tx.AddCondition(Condition.HashEqual(JobKey(jobId), "leaseExpiresUtc", Ticks(lease)));
-
-        ApplyTransition(tx, jobId, JobStatus.Processing, newStatus, patch);
-        return await tx.ExecuteAsync().ConfigureAwait(false);
-    }
-
-    public Task SetProgressAsync(string jobId, int? percent = null, string? message = null, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.KeyExists(JobKey(jobId)));
-        if (percent is { } p)
-            _ = tx.HashSetAsync(JobKey(jobId), "progress", p);
-        if (message is not null)
-            _ = tx.HashSetAsync(JobKey(jobId), "progressMessage", message);
-        _ = tx.HashSetAsync(JobKey(jobId), "lastUpdatedUtc", Ticks(_timeProvider.GetUtcNow()));
-        return tx.ExecuteAsync();
-    }
-
-    public Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.KeyExists(JobKey(jobId)));
-        _ = tx.HashIncrementAsync(JobKey(jobId), "attempt", 1);
-        _ = tx.HashSetAsync(JobKey(jobId), "lastUpdatedUtc", Ticks(_timeProvider.GetUtcNow()));
-        return tx.ExecuteAsync();
-    }
-
-    public Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.KeyExists(JobKey(jobId)));
-        _ = tx.HashSetAsync(JobKey(jobId),
-        [
-            new HashEntry("cancellationRequested", "1"),
-            new HashEntry("lastUpdatedUtc", Ticks(_timeProvider.GetUtcNow()))
-        ]);
-        return tx.ExecuteAsync();
+        const string script = """
+            if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+            local status = redis.call('HGET', KEYS[1], 'status')
+            redis.call('HSET', KEYS[1], 'cancellationRequested', '1', 'lastUpdatedUtc', ARGV[2])
+            if status == 'Queued' or status == 'Scheduled' then
+                redis.call('HSET', KEYS[1], 'status', 'Cancelled', 'completedUtc', ARGV[2])
+                redis.call('ZREM', KEYS[2], ARGV[1])
+                redis.call('ZREM', KEYS[3], ARGV[1])
+                redis.call('ZADD', KEYS[4], 0, ARGV[1])
+                redis.call('ZADD', KEYS[5], ARGV[2], ARGV[1])
+                local ready = redis.call('HGET', KEYS[1], 'readyKey')
+                local active = redis.call('HGET', KEYS[1], 'activeScheduleKey')
+                if ready then redis.call('ZREM', ready, ARGV[1]) end
+                if active then redis.call('SREM', active, ARGV[1]) end
+            end
+            return 1
+            """;
+        var result = await _db.ScriptEvaluateAsync(script,
+            new RedisKey[] { JobKey(jobId), StatusKey(JobStatus.Queued), StatusKey(JobStatus.Scheduled), StatusKey(JobStatus.Cancelled), TerminalKey },
+            new RedisValue[] { jobId, Ticks(_timeProvider.GetUtcNow()) }).ConfigureAwait(false);
+        return (long)result == 1;
     }
 
     public async Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken cancellationToken = default)
@@ -289,13 +205,15 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             [DueKey],
             [now.UtcTicks, Math.Max(1, limit), nodeId, Ticks(now.Add(lease)), $"{_prefix}dispatch:"]).ConfigureAwait(false);
 
-        var ids = (RedisValue[]?)result ?? [];
-        var dispatches = new List<ScheduledDispatchState>(ids.Length);
-        foreach (var id in ids)
+        var snapshots = (RedisResult[]?)result ?? [];
+        var dispatches = new List<ScheduledDispatchState>(snapshots.Length);
+        foreach (var snapshot in snapshots)
         {
-            var entries = await _db.HashGetAllAsync(DispatchKey(id!)).ConfigureAwait(false);
-            if (entries.Length > 0)
-                dispatches.Add(DispatchFromHash(entries));
+            var values = (RedisValue[]?)snapshot ?? [];
+            var entries = new HashEntry[values.Length / 2];
+            for (int index = 0; index < entries.Length; index++)
+                entries[index] = new HashEntry(values[index * 2], values[index * 2 + 1]);
+            dispatches.Add(DispatchFromHash(entries));
         }
 
         return dispatches;
@@ -304,83 +222,33 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
     public Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(DispatchKey(dispatchId), "claimOwner", nodeId));
-        _ = tx.KeyDeleteAsync(DispatchKey(dispatchId));
-        _ = tx.SortedSetRemoveAsync(DueKey, dispatchId);
-        return tx.ExecuteAsync();
+        return _db.ScriptEvaluateAsync("""
+            if redis.call('HGET', KEYS[1], 'claimOwner') ~= ARGV[1] then return 0 end
+            if tonumber(redis.call('HGET', KEYS[1], 'claimExpiresUtc') or '0') <= tonumber(ARGV[2]) then return 0 end
+            redis.call('DEL', KEYS[1])
+            redis.call('ZREM', KEYS[2], ARGV[3])
+            return 1
+            """, [DispatchKey(dispatchId), DueKey], [nodeId, Ticks(_timeProvider.GetUtcNow()), dispatchId]);
     }
 
     public Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        var tx = _db.CreateTransaction();
-        tx.AddCondition(Condition.HashEqual(DispatchKey(dispatchId), "claimOwner", nodeId));
-        _ = tx.HashDeleteAsync(DispatchKey(dispatchId), ["claimOwner", "claimExpiresUtc"]);
-        _ = tx.HashSetAsync(DispatchKey(dispatchId), "dueUtc", Ticks(nextDueUtc));
-        _ = tx.SortedSetAddAsync(DueKey, dispatchId, nextDueUtc.UtcTicks);
-        return tx.ExecuteAsync();
-    }
-
-    private void ApplyTransition(ITransaction tx, string jobId, JobStatus fromStatus, JobStatus toStatus, JobStatePatch? patch)
-    {
-        var sets = new List<HashEntry>
-        {
-            new("status", toStatus.ToString()),
-            new("lastUpdatedUtc", Ticks(patch?.LastUpdatedUtc ?? _timeProvider.GetUtcNow()))
-        };
-        var deletes = new List<RedisValue>();
-
-        if (patch is not null)
-        {
-            if (patch.JobType is not null) sets.Add(new("jobType", patch.JobType));
-            if (patch.Progress is { } progress) sets.Add(new("progress", progress));
-            if (patch.ProgressMessage is not null) sets.Add(new("progressMessage", patch.ProgressMessage));
-            if (patch.Error is not null) sets.Add(new("error", patch.Error));
-            if (patch.StartedUtc is { } started) sets.Add(new("startedUtc", Ticks(started)));
-            if (patch.CompletedUtc is { } completed) sets.Add(new("completedUtc", Ticks(completed)));
-            if (patch.CancellationRequested is { } cancel) sets.Add(new("cancellationRequested", cancel ? "1" : "0"));
-
-            if (patch.ClearNodeId) deletes.Add("nodeId");
-            else if (patch.NodeId is not null) sets.Add(new("nodeId", patch.NodeId));
-
-            if (patch.ClearLeaseExpiresUtc) deletes.Add("leaseExpiresUtc");
-            else if (patch.LeaseExpiresUtc is { } leaseExpires) sets.Add(new("leaseExpiresUtc", Ticks(leaseExpires)));
-
-            if (patch.AttemptDelta != 0)
-                _ = tx.HashIncrementAsync(JobKey(jobId), "attempt", patch.AttemptDelta);
-        }
-
-        _ = tx.HashSetAsync(JobKey(jobId), sets.ToArray());
-        if (deletes.Count > 0)
-            _ = tx.HashDeleteAsync(JobKey(jobId), deletes.ToArray());
-
-        if (fromStatus != toStatus)
-        {
-            _ = tx.SetRemoveAsync(StatusKey(fromStatus), jobId);
-            _ = tx.SetAddAsync(StatusKey(toStatus), jobId);
-        }
-    }
-
-    private async Task<List<JobState>> LoadAsync(RedisValue[] ids)
-    {
-        var states = new List<JobState>(ids.Length);
-        foreach (var id in ids)
-        {
-            var entries = await _db.HashGetAllAsync(JobKey(id!)).ConfigureAwait(false);
-            if (entries.Length > 0)
-                states.Add(FromHash(entries));
-        }
-
-        return states;
+        return _db.ScriptEvaluateAsync("""
+            if redis.call('HGET', KEYS[1], 'claimOwner') ~= ARGV[1] then return 0 end
+            if tonumber(redis.call('HGET', KEYS[1], 'claimExpiresUtc') or '0') <= tonumber(ARGV[2]) then return 0 end
+            redis.call('HDEL', KEYS[1], 'claimOwner', 'claimExpiresUtc')
+            redis.call('HSET', KEYS[1], 'dueUtc', ARGV[4])
+            redis.call('ZADD', KEYS[2], ARGV[4], ARGV[3])
+            return 1
+            """, [DispatchKey(dispatchId), DueKey], [nodeId, Ticks(_timeProvider.GetUtcNow()), dispatchId, Ticks(nextDueUtc)]);
     }
 
     private RedisKey JobKey(string id) => $"{_prefix}job:{id}";
     private RedisKey StatusKey(JobStatus status) => $"{_prefix}status:{status}";
     private RedisKey NameKey(string name) => $"{_prefix}name:{name}";
     private RedisKey DispatchKey(string id) => $"{_prefix}dispatch:{id}";
+    private RedisKey TerminalKey => $"{_prefix}terminal";
     private RedisKey AllKey => $"{_prefix}all";
     private RedisKey DueKey => $"{_prefix}dispatches:due";
 
@@ -395,7 +263,7 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
 
     private static string? ToStringOrNull(RedisValue value) => value.IsNullOrEmpty ? null : (string)value!;
 
-    private static HashEntry[] ToHash(JobState state)
+    private HashEntry[] ToHash(JobState state)
     {
         var entries = new List<HashEntry>
         {
@@ -403,17 +271,30 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             new("name", state.Name),
             new("status", state.Status.ToString()),
             new("attempt", state.Attempt),
+            new("maxAttempts", state.MaxAttempts),
             new("cancellationRequested", state.CancellationRequested ? "1" : "0"),
             new("createdUtc", Ticks(state.CreatedUtc)),
             new("lastUpdatedUtc", Ticks(state.LastUpdatedUtc))
         };
 
-        if (state.JobType is not null) entries.Add(new("jobType", state.JobType));
+        if (state.JobType is not null)
+        {
+            entries.Add(new("jobType", state.JobType));
+            entries.Add(new("readyKey", ReadyKey(state.JobType, state.RequiredNodeId).ToString()));
+        }
+        if (state.RequiredNodeId is not null) entries.Add(new("requiredNodeId", state.RequiredNodeId));
+        if (state.ScheduleName is not null)
+        {
+            entries.Add(new("scheduleName", state.ScheduleName));
+            entries.Add(new("activeScheduleKey", ActiveScheduleKey(state.ScheduleName, state.RequiredNodeId).ToString()));
+        }
         if (state.Payload is { } payload) entries.Add(new("payload", Convert.ToBase64String(payload.Span)));
         if (state.PayloadType is not null) entries.Add(new("payloadType", state.PayloadType));
         if (state.Progress is { } progress) entries.Add(new("progress", progress));
         if (state.ProgressMessage is not null) entries.Add(new("progressMessage", state.ProgressMessage));
         if (state.NodeId is not null) entries.Add(new("nodeId", state.NodeId));
+        if (state.ClaimToken is not null) entries.Add(new("claimToken", state.ClaimToken));
+        if (state.AvailableUtc is { } available) entries.Add(new("availableUtc", Ticks(available)));
         if (state.StartedUtc is { } started) entries.Add(new("startedUtc", Ticks(started)));
         if (state.CompletedUtc is { } completed) entries.Add(new("completedUtc", Ticks(completed)));
         if (state.LeaseExpiresUtc is { } leaseExpires) entries.Add(new("leaseExpiresUtc", Ticks(leaseExpires)));
@@ -440,6 +321,11 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             ProgressMessage = ToStringOrNull(Get("progressMessage")),
             Attempt = Get("attempt").IsNullOrEmpty ? 0 : (int)Get("attempt"),
             NodeId = ToStringOrNull(Get("nodeId")),
+            ClaimToken = ToStringOrNull(Get("claimToken")),
+            RequiredNodeId = ToStringOrNull(Get("requiredNodeId")),
+            ScheduleName = ToStringOrNull(Get("scheduleName")),
+            MaxAttempts = Get("maxAttempts").IsNullOrEmpty ? 3 : (int)Get("maxAttempts"),
+            AvailableUtc = ParseTime(Get("availableUtc")),
             CreatedUtc = ParseTime(Get("createdUtc")) ?? default,
             LastUpdatedUtc = ParseTime(Get("lastUpdatedUtc")) ?? default,
             StartedUtc = ParseTime(Get("startedUtc")),
@@ -468,13 +354,9 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             new("attempts", dispatch.Attempts)
         };
 
-        // Destination (message dispatches) and JobName (job occurrences) are mutually exclusive; only the populated
-        // side is written so the read side can distinguish them by field presence.
         if (dispatch.Destination is not null) entries.Add(new("destination", JsonSerializer.Serialize(dispatch.Destination)));
-        if (dispatch.JobName is not null) entries.Add(new("jobName", dispatch.JobName));
         if (dispatch.ClaimOwner is not null) entries.Add(new("claimOwner", dispatch.ClaimOwner));
         if (dispatch.ClaimExpiresUtc is { } claimExpires) entries.Add(new("claimExpiresUtc", Ticks(claimExpires)));
-        if (dispatch.JobId is not null) entries.Add(new("jobId", dispatch.JobId));
 
         return entries.ToArray();
     }
@@ -494,15 +376,13 @@ public sealed class RedisJobRuntimeStore : IJobRuntimeStore
             DispatchId = (string)Get("dispatchId")!,
             Kind = Enum.Parse<ScheduledDispatchKind>((string)Get("kind")!),
             Destination = destination.IsNullOrEmpty ? null : JsonSerializer.Deserialize<DestinationAddress>((string)destination!),
-            JobName = ToStringOrNull(Get("jobName")),
             Body = Get("body").IsNullOrEmpty ? ReadOnlyMemory<byte>.Empty : Convert.FromBase64String((string)Get("body")!),
             Headers = MessageHeaders.Create(headerMap),
             Options = options,
             DueUtc = ParseTime(Get("dueUtc")) ?? default,
             ClaimOwner = ToStringOrNull(Get("claimOwner")),
             ClaimExpiresUtc = ParseTime(Get("claimExpiresUtc")),
-            Attempts = Get("attempts").IsNullOrEmpty ? 0 : (int)Get("attempts"),
-            JobId = ToStringOrNull(Get("jobId"))
+            Attempts = Get("attempts").IsNullOrEmpty ? 0 : (int)Get("attempts")
         };
     }
 }

@@ -17,5 +17,4 @@ public sealed class MessageRouteAttribute : Attribute
 
     public string? Destination { get; set; }
     public string? Topic { get; set; }
-    public string? Subscription { get; set; }
 }

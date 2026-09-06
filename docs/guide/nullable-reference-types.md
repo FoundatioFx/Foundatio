@@ -1,5 +1,8 @@
 # Nullable Reference Types (NRT) Migration
 
+This migration reference includes earlier queue/job interfaces removed by the unreleased redesign. Current receive and job contracts are documented in [Messaging](messaging.md) and [Durable jobs](jobs.md).
+
+
 Foundatio has been fully annotated with C# [nullable reference types](https://learn.microsoft.com/en-us/dotnet/csharp/nullable-references) across the core library and all provider repositories. This document describes the public API changes, design decisions, and remaining areas for improvement.
 
 ## Interface Return Type Changes

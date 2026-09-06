@@ -25,6 +25,31 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     }
 
     [Fact]
+    public virtual async Task TemporarySubscription_ExpiresWithoutListenerDisposalAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsEphemeralSubscriptions temporary)
+        {
+            Assert.Skip("Transport does not support expiring subscriptions.");
+            return;
+        }
+        try
+        {
+            var token = TestCancellationToken;
+            var source = DestinationAddress.ForSubscription("temporary-events", "temporary-listener");
+            await temporary.EnsureAsync([new DestinationDeclaration { Address = source, AutoDeleteAfter = TimeSpan.FromMilliseconds(100) }], token);
+            Assert.True(await temporary.ExistsAsync(source, token));
+            await Task.Delay(200, token);
+            Assert.False(await temporary.RenewSubscriptionAsync(source, TimeSpan.FromMinutes(1), token));
+            Assert.False(await temporary.ExistsAsync(source, token));
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    [Fact]
     public virtual async Task CanSendAndReceiveBatchAsync()
     {
         var transport = CreateTransport();
@@ -141,11 +166,14 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await transport.SendAsync(queue, [new TransportMessage
             {
                 Body = body,
+                MessageId = "application-message-id",
                 ContentType = "application/json"
             }], new TransportSendOptions(), TestCancellationToken);
 
             var entry = Assert.Single(await pull.ReceiveAsync(queue, new ReceiveRequest { MaxWaitTime = TimeSpan.FromSeconds(2) }, TestCancellationToken));
             Assert.Equal(body, entry.Body.ToArray());
+            Assert.Equal("application-message-id", entry.ApplicationMessageId);
+            Assert.Equal("application/json", entry.ContentType);
 
             await transport.CompleteAsync(entry, TestCancellationToken);
         }
@@ -663,7 +691,43 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
     }
 
     [Fact]
-    public virtual async Task ReceiveDeadLetteredAsync_ReturnsPoisonPayloadAndReasonAsync()
+    public virtual async Task ReplayDeadLetteredAsync_PreservesApplicationIdAndResetsAttemptsAsync()
+    {
+        var transport = CreateTransport();
+        if (transport is not ISupportsDeadLetter dead || transport is not ISupportsPull pull)
+        {
+            Assert.Skip("Transport has no dead-letter administration.");
+            return;
+        }
+        try
+        {
+            var token = TestCancellationToken;
+            var source = DestinationAddress.ForQueue("dead-source");
+            var target = DestinationAddress.ForQueue("replay-target");
+            await EnsureAsync(transport, new DestinationDeclaration { Address = source });
+            await EnsureAsync(transport, new DestinationDeclaration { Address = target });
+            await transport.SendAsync(source, [CreateMessage("payload", (KnownHeaders.Attempts, "5")) with { MessageId = "stable-id" }], new TransportSendOptions(), token);
+            var original = Assert.Single(await pull.ReceiveAsync(source, new ReceiveRequest(), token));
+            await dead.DeadLetterAsync(original, "failure", token);
+            var entry = Assert.Single(await dead.PeekDeadLetteredAsync(source, cancellationToken: token));
+            Assert.True(await dead.ReplayDeadLetteredAsync(source, entry.Id, target, token));
+            Assert.False(await dead.ReplayDeadLetteredAsync(source, entry.Id, target, token));
+            Assert.Empty(await dead.PeekDeadLetteredAsync(source, cancellationToken: token));
+            var replayed = Assert.Single(await pull.ReceiveAsync(target, new ReceiveRequest(), token));
+            Assert.Equal("stable-id", replayed.ApplicationMessageId);
+            Assert.Equal("payload", ReadBody(replayed));
+            Assert.Equal(1, replayed.DeliveryCount);
+            Assert.False(replayed.Headers.ContainsKey(KnownHeaders.Attempts));
+            await transport.CompleteAsync(replayed, token);
+        }
+        finally
+        {
+            await CleanupTransportIfNotNullAsync(transport);
+        }
+    }
+
+    [Fact]
+    public virtual async Task PeekDeadLetteredAsync_PreservesEvidenceUntilExplicitDeletionAsync()
     {
         var transport = CreateTransport();
         if (transport is not ISupportsPull pull || transport is not ISupportsDeadLetter deadLetter)
@@ -682,13 +746,15 @@ public abstract class MessageTransportConformanceTests : TestWithLoggingBase
             await deadLetter.DeadLetterAsync(entry, "bad-payload", TestCancellationToken);
 
             // The raw (un-deserialized) payload and the dead-letter reason must be inspectable.
-            var deadLettered = Assert.Single(await deadLetter.ReceiveDeadLetteredAsync(queue, new ReceiveRequest { MaxMessages = 10 }, TestCancellationToken));
+            var deadLettered = Assert.Single(await deadLetter.PeekDeadLetteredAsync(queue, new DeadLetterQuery { Limit = 10 }, TestCancellationToken));
             Assert.Equal("poison", ReadBody(deadLettered));
             Assert.Equal("acme", deadLettered.Headers["tenant"]);
             Assert.Equal("bad-payload", deadLettered.Headers[KnownHeaders.DeadLetterReason]);
 
-            // Reading the dead-letter backlog consumes it: a second read must return empty, not the same entries.
-            Assert.Empty(await deadLetter.ReceiveDeadLetteredAsync(queue, new ReceiveRequest { MaxMessages = 10 }, TestCancellationToken));
+            Assert.Equal(deadLettered.Id, Assert.Single(await deadLetter.PeekDeadLetteredAsync(queue, cancellationToken: TestCancellationToken)).Id);
+            Assert.True(await deadLetter.DeleteDeadLetteredAsync(queue, deadLettered.Id, TestCancellationToken));
+            Assert.False(await deadLetter.DeleteDeadLetteredAsync(queue, deadLettered.Id, TestCancellationToken));
+            Assert.Empty(await deadLetter.PeekDeadLetteredAsync(queue, cancellationToken: TestCancellationToken));
         }
         finally
         {

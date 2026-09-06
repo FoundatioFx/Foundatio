@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using StackExchange.Redis;
@@ -23,8 +24,8 @@ namespace Foundatio.Messaging;
 /// message held by a crashed instance is recovered by any other instance. A stale receipt (already settled, or the
 /// entry was redelivered to someone else) is detected by an owner token and surfaced as <see cref="ReceiptExpiredException"/>.
 /// </remarks>
-public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
-    ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsDeadLetter, ISupportsProvisioning, ISupportsStats, ITransportInfo
+public sealed partial class RedisStreamsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
+    ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsDeadLetter, ISupportsEphemeralSubscriptions, ISupportsStats, ITransportInfo
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
 
@@ -42,6 +43,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     public RedisStreamsMessageTransport(RedisStreamsMessageTransportOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxPendingMessages, 1);
         ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
         _db = options.ConnectionMultiplexer.GetDatabase();
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
@@ -75,11 +77,24 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         // stream namespace so a queue and a topic sharing a route name never cross-deliver.
         RedisKey streamKey = destination.Role == DestinationRole.Topic ? TopicStreamKey(destination.Name) : QueueStreamKey(destination.Name);
         var items = new List<SendItemResult>(messages.Count);
-        foreach (var message in messages)
+        try
         {
-            RedisValue id = await _db.StreamAddAsync(streamKey, BuildFields(message), messageId: null,
-                maxLength: _options.MaxStreamLength, useApproximateMaxLength: true).ConfigureAwait(false);
-            items.Add(new SendItemResult { MessageId = id.ToString() });
+            foreach (var message in messages)
+            {
+                ct.ThrowIfCancellationRequested();
+                var arguments = new List<RedisValue> { destination.Role == DestinationRole.Topic ? "1" : "0", _options.MaxPendingMessages, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() };
+                foreach (var field in BuildFields(message))
+                {
+                    arguments.Add(field.Name);
+                    arguments.Add(field.Value);
+                }
+                var id = await _db.ScriptEvaluateAsync(SendScript, new RedisKey[] { streamKey }, arguments.ToArray()).ConfigureAwait(false);
+                items.Add(new SendItemResult { MessageId = (string)id! });
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new TransportSendException(items.Count, ex);
         }
 
         return new SendResult { Items = items };
@@ -95,8 +110,6 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ArgumentNullException.ThrowIfNull(request);
 
         var resolved = Resolve(source);
-        await EnsureGroupAsync(resolved).ConfigureAwait(false);
-
         int max = Math.Max(1, request.MaxMessages);
         long visibilityMs = (long)Math.Max(0, visibility.TotalMilliseconds);
         var deadline = _timeProvider.GetUtcNow() + (request.MaxWaitTime ?? TimeSpan.Zero);
@@ -118,138 +131,109 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
     private async Task<List<TransportEntry>> PollOnceAsync(DestinationAddress source, ResolvedSource resolved, int max, long visibilityMs, CancellationToken ct)
     {
-        var result = new List<TransportEntry>(max);
+        ct.ThrowIfCancellationRequested();
         long nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        RedisKey lockKey = LockKey(resolved);
-        RedisKey metaKey = MetaKey(resolved);
-
-        // 1. Reclaim entries whose lease has lapsed (abandoned, redelivery-delay due, lock expired, crashed consumer).
-        // The lease score is updated only after the claim, never removed first, so a crash mid-reclaim can't orphan an
-        // entry (it stays reclaimable); the cost is that two instances racing the same lapsed entry may both deliver it
-        // — acceptable under at-least-once.
-        var dueIds = await _db.SortedSetRangeByScoreAsync(lockKey, Double.NegativeInfinity, nowMs, take: max).ConfigureAwait(false);
-        if (dueIds.Length > 0)
+        var snapshot = await _db.ScriptEvaluateAsync(ReceiveScript,
+            new RedisKey[] { resolved.StreamKey, LockKey(resolved), MetaKey(resolved) },
+            new RedisValue[] { resolved.Group, _consumer, nowMs, visibilityMs, max, Guid.NewGuid().ToString("N"), (long)_options.DefaultVisibilityTimeout.TotalMilliseconds }).ConfigureAwait(false);
+        var rows = (RedisResult[]?)snapshot ?? [];
+        var result = new List<TransportEntry>(rows.Length);
+        foreach (var row in rows)
         {
-            var claimed = await _db.StreamClaimAsync(resolved.StreamKey, resolved.Group, _consumer, 0, dueIds).ConfigureAwait(false);
-            foreach (var entry in claimed)
+            var values = (RedisResult[])row!;
+            var fields = (RedisResult[])values[1]!;
+            var entries = new NameValueEntry[fields.Length / 2];
+            for (int index = 0; index < entries.Length; index++)
+                entries[index] = new NameValueEntry((string)fields[index * 2]!, (byte[])fields[index * 2 + 1]!);
+            var entry = new StreamEntry((string)values[0]!, entries);
+            result.Add(ToEntry(source, resolved, entry, (int)values[2], (string)values[3]!) with
             {
-                ct.ThrowIfCancellationRequested();
-                if (entry.IsNull || entry.Values is not { Length: > 0 })
-                {
-                    // The entry was settled/trimmed since we read the lease; drop our bookkeeping for it.
-                    await _db.SortedSetRemoveAsync(lockKey, entry.Id).ConfigureAwait(false);
-                    await _db.HashDeleteAsync(metaKey, entry.Id).ConfigureAwait(false);
-                    continue;
-                }
-
-                int deliveries = ParseDeliveries(await _db.HashGetAsync(metaKey, entry.Id).ConfigureAwait(false)) + 1;
-                result.Add(await TrackAsync(source, resolved, entry, deliveries, nowMs, visibilityMs).ConfigureAwait(false));
-                if (result.Count >= max)
-                    return result;
-            }
+                LockExpiresUtc = DateTimeOffset.FromUnixTimeMilliseconds(nowMs + visibilityMs)
+            });
         }
-
-        // 2. New, never-delivered entries.
-        var fresh = await _db.StreamReadGroupAsync(resolved.StreamKey, resolved.Group, _consumer, StreamPosition.NewMessages, max - result.Count).ConfigureAwait(false);
-        foreach (var entry in fresh)
-        {
-            ct.ThrowIfCancellationRequested();
-            result.Add(await TrackAsync(source, resolved, entry, 1, nowMs, visibilityMs).ConfigureAwait(false));
-        }
-
         return result;
     }
 
-    // Records the lease (sorted set) + owner token & delivery count (hash) for a just-delivered entry and projects it
-    // into a TransportEntry whose Receipt carries everything needed to settle it.
-    private async Task<TransportEntry> TrackAsync(DestinationAddress source, ResolvedSource resolved, StreamEntry entry, int deliveries, long nowMs, long visibilityMs)
-    {
-        string token = Guid.NewGuid().ToString("N");
-        await _db.HashSetAsync(MetaKey(resolved), entry.Id, $"{token}|{deliveries}").ConfigureAwait(false);
-        await _db.SortedSetAddAsync(LockKey(resolved), entry.Id, nowMs + visibilityMs).ConfigureAwait(false);
-        return ToEntry(source, resolved, entry, deliveries, token);
-    }
+    public Task CompleteAsync(TransportEntry entry, CancellationToken ct = default)
+        => SettleAsync(entry, "complete", null, null, ct);
 
-    public async Task CompleteAsync(TransportEntry entry, CancellationToken ct = default)
+    public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
+        => AbandonAsync(entry, TimeSpan.Zero, ct);
+
+    public Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct)
+        => SettleAsync(entry, "abandon", redeliveryDelay, null, ct);
+
+    public Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct)
+        => SettleAsync(entry, "renew", duration ?? _options.DefaultVisibilityTimeout, null, ct);
+
+    public Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct)
+        => SettleAsync(entry, "deadletter", null, reason, ct);
+
+    private async Task SettleAsync(TransportEntry entry, string operation, TimeSpan? duration, string? reason, CancellationToken ct)
     {
         ThrowIfDisposed();
-        var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
-
-        long acked = await _db.StreamAcknowledgeAsync(r.StreamKey, r.Group, r.EntryId).ConfigureAwait(false);
-        // Only a queue stream (single consumer group) may delete on complete. A topic stream is shared by every
-        // subscription group, so one group completing must not delete the entry before the others read it; topic
-        // entries are retained (bound by MaxStreamLength when configured).
-        if (!IsTopicStream(r.StreamKey))
-            await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
-        await ClearTrackingAsync(r).ConfigureAwait(false);
-
-        if (acked == 0)
+        ArgumentNullException.ThrowIfNull(entry);
+        ct.ThrowIfCancellationRequested();
+        if (entry.Receipt.TransportState is not StreamReceipt receipt)
+            throw new ReceiptExpiredException("The entry does not carry a Redis Streams receipt.");
+        long nowMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        var arguments = new List<RedisValue>
+        {
+            receipt.Group, receipt.EntryId, receipt.Token, nowMs, operation,
+            nowMs + (long)Math.Max(0, duration?.TotalMilliseconds ?? 0), IsTopicStream(receipt.StreamKey) ? "0" : "1", _options.MaxPendingMessages
+        };
+        if (operation == "deadletter")
+        {
+            var headers = entry.Headers.ToBuilder();
+            if (!String.IsNullOrEmpty(reason))
+                headers.Set(KnownHeaders.DeadLetterReason, reason);
+            foreach (var field in BuildFields(entry.ApplicationMessageId, entry.Body, headers.Build(), entry.ContentType))
+            {
+                arguments.Add(field.Name);
+                arguments.Add(field.Value);
+            }
+        }
+        var result = await _db.ScriptEvaluateAsync(SettleScript,
+            new RedisKey[] { receipt.StreamKey, LockKey(receipt), MetaKey(receipt), DeadKey(receipt) }, arguments.ToArray()).ConfigureAwait(false);
+        if ((long)result != 1)
             throw new ReceiptExpiredException();
     }
 
-    public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default) => AbandonAsync(entry, TimeSpan.Zero, ct);
-
-    public async Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct)
-    {
-        ThrowIfDisposed();
-        var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
-
-        // Make the (still-pending) entry reclaimable when the delay lapses; the reclaim pass redelivers the same stream
-        // id with an incremented delivery count. delay <= 0 => immediately due.
-        long dueMs = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() + (long)Math.Max(0, redeliveryDelay.TotalMilliseconds);
-        await _db.SortedSetAddAsync(LockKey(r), r.EntryId, dueMs).ConfigureAwait(false);
-    }
-
-    public async Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct)
-    {
-        ThrowIfDisposed();
-        var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
-        long until = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() + (long)(duration ?? _options.DefaultVisibilityTimeout).TotalMilliseconds;
-        await _db.SortedSetAddAsync(LockKey(r), r.EntryId, until).ConfigureAwait(false);
-    }
-
-    public async Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct)
-    {
-        ThrowIfDisposed();
-        var r = await ValidateReceiptAsync(entry).ConfigureAwait(false);
-
-        // Match the in-memory reference: record the reason header only when there's a reason (never an empty value).
-        var headerBuilder = entry.Headers.ToBuilder();
-        if (!String.IsNullOrEmpty(reason))
-            headerBuilder.Set(KnownHeaders.DeadLetterReason, reason);
-        var headers = headerBuilder.Build();
-        await _db.StreamAddAsync(DeadKey(r.StreamKey), BuildFields(entry.Id, entry.Body, headers), messageId: null,
-            maxLength: _options.MaxStreamLength, useApproximateMaxLength: true).ConfigureAwait(false);
-
-        await _db.StreamAcknowledgeAsync(r.StreamKey, r.Group, r.EntryId).ConfigureAwait(false);
-        // Same rule as CompleteAsync: other subscription groups on a topic stream may not have read this entry yet.
-        if (!IsTopicStream(r.StreamKey))
-            await _db.StreamDeleteAsync(r.StreamKey, [r.EntryId]).ConfigureAwait(false);
-        await ClearTrackingAsync(r).ConfigureAwait(false);
-    }
-
-    public async Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
+    public async Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(destination);
-        ArgumentNullException.ThrowIfNull(request);
-
-        RedisKey deadKey = DeadKey(Resolve(destination).StreamKey);
-        var entries = await _db.StreamRangeAsync(deadKey, count: Math.Max(1, request.MaxMessages)).ConfigureAwait(false);
-        if (entries.Length == 0)
-            return [];
-
+        cancellationToken.ThrowIfCancellationRequested();
+        query ??= new DeadLetterQuery();
+        query.Validate();
+        var entries = await _db.StreamRangeAsync(DeadKey(Resolve(destination)), minId: query.AfterId is null ? "-" : "(" + query.AfterId, count: query.Limit).ConfigureAwait(false);
         var result = new List<TransportEntry>(entries.Length);
-        var ids = new RedisValue[entries.Length];
-        for (int i = 0; i < entries.Length; i++)
-        {
-            ids[i] = entries[i].Id;
-            result.Add(ToEntry(destination, resolved: null, entries[i], deliveries: 1, token: ""));
-        }
-
-        // Inspecting the dead-letter backlog consumes it.
-        await _db.StreamDeleteAsync(deadKey, ids).ConfigureAwait(false);
+        foreach (var entry in entries)
+            result.Add(ToEntry(destination, null, entry, 1, ""));
         return result;
+    }
+
+    public async Task<bool> DeleteDeadLetteredAsync(DestinationAddress destination, string id, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _db.StreamDeleteAsync(DeadKey(Resolve(destination)), new RedisValue[] { id }).ConfigureAwait(false) > 0;
+    }
+
+    public async Task<bool> ReplayDeadLetteredAsync(DestinationAddress source, string id, DestinationAddress target, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (target.Role is not (DestinationRole.Queue or DestinationRole.Topic))
+            throw new ArgumentException("Replay targets must be a queue or topic.", nameof(target));
+        var result = await _db.ScriptEvaluateAsync(ReplayScript, new RedisKey[] { DeadKey(Resolve(source)), Resolve(target).StreamKey },
+            new RedisValue[] { id, target.Role == DestinationRole.Topic ? "1" : "0", _options.MaxPendingMessages, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() }).ConfigureAwait(false);
+        return (long)result == 1;
     }
 
     public async Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken ct)
@@ -259,10 +243,21 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
         foreach (var declaration in declarations)
         {
+            if (declaration.AutoDeleteAfter is { } lease)
+            {
+                await EnsureTemporarySubscriptionAsync(declaration.Address, lease, ct).ConfigureAwait(false);
+                continue;
+            }
             switch (declaration.Address.Role)
             {
                 case DestinationRole.Topic:
-                    // Topics are read through subscription groups; nothing to create until a subscription appears.
+                    await _db.ScriptEvaluateAsync("""
+                        if redis.call('EXISTS', KEYS[1]) == 0 then
+                            local id = redis.call('XADD', KEYS[1], '*', 'init', '1')
+                            redis.call('XDEL', KEYS[1], id)
+                        end
+                        return 1
+                        """, new RedisKey[] { TopicStreamKey(declaration.Address.Name) }).ConfigureAwait(false);
                     break;
                 default:
                     // Queue, subscription, and binding declarations all materialize as a consumer group on the stream
@@ -284,7 +279,8 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         {
             var sub = Resolve(destination);
             await _db.StreamDeleteConsumerGroupAsync(sub.StreamKey, sub.Group).ConfigureAwait(false);
-            await _db.KeyDeleteAsync([LockKey(sub), MetaKey(sub)]).ConfigureAwait(false);
+            await _db.KeyDeleteAsync([LockKey(sub), MetaKey(sub), DeadKey(sub)]).ConfigureAwait(false);
+            await _db.SortedSetRemoveAsync((RedisKey)$"{sub.StreamKey}:subscriptions", sub.Group).ConfigureAwait(false);
             _ensuredGroups.TryRemove(GroupKey(sub), out _);
             return;
         }
@@ -297,12 +293,12 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
             foreach (var group in await _db.StreamGroupInfoAsync(resolved.StreamKey).ConfigureAwait(false))
             {
                 var groupSource = resolved with { Group = group.Name };
-                await _db.KeyDeleteAsync([LockKey(groupSource), MetaKey(groupSource)]).ConfigureAwait(false);
+                await _db.KeyDeleteAsync([LockKey(groupSource), MetaKey(groupSource), DeadKey(groupSource)]).ConfigureAwait(false);
                 _ensuredGroups.TryRemove(GroupKey(groupSource), out _);
             }
         }
 
-        await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved.StreamKey)]).ConfigureAwait(false);
+        await _db.KeyDeleteAsync([resolved.StreamKey, DeadKey(resolved), (RedisKey)$"{resolved.StreamKey}:subscriptions"]).ConfigureAwait(false);
         _ensuredGroups.TryRemove(GroupKey(resolved), out _);
     }
 
@@ -312,6 +308,8 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         ArgumentNullException.ThrowIfNull(destination);
 
         var resolved = Resolve(destination);
+        await _db.ScriptEvaluateAsync(TopicRetentionFunctions + "\ncleanupSubscriptions(KEYS[1], ARGV[1]); return 1",
+            new RedisKey[] { resolved.StreamKey }, new RedisValue[] { _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() }).ConfigureAwait(false);
         if (!await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
             return false;
 
@@ -333,25 +331,33 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(destination);
+        ct.ThrowIfCancellationRequested();
         var resolved = Resolve(destination);
+        var result = await _db.ScriptEvaluateAsync(TopicRetentionFunctions + """
 
-        // Probing stats must not create phantom streams/groups; a destination that doesn't exist yet is simply empty.
-        if (!await _db.KeyExistsAsync(resolved.StreamKey).ConfigureAwait(false))
-            return new MessageDestinationStats();
-
-        await EnsureGroupAsync(resolved).ConfigureAwait(false);
-
-        long length = await _db.StreamLengthAsync(resolved.StreamKey).ConfigureAwait(false);
-        long working = (await _db.StreamPendingAsync(resolved.StreamKey, resolved.Group).ConfigureAwait(false)).PendingMessageCount;
-        RedisKey deadKey = DeadKey(resolved.StreamKey);
-        long dead = await _db.KeyExistsAsync(deadKey).ConfigureAwait(false) ? await _db.StreamLengthAsync(deadKey).ConfigureAwait(false) : 0;
-
-        return new MessageDestinationStats
-        {
-            Queued = Math.Max(0, length - working),
-            Working = working,
-            Deadletter = dead
-        };
+            cleanupSubscriptions(KEYS[1], ARGV[4])
+            local queued, working, found = 0, 0, false
+            if redis.call('EXISTS', KEYS[1]) == 1 then
+                for _, group in ipairs(redis.call('XINFO', 'GROUPS', KEYS[1])) do
+                    local name, pending, lag
+                    for index = 1, #group, 2 do
+                        if group[index] == 'name' then name = group[index + 1] end
+                        if group[index] == 'pending' then pending = group[index + 1] end
+                        if group[index] == 'lag' then lag = group[index + 1] end
+                    end
+                    if ARGV[2] == '1' or name == ARGV[1] then
+                        found = true
+                        queued = queued + (tonumber(lag) or 0)
+                        working = working + (tonumber(pending) or 0)
+                    end
+                end
+                if not found and ARGV[3] == '1' then queued = redis.call('XLEN', KEYS[1]) end
+            end
+            return {queued, working, redis.call('XLEN', KEYS[2])}
+            """, new RedisKey[] { resolved.StreamKey, DeadKey(resolved) },
+            new RedisValue[] { resolved.Group, destination.Role == DestinationRole.Topic ? "1" : "0", destination.Role == DestinationRole.Queue ? "1" : "0", _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() }).ConfigureAwait(false);
+        var values = (RedisResult[])result!;
+        return new MessageDestinationStats { Queued = (long)values[0], Working = (long)values[1], Deadletter = (long)values[2] };
     }
 
     public ValueTask DisposeAsync()
@@ -360,29 +366,9 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         return ValueTask.CompletedTask; // the connection multiplexer is owned by the caller
     }
 
-    private async Task<StreamReceipt> ValidateReceiptAsync(TransportEntry entry)
-    {
-        if (entry.Receipt.TransportState is not StreamReceipt r)
-            throw new ReceiptExpiredException("The transport entry does not carry a Redis Streams receipt.");
-
-        // The owner token guards stale receipts: once the entry is redelivered (reclaimed) or settled, the token in the
-        // meta hash no longer matches, so a late Complete/Abandon from the previous holder is rejected.
-        var current = await _db.HashGetAsync(MetaKey(r), r.EntryId).ConfigureAwait(false);
-        if (current.IsNull || ParseToken(current) != r.Token)
-            throw new ReceiptExpiredException();
-
-        return r;
-    }
-
-    private async Task ClearTrackingAsync(StreamReceipt r)
-    {
-        await _db.SortedSetRemoveAsync(LockKey(r), r.EntryId).ConfigureAwait(false);
-        await _db.HashDeleteAsync(MetaKey(r), r.EntryId).ConfigureAwait(false);
-    }
-
     private async Task EnsureGroupAsync(ResolvedSource resolved)
     {
-        if (!_ensuredGroups.TryAdd(GroupKey(resolved), 0))
+        if (_ensuredGroups.ContainsKey(GroupKey(resolved)))
             return;
 
         try
@@ -393,6 +379,7 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
         {
             // Group already exists — creation is idempotent.
         }
+        _ensuredGroups.TryAdd(GroupKey(resolved), 0);
     }
 
     // The address is structural, so the physical mapping is derived from it directly — topology declarations and the
@@ -408,7 +395,6 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
     private TransportEntry ToEntry(DestinationAddress destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
     {
-        string? messageId = GetField(entry, "id");
         var headers = MessageHeaders.DeserializeFromJson(GetField(entry, "h"));
         Receipt receipt = resolved is null
             ? default
@@ -416,7 +402,9 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
 
         return new TransportEntry
         {
-            Id = String.IsNullOrEmpty(messageId) ? entry.Id.ToString() : messageId,
+            Id = entry.Id.ToString(),
+            ApplicationMessageId = GetField(entry, "id"),
+            ContentType = GetField(entry, "ct"),
             Destination = destination,
             Body = GetBody(entry),
             Headers = headers,
@@ -474,33 +462,21 @@ public sealed class RedisStreamsMessageTransport : IMessageTransport, ISupportsP
             : null;
     }
 
-    private static int ParseDeliveries(RedisValue meta)
-    {
-        if (meta.IsNullOrEmpty)
-            return 0;
-        string s = meta.ToString();
-        int bar = s.IndexOf('|');
-        return bar >= 0 && Int32.TryParse(s.AsSpan(bar + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0;
-    }
-
-    private static string ParseToken(RedisValue meta)
-    {
-        string s = meta.ToString();
-        int bar = s.IndexOf('|');
-        return bar >= 0 ? s[..bar] : s;
-    }
-
     // Streams are namespaced by role ("q:" queue, "t:" topic) because an XADD lands on whichever stream the key names:
     // without the split, a message type both sent and published would share one stream and cross-deliver (a publish
     // consumed as queue work and vice versa). Subscriptions are consumer groups on the topic stream.
-    private RedisKey QueueStreamKey(string name) => $"{_prefix}q:{name}";
-    private RedisKey TopicStreamKey(string name) => $"{_prefix}t:{name}";
+    private static string EncodeKeyPart(string value) => Convert.ToHexString(Encoding.UTF8.GetBytes(value));
+    private RedisKey QueueStreamKey(string name) => $"{_prefix}q:{EncodeKeyPart(name)}";
+    private RedisKey TopicStreamKey(string name) => $"{_prefix}t:{EncodeKeyPart(name)}";
     private bool IsTopicStream(string streamKey) => streamKey.StartsWith($"{_prefix}t:", StringComparison.Ordinal);
-    private static RedisKey DeadKey(RedisKey streamKey) => streamKey.ToString() + ":dead";
-    private static RedisKey LockKey(ResolvedSource r) => $"{r.StreamKey}:lock:{r.Group}";
-    private static RedisKey MetaKey(ResolvedSource r) => $"{r.StreamKey}:meta:{r.Group}";
-    private static RedisKey LockKey(StreamReceipt r) => $"{r.StreamKey}:lock:{r.Group}";
-    private static RedisKey MetaKey(StreamReceipt r) => $"{r.StreamKey}:meta:{r.Group}";
+    private RedisKey DeadKey(ResolvedSource source)
+        => IsTopicStream(source.StreamKey.ToString()) ? $"{source.StreamKey}:dead:{EncodeKeyPart(source.Group)}" : $"{source.StreamKey}:dead";
+    private RedisKey DeadKey(StreamReceipt receipt)
+        => IsTopicStream(receipt.StreamKey) ? $"{receipt.StreamKey}:dead:{EncodeKeyPart(receipt.Group)}" : $"{receipt.StreamKey}:dead";
+    private static RedisKey LockKey(ResolvedSource r) => $"{r.StreamKey}:lock:{EncodeKeyPart(r.Group)}";
+    private static RedisKey MetaKey(ResolvedSource r) => $"{r.StreamKey}:meta:{EncodeKeyPart(r.Group)}";
+    private static RedisKey LockKey(StreamReceipt r) => $"{r.StreamKey}:lock:{EncodeKeyPart(r.Group)}";
+    private static RedisKey MetaKey(StreamReceipt r) => $"{r.StreamKey}:meta:{EncodeKeyPart(r.Group)}";
     private static string GroupKey(ResolvedSource r) => $"{r.StreamKey}|{r.Group}";
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) == 1, this);

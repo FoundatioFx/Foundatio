@@ -58,7 +58,7 @@ using Foundatio.Caching;
 using Foundatio.Messaging;
 
 var cache = new InMemoryCacheClient();
-var messageBus = new InMemoryMessageBus();
+var messageBus = new MessageBus(new InMemoryMessageTransport());
 var locker = new CacheLockProvider(cache, messageBus);
 
 await using var lck = await locker.TryAcquireAsync("my-resource");
@@ -436,7 +436,7 @@ public async Task<IActionResult> ProcessRequest(string userId)
 
 ```csharp
 services.AddSingleton<ICacheClient, InMemoryCacheClient>();
-services.AddSingleton<IMessageBus, InMemoryMessageBus>();
+services.AddFoundatio().Messaging.UseInMemory();
 
 services.AddSingleton<ILockProvider>(sp =>
     new CacheLockProvider(

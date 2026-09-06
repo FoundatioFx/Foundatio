@@ -7,8 +7,8 @@ Foundatio provides in-memory implementations for all core abstractions. These ar
 | Implementation | Interface | Package |
 |----------------|-----------|---------|
 | `InMemoryCacheClient` | `ICacheClient` | Foundatio |
-| `InMemoryQueue<T>` | `IQueue<T>` | Foundatio |
-| `InMemoryMessageBus` | `IMessageBus` | Foundatio |
+| `InMemoryMessageTransport` / `MessageBus` | `IMessageTransport` / `IMessageBus` | Foundatio |
+| `InMemoryJobRuntimeStore` | `IJobRuntimeStore` | Foundatio |
 | `InMemoryFileStorage` | `IFileStorage` | Foundatio |
 | `CacheLockProvider` | `ILockProvider` | Foundatio |
 
@@ -149,145 +149,24 @@ services.AddSingleton<ICacheClient>(sp =>
     }));
 ```
 
-## InMemoryQueue
-
-A thread-safe in-memory queue with retry support and dead letter handling.
-
-### Basic Usage
+## Messaging and durable job contracts
 
 ```csharp
-using Foundatio.Queues;
-
-var queue = new InMemoryQueue<WorkItem>();
-
-// Enqueue items
-await queue.EnqueueAsync(new WorkItem { Id = 1, Data = "Hello" });
-
-// Dequeue and process
-var entry = await queue.DequeueAsync();
-if (entry != null)
-{
-    // Process the item
-    Console.WriteLine(entry.Value.Data);
-
-    // Mark as complete
-    await entry.CompleteAsync();
-}
+services.AddFoundatio()
+    .Messaging.UseInMemory()
+    .Messaging.AddConsumer<WorkItem, WorkItemHandler>()
+    .Messaging.AddSubscriber<OrderCreated, OrderCreatedHandler>("billing")
+    .Jobs.UseInMemory()
+    .Jobs.AddJobType<CleanupJob>("cleanup.v1");
+services.AddMessageConsumers();
+services.AddJobWorker();
 ```
 
-### Configuration Options
+In-memory messaging provides competing queues, named event subscriptions, temporary expiring subscriptions, lease supervision, and non-destructive dead-letter administration. Use `MessageBus` over `InMemoryMessageTransport` for manual construction. It has no native delayed sends; configure a dispatch store and `AddScheduledMessageDispatcher` for delays.
 
-```csharp
-var queue = new InMemoryQueue<WorkItem>(options =>
-{
-    // Queue identifier
-    options.Name = "work-items";
+The job store uses the same claims, retries, cancellation, schedule revisions, pagination, and retention contracts as the Redis provider. All state is lost on process exit. These implementations exercise application behavior without requiring a broker; they do not model a distributed provider's durability or every capability.
 
-    // Work item timeout (for retry)
-    options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-
-    // Retry settings
-    options.Retries = 3;
-    options.RetryDelay = TimeSpan.FromSeconds(30);
-
-    // Processing behaviors
-    options.Behaviors.Add(new DuplicateDetectionQueueBehavior<WorkItem>(cacheClient, loggerFactory));
-
-    // Logger
-    options.LoggerFactory = loggerFactory;
-});
-```
-
-### Processing Patterns
-
-```csharp
-// Continuous processing with handler
-await queue.StartWorkingAsync(async (entry, token) =>
-{
-    await ProcessWorkItemAsync(entry.Value);
-});
-
-// Process until empty
-while (await queue.GetQueueStatsAsync() is { Queued: > 0 })
-{
-    var entry = await queue.DequeueAsync();
-    if (entry is null)
-        break;
-
-    await entry.CompleteAsync();
-}
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new InMemoryQueue<WorkItem>(options =>
-    {
-        options.Name = "work-items";
-        options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-        options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-    }));
-```
-
-## InMemoryMessageBus
-
-A simple in-memory pub/sub message bus for single-process communication.
-
-### Basic Usage
-
-```csharp
-using Foundatio.Messaging;
-
-var messageBus = new InMemoryMessageBus();
-
-// Subscribe to messages
-await messageBus.SubscribeAsync<UserCreatedEvent>(message =>
-{
-    Console.WriteLine($"User created: {message.UserId}");
-});
-
-// Publish messages
-await messageBus.PublishAsync(new UserCreatedEvent { UserId = "123" });
-```
-
-### Configuration Options
-
-```csharp
-var messageBus = new InMemoryMessageBus(options =>
-{
-    options.LoggerFactory = loggerFactory;
-    options.Serializer = serializer;
-});
-```
-
-### Subscription Management
-
-```csharp
-// Subscribe with options
-await messageBus.SubscribeAsync<OrderEvent>(
-    handler: async (message, token) =>
-    {
-        await ProcessOrderAsync(message);
-    },
-    cancellationToken: stoppingToken);
-
-// Type hierarchy subscription
-await messageBus.SubscribeAsync<BaseEvent>(message =>
-{
-    // Receives all events that inherit from BaseEvent
-});
-```
-
-### DI Registration
-
-```csharp
-services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-services.AddSingleton<IMessagePublisher>(sp =>
-    sp.GetRequiredService<IMessageBus>());
-services.AddSingleton<IMessageSubscriber>(sp =>
-    sp.GetRequiredService<IMessageBus>());
-```
+See [Messaging](../messaging.md), [Durable jobs](../jobs.md), and the `Foundatio.Testing` harnesses for executable usage patterns.
 
 ## InMemoryFileStorage
 
@@ -372,7 +251,7 @@ Use `CacheLockProvider` with `InMemoryCacheClient` for in-memory distributed loc
 using Foundatio.Lock;
 
 var cache = new InMemoryCacheClient();
-var messageBus = new InMemoryMessageBus();
+var messageBus = new MessageBus(new InMemoryMessageTransport());
 var locker = new CacheLockProvider(cache, messageBus);
 
 // Acquire a lock
@@ -405,63 +284,22 @@ services.AddSingleton<ILockProvider>(sp =>
         sp.GetRequiredService<IMessageBus>()));
 ```
 
-## Complete In-Memory Setup
-
-### All Services
+## Complete in-memory setup
 
 ```csharp
-public static IServiceCollection AddFoundatioInMemory(
-    this IServiceCollection services)
-{
-    // Cache
-    services.AddSingleton<ICacheClient, InMemoryCacheClient>();
-
-    // Message Bus
-    services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-    services.AddSingleton<IMessagePublisher>(sp =>
-        sp.GetRequiredService<IMessageBus>());
-    services.AddSingleton<IMessageSubscriber>(sp =>
-        sp.GetRequiredService<IMessageBus>());
-
-    // Lock Provider
-    services.AddSingleton<ILockProvider>(sp =>
-        new CacheLockProvider(
-            sp.GetRequiredService<ICacheClient>(),
-            sp.GetRequiredService<IMessageBus>()));
-
-    // File Storage
-    services.AddSingleton<IFileStorage, InMemoryFileStorage>();
-
-    return services;
-}
-
-// With queues
-public static IServiceCollection AddFoundatioQueue<T>(
-    this IServiceCollection services,
-    string name) where T : class
-{
-    services.AddSingleton<IQueue<T>>(sp =>
-        new InMemoryQueue<T>(options =>
-        {
-            options.Name = name;
-            options.LoggerFactory = sp.GetRequiredService<ILoggerFactory>();
-        }));
-
-    return services;
-}
+builder.Services.AddFoundatio()
+    .Caching.UseInMemory()
+    .Storage.UseInMemory()
+    .Locking.UseCache()
+    .Messaging.UseInMemory()
+    .Messaging.AddConsumer<WorkItem, WorkItemHandler>()
+    .Jobs.UseInMemory()
+    .Jobs.AddJobType<CleanupJob>("cleanup.v1");
+builder.Services.AddMessageConsumers();
+builder.Services.AddJobWorker();
 ```
 
-### Usage
-
-```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddFoundatioInMemory();
-builder.Services.AddFoundatioQueue<WorkItem>("work-items");
-builder.Services.AddFoundatioQueue<EmailMessage>("emails");
-
-var app = builder.Build();
-```
+Clients and stores are singletons; handlers/jobs receive a scope for each invocation. Add a scheduler or scheduled-message dispatcher only when this process should run that role.
 
 ## When to Use In-Memory
 

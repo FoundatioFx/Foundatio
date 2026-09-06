@@ -20,7 +20,7 @@ public sealed class ProcessOrderHandler(InstanceInfo instance, ILogger<ProcessOr
 }
 
 /// <summary>
-/// Handles announcements published via <c>bus.PublishAsync</c>. Registered with <c>PerInstance = true</c>, so every
+/// Handles announcements published via <c>bus.PublishAsync</c>. Registered in the durable announcements group; one competing
 /// running replica receives its own copy — without it, the default is once per service (replicas compete).
 /// </summary>
 public sealed class AnnouncementHandler(InstanceInfo instance, ILogger<AnnouncementHandler> logger) : IMessageHandler<Announcement>

@@ -11,6 +11,9 @@ public class RedisJobRuntimeStoreOptions
     /// <summary>Prefix applied to every key this store creates. Useful to isolate environments/runs on a shared Redis.</summary>
     public string KeyPrefix { get; set; } = "fnd:jobs:";
 
+    /// <summary>Maximum retained job records. New jobs are rejected at capacity; existing IDs remain idempotent.</summary>
+    public int MaxJobs { get; set; } = 100000;
+
     /// <summary>Time source (defaults to <see cref="TimeProvider.System"/>).</summary>
     public TimeProvider? TimeProvider { get; set; }
 }

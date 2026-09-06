@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio.Messaging;
 
 namespace Foundatio.Messaging.Testing;
 
@@ -15,7 +14,7 @@ namespace Foundatio.Messaging.Testing;
 /// </summary>
 internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout,
     ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats,
-    ISupportsProvisioning, ITransportInfo
+    ISupportsEphemeralSubscriptions, ITransportInfo
 {
     // A delayed redelivery lives only in the inner transport's timer until it fires — neither queued nor in flight —
     // so idle detection would report quiescent while a retry is pending. Give the timer this long past its due time to
@@ -132,8 +131,16 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         _deadLettered.Enqueue(Record(entry) with { Reason = reason });
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct = default)
-        => _inner.ReceiveDeadLetteredAsync(destination, request, ct);
+    public Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default)
+        => _inner.PeekDeadLetteredAsync(destination, query, cancellationToken);
+    public Task<bool> DeleteDeadLetteredAsync(DestinationAddress destination, string id, CancellationToken cancellationToken = default)
+        => _inner.DeleteDeadLetteredAsync(destination, id, cancellationToken);
+
+    public Task<bool> ReplayDeadLetteredAsync(DestinationAddress source, string id, DestinationAddress target, CancellationToken cancellationToken = default)
+        => _inner.ReplayDeadLetteredAsync(source, id, target, cancellationToken);
+
+    public Task<bool> RenewSubscriptionAsync(DestinationAddress source, TimeSpan lease, CancellationToken cancellationToken = default)
+        => _inner.RenewSubscriptionAsync(source, lease, cancellationToken);
 
     public Task RenewLockAsync(TransportEntry entry, TimeSpan? duration, CancellationToken ct = default)
         => _inner.RenewLockAsync(entry, duration, ct);

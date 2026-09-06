@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Threading.Channels;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
-using Foundatio;
 using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
@@ -65,14 +64,14 @@ public class MessageQueueTests
 
         await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, destination: "custom-work", cancellationToken: cancellationToken);
         var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(first);
+        await first.CompleteAsync(cancellationToken);
         var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
-        Assert.NotNull(first);
         Assert.NotNull(second);
         Assert.Equal("one", first.Message.Data);
         Assert.Equal("two", second.Message.Data);
 
-        await first.CompleteAsync(cancellationToken);
         await second.CompleteAsync(cancellationToken);
     }
 
@@ -143,7 +142,7 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var handled = new AsyncCountdownEvent(1);
 
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((message, _) =>
         {
             Assert.Equal("work", message.Message.Data);
             handled.Signal();
@@ -165,11 +164,11 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var handled = new AsyncCountdownEvent(1);
 
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((message, _) =>
         {
             handled.Signal();
             return Task.CompletedTask; // intentionally does NOT settle the message
-        }, new MessageSubscriptionOptions { AckMode = AckMode.Manual }, cts.Token);
+        }, new MessageConsumerOptions { AckMode = AckMode.Manual }, cts.Token);
 
         await queue.SendAsync(new PreviewWorkItem { Data = "manual" }, cancellationToken: cts.Token);
         await handled.WaitAsync(TimeSpan.FromSeconds(2));
@@ -191,7 +190,7 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var handled = new AsyncCountdownEvent(1);
 
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((message, _) =>
         {
             Assert.Equal("good", message.Message.Data);
             handled.Signal();
@@ -244,7 +243,7 @@ public class MessageQueueTests
         var immediate = await collector.NextAsync(TimeSpan.FromMilliseconds(250), cancellationToken);
         Assert.Null(immediate); // parked in the runtime store, not on the transport
 
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, await processor.DispatchDueAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
 
         var delayed = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
         Assert.NotNull(delayed);
@@ -277,7 +276,7 @@ public class MessageQueueTests
 
         Assert.Equal(1, nativeTransport.SendCount);
         Assert.NotNull(nativeTransport.LastSendOptions?.DeliverAt);
-        Assert.Equal(0, await nativeProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddYears(1), cancellationToken: cancellationToken));
+        Assert.Equal(0, await nativeProcessor.DispatchDueAsync(DateTimeOffset.UtcNow.AddYears(1), cancellationToken: cancellationToken));
 
         // Beyond the transport's maximum: routed through the runtime store instead of being silently truncated.
         var fallbackStore = new InMemoryJobRuntimeStore();
@@ -288,7 +287,7 @@ public class MessageQueueTests
         await fallbackQueue.SendAsync(new PreviewWorkItem { Data = "later" }, new MessageSendOptions { Delay = TimeSpan.FromHours(1) }, cancellationToken);
 
         Assert.Equal(0, fallbackTransport.SendCount);
-        Assert.Equal(1, await fallbackProcessor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, await fallbackProcessor.DispatchDueAsync(DateTimeOffset.UtcNow.AddHours(2), cancellationToken: cancellationToken));
         Assert.Equal(1, fallbackTransport.SendCount);
 
         await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(fallbackQueue, cancellationToken: cancellationToken);
@@ -315,7 +314,7 @@ public class MessageQueueTests
         var secondAttempt = new AsyncCountdownEvent(1);
         int attempts = 0;
 
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((message, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((message, _) =>
         {
             attempts++;
             if (attempts == 1)
@@ -329,7 +328,7 @@ public class MessageQueueTests
             Assert.Equal("retry", message.Message.Data);
             secondAttempt.Signal();
             return Task.CompletedTask;
-        }, new MessageSubscriptionOptions { RedeliveryBackoff = _ => TimeSpan.FromMinutes(1), MaxAttempts = 3 }, cts.Token);
+        }, new MessageConsumerOptions { RedeliveryBackoff = _ => TimeSpan.FromMinutes(1), MaxAttempts = 3 }, cts.Token);
 
         await queue.SendAsync(new PreviewWorkItem { Data = "retry" }, cancellationToken: cts.Token);
         await firstAttempt.WaitAsync(TimeSpan.FromSeconds(2));
@@ -339,7 +338,7 @@ public class MessageQueueTests
         await Task.Delay(250, cancellationToken);
         Assert.Equal(1, attempts);
 
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, await processor.DispatchDueAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
         await secondAttempt.WaitAsync(TimeSpan.FromSeconds(2));
 
     }
@@ -371,7 +370,7 @@ public class MessageQueueTests
         var processor = CreateDispatchProcessor(store, transport);
         var now = DateTimeOffset.UtcNow;
 
-        await queue.SendAsync(new PreviewWorkItem { Data = "loop" }, cancellationToken: cancellationToken);
+        string messageId = await queue.SendAsync(new PreviewWorkItem { Data = "loop" }, cancellationToken: cancellationToken);
         await using var collector = await MessageCollector<PreviewWorkItem>.StartAsync(queue, cancellationToken: cancellationToken);
 
         for (int expectedAttempt = 1; expectedAttempt <= 3; expectedAttempt++)
@@ -380,11 +379,12 @@ public class MessageQueueTests
             Assert.NotNull(received);
             Assert.Equal(expectedAttempt, received.Attempts);
             Assert.Equal("loop", received.Message.Data);
+            Assert.Equal(messageId, received.Id);
 
             if (expectedAttempt < 3)
             {
                 await received.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromMinutes(1) }, cancellationToken);
-                Assert.Equal(1, await processor.RunDueOccurrencesAsync(now.AddMinutes(expectedAttempt * 2), cancellationToken: cancellationToken));
+                Assert.Equal(1, await processor.DispatchDueAsync(now.AddMinutes(expectedAttempt * 2), cancellationToken: cancellationToken));
             }
             else
             {
@@ -439,8 +439,7 @@ public class MessageQueueTests
         services.AddFoundatio()
             .Messaging.ConfigureRouting(r => r
                 .UseDefaultQueue("all-work")
-                .MapTopic("grouped-events", typeof(IGroupedWorkItem))
-                .UseServiceIdentity("billing-service"))
+                .MapTopic("grouped-events", typeof(IGroupedWorkItem)))
             .UseInMemory();
 
         await using var provider = services.BuildServiceProvider();
@@ -461,7 +460,7 @@ public class MessageQueueTests
         var declarations = topology.GetDeclarations();
         Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Queue && d.Address.Name == "all-work");
         Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Topic && d.Address.Name == "grouped-events");
-        Assert.Contains(declarations, d => d.Address.Role == DestinationRole.Subscription && d.Address.Name == "billing-service" && d.Address.Topic == "grouped-events");
+        Assert.DoesNotContain(declarations, d => d.Address.Role == DestinationRole.Subscription);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await topology.ValidateAsync(cancellationToken));
         await topology.EnsureAsync(cancellationToken);
@@ -486,31 +485,13 @@ public class MessageQueueTests
     }
 
     [Fact]
-    public async Task StartConsumerAsync_WithSameKeyAndSameRegistration_SharesTheUnderlyingConsumerAsync()
+    public async Task ConsumeAsync_WithDuplicateRegistration_ThrowsAsync()
     {
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var token = TestContext.Current.CancellationToken;
         await using var queue = new MessageBus(new InMemoryMessageTransport());
-        int handled = 0;
-        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<IMessageContext<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) =>
-        {
-            Interlocked.Increment(ref handled);
-            received.TrySetResult();
-            return Task.CompletedTask;
-        };
-
-        // Registering the same key + handler + options twice is idempotent: both handles refer to the one underlying
-        // consumer, so a sent message is handled exactly once.
-        await using var first = await queue.SubscribeAsync(handler, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
-        await using var second = await queue.SubscribeAsync(handler, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
-
-        Assert.Equal(first.Key, second.Key);
-        Assert.Equal(first.Destination, second.Destination);
-
-        await queue.SendAsync(new PreviewWorkItem { Data = "once" }, cancellationToken: cancellationToken);
-        await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-        await Task.Delay(250, cancellationToken);
-        Assert.Equal(1, Volatile.Read(ref handled));
+        Func<IMessageContext<PreviewWorkItem>, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
+        await using var first = await queue.ConsumeAsync(handler, cancellationToken: token);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => queue.ConsumeAsync(handler, cancellationToken: token));
     }
 
     [Fact]
@@ -519,10 +500,10 @@ public class MessageQueueTests
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var queue = new MessageBus(new InMemoryMessageTransport());
 
-        await using var first = await queue.SubscribeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken);
+        await using var first = await queue.ConsumeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageConsumerOptions { }, cancellationToken);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await queue.SubscribeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Key = "shared" }, cancellationToken));
+            await queue.ConsumeAsync<PreviewWorkItem>((_, _) => Task.CompletedTask, new MessageConsumerOptions { }, cancellationToken));
     }
 
     [Fact]
@@ -540,17 +521,17 @@ public class MessageQueueTests
             new OtherWorkItem { Data = "two" }
         }, cancellationToken: cancellationToken);
 
-        await using var collector = await MessageCollector.StartAsync(queue, routeType: typeof(IGroupedWorkItem), cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector.StartAsync(queue, destination: "grouped-work", cancellationToken: cancellationToken);
         var first = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
+        Assert.NotNull(first);
+        await first.CompleteAsync(cancellationToken);
         var second = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
-        Assert.NotNull(first);
         Assert.NotNull(second);
         Assert.NotEmpty(first.Body.ToArray());
         Assert.Equal(typeof(PreviewWorkItem).FullName, first.MessageType);
         Assert.Equal(typeof(OtherWorkItem).FullName, second.MessageType);
 
-        await first.CompleteAsync(cancellationToken);
         await second.CompleteAsync(cancellationToken);
     }
 
@@ -561,7 +542,15 @@ public class MessageQueueTests
         var routing = new MessageRoutingOptionsBuilder()
             .MapQueue("grouped-work", typeof(IGroupedWorkItem))
             .Build();
-        await using var queue = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Router = new DefaultMessageRouter(routing) });
+        await using var queue = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions
+        {
+            Router = new DefaultMessageRouter(routing),
+            MessageTypes = new MessageTypeRegistry(new[]
+            {
+                new MessageTypeRegistration("preview.v1", typeof(PreviewWorkItem)),
+                new MessageTypeRegistration("other.v1", typeof(OtherWorkItem))
+            })
+        });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
 
@@ -570,7 +559,7 @@ public class MessageQueueTests
 
         // An interface-typed consumer receives the concrete payload (assignable to the interface), not raw bytes —
         // the core resolves the concrete type from the message-type header and deserializes that.
-        await using var consumer = await queue.SubscribeAsync<IGroupedWorkItem>((message, _) =>
+        await using var consumer = await queue.ConsumeAsync<IGroupedWorkItem>((message, _) =>
         {
             string? data = message.Message switch
             {
@@ -606,7 +595,7 @@ public class MessageQueueTests
 
         await queue.SendAsync(new PreviewWorkItem { Data = "global" }, cancellationToken: cancellationToken);
 
-        await using var collector = await MessageCollector.StartAsync(queue, cancellationToken: cancellationToken);
+        await using var collector = await MessageCollector.StartAsync(queue, destination: "all-work", cancellationToken: cancellationToken);
         var received = await collector.NextAsync(TimeSpan.FromSeconds(2), cancellationToken);
 
         Assert.NotNull(received);
@@ -642,15 +631,15 @@ public class MessageQueueTests
         public static async Task<MessageCollector<T>> StartAsync(IMessageBus bus, string? destination = null, CancellationToken cancellationToken = default)
         {
             var collector = new MessageCollector<T>();
-            collector._subscription = await bus.SubscribeAsync<T>((context, _) =>
+            collector._subscription = await bus.ConsumeAsync<T>((context, _) =>
             {
                 collector._received.Writer.TryWrite(context);
                 return Task.CompletedTask;
-            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, Destination = destination }, cancellationToken);
+            }, new MessageConsumerOptions { AckMode = AckMode.Manual, Destination = destination }, cancellationToken);
             return collector;
         }
 
-        public string Destination => _subscription.Destination;
+        public string Destination => _subscription.Source.Name;
 
         public async Task<IMessageContext<T>?> NextAsync(TimeSpan maxWait, CancellationToken cancellationToken = default)
         {
@@ -682,14 +671,14 @@ public class MessageQueueTests
         private readonly Channel<IMessageContext> _received = Channel.CreateUnbounded<IMessageContext>();
         private IMessageSubscription _subscription = null!;
 
-        public static async Task<MessageCollector> StartAsync(IMessageBus bus, Type? routeType = null, string? destination = null, CancellationToken cancellationToken = default)
+        public static async Task<MessageCollector> StartAsync(IMessageBus bus, string? destination = null, CancellationToken cancellationToken = default)
         {
             var collector = new MessageCollector();
-            collector._subscription = await bus.SubscribeAsync((context, _) =>
+            collector._subscription = await bus.ConsumeAsync((context, _) =>
             {
                 collector._received.Writer.TryWrite(context);
                 return Task.CompletedTask;
-            }, new MessageSubscriptionOptions { AckMode = AckMode.Manual, RouteType = routeType, Destination = destination }, cancellationToken);
+            }, new MessageConsumerOptions { AckMode = AckMode.Manual, Destination = destination }, cancellationToken);
             return collector;
         }
 
@@ -729,7 +718,7 @@ public class MessageQueueTests
         var aSignal = new AsyncCountdownEvent(1);
         var bSignal = new AsyncCountdownEvent(1);
 
-        await using var consumerA = await queue.SubscribeAsync<SharedAWorkItem>((message, _) =>
+        await using var consumerA = await queue.ConsumeAsync<SharedAWorkItem>((message, _) =>
         {
             lock (aReceived)
                 aReceived.Add(message.Message.Data);
@@ -737,7 +726,7 @@ public class MessageQueueTests
             return Task.CompletedTask;
         }, cancellationToken: cts.Token);
 
-        await using var consumerB = await queue.SubscribeAsync<SharedBWorkItem>((message, _) =>
+        await using var consumerB = await queue.ConsumeAsync<SharedBWorkItem>((message, _) =>
         {
             lock (bReceived)
                 bReceived.Add(message.Message.Data);
@@ -768,7 +757,7 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(20));
 
         var aSignal = new AsyncCountdownEvent(1);
-        await using var consumerA = await queue.SubscribeAsync<SharedAWorkItem>((_, _) =>
+        await using var consumerA = await queue.ConsumeAsync<SharedAWorkItem>((_, _) =>
         {
             aSignal.Signal();
             return Task.CompletedTask;
@@ -849,11 +838,11 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(15));
         int attempts = 0;
 
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((_, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((_, _) =>
         {
             Interlocked.Increment(ref attempts);
             throw new InvalidOperationException("always fails");
-        }, new MessageSubscriptionOptions { MaxAttempts = 3 }, cts.Token);
+        }, new MessageConsumerOptions { MaxAttempts = 3 }, cts.Token);
 
         await queue.SendAsync(new PreviewWorkItem { Data = "doomed" }, cancellationToken: cts.Token);
 
@@ -880,7 +869,7 @@ public class MessageQueueTests
         cts.CancelAfter(TimeSpan.FromSeconds(20));
 
         int attempts = 0;
-        await using var consumer = await queue.SubscribeAsync<PreviewWorkItem>((_, _) =>
+        await using var consumer = await queue.ConsumeAsync<PreviewWorkItem>((_, _) =>
         {
             Interlocked.Increment(ref attempts);
             throw new InvalidOperationException("always fails");
@@ -935,11 +924,9 @@ public class MessageQueueTests
         Assert.Equal(1, transport.DisposeCount);
     }
 
-    private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
+    private static ScheduledMessageDispatcher CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        return new JobScheduleProcessor(new InMemoryScheduledJobStore(), store, worker, nodeId: "node-a", transport: transport);
+        return new ScheduledMessageDispatcher(store, transport);
     }
 
     [MessageRoute("routed-work")]

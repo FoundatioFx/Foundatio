@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
@@ -95,17 +96,18 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
             throw new ReceiptExpiredException();
 
         var headers = String.IsNullOrEmpty(reason) ? stored.Headers : stored.Headers.ToBuilder().Set(KnownHeaders.DeadLetterReason, reason).Build();
-        dest.Dead.Enqueue(stored with { Headers = headers });
+        dest.Dead[stored.Id] = stored with { Headers = headers };
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default)
     {
         var entries = new List<TransportEntry>();
         if (_destinations.TryGetValue(destination.Key, out var dest))
         {
-            int max = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
-            while (entries.Count < max && dest.Dead.TryDequeue(out var stored))
+            query ??= new DeadLetterQuery();
+            query.Validate();
+            foreach (var stored in dest.Dead.Values.Where(v => query.AfterId is null || StringComparer.Ordinal.Compare(v.Id, query.AfterId) > 0).OrderBy(v => v.Id, StringComparer.Ordinal).Take(query.Limit))
             {
                 entries.Add(new TransportEntry
                 {
@@ -120,6 +122,17 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
         }
 
         return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
+    }
+
+    public Task<bool> DeleteDeadLetteredAsync(DestinationAddress destination, string id, CancellationToken cancellationToken = default)
+        => Task.FromResult(_destinations.TryGetValue(destination.Key, out var dest) && dest.Dead.TryRemove(id, out _));
+
+    public async Task<bool> ReplayDeadLetteredAsync(DestinationAddress source, string id, DestinationAddress target, CancellationToken cancellationToken = default)
+    {
+        if (!_destinations.TryGetValue(source.Key, out var dest) || !dest.Dead.TryGetValue(id, out var stored))
+            return false;
+        await SendAsync(target, [new TransportMessage { Body = stored.Body, Headers = stored.Headers, MessageId = stored.Id }], new TransportSendOptions(), cancellationToken);
+        return dest.Dead.TryRemove(id, out _);
     }
 
     public Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
@@ -160,7 +173,7 @@ internal sealed class BasicQueueTransport : IMessageTransport, ISupportsPull, IS
     private sealed class Destination
     {
         public readonly ConcurrentQueue<StoredEntry> Ready = new();
-        public readonly ConcurrentQueue<StoredEntry> Dead = new();
+        public readonly ConcurrentDictionary<string, StoredEntry> Dead = new();
         public readonly ConcurrentDictionary<string, StoredEntry> InFlight = new(StringComparer.Ordinal);
         public long Enqueued;
         public long Dequeued;

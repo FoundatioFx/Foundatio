@@ -56,7 +56,7 @@ public sealed class LegacyMessageBusAdapter : IMessageBus
 
         // The old bus delivered every published message to every subscriber in every process: per-instance,
         // events only. Auto-ack on return, retry on throw now come from the core policy instead of being swallowed.
-        var options = new MessageSubscriptionOptions { PerInstance = true, Deliveries = MessageDeliveries.Published };
+        var options = new MessageSubscriptionOptions();
 
         var subscription = await _bus.SubscribeAsync<T>((context, token) => handler(context.Message, token), options, cancellationToken).AnyContext();
 

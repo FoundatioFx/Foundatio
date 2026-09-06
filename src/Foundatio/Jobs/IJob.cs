@@ -19,6 +19,16 @@ public interface IJob
     Task<JobResult> RunAsync(JobExecutionContext context);
 }
 
+/// <summary>A job whose required argument contract is checked when it is submitted.</summary>
+public interface IJob<TArgs> : IJob where TArgs : class
+{
+    /// <summary>Executes with the deserialized arguments and the current execution context.</summary>
+    Task<JobResult> RunAsync(TArgs arguments, JobExecutionContext context);
+
+    Task<JobResult> IJob.RunAsync(JobExecutionContext context)
+        => RunAsync(context.GetArguments<TArgs>(), context);
+}
+
 public static class JobExtensions
 {
     /// <summary>
@@ -30,7 +40,7 @@ public static class JobExtensions
         {
             return await job.RunAsync(context).AnyContext();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
         {
             return JobResult.Cancelled;
         }

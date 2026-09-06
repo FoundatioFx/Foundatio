@@ -27,7 +27,7 @@ public static class TestingFoundatioBuilderExtensions
     }
 
     /// <summary>
-    /// Runs jobs over the in-memory runtime with the auto pump disabled, so nothing races the test's manual drive.
+    /// Runs jobs over the in-memory runtime without hosted workers, so tests drive execution explicitly.
     /// Resolve <see cref="JobsTestHarness"/> from the container to enqueue jobs, tick schedules deterministically,
     /// and run work to completion (<see cref="JobsTestHarness.RunAllQueuedAsync"/> /
     /// <see cref="JobsTestHarness.RunDueAsync"/> / <see cref="JobsTestHarness.RunToCompletionAsync"/>).
@@ -41,8 +41,6 @@ public static class TestingFoundatioBuilderExtensions
             sp.GetRequiredService<JobScheduleProcessor>(),
             sp.GetRequiredService<IJobClient>(),
             sp.GetRequiredService<IScheduledJobManager>()));
-        builder.UseInMemory();
-        // The auto-registered pump must never race the harness's manual drive.
-        return builder.ConfigureRuntimePump(options => options.Enabled = false);
+        return builder.UseInMemory();
     }
 }

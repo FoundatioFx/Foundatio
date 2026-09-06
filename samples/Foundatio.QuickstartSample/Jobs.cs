@@ -11,11 +11,10 @@ public sealed record ResizeArgs(string FileName, int Width, int Height);
 /// its typed arguments back with <c>context.GetArguments&lt;ResizeArgs&gt;()</c> and reports progress through the
 /// runtime store as it works.
 /// </summary>
-public sealed class ResizeImageJob(ILogger<ResizeImageJob> logger) : IJob
+public sealed class ResizeImageJob(ILogger<ResizeImageJob> logger) : IJob<ResizeArgs>
 {
-    public async Task<JobResult> RunAsync(JobExecutionContext context)
+    public async Task<JobResult> RunAsync(ResizeArgs args, JobExecutionContext context)
     {
-        var args = context.GetArguments<ResizeArgs>();
         logger.LogInformation("JOB {JobId} started: resizing {FileName} to {Width}x{Height}", context.JobId, args.FileName, args.Width, args.Height);
 
         for (int percent = 25; percent <= 100; percent += 25)
@@ -31,7 +30,7 @@ public sealed class ResizeImageJob(ILogger<ResizeImageJob> logger) : IJob
 
 /// <summary>
 /// A recurring (CRON) job registered with <c>AddCronJob&lt;CleanupJob&gt;("*/1 * * * *")</c> in Program.cs — the
-/// scheduler materializes a durable occurrence every minute and the runtime pump executes it.
+/// scheduler materializes a durable occurrence every minute and the job worker executes it.
 /// </summary>
 public sealed class CleanupJob(ILogger<CleanupJob> logger) : IJob
 {

@@ -10,29 +10,33 @@ namespace Foundatio.Tests.Jobs;
 
 public class ScheduledJobManagerTests
 {
+    private static JobTypeRegistry CreateJobRegistry() => new(typeof(ScheduledJobManagerTests).GetNestedTypes(System.Reflection.BindingFlags.NonPublic)
+        .Where(t => t.IsClass && !t.IsAbstract && typeof(IJob).IsAssignableFrom(t))
+        .Select(t => new JobTypeRegistration(t.FullName!, t)));
+
     [Fact]
     public async Task ScheduleAsync_AddsAndReplacesByNameAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, _, _) = CreateRuntime();
+        var (manager, _, _, _) = CreateRuntime();
 
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob) }, cancellationToken);
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob).FullName! }, cancellationToken);
         Assert.Equal("0 3 * * *", (await manager.GetScheduleAsync("nightly", cancellationToken))!.Cron);
 
         // Re-scheduling the same name replaces the whole definition (runtime add/update, no restart).
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 4 * * *", JobType = typeof(ProbeJob), MaxAttempts = 7 }, cancellationToken);
+        await manager.ScheduleAsync((await manager.GetScheduleAsync("nightly", cancellationToken))! with { Cron = "0 4 * * *", MaxAttempts = 7 }, cancellationToken);
         var updated = await manager.GetScheduleAsync("nightly", cancellationToken);
         Assert.Equal("0 4 * * *", updated!.Cron);
         Assert.Equal(7, updated.MaxAttempts);
-        Assert.Single(await manager.GetSchedulesAsync(cancellationToken));
+        Assert.Single(await manager.GetSchedulesAsync(cancellationToken: cancellationToken));
     }
 
     [Fact]
     public async Task RescheduleAsync_ChangesCronAndValidatesAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, _, _) = CreateRuntime();
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob), MaxAttempts = 5 }, cancellationToken);
+        var (manager, _, _, _) = CreateRuntime();
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = typeof(ProbeJob).FullName!, MaxAttempts = 5 }, cancellationToken);
 
         Assert.True(await manager.RescheduleAsync("nightly", "*/5 * * * *", cancellationToken));
         var updated = await manager.GetScheduleAsync("nightly", cancellationToken);
@@ -48,8 +52,8 @@ public class ScheduledJobManagerTests
     public async Task SetEnabledAsync_StopsAndResumesOccurrenceMaterializationAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, processor, _) = CreateRuntime();
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "everyminute", Cron = "* * * * *", JobType = typeof(ProbeJob) }, cancellationToken);
+        var (manager, processor, _, _) = CreateRuntime();
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "everyminute", Cron = "* * * * *", JobType = typeof(ProbeJob).FullName! }, cancellationToken);
 
         var tick = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
@@ -66,22 +70,16 @@ public class ScheduledJobManagerTests
     public async Task TriggerAsync_RunsImmediatelyWithArgumentsAndReturnsHandleAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, processor, probe) = CreateRuntime();
+        var (manager, _, worker, probe) = CreateRuntime();
 
         // A schedule that would never fire on its own within the test (yearly), with typed arguments.
-        await manager.ScheduleAsync(new ScheduledJobDefinition
-        {
-            Name = "yearly-report",
-            Cron = "0 0 1 1 *",
-            JobType = typeof(ProbeJob),
-            Arguments = new ReportArgs { Region = "emea" }
-        }, cancellationToken);
+        await manager.ScheduleAsync<TypedProbeJob, ReportArgs>("0 0 1 1 *", new ReportArgs { Region = "emea" }, o => o.Name = "yearly-report", cancellationToken);
 
         var handle = await manager.TriggerAsync("yearly-report", cancellationToken);
         Assert.StartsWith("yearly-report:manual:", handle.JobId);
 
         // The trigger is durable: the pump's normal drain claims and runs it.
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow, cancellationToken: cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
         Assert.Equal("emea", probe.LastRegion);
 
         var state = await handle.GetStateAsync(cancellationToken);
@@ -89,7 +87,7 @@ public class ScheduledJobManagerTests
 
         // A second trigger runs again (manual occurrences never dedupe).
         await manager.TriggerAsync("yearly-report", cancellationToken);
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow, cancellationToken: cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
         Assert.Equal(2, probe.RunCount);
     }
 
@@ -97,14 +95,14 @@ public class ScheduledJobManagerTests
     public async Task GenericOverloads_ResolveTheTypeDefaultNameAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, processor, probe) = CreateRuntime();
+        var (manager, _, worker, probe) = CreateRuntime();
 
         // Registered the way AddCronJob<TJob> does when no explicit name is given: the type's default name.
         await manager.ScheduleAsync(new ScheduledJobDefinition
         {
             Name = ScheduledJobDefinition.DefaultNameFor(typeof(ProbeJob)),
             Cron = "0 0 1 1 *",
-            JobType = typeof(ProbeJob)
+            JobType = typeof(ProbeJob).FullName!
         }, cancellationToken);
 
         var found = await manager.GetScheduleAsync<ProbeJob>(cancellationToken);
@@ -120,7 +118,7 @@ public class ScheduledJobManagerTests
 
         var handle = await manager.TriggerAsync<ProbeJob>(cancellationToken);
         Assert.StartsWith($"{nameof(ProbeJob)}:manual:", handle.JobId);
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow, cancellationToken: cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
         Assert.Equal(1, probe.RunCount);
         Assert.Equal(JobStatus.Completed, (await handle.GetStateAsync(cancellationToken))!.Status);
 
@@ -132,27 +130,36 @@ public class ScheduledJobManagerTests
     public async Task TriggerAsync_UnknownOrDisabled_ThrowsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        var (manager, _, _) = CreateRuntime();
+        var (manager, _, _, _) = CreateRuntime();
 
         var notFound = await Assert.ThrowsAsync<ScheduledJobNotFoundException>(() => manager.TriggerAsync("unknown", cancellationToken));
         Assert.Equal("unknown", notFound.Name);
 
-        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "off", Cron = "* * * * *", JobType = typeof(ProbeJob), Enabled = false }, cancellationToken);
+        await manager.ScheduleAsync(new ScheduledJobDefinition { Name = "off", Cron = "* * * * *", JobType = typeof(ProbeJob).FullName!, Enabled = false }, cancellationToken);
         var ex = await Assert.ThrowsAsync<ScheduledJobDisabledException>(() => manager.TriggerAsync("off", cancellationToken));
         Assert.Contains("disabled", ex.Message);
         Assert.Equal("off", ex.Name);
     }
 
-    private static (IScheduledJobManager Manager, JobScheduleProcessor Processor, RegionProbe Probe) CreateRuntime()
+    private static (IScheduledJobManager Manager, JobScheduleProcessor Processor, IJobWorker Worker, RegionProbe Probe) CreateRuntime()
     {
         var store = new InMemoryJobRuntimeStore();
         var scheduler = new InMemoryScheduledJobStore();
         var probe = new RegionProbe();
         var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
         var manager = new ScheduledJobManager(scheduler, store);
-        return (manager, processor, probe);
+        return (manager, new JobScheduleProcessor(scheduler, store), worker, probe);
+    }
+
+    private sealed class TypedProbeJob(RegionProbe probe) : IJob<ReportArgs>
+    {
+        public Task<JobResult> RunAsync(ReportArgs arguments, JobExecutionContext context)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+            probe.Record(arguments.Region);
+            return Task.FromResult(JobResult.Success);
+        }
     }
 
     private sealed class ReportArgs

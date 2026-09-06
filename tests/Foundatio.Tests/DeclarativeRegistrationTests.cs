@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Jobs;
+using Foundatio.Extensions.Hosting.Messaging;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +17,18 @@ namespace Foundatio.Tests;
 public class DeclarativeRegistrationTests
 {
     [Fact]
-    public async Task AddHandler_SendGoesToOneHandlerAndPublishReachesSubscriptionAsync()
+    public async Task RegisteringClientsAndHandlers_DoesNotStartConsumersAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddFoundatio().Messaging.UseInMemory()
+            .Messaging.AddConsumer<HandledOrder>((_, _) => Task.CompletedTask);
+        await using var provider = services.BuildServiceProvider();
+        Assert.Empty(provider.GetServices<IHostedService>());
+        Assert.NotNull(provider.GetRequiredService<IMessageBus>());
+    }
+
+    [Fact]
+    public async Task ExplicitConsumersAndSubscribers_DeliverTheirRespectivePatternsAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var probe = new HandlerProbe();
@@ -25,14 +38,16 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddHandler<HandledOrder, OrderHandler>()                                       // class handler
-            .Messaging.AddHandler<HandledTask>((context, _) => { probe.Record($"task:{context.Message.Id}"); return Task.CompletedTask; }); // delegate handler
+            .Messaging.AddConsumer<HandledOrder, OrderHandler>()
+            .Messaging.AddSubscriber<HandledOrder, OrderHandler>("orders")                                       // class handler
+            .Messaging.AddConsumer<HandledTask>((context, _) => { probe.Record($"task:{context.Message.Id}"); return Task.CompletedTask; }); // delegate handler
 
+        services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         // Auto-registered: startup topology, ONE handler host driving every handler, and the misconfiguration validator.
-        Assert.Equal(3, hosted.Count);
-        Assert.Single(hosted.OfType<MessageHandlerHostedService>());
+        Assert.Equal(2, hosted.Count);
+        Assert.Single(hosted, service => service.GetType().Name == "MessageHandlerHostedService");
 
         foreach (var service in hosted)
             await service.StartAsync(cancellationToken);
@@ -41,7 +56,7 @@ public class DeclarativeRegistrationTests
         {
             var bus = provider.GetRequiredService<IMessageBus>();
 
-            // The caller's verb decides delivery; the same registration serves both.
+            // Queue consumers and event subscribers are registered separately.
             await bus.SendAsync(new HandledOrder { Id = "sent" }, cancellationToken: cancellationToken);
             await bus.PublishAsync(new HandledOrder { Id = "published" }, cancellationToken: cancellationToken);
             await bus.SendAsync(new HandledTask { Id = "t1" }, cancellationToken: cancellationToken);
@@ -63,7 +78,7 @@ public class DeclarativeRegistrationTests
     }
 
     [Fact]
-    public async Task AddHandler_PublishIsOncePerServiceUnlessPerInstanceAsync()
+    public async Task AddSubscriber_NamedSubscriptionsCompeteAndTemporarySubscriptionsBroadcastAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var transport = new InMemoryMessageTransport();
@@ -103,7 +118,7 @@ public class DeclarativeRegistrationTests
     }
 
     [Fact]
-    public async Task AddHandler_TwoHandlerClassesForOneType_EachGetsPublishedAndSendReachesOneAsync()
+    public async Task AddSubscriber_IndependentSubscriptionsDoNotCompeteWithQueueConsumerAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var probe = new HandlerProbe();
@@ -113,9 +128,11 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddHandler<HandledEvent, EventHandler>()
-            .Messaging.AddHandler<HandledEvent, SecondEventHandler>();
+            .Messaging.AddSubscriber<HandledEvent, EventHandler>("events")
+            .Messaging.AddSubscriber<HandledEvent, SecondEventHandler>("second-events")
+            .Messaging.AddConsumer<HandledEvent, EventHandler>();
 
+        services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         foreach (var service in hosted)
@@ -155,11 +172,13 @@ public class DeclarativeRegistrationTests
             .Jobs.UseInMemory()
             .Jobs.AddCronJob<CronProbeJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode);
 
+        services.AddJobScheduler();
+        services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
 
         // The builder records the schedule as a DI singleton with the requested scope and a type-derived name.
         var definition = Assert.Single(provider.GetServices<ScheduledJobDefinition>());
-        Assert.Equal(typeof(CronProbeJob), definition.JobType);
+        Assert.Equal(typeof(CronProbeJob).FullName, definition.JobType);
         Assert.Equal(ScheduledJobScope.PerNode, definition.Scope);
         Assert.Equal(nameof(CronProbeJob), definition.Name);
 
@@ -175,7 +194,7 @@ public class DeclarativeRegistrationTests
             long deadline = Environment.TickCount64 + 10_000;
             while (Environment.TickCount64 < deadline)
             {
-                scheduled = (await scheduler.GetSchedulesAsync(cancellationToken)).FirstOrDefault(s => s.Name == nameof(CronProbeJob));
+                scheduled = (await scheduler.GetSchedulesAsync(cancellationToken: cancellationToken)).FirstOrDefault(s => s.Name == nameof(CronProbeJob));
                 if (scheduled is not null)
                     break;
                 await Task.Delay(25, cancellationToken);
@@ -198,9 +217,10 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseTransport(transport)
-            .Messaging.AddHandler<HandledEvent, EventHandler>()
-            .Messaging.AddHandler<HandledBroadcast, BroadcastHandler>(o => o.PerInstance = true);
+            .Messaging.AddSubscriber<HandledEvent, EventHandler>("events")
+            .Messaging.AddTemporarySubscriber<HandledBroadcast, BroadcastHandler>();
 
+        services.AddMessageConsumers();
         var provider = services.BuildServiceProvider();
         return (provider, provider.GetServices<IHostedService>().ToList());
     }

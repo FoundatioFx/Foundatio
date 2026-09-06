@@ -25,6 +25,96 @@ public class RedisStreamsTransportIntegrationTests
     private static string NewPrefix() => $"fnd-it:{Guid.NewGuid():N}:";
 
     [Fact]
+    public async Task ReceiveAsync_MissingQueue_DoesNotProvisionAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = CreateTransport(connection, NewPrefix());
+        var queue = DestinationAddress.ForQueue("missing");
+        await Assert.ThrowsAnyAsync<Exception>(() => transport.ReceiveAsync(queue, new ReceiveRequest(), token));
+        Assert.False(await transport.ExistsAsync(queue, token));
+    }
+
+    [Fact]
+    public async Task SendAsync_AtCapacity_PreservesUnreadWorkAndResumesAfterSettlementAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = new RedisStreamsMessageTransport(new RedisStreamsMessageTransportOptions
+        {
+            ConnectionMultiplexer = connection,
+            KeyPrefix = NewPrefix(),
+            MaxPendingMessages = 1
+        });
+        var topic = DestinationAddress.ForTopic("bounded");
+        var first = DestinationAddress.ForSubscription("bounded", "first");
+        var second = DestinationAddress.ForSubscription("bounded", "second");
+        await transport.EnsureAsync([new DestinationDeclaration { Address = first }, new DestinationDeclaration { Address = second }], token);
+        await transport.SendAsync(topic, [Message("one")], new TransportSendOptions(), token);
+        await Assert.ThrowsAsync<TransportSendException>(() => transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token));
+        await transport.CompleteAsync(Assert.Single(await transport.ReceiveAsync(first, new ReceiveRequest(), token)), token);
+        await Assert.ThrowsAsync<TransportSendException>(() => transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token));
+        var held = Assert.Single(await transport.ReceiveAsync(second, new ReceiveRequest(), token));
+        Assert.Equal("one", System.Text.Encoding.UTF8.GetString(held.Body.Span));
+        await transport.CompleteAsync(held, token);
+        await transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token);
+        Assert.Equal("two", System.Text.Encoding.UTF8.GetString(Assert.Single(await transport.ReceiveAsync(first, new ReceiveRequest(), token)).Body.Span));
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_RecoversPendingEntryMissingLeaseMetadataAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        string prefix = NewPrefix();
+        await using var transport = new RedisStreamsMessageTransport(new RedisStreamsMessageTransportOptions
+        {
+            ConnectionMultiplexer = connection,
+            KeyPrefix = prefix,
+            DefaultVisibilityTimeout = TimeSpan.FromMilliseconds(10)
+        });
+        var source = DestinationAddress.ForQueue("orphan");
+        await transport.EnsureAsync([new DestinationDeclaration { Address = source }], token);
+        await transport.SendAsync(source, [Message("orphan")], new TransportSendOptions(), token);
+        var pending = await connection.GetDatabase().StreamReadGroupAsync(prefix + "q:" + Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes("orphan")), "foundatio", "crashed", ">", 1);
+        Assert.Single(pending);
+        await Task.Delay(30, token);
+
+        var recovered = await transport.ReceiveAsync(source, new ReceiveRequest { MaxMessages = 1 }, TimeSpan.FromMinutes(1), token);
+        Assert.Equal(pending[0].Id.ToString(), Assert.Single(recovered).Id);
+        await transport.CompleteAsync(recovered[0], token);
+    }
+
+    [Fact]
+    public async Task Settlement_AfterLeaseExpires_RejectsEveryStaleMutationAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        await using var transport = new RedisStreamsMessageTransport(new RedisStreamsMessageTransportOptions
+        {
+            ConnectionMultiplexer = connection,
+            KeyPrefix = NewPrefix(),
+            TimeProvider = time
+        });
+        var source = DestinationAddress.ForQueue("expired");
+        await transport.EnsureAsync([new DestinationDeclaration { Address = source }], token);
+        await transport.SendAsync(source, [Message("expired")], new TransportSendOptions(), token);
+        var entry = Assert.Single(await transport.ReceiveAsync(source, new ReceiveRequest(), TimeSpan.FromSeconds(1), token));
+        time.Advance(TimeSpan.FromSeconds(2));
+
+        await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.CompleteAsync(entry, token));
+        await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.AbandonAsync(entry, token));
+        await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.RenewLockAsync(entry, TimeSpan.FromMinutes(1), token));
+        await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.DeadLetterAsync(entry, "stale", token));
+        Assert.Equal(entry.Id, Assert.Single(await transport.ReceiveAsync(source, new ReceiveRequest(), TimeSpan.FromMinutes(1), token)).Id);
+    }
+
+    [Fact]
     public async Task CrashedConsumer_LeaseLapses_AnotherInstanceReclaimsAndCompletesAsync()
     {
         if (RedisTestConnection.Multiplexer is not { } connection)
@@ -80,7 +170,7 @@ public class RedisStreamsTransportIntegrationTests
         // core's retry machinery works unchanged over Streams.
         int retryAttempts = 0;
         var succeeded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var retryConsumer = await queue.SubscribeAsync<RetryItem>((message, _) =>
+        await using var retryConsumer = await queue.ConsumeAsync<RetryItem>((message, _) =>
         {
             int attempt = Interlocked.Increment(ref retryAttempts);
             if (attempt == 1)
@@ -89,12 +179,12 @@ public class RedisStreamsTransportIntegrationTests
             Assert.Equal(2, message.Attempts);
             succeeded.TrySetResult();
             return Task.CompletedTask;
-        }, new MessageSubscriptionOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(200) }, ct);
+        }, new MessageConsumerOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(200) }, ct);
 
         // (b) A handler that always throws is dead-lettered once its attempt budget is spent.
-        await using var poisonConsumer = await queue.SubscribeAsync<PoisonItem>((_, _) =>
+        await using var poisonConsumer = await queue.ConsumeAsync<PoisonItem>((_, _) =>
             throw new InvalidOperationException("always fails"),
-            new MessageSubscriptionOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(100) }, ct);
+            new MessageConsumerOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(100) }, ct);
 
         await queue.SendAsync(new RetryItem { Data = "retry" }, cancellationToken: ct);
         await queue.SendAsync(new PoisonItem { Data = "poison" }, cancellationToken: ct);
@@ -114,7 +204,7 @@ public class RedisStreamsTransportIntegrationTests
         Assert.Equal(0, stats.Working);
 
         // The poison payload is inspectable in the dead-letter stream with a reason recorded by the core.
-        var deadLettered = Assert.Single(await transport.ReceiveDeadLetteredAsync(DestinationAddress.ForQueue("streams-poison"), new ReceiveRequest { MaxMessages = 10 }, ct));
+        var deadLettered = Assert.Single(await transport.PeekDeadLetteredAsync(DestinationAddress.ForQueue("streams-poison"), new DeadLetterQuery { Limit = 10 }, ct));
         Assert.NotEmpty(deadLettered.Headers[KnownHeaders.DeadLetterReason]);
     }
 
@@ -176,13 +266,16 @@ public class RedisStreamsTransportIntegrationTests
         var published = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         int deliveries = 0;
 
+        await using var consumer = await bus.ConsumeAsync<DualItem>((message, _) =>
+        {
+            Interlocked.Increment(ref deliveries);
+            sent.TrySetResult(message.Message.Data ?? "");
+            return Task.CompletedTask;
+        }, cancellationToken: ct);
         await using var subscription = await bus.SubscribeAsync<DualItem>((message, _) =>
         {
             Interlocked.Increment(ref deliveries);
-            if (message.Message.Data == "for-one")
-                sent.TrySetResult(message.Message.Data);
-            else
-                published.TrySetResult(message.Message.Data ?? "");
+            published.TrySetResult(message.Message.Data ?? "");
             return Task.CompletedTask;
         }, cancellationToken: ct);
 

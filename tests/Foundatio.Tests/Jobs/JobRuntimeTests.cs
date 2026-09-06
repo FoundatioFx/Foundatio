@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -10,13 +11,87 @@ namespace Foundatio.Tests.Jobs;
 
 public class JobRuntimeTests
 {
+    private static JobTypeRegistry CreateJobRegistry() => new(typeof(JobRuntimeTests).GetNestedTypes(System.Reflection.BindingFlags.NonPublic)
+        .Where(t => t.IsClass && !t.IsAbstract && typeof(IJob).IsAssignableFrom(t))
+        .Select(t => new JobTypeRegistration(t.FullName!, t)));
+
+    [Fact]
+    public async Task CreateIfAbsentAsync_AtCapacity_PreservesExistingWorkAndRejectsNewWorkAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore(maxJobs: 1);
+        var state = new JobState { JobId = "one", Name = "work" };
+        await store.CreateIfAbsentAsync(state, token);
+        await store.CreateIfAbsentAsync(state, token);
+        await Assert.ThrowsAsync<JobException>(() => store.CreateIfAbsentAsync(state with { JobId = "two" }, token));
+        Assert.Equal("one", Assert.Single(await store.QueryAsync(new JobQuery(), token)).JobId);
+    }
+
+    [Fact]
+    public async Task RequestCancellationAsync_BeforeClaim_PreventsExecutionAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var probe = new JobRuntimeProbe();
+        await using var provider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
+        var client = new JobClient(store);
+        var handle = await client.EnqueueAsync<SuccessfulTrackedJob>(cancellationToken: token);
+        await handle.RequestCancellationAsync(token);
+        var worker = new JobWorker(store, provider, new JobWorkerOptions { JobTypes = CreateJobRegistry() });
+        Assert.False(await worker.RunAsync(handle.JobId, token));
+        var state = await handle.GetStateAsync(token);
+        Assert.Equal(JobStatus.Cancelled, state!.Status);
+        Assert.Equal(0, state.Attempt);
+    }
+
+    [Fact]
+    public async Task RunAsync_HostStops_LeavesUnfinishedWorkQueuedAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var provider = new ServiceCollection().AddSingleton(started).BuildServiceProvider();
+        var client = new JobClient(store);
+        var handle = await client.EnqueueAsync<InterruptedJob>(cancellationToken: token);
+        var worker = new JobWorker(store, provider, new JobWorkerOptions { JobTypes = CreateJobRegistry() });
+        using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var run = worker.RunAsync(handle.JobId, shutdown.Token);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        await shutdown.CancelAsync();
+        await run.WaitAsync(TimeSpan.FromSeconds(5), token);
+        var state = await handle.GetStateAsync(token);
+        Assert.Equal(JobStatus.Queued, state!.Status);
+        Assert.Null(state.CompletedUtc);
+        Assert.False(state.CancellationRequested);
+    }
+
+    private sealed class InterruptedJob(TaskCompletionSource started) : IJob
+    {
+        public async Task<JobResult> RunAsync(JobExecutionContext context)
+        {
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, context.CancellationToken);
+            return JobResult.Success;
+        }
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_TypedJobWithoutArguments_RejectsBeforePersistingAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var store = new InMemoryJobRuntimeStore();
+        var client = new JobClient(store);
+        await Assert.ThrowsAsync<ArgumentException>(() => client.EnqueueAsync<ArgsConsumingJob>(cancellationToken: token));
+        Assert.Empty(await store.QueryAsync(new JobQuery(), token));
+    }
+
     [Fact]
     public async Task RunAsync_WithExecutionContext_ReportsProgressAndIdentityAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var store = new InMemoryJobRuntimeStore();
         await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "ctx-node");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "ctx-node", JobTypes = CreateJobRegistry() });
 
         await store.CreateIfAbsentAsync(new JobState
         {
@@ -37,58 +112,36 @@ public class JobRuntimeTests
     }
 
     [Fact]
-    public async Task RecoverStaleAsync_ReclaimsExpiredProcessingJobsAsync()
+    public async Task RunQueuedAsync_RecoversExpiredAdHocAndScheduledJobsAsync()
     {
-        var cancellationToken = TestContext.Current.CancellationToken;
+        var token = TestContext.Current.CancellationToken;
         var store = new InMemoryJobRuntimeStore();
-        await using var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "recovery-node");
-
+        var probe = new JobRuntimeProbe();
+        await using var provider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
+        using var worker = new JobWorker(store, provider, new JobWorkerOptions { JobTypes = CreateJobRegistry() });
         var expired = DateTimeOffset.UtcNow.AddMinutes(-5);
+        foreach (var id in new[] { "ad-hoc", "scheduled", "exhausted", "healthy" })
+        {
+            await store.CreateIfAbsentAsync(new JobState
+            {
+                JobId = id,
+                Name = "recovery",
+                JobType = typeof(SuccessfulTrackedJob).FullName,
+                Status = JobStatus.Processing,
+                NodeId = "previous-worker",
+                ClaimToken = "previous-claim",
+                LeaseExpiresUtc = id == "healthy" ? DateTimeOffset.UtcNow.AddMinutes(5) : expired,
+                Attempt = id == "exhausted" ? 3 : 1,
+                ScheduledForUtc = id == "scheduled" ? expired : null
+            }, token);
+        }
 
-        // A crashed job with attempts remaining -> re-queued.
-        await store.CreateIfAbsentAsync(new JobState { JobId = "retry-me", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 1 }, cancellationToken);
-        // A crashed job that exhausted its attempts -> dead-lettered.
-        await store.CreateIfAbsentAsync(new JobState { JobId = "give-up", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 3 }, cancellationToken);
-        // A healthy job whose lease is still valid -> untouched.
-        await store.CreateIfAbsentAsync(new JobState { JobId = "alive", Name = "j", Status = JobStatus.Processing, NodeId = "live-node", LeaseExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(5), Attempt = 1 }, cancellationToken);
-        // A CRON occurrence (ScheduledForUtc set) with an expired lease -> NOT reclaimed here; the scheduler owns it.
-        await store.CreateIfAbsentAsync(new JobState { JobId = "occurrence", Name = "j", Status = JobStatus.Processing, NodeId = "dead-node", LeaseExpiresUtc = expired, Attempt = 1, ScheduledForUtc = expired }, cancellationToken);
-
-        int recovered = await worker.RecoverStaleAsync(maxAttempts: 3, cancellationToken: cancellationToken);
-
-        Assert.Equal(2, recovered);
-
-        var retried = await store.GetAsync("retry-me", cancellationToken);
-        Assert.Equal(JobStatus.Queued, retried!.Status);
-        Assert.Null(retried.NodeId);
-        Assert.Null(retried.LeaseExpiresUtc);
-
-        Assert.Equal(JobStatus.DeadLettered, (await store.GetAsync("give-up", cancellationToken))!.Status);
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("alive", cancellationToken))!.Status);
-        // The CRON occurrence is left for the scheduler's own recovery, not reclaimed as a plain job.
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("occurrence", cancellationToken))!.Status);
-    }
-
-    [Fact]
-    public async Task TryReclaimExpiredAsync_GuardsAgainstOwnerRenewAndForeignNodeAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var store = new InMemoryJobRuntimeStore();
-        var now = DateTimeOffset.UtcNow;
-
-        await store.CreateIfAbsentAsync(new JobState { JobId = "expired", Name = "j", Status = JobStatus.Processing, NodeId = "owner", LeaseExpiresUtc = now.AddMinutes(-1), Attempt = 1 }, cancellationToken);
-        await store.CreateIfAbsentAsync(new JobState { JobId = "renewed", Name = "j", Status = JobStatus.Processing, NodeId = "owner", LeaseExpiresUtc = now.AddMinutes(5), Attempt = 1 }, cancellationToken);
-
-        // Wrong owner -> rejected (another node already reclaimed/re-ran it).
-        Assert.False(await store.TryReclaimExpiredAsync("expired", now, "different-node", JobStatus.Queued, cancellationToken: cancellationToken));
-        // Owner renewed its lease (no longer expired) -> rejected, so a live worker is never yanked out from under itself.
-        Assert.False(await store.TryReclaimExpiredAsync("renewed", now, "owner", JobStatus.Queued, cancellationToken: cancellationToken));
-        // Still owned by the presumed-dead node and still expired -> reclaimed.
-        Assert.True(await store.TryReclaimExpiredAsync("expired", now, "owner", JobStatus.Queued, cancellationToken: cancellationToken));
-
-        Assert.Equal(JobStatus.Queued, (await store.GetAsync("expired", cancellationToken))!.Status);
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("renewed", cancellationToken))!.Status);
+        Assert.Equal(2, await worker.RunQueuedAsync(cancellationToken: token));
+        Assert.Equal(2, probe.RunCount);
+        Assert.Equal(JobStatus.Completed, (await store.GetAsync("ad-hoc", token))!.Status);
+        Assert.Equal(JobStatus.Completed, (await store.GetAsync("scheduled", token))!.Status);
+        Assert.Equal(JobStatus.Failed, (await store.GetAsync("exhausted", token))!.Status);
+        Assert.Equal(JobStatus.Processing, (await store.GetAsync("healthy", token))!.Status);
     }
 
     [Fact]
@@ -118,56 +171,6 @@ public class JobRuntimeTests
         Assert.Equal("first", state.Name);
         Assert.Equal(JobStatus.Queued, state.Status);
         Assert.Null(state.Error);
-    }
-
-    [Fact]
-    public async Task TryTransitionAsync_WithExpectedNodeId_RejectsStaleOwnerAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var store = new InMemoryJobRuntimeStore();
-
-        await store.CreateIfAbsentAsync(new JobState { JobId = "job-1", Name = "test", Status = JobStatus.Queued }, cancellationToken);
-
-        // node-a claims and moves to Processing.
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Queued, JobStatus.Processing, new JobStatePatch { NodeId = "node-a" }, cancellationToken: cancellationToken));
-
-        // Its lease lapses and node-b reclaims (re-queue, then claim); node-a is no longer the owner.
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Queued, new JobStatePatch { ClearNodeId = true }, cancellationToken: cancellationToken));
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Queued, JobStatus.Processing, new JobStatePatch { NodeId = "node-b" }, cancellationToken: cancellationToken));
-
-        // Stale node-a must NOT be able to complete the job it no longer owns (would otherwise stomp node-b's run).
-        Assert.False(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, patch: null, expectedNodeId: "node-a", cancellationToken: cancellationToken));
-
-        // The current owner (node-b) can.
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, patch: null, expectedNodeId: "node-b", cancellationToken: cancellationToken));
-
-        var state = await store.GetAsync("job-1", cancellationToken);
-        Assert.NotNull(state);
-        Assert.Equal(JobStatus.Completed, state.Status);
-    }
-
-    [Fact]
-    public async Task TryClaimAsync_WhenLeaseIsHeldByAnotherNode_ReturnsFalseUntilLeaseExpiresAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var store = new InMemoryJobRuntimeStore();
-
-        await store.CreateIfAbsentAsync(new JobState
-        {
-            JobId = "job-1",
-            Name = "test",
-            Status = JobStatus.Queued
-        }, cancellationToken);
-
-        Assert.True(await store.TryClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(1), cancellationToken));
-        Assert.False(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(1), cancellationToken));
-        Assert.True(await store.ReleaseClaimAsync("job-1", "node-a", cancellationToken));
-        Assert.True(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(1), cancellationToken));
-
-        var state = await store.GetAsync("job-1", cancellationToken);
-        Assert.NotNull(state);
-        Assert.Equal("node-b", state.NodeId);
-        Assert.NotNull(state.LeaseExpiresUtc);
     }
 
     [Fact]
@@ -228,7 +231,7 @@ public class JobRuntimeTests
             .AddSingleton(probe)
             .BuildServiceProvider();
         var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
 
         JobHandle handle = await client.EnqueueAsync<SuccessfulTrackedJob>(new JobRequestOptions { JobId = "job-1" }, cancellationToken);
         Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
@@ -256,7 +259,7 @@ public class JobRuntimeTests
             .AddSingleton(probe)
             .BuildServiceProvider();
         var client = new JobClient(store, jobTypes: registry);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", jobTypes: registry);
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = registry });
 
         JobHandle handle = await client.EnqueueAsync<SuccessfulTrackedJob>(new JobRequestOptions { JobId = "job-registered" }, cancellationToken);
         var queued = await handle.GetStateAsync(cancellationToken);
@@ -282,7 +285,7 @@ public class JobRuntimeTests
             .AddSingleton(probe)
             .BuildServiceProvider();
         var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
 
         JobHandle handle = await client.EnqueueAsync<CancellableTrackedJob>(new JobRequestOptions { JobId = "job-1" }, cancellationToken);
         var runTask = worker.RunAsync(handle.JobId, cancellationToken);
@@ -329,7 +332,7 @@ public class JobRuntimeTests
             .AddSingleton(probe)
             .BuildServiceProvider();
         var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
 
         var handle = await client.EnqueueAsync<ArgsConsumingJob, ResizeArgs>(new ResizeArgs { Path = "/img/1.png", Width = 640 }, cancellationToken: cancellationToken);
 
@@ -344,28 +347,6 @@ public class JobRuntimeTests
     }
 
     [Fact]
-    public async Task GetArguments_WhenEnqueuedWithout_ThrowsDescriptiveErrorAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var store = new InMemoryJobRuntimeStore();
-        var probe = new JobRuntimeProbe();
-        await using var serviceProvider = new ServiceCollection()
-            .AddSingleton(probe)
-            .BuildServiceProvider();
-        var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-
-        // The args-requiring job was enqueued via the argless API: the run fails (job faults) rather than silently
-        // executing with defaults, and the error names the fix.
-        var handle = await client.EnqueueAsync<ArgsConsumingJob>(cancellationToken: cancellationToken);
-        Assert.True(await worker.RunAsync(handle.JobId, cancellationToken));
-
-        var state = await handle.GetStateAsync(cancellationToken);
-        Assert.Equal(JobStatus.Failed, state!.Status);
-        Assert.Contains("without arguments", state.Error);
-    }
-
-    [Fact]
     public async Task RunJob_ResolvesScopedServicesPerExecutionAndDisposesThemAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -377,7 +358,7 @@ public class JobRuntimeTests
             .AddTransient<ScopedConsumingJob>()
             .BuildServiceProvider();
         var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
 
         var first = await client.EnqueueAsync<ScopedConsumingJob>(cancellationToken: cancellationToken);
         var second = await client.EnqueueAsync<ScopedConsumingJob>(cancellationToken: cancellationToken);
@@ -399,7 +380,7 @@ public class JobRuntimeTests
             .AddSingleton(gauge)
             .BuildServiceProvider();
         var client = new JobClient(store);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", maxConcurrency: 2);
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", MaxConcurrency = 2, JobTypes = CreateJobRegistry() });
 
         for (int i = 0; i < 6; i++)
             await client.EnqueueAsync<ConcurrencyProbeJob>(cancellationToken: cancellationToken);
@@ -478,7 +459,7 @@ public class JobRuntimeTests
         public int Width { get; set; }
     }
 
-    private sealed class ArgsConsumingJob : IJob
+    private sealed class ArgsConsumingJob : IJob<ResizeArgs>
     {
         private readonly JobRuntimeProbe _probe;
 
@@ -487,9 +468,8 @@ public class JobRuntimeTests
             _probe = probe;
         }
 
-        public Task<JobResult> RunAsync(JobExecutionContext context)
+        public Task<JobResult> RunAsync(ResizeArgs args, JobExecutionContext context)
         {
-            var args = context.GetArguments<ResizeArgs>();
             _probe.RecordRun($"{args.Path}:{args.Width}");
             return Task.FromResult(JobResult.Success);
         }

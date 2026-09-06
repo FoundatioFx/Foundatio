@@ -2,8 +2,9 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Jobs;
+using Foundatio.Extensions.Hosting.Messaging;
 using Foundatio.Jobs;
-using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -19,6 +20,9 @@ public class StartupValidationTests
         var services = new ServiceCollection();
         services.AddFoundatio().Jobs.AddCronJob<NoopJob>("* * * * *");
 
+        services.AddLogging();
+        services.AddMessageConsumers();
+        services.AddJobScheduler();
         await using var provider = services.BuildServiceProvider();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => StartHostedAsync(provider, cancellationToken));
         Assert.Contains("UseInMemory", ex.Message);
@@ -30,8 +34,11 @@ public class StartupValidationTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var services = new ServiceCollection();
-        services.AddFoundatio().Messaging.AddHandler<Ping>((_, _) => Task.CompletedTask);
+        services.AddFoundatio().Messaging.AddConsumer<Ping>((_, _) => Task.CompletedTask);
 
+        services.AddLogging();
+        services.AddMessageConsumers();
+        services.AddJobScheduler();
         await using var provider = services.BuildServiceProvider();
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => StartHostedAsync(provider, cancellationToken));
         Assert.Contains("no message transport", ex.Message);
@@ -64,10 +71,13 @@ public class StartupValidationTests
         var services = new ServiceCollection();
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddHandler<Ping>((_, _) => Task.CompletedTask)
+            .Messaging.AddConsumer<Ping>((_, _) => Task.CompletedTask)
             .Jobs.UseInMemory()
             .Jobs.AddCronJob<NoopJob>("0 3 * * *");
 
+        services.AddLogging();
+        services.AddMessageConsumers();
+        services.AddJobScheduler();
         await using var provider = services.BuildServiceProvider();
         await StartHostedAsync(provider, cancellationToken);
         await StopHostedAsync(provider, cancellationToken);
@@ -76,13 +86,13 @@ public class StartupValidationTests
     private static async Task StartHostedAsync(ServiceProvider provider, CancellationToken cancellationToken)
     {
         // Validators and hosts run in registration order, like the generic host would run them.
-        foreach (var hosted in provider.GetServices<IHostedService>().Where(s => s is not JobRuntimePumpService))
+        foreach (var hosted in provider.GetServices<IHostedService>())
             await hosted.StartAsync(cancellationToken);
     }
 
     private static async Task StopHostedAsync(ServiceProvider provider, CancellationToken cancellationToken)
     {
-        foreach (var hosted in provider.GetServices<IHostedService>().Reverse().Where(s => s is not JobRuntimePumpService))
+        foreach (var hosted in provider.GetServices<IHostedService>().Reverse())
             await hosted.StopAsync(cancellationToken);
     }
 
