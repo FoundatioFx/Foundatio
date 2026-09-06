@@ -59,8 +59,8 @@ public sealed record RetryPolicy
     /// <summary>Maximum attempts for a message whose type has no registered consumer before it is dead-lettered as "no-handler". Default 50.</summary>
     public int UnmatchedMaxAttempts { get; init; } = 50;
 
-    /// <summary>Delay before redelivering an unmatched-type message. Null defers to the transport's own redelivery timing.</summary>
-    public Func<int, TimeSpan>? UnmatchedBackoff { get; init; }
+    /// <summary>Delay before redelivering an unmatched-type message. Default five seconds with jitter. Null defers to the transport's own redelivery timing.</summary>
+    public Func<int, TimeSpan>? UnmatchedBackoff { get; init; } = _ => TimeSpan.FromSeconds(4 + Random.Shared.NextDouble() * 2);
 }
 
 /// <summary>

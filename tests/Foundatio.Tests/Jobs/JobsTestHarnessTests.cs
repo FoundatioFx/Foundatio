@@ -111,7 +111,7 @@ public class JobsTestHarnessTests
         var probe = new Probe();
         var services = new ServiceCollection();
         services.AddSingleton(probe);
-        services.AddFoundatio().Jobs.UseTestHarness().Jobs.AddJobType<CounterJob>().Jobs.AddJobType<GreetingJob>();
+        services.AddFoundatio().Jobs.UseTestHarness().AddJobType<CounterJob>().AddJobType<GreetingJob>();
         return (services.BuildServiceProvider(), probe);
     }
 

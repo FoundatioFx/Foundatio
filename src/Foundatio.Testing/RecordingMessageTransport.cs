@@ -12,7 +12,7 @@ namespace Foundatio.Messaging.Testing;
 /// assert on what actually moved through the bus, and tracks the destinations/sources it has seen so
 /// <see cref="MessagingTestHarness.WaitForIdleAsync"/> can detect quiescence.
 /// </summary>
-internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout,
+internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
     ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats,
     ISupportsEphemeralSubscriptions, ITransportInfo
 {
@@ -87,12 +87,6 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         return _inner.ReceiveAsync(source, request, visibility, ct);
     }
 
-    public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct = default)
-    {
-        _knownNames.TryAdd(source, 0);
-        _consumeSources.TryAdd(source, 0);
-        return _inner.SubscribeAsync(source, onMessage, options, ct);
-    }
 
     public async Task CompleteAsync(TransportEntry entry, CancellationToken ct = default)
     {

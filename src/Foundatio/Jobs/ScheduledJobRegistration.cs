@@ -20,6 +20,8 @@ internal sealed record ScheduledJobRegistration(Type JobType, string Cron, CronJ
             Overlap = Options.Overlap,
             MisfireWindow = Options.MisfireWindow,
             MaxAttempts = Options.MaxAttempts,
+            RetryPolicy = Options.RetryPolicy,
+            UnclaimedLifetime = Options.UnclaimedLifetime,
             ConfigurationVersion = Options.ConfigurationVersion
         }.Validate();
     }
@@ -37,6 +39,8 @@ internal sealed record ScheduledJobRegistration(Type JobType, string Cron, CronJ
             Overlap = Options.Overlap,
             MisfireWindow = Options.MisfireWindow,
             MaxAttempts = Options.MaxAttempts,
+            RetryPolicy = Options.RetryPolicy,
+            UnclaimedLifetime = Options.UnclaimedLifetime,
             Enabled = Options.Enabled,
             ConfigurationVersion = Options.ConfigurationVersion,
             Payload = Arguments is null ? null : (ReadOnlyMemory<byte>?)serializer.SerializeToBytes(Arguments),

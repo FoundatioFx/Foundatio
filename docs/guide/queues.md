@@ -5,7 +5,7 @@ Queued work uses the same `IMessageBus` client as pub/sub, with explicit consume
 ```csharp
 builder.Services.AddFoundatioWorker(foundatio => foundatio
     .Messaging.UseInMemory()
-    .Messaging.AddConsumer<ProcessOrder, ProcessOrderHandler>());
+    .AddConsumer<ProcessOrder, ProcessOrderHandler>());
 
 await bus.SendAsync(new ProcessOrder(1001));
 ```

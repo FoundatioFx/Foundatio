@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
+using Foundatio.Jobs;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Foundatio.Redis.Tests;
@@ -23,6 +25,35 @@ public class RedisStreamsTransportIntegrationTests
         });
 
     private static string NewPrefix() => $"fnd-it:{Guid.NewGuid():N}:";
+
+    [Fact]
+    public async Task MessagingScheduling_DifferentTransportPrefixes_IsolatesDispatchesAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        var firstServices = new ServiceCollection();
+        firstServices.AddSingleton(connection);
+        firstServices.AddFoundatio().Messaging.UseRedis(o => o.KeyPrefix = NewPrefix());
+        var secondServices = new ServiceCollection();
+        secondServices.AddSingleton(connection);
+        secondServices.AddFoundatio().Messaging.UseRedis(o => o.KeyPrefix = NewPrefix());
+        await using var first = firstServices.BuildServiceProvider();
+        await using var second = secondServices.BuildServiceProvider();
+        var firstStore = first.GetRequiredService<IScheduledDispatchStore>();
+        var secondStore = second.GetRequiredService<IScheduledDispatchStore>();
+        string id = Guid.NewGuid().ToString("N");
+        await firstStore.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = id, Destination = DestinationAddress.ForQueue("work"), Body = "test"u8.ToArray(), DueUtc = DateTimeOffset.UtcNow
+        }, token);
+        var foreignClaims = await secondStore.ClaimDueDispatchesAsync(DateTimeOffset.UtcNow, 100, "second", TimeSpan.FromMinutes(1), token);
+        foreach (var claim in foreignClaims)
+            await secondStore.CompleteDispatchAsync(claim.DispatchId, "second", token);
+        Assert.DoesNotContain(foreignClaims, claim => claim.DispatchId == id);
+        Assert.Equal(id, Assert.Single(await firstStore.ClaimDueDispatchesAsync(DateTimeOffset.UtcNow, 100, "first", TimeSpan.FromMinutes(1), token)).DispatchId);
+        Assert.True(await firstStore.CompleteDispatchAsync(id, "first", token));
+    }
 
     [Fact]
     public async Task ReceiveAsync_MissingQueue_DoesNotProvisionAsync()
@@ -53,9 +84,9 @@ public class RedisStreamsTransportIntegrationTests
         var second = DestinationAddress.ForSubscription("bounded", "second");
         await transport.EnsureAsync([new DestinationDeclaration { Address = first }, new DestinationDeclaration { Address = second }], token);
         await transport.SendAsync(topic, [Message("one")], new TransportSendOptions(), token);
-        await Assert.ThrowsAsync<TransportSendException>(() => transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token));
+        Assert.Equal(MessageSendStatus.Rejected, Assert.Single((await transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token)).Items).Status);
         await transport.CompleteAsync(Assert.Single(await transport.ReceiveAsync(first, new ReceiveRequest(), token)), token);
-        await Assert.ThrowsAsync<TransportSendException>(() => transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token));
+        Assert.Equal(MessageSendStatus.Rejected, Assert.Single((await transport.SendAsync(topic, [Message("two")], new TransportSendOptions(), token)).Items).Status);
         var held = Assert.Single(await transport.ReceiveAsync(second, new ReceiveRequest(), token));
         Assert.Equal("one", System.Text.Encoding.UTF8.GetString(held.Body.Span));
         await transport.CompleteAsync(held, token);

@@ -9,18 +9,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton(new InstanceInfo(Guid.NewGuid().ToString("N")[..6]));
 
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    // Queue consumers compete; each named event subscription receives its own copy.
-    .Messaging.UseAws()
-    .Messaging.AddConsumer<ProcessOrder, ProcessOrderHandler>()
-    .Messaging.AddSubscriber<Announcement, AnnouncementHandler>("announcements") // one replica in this durable subscriber group
-                                                                                 // Persisted jobs on Redis.
-    .Jobs.UseRedis()
-    .Jobs.AddJobType<GenerateReportJob>("generate-report")                      // on-demand, submitted via POST /reports
-    .Jobs.AddCronJob<HeartbeatJob>("* * * * *")                               // Global: one instance per tick
-    .Jobs.AddCronJob<RefreshCacheJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode) // every instance per tick
-    .Jobs.AddCronJob<SweepStaleOrdersJob>("*/2 * * * *"));                     // Global: periodic sweep
+    .UseServiceName("messaging-sample")
+    .ConfigureMessaging(messaging => messaging.UseAws()
+        .AddConsumer<ProcessOrder, ProcessOrderHandler>()
+        .AddSubscriber<Announcement, AnnouncementHandler>())
+    .ConfigureJobs(jobs => jobs.UseRedis()
+        .AddJobType<GenerateReportJob>("generate-report")
+        .AddCronJob<HeartbeatJob>("* * * * *")
+        .AddCronJob<RefreshCacheJob>("* * * * *")
+        .AddCronJob<SweepStaleOrdersJob>("*/2 * * * *")));
 
 var app = builder.Build();
+app.MapHealthChecks("/health");
 
 app.MapGet("/", (InstanceInfo instance) => Results.Ok(new { service = "Foundatio messaging sample", instance = instance.Id }));
 

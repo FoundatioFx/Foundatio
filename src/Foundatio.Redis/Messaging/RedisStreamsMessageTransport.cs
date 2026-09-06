@@ -27,7 +27,7 @@ namespace Foundatio.Messaging;
 public sealed partial class RedisStreamsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
     ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsDeadLetter, ISupportsEphemeralSubscriptions, ISupportsStats, ITransportInfo
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(250);
+    private readonly ConcurrentDictionary<string, int> _idlePolls = new(StringComparer.Ordinal);
 
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles =
         new HashSet<DestinationRole> { DestinationRole.Queue, DestinationRole.Topic, DestinationRole.Subscription, DestinationRole.Binding };
@@ -44,6 +44,10 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxPendingMessages, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxBatchSize, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MaxBatchSize, 256);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.PollInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxIdlePollInterval, options.PollInterval);
         ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
         _db = options.ConnectionMultiplexer.GetDatabase();
         _timeProvider = options.TimeProvider ?? TimeProvider.System;
@@ -57,7 +61,7 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
 
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
     public IReadOnlySet<DestinationRole> SupportedRoles => _supportedRoles;
-    public TransportCapabilities GetCapabilities(DestinationAddress destination) => _capabilities;
+    public TransportCapabilities GetCapabilities(DestinationAddress destination) => _capabilities with { MaxBatchSize = _options.MaxBatchSize };
     public TimeSpan? MaxRedeliveryDelay => null; // lease is tracked in Redis, so any delay is honored
     public TimeSpan? MaxVisibilityTimeout => null;
 
@@ -76,28 +80,43 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
         // The stream IS the queue/topic; subscriptions read it through their own group. The address role picks the
         // stream namespace so a queue and a topic sharing a route name never cross-deliver.
         RedisKey streamKey = destination.Role == DestinationRole.Topic ? TopicStreamKey(destination.Name) : QueueStreamKey(destination.Name);
-        var items = new List<SendItemResult>(messages.Count);
-        try
+        var items = new SendItemResult[messages.Count];
+        for (int index = 0; index < items.Length; index++)
+            items[index] = new SendItemResult { Index = index, Status = MessageSendStatus.NotAttempted };
+        for (int offset = 0; offset < messages.Count; offset += _options.MaxBatchSize)
         {
-            foreach (var message in messages)
+            if (ct.IsCancellationRequested) break;
+            int count = Math.Min(_options.MaxBatchSize, messages.Count - offset);
+            var pending = new Task[count];
+            for (int index = 0; index < count; index++)
+                pending[index] = SendOneAsync(offset + index);
+            await Task.WhenAll(pending).ConfigureAwait(false);
+        }
+        return new SendResult { Items = items };
+
+        async Task SendOneAsync(int index)
+        {
+            items[index] = items[index] with { Status = MessageSendStatus.Unknown };
+            try
             {
-                ct.ThrowIfCancellationRequested();
                 var arguments = new List<RedisValue> { destination.Role == DestinationRole.Topic ? "1" : "0", _options.MaxPendingMessages, _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() };
-                foreach (var field in BuildFields(message))
+                foreach (var field in BuildFields(messages[index])) { arguments.Add(field.Name); arguments.Add(field.Value); }
+                var id = await _db.ScriptEvaluateAsync(SendScript, [streamKey], arguments.ToArray()).WaitAsync(ct).ConfigureAwait(false);
+                items[index] = new SendItemResult { Index = index, Status = MessageSendStatus.Accepted, MessageId = (string)id! };
+            }
+            catch (Exception ex)
+            {
+                bool rejected = ex is RedisServerException && ex.Message.Contains("The destination has reached its pending-message capacity.", StringComparison.Ordinal);
+                items[index] = new SendItemResult
                 {
-                    arguments.Add(field.Name);
-                    arguments.Add(field.Value);
-                }
-                var id = await _db.ScriptEvaluateAsync(SendScript, new RedisKey[] { streamKey }, arguments.ToArray()).ConfigureAwait(false);
-                items.Add(new SendItemResult { MessageId = (string)id! });
+                    Index = index,
+                    Status = rejected ? MessageSendStatus.Rejected : MessageSendStatus.Unknown,
+                    ErrorCode = rejected ? "CapacityExceeded" : ex.GetType().Name,
+                    ErrorMessage = ex.Message,
+                    Retryable = ex is not OperationCanceledException
+                };
             }
         }
-        catch (Exception ex)
-        {
-            throw new TransportSendException(items.Count, ex);
-        }
-
-        return new SendResult { Items = items };
     }
 
     public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
@@ -117,15 +136,26 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
         while (true)
         {
             ct.ThrowIfCancellationRequested();
-            var entries = await PollOnceAsync(source, resolved, max, visibilityMs, ct).ConfigureAwait(false);
+            List<TransportEntry> entries;
+            try { entries = await PollOnceAsync(source, resolved, max, visibilityMs, ct).ConfigureAwait(false); }
+            catch (RedisServerException ex) when (ex.Message.Contains("NOGROUP", StringComparison.Ordinal))
+            {
+                _ensuredGroups.TryRemove(GroupKey(resolved), out _);
+                throw new MessageDestinationNotFoundException(source, ex);
+            }
             if (entries.Count > 0)
+            {
+                _idlePolls.TryRemove(GroupKey(resolved), out _);
                 return entries;
+            }
 
             var remaining = deadline - _timeProvider.GetUtcNow();
             if (remaining <= TimeSpan.Zero)
                 return [];
 
-            await Task.Delay(remaining < PollInterval ? remaining : PollInterval, ct).ConfigureAwait(false);
+            int idle = _idlePolls.AddOrUpdate(GroupKey(resolved), 0, (_, current) => Math.Min(10, current + 1));
+            var delay = TimeSpan.FromMilliseconds(Math.Min(_options.MaxIdlePollInterval.TotalMilliseconds, _options.PollInterval.TotalMilliseconds * (1 << idle)));
+            await Task.Delay(remaining < delay ? remaining : delay, _timeProvider, ct).ConfigureAwait(false);
         }
     }
 

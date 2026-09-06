@@ -244,7 +244,7 @@ public class MessagingTestHarnessTests
         services.AddLogging();
         services.AddFoundatio()
             .Messaging.UseTestHarness()
-            .Messaging.AddConsumer<HarnessOrder, RecordingOrderHandler>();
+            .AddConsumer<HarnessOrder, RecordingOrderHandler>();
 
         services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();

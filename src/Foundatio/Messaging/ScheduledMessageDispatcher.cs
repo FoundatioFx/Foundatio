@@ -29,6 +29,8 @@ public sealed class ScheduledMessageDispatcher
     private readonly TimeProvider _timeProvider;
     private readonly TopologyMode _topologyMode;
     private readonly ILogger _logger;
+    private Exception? _lastFailure;
+    public Exception? LastFailure => Volatile.Read(ref _lastFailure);
 
     public ScheduledMessageDispatcher(IScheduledDispatchStore store, IMessageTransport transport, ScheduledMessageDispatcherOptions? options = null)
     {
@@ -47,6 +49,7 @@ public sealed class ScheduledMessageDispatcher
     public async Task<int> DispatchDueAsync(DateTimeOffset utcNow, int limit = 100, CancellationToken cancellationToken = default)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        Volatile.Write(ref _lastFailure, null);
         int completed = 0;
         for (int index = 0; index < limit; index++)
         {
@@ -62,8 +65,10 @@ public sealed class ScheduledMessageDispatcher
             try
             {
                 await SendAsync(dispatch, operation.Token).WaitAsync(operation.Token).AnyContext();
-                await _store.CompleteDispatchAsync(dispatch.DispatchId, claim, operation.Token).WaitAsync(operation.Token).AnyContext();
-                completed++;
+                if (await _store.CompleteDispatchAsync(dispatch.DispatchId, claim, operation.Token).WaitAsync(operation.Token).AnyContext())
+                    completed++;
+                else
+                    _logger.LogWarning("Scheduled dispatch {DispatchId} lost its claim before completion", dispatch.DispatchId);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -71,9 +76,10 @@ public sealed class ScheduledMessageDispatcher
             }
             catch (Exception ex)
             {
+                Volatile.Write(ref _lastFailure, ex);
                 _logger.LogError(ex, "Failed to dispatch scheduled message {DispatchId}", dispatch.DispatchId);
                 using var settlement = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
-                await _store.ReleaseDispatchAsync(dispatch.DispatchId, claim, utcNow.AddSeconds(30), settlement.Token)
+                await _store.ReleaseDispatchAsync(dispatch.DispatchId, claim, _timeProvider.GetUtcNow().AddSeconds(30), settlement.Token)
                     .WaitAsync(settlement.Token).AnyContext();
             }
         }
@@ -94,11 +100,12 @@ public sealed class ScheduledMessageDispatcher
                 throw new InvalidOperationException($"Scheduled message destination {destination} does not exist.");
         }
 
-        await _transport.SendAsync(destination, [new TransportMessage
+        var result = await _transport.SendAsync(destination, [new TransportMessage
         {
             MessageId = dispatch.Headers.GetValueOrDefault(KnownHeaders.MessageId) ?? dispatch.DispatchId,
             Body = dispatch.Body, Headers = dispatch.Headers,
             ContentType = dispatch.Headers.GetValueOrDefault(KnownHeaders.ContentType)
         }], dispatch.Options with { DeliverAt = null }, cancellationToken).AnyContext();
+        result.EnsureAccepted(1);
     }
 }

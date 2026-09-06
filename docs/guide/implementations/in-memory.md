@@ -154,10 +154,10 @@ services.AddSingleton<ICacheClient>(sp =>
 ```csharp
 services.AddFoundatio()
     .Messaging.UseInMemory()
-    .Messaging.AddConsumer<WorkItem, WorkItemHandler>()
-    .Messaging.AddSubscriber<OrderCreated, OrderCreatedHandler>("billing")
-    .Jobs.UseInMemory()
-    .Jobs.AddJobType<CleanupJob>("cleanup.v1");
+    .AddConsumer<WorkItem, WorkItemHandler>()
+    .AddSubscriber<OrderCreated, OrderCreatedHandler>("billing")
+    .Builder.Jobs.UseInMemory()
+    .AddJobType<CleanupJob>("cleanup.v1");
 services.AddMessageConsumers();
 services.AddJobWorker();
 ```
@@ -292,9 +292,9 @@ builder.Services.AddFoundatio()
     .Storage.UseInMemory()
     .Locking.UseCache()
     .Messaging.UseInMemory()
-    .Messaging.AddConsumer<WorkItem, WorkItemHandler>()
-    .Jobs.UseInMemory()
-    .Jobs.AddJobType<CleanupJob>("cleanup.v1");
+    .AddConsumer<WorkItem, WorkItemHandler>()
+    .Builder.Jobs.UseInMemory()
+    .AddJobType<CleanupJob>("cleanup.v1");
 builder.Services.AddMessageConsumers();
 builder.Services.AddJobWorker();
 ```

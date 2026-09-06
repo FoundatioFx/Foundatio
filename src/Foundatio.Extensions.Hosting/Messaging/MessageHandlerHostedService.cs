@@ -31,6 +31,14 @@ internal sealed class MessagingTopologyStartupService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        var types = _serviceProvider.GetService<IMessageTypeRegistry>();
+        var routes = _serviceProvider.GetService<MessageRoutingOptions>();
+        if (types is not null && routes is not null)
+        {
+            foreach (var mapping in routes.GetRouteMaps())
+                _logger.LogInformation("Message contract {MessageType} uses wire name {WireName} and {Role} route {Route}",
+                    mapping.MessageType.FullName, types.GetName(mapping.MessageType), mapping.Role, mapping.Route);
+        }
         var mode = (_serviceProvider.GetService(typeof(MessagingTopologyOptions)) as MessagingTopologyOptions)?.Mode ?? TopologyMode.Ensure;
         if (mode == TopologyMode.None)
             return;
@@ -72,6 +80,7 @@ internal sealed class MessageHandlerHostedService : IHostedService
     private readonly IEnumerable<MessageHandlerRegistration> _registrations;
     private readonly ILogger _logger;
     private readonly List<IAsyncDisposable> _started = new();
+    internal IReadOnlyList<IMessageSubscription> Subscriptions { get { lock (_started) return _started.OfType<IMessageSubscription>().ToArray(); } }
 
     public MessageHandlerHostedService(IServiceProvider serviceProvider, IEnumerable<MessageHandlerRegistration> registrations, ILoggerFactory? loggerFactory = null)
     {
@@ -89,7 +98,7 @@ internal sealed class MessageHandlerHostedService : IHostedService
             foreach (var registration in _registrations)
             {
                 var disposable = await registration.StartAsync(_serviceProvider, cancellationToken).AnyContext();
-                _started.Add(disposable);
+                lock (_started) _started.Add(disposable);
                 _logger.LogInformation("Started message handler {Handler}", registration.Description);
             }
         }
@@ -124,7 +133,7 @@ internal sealed class MessageHandlerHostedService : IHostedService
         }
         finally
         {
-            _started.Clear();
+            lock (_started) _started.Clear();
         }
     }
 }

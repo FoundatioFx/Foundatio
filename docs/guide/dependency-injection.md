@@ -9,11 +9,12 @@ builder.Services.AddFoundatioWorker(foundatio => foundatio
     .Caching.UseInMemory()
     .Storage.UseInMemory()
     .Locking.UseCache()
-    .Messaging.UseInMemory()
-    .Messaging.AddConsumer<ProcessOrder, ProcessOrderHandler>()
-    .Messaging.AddSubscriber<OrderPlaced, OrderPlacedHandler>("billing")
-    .Jobs.UseInMemory()
-    .Jobs.AddJobType<GenerateReportJob>("generate-report.v1"));
+    .UseServiceName("billing")
+    .ConfigureMessaging(messaging => messaging.UseInMemory()
+        .AddConsumer<ProcessOrder, ProcessOrderHandler>()
+        .AddSubscriber<OrderPlaced, OrderPlacedHandler>())
+    .ConfigureJobs(jobs => jobs.UseInMemory()
+        .AddJobType<GenerateReportJob>("generate-report.v1")));
 ```
 
 ## Choose host roles explicitly
@@ -30,7 +31,9 @@ builder.Services.AddFoundatioWorker(foundatio => foundatio
 
 `AddFoundatioWorker` selects these roles for a combined worker: consumers when a transport is configured, worker and scheduler when job types are registered, and delayed dispatch when both a transport and dispatch store are configured. Set its `jobConcurrency` argument to control simultaneous job executions; set message concurrency on each receiving endpoint.
 
-Scheduler, worker, and dispatcher loops run independently. A long-running job does not block delayed-message delivery or schedule materialization. Host registrations are idempotent.
+Messaging and jobs methods consistently return their feature builder. Prefer `ConfigureMessaging(m => ...)` and `ConfigureJobs(j => ...)` when configuring several features; `.Builder` explicitly returns to the root.
+
+Scheduler, worker slots, and dispatcher loops run independently. A long-running job does not block delayed-message delivery or schedule materialization. Host registrations are idempotent.
 
 ## Service lifetimes and ownership
 
@@ -56,10 +59,10 @@ public sealed class ProcessOrderHandler(OrderService orders) : IMessageHandler<P
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
     ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Messaging.UseRedis()
-    .Messaging.AddConsumer<ProcessOrder, ProcessOrderHandler>()
-    .Jobs.UseRedis()
-    .Jobs.AddJobType<GenerateReportJob>("generate-report.v1"));
+    .ConfigureMessaging(messaging => messaging.UseRedis()
+        .AddConsumer<ProcessOrder, ProcessOrderHandler>())
+    .ConfigureJobs(jobs => jobs.UseRedis()
+        .AddJobType<GenerateReportJob>("generate-report.v1")));
 ```
 
 The explicit connection example uses `StackExchange.Redis` and `Microsoft.Extensions.DependencyInjection`. A connection passed as an already-created singleton instance remains caller-owned: dispose the host first, then dispose that connection. Never dispose a shared connection while handlers, workers, or lock-release operations are still using it.

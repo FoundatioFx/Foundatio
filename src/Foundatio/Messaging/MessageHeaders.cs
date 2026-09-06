@@ -1,6 +1,5 @@
 using System;
 using System.Collections;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Text.Json;
 
@@ -8,11 +7,11 @@ namespace Foundatio.Messaging;
 
 public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
 {
-    public static MessageHeaders Empty { get; } = new(FrozenDictionary<string, string>.Empty);
+    public static MessageHeaders Empty { get; } = new(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
 
-    private readonly FrozenDictionary<string, string> _headers;
+    private readonly Dictionary<string, string> _headers;
 
-    private MessageHeaders(FrozenDictionary<string, string> headers)
+    private MessageHeaders(Dictionary<string, string> headers)
     {
         _headers = headers;
     }
@@ -39,7 +38,7 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
 
         return values.Count == 0
             ? Empty
-            : new MessageHeaders(values.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase));
+            : new MessageHeaders(values);
     }
 
     /// <summary>
@@ -50,10 +49,7 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
     public static string SerializeToJson(MessageHeaders headers)
     {
         ArgumentNullException.ThrowIfNull(headers);
-        var map = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var header in headers)
-            map[header.Key] = header.Value;
-        return JsonSerializer.Serialize(map);
+        return JsonSerializer.Serialize(headers._headers);
     }
 
     /// <summary>Reads headers from the canonical encoding produced by <see cref="SerializeToJson"/>.</summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Reflection;
 
@@ -38,6 +39,9 @@ public sealed class MessageRoutingOptions
     public string? DefaultQueueDestination { get; set; }
     public string? DefaultPubSubTopic { get; set; }
     public Func<MessageRouteContext, string>? Convention { get; set; }
+
+    /// <summary>Returns the declared type-to-route mappings for configuration diagnostics.</summary>
+    public IReadOnlyList<MessageRouteMap> GetRouteMaps() => RouteMaps.ToArray();
 
     public IReadOnlyList<DestinationDeclaration> GetTopologyDeclarations()
     {
@@ -174,10 +178,18 @@ public sealed class DefaultMessageRouter : IMessageRouter
     public static DefaultMessageRouter Instance { get; } = new(new MessageRoutingOptions());
 
     private readonly MessageRoutingOptions _options;
+    private readonly ConcurrentDictionary<(Type Type, MessageRouteRole Role), string> _routes = new();
 
     public DefaultMessageRouter(MessageRoutingOptions options)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
+        ArgumentNullException.ThrowIfNull(options);
+        _options = new MessageRoutingOptions
+        {
+            DefaultQueueDestination = options.DefaultQueueDestination,
+            DefaultPubSubTopic = options.DefaultPubSubTopic,
+            Convention = options.Convention
+        };
+        _options.RouteMaps.AddRange(options.RouteMaps);
     }
 
     public string ResolveRoute(MessageRouteContext context)
@@ -188,6 +200,13 @@ public sealed class DefaultMessageRouter : IMessageRouter
         if (!String.IsNullOrEmpty(context.OperationOverride))
             return context.OperationOverride;
 
+        if (_options.Convention is not null)
+            return ResolveUncached(context);
+        return _routes.GetOrAdd((context.MessageType, context.Role), key => ResolveUncached(new MessageRouteContext { MessageType = key.Type, Role = key.Role }));
+    }
+
+    private string ResolveUncached(MessageRouteContext context)
+    {
         var exact = _options.RouteMaps.LastOrDefault(m => m.Role == context.Role && m.MessageType == context.MessageType);
         if (exact is not null)
             return exact.Route;

@@ -15,8 +15,8 @@ public class RedisJobRuntimeStoreConformanceTests : JobRuntimeStoreConformanceTe
 {
     public RedisJobRuntimeStoreConformanceTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IJobRuntimeStore? CreateStore(TimeProvider timeProvider) =>
+    protected override IJobRuntimeStore? CreateStore(TimeProvider timeProvider, JobRuntimeStoreOptions? options = null) =>
         RedisTestConnection.Multiplexer is { } connection
-            ? RedisTestConnection.CreateStore(connection, timeProvider)
+            ? new RedisJobRuntimeStore(new RedisJobRuntimeStoreOptions { ConnectionMultiplexer = connection, TimeProvider = timeProvider, KeyPrefix = $"conformance:{Guid.NewGuid():N}:", Runtime = options ?? new() })
             : null; // not configured -> the base suite skips every test
 }

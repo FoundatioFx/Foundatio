@@ -21,7 +21,7 @@ public sealed record MessageReceiveOptions
     public TimeSpan WaitTime { get; init; }
 }
 
-internal class ReceivedMessage(IMessageContext context, CancellationTokenSource cancellation, Task supervision) : IReceivedMessage
+internal class ReceivedMessage(IMessageContext context, CancellationTokenSource cancellation, Task<bool> supervision, Func<CancellationToken, Task> abandon) : IReceivedMessage
 {
     private int _disposed;
     public string Id => context.Id;
@@ -57,8 +57,13 @@ internal class ReceivedMessage(IMessageContext context, CancellationTokenSource 
 
         try
         {
-            if (!context.IsHandled && !context.CancellationToken.IsCancellationRequested)
-                await context.RejectAsync(cancellationToken: context.CancellationToken).AnyContext();
+            await cancellation.CancelAsync().AnyContext();
+            bool leaseLost = await supervision.AnyContext();
+            if (!context.IsHandled && !leaseLost)
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await abandon(cleanup.Token).AnyContext();
+            }
         }
         finally
         {
@@ -69,8 +74,8 @@ internal class ReceivedMessage(IMessageContext context, CancellationTokenSource 
     }
 }
 
-internal sealed class ReceivedMessage<T>(IMessageContext<T> context, CancellationTokenSource cancellation, Task supervision)
-    : ReceivedMessage(context, cancellation, supervision), IReceivedMessage<T> where T : class
+internal sealed class ReceivedMessage<T>(IMessageContext<T> context, CancellationTokenSource cancellation, Task<bool> supervision, Func<CancellationToken, Task> abandon)
+    : ReceivedMessage(context, cancellation, supervision, abandon), IReceivedMessage<T> where T : class
 {
     public T Message => context.Message;
 }

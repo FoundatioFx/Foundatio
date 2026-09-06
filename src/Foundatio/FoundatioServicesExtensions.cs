@@ -13,6 +13,7 @@ using Foundatio.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Hosting;
 using Legacy = Foundatio.Messaging.Legacy;
 
 namespace Foundatio;
@@ -143,6 +144,30 @@ public class FoundatioBuilder : IFoundatioBuilder
         return this;
     }
 
+    /// <summary>Configures messaging in one feature block.</summary>
+    public FoundatioBuilder ConfigureMessaging(Action<MessagingBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        configure(Messaging);
+        return this;
+    }
+
+    /// <summary>Configures durable jobs in one feature block.</summary>
+    public FoundatioBuilder ConfigureJobs(Action<JobsBuilder> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        configure(Jobs);
+        return this;
+    }
+
+    /// <summary>Stable service identity used for default durable event subscriptions.</summary>
+    public FoundatioBuilder UseServiceName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        _services.ReplaceSingleton(_ => new FoundatioServiceIdentity(name));
+        return this;
+    }
+
     public class CachingBuilder : IFoundatioBuilder
     {
         private readonly FoundatioBuilder _builder;
@@ -266,6 +291,9 @@ public class FoundatioBuilder : IFoundatioBuilder
             return this;
         }
 
+        /// <summary>Returns the root builder for configuring another feature.</summary>
+        public FoundatioBuilder Builder => _builder;
+
         IServiceCollection IFoundatioBuilder.Services => _services;
         FoundatioBuilder IFoundatioBuilder.Builder => _builder;
 
@@ -275,12 +303,12 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// <see cref="IMessageBus"/>, so existing consuming code keeps compiling while it migrates. There is no
         /// legacy bus behind it — remove this call once call sites are on the new API.
         /// </summary>
-        public FoundatioBuilder AddLegacyAdapter()
+        public MessagingBuilder AddLegacyAdapter()
         {
             _services.ReplaceSingleton<Legacy.IMessageBus>(sp => new Legacy.LegacyMessageBusAdapter(sp.GetRequiredService<IMessageBus>()));
             _services.ReplaceSingleton<Legacy.IMessagePublisher>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
             _services.ReplaceSingleton<Legacy.IMessageSubscriber>(sp => sp.GetRequiredService<Legacy.IMessageBus>());
-            return _builder;
+            return this;
         }
 
         public MessagingBuilder ConfigureRouting(Action<MessageRoutingOptionsBuilder> configure)
@@ -309,36 +337,47 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         // Registers a stable wire name for a message type so the discriminator survives assembly/namespace moves and
         // grouped/interface consumers can resolve and deserialize the concrete payload type.
-        public MessagingBuilder AddMessageType<T>(string name) where T : class
+        public MessagingBuilder AddMessageType<T>(string name, string? queue = null, string? topic = null) where T : class
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
             _services.AddSingleton(new MessageTypeRegistration(name, typeof(T)));
+            if (queue is not null) ConfigureRouting(r => r.MapQueue<T>(queue));
+            if (topic is not null) ConfigureRouting(r => r.MapTopic<T>(topic));
             return this;
         }
 
         /// <summary>Uses the in-memory transport — the all-defaults setup for development and tests.</summary>
-        public FoundatioBuilder UseInMemory()
+        public MessagingBuilder UseInMemory(JobRuntimeStoreOptions? scheduling = null)
         {
+            _services.TryAddSingleton<IScheduledDispatchStore>(sp => sp.GetService<IJobRuntimeStore>() ?? new InMemoryJobRuntimeStore(scheduling ?? new(), sp.GetService<TimeProvider>()));
             RegisterMessagingRuntime(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>(), sp.GetService<ILoggerFactory>()));
-            return _builder;
+            return this;
         }
 
-        public FoundatioBuilder UseTransport(IMessageTransport transport)
+        /// <summary>Configures delayed messaging without registering job execution services.</summary>
+        public MessagingBuilder UseSchedulingStore(Func<IServiceProvider, IScheduledDispatchStore> factory)
+        {
+            ArgumentNullException.ThrowIfNull(factory);
+            _services.ReplaceSingleton(factory);
+            return this;
+        }
+
+        public MessagingBuilder UseTransport(IMessageTransport transport)
         {
             ArgumentNullException.ThrowIfNull(transport);
             RegisterMessagingRuntime(_ => transport);
-            return _builder;
+            return this;
         }
 
-        public FoundatioBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
+        public MessagingBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
         {
             ArgumentNullException.ThrowIfNull(factory);
             RegisterMessagingRuntime(factory);
-            return _builder;
+            return this;
         }
 
         /// <summary>Runs queued work in a scoped handler. Replicas compete for the same queue.</summary>
-        public FoundatioBuilder AddConsumer<TMessage, THandler>(Action<MessageConsumerOptions>? configure = null)
+        public MessagingBuilder AddConsumer<TMessage, THandler>(Action<MessageConsumerOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
@@ -346,19 +385,21 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
 
         /// <summary>Runs queued work in a delegate handler.</summary>
-        public FoundatioBuilder AddConsumer<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageConsumerOptions>? configure = null)
+        public MessagingBuilder AddConsumer<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageConsumerOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
             return AddConsumer<TMessage>((_, message, ct) => handler(message, ct), configure);
         }
 
-        private FoundatioBuilder AddConsumer<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, Action<MessageConsumerOptions>? configure)
+        private MessagingBuilder AddConsumer<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, Action<MessageConsumerOptions>? configure)
             where TMessage : class
         {
             var options = new MessageConsumerOptions();
             configure?.Invoke(options);
             options.Validate();
+            if (options.MessageTypeName is { } wireName) AddMessageType<TMessage>(wireName, queue: options.Destination);
+            else if (options.Destination is not null) ConfigureRouting(r => r.MapQueue<TMessage>(options.Destination));
             return AddHandlerRegistration($"consumer:{typeof(TMessage).Name}", (sp, ct) =>
                 sp.GetRequiredService<IMessageBus>().ConsumeAsync<TMessage>((message, token) => dispatch(sp, message, token), options, ct));
         }
@@ -367,7 +408,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// Receives published events in a scoped handler. Supply a stable subscription name for durable delivery
         /// shared by replicas. Use AddTemporarySubscriber for a temporary subscription on every instance.
         /// </summary>
-        public FoundatioBuilder AddSubscriber<TMessage, THandler>(string subscription, Action<MessageSubscriptionOptions>? configure = null)
+        public MessagingBuilder AddSubscriber<TMessage, THandler>(string? subscription = null, Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
@@ -375,7 +416,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
 
         /// <summary>Receives published events in a delegate handler on a named durable subscription.</summary>
-        public FoundatioBuilder AddSubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, string subscription, Action<MessageSubscriptionOptions>? configure = null)
+        public MessagingBuilder AddSubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, string? subscription = null, Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
@@ -383,7 +424,7 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
 
         /// <summary>Receives a copy of each event for this process using an expiring subscription. Requires provider support.</summary>
-        public FoundatioBuilder AddTemporarySubscriber<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
+        public MessagingBuilder AddTemporarySubscriber<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
@@ -391,35 +432,43 @@ public class FoundatioBuilder : IFoundatioBuilder
         }
 
         /// <summary>Receives events in a delegate using an expiring subscription. Requires provider support.</summary>
-        public FoundatioBuilder AddTemporarySubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
+        public MessagingBuilder AddTemporarySubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
             return AddSubscriber<TMessage>((_, message, ct) => handler(message, ct), null, configure, temporary: true);
         }
 
-        private FoundatioBuilder AddSubscriber<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, string? subscription, Action<MessageSubscriptionOptions>? configure, bool temporary = false)
+        private MessagingBuilder AddSubscriber<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, string? subscription, Action<MessageSubscriptionOptions>? configure, bool temporary = false)
             where TMessage : class
         {
-            if (!temporary)
+            if (subscription is not null)
                 ArgumentException.ThrowIfNullOrWhiteSpace(subscription);
             var options = new MessageSubscriptionOptions { Subscription = subscription };
             configure?.Invoke(options);
             options.Validate();
             if (options.Subscription != subscription)
                 throw new ArgumentException("Set the durable name with the subscription argument. Use AddTemporarySubscriber for a temporary subscription.", nameof(configure));
+            if (options.MessageTypeName is { } wireName) AddMessageType<TMessage>(wireName, topic: options.Topic);
+            else if (options.Topic is not null) ConfigureRouting(r => r.MapTopic<TMessage>(options.Topic));
             return AddHandlerRegistration($"subscriber:{typeof(TMessage).Name}", (sp, ct) =>
-                sp.GetRequiredService<IMessageBus>().SubscribeAsync<TMessage>((message, token) => dispatch(sp, message, token), options, ct));
+            {
+                var subscriptionOptions = options.Copy();
+                if (!temporary && subscriptionOptions.Subscription is null)
+                    subscriptionOptions.Subscription = sp.GetService<FoundatioServiceIdentity>()?.Name ?? sp.GetService<IHostEnvironment>()?.ApplicationName
+                        ?? throw new InvalidOperationException("A default durable subscription requires UseServiceName(...), a hosting ApplicationName, or an explicit subscription name.");
+                return sp.GetRequiredService<IMessageBus>().SubscribeAsync<TMessage>((message, token) => dispatch(sp, message, token), subscriptionOptions, ct);
+            });
         }
 
-        private FoundatioBuilder AddHandlerRegistration(string description, Func<IServiceProvider, CancellationToken, Task<IMessageSubscription>> start)
+        private MessagingBuilder AddHandlerRegistration(string description, Func<IServiceProvider, CancellationToken, Task<IMessageSubscription>> start)
         {
             _services.AddSingleton(new MessageHandlerRegistration
             {
                 Description = description,
                 StartAsync = async (sp, ct) => await start(sp, ct).ConfigureAwait(false)
             });
-            return _builder;
+            return this;
         }
 
         private static async Task DispatchAsync<TMessage, THandler>(IServiceProvider serviceProvider, IMessageContext<TMessage> message, CancellationToken cancellationToken)
@@ -502,40 +551,56 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services = builder.Services;
         }
 
+        /// <summary>Returns the root builder for configuring another feature.</summary>
+        public FoundatioBuilder Builder => _builder;
+
         IServiceCollection IFoundatioBuilder.Services => _services;
         FoundatioBuilder IFoundatioBuilder.Builder => _builder;
 
-        public FoundatioBuilder UseRuntimeStore(IJobRuntimeStore store)
+        public JobsBuilder UseRuntimeStore(IJobRuntimeStore store)
         {
             ArgumentNullException.ThrowIfNull(store);
             _services.ReplaceSingleton(_ => store);
             RegisterJobServices();
-            return _builder;
+            return this;
         }
 
-        public FoundatioBuilder UseRuntimeStore(Func<IServiceProvider, IJobRuntimeStore> factory)
+        public JobsBuilder UseRuntimeStore(Func<IServiceProvider, IJobRuntimeStore> factory)
         {
             ArgumentNullException.ThrowIfNull(factory);
             _services.ReplaceSingleton(factory);
             RegisterJobServices();
-            return _builder;
+            return this;
         }
 
         /// <summary>Uses the in-memory job runtime — the all-defaults setup for development and tests.</summary>
-        public FoundatioBuilder UseInMemory()
+        public JobsBuilder UseInMemory(JobRuntimeStoreOptions? options = null)
         {
-            _services.ReplaceSingleton<IJobRuntimeStore>(sp => new InMemoryJobRuntimeStore(sp.GetService<TimeProvider>()));
+            _services.ReplaceSingleton<IJobRuntimeStore>(sp => new InMemoryJobRuntimeStore(options ?? new(), sp.GetService<TimeProvider>()));
             RegisterJobServices();
-            return _builder;
+            return this;
         }
 
-        public FoundatioBuilder AddJobType<TJob>(string? name = null) where TJob : IJob
+        /// <summary>Configures execution slots, stable node identity, lease and polling settings.</summary>
+        public JobsBuilder ConfigureWorker(Func<JobWorkerOptions, JobWorkerOptions> configure)
+        {
+            ArgumentNullException.ThrowIfNull(configure);
+            var existing = _services.LastOrDefault(d => d.ServiceType == typeof(JobWorkerOptions))?.ImplementationInstance as JobWorkerOptions ?? new();
+            var options = configure(existing);
+            ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxConcurrency, 1);
+            if (options.NodeId is not null) ArgumentException.ThrowIfNullOrWhiteSpace(options.NodeId);
+            _services.Replace(ServiceDescriptor.Singleton(options));
+            return this;
+        }
+
+        public JobsBuilder AddJobType<TJob>(string? name = null) where TJob : IJob
         {
             JobArgumentContract.ValidateType(typeof(TJob));
             if (name is not null)
                 ArgumentException.ThrowIfNullOrWhiteSpace(name);
+            _services.TryAddScoped(typeof(TJob));
             _services.AddSingleton(new JobTypeRegistration(name ?? typeof(TJob).FullName ?? typeof(TJob).Name, typeof(TJob)));
-            return _builder;
+            return this;
         }
 
         /// <summary>
@@ -545,15 +610,15 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// <see cref="IScheduledJobStore.ScheduleAsync"/> call needed. Requires a runtime store (<see cref="UseRuntimeStore(IJobRuntimeStore)"/>
         /// / <see cref="UseInMemory"/>).
         /// </summary>
-        public FoundatioBuilder AddCronJob<TJob>(string cronSchedule, Action<CronJobOptions>? configure = null) where TJob : IJob
+        public JobsBuilder AddCronJob<TJob>(string cronSchedule, Action<CronJobOptions>? configure = null) where TJob : IJob
             => AddCronJob(typeof(TJob), cronSchedule, null, configure);
 
         /// <summary>Declares a recurring job with arguments constrained to its typed job contract.</summary>
-        public FoundatioBuilder AddCronJob<TJob, TArgs>(string cronSchedule, TArgs arguments, Action<CronJobOptions>? configure = null)
+        public JobsBuilder AddCronJob<TJob, TArgs>(string cronSchedule, TArgs arguments, Action<CronJobOptions>? configure = null)
             where TJob : IJob<TArgs> where TArgs : class
             => AddCronJob(typeof(TJob), cronSchedule, arguments, configure);
 
-        private FoundatioBuilder AddCronJob(Type jobType, string cronSchedule, object? arguments, Action<CronJobOptions>? configure)
+        private JobsBuilder AddCronJob(Type jobType, string cronSchedule, object? arguments, Action<CronJobOptions>? configure)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(cronSchedule);
             JobScheduleProcessor.ValidateCron(cronSchedule);
@@ -566,9 +631,10 @@ public class FoundatioBuilder : IFoundatioBuilder
                 throw new InvalidOperationException($"A CRON job named {registration.Name} is already registered. Give one an explicit CronJobOptions.Name.");
             if (!_services.Any(d => d.ImplementationInstance is JobTypeRegistration existing && existing.JobType == jobType))
                 _services.AddSingleton(new JobTypeRegistration(jobType.FullName ?? jobType.Name, jobType));
+            _services.TryAddScoped(jobType);
             _services.AddSingleton(registration);
             _services.AddSingleton(sp => registration.Create(sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>() ?? DefaultSerializer.Instance));
-            return _builder;
+            return this;
         }
 
         private void RegisterJobServices()
@@ -576,15 +642,24 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IJobTypeRegistry>(sp => new JobTypeRegistry(sp.GetServices<JobTypeRegistration>()));
             _services.ReplaceSingleton<IJobMonitor>(sp => sp.GetRequiredService<IJobRuntimeStore>());
             _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>()));
-            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, new JobWorkerOptions { TimeProvider = sp.GetService<TimeProvider>(), JobTypes = sp.GetRequiredService<IJobTypeRegistry>(), Serializer = sp.GetService<ISerializer>(), MaxConcurrency = sp.GetService<JobWorkerOptions>()?.MaxConcurrency ?? 1 }));
+            _services.ReplaceSingleton<IJobWorker>(sp =>
+            {
+                var options = sp.GetService<JobWorkerOptions>() ?? new();
+                return new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, options with
+                {
+                    TimeProvider = options.TimeProvider ?? sp.GetService<TimeProvider>(),
+                    JobTypes = options.JobTypes ?? sp.GetRequiredService<IJobTypeRegistry>(),
+                    Serializer = options.Serializer ?? sp.GetService<ISerializer>()
+                });
+            });
             _services.ReplaceSingleton<IScheduledJobStore>(sp => sp.GetRequiredService<IJobRuntimeStore>());
             _services.ReplaceSingleton<IScheduledJobManager>(sp => new ScheduledJobManager(
                 sp.GetRequiredService<IScheduledJobStore>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
                 sp.GetRequiredService<IJobTypeRegistry>(),
                 sp.GetService<ISerializer>(),
-                sp.GetService<TimeProvider>()));
-            _services.ReplaceSingleton(sp => new JobScheduleProcessor(sp.GetRequiredService<IScheduledJobStore>(), sp.GetRequiredService<IJobRuntimeStore>(), new JobScheduleProcessorOptions { TimeProvider = sp.GetService<TimeProvider>() }));
+                sp.GetService<TimeProvider>(), sp.GetService<JobWorkerOptions>()?.NodeId));
+            _services.ReplaceSingleton(sp => new JobScheduleProcessor(sp.GetRequiredService<IScheduledJobStore>(), sp.GetRequiredService<IJobRuntimeStore>(), new JobScheduleProcessorOptions { TimeProvider = sp.GetService<TimeProvider>(), NodeId = sp.GetService<JobWorkerOptions>()?.NodeId }));
 
 
         }
@@ -644,3 +719,6 @@ public interface IFoundatioBuilder
     IServiceCollection Services { get; }
     FoundatioBuilder Builder { get; }
 }
+
+/// <summary>Stable application identity for durable subscription defaults.</summary>
+public sealed record FoundatioServiceIdentity(string Name);

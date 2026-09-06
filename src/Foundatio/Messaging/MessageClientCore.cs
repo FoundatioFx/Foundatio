@@ -113,22 +113,51 @@ internal sealed class MessageClientCore : IAsyncDisposable
         return _transport is ITransportInfo info ? info.SupportedRoles.Contains(role) : role == DestinationRole.Queue;
     }
 
+    public bool SupportsTemporarySubscriptions => _topologyMode == TopologyMode.Ensure && _transport is ISupportsEphemeralSubscriptions;
+
     public void RequireEphemeralSubscriptions()
     {
         if (_topologyMode != TopologyMode.Ensure || _transport is not ISupportsEphemeralSubscriptions)
             throw new NotSupportedException("Temporary subscriptions require a transport with expiring subscription leases and TopologyMode.Ensure. Use an explicitly named, pre-provisioned subscription with this transport or topology mode.");
     }
 
+    private readonly ConcurrentDictionary<DestinationAddress, DateTimeOffset> _ensuredDestinations = new();
+    private readonly SemaphoreSlim _provisioning = new(1, 1);
+
     public Task EnsureAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
-    {
-        return _topologyMode switch
+        => _topologyMode switch
         {
             TopologyMode.None => Task.CompletedTask,
             TopologyMode.Validate => ValidateDeclarationsAsync(declarations, cancellationToken),
-            _ => _transport is ISupportsProvisioning provisioning
-                ? provisioning.EnsureAsync(declarations, cancellationToken)
-                : Task.CompletedTask
+            _ => EnsureDeclarationsAsync(declarations, cancellationToken)
         };
+
+    private async Task EnsureDeclarationsAsync(IReadOnlyList<DestinationDeclaration> declarations, CancellationToken cancellationToken)
+    {
+        if (_transport is not ISupportsProvisioning provisioning) return;
+        foreach (var declaration in declarations)
+        {
+            if (declaration.AutoDeleteAfter is not null)
+            {
+                await provisioning.EnsureAsync([declaration], cancellationToken).AnyContext();
+                continue;
+            }
+            if (_ensuredDestinations.TryGetValue(declaration.Address, out var expires) && expires > _timeProvider.GetUtcNow()) continue;
+            await _provisioning.WaitAsync(cancellationToken).AnyContext();
+            try
+            {
+                if (_ensuredDestinations.TryGetValue(declaration.Address, out expires) && expires > _timeProvider.GetUtcNow()) continue;
+                await provisioning.EnsureAsync([declaration], cancellationToken).AnyContext();
+                _ensuredDestinations[declaration.Address] = _timeProvider.GetUtcNow().AddSeconds(30);
+            }
+            finally { _provisioning.Release(); }
+        }
+    }
+
+    private void InvalidateProvisioning(DestinationAddress address)
+    {
+        _ensuredDestinations.TryRemove(address, out _);
+        _validatedDestinations.TryRemove(address, out _);
     }
 
     // Validate never creates: each destination is checked once (successes are cached so steady-state publishes pay no
@@ -183,13 +212,16 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         var sendOptions = BuildSendOptions(options);
         if (options.MessageId is not null)
-            throw new ArgumentException("A batch cannot share one message ID. Send messages individually when supplying application IDs.", nameof(options));
+            throw new ArgumentException("A batch cannot share one message ID. Use MessageBatchItem<T> to supply per-input application IDs.", nameof(options));
 
         var grouped = new Dictionary<DestinationAddress, List<(int InputIndex, TransportMessage Message)>>();
         var messageIds = new List<string>();
 
-        foreach (var message in messages)
+        foreach (var input in messages)
         {
+            ArgumentNullException.ThrowIfNull(input);
+            var item = input as IMessageBatchItem;
+            var message = item?.Value ?? input;
             ArgumentNullException.ThrowIfNull(message);
             Type messageType = declaredType ?? message.GetType();
             var destination = resolveDestination(messageType);
@@ -201,9 +233,10 @@ internal sealed class MessageClientCore : IAsyncDisposable
             }
 
             // Application IDs stay in input order even when messages route to different destinations.
-            string messageId = Guid.NewGuid().ToString("N");
+            string messageId = item?.MessageId ?? Guid.NewGuid().ToString("N");
+            ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
             messageIds.Add(messageId);
-            transportMessages.Add((messageIds.Count - 1, CreateTransportMessage(message, messageType, options, messageId)));
+            transportMessages.Add((messageIds.Count - 1, CreateTransportMessage(message, messageType, options with { Headers = item?.Headers ?? options.Headers }, messageId)));
         }
 
         var outcomes = messageIds.Select(id => new MessageSendOutcome(id, MessageSendStatus.NotAttempted)).ToArray();
@@ -250,23 +283,23 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public Task<IReceivedMessage<T>?> ReceiveAsync<T>(DestinationAddress source, TimeSpan wait, CancellationToken cancellationToken) where T : class
     {
         return ReceiveCoreAsync<IReceivedMessage<T>>(source, wait, async (entry, cancellation, supervision) =>
-            new ReceivedMessage<T>(await CreateMessageContextAsync<T>(entry, cancellation.Token).AnyContext(), cancellation, supervision), cancellationToken);
+            new ReceivedMessage<T>(await CreateMessageContextAsync<T>(entry, cancellation.Token).AnyContext(), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct)), cancellationToken);
     }
 
     public Task<IReceivedMessage?> ReceiveAsync(DestinationAddress source, TimeSpan wait, CancellationToken cancellationToken)
     {
         return ReceiveCoreAsync<IReceivedMessage>(source, wait, (entry, cancellation, supervision) =>
-            Task.FromResult<IReceivedMessage>(new ReceivedMessage(CreateMessageContext(entry, cancellation.Token), cancellation, supervision)), cancellationToken);
+            Task.FromResult<IReceivedMessage>(new ReceivedMessage(CreateMessageContext(entry, cancellation.Token), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct))), cancellationToken);
     }
 
     private async Task<T?> ReceiveCoreAsync<T>(DestinationAddress source, TimeSpan wait,
-        Func<TransportEntry, CancellationTokenSource, Task, Task<T>> create, CancellationToken cancellationToken) where T : class
+        Func<TransportEntry, CancellationTokenSource, Task<bool>, Task<T>> create, CancellationToken cancellationToken) where T : class
     {
         ThrowIfDisposed();
         ArgumentOutOfRangeException.ThrowIfLessThan(wait, TimeSpan.Zero);
         var pull = RequirePull();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeCancellation.Token);
-        Task supervision = Task.CompletedTask;
+        Task<bool> supervision = Task.FromResult(false);
         bool transferred = false;
         try
         {
@@ -399,7 +432,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     // (no head-of-line blocking) and steady-state utilization stays at the configured concurrency. A failure while
     // receiving or while processing a single entry (including a poison message that was already dead-lettered) must
     // never tear down the loop, otherwise one bad message or a transient transport blip silently stops consumption.
-    private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken)
+    private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken, Action<bool>? receivingHealth = null)
     {
         maxConcurrency = Math.Max(1, maxConcurrency);
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
@@ -431,11 +464,14 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 IReadOnlyList<TransportEntry> entries;
                 try
                 {
-                    entries = await pull.ReceiveAsync(source, new ReceiveRequest
+                    var request = new ReceiveRequest
                     {
                         MaxMessages = claimed,
                         MaxWaitTime = pollWindow
-                    }, cancellationToken).AnyContext();
+                    };
+                    entries = _transport is ISupportsVisibilityTimeout visibility
+                        ? await visibility.ReceiveAsync(source, request, TimeSpan.FromMinutes(1), cancellationToken).AnyContext()
+                        : await pull.ReceiveAsync(source, request, cancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -445,6 +481,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 catch (Exception ex)
                 {
                     ReleaseSlots(slots, claimed);
+                    InvalidateProvisioning(source);
+                    receivingHealth?.Invoke(false);
+                    if (ex is MessageDestinationNotFoundException) throw;
 
                     // The first failure of an outage is the alert; repeats at 1/s would be a firehose, so they
                     // de-escalate to WARN (with a running count) until a receive succeeds again.
@@ -458,6 +497,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     continue;
                 }
 
+                if (consecutiveReceiveFailures > 0) receivingHealth?.Invoke(true);
                 if (consecutiveReceiveFailures > 1)
                     _logger.LogInformation("Receiving from \"{Source}\" recovered after {ConsecutiveFailures} consecutive failures", source, consecutiveReceiveFailures);
                 consecutiveReceiveFailures = 0;
@@ -526,6 +566,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         catch (OperationCanceledException) when (deliveryCancellation.IsCancellationRequested)
         {
+            bool leaseLost = await supervision.AnyContext();
+            if (cancellationToken.IsCancellationRequested && !leaseLost)
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
+                await ReturnUnsettledAsync(entry, cleanup.Token).AnyContext();
+            }
         }
         catch (UnhandledMessageTypeException)
         {
@@ -545,10 +591,23 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    private async Task SuperviseLeaseAsync(TransportEntry entry, CancellationTokenSource deliveryCancellation)
+    private async Task ReturnUnsettledAsync(TransportEntry entry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _transport.AbandonAsync(entry, cancellationToken).WaitAsync(cancellationToken).AnyContext();
+        }
+        catch (ReceiptExpiredException) { }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Unable to return interrupted message {MessageId} from {Source}; its lease will expire", entry.Id, entry.Destination);
+        }
+    }
+
+    private async Task<bool> SuperviseLeaseAsync(TransportEntry entry, CancellationTokenSource deliveryCancellation)
     {
         if (entry.LockExpiresUtc is not { } expires)
-            return;
+            return false;
 
         var token = deliveryCancellation.Token;
         var duration = TimeSpan.FromMinutes(1);
@@ -584,12 +643,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
+            return expires <= _timeProvider.GetUtcNow();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Lease lost for message {MessageId} from {Source}; cancelling its handler", entry.Id, entry.Destination);
             await deliveryCancellation.CancelAsync().AnyContext();
+            return true;
         }
+        return expires <= _timeProvider.GetUtcNow();
     }
 
     private async Task HandleMessageAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, Task> handler, CancellationToken cancellationToken) where TMessage : IMessageContext
@@ -697,6 +759,11 @@ internal sealed class MessageClientCore : IAsyncDisposable
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
 
+        if (entry.EnvelopeError is { } envelopeError)
+        {
+            await DeadLetterPoisonMessageAsync(entry, "invalid-envelope", envelopeError, cancellationToken).AnyContext();
+            throw _exceptionFactory($"Message {entry.Id} has an invalid transport envelope.", envelopeError);
+        }
         string? contentType = entry.ContentType ?? entry.Headers.GetValueOrDefault(KnownHeaders.ContentType);
         if (!String.IsNullOrEmpty(contentType) && !String.Equals(contentType, _contentType, StringComparison.OrdinalIgnoreCase))
         {
@@ -840,7 +907,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             {
                 await _runtimeStore!.ScheduleDispatchAsync(new ScheduledDispatchState
                 {
-                    DispatchId = outcomes[index].MessageId,
+                    DispatchId = Guid.NewGuid().ToString("N"),
                     Kind = kind,
                     Destination = destination,
                     Body = message.Body,
@@ -900,7 +967,8 @@ internal sealed class MessageClientCore : IAsyncDisposable
         var outcomes = messages.Select(m => new MessageSendOutcome(m.MessageId!, MessageSendStatus.NotAttempted)).ToArray();
         for (int offset = 0; offset < messages.Count; offset += limit)
         {
-            var chunk = messages.Skip(offset).Take(limit).ToArray();
+            var chunk = new TransportMessage[Math.Min(limit, messages.Count - offset)];
+            for (int index = 0; index < chunk.Length; index++) chunk[index] = messages[offset + index];
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -911,14 +979,20 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 if (result.Items.Count != chunk.Length)
                     throw new MessageBusException("The transport did not return one acceptance result per message.");
 
-                RecordSent(destination, result.Items);
-                items.AddRange(result.Items);
-                for (int index = 0; index < chunk.Length; index++)
-                    outcomes[offset + index] = outcomes[offset + index] with { Status = MessageSendStatus.Accepted };
+                ApplyOutcomes(result.Items, outcomes, offset, chunk.Length);
+                var accepted = result.Items.Where(i => i.Status == MessageSendStatus.Accepted).ToArray();
+                RecordSent(destination, accepted);
+                items.AddRange(accepted);
+                if (accepted.Length != chunk.Length)
+                    throw new MessageSendException(outcomes, new MessageBusException("The provider rejected or could not confirm part of the batch."));
             }
             catch (Exception ex)
             {
-                if (ex is TransportSendException partial && partial.AcceptedCount < chunk.Length)
+                InvalidateProvisioning(destination);
+                if (ex is MessageSendException) throw;
+                if (ex is TransportSendException { Items: { } indexed })
+                    ApplyOutcomes(indexed, outcomes, offset, chunk.Length);
+                else if (ex is TransportSendException partial && partial.AcceptedCount < chunk.Length)
                 {
                     for (int index = 0; index < chunk.Length; index++)
                     {
@@ -940,6 +1014,25 @@ internal sealed class MessageClientCore : IAsyncDisposable
         // Every returned item was accepted (send is throw-on-failure).
         if (items.Count > 0)
             MessagingInstruments.Sent.Add(items.Count, new KeyValuePair<string, object?>("destination", destination.Key));
+    }
+
+    private static void ApplyOutcomes(IReadOnlyList<SendItemResult> items, MessageSendOutcome[] outcomes, int offset, int count)
+    {
+        if (items.Count != count) throw new MessageBusException("Transport must report every input outcome.");
+        var seen = new bool[count];
+        for (int position = 0; position < items.Count; position++)
+        {
+            int index = items[position].Index ?? position;
+            if (index < 0 || index >= count || seen[index] || !Enum.IsDefined(items[position].Status))
+                throw new MessageBusException("Transport returned invalid or duplicate result indexes.");
+            seen[index] = true;
+        }
+        for (int position = 0; position < items.Count; position++)
+        {
+            var item = items[position];
+            int index = offset + (item.Index ?? position);
+            outcomes[index] = outcomes[index] with { Status = item.Status, ErrorCode = item.ErrorCode, ErrorMessage = item.ErrorMessage, Retryable = item.Retryable };
+        }
     }
 
     private ISupportsPull RequirePull()
@@ -981,9 +1074,21 @@ internal sealed class MessageClientCore : IAsyncDisposable
         private readonly ConsumerGroup _catchAll = new();
         private int _maxConcurrency = 1;
         private bool _ephemeral;
-        private IPushSubscription? _pushSubscription;
         private Task? _loop;
-        private Task? _subscriptionLease;
+        private int _status = (int)MessageSubscriptionStatus.Starting;
+        private long _recoveryVersion;
+        public MessageSubscriptionStatus Status => (MessageSubscriptionStatus)Volatile.Read(ref _status);
+        public long RecoveryVersion => Interlocked.Read(ref _recoveryVersion);
+
+        public async Task WaitUntilReadyAsync(CancellationToken cancellationToken)
+        {
+            while (Status != MessageSubscriptionStatus.Healthy)
+            {
+                if (Status == MessageSubscriptionStatus.Stopped)
+                    throw new ObjectDisposedException(nameof(IMessageSubscription));
+                await Task.Delay(TimeSpan.FromMilliseconds(50), cancellationToken).AnyContext();
+            }
+        }
         private bool _isDisposed;
 
         public SourceListener(MessageClientCore core, DestinationAddress source)
@@ -1018,7 +1123,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     throw new InvalidOperationException($"Source \"{_source}\" is already consumed with MaxConcurrency {_maxConcurrency}; a conflicting MaxConcurrency {desired} was requested. Consumers sharing a destination must use the same MaxConcurrency.");
                 }
 
-                handle = new MessageListenerHandle(_source, registration.Key, () => RemoveConsumerAsync(registration.Key));
+                handle = new MessageListenerHandle(_source, registration.Key, () => RemoveConsumerAsync(registration.Key), () => Status, () => RecoveryVersion, WaitUntilReadyAsync);
                 _consumers[registration.Key] = new Registered(registration, handle);
                 group.Add(registration);
 
@@ -1031,50 +1136,104 @@ internal sealed class MessageClientCore : IAsyncDisposable
             return registration.IsCatchAll ? _catchAll : _byType.GetOrAdd(registration.TypeName!, _ => new ConsumerGroup());
         }
 
-        public async Task StartAsync(CancellationToken cancellationToken)
+        public Task StartAsync(CancellationToken cancellationToken)
         {
-            if (_ephemeral)
-                _subscriptionLease = SuperviseSubscriptionAsync(_cancellationTokenSource.Token);
-            if (_core._transport is ISupportsPush push)
-            {
-                // Route the push callback through SafeProcessAsync so a throw (including an unmatched-type throw) is
-                // isolated to the message and never tears down the subscription.
-                _pushSubscription = await push.SubscribeAsync(_source, (entry, token) => _core.SafeProcessAsync(entry, DispatchAsync, _source, token), new PushOptions { MaxConcurrentMessages = Math.Max(1, _maxConcurrency) }, cancellationToken).AnyContext();
-                return;
-            }
-
-            if (_core._transport is not ISupportsPull pull)
-                throw _core._exceptionFactory($"Transport \"{_core._transport.GetType().Name}\" does not support receiving messages.", null);
-
-            // Task.Run so a transport whose ReceiveAsync completes synchronously can never run the loop inline on the
-            // caller's thread and block the subscribe call from returning.
-            _loop = Task.Run(() => _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, _cancellationTokenSource.Token), CancellationToken.None);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_core._transport is not ISupportsPull && _core._transport is not ISupportsPush)
+                throw _core._exceptionFactory($"Transport {_core._transport.GetType().Name} does not support receiving messages.", null);
+            _loop = Task.Run(() => RunSupervisedAsync(_cancellationTokenSource.Token), CancellationToken.None);
+            return Task.CompletedTask;
         }
 
-        private async Task SuperviseSubscriptionAsync(CancellationToken cancellationToken)
+        private async Task RunSupervisedAsync(CancellationToken cancellationToken)
         {
+            bool recreate = false;
             try
             {
                 while (!cancellationToken.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(30), _core._timeProvider, cancellationToken).AnyContext();
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10), _core._timeProvider);
+                    using var receiving = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    Task? receiver = null;
+                    Task? lease = null;
+                    try
+                    {
+                        if (recreate)
+                            await _core.EnsureAsync([new DestinationDeclaration { Address = _source, AutoDeleteAfter = _ephemeral ? TimeSpan.FromMinutes(2) : null }], cancellationToken).AnyContext();
+                        Volatile.Write(ref _status, (int)MessageSubscriptionStatus.Healthy);
+                        receiver = RunReceiverAsync(receiving.Token);
+                        lease = _ephemeral ? SuperviseSubscriptionAsync(receiving.Token) : Task.Delay(Timeout.Infinite, receiving.Token);
+                        var completed = await Task.WhenAny(receiver, lease).AnyContext();
+                        await completed.AnyContext();
+                        cancellationToken.ThrowIfCancellationRequested();
+                        throw new InvalidOperationException($"Listener {_source} stopped unexpectedly.");
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
+                    catch (Exception ex)
+                    {
+                        Volatile.Write(ref _status, (int)MessageSubscriptionStatus.Recovering);
+                        Interlocked.Increment(ref _recoveryVersion);
+                        _core._logger.LogWarning(ex, "Listener {Source} interrupted; recovering subscription", _source);
+                        recreate = true;
+                    }
+                    finally
+                    {
+                        await receiving.CancelAsync().AnyContext();
+                        try { await Task.WhenAll(receiver ?? Task.CompletedTask, lease ?? Task.CompletedTask).AnyContext(); }
+                        catch (Exception) { }
+                    }
+                    await _core._timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                }
+            }
+            finally { Volatile.Write(ref _status, (int)MessageSubscriptionStatus.Stopped); }
+        }
+
+        private async Task RunReceiverAsync(CancellationToken cancellationToken)
+        {
+            if (_core._transport is ISupportsPull pull)
+            {
+                await _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, cancellationToken, healthy =>
+                {
+                    int previous = Interlocked.Exchange(ref _status, (int)(healthy ? MessageSubscriptionStatus.Healthy : MessageSubscriptionStatus.Recovering));
+                    if (!healthy && previous == (int)MessageSubscriptionStatus.Healthy)
+                        Interlocked.Increment(ref _recoveryVersion);
+                }).AnyContext();
+                return;
+            }
+            await using var push = await ((ISupportsPush)_core._transport).SubscribeAsync(_source,
+                (entry, token) => _core.SafeProcessAsync(entry, DispatchAsync, _source, token),
+                new PushOptions { MaxConcurrentMessages = _maxConcurrency }, cancellationToken).AnyContext();
+            await Task.Delay(Timeout.Infinite, cancellationToken).AnyContext();
+        }
+
+        private async Task SuperviseSubscriptionAsync(CancellationToken cancellationToken)
+        {
+            var expires = _core._timeProvider.GetUtcNow().AddMinutes(2);
+            var delay = TimeSpan.FromSeconds(30);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delay, _core._timeProvider, cancellationToken).AnyContext();
+                var started = _core._timeProvider.GetUtcNow();
+                var remaining = expires - started;
+                if (remaining <= TimeSpan.Zero)
+                    throw new ReceiptExpiredException("The temporary subscription lease expired.");
+                try
+                {
+                    using var timeout = new CancellationTokenSource(remaining < TimeSpan.FromSeconds(10) ? remaining : TimeSpan.FromSeconds(10), _core._timeProvider);
                     using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
                     bool renewed = await ((ISupportsEphemeralSubscriptions)_core._transport).RenewSubscriptionAsync(_source, TimeSpan.FromMinutes(2), operation.Token)
                         .WaitAsync(operation.Token).AnyContext();
                     if (!renewed)
-                        throw new ReceiptExpiredException("The temporary subscription lease expired.");
+                        throw new ReceiptExpiredException("The temporary subscription lease was lost.");
+                    expires = started.AddMinutes(2);
+                    delay = TimeSpan.FromSeconds(30);
                 }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-            }
-            catch (Exception ex)
-            {
-                _core._logger.LogError(ex, "Lost temporary subscription {Source}", _source);
-                await _cancellationTokenSource.CancelAsync().AnyContext();
-                if (_pushSubscription is not null)
-                    await _pushSubscription.DisposeAsync().AnyContext();
+                catch (ReceiptExpiredException) { throw; }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+                catch (Exception ex)
+                {
+                    _core._logger.LogWarning(ex, "Unable to renew temporary subscription {Source}; retrying within its lease", _source);
+                    delay = TimeSpan.FromSeconds(1);
+                }
             }
         }
 
@@ -1126,9 +1285,6 @@ internal sealed class MessageClientCore : IAsyncDisposable
         {
             await _cancellationTokenSource.CancelAsync().AnyContext();
 
-            if (_pushSubscription is not null)
-                await _pushSubscription.DisposeAsync().AnyContext();
-
             if (_loop is not null)
             {
                 try
@@ -1138,16 +1294,23 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 catch (OperationCanceledException) { }
             }
 
-            if (_subscriptionLease is not null)
-                await _subscriptionLease.AnyContext();
             _cancellationTokenSource.Dispose();
             _core.RemoveSource(_source, this);
             if (_ephemeral && _core._transport is ISupportsProvisioning provisioning)
-                await provisioning.DeleteAsync(_source, CancellationToken.None).AnyContext();
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _core._timeProvider);
+                try { await provisioning.DeleteAsync(_source, cleanup.Token).WaitAsync(cleanup.Token).AnyContext(); }
+                catch (Exception ex) { _core._logger.LogWarning(ex, "Unable to remove temporary subscription {Source}; its lease will expire", _source); }
+            }
         }
 
         private async Task DispatchAsync(TransportEntry entry, CancellationToken token)
         {
+            if (entry.EnvelopeError is { } error)
+            {
+                await _core.DeadLetterPoisonMessageAsync(entry, "invalid-envelope", error, token).AnyContext();
+                return;
+            }
             var registration = Resolve(entry);
             if (registration is null)
             {
@@ -1224,6 +1387,7 @@ internal class MessageContext : IMessageContext
 
     public async Task CompleteAsync(CancellationToken cancellationToken = default)
     {
+        if (cancellationToken == default) cancellationToken = CancellationToken;
         if (IsHandled)
             return;
         CancellationToken.ThrowIfCancellationRequested();
@@ -1245,6 +1409,7 @@ internal class MessageContext : IMessageContext
 
     public async Task RejectAsync(RejectOptions? options = null, CancellationToken cancellationToken = default)
     {
+        if (cancellationToken == default) cancellationToken = CancellationToken;
         if (IsHandled)
             return;
         CancellationToken.ThrowIfCancellationRequested();
@@ -1333,7 +1498,7 @@ internal class MessageContext : IMessageContext
     public Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default)
     {
         return _transport is ISupportsLockRenewal lockRenewal
-            ? lockRenewal.RenewLockAsync(_entry, duration, cancellationToken)
+            ? lockRenewal.RenewLockAsync(_entry, duration, cancellationToken == default ? CancellationToken : cancellationToken)
             : throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support lock renewal.");
     }
 
@@ -1363,7 +1528,8 @@ internal class MessageContext : IMessageContext
 
         try
         {
-            await transport.SendAsync(destination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.ApplicationMessageId ?? entry.Headers.GetValueOrDefault(KnownHeaders.MessageId) ?? entry.Id, ContentType = entry.ContentType ?? entry.Headers.GetValueOrDefault(KnownHeaders.ContentType) }], new TransportSendOptions(), cancellationToken).AnyContext();
+            var result = await transport.SendAsync(destination, [new TransportMessage { Body = entry.Body, Headers = headers, MessageId = entry.ApplicationMessageId ?? entry.Headers.GetValueOrDefault(KnownHeaders.MessageId) ?? entry.Id, ContentType = entry.ContentType ?? entry.Headers.GetValueOrDefault(KnownHeaders.ContentType) }], new TransportSendOptions(), cancellationToken).AnyContext();
+            result.EnsureAccepted(1);
         }
         catch (Exception ex)
         {
@@ -1482,16 +1648,25 @@ internal static class MessageRoutingConventions
 internal sealed class MessageListenerHandle : IMessageSubscription
 {
     private readonly Func<ValueTask> _dispose;
+    private readonly Func<MessageSubscriptionStatus> _status;
+    private readonly Func<long> _recoveryVersion;
+    private readonly Func<CancellationToken, Task> _waitUntilReady;
     private int _isDisposed;
 
-    public MessageListenerHandle(DestinationAddress source, string key, Func<ValueTask> dispose)
+    public MessageListenerHandle(DestinationAddress source, string key, Func<ValueTask> dispose, Func<MessageSubscriptionStatus> status, Func<long> recoveryVersion, Func<CancellationToken, Task> waitUntilReady)
     {
+        _status = status;
+        _recoveryVersion = recoveryVersion;
+        _waitUntilReady = waitUntilReady;
         Source = source;
         Key = key;
         _dispose = dispose;
     }
 
     public DestinationAddress Source { get; }
+    public MessageSubscriptionStatus Status => Volatile.Read(ref _isDisposed) == 1 ? MessageSubscriptionStatus.Stopped : _status();
+    public long RecoveryVersion => _recoveryVersion();
+    public Task WaitUntilReadyAsync(CancellationToken cancellationToken = default) => _waitUntilReady(cancellationToken);
     public string Topic => Source.Topic ?? "";
     public string Subscription => Source.Role == DestinationRole.Subscription ? Source.Name : "";
     public string Key { get; }

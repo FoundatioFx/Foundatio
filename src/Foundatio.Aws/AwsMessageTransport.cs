@@ -29,7 +29,7 @@ namespace Foundatio.Messaging;
 /// priority, per-message TTL, or push delivery, and no transport-native dead-letter that the core controls the timing
 /// of, so those capabilities are intentionally not implemented (the core owns retry/dead-lettering).
 /// </remarks>
-public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
+public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
     ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsProvisioning, ISupportsStats, ITransportInfo
 {
     private const string HeadersAttributeName = "fnd.headers";
@@ -50,12 +50,23 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     private readonly ConcurrentDictionary<string, string> _queueUrls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _topicArns = new(StringComparer.Ordinal);
     private int _isDisposed;
+    private readonly bool _ownsClients = true;
 
     public AwsMessageTransport(AwsMessageTransportOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _sqs = new Lazy<IAmazonSQS>(CreateSqsClient);
         _sns = new Lazy<IAmazonSimpleNotificationService>(CreateSnsClient);
+    }
+
+    /// <summary>Uses caller-owned SDK clients, allowing shared connection configuration and deterministic tests.</summary>
+    public AwsMessageTransport(AwsMessageTransportOptions options, IAmazonSQS sqs, IAmazonSimpleNotificationService sns) : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(sqs);
+        ArgumentNullException.ThrowIfNull(sns);
+        _sqs = new Lazy<IAmazonSQS>(() => sqs);
+        _sns = new Lazy<IAmazonSimpleNotificationService>(() => sns);
+        _ownsClients = false;
     }
 
     public AwsMessageTransport(string connectionString) : this(AwsMessageTransportOptions.FromConnectionString(connectionString)) { }
@@ -67,12 +78,14 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     {
         DelayedDelivery = true,
         MaxDeliveryDelay = TimeSpan.FromMinutes(15), // SQS DelaySeconds maximum
-        MaxMessageBytes = 262144 // 256 KB SQS limit
+        MaxMessageBytes = 1048576,
+        MaxBatchSize = 10
     };
 
     private static readonly TransportCapabilities _topicCapabilities = new()
     {
-        MaxMessageBytes = 262144 // 256 KB SNS limit
+        MaxMessageBytes = 262144,
+        MaxBatchSize = 10
     };
 
     public DeliveryGuarantee DeliveryGuarantee => DeliveryGuarantee.AtLeastOnce;
@@ -83,76 +96,6 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
     public TimeSpan? MaxRedeliveryDelay => TimeSpan.FromHours(12); // SQS ChangeMessageVisibility maximum
     public TimeSpan? MaxVisibilityTimeout => TimeSpan.FromHours(12); // SQS visibility maximum
-
-    public async Task<SendResult> SendAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken ct = default)
-    {
-        ThrowIfDisposed();
-        ArgumentNullException.ThrowIfNull(destination);
-        ArgumentNullException.ThrowIfNull(messages);
-
-        var items = new List<SendItemResult>(messages.Count);
-
-        // The address states the destination role, so route without inferring: a topic publishes to SNS, anything else
-        // sends to an SQS queue.
-        if (destination.Role == DestinationRole.Topic)
-        {
-            // SNS has no native delayed publish. The core routes delayed topic publishes through the runtime-store
-            // fallback (topic capabilities advertise no DelayedDelivery), so a DeliverAt reaching here is a contract
-            // violation — refuse loudly rather than publish immediately and silently drop the delay.
-            if (options.DeliverAt is { } deliverAt && deliverAt > DateTimeOffset.UtcNow)
-                throw new NotSupportedException($"Transport \"{nameof(AwsMessageTransport)}\" does not support delayed delivery for Topic destinations (SNS has no native delay). Register a job runtime store so delayed publishes use the scheduled-dispatch fallback.");
-
-            string topicArn = await ResolveTopicArnAsync(destination.Name, ct).ConfigureAwait(false);
-            try
-            {
-                foreach (var message in messages)
-                {
-                    var (body, encoding) = EncodeBody(message);
-                    var response = await _sns.Value.PublishAsync(new PublishRequest
-                    {
-                        TopicArn = topicArn,
-                        Message = body,
-                        MessageAttributes = BuildAttributes(message, encoding, static value => new SnsMessageAttributeValue { DataType = "String", StringValue = value })
-                    }, ct).ConfigureAwait(false);
-
-                    items.Add(new SendItemResult { MessageId = response.MessageId });
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new TransportSendException(items.Count, ex);
-            }
-
-            return new SendResult { Items = items };
-        }
-
-        string queueUrl = await ResolveQueueUrlAsync(destination, ct).ConfigureAwait(false);
-        int? delaySeconds = ToDelaySeconds(options.DeliverAt);
-        try
-        {
-            foreach (var message in messages)
-            {
-                var (body, encoding) = EncodeBody(message);
-                var request = new SendMessageRequest
-                {
-                    QueueUrl = queueUrl,
-                    MessageBody = body,
-                    MessageAttributes = BuildAttributes(message, encoding, static value => new SqsMessageAttributeValue { DataType = "String", StringValue = value })
-                };
-                if (delaySeconds is { } delay)
-                    request.DelaySeconds = delay;
-
-                var response = await _sqs.Value.SendMessageAsync(request, ct).ConfigureAwait(false);
-                items.Add(new SendItemResult { MessageId = response.MessageId });
-            }
-        }
-        catch (Exception ex)
-        {
-            throw new TransportSendException(items.Count, ex);
-        }
-
-        return new SendResult { Items = items };
-    }
 
     public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
     {
@@ -179,13 +122,36 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
             sqsRequest.WaitTimeSeconds = (int)Math.Clamp(wait.TotalSeconds, 0, 20);
 
         var receiveStarted = DateTimeOffset.UtcNow;
-        var response = await _sqs.Value.ReceiveMessageAsync(sqsRequest, ct).ConfigureAwait(false);
+        ReceiveMessageResponse response;
+        try { response = await _sqs.Value.ReceiveMessageAsync(sqsRequest, ct).ConfigureAwait(false); }
+        catch (QueueDoesNotExistException ex)
+        {
+            _queueUrls.TryRemove(source.Key, out _);
+            throw new MessageDestinationNotFoundException(source, ex);
+        }
         if (response.Messages is not { Count: > 0 })
             return [];
 
         var entries = new List<TransportEntry>(response.Messages.Count);
         foreach (var message in response.Messages)
         {
+            ReadOnlyMemory<byte> body;
+            MessageHeaders headers;
+            Exception? envelopeError = null;
+            try
+            {
+                body = DecodeBody(message.Body ?? throw new FormatException("Missing message body."), GetAttribute(message.MessageAttributes, EncodingAttributeName));
+                headers = FromSqsAttributes(message.MessageAttributes);
+            }
+            catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException)
+            {
+                envelopeError = ex;
+                body = Encoding.UTF8.GetBytes(message.Body ?? "");
+                headers = MessageHeaders.Create(new Dictionary<string, string>
+                {
+                    ["transport.raw.attributes"] = JsonSerializer.Serialize(message.MessageAttributes)
+                });
+            }
             entries.Add(new TransportEntry
             {
                 Id = message.MessageId,
@@ -193,8 +159,9 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
                 ContentType = GetAttribute(message.MessageAttributes, ContentTypeAttributeName),
                 Destination = source,
                 LockExpiresUtc = receiveStarted.AddSeconds(sqsRequest.VisibilityTimeout.GetValueOrDefault()),
-                Body = DecodeBody(message.Body, GetAttribute(message.MessageAttributes, EncodingAttributeName)),
-                Headers = FromSqsAttributes(message.MessageAttributes),
+                Body = body,
+                Headers = headers,
+                EnvelopeError = envelopeError,
                 DeliveryCount = GetReceiveCount(message),
                 Receipt = new Receipt { TransportState = message.ReceiptHandle }
             });
@@ -369,9 +336,9 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return;
 
-        if (_sqs.IsValueCreated)
+        if (_ownsClients && _sqs.IsValueCreated)
             _sqs.Value.Dispose();
-        if (_sns.IsValueCreated)
+        if (_ownsClients && _sns.IsValueCreated)
             _sns.Value.Dispose();
 
         await ValueTask.CompletedTask.ConfigureAwait(false);

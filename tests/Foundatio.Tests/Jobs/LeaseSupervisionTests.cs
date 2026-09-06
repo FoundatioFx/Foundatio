@@ -86,7 +86,7 @@ public class LeaseSupervisionTests
         public Task<JobState?> GetAsync(string jobId, CancellationToken ct = default) => _inner.GetAsync(jobId, ct);
         public Task<int> CleanupAsync(int limit = 1000, CancellationToken ct = default) => _inner.CleanupAsync(limit, ct);
         public Task<JobPage> QueryAsync(JobQuery query, CancellationToken ct = default) => _inner.QueryAsync(query, ct);
-        public Task<bool> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken ct = default) => _inner.CreateOccurrenceAsync(initial, allowOverlap, ct);
+        public Task<JobOccurrenceResult> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken ct = default) => _inner.CreateOccurrenceAsync(initial, allowOverlap, ct);
         public Task<JobState?> ClaimNextAsync(JobClaimRequest request, CancellationToken ct = default) => _inner.ClaimNextAsync(request, ct);
         public Task<JobState?> ClaimJobAsync(string jobId, JobClaimRequest request, CancellationToken ct = default) => _inner.ClaimJobAsync(jobId, request, ct);
         public Task<bool> CompleteJobAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken ct = default) => _inner.CompleteJobAsync(jobId, claimToken, completion, ct);
@@ -102,7 +102,8 @@ public class LeaseSupervisionTests
         public Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken ct = default) => _inner.IsCancellationRequestedAsync(jobId, ct);
         public Task ScheduleDispatchAsync(ScheduledDispatchState dispatch, CancellationToken ct = default) => _inner.ScheduleDispatchAsync(dispatch, ct);
         public Task<IReadOnlyList<ScheduledDispatchState>> ClaimDueDispatchesAsync(DateTimeOffset now, int limit, string nodeId, TimeSpan lease, CancellationToken ct = default) => _inner.ClaimDueDispatchesAsync(now, limit, nodeId, lease, ct);
-        public Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken ct = default) => _inner.CompleteDispatchAsync(dispatchId, nodeId, ct);
+        public Task<JobRuntimeStoreStats> GetStatsAsync(CancellationToken ct = default) => _inner.GetStatsAsync(ct);
+        public Task<bool> CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken ct = default) => _inner.CompleteDispatchAsync(dispatchId, nodeId, ct);
         public Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken ct = default) => _inner.ReleaseDispatchAsync(dispatchId, nodeId, nextDueUtc, ct);
     }
 }

@@ -15,7 +15,7 @@ public static class AwsFoundatioBuilderExtensions
     /// also bound from an "Aws" configuration section when present, and <paramref name="configure"/> can override
     /// anything. Point ServiceUrl at LocalStack to run without a cloud account.
     /// </summary>
-    public static FoundatioBuilder UseAws(this FoundatioBuilder.MessagingBuilder builder, Action<AwsMessageTransportOptions>? configure = null)
+    public static FoundatioBuilder.MessagingBuilder UseAws(this FoundatioBuilder.MessagingBuilder builder, Action<AwsMessageTransportOptions>? configure = null)
     {
         return builder.UseTransport(sp =>
         {

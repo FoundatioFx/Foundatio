@@ -19,7 +19,10 @@ public sealed partial class RedisStreamsMessageTransport
             local bm, bs = string.match(b, '^(%d+)%-(%d+)$')
             return tonumber(am) < tonumber(bm) or (tonumber(am) == tonumber(bm) and tonumber(as) < tonumber(bs))
         end
-        local function trimTopic(stream, now)
+        local function trimTopic(stream, now, force)
+            local cadence = stream .. ':trim'
+            if not force and redis.call('EXISTS', cadence) == 1 then return end
+            redis.call('SET', cadence, '1', 'PX', 1000)
             cleanupSubscriptions(stream, now)
             if redis.call('EXISTS', stream) == 0 then return end
             local groups = redis.call('XINFO', 'GROUPS', stream)
@@ -45,7 +48,7 @@ public sealed partial class RedisStreamsMessageTransport
 
     private const string SendScript = TopicRetentionFunctions + """
 
-        if ARGV[1] == '1' then trimTopic(KEYS[1], ARGV[3]) end
+        if ARGV[1] == '1' then trimTopic(KEYS[1], ARGV[3], redis.call('XLEN', KEYS[1]) >= tonumber(ARGV[2])) end
         if redis.call('XLEN', KEYS[1]) >= tonumber(ARGV[2]) then
             return redis.error_reply('The destination has reached its pending-message capacity.')
         end
@@ -58,7 +61,7 @@ public sealed partial class RedisStreamsMessageTransport
 
         local entries = redis.call('XRANGE', KEYS[1], ARGV[1], ARGV[1], 'COUNT', 1)
         if #entries == 0 then return 0 end
-        if ARGV[2] == '1' then trimTopic(KEYS[2], ARGV[4]) end
+        if ARGV[2] == '1' then trimTopic(KEYS[2], ARGV[4], redis.call('XLEN', KEYS[2]) >= tonumber(ARGV[3])) end
         if redis.call('XLEN', KEYS[2]) >= tonumber(ARGV[3]) then return redis.error_reply('Replay destination is full.') end
         local fields = entries[1][2]
         for index = 1, #fields, 2 do

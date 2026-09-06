@@ -57,7 +57,7 @@ Configure the bus once, then register explicit consumers or subscribers. Queue a
 builder.Services.AddFoundatioWorker(foundatio => foundatio
     .Messaging.ConfigureRetry(policy => policy with { MaxAttempts = 5 })
     .UseInMemory()
-    .Messaging.AddConsumer<WorkItem, WorkItemHandler>(options => options.MaxConcurrency = 4));
+    .AddConsumer<WorkItem, WorkItemHandler>(options => options.MaxConcurrency = 4));
 ```
 
 Use `MessageBusOptions` when constructing a bus manually. Set `Topology` to `Ensure`, `Validate`, or `None`; set `Serializer` and matching `ContentType` when overriding serialization. Consumer concurrency belongs to an endpoint. Named subscriptions are durable; unnamed temporary subscriptions require provider support.
@@ -234,8 +234,8 @@ Register the store and eligible job types in a worker:
 ```csharp
 builder.Services.AddFoundatioWorker(foundatio => foundatio
     .Jobs.UseInMemory()
-    .Jobs.AddJobType<CleanupJob>("cleanup.v1")
-    .Jobs.AddCronJob<CleanupJob>("0 2 * * *"), jobConcurrency: 4);
+    .AddJobType<CleanupJob>("cleanup.v1")
+    .AddCronJob<CleanupJob>("0 2 * * *"), jobConcurrency: 4);
 ```
 
 Set per-request `MaxAttempts` in `JobRequestOptions`; schedule definitions snapshot their own retry budget. Persisted schedule edits use revisions, and changed declarations require a higher `ConfigurationVersion`. See [Durable jobs](jobs.md) for retention, capacity, and deployment behavior.

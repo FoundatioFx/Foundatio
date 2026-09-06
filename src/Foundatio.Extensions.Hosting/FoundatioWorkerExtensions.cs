@@ -5,6 +5,7 @@ using Foundatio.Extensions.Hosting.Messaging;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Foundatio;
 
@@ -19,11 +20,13 @@ public static class FoundatioWorkerExtensions
     /// <param name="services">The application's services.</param>
     /// <param name="configure">Transport, store, handler, and job registrations for this worker.</param>
     /// <param name="jobConcurrency">Maximum simultaneous job executions. Message concurrency is configured per consumer.</param>
-    public static IServiceCollection AddFoundatioWorker(this IServiceCollection services, Action<FoundatioBuilder> configure, int jobConcurrency = 1)
+    public static IServiceCollection AddFoundatioWorker(this IServiceCollection services, Action<FoundatioBuilder> configure, int? jobConcurrency = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
-        ArgumentOutOfRangeException.ThrowIfLessThan(jobConcurrency, 1);
+        if (jobConcurrency is { } value) ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+        services.TryAddSingleton<FoundatioRuntimeHealth>();
+        services.AddHealthChecks().AddCheck<FoundatioHealthCheck>("foundatio");
         configure(services.AddFoundatio());
 
         bool handlers = services.Any(d => d.ServiceType == typeof(MessageHandlerRegistration));
