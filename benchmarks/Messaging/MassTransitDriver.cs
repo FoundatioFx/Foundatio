@@ -27,7 +27,7 @@ public sealed class MassTransitDriver(BenchmarkOptions options, string prefix) :
                 for (int group = 0; group < options.DeliveryCopies; group++)
                 {
                     int subscriber = group;
-                    cfg.ReceiveEndpoint("input" + group, e => Configure(e, subscriber));
+                    cfg.ReceiveEndpoint(prefix + "input" + group, e => Configure(e, subscriber));
                 }
             });
         }
@@ -38,13 +38,13 @@ public sealed class MassTransitDriver(BenchmarkOptions options, string prefix) :
                 for (int group = 0; group < options.DeliveryCopies; group++)
                 {
                     int subscriber = group;
-                    cfg.ReceiveEndpoint("input" + group, e => Configure(e, subscriber));
+                    cfg.ReceiveEndpoint(prefix + "input" + group, e => Configure(e, subscriber));
                 }
             });
         }
         _observer = _bus.ConnectReceiveObserver(this);
         await _bus.StartAsync(token);
-        _send = await _bus.GetSendEndpoint(new Uri("queue:input0"));
+        _send = await _bus.GetSendEndpoint(new Uri("queue:" + prefix + "input0"));
     }
 
     private void Configure(IReceiveEndpointConfigurator endpoint, int subscriber)
