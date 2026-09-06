@@ -70,6 +70,7 @@ public static class BenchmarkRunner
 
         async Task<PhaseResult> PhaseAsync(int seconds, bool warmup)
         {
+            Console.WriteLine($"PHASE {(warmup ? "warmup" : "measurement")} {seconds}s");
             string runId = Guid.NewGuid().ToString("N");
             string payload = new('x', options.PayloadBytes);
             int capacity = warmup ? Math.Min(options.MaxMessages, 1_000_000) : options.MaxMessages;
@@ -111,6 +112,7 @@ public static class BenchmarkRunner
             for (int i = 0; i < 3; i++) collections[i] = GC.CollectionCount(i) - collections[i];
             await sampling.CancelAsync(); await sampleTask;
             process.Refresh();
+            var gcMemory = GC.GetGCMemoryInfo();
             long peak = Math.Max(process.WorkingSet64, samples.Count == 0 ? 0 : samples.Max(s => s.WorkingSetBytes));
             return new PhaseResult
             {
@@ -128,6 +130,9 @@ public static class BenchmarkRunner
                 CpuMilliseconds = cpu.TotalMilliseconds,
                 GcPauseMilliseconds = pauses.TotalMilliseconds,
                 PeakWorkingSetBytes = peak,
+                GcHeapSizeBytes = gcMemory.HeapSizeBytes,
+                GcCommittedBytes = gcMemory.TotalCommittedBytes,
+                GcFragmentedBytes = gcMemory.FragmentedBytes,
                 Collections = collections,
                 DeliveryLatency = phaseTracker.Latency.Snapshot(),
                 SendCallLatency = sendLatency.Snapshot(),
@@ -148,12 +153,8 @@ public static class BenchmarkRunner
                         : start + (long)(sequence * (double)Stopwatch.Frequency / options.RatePerSecond);
                     if (options.RatePerSecond > 0)
                     {
-                        var remaining = Stopwatch.GetElapsedTime(Stopwatch.GetTimestamp(), timestamp);
-                        if (remaining > TimeSpan.Zero)
-                        {
-                            try { await Task.Delay(remaining, publishing.Token); }
-                            catch (OperationCanceledException) when (publishing.IsCancellationRequested) { phaseTracker.ReleaseUnused(count); return; }
-                        }
+                        try { await RateSchedule.WaitUntilAsync(timestamp, publishing.Token); }
+                        catch (OperationCanceledException) when (publishing.IsCancellationRequested) { phaseTracker.ReleaseUnused(count); return; }
                     }
                     if (publishing.IsCancellationRequested) { phaseTracker.ReleaseUnused(count); return; }
                     var batch = new LoadMessage[count];
@@ -177,8 +178,10 @@ public static class BenchmarkRunner
                     {
                         await Task.Delay(TimeSpan.FromSeconds(1), sampling.Token);
                         process.Refresh();
+                        var sampleMemory = GC.GetGCMemoryInfo();
                         samples.Add(new(Stopwatch.GetElapsedTime(start).TotalSeconds, phaseTracker.ExpectedInputs, phaseTracker.UniqueDeliveries,
-                            phaseTracker.OutstandingInputs, process.WorkingSet64, GC.GetTotalAllocatedBytes(false) - allocatedStart));
+                            phaseTracker.OutstandingInputs, process.WorkingSet64, GC.GetTotalAllocatedBytes(false) - allocatedStart,
+                            sampleMemory.HeapSizeBytes, sampleMemory.TotalCommittedBytes, sampleMemory.FragmentedBytes));
                     }
                 }
                 catch (OperationCanceledException) when (sampling.IsCancellationRequested) { }

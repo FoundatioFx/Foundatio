@@ -29,6 +29,9 @@ public sealed record PhaseResult
     public double AllocatedBytesPerInput => Inputs > 0 ? AllocatedBytes / (double)Inputs : 0;
     public double CpuMilliseconds { get; init; }
     public long PeakWorkingSetBytes { get; init; }
+    public long GcHeapSizeBytes { get; init; }
+    public long GcCommittedBytes { get; init; }
+    public long GcFragmentedBytes { get; init; }
     public int[] Collections { get; init; } = [];
     public double GcPauseMilliseconds { get; init; }
     public required LatencySummary DeliveryLatency { get; init; }
@@ -36,4 +39,5 @@ public sealed record PhaseResult
     public IReadOnlyList<ProgressSample> Samples { get; init; } = [];
 }
 
-public sealed record ProgressSample(double Seconds, long Inputs, long Deliveries, long Outstanding, long WorkingSetBytes, long AllocatedBytes);
+public sealed record ProgressSample(double Seconds, long Inputs, long Deliveries, long Outstanding, long WorkingSetBytes, long AllocatedBytes,
+    long GcHeapSizeBytes, long GcCommittedBytes, long GcFragmentedBytes);

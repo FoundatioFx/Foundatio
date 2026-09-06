@@ -6,6 +6,27 @@ namespace Foundatio.Messaging.Benchmarks.Tests;
 public class MeasurementTests
 {
     [Fact]
+    public async Task RateSchedule_SubMillisecondRemainder_NeverPublishesEarly()
+    {
+        await RateSchedule.WaitUntilAsync(System.Diagnostics.Stopwatch.GetTimestamp(), CancellationToken.None);
+        for (int i = 0; i < 10; i++)
+        {
+            long scheduled = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency / 2000;
+            await RateSchedule.WaitUntilAsync(scheduled, CancellationToken.None);
+            Assert.True(System.Diagnostics.Stopwatch.GetTimestamp() >= scheduled);
+        }
+    }
+
+    [Fact]
+    public async Task RateSchedule_CanceledWait_StopsPromptly()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        long scheduled = System.Diagnostics.Stopwatch.GetTimestamp() + System.Diagnostics.Stopwatch.Frequency;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => RateSchedule.WaitUntilAsync(scheduled, cancellation.Token));
+    }
+
+    [Fact]
     public void Histogram_KnownDistribution_RetainsTailAndMaximum()
     {
         var histogram = new LatencyHistogram();
