@@ -25,6 +25,12 @@ public static class BenchmarkRunner
             ["SnsSdk"] = VersionOf(typeof(Amazon.SimpleNotificationService.AmazonSimpleNotificationServiceClient).Assembly),
             ["Broker"] = options.Transport == "sqs" ? (AwsResources.ServiceUrl is null ? "AWS (live)" : "SQS/SNS custom endpoint") : options.Transport
         };
+        if (options.Transport == "sqs")
+        {
+            environment["AwsMode"] = AwsResources.Mode;
+            environment["AwsRegion"] = AwsResources.Region.SystemName;
+            Console.WriteLine($"AWS mode={AwsResources.Mode} region={AwsResources.Region.SystemName}");
+        }
         IMessagingDriver driver = options.Engine switch
         {
             "masstransit" => new MassTransitDriver(options, prefix),

@@ -8,7 +8,13 @@ namespace Foundatio.Messaging.Benchmarks;
 
 public static class AwsResources
 {
-    public static string? ServiceUrl => Environment.GetEnvironmentVariable("PERF_AWS_MODE") == "live" ? null : Environment.GetEnvironmentVariable("PERF_AWS_URL") ?? "http://localhost:24566";
+    public static string Mode => Environment.GetEnvironmentVariable("PERF_AWS_MODE")?.Trim().ToLowerInvariant() switch
+    {
+        null or "" or "localstack" => "localstack",
+        "live" => "live",
+        _ => throw new ArgumentException("PERF_AWS_MODE must be 'localstack' or 'live'.")
+    };
+    public static string? ServiceUrl => Mode == "live" ? null : Environment.GetEnvironmentVariable("PERF_AWS_URL") ?? "http://localhost:24566";
     public static RegionEndpoint Region => RegionEndpoint.GetBySystemName(Environment.GetEnvironmentVariable("PERF_AWS_REGION") ?? "us-east-1");
     public static AWSCredentials? LocalCredentials => ServiceUrl is null ? null : new BasicAWSCredentials("test", "test");
     public static AmazonSQSConfig SqsConfig

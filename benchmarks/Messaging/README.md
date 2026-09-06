@@ -9,9 +9,11 @@ See [measured results and findings](RESULTS.md) for the checked-in baseline, the
 Requires .NET 10, PowerShell 7 and Docker. Start disposable, isolated brokers; the compose file limits each broker to four CPUs and enables Redis AOF with `appendfsync everysec`.
 
 ```powershell
+$env:PERF_AWS_MODE = 'localstack'
 docker compose -f benchmarks/Messaging/docker-compose.yml up -d
 dotnet build benchmarks/Messaging.Tests -c Release
 dotnet benchmarks/Messaging.Tests/bin/Release/net10.0/Foundatio.Messaging.Benchmarks.Tests.dll
+./benchmarks/Messaging.Tests/SummaryTests.ps1
 ./benchmarks/Messaging/run.ps1 -Profile smoke -NoBuild
 ./benchmarks/Messaging/run.ps1 -Profile standard -Repetitions 3 -Seconds 15 -NoBuild
 ./benchmarks/Messaging/run.ps1 -Profile extended -Repetitions 3 -Seconds 15 -NoBuild
@@ -72,7 +74,39 @@ dotnet $runner --engine masstransit --transport sqs --scenario pubsub --subscrib
 dotnet $runner --engine loopback --transport memory --scenario queue --seconds 5 --output harness-overhead.json
 ```
 
-For connection overrides use `PERF_REDIS`, `PERF_AWS_URL` and `PERF_AWS_REGION`. The default SQS/SNS endpoint is local port 24566 with LocalStack test credentials. Live AWS requires explicitly setting `PERF_AWS_MODE=live`; the normal AWS SDK credential chain supplies credentials. Run from comparable client hosts and regions, and retain the exact broker/client configuration. Each invocation creates and removes its own `fperf-<random>` resources; it never purges arbitrary application queues. If interrupted before cleanup, use the prefix in its log/result to identify only that run's resources.
+## LocalStack and real AWS
+
+LocalStack is the default, including when AWS credentials are already available on the machine. Foundatio, MassTransit and resource cleanup all use the same mode, endpoint, region and credential selection.
+
+| Setting | Default | Behavior |
+| --- | --- | --- |
+| `PERF_AWS_MODE` | `localstack` | `localstack` or `live`, case insensitive; unknown values fail before connecting |
+| `PERF_AWS_URL` | `http://localhost:24566` | LocalStack endpoint; ignored in live mode |
+| `PERF_AWS_REGION` | `us-east-1` | Region for both SQS and SNS; also the LocalStack signing region |
+| `PERF_REDIS` | `localhost:16379` | Redis connection string |
+
+LocalStack uses explicit `test` credentials. Live mode uses regional AWS endpoints and the [AWS SDK credential chain](https://docs.aws.amazon.com/sdk-for-net/v4/developer-guide/creds-assign.html), including temporary environment credentials, shared credentials profiles and instance/task roles. The harness does not copy credentials into results. Environment credentials take precedence over `AWS_PROFILE`; use one credential source deliberately.
+
+To compare both implementations in an AWS account, use a benchmark account/region with permissions to provision SQS queues and SNS topics, configure subscriptions and queue policies, send/receive/acknowledge messages, and delete the run's resources. Adapt the [MassTransit IAM example](https://masstransit.massient.com/configuration/transports/amazon-sqs#example-iam-policy) to your account and `fperf-*` queue/topic names; cleanup additionally requires `sqs:ListQueues`, `sns:ListTopics` and `sns:DeleteTopic`. [SQS listing uses the account/region wildcard queue ARN](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-api-permissions-reference.html); SNS listing uses `Resource: "*"`. Retain the example's `sqs:DeleteQueue` permission.
+
+```powershell
+dotnet build benchmarks/Messaging -c Release
+$env:PERF_AWS_MODE = 'live'
+$env:PERF_AWS_REGION = 'us-east-1'
+# Optional: select a shared-credentials profile when not using an instance/task role.
+$env:AWS_PROFILE = 'foundatio-benchmarks'
+try {
+    ./benchmarks/Messaging/run.ps1 -Profile smoke -Engines @('foundatio-sqs', 'masstransit-sqs') -NoBuild
+    ./benchmarks/Messaging/run.ps1 -Profile standard -Engines @('foundatio-sqs', 'masstransit-sqs') -Repetitions 3 -Seconds 15 -NoBuild
+}
+finally {
+    $env:PERF_AWS_MODE = 'localstack'
+}
+```
+
+These commands use real, billable AWS services. No Docker broker is needed in live mode. Use the same client host and AWS region for both contenders, preferably a host in that region, and retain the broker/client configuration with the results. Mode and region appear in worker logs, JSON results and summaries. The summarizer rejects a mixture of LocalStack/live or different AWS regions; keep separate output directories for each environment. The checked-in baseline was measured against LocalStack, not an AWS account.
+
+Each invocation creates and removes its own `fperf-<random>` resources. Cleanup lists resources and deletes only names starting with that invocation's random prefix; it never purges arbitrary application queues. If interrupted before cleanup, use the prefix in its log/result to identify only that run's resources.
 
 ## References
 
