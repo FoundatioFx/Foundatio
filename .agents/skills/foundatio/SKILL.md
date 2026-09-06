@@ -310,6 +310,7 @@ Validate a custom transport or job store against the shared conformance suites i
 - **Cache stampede**: serialize regeneration of hot keys with `CacheLockProvider` (lock on the cache key, double-check after acquiring). See the [Cache Stampede Protection](https://foundatio.readthedocs.io/guide/caching.html#cache-stampede-protection) docs.
 - **Register as singletons**: infrastructure services (`ICacheClient`, `IMessageBus`, `IFileStorage`, `ILockProvider`) maintain internal state and connections; the `AddFoundatio()` builder does this for you.
 - **In-memory for tests**: in-memory implementations run the same applicable conformance suites for fast, isolated tests. Their state is process-local, and optional provider capabilities differ.
+- **In-memory visibility timing**: one shared timer reclaims expired deliveries at 50 ms intervals while messages are in flight, and pauses when idle. With a fake TimeProvider, advance past the lease expiry to wake blocked receivers; lock renewal uses the current lease, and completion does not retain one timer per delivery.
 - **Legacy name collision during migration**: with `AddLegacyAdapter()`, `Foundatio.Messaging.Legacy.IMessageBus` and `Foundatio.Messaging.IMessageBus` coexist. Disambiguate with a `using` alias in files that reference both namespaces.
 
 ## NuGet Packages
