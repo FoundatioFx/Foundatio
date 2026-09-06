@@ -4,6 +4,7 @@ using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using StackExchange.Redis;
 
 namespace Foundatio;
@@ -16,7 +17,7 @@ public static class RedisFoundatioBuilderExtensions
     /// (falling back to localhost). When both messaging and jobs use Redis a single connection is shared, so the
     /// explicit connection settings must agree. Conflicting settings fail during registration.
     /// </summary>
-    public static FoundatioBuilder UseRedis(this FoundatioBuilder.JobsBuilder builder, Action<RedisJobRuntimeStoreOptions>? configure = null, string? connectionString = null)
+    public static FoundatioBuilder.JobsBuilder UseRedis(this FoundatioBuilder.JobsBuilder builder, Action<RedisJobRuntimeStoreOptions>? configure = null, string? connectionString = null)
     {
         EnsureConnection(((IFoundatioBuilder)builder).Services, connectionString);
         return builder.UseRuntimeStore(sp =>
@@ -33,15 +34,33 @@ public static class RedisFoundatioBuilderExtensions
     /// from configuration (falling back to localhost). When both messaging and jobs use Redis a single connection is
     /// shared. Explicit connection settings must agree; conflicting settings fail during registration.
     /// </summary>
-    public static FoundatioBuilder UseRedis(this FoundatioBuilder.MessagingBuilder builder, Action<RedisStreamsMessageTransportOptions>? configure = null, string? connectionString = null)
+    public static FoundatioBuilder.MessagingBuilder UseRedis(this FoundatioBuilder.MessagingBuilder builder, Action<RedisStreamsMessageTransportOptions>? configure = null, string? connectionString = null)
     {
         EnsureConnection(((IFoundatioBuilder)builder).Services, connectionString);
-        return builder.UseTransport(sp =>
+        var services = ((IFoundatioBuilder)builder).Services;
+        services.AddSingleton(sp =>
         {
-            var options = new RedisStreamsMessageTransportOptions { ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>() };
+            var options = new RedisStreamsMessageTransportOptions
+            {
+                ConnectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>(),
+                TimeProvider = sp.GetService<TimeProvider>()
+            };
             configure?.Invoke(options);
-            return new RedisStreamsMessageTransport(options);
+            return options;
         });
+        services.TryAddSingleton<IScheduledDispatchStore>(sp =>
+        {
+            if (sp.GetService<IJobRuntimeStore>() is { } store) return store;
+            var options = sp.GetRequiredService<RedisStreamsMessageTransportOptions>();
+            return new RedisJobRuntimeStore(new RedisJobRuntimeStoreOptions
+            {
+                ConnectionMultiplexer = options.ConnectionMultiplexer,
+                KeyPrefix = options.KeyPrefix + "dispatch:",
+                TimeProvider = options.TimeProvider,
+                Runtime = options.Scheduling
+            });
+        });
+        return builder.UseTransport(sp => new RedisStreamsMessageTransport(sp.GetRequiredService<RedisStreamsMessageTransportOptions>()));
     }
 
     private static void EnsureConnection(IServiceCollection services, string? connectionString)

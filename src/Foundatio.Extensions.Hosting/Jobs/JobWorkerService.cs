@@ -8,24 +8,23 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
 
-/// <summary>Executes registered job types independently of schedule creation and message dispatch.</summary>
-internal sealed class JobWorkerService(IJobWorker worker, IJobRuntimeStore store, ILogger<JobWorkerService> logger) : BackgroundService
+/// <summary>Executes jobs and maintains retention independently of long-running executions.</summary>
+internal sealed class JobWorkerService(IJobWorker worker, IJobRuntimeStore store, ILogger<JobWorkerService> logger, FoundatioRuntimeHealth health) : BackgroundService
 {
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        => Task.WhenAll(worker.RunContinuouslyAsync(stoppingToken), CleanupAsync(stoppingToken));
+
+    private async Task CleanupAsync(CancellationToken stoppingToken)
     {
-        var nextCleanup = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
+            var delay = TimeSpan.FromMinutes(1);
             try
             {
-                if (DateTimeOffset.UtcNow >= nextCleanup)
-                {
-                    int removed = await store.CleanupAsync(cancellationToken: stoppingToken).AnyContext();
-                    nextCleanup = DateTimeOffset.UtcNow.Add(removed == 1000 ? TimeSpan.FromSeconds(1) : TimeSpan.FromMinutes(1));
-                }
-                int executed = await worker.RunQueuedAsync(cancellationToken: stoppingToken).AnyContext();
-                if (executed == 0)
-                    await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).AnyContext();
+                health.UpdateCapacity(await store.GetStatsAsync(stoppingToken).AnyContext());
+                health.Healthy("job-store");
+                if (await store.CleanupAsync(cancellationToken: stoppingToken).AnyContext() == 1000)
+                    delay = TimeSpan.FromSeconds(1);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -33,8 +32,16 @@ internal sealed class JobWorkerService(IJobWorker worker, IJobRuntimeStore store
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Error running queued jobs");
-                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken).AnyContext();
+                health.Failed("job-store", ex);
+                logger.LogError(ex, "Error cleaning up job history");
+            }
+            try
+            {
+                await Task.Delay(delay, stoppingToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
         }
     }

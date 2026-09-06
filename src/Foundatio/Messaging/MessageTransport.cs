@@ -109,6 +109,8 @@ public sealed record TransportSendOptions
 /// </remarks>
 public sealed record TransportEntry
 {
+    /// <summary>Per-entry envelope decoding failure. Body and headers retain raw evidence for quarantine.</summary>
+    public Exception? EnvelopeError { get; init; }
     /// <summary>The broker-assigned message id — stable across redeliveries of the same message.</summary>
     public required string Id { get; init; }
 
@@ -175,21 +177,37 @@ public sealed record MessageDestinationStats
 
 public sealed record SendItemResult
 {
+    /// <summary>Zero-based index in this transport call. Null uses the result's position for sequential providers.</summary>
+    public int? Index { get; init; }
+    public MessageSendStatus Status { get; init; } = MessageSendStatus.Accepted;
+    public string? ErrorCode { get; init; }
+    public string? ErrorMessage { get; init; }
+    public bool? Retryable { get; init; }
     /// <summary>The broker-assigned id of the accepted message.</summary>
     public string? MessageId { get; init; }
 }
 
-/// <summary>
-/// The result of a successful <see cref="IMessageTransport.SendAsync"/>: the accepted messages' ids, in order.
-/// </summary>
-/// <remarks>
-/// Send is throw-on-failure: a transport throws for any failure rather than returning a failed item, so every item in
-/// <see cref="Items"/> was accepted. A multi-message send is NOT atomic — if a later message fails, earlier messages
-/// may already have been delivered before the exception propagates.
-/// </remarks>
+/// <summary>One indexed outcome for every input. Providers may mix acceptance, rejection and unknown outcomes.</summary>
 public sealed record SendResult
 {
     public required IReadOnlyList<SendItemResult> Items { get; init; }
+
+    /// <summary>Verifies acceptance before discarding a durable source record.</summary>
+    public void EnsureAccepted(int expectedCount)
+    {
+        if (Items.Count != expectedCount)
+            throw new MessageBusException("Transport returned an incomplete result.");
+        var seen = new HashSet<int>();
+        for (int position = 0; position < Items.Count; position++)
+        {
+            var item = Items[position];
+            int index = item.Index ?? position;
+            if (index < 0 || index >= expectedCount || !seen.Add(index))
+                throw new MessageBusException("Transport returned an invalid or duplicate input index.");
+            if (item.Status != MessageSendStatus.Accepted)
+                throw new TransportSendException(Items, new MessageBusException(item.ErrorMessage ?? "Transport did not accept every input."));
+        }
+    }
 }
 
 /// <summary>

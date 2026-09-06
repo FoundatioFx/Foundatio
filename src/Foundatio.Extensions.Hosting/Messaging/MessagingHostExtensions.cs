@@ -28,6 +28,7 @@ public static class MessagingHostExtensions
     /// <summary>Dispatches persisted delayed messages independently of job execution.</summary>
     public static IServiceCollection AddScheduledMessageDispatcher(this IServiceCollection services)
     {
+        services.TryAddSingleton<FoundatioRuntimeHealth>();
         services.TryAddSingleton(sp => new ScheduledMessageDispatcher(
             sp.GetService<IScheduledDispatchStore>() ?? sp.GetRequiredService<IJobRuntimeStore>(),
             sp.GetRequiredService<IMessageTransport>(),

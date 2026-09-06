@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Jobs;
 
@@ -21,6 +23,9 @@ public sealed class JobWorker : IJobWorker, IDisposable
     private readonly TimeSpan _cancellationPollInterval;
     private readonly SemaphoreSlim _slots;
     private readonly int _concurrency;
+    private readonly ILogger _logger;
+    private int _failingSlots;
+    public bool IsHealthy => Volatile.Read(ref _failingSlots) == 0;
 
     public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, JobWorkerOptions? options = null)
     {
@@ -28,6 +33,7 @@ public sealed class JobWorker : IJobWorker, IDisposable
         ArgumentNullException.ThrowIfNull(serviceProvider);
         options ??= new JobWorkerOptions();
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxConcurrency, 1);
+        _logger = (options.LoggerFactory ?? serviceProvider.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance).CreateLogger<JobWorker>();
         _store = store;
         _services = serviceProvider;
         _time = options.TimeProvider ?? TimeProvider.System;
@@ -78,6 +84,43 @@ public sealed class JobWorker : IJobWorker, IDisposable
         return executed;
     }
 
+    public Task RunContinuouslyAsync(CancellationToken cancellationToken = default)
+    {
+        async Task RunSlotAsync()
+        {
+            bool failed = false;
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested)
+                {
+                    try
+                    {
+                        int executed = await RunQueuedAsync(1, cancellationToken).AnyContext();
+                        if (failed) { failed = false; Interlocked.Decrement(ref _failingSlots); }
+                        if (executed == 0)
+                            await Task.Delay(TimeSpan.FromMilliseconds(100), _time, cancellationToken).AnyContext();
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (!failed) { failed = true; Interlocked.Increment(ref _failingSlots); }
+                        _logger.LogError(ex, "Job worker failed to claim or settle work; retrying");
+                        await _time.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                    }
+                }
+            }
+            finally
+            {
+                if (failed) Interlocked.Decrement(ref _failingSlots);
+            }
+        }
+
+        return Task.WhenAll(Enumerable.Range(0, _concurrency).Select(_ => RunSlotAsync()));
+    }
+
     public async Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -117,8 +160,22 @@ public sealed class JobWorker : IJobWorker, IDisposable
                 execution.Token.ThrowIfCancellationRequested();
                 var type = _types.Resolve(claim.JobType!);
                 await using var scope = _services.CreateAsyncScope();
-                var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(scope.ServiceProvider, type);
-                result = await job.TryRunAsync(context).AnyContext();
+                var registered = scope.ServiceProvider.GetService(type);
+                var job = (IJob)(registered ?? ActivatorUtilities.CreateInstance(scope.ServiceProvider, type));
+                try
+                {
+                    result = await job.TryRunAsync(context).AnyContext();
+                }
+                finally
+                {
+                    if (registered is null)
+                    {
+                        if (job is IAsyncDisposable asyncDisposable)
+                            await asyncDisposable.DisposeAsync().AnyContext();
+                        else if (job is IDisposable disposable)
+                            disposable.Dispose();
+                    }
+                }
             }
             catch (OperationCanceledException) when (execution.IsCancellationRequested)
             {
@@ -135,8 +192,11 @@ public sealed class JobWorker : IJobWorker, IDisposable
             var kind = stoppingToken.IsCancellationRequested ? JobCompletionKind.Interrupted
                 : result.IsCancelled ? JobCompletionKind.Cancelled
                 : result.IsSuccess ? JobCompletionKind.Succeeded : JobCompletionKind.Failed;
-            using var settlement = new CancellationTokenSource(_request.Lease, _time);
-            if (await _store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = kind, Error = result.Message }, settlement.Token)
+            if (kind == JobCompletionKind.Failed)
+                _logger.LogError(result.Error, "Job {JobId} ({JobType}) failed on attempt {Attempt} of {MaxAttempts}: {Message}",
+                    claim.JobId, claim.JobType, claim.Attempt, claim.MaxAttempts, result.Message);
+            using var settlement = new CancellationTokenSource(TimeSpan.FromSeconds(5), _time);
+            if (await _store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = kind, Retryable = result.Retryable, Message = result.Message, Error = kind == JobCompletionKind.Failed ? BoundError(result) : null }, settlement.Token)
                 .WaitAsync(_request.Lease, _time, settlement.Token).AnyContext())
             {
                 if (kind == JobCompletionKind.Succeeded) JobInstruments.Completed.Add(1, tag);
@@ -179,8 +239,9 @@ public sealed class JobWorker : IJobWorker, IDisposable
         catch (OperationCanceledException) when (supervision.IsCancellationRequested)
         {
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Execution lease lost for job {JobId}", claim.JobId);
             lost();
             await execution.CancelAsync().AnyContext();
         }
@@ -209,6 +270,12 @@ public sealed class JobWorker : IJobWorker, IDisposable
 
             await _time.SafeDelay(_cancellationPollInterval, supervision).AnyContext();
         }
+    }
+
+    private static string? BoundError(JobResult result)
+    {
+        string? error = result.Error?.ToString() ?? result.Message;
+        return error?.Length > 8192 ? error[..8192] : error;
     }
 
     public void Dispose() => _slots.Dispose();

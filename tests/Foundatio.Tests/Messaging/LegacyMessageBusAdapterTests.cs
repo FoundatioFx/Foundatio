@@ -75,7 +75,7 @@ public class LegacyMessageBusAdapterTests
         var services = new ServiceCollection();
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddLegacyAdapter();
+            .AddLegacyAdapter();
 
         await using var provider = services.BuildServiceProvider();
         var legacyBus = provider.GetRequiredService<Foundatio.Messaging.Legacy.IMessageBus>();

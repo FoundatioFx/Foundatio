@@ -30,4 +30,6 @@ public sealed record JobCompletion
 {
     public required JobCompletionKind Kind { get; init; }
     public string? Error { get; init; }
+    public string? Message { get; init; }
+    public bool Retryable { get; init; } = true;
 }

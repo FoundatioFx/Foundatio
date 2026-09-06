@@ -21,7 +21,7 @@ public class DeclarativeRegistrationTests
     {
         var services = new ServiceCollection();
         services.AddFoundatio().Messaging.UseInMemory()
-            .Messaging.AddConsumer<HandledOrder>((_, _) => Task.CompletedTask);
+            .AddConsumer<HandledOrder>((_, _) => Task.CompletedTask);
         await using var provider = services.BuildServiceProvider();
         Assert.Empty(provider.GetServices<IHostedService>());
         Assert.NotNull(provider.GetRequiredService<IMessageBus>());
@@ -38,9 +38,9 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddConsumer<HandledOrder, OrderHandler>()
-            .Messaging.AddSubscriber<HandledOrder, OrderHandler>("orders")                                       // class handler
-            .Messaging.AddConsumer<HandledTask>((context, _) => { probe.Record($"task:{context.Message.Id}"); return Task.CompletedTask; }); // delegate handler
+            .AddConsumer<HandledOrder, OrderHandler>()
+            .AddSubscriber<HandledOrder, OrderHandler>("orders")                                       // class handler
+            .AddConsumer<HandledTask>((context, _) => { probe.Record($"task:{context.Message.Id}"); return Task.CompletedTask; }); // delegate handler
 
         services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
@@ -128,9 +128,9 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddSubscriber<HandledEvent, EventHandler>("events")
-            .Messaging.AddSubscriber<HandledEvent, SecondEventHandler>("second-events")
-            .Messaging.AddConsumer<HandledEvent, EventHandler>();
+            .AddSubscriber<HandledEvent, EventHandler>("events")
+            .AddSubscriber<HandledEvent, SecondEventHandler>("second-events")
+            .AddConsumer<HandledEvent, EventHandler>();
 
         services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
@@ -170,7 +170,8 @@ public class DeclarativeRegistrationTests
         services.AddLogging();
         services.AddFoundatio()
             .Jobs.UseInMemory()
-            .Jobs.AddCronJob<CronProbeJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode);
+            .ConfigureWorker(o => o with { NodeId = "cron-probe" })
+            .AddCronJob<CronProbeJob>("* * * * *", o => o.Scope = ScheduledJobScope.PerNode);
 
         services.AddJobScheduler();
         services.AddMessageConsumers();
@@ -217,8 +218,8 @@ public class DeclarativeRegistrationTests
         services.AddSingleton(probe);
         services.AddFoundatio()
             .Messaging.UseTransport(transport)
-            .Messaging.AddSubscriber<HandledEvent, EventHandler>("events")
-            .Messaging.AddTemporarySubscriber<HandledBroadcast, BroadcastHandler>();
+            .AddSubscriber<HandledEvent, EventHandler>("events")
+            .AddTemporarySubscriber<HandledBroadcast, BroadcastHandler>();
 
         services.AddMessageConsumers();
         var provider = services.BuildServiceProvider();

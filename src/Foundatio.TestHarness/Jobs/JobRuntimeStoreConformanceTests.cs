@@ -24,6 +24,105 @@ namespace Foundatio.Tests.Jobs;
 public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
 {
     [Fact]
+    public virtual async Task RetentionPressure_EvictsHistoryAndPreservesIdempotencyAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { MaxActiveJobs = 1, MaxHistoryJobs = 1, MaxDeduplicationRecords = 10 });
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        var request = new JobClaimRequest { NodeId = "node", JobTypes = ["work"] };
+        for (int i = 0; i < 3; i++)
+        {
+            await store.CreateIfAbsentAsync(new JobState { JobId = $"job-{i}", Name = "work", JobType = "work" }, token);
+            var claim = Assert.IsType<JobState>(await store.ClaimNextAsync(request, token));
+            Assert.True(await store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded, Message = "Done" }, token));
+            time.Advance(TimeSpan.FromSeconds(1));
+        }
+        Assert.Single(await store.QueryAsync(new JobQuery(), token));
+        await store.CreateIfAbsentAsync(new JobState { JobId = "job-0", Name = "work", JobType = "work" }, token);
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        Assert.Equal(new JobRuntimeStoreStats(0, 1, 3, 0), await store.GetStatsAsync(token));
+        time.Advance(TimeSpan.FromDays(8));
+        await store.CleanupAsync(cancellationToken: token);
+        await store.CreateIfAbsentAsync(new JobState { JobId = "job-0", Name = "work", JobType = "work" }, token);
+        Assert.NotNull(await store.ClaimNextAsync(request, token));
+    }
+
+    [Fact]
+    public virtual async Task RetryPolicy_PersistsDelayAndHonorsTerminalFailureAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = "retry-policy",
+            Name = "work",
+            JobType = "work",
+            MaxAttempts = 5,
+            RetryPolicy = new JobRetryPolicy { InitialDelay = TimeSpan.FromMinutes(2), MaxDelay = TimeSpan.FromMinutes(3), JitterFactor = 0 }
+        }, token);
+        var request = new JobClaimRequest { NodeId = "node", JobTypes = ["work"] };
+        var claim = Assert.IsType<JobState>(await store.ClaimNextAsync(request, token));
+        await store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Failed, Error = "Transient" }, token);
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        time.Advance(TimeSpan.FromMinutes(2));
+        claim = Assert.IsType<JobState>(await store.ClaimNextAsync(request, token));
+        await store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Failed, Retryable = false, Error = "Permanent" }, token);
+        Assert.Equal(JobStatus.Failed, (await store.GetAsync(claim.JobId, token))!.Status);
+        Assert.Null(await store.ClaimNextAsync(request, token));
+    }
+
+    [Fact]
+    public virtual async Task DispatchCapacity_RejectsNewWorkWithoutLosingAcceptedMessagesAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { MaxScheduledDispatches = 1, MaxPayloadBytes = 32 });
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        var dispatch = new ScheduledDispatchState { DispatchId = "one", Body = "data"u8.ToArray(), DueUtc = time.GetUtcNow(), Destination = DestinationAddress.ForQueue("work") };
+        await store.ScheduleDispatchAsync(dispatch, token);
+        await Assert.ThrowsAsync<JobException>(() => store.ScheduleDispatchAsync(dispatch with { DispatchId = "two" }, token));
+        var claim = Assert.Single(await store.ClaimDueDispatchesAsync(time.GetUtcNow(), 1, "claim", TimeSpan.FromMinutes(1), token));
+        Assert.Equal("one", claim.DispatchId);
+        Assert.True(await store.CompleteDispatchAsync(claim.DispatchId, "claim", token));
+        await store.ScheduleDispatchAsync(dispatch with { DispatchId = "two" }, token);
+        await Assert.ThrowsAsync<JobException>(() => store.CreateIfAbsentAsync(new JobState { JobId = "large", Name = "large", Payload = new byte[33] }, token));
+    }
+
+    [Fact]
+    public virtual async Task PerNodeExpiry_RetiresOnlyUnclaimedOccurrencesAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState { JobId = "retired", Name = "work", JobType = "work", RequiredNodeId = "retired-node", ExpiresUtc = time.GetUtcNow().AddMinutes(1) }, token);
+        await store.CreateIfAbsentAsync(new JobState { JobId = "normal", Name = "work", JobType = "work" }, token);
+        time.Advance(TimeSpan.FromDays(2));
+        await store.CleanupAsync(cancellationToken: token);
+        Assert.Equal(JobStatus.Cancelled, (await store.GetAsync("retired", token))!.Status);
+        Assert.Equal(JobStatus.Queued, (await store.GetAsync("normal", token))!.Status);
+    }
+
+    [Fact]
+    public virtual async Task DispatchLease_UsesAcquisitionClockRatherThanDueCutoffAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        var cutoff = time.GetUtcNow();
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState { DispatchId = "old", Body = "data"u8.ToArray(), DueUtc = cutoff }, token);
+        time.Advance(TimeSpan.FromMinutes(2));
+        var claim = Assert.Single(await store.ClaimDueDispatchesAsync(cutoff, 1, "owner", TimeSpan.FromMinutes(1), token));
+        Assert.Equal(time.GetUtcNow().AddMinutes(1), claim.ClaimExpiresUtc);
+        Assert.True(await store.CompleteDispatchAsync(claim.DispatchId, "owner", token));
+        Assert.False(await store.CompleteDispatchAsync(claim.DispatchId, "owner", token));
+    }
+
+    [Fact]
     public virtual async Task CreateIfAbsentAsync_UnspecifiedTimestamps_UsesStoreClockAsync()
     {
         var time = new FakeTimeProvider();
@@ -130,13 +229,13 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var token = TestCancellationToken;
         var occurrence = NewJob(time, "occurrence-1") with { JobType = "work.v1", ScheduleName = "periodic", RequiredNodeId = "node-a" };
         var creates = await Task.WhenAll(Enumerable.Range(0, 20).Select(i => store.CreateOccurrenceAsync(occurrence with { JobId = $"occurrence-{i}" }, cancellationToken: token)));
-        Assert.Single(creates.Where(created => created));
+        Assert.Single(creates.Where(created => created == JobOccurrenceResult.Created));
         var request = new JobClaimRequest { NodeId = "node-b", JobTypes = new[] { "work.v1" } };
         Assert.Null(await store.ClaimNextAsync(request, token));
         var claimed = await store.ClaimNextAsync(request with { NodeId = "node-a" }, token);
         Assert.NotNull(claimed);
         Assert.True(await store.CompleteJobAsync(claimed.JobId, claimed.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
-        Assert.True(await store.CreateOccurrenceAsync(occurrence with { JobId = "next-occurrence" }, cancellationToken: token));
+        Assert.Equal(JobOccurrenceResult.Created, await store.CreateOccurrenceAsync(occurrence with { JobId = "next-occurrence" }, cancellationToken: token));
     }
 
     [Fact]
@@ -208,7 +307,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
     protected JobRuntimeStoreConformanceTests(ITestOutputHelper output) : base(output) { }
 
     /// <summary>Creates a fresh, isolated store bound to <paramref name="timeProvider"/>, or null when unavailable.</summary>
-    protected abstract IJobRuntimeStore? CreateStore(TimeProvider timeProvider);
+    protected abstract IJobRuntimeStore? CreateStore(TimeProvider timeProvider, JobRuntimeStoreOptions? options = null);
 
     protected static JobState NewJob(TimeProvider time, string id, string name = "conformance-job", JobStatus status = JobStatus.Queued)
     {
@@ -444,6 +543,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
 
         // A complete from the wrong owner is ignored: after the lease lapses the dispatch is re-claimable, attempt 2.
         await store.CompleteDispatchAsync("d1", "node-b", ct);
+        time.Advance(TimeSpan.FromMinutes(6));
         var reclaimed = await store.ClaimDueDispatchesAsync(t.AddMinutes(6), 100, "node-a", TimeSpan.FromMinutes(5), ct);
         Assert.Equal(2, Assert.Single(reclaimed).Attempts);
 
@@ -469,6 +569,40 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var rescheduled = Assert.Single(await store.ClaimDueDispatchesAsync(t.AddMinutes(51), 100, "node-c", TimeSpan.FromMinutes(5), ct));
         Assert.Equal("d3", rescheduled.DispatchId);
         Assert.Equal("node-c", rescheduled.ClaimOwner);
+    }
+
+    [Fact]
+    public virtual async Task ClaimAsync_ExpiredUnclaimedOccurrence_RetiresBeforeExecutionAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestCancellationToken;
+        await store.CreateOccurrenceAsync(NewJob(time, "expired") with
+        {
+            ScheduleName = "daily",
+            RequiredNodeId = "node",
+            ExpiresUtc = time.GetUtcNow().AddMinutes(1)
+        }, cancellationToken: token);
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Null(await store.ClaimJobAsync("expired", new JobClaimRequest { NodeId = "node", JobTypes = ["work.v1"] }, token));
+        Assert.Equal(JobStatus.Cancelled, (await store.GetAsync("expired", token))!.Status);
+    }
+
+    [Fact]
+    public virtual Task ScheduleDispatchAsync_HeadersExceedPayloadBudget_RejectsAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { MaxPayloadBytes = 16 });
+        Assert.SkipWhen(store is null, "Store unavailable");
+        return Assert.ThrowsAsync<JobException>(() => store.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = "large-headers",
+            Destination = DestinationAddress.ForQueue("q"),
+            DueUtc = time.GetUtcNow(),
+            Body = ReadOnlyMemory<byte>.Empty,
+            Headers = MessageHeaders.Empty.ToBuilder().Set("evidence", new string('x', 32)).Build()
+        }, TestCancellationToken));
     }
 
     [Fact]

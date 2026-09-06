@@ -12,7 +12,7 @@ From a checkout of this revision:
 dotnet run --project samples/Foundatio.QuickstartSample
 ```
 
-The sample starts a host, sends a command, publishes an event, runs a typed job with progress, and schedules a CRON cleanup. It requires no external services.
+The sample starts a host, sends a command, publishes an event, runs a typed job with progress, and schedules a CRON cleanup. It requires no external services. Add `-- --verify` to check message handling, a delayed job, cancellation and an automatic CRON occurrence, then exit.
 
 ## A message worker
 
@@ -25,9 +25,10 @@ using Microsoft.Extensions.Hosting;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Messaging.UseInMemory()
-    .Messaging.AddConsumer<SendReceipt, SendReceiptHandler>()
-    .Messaging.AddSubscriber<OrderPlaced, OrderPlacedHandler>("billing"));
+    .UseServiceName("billing")
+    .ConfigureMessaging(messaging => messaging.UseInMemory()
+        .AddConsumer<SendReceipt, SendReceiptHandler>()
+        .AddSubscriber<OrderPlaced, OrderPlacedHandler>()));
 
 await builder.Build().RunAsync();
 ```
@@ -41,7 +42,7 @@ For a producer-only API, use `AddFoundatio().Messaging.UseInMemory()` instead. `
 | You need to… | Use | Register on the worker |
 | --- | --- | --- |
 | Hand work to one available consumer | `bus.SendAsync(message)` | `AddConsumer<T, THandler>()` |
-| Notify each interested service | `bus.PublishAsync(message)` | `AddSubscriber<T, THandler>("service-name")` |
+| Notify each interested service | `bus.PublishAsync(message)` | `AddSubscriber<T, THandler>()` with a stable service name |
 | Track execution, progress, cancellation, or schedules | `jobs.EnqueueAsync<TJob, TArgs>(args)` | `AddJobType<TJob>("job-name.v1")` |
 
 ## Add the infrastructure you need

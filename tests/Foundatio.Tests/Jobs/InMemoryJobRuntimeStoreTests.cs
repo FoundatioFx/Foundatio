@@ -10,5 +10,5 @@ public class InMemoryJobRuntimeStoreTests : JobRuntimeStoreConformanceTests
 {
     public InMemoryJobRuntimeStoreTests(ITestOutputHelper output) : base(output) { }
 
-    protected override IJobRuntimeStore CreateStore(TimeProvider timeProvider) => new InMemoryJobRuntimeStore(timeProvider);
+    protected override IJobRuntimeStore CreateStore(TimeProvider timeProvider, JobRuntimeStoreOptions? options = null) => new InMemoryJobRuntimeStore(options ?? new(), timeProvider);
 }

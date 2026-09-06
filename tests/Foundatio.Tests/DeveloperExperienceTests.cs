@@ -24,9 +24,9 @@ public class DeveloperExperienceTests
         builder.Services.AddFoundatioWorker(foundatio =>
         {
             if (messaging)
-                foundatio.Messaging.UseInMemory().Messaging.AddConsumer<Ping>((_, _) => { handled.TrySetResult(); return Task.CompletedTask; });
+                foundatio.Messaging.UseInMemory().AddConsumer<Ping>((_, _) => { handled.TrySetResult(); return Task.CompletedTask; });
             if (jobs)
-                foundatio.Jobs.UseInMemory().Jobs.AddCronJob<NoopJob>("0 2 * * *");
+                foundatio.Jobs.UseInMemory().AddCronJob<NoopJob>("0 2 * * *");
         });
         using var host = builder.Build();
         await host.StartAsync(token);
@@ -36,7 +36,7 @@ public class DeveloperExperienceTests
             Assert.Equal(messaging, names.Contains("MessageHandlerHostedService"));
             Assert.Equal(jobs, names.Contains("JobWorkerService"));
             Assert.Equal(jobs, names.Contains("JobSchedulerService"));
-            Assert.Equal(messaging && jobs, names.Contains("ScheduledMessageDispatcherService"));
+            Assert.Equal(messaging, names.Contains("ScheduledMessageDispatcherService"));
             if (messaging)
             {
                 await host.Services.GetRequiredService<IMessageBus>().SendAsync(new Ping(), cancellationToken: token);
@@ -65,7 +65,6 @@ public class DeveloperExperienceTests
     }
 
     [Theory]
-    [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
     public void AddSubscriber_InvalidDurableName_FailsAtRegistration(string? name)
@@ -118,7 +117,7 @@ public class DeveloperExperienceTests
         var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddFoundatioWorker(f => f.Messaging.UseInMemory()
-            .Messaging.AddTemporarySubscriber<Ping>((_, _) => { received.TrySetResult(); return Task.CompletedTask; }));
+            .AddTemporarySubscriber<Ping>((_, _) => { received.TrySetResult(); return Task.CompletedTask; }));
         using var host = builder.Build();
         await host.StartAsync(token);
         try

@@ -42,6 +42,8 @@ public sealed record MessagePublishOptions
 /// <summary>Failure handling and concurrency for one receiving endpoint.</summary>
 public abstract class MessageHandlerOptions
 {
+    /// <summary>Optional stable wire name bound with a declarative handler registration.</summary>
+    public string? MessageTypeName { get; set; }
     /// <summary>Maximum in-flight messages across this endpoint's handlers on this process. Default 1.</summary>
     public int MaxConcurrency { get; set; } = 1;
 
@@ -96,21 +98,43 @@ public sealed class MessageSubscriptionOptions : MessageHandlerOptions
     /// Null creates a temporary subscription with a renewable expiration lease; disposal removes its backlog.
     /// </summary>
     public string? Subscription { get; set; }
+
+    internal MessageSubscriptionOptions Copy() => (MessageSubscriptionOptions)MemberwiseClone();
 }
+
+/// <summary>The observable state of a supervised listener.</summary>
+public enum MessageSubscriptionStatus { Starting, Healthy, Recovering, Stopped }
 
 /// <summary>A running consumer. Disposal stops receiving and releases the listener's resources.</summary>
 public interface IMessageSubscription : IAsyncDisposable
 {
     /// <summary>The queue or topic subscription this consumer receives from.</summary>
     DestinationAddress Source { get; }
+    /// <summary>Recovering listeners must not be reported as healthy.</summary>
+    MessageSubscriptionStatus Status { get; }
+    /// <summary>Increases after a possible delivery gap. Derived local state must be resynchronized.</summary>
+    long RecoveryVersion { get; }
+    /// <summary>Waits until receiving resumes; cancellation stops only the wait.</summary>
+    Task WaitUntilReadyAsync(CancellationToken cancellationToken = default);
 }
 
-/// <summary>
-/// Worker queues and pub/sub. Send targets competing queue consumers; publish fans out to event subscriptions.
-/// Delivery is at least once where supported by the transport; handlers must tolerate duplicates.
-/// </summary>
+/// <summary>A batch payload with a stable application ID for selective retry.</summary>
+public sealed record MessageBatchItem<T>(T Message, string? MessageId = null, MessageHeaders? Headers = null) : IMessageBatchItem where T : class
+{
+    object IMessageBatchItem.Value => Message;
+}
+
+internal interface IMessageBatchItem
+{
+    object Value { get; }
+    string? MessageId { get; }
+    MessageHeaders? Headers { get; }
+}
+
 public interface IMessageBus : IAsyncDisposable
 {
+    /// <summary>Whether per-instance, automatically expiring event subscriptions are available.</summary>
+    bool SupportsTemporarySubscriptions => false;
     /// <summary>Receives queued work directly. Dispose an unsettled delivery to return it for redelivery.</summary>
     Task<IReceivedMessage<T>?> ReceiveAsync<T>(MessageReceiveOptions? options = null, CancellationToken cancellationToken = default) where T : class;
 
@@ -122,6 +146,8 @@ public interface IMessageBus : IAsyncDisposable
 
     /// <summary>Enqueues work in input order. Batches are not atomic.</summary>
     Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<T> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    /// <summary>Sends per-input application IDs and headers, preserving outcome order.</summary>
+    Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<MessageBatchItem<T>> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task<IReadOnlyList<string>> SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Publishes to existing subscriptions. Events without subscriptions are dropped.</summary>
@@ -129,6 +155,8 @@ public interface IMessageBus : IAsyncDisposable
 
     /// <summary>Publishes events and returns their IDs in input order. Batches are not atomic.</summary>
     Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<T> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
+    /// <summary>Publishs per-input application IDs and headers, preserving outcome order.</summary>
+    Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<MessageBatchItem<T>> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class;
     Task<IReadOnlyList<string>> PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>Consumes queued work. Only one handler per message type may be registered on an endpoint in this bus.</summary>
@@ -229,6 +257,13 @@ public sealed class MessageBus : IMessageBus
         return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetDestination(type, options.Destination), EnsureDestinationAsync, cancellationToken);
     }
 
+    public Task<IReadOnlyList<string>> SendBatchAsync<T>(IEnumerable<MessageBatchItem<T>> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        options ??= new MessageSendOptions();
+        return _core.SendBatchAsync(ScheduledDispatchKind.QueueMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetDestination(type, options.Destination), EnsureDestinationAsync, cancellationToken);
+    }
+
     public Task<IReadOnlyList<string>> SendBatchAsync(IEnumerable<object> messages, MessageSendOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
@@ -250,12 +285,21 @@ public sealed class MessageBus : IMessageBus
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureDestinationAsync, cancellationToken);
     }
 
+    public Task<IReadOnlyList<string>> PublishBatchAsync<T>(IEnumerable<MessageBatchItem<T>> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(messages);
+        options ??= new MessagePublishOptions();
+        return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages.Cast<object>(), typeof(T), ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureDestinationAsync, cancellationToken);
+    }
+
     public Task<IReadOnlyList<string>> PublishBatchAsync(IEnumerable<object> messages, MessagePublishOptions? options = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(messages);
         options ??= new MessagePublishOptions();
         return _core.SendBatchAsync(ScheduledDispatchKind.PubSubMessage, messages, null, ToEnvelope(options), type => GetTopic(type, options.Topic), EnsureDestinationAsync, cancellationToken);
     }
+
+    public bool SupportsTemporarySubscriptions => _core.SupportsTemporarySubscriptions;
 
     public Task<IMessageSubscription> ConsumeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {

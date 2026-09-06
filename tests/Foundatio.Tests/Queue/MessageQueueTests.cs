@@ -418,7 +418,7 @@ public class MessageQueueTests
 
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Jobs.UseInMemory();
+            .Builder.Jobs.UseInMemory();
 
         await using var provider = services.BuildServiceProvider();
 
@@ -752,7 +752,7 @@ public class MessageQueueTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var transport = new InMemoryMessageTransport();
-        await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { UnmatchedMaxAttempts = 3 } });
+        await using var queue = new MessageBus(transport, new MessageBusOptions { RetryPolicy = new RetryPolicy { UnmatchedMaxAttempts = 3, UnmatchedBackoff = _ => TimeSpan.Zero } });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(20));
 

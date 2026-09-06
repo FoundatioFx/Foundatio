@@ -14,6 +14,8 @@ public sealed record JobResult
     public Exception? Error { get; init; }
     public string Message { get; init; } = String.Empty;
     public bool IsSuccess { get; init; }
+    /// <summary>False makes a failure terminal without consuming the remaining retry budget.</summary>
+    public bool Retryable { get; init; } = true;
 
     public static readonly JobResult Cancelled = new()
     {

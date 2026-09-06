@@ -13,7 +13,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-public sealed partial class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsEphemeralSubscriptions, ITransportInfo
+public sealed partial class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsEphemeralSubscriptions, ITransportInfo
 {
     private static readonly TimeSpan _defaultLockRenewal = TimeSpan.FromMinutes(1);
 
@@ -90,7 +90,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
 
     public Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, CancellationToken ct)
     {
-        return ReceiveAsync(source, request, visibility: null, ct);
+        return ReceiveAsync(source, request, visibility: TimeSpan.FromMinutes(1), ct);
     }
 
     public async Task<IReadOnlyList<TransportEntry>> ReceiveAsync(DestinationAddress source, ReceiveRequest request, TimeSpan visibility, CancellationToken ct)
@@ -317,19 +317,6 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         }
     }
 
-    public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct)
-    {
-        ThrowIfDisposed();
-        ct.ThrowIfCancellationRequested();
-        ArgumentNullException.ThrowIfNull(source);
-        ArgumentNullException.ThrowIfNull(onMessage);
-        ArgumentNullException.ThrowIfNull(options);
-
-        var subscription = new PushSubscription(source);
-        subscription.Start(RunPushSubscriptionAsync(source, onMessage, options, subscription.CancellationToken));
-        return Task.FromResult<IPushSubscription>(subscription);
-    }
-
     public Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
@@ -453,59 +440,6 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         _roles.Clear();
         _topicSubscriptions.Clear();
         return ValueTask.CompletedTask;
-    }
-
-    private async Task RunPushSubscriptionAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken subscriptionCancellationToken)
-    {
-        using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(subscriptionCancellationToken, _disposeCancellationTokenSource.Token);
-        var token = linkedCancellationTokenSource.Token;
-        int maxMessages = Math.Max(1, options.MaxConcurrentMessages);
-
-        while (!token.IsCancellationRequested)
-        {
-            IReadOnlyList<TransportEntry> entries;
-            try
-            {
-                entries = await ReceiveAsync(source, new ReceiveRequest
-                {
-                    MaxMessages = maxMessages,
-                    MaxWaitTime = options.PollInterval
-                }, token).AnyContext();
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                break;
-            }
-
-            foreach (var entry in entries)
-            {
-                try
-                {
-                    await onMessage(entry, token).AnyContext();
-                }
-                catch (OperationCanceledException) when (token.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch
-                {
-                    // Safety net: the handler threw without settling, so abandon for redelivery. If the handler had
-                    // already settled the message (e.g. dead-lettered a poison payload and then rethrew), the receipt
-                    // is gone — treat that as already handled rather than faulting the subscription loop.
-                    try
-                    {
-                        await AbandonAsync(entry, token).AnyContext();
-                    }
-                    catch (ReceiptExpiredException)
-                    {
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
     }
 
     private void EnqueueForDestination(string key, StoredMessage message)
@@ -853,38 +787,4 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         }
     }
 
-    private sealed class PushSubscription : IPushSubscription
-    {
-        private readonly CancellationTokenSource _cancellationTokenSource = new();
-        private Task? _worker;
-
-        public PushSubscription(DestinationAddress source)
-        {
-            Source = source;
-        }
-
-        public DestinationAddress Source { get; }
-        public CancellationToken CancellationToken => _cancellationTokenSource.Token;
-
-        public void Start(Task worker)
-        {
-            _worker = worker;
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            await _cancellationTokenSource.CancelAsync().AnyContext();
-
-            if (_worker is not null)
-            {
-                try
-                {
-                    await _worker.AnyContext();
-                }
-                catch (OperationCanceledException) { }
-            }
-
-            _cancellationTokenSource.Dispose();
-        }
-    }
 }

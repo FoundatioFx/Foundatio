@@ -9,9 +9,10 @@ using Foundatio;
 using Foundatio.Messaging;
 
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Messaging.UseInMemory()
-    .Messaging.AddConsumer<SendReceipt, SendReceiptHandler>()
-    .Messaging.AddSubscriber<OrderPlaced, OrderPlacedHandler>("billing"));
+    .UseServiceName("billing")
+    .ConfigureMessaging(messaging => messaging.UseInMemory()
+        .AddConsumer<SendReceipt, SendReceiptHandler>()
+        .AddSubscriber<OrderPlaced, OrderPlacedHandler>()));
 ```
 
 Handlers implement `IMessageHandler<T>`:
@@ -39,9 +40,9 @@ The [quickstart sample](https://github.com/FoundatioFx/Foundatio/tree/feat/messa
 
 A named subscription such as `"billing"` is durable. All replicas using that name compete for the subscription's events. A separate `"analytics"` subscription gets its own copy. Names are deployment contracts: keep them stable across restarts and class renames. Register the subscription before publishing events that it must receive; creating one does not replay earlier publications.
 
-`AddSubscriber<T, THandler>("name")` requires a nonblank durable name. Use `.Messaging.AddTemporarySubscriber<T, THandler>()` when each running instance needs its own temporary subscription.
+`AddSubscriber<T, THandler>()` defaults to `UseServiceName(...)`, then `IHostEnvironment.ApplicationName`. This gives one copy per service, with replicas competing. Configure a stable service name for deployed contracts; outside a host, supply it or an explicit subscription name. `AddSubscriber<T, THandler>("name")` overrides the default and rejects blank names. Use `.Messaging.AddTemporarySubscriber<T, THandler>()` when each running instance needs its own temporary subscription.
 
-For dynamic `SubscribeAsync`, an unnamed subscription is temporary and receives its own copy while its listener is alive. In-memory and Redis transports support renewable two-minute subscription leases. Disposal deletes the subscription, and loss of renewal expires it after a crash. Redis physically removes expired groups during subsequent stream operations. AWS requires a named durable subscription because SQS/SNS does not provide this expiration contract; unnamed subscriptions fail explicitly.
+For dynamic `SubscribeAsync`, an unnamed subscription is temporary and receives its own copy while its listener is alive. In-memory and Redis transports support renewable two-minute subscription leases. Disposal deletes the subscription, and loss of renewal expires it after a crash. Transient renewal errors retry within the lease; a lost lease stops the old receiver and recreates its subscription. `IMessageSubscription.Status`, `RecoveryVersion`, and `WaitUntilReadyAsync` expose recovery. Consumers maintaining derived state must resynchronize after a possible gap. Redis physically removes expired groups during subsequent stream operations. AWS requires a named durable subscription because SQS/SNS does not provide this expiration contract; unnamed subscriptions fail explicitly.
 
 ```csharp
 await using var consumer = await bus.ConsumeAsync<SendReceipt>(
@@ -77,38 +78,48 @@ Durable delivery is **at least once**. A worker can finish a business operation 
 
 The application `MessageId`, broker entry ID, and per-delivery receipt are distinct. Send/publish return the application ID. Supply `MessageSendOptions.MessageId` or `MessagePublishOptions.MessageId` for retry correlation and consumer deduplication; supplying an ID does not make broker sends idempotent. Scheduling, retries, and dead-lettering preserve that ID.
 
-Batch sends are not transactions. On failure, `MessageSendException.Outcomes` describes each input as accepted, unknown, or not attempted. An unknown outcome may already have reached the broker. Retrying requires an application deduplication strategy.
+Batch sends are not transactions. On failure, `MessageSendException.Outcomes` describes each input as accepted, rejected, unknown, or not attempted, with its original index, application ID, provider error and retryability when known. An unknown outcome may already have reached the broker. Retrying requires an application deduplication strategy. Preserve individual IDs with the batch-item overload:
+
+```csharp
+await bus.SendBatchAsync<SendReceipt>([
+    new MessageBatchItem<SendReceipt>(new SendReceipt(1001), "receipt-1001"),
+    new MessageBatchItem<SendReceipt>(new SendReceipt(1002), "receipt-1002")
+]);
+```
+
+AWS uses native batches of up to ten, respecting encoded payload/attribute limits and retaining mixed per-entry outcomes. Redis pipelines bounded batches (64 by default, configurable up to 256). Durable retry and dead-letter source records are removed only after verified acceptance.
 
 For long-lived contracts, register versioned wire names on producers and consumers:
 
 ```csharp
 builder.Services.AddFoundatio().Messaging
-    .AddMessageType<OrderPlaced>("order-placed.v1");
+    .AddMessageType<OrderPlaced>("order-placed.v1", topic: "orders");
 ```
 
-Configure stable queue/topic routes independently of CLR class names. Concrete handlers may use the default CLR full-name discriminator; polymorphic/interface handlers accept only explicitly registered concrete types. The runtime does not scan assemblies or activate a type named by an untrusted header. Producers and consumers must agree on serialization and schema evolution. JSON uses `application/json`; other serializers default to byte-safe `application/octet-stream` unless configured otherwise.
+Bind the stable wire name and producer route together with `AddMessageType<T>(name, queue: ..., topic: ...)`, or set `MessageTypeName` plus `Destination`/`Topic` in a handler registration. Startup topology checks validate wire-name collisions even in `TopologyMode.None`; `MessageRoutingOptions.GetRouteMaps()` and startup logs expose declared mappings. Configure stable queue/topic routes independently of CLR class names. Concrete handlers may use the default CLR full-name discriminator; polymorphic/interface handlers accept only explicitly registered concrete types. The runtime does not scan assemblies or activate a type named by an untrusted header. Producers and consumers must agree on serialization and schema evolution. JSON uses `application/json`; other serializers default to byte-safe `application/octet-stream` unless configured otherwise.
 
 When updating a business database and publishing must commit together, persist an outbox record in the same database transaction and publish from an outbox dispatcher. Foundatio does not coordinate that transaction. Consumers should commit their deduplication record with their business changes. Scheduled dispatch send/delete and retry park/ack are also at-least-once boundaries.
 
 ## Delays and failures
 
-Native delays are used when the destination supports them. Otherwise configure an `IScheduledDispatchStore`. `AddFoundatioWorker` starts its dispatcher when both a transport and dispatch store are registered; split deployments can call `AddScheduledMessageDispatcher()` directly. Messaging depends only on that store contract; a job worker is not required. `IJobRuntimeStore` also implements the dispatch store, so a configured job store can be shared.
+Native delays are used when the destination supports them. `Messaging.UseInMemory()` and `Messaging.UseRedis()` automatically supply a matching `IScheduledDispatchStore` without registering job execution. The automatic Redis store shares the transport connection, clock and key prefix; `RedisStreamsMessageTransportOptions.Scheduling` sets its limits. AWS requires an explicit durable store for delays beyond native support; configure `Messaging.UseSchedulingStore(...)` or share a job runtime store. `AddFoundatioWorker` starts its dispatcher when both a transport and dispatch store are registered; split deployments can call `AddScheduledMessageDispatcher()` directly. Messaging depends only on that store contract; a job worker is not required. `IJobRuntimeStore` also implements the dispatch store, so a configured job store can be shared.
 
 ```csharp
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Messaging.UseInMemory()
-    .Jobs.UseInMemory());
+    .ConfigureMessaging(messaging => messaging.UseInMemory()));
 ```
 
 For production durability use a durable dispatch store, such as Redis. Without a suitable native delay or dispatch store, unsupported delays fail instead of being shortened. The scheduled message dispatcher runs independently of job execution.
 
 Native dead-letter transports expose `ISupportsDeadLetter`: `PeekDeadLetteredAsync` reads a bounded page without removing evidence; `DeleteDeadLetteredAsync` removes an explicit ID; `ReplayDeadLetteredAsync` sends that ID to an explicit queue/topic and resets retry metadata while preserving the application ID. Peeking repeatedly is safe. Replaying can repeat business effects, so apply the same idempotency rules as normal delivery.
 
+Unmatched message types retry after five seconds with jitter (50 attempts by default), allowing rolling deployments without a tight redelivery loop. Ordinary handler failures use five attempts with immediate-first, then 10/20/30-second jittered delays. Override these through `ConfigureRetry`. Malformed AWS envelope entries retain raw evidence and are quarantined independently, allowing valid entries in the batch to proceed.
+
 If native dead-lettering is unavailable, the core sends to a fallback queue and only completes the original after that send succeeds. Failure to park the message leaves the original recoverable. AWS fallback queues support ordinary receive/settle operations, not non-destructive peek by ID.
 
 ## Topology
 
-`TopologyMode.Ensure` creates destinations on first use. `Validate` checks existing destinations and fails if missing; it does not create. `None` assumes out-of-band provisioning. This policy applies to sends, publishes, receiving, delayed dispatch, and fallback dead-letter sends. Temporary subscriptions require `Ensure`.
+`TopologyMode.Ensure` creates destinations on first use. Successful permanent provisioning is cached briefly; errors invalidate it, and deleted receive destinations are recreated under listener supervision. Expiring declarations are never cached. `Validate` checks existing destinations and fails if missing; it does not create. `None` assumes out-of-band provisioning. This policy applies to sends, publishes, receiving, delayed dispatch, and fallback dead-letter sends. Temporary subscriptions require `Ensure`.
 
 Producer routing declares queues/topics, never phantom subscriber groups. AWS resource existence and deletion work through a fresh transport instance, including SNS bindings. Provider administration should use `ISupportsProvisioning` explicitly.
 
@@ -117,7 +128,10 @@ Producer routing declares queues/topics, never phantom subscriber groups. AWS re
 | Behavior | In-memory | Redis Streams | AWS SQS/SNS |
 | --- | --- | --- | --- |
 | Queued work and named event subscriptions | Yes, process-local | Yes | Yes |
-| Temporary expiring subscriptions | Yes | Yes | Unsupported; name the subscription |
+| Temporary expiring subscriptions | Yes, supervised recovery | Yes, supervised recovery | Unsupported; name the subscription |
+| Hybrid-cache invalidation | Resynchronizes after listener gaps | Resynchronizes after listener gaps | Fails immediately: temporary subscriptions required |
+| Cache-backed lock notifications | Notifications plus polling | Notifications plus polling | Polling fallback |
+| Delayed-message persistence | Automatic, process-local | Automatic, Redis | Explicit durable store for non-native delays |
 | Execution durability after process loss | No | Depends on Redis persistence/HA | Broker-managed |
 | Delivery order | Initial FIFO; priority/retries can reorder | Initial FIFO; retries/concurrency can reorder | Standard queues, no ordering guarantee |
 | Native delayed queue send | No | No | Up to 15 minutes |
@@ -126,10 +140,10 @@ Producer routing declares queues/topics, never phantom subscriber groups. AWS re
 | Non-destructive DLQ peek/replay by ID | Yes | Yes, per subscription | No; core fallback queue |
 | Backlog limit | Process memory | `MaxPendingMessages`, default 100,000 per stream/DLQ | Broker limits |
 
-Redis capacity rejects new messages instead of trimming unread or pending entries. A slow durable subscription therefore applies backpressure to the topic. Acknowledged topic entries are trimmed only when every subscription has progressed past them. Delete abandoned durable subscriptions deliberately; temporary leases are not a replacement for durable subscription administration.
+Redis capacity rejects new messages instead of trimming unread or pending entries. A slow durable subscription therefore applies backpressure to the topic. Acknowledged topic entries are trimmed only when every subscription has progressed past them. Retention checks are amortized to a one-second cadence and forced before capacity rejection. Empty Redis receivers back off from 25 ms to one second; tune `PollInterval` and `MaxIdlePollInterval` when idle latency matters. Delete abandoned durable subscriptions deliberately; temporary leases are not a replacement for durable subscription administration.
 
 SQS/SNS support varies by destination role. Do not infer topic capabilities from queue capabilities. The shared conformance suite exercises in-memory, Redis, and SQS/SNS via LocalStack in CI; the emulator is not evidence of a live AWS deployment.
 
 ## Migration
 
-The former publish-only interfaces live under `Foundatio.Messaging.Legacy`; `Messaging.AddLegacyAdapter()` adapts them to this bus. Legacy `IQueue<T>` workers migrate to an explicit consumer and `SendAsync`. There is no `Deliveries.Both`, handler-name-derived subscriber identity, or `PerInstance` flag. Choose `AddConsumer` or `AddSubscriber`, and give durable subscribers explicit names.
+The former publish-only interfaces live under `Foundatio.Messaging.Legacy`; `Messaging.AddLegacyAdapter()` adapts them to this bus. Legacy `IQueue<T>` workers migrate to an explicit consumer and `SendAsync`. There is no `Deliveries.Both`, handler-name-derived subscriber identity, or `PerInstance` flag. Choose `AddConsumer` or `AddSubscriber`, and use a stable service identity or explicit names for durable subscribers.

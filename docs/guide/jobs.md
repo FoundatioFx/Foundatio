@@ -9,9 +9,9 @@ using Foundatio;
 using Foundatio.Jobs;
 
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Jobs.UseInMemory()
-    .Jobs.AddJobType<ResizeImageJob>("resize-image.v1")
-    .Jobs.AddCronJob<CleanupJob>("0 2 * * *"));
+    .ConfigureJobs(jobs => jobs.UseInMemory()
+        .AddJobType<ResizeImageJob>("resize-image.v1")
+        .AddCronJob<CleanupJob>("0 2 * * *")));
 ```
 
 The in-memory store is for tests and local development. Use `.Jobs.UseRedis()` for persistence across processes, with Redis persistence and availability configured for your requirements.
@@ -34,9 +34,15 @@ public sealed class ResizeImageJob(ImageService images) : IJob<ResizeArgs>
 }
 
 var handle = await jobs.EnqueueAsync<ResizeImageJob, ResizeArgs>(new ResizeArgs("image.png", 640));
-var state = await handle.GetStateAsync();
-await handle.RequestCancellationAsync();
+var state = await handle.WaitForCompletionAsync(TimeSpan.FromMinutes(2));
+Console.WriteLine(state.ResultMessage);
+
+var delayed = await jobs.EnqueueAsync<ResizeImageJob, ResizeArgs>(
+    new ResizeArgs("later.png", 640), new JobRequestOptions { Delay = TimeSpan.FromHours(1) });
+await delayed.RequestCancellationAsync();
 ```
+
+`Delay` and `RunAt` are mutually exclusive. `WaitForCompletionAsync` defaults to a five-minute timeout and polls every 250 ms. Timeout or cancellation stops the wait; cancelling execution requires `RequestCancellationAsync`.
 
 The argument type is part of `IJob<TArgs>` and is checked before persistence. Argument-free jobs implement `IJob.RunAsync(JobExecutionContext)`. A typed job cannot be submitted without its arguments. Register stable, versioned job names on both submitters and workers; only allowlisted job types execute. Keep the serialized argument contract compatible for as long as old jobs can remain queued or retained.
 
@@ -44,11 +50,11 @@ Each execution receives a dependency injection scope, its application job ID, at
 
 ## Execution and retries
 
-Jobs progress from queued to processing to completed, failed, or cancelled. A failed attempt returns to the queue with a persisted delay, starting at 10 seconds and increasing exponentially up to five minutes. `JobRequestOptions.MaxAttempts` defaults to three total attempts, including crash recovery; CRON definitions snapshot the same budget into each occurrence. Exhausted jobs end in `Failed` with their error retained.
+Jobs progress from queued to processing to completed, failed, or cancelled. A failed attempt returns to the queue with a persisted `JobRetryPolicy`: initially 10 seconds, exponential multiplier 2, a five-minute cap, and 20% jitter. Set `JobRequestOptions.RetryPolicy` or `CronJobOptions.RetryPolicy` to change it. The policy is stored with the job so different workers apply the same curve. Return a failed `JobResult` with `Retryable = false` for a terminal business failure. `JobRequestOptions.MaxAttempts` defaults to three total attempts, including crash recovery; CRON definitions snapshot the same budget into each occurrence. Exhausted jobs end in `Failed` with their error retained.
 
 An expired processing lease can be claimed with a fresh token. Host shutdown returns unfinished work to the queue; explicit user cancellation is terminal. A worker that loses its lease cannot complete or report progress against the replacement claim.
 
-These fences protect job state, not arbitrary external side effects. A process can crash after completing an external operation but before persisting completion. Jobs must tolerate repeated execution. A stable caller-supplied `JobRequestOptions.JobId` makes submission create-if-absent while that record is retained; it does not make execution exactly once.
+These fences protect job state, not arbitrary external side effects. A process can crash after completing an external operation but before persisting completion. Jobs must tolerate repeated execution. A stable caller-supplied `JobRequestOptions.JobId` makes submission create-if-absent until its idempotency reservation expires; it does not make execution exactly once.
 
 Workers atomically claim the oldest eligible due job from registered types and optional node affinity. Monitoring queries do not drive execution, so old or unknown job types cannot crowd runnable work out of a monitoring page.
 
@@ -56,19 +62,19 @@ Workers atomically claim the oldest eligible due job from registered types and o
 
 ```csharp
 builder.Services.AddFoundatioWorker(foundatio => foundatio
-    .Jobs.UseInMemory()
-    .Jobs.AddJobType<ResizeImageJob>("resize-image.v1")
-    .Jobs.AddCronJob<ResizeImageJob, ResizeArgs>("0 2 * * *", new ResizeArgs("banner.png", 640), o =>
+    .ConfigureJobs(jobs => jobs.UseInMemory()
+    .AddJobType<ResizeImageJob>("resize-image.v1")
+    .AddCronJob<ResizeImageJob, ResizeArgs>("0 2 * * *", new ResizeArgs("banner.png", 640), o =>
     {
         o.Name = "resize-banner";
         o.TimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/Chicago");
         o.ConfigurationVersion = 1;
-    }));
+    })));
 ```
 
 Five-field expressions use minute resolution; six-field expressions include seconds. Definitions persist a wire job name, serialized argument payload, time-zone ID, retry budget, enabled state, scope, overlap policy, and revision. They contain no CLR `Type`, delegates, or live argument objects.
 
-Global schedules create one occurrence per tick across scheduler replicas. `PerNode` creates occurrences with affinity to each scheduler node; the worker on that node must use the same node identity and register the job type. `FOUNDATIO_NODE_ID` sets a stable identity when required. The default is process-unique.
+Global schedules create one occurrence per tick across scheduler replicas. `PerNode` creates occurrences with affinity to each scheduler node; the worker on that node must use the same node identity and register the job type. `PerNode` requires an explicit stable `Jobs.ConfigureWorker(o => o with { NodeId = "worker-a" })` or `FOUNDATIO_NODE_ID`; startup fails if neither is configured. Use a unique stable identity per node. Global is the default and needs no node configuration. Unclaimed node-affine occurrences expire after `UnclaimedLifetime` (default one day), releasing backlog and overlap reservations when a node is retired. Once an attempt starts, ordinary retry and lease recovery apply.
 
 `SkipIfRunning` prevents a new occurrence while an earlier occurrence remains queued, processing, or waiting for retry. Explicitly allowing overlap permits concurrent occurrences. Unique occurrence IDs prevent duplicate materialization across concurrent scheduler polls. Manual triggers also respect overlap and disabled state.
 
@@ -99,9 +105,21 @@ do
 
 Redis reads bounded index pages rather than loading every job. A filtered page can be empty and still have a continuation token. Pages are a live view; concurrent inserts or status changes are not a snapshot.
 
-Terminal records are retained for seven days after completion. The worker host runs bounded cleanup automatically; manual hosts call `IJobRuntimeStore.CleanupAsync()`. Active jobs are never removed by retention. Once a record is removed, its ID can be submitted again; application idempotency may require a longer-lived record in your business database.
+`JobRuntimeStoreOptions` separates admission, history and idempotency budgets:
 
-Stores default to 100,000 retained job records. Set `RedisJobRuntimeStoreOptions.MaxJobs` or the in-memory constructor's `maxJobs` for the deployment. At capacity, new submissions fail with `JobException`, preserving existing work. Cleanup releases capacity. This count includes retained terminal records, so size it for peak backlog plus seven days of history. Payload sizes and Redis persistence remain deployment responsibilities.
+| Option | Default |
+| --- | --- |
+| `MaxActiveJobs` | 100,000 queued, scheduled or processing jobs |
+| `MaxHistoryJobs` / `HistoryRetention` | 100,000 terminal records / seven days |
+| `MaxDeduplicationRecords` / `DeduplicationRetention` | 1,000,000 ID reservations / seven days after completion |
+| `MaxScheduledDispatches` | 100,000 delayed messages |
+| `MaxPayloadBytes` | 1 MiB per job payload or scheduled message body plus UTF-8 header keys/values |
+
+History is evicted by age or count independently of active capacity. Eviction preserves the ID reservation until its deduplication deadline; active jobs reserve IDs until they become terminal. Deduplication retention must be at least history retention. Admission fails with an actionable `JobException` when an applicable budget is full. Neither eviction nor a supplied ID makes business side effects exactly once.
+
+Pass these options to `Jobs.UseInMemory(options)` or `RedisJobRuntimeStoreOptions.Runtime`. The old `MaxJobs` setting now means active capacity. Hosted workers clean up automatically; manual hosts call `CleanupAsync`. `GetStatsAsync` exposes current budget usage.
+
+`AddFoundatioWorker` registers a `foundatio` health check. Map it with ASP.NET Core's `app.MapHealthChecks("/health")` or query `HealthCheckService`. Worker, scheduler, dispatcher and listener recovery affect health. The `Foundatio.Runtime` meter exposes active jobs, retained history, ID reservations and scheduled dispatch counts. Job exceptions are logged with ID, wire type and attempt, with a bounded failure summary in `JobState.Error`; successful messages use `ResultMessage`.
 
 ## Testing and migration
 

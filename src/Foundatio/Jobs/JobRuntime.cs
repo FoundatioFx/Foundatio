@@ -17,6 +17,7 @@ namespace Foundatio.Jobs;
 /// </summary>
 internal static class JobInstruments
 {
+    public static readonly Counter<long> CapacityRejected = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.capacity_rejected", description: "Job store admissions rejected by a configured resource budget");
     public static readonly Counter<long> Started = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.started", description: "Number of durable jobs started");
     public static readonly Counter<long> Completed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.completed", description: "Number of durable jobs completed successfully");
     public static readonly Counter<long> Failed = FoundatioDiagnostics.Meter.CreateCounter<long>("foundatio.jobs.failed", description: "Number of durable jobs that failed");
@@ -58,6 +59,7 @@ public sealed record JobState
     public int Attempt { get; init; }
     /// <summary>Total execution attempts allowed, including retries and crash recovery.</summary>
     public int MaxAttempts { get; init; } = 3;
+    public JobRetryPolicy RetryPolicy { get; init; } = new();
     /// <summary>Earliest execution time, including persisted retry delays.</summary>
     public DateTimeOffset? AvailableUtc { get; init; }
     /// <summary>Unique ownership token for the current execution; changes on every claim.</summary>
@@ -73,8 +75,12 @@ public sealed record JobState
     public DateTimeOffset? CompletedUtc { get; init; }
     public DateTimeOffset? LeaseExpiresUtc { get; init; }
     public string? Error { get; init; }
+    /// <summary>Informational outcome, independent of failure diagnostics.</summary>
+    public string? ResultMessage { get; init; }
     public bool CancellationRequested { get; init; }
     public DateTimeOffset? ScheduledForUtc { get; init; }
+    /// <summary>Expires an unclaimed per-node occurrence when its intended node never returns.</summary>
+    public DateTimeOffset? ExpiresUtc { get; init; }
 }
 
 public sealed record JobQuery
@@ -111,10 +117,18 @@ public sealed record ScheduledDispatchState
     public int Attempts { get; init; }
 }
 
+/// <summary>Distinguishes a confirmed occurrence from overlap that may become eligible later.</summary>
+public enum JobOccurrenceResult { AlreadyExists, Created, OverlapBlocked }
+
 public sealed record JobRequestOptions
 {
+    /// <summary>Relative initial delay. Mutually exclusive with RunAt.</summary>
+    public TimeSpan? Delay { get; init; }
+    /// <summary>Absolute earliest execution time. Mutually exclusive with Delay.</summary>
+    public DateTimeOffset? RunAt { get; init; }
     /// <summary>Total execution attempts, including retries. Default three.</summary>
     public int MaxAttempts { get; init; } = 3;
+    public JobRetryPolicy RetryPolicy { get; init; } = new();
     public string? JobId { get; init; }
     public string? Name { get; init; }
 }
@@ -185,10 +199,12 @@ public sealed class JobTypeRegistry : IJobTypeRegistry
 public sealed class JobHandle
 {
     private readonly IJobMonitor _monitor;
+    private readonly TimeProvider _timeProvider;
     private readonly Func<string, CancellationToken, Task<bool>> _requestCancellation;
 
-    internal JobHandle(string jobId, IJobMonitor monitor, Func<string, CancellationToken, Task<bool>> requestCancellation)
+    internal JobHandle(string jobId, IJobMonitor monitor, Func<string, CancellationToken, Task<bool>> requestCancellation, TimeProvider? timeProvider = null)
     {
+        _timeProvider = timeProvider ?? TimeProvider.System;
         JobId = jobId;
         _monitor = monitor;
         _requestCancellation = requestCancellation;
@@ -199,6 +215,33 @@ public sealed class JobHandle
     public Task<JobState?> GetStateAsync(CancellationToken cancellationToken = default)
     {
         return _monitor.GetAsync(JobId, cancellationToken);
+    }
+
+    /// <summary>Waits for a terminal state. Timeout or cancellation stops this wait without cancelling the job.</summary>
+    public async Task<JobState> WaitForCompletionAsync(TimeSpan? timeout = null, TimeSpan? pollInterval = null, CancellationToken cancellationToken = default)
+    {
+        var duration = timeout ?? TimeSpan.FromMinutes(5);
+        var interval = pollInterval ?? TimeSpan.FromMilliseconds(250);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(duration, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
+        using var deadline = new CancellationTokenSource(duration, _timeProvider);
+        using var waiting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        try
+        {
+            while (true)
+            {
+                waiting.Token.ThrowIfCancellationRequested();
+                var state = await _monitor.GetAsync(JobId, waiting.Token).WaitAsync(waiting.Token).AnyContext()
+                    ?? throw new JobException($"Job {JobId} is unavailable; its retained history may have expired.");
+                if (state.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled or JobStatus.DeadLettered)
+                    return state;
+                await Task.Delay(interval, _timeProvider, waiting.Token).AnyContext();
+            }
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Job {JobId} did not finish within {duration}.");
+        }
     }
 
     public Task<bool> RequestCancellationAsync(CancellationToken cancellationToken = default)
@@ -297,7 +340,7 @@ public sealed class JobExecutionContext
     public async Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
         CancellationToken.ThrowIfCancellationRequested();
-        if (_store is not null && !await _store.ReportJobProgressAsync(JobId, _claimToken, percent, message, cancellationToken).AnyContext())
+        if (_store is not null && !await _store.ReportJobProgressAsync(JobId, _claimToken, percent, message, cancellationToken == default ? CancellationToken : cancellationToken).AnyContext())
             throw new JobException($"Job {JobId} no longer owns its execution lease.");
     }
 
@@ -307,10 +350,10 @@ public sealed class JobExecutionContext
     /// to observe lease health explicitly (a false return means another node now owns the job).
     /// </summary>
     public Task<bool> RenewLeaseAsync(CancellationToken cancellationToken = default)
-        => _store?.RenewJobLeaseAsync(JobId, _claimToken, _lease, cancellationToken) ?? Task.FromResult(true);
+        => _store?.RenewJobLeaseAsync(JobId, _claimToken, _lease, cancellationToken == default ? CancellationToken : cancellationToken) ?? Task.FromResult(true);
 
     public Task<bool> IsCancellationRequestedAsync(CancellationToken cancellationToken = default)
-        => _store?.IsCancellationRequestedAsync(JobId, cancellationToken) ?? Task.FromResult(CancellationToken.IsCancellationRequested);
+        => _store?.IsCancellationRequestedAsync(JobId, cancellationToken == default ? CancellationToken : cancellationToken) ?? Task.FromResult(CancellationToken.IsCancellationRequested);
 }
 
 public interface IJobMonitor
@@ -336,8 +379,12 @@ public interface IJobClient
 
 public interface IJobWorker
 {
+    /// <summary>False while any execution slot is recovering from an infrastructure failure.</summary>
+    bool IsHealthy { get; }
     Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default);
     Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default);
+    /// <summary>Continuously replenishes independent execution slots until shutdown.</summary>
+    Task RunContinuouslyAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -352,7 +399,7 @@ public interface IScheduledDispatchStore
     // SELECT ... FOR UPDATE SKIP LOCKED, or UPDATE ... WHERE due and unclaimed/lease-expired), never read-then-write —
     // so concurrent nodes never claim the same dispatch.
     Task<IReadOnlyList<ScheduledDispatchState>> ClaimDueDispatchesAsync(DateTimeOffset now, int limit, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
-    Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default);
+    Task<bool> CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default);
     Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default);
 }
 
@@ -365,7 +412,7 @@ public interface IScheduledDispatchStore
 public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore, IScheduledJobStore
 {
     /// <summary>Atomically creates an occurrence, enforcing its unique ID and optional overlap exclusion.</summary>
-    Task<bool> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken cancellationToken = default);
+    Task<JobOccurrenceResult> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken cancellationToken = default);
     /// <summary>Atomically claims the oldest eligible due job, including recoverable expired executions.</summary>
     Task<JobState?> ClaimNextAsync(JobClaimRequest request, CancellationToken cancellationToken = default);
     /// <summary>Atomically claims a specific eligible job.</summary>
@@ -376,7 +423,8 @@ public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore, ISched
     Task<bool> RenewJobLeaseAsync(string jobId, string claimToken, TimeSpan lease, CancellationToken cancellationToken = default);
     /// <summary>Updates progress only for the current, unexpired execution claim.</summary>
     Task<bool> ReportJobProgressAsync(string jobId, string claimToken, int? percent = null, string? message = null, CancellationToken cancellationToken = default);
-    /// <summary>Removes up to limit terminal jobs completed more than seven days ago. IDs remain deduplicated until removal.</summary>
+    Task<JobRuntimeStoreStats> GetStatsAsync(CancellationToken cancellationToken = default);
+    /// <summary>Applies configured history, idempotency and unclaimed occurrence retention in bounded batches.</summary>
     Task<int> CleanupAsync(int limit = 1000, CancellationToken cancellationToken = default);
     Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
@@ -389,12 +437,21 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
     private readonly ConcurrentDictionary<string, ScheduledDispatchState> _dispatches = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
-    private readonly int _maxJobs;
+    private readonly JobRuntimeStoreOptions _options;
+    private readonly Dictionary<string, DateTimeOffset> _deduplication = new(StringComparer.Ordinal);
+    private readonly PriorityQueue<(string Id, DateTimeOffset Expires), DateTimeOffset> _deduplicationExpiry = new();
+    private readonly PriorityQueue<(string Id, DateTimeOffset Completed), DateTimeOffset> _history = new();
+    private int _activeJobs;
+    private readonly Dictionary<string, JobState> _active = new(StringComparer.Ordinal);
 
     public InMemoryJobRuntimeStore(TimeProvider? timeProvider = null, int maxJobs = 100000)
+        : this(new JobRuntimeStoreOptions { MaxActiveJobs = maxJobs }, timeProvider) { }
+
+    public InMemoryJobRuntimeStore(JobRuntimeStoreOptions options, TimeProvider? timeProvider = null)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(maxJobs, 1);
-        _maxJobs = maxJobs;
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        _options = options;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -405,11 +462,14 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
 
         lock (_lock)
         {
-            if (_jobs.ContainsKey(initial.JobId))
+            ValidatePayload(initial.Payload?.Length ?? 0);
+            initial.RetryPolicy.Validate();
+            PurgeDeduplication();
+            if (_jobs.ContainsKey(initial.JobId) || _deduplication.ContainsKey(initial.JobId))
                 return Task.CompletedTask;
             EnsureCapacity();
             var now = _timeProvider.GetUtcNow();
-            _jobs.TryAdd(initial.JobId, initial with
+            StoreJob(initial with
             {
                 CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc,
                 LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc
@@ -441,8 +501,81 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
 
     private void EnsureCapacity()
     {
-        if (_jobs.Count >= _maxJobs)
-            throw new JobException($"Job storage capacity ({_maxJobs}) reached. Run cleanup or increase capacity before enqueueing more work.");
+        PurgeDeduplication();
+        if (_activeJobs >= _options.MaxActiveJobs)
+            throw CapacityExceeded("active jobs", _options.MaxActiveJobs);
+        if (_deduplication.Count >= _options.MaxDeduplicationRecords)
+            throw CapacityExceeded("idempotency records", _options.MaxDeduplicationRecords);
+    }
+
+    private static JobException CapacityExceeded(string budget, int maximum)
+    {
+        JobInstruments.CapacityRejected.Add(1, new KeyValuePair<string, object?>("budget", budget));
+        return new JobException($"Job store {budget} capacity ({maximum}) reached. Configure JobRuntimeStoreOptions to increase this budget.");
+    }
+
+    private void ValidatePayload(long bytes)
+    {
+        if (bytes > _options.MaxPayloadBytes)
+            throw new JobException($"Payload exceeds the configured {_options.MaxPayloadBytes} byte limit.");
+    }
+
+    private static bool IsActive(JobState state) => state.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing;
+
+    private void StoreJob(JobState state)
+    {
+        _jobs.TryGetValue(state.JobId, out var previous);
+        bool active = IsActive(state);
+        _activeJobs += (active ? 1 : 0) - (previous is not null && IsActive(previous) ? 1 : 0);
+        if (!active && state.CompletedUtc is null)
+            state = state with { CompletedUtc = _timeProvider.GetUtcNow() };
+        _jobs[state.JobId] = state;
+        if (active) _active[state.JobId] = state;
+        else _active.Remove(state.JobId);
+        if (previous is null)
+            _deduplication[state.JobId] = DateTimeOffset.MaxValue;
+        if (!active && (previous is null || previous.CompletedUtc != state.CompletedUtc || IsActive(previous)))
+        {
+            var completed = state.CompletedUtc!.Value;
+            var expires = completed.Add(_options.DeduplicationRetention);
+            _deduplication[state.JobId] = expires;
+            _deduplicationExpiry.Enqueue((state.JobId, expires), expires);
+            _history.Enqueue((state.JobId, completed), completed);
+            TrimHistory(1000, pressureOnly: true);
+        }
+    }
+
+    private void PurgeDeduplication()
+    {
+        var now = _timeProvider.GetUtcNow();
+        while (_deduplicationExpiry.TryPeek(out var item, out var expires) && expires <= now)
+        {
+            _deduplicationExpiry.Dequeue();
+            if (_deduplication.TryGetValue(item.Id, out var current) && current == item.Expires)
+                _deduplication.Remove(item.Id);
+        }
+    }
+
+    private int TrimHistory(int limit, bool pressureOnly = false)
+    {
+        int removed = 0;
+        var cutoff = _timeProvider.GetUtcNow().Subtract(_options.HistoryRetention);
+        while (removed < limit && _history.TryPeek(out var item, out var completed))
+        {
+            if (_jobs.Count - _activeJobs <= _options.MaxHistoryJobs && (pressureOnly || completed > cutoff))
+                break;
+            _history.Dequeue();
+            if (_jobs.TryGetValue(item.Id, out var state) && !IsActive(state) && state.CompletedUtc == item.Completed && _jobs.TryRemove(item.Id, out _))
+                removed++;
+        }
+        return removed;
+    }
+
+    public Task<JobRuntimeStoreStats> GetStatsAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_lock)
+            return Task.FromResult(new JobRuntimeStoreStats(_activeJobs, _jobs.Count - _activeJobs, _deduplication.Count, _dispatches.Count));
     }
 
     public Task<int> CleanupAsync(int limit = 1000, CancellationToken cancellationToken = default)
@@ -452,12 +585,11 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
-            var cutoff = _timeProvider.GetUtcNow().AddDays(-7);
-            var expired = _jobs.Values.Where(s => s.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled or JobStatus.DeadLettered)
-                .Where(s => s.CompletedUtc <= cutoff).OrderBy(s => s.CompletedUtc).Take(limit).ToArray();
-            foreach (var state in expired)
-                _jobs.TryRemove(state.JobId, out _);
-            return Task.FromResult(expired.Length);
+            PurgeDeduplication();
+            var now = _timeProvider.GetUtcNow();
+            foreach (var state in _jobs.Values.Where(s => s.RequiredNodeId is not null && s.Attempt == 0 && s.Status is JobStatus.Queued or JobStatus.Scheduled && s.ExpiresUtc <= now).Take(limit))
+                StoreJob(state with { Status = JobStatus.Cancelled, CompletedUtc = now, LastUpdatedUtc = now, ResultMessage = "Unclaimed per-node occurrence expired." });
+            return Task.FromResult(TrimHistory(limit));
         }
     }
 
@@ -483,7 +615,15 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
     {
         ArgumentNullException.ThrowIfNull(dispatch);
         cancellationToken.ThrowIfCancellationRequested();
-        _dispatches.TryAdd(dispatch.DispatchId, dispatch);
+        lock (_lock)
+        {
+            if (_dispatches.ContainsKey(dispatch.DispatchId))
+                return Task.CompletedTask;
+            ValidatePayload(dispatch.Body.Length + dispatch.Headers.Sum(h => (long)System.Text.Encoding.UTF8.GetByteCount(h.Key) + System.Text.Encoding.UTF8.GetByteCount(h.Value)));
+            if (_dispatches.Count >= _options.MaxScheduledDispatches)
+                throw CapacityExceeded("scheduled dispatches", _options.MaxScheduledDispatches);
+            _dispatches.TryAdd(dispatch.DispatchId, dispatch with { Body = dispatch.Body.ToArray() });
+        }
         return Task.CompletedTask;
     }
 
@@ -495,7 +635,7 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
         lock (_lock)
         {
             var due = _dispatches.Values
-                .Where(d => d.DueUtc <= now && (String.IsNullOrEmpty(d.ClaimOwner) || d.ClaimExpiresUtc <= now))
+                .Where(d => d.DueUtc <= now && (String.IsNullOrEmpty(d.ClaimOwner) || d.ClaimExpiresUtc <= _timeProvider.GetUtcNow()))
                 .OrderBy(d => d.DueUtc)
                 .Take(Math.Max(1, limit))
                 .ToArray();
@@ -505,7 +645,7 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
                 var claimed = due[index] with
                 {
                     ClaimOwner = nodeId,
-                    ClaimExpiresUtc = now.Add(lease),
+                    ClaimExpiresUtc = _timeProvider.GetUtcNow().Add(lease),
                     Attempts = due[index].Attempts + 1
                 };
                 _dispatches[claimed.DispatchId] = claimed;
@@ -516,17 +656,16 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
         }
     }
 
-    public Task CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default)
+    public Task<bool> CompleteDispatchAsync(string dispatchId, string nodeId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         lock (_lock)
         {
             if (_dispatches.TryGetValue(dispatchId, out var dispatch) && dispatch.ClaimOwner == nodeId && dispatch.ClaimExpiresUtc > _timeProvider.GetUtcNow())
-                _dispatches.TryRemove(dispatchId, out _);
+                return Task.FromResult(_dispatches.TryRemove(dispatchId, out _));
+            return Task.FromResult(false);
         }
-
-        return Task.CompletedTask;
     }
 
     public Task ReleaseDispatchAsync(string dispatchId, string nodeId, DateTimeOffset nextDueUtc, CancellationToken cancellationToken = default)
@@ -556,7 +695,7 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
             if (!_jobs.TryGetValue(jobId, out var current))
                 return false;
 
-            _jobs[jobId] = update(current);
+            StoreJob(update(current));
             return true;
         }
     }
@@ -569,6 +708,7 @@ public sealed class JobClient : IJobClient
     private readonly IJobRuntimeStore _store;
     private readonly TimeProvider _timeProvider;
     private readonly IJobTypeRegistry _jobTypes;
+    private readonly bool _requireRegisteredTypes;
     private readonly ISerializer _serializer;
 
     public JobClient(IJobRuntimeStore store, TimeProvider? timeProvider = null, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null)
@@ -576,6 +716,7 @@ public sealed class JobClient : IJobClient
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = timeProvider ?? TimeProvider.System;
         _jobTypes = jobTypes ?? new JobTypeRegistry();
+        _requireRegisteredTypes = jobTypes is not null;
         _serializer = serializer ?? DefaultSerializer.Instance;
     }
 
@@ -604,16 +745,25 @@ public sealed class JobClient : IJobClient
         JobArgumentContract.Validate(jobType, args);
         options ??= new JobRequestOptions();
         ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
+        options.RetryPolicy.Validate();
+        if (options.Delay is not null && options.RunAt is not null)
+            throw new ArgumentException("Specify either Delay or RunAt, not both.", nameof(options));
+        if (options.Delay is { } delay)
+            ArgumentOutOfRangeException.ThrowIfLessThan(delay, TimeSpan.Zero);
         string jobId = options.JobId ?? Guid.NewGuid().ToString("N");
         string name = options.Name ?? jobType.Name;
         var now = _timeProvider.GetUtcNow();
 
+        string typeName = _jobTypes.GetName(jobType);
+        if (_requireRegisteredTypes) _jobTypes.Resolve(typeName);
         await _store.CreateIfAbsentAsync(new JobState
         {
             JobId = jobId,
             Name = name,
-            JobType = _jobTypes.GetName(jobType),
+            JobType = typeName,
             MaxAttempts = options.MaxAttempts,
+            RetryPolicy = options.RetryPolicy,
+            AvailableUtc = options.RunAt ?? (options.Delay is { } delayValue ? now.Add(delayValue) : now),
             // Explicitly typed: the byte[] -> ReadOnlyMemory conversion maps a null array to an EMPTY memory, which
             // would make an argless job look like it carries a zero-byte payload.
             Payload = args is null ? null : (ReadOnlyMemory<byte>?)_serializer.SerializeToBytes(args),
@@ -623,7 +773,7 @@ public sealed class JobClient : IJobClient
             LastUpdatedUtc = now
         }, cancellationToken).ConfigureAwait(false);
 
-        return new JobHandle(jobId, _store, RequestCancellationAsync);
+        return new JobHandle(jobId, _store, RequestCancellationAsync, _timeProvider);
     }
 
     public Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
@@ -639,6 +789,10 @@ public sealed class JobClient : IJobClient
 /// </summary>
 internal static class NodeIdentity
 {
+    public static string? Configured => Environment.GetEnvironmentVariable("FOUNDATIO_NODE_ID") is { } value && !String.IsNullOrWhiteSpace(value) ? value : null;
+    public static string RequireStable(string? nodeId)
+        => !String.IsNullOrWhiteSpace(nodeId) ? nodeId : Configured
+            ?? throw new JobException("PerNode schedules require a stable NodeId. Configure Jobs.ConfigureWorker(o => o with { NodeId = ... }) or FOUNDATIO_NODE_ID; use Global for fleet-wide work.");
     public static string Current { get; } = Resolve();
 
     private static string Resolve()
@@ -657,6 +811,7 @@ internal static class NodeIdentity
 /// </summary>
 public sealed record JobWorkerOptions
 {
+    public Microsoft.Extensions.Logging.ILoggerFactory? LoggerFactory { get; init; }
     public TimeProvider? TimeProvider { get; init; }
     public string? NodeId { get; init; }
     public TimeSpan? Lease { get; init; }

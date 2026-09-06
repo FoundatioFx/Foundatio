@@ -20,7 +20,7 @@ public sealed class ResizeImageJob(ILogger<ResizeImageJob> logger) : IJob<Resize
         for (int percent = 25; percent <= 100; percent += 25)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(200), context.CancellationToken);
-            await context.ReportProgressAsync(percent, $"{percent}% complete", context.CancellationToken);
+            await context.ReportProgressAsync(percent, $"{percent}% complete");
             logger.LogInformation("JOB {JobId} progress: {Percent}%", context.JobId, percent);
         }
 
@@ -32,11 +32,12 @@ public sealed class ResizeImageJob(ILogger<ResizeImageJob> logger) : IJob<Resize
 /// A recurring (CRON) job registered with <c>AddCronJob&lt;CleanupJob&gt;("*/1 * * * *")</c> in Program.cs — the
 /// scheduler materializes a durable occurrence every minute and the job worker executes it.
 /// </summary>
-public sealed class CleanupJob(ILogger<CleanupJob> logger) : IJob
+public sealed class CleanupJob(ILogger<CleanupJob> logger, SampleActivity activity) : IJob
 {
     public Task<JobResult> RunAsync(JobExecutionContext context)
     {
         logger.LogInformation("CRON tick: cleanup ran at {Time:HH:mm:ss}", DateTimeOffset.Now);
+        activity.CleanupRan.TrySetResult();
         return Task.FromResult(JobResult.Success);
     }
 }

@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Extensions.Hosting.Messaging;
 using Foundatio.Jobs;
+using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Xunit;
@@ -13,6 +14,20 @@ namespace Foundatio.Tests;
 
 public class StartupValidationTests
 {
+    [Fact]
+    public async Task ProducerTopologyNone_DuplicateWireNames_FailsBeforePublishingAsync()
+    {
+        var services = new ServiceCollection();
+        services.AddFoundatio().ConfigureMessaging(m => m.UseInMemory().ConfigureTopology(TopologyMode.None)
+            .AddMessageType<Ping>("event.v1").AddMessageType<OtherPing>("event.v1"));
+        services.AddMessagingTopology();
+        await using var provider = services.BuildServiceProvider();
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartHostedAsync(provider, TestContext.Current.CancellationToken));
+        Assert.Contains("event.v1", error.Message);
+    }
+
+    private sealed record OtherPing;
+
     [Fact]
     public async Task CronJobWithoutRuntimeStore_FailsStartupWithActionableMessageAsync()
     {
@@ -71,9 +86,9 @@ public class StartupValidationTests
         var services = new ServiceCollection();
         services.AddFoundatio()
             .Messaging.UseInMemory()
-            .Messaging.AddConsumer<Ping>((_, _) => Task.CompletedTask)
-            .Jobs.UseInMemory()
-            .Jobs.AddCronJob<NoopJob>("0 3 * * *");
+            .AddConsumer<Ping>((_, _) => Task.CompletedTask)
+            .Builder.Jobs.UseInMemory()
+            .AddCronJob<NoopJob>("0 3 * * *");
 
         services.AddLogging();
         services.AddMessageConsumers();

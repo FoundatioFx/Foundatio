@@ -13,10 +13,17 @@ The unreleased PR is revised around worker queues, explicit pub/sub subscription
 - Atomic occurrence admission, node/type eligibility, fair due claims, stale recovery, and ownership-guarded progress/renewal/completion.
 - Serializable schedule definitions with revisions and deployment configuration versions that preserve operator edits across restarts.
 - Explicit consumer, worker, scheduler, and delayed-message dispatcher hosting. Registering clients or storage starts no background work.
-- Bounded monitoring pages, indexed Redis claims/queries, seven-day terminal retention, and atomic capacity rejection.
+- Bounded monitoring pages, independent active/history/idempotency/dispatch budgets, configurable retention, payload limits, and atomic capacity rejection.
 - Atomic Redis receive/reclaim/settle, orphan pending-entry recovery, safe topic retention, and non-destructive per-subscription dead-letter inspection/replay.
 - Dedicated CI services for Redis and SQS/SNS LocalStack conformance; executable local and distributed samples.
 - Updated public guides, migration guidance, capability matrix, and repository skill.
+
+- Consistent messaging/job feature builders, service-based durable subscription defaults, and combined wire-name/route registration with startup diagnostics.
+- Supervised subscription renewal and recreation, observable listener health, hybrid-cache resynchronization, and immediate return of owned unsettled messages at shutdown.
+- Independently replenished job slots, scoped job disposal, configurable persisted retry policies, delayed enqueue, completion waits, and separate success/failure diagnostics.
+- Stable per-node schedule identity, expiry for unclaimed occurrences on retired nodes, cached CRON parsing and confirmed occurrence materialization.
+- Indexed send outcomes and individual application IDs, native AWS batches and bounded Redis pipelines, per-entry malformed-envelope quarantine, and amortized safe retention.
+- Measured header/routing/polling improvements, reusable hot-path benchmarks and runtime health/capacity reporting.
 
 ## Boundaries
 
@@ -26,11 +33,15 @@ The changes intentionally break the unreleased API and Redis state layout. Do no
 
 The full external-provider workspace solution references Aliyun, Azure Service Bus, and Minio projects that are absent from this checkout. Its build cannot start. This is an environment limitation, separate from the successful in-repository validation below.
 
-## Final validation
+## Validation of the feedback changes
 
-- `dotnet build Foundatio.slnx --no-restore`: passed, zero warnings and errors.
-- `dotnet test --solution Foundatio.slnx --no-build`, with Redis and LocalStack configured: 2,043 tests; 2,020 passed, zero failed, 23 skipped for unsupported provider capabilities or existing benchmark/cache exclusions.
-- Redis 8.6 and SQS/SNS through LocalStack 3.8.1 conformance passed. The dedicated CI workflow starts these services and supplies the connection settings; hosted GitHub execution has not been run for these local changes.
-- .NET whitespace verification and `git diff --check`: passed. Multi-target formatter import conflicts were resolved and the final solution rebuilt successfully.
-- Documentation site build: passed.
-- Quickstart smoke test: command and event handlers executed, typed job reached 100 percent progress, CRON ticked, and the host shut down gracefully.
+- Full in-repository solution rebuilt successfully. The existing sample AppHost emits ASPIRE010 because AspireUseCliBundle is false; there are no compilation errors.
+- Core suite: 2,029 tests, 2,017 passed and 12 skipped; zero failures.
+- Redis suite: 60 tests, 56 passed and four unsupported-capability skips; zero failures.
+- AWS suite: 29 tests, 21 passed and eight unsupported-capability skips; zero failures.
+- Redis 8.6 and SQS/SNS through LocalStack 3.8.1 ran in isolated local containers. This does not certify live AWS behavior.
+- Documentation site build and git whitespace checks passed.
+- Quickstart `--verify` passed: producer-only registration, command processing, durable event subscription, delayed typed job, persisted cancellation, automatic CRON execution and graceful shutdown.
+- [Measured costs and repeatable benchmarks](https://github.com/FoundatioFx/Foundatio/blob/feat/messaging-jobs/benchmarks/MESSAGING_JOBS_BENCHMARK_RESULTS.md) cover header allocation, idle polling independent of retained history, batching and overlapping handlers. Timing results are local development evidence, not deployment capacity limits.
+
+The six reproduced execution/ownership regressions are retained as tests. Additional shared cases cover retained-history pressure without losing idempotency, retry policy persistence, nonretryable failure, per-node expiry, payload/dispatch budgets, and dispatch lease timing. Recovery and configuration tests cover transient/lost subscriptions, cache gaps, cancellation, indexed batch results and startup wire-name collisions.

@@ -7,24 +7,29 @@ namespace Foundatio.Jobs;
 
 public sealed partial class InMemoryJobRuntimeStore
 {
-    public Task<bool> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken cancellationToken = default)
+    public Task<JobOccurrenceResult> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(initial);
         ArgumentException.ThrowIfNullOrWhiteSpace(initial.ScheduleName);
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
-            if (_jobs.ContainsKey(initial.JobId) || (!allowOverlap && _jobs.Values.Any(s => s.ScheduleName == initial.ScheduleName
-                    && s.RequiredNodeId == initial.RequiredNodeId && s.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing)))
-                return Task.FromResult(false);
+            ValidatePayload(initial.Payload?.Length ?? 0);
+            initial.RetryPolicy.Validate();
+            PurgeDeduplication();
+            if (_jobs.ContainsKey(initial.JobId) || _deduplication.ContainsKey(initial.JobId))
+                return Task.FromResult(JobOccurrenceResult.AlreadyExists);
+            if (!allowOverlap && _active.Values.Any(s => s.ScheduleName == initial.ScheduleName
+                    && s.RequiredNodeId == initial.RequiredNodeId && s.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing))
+                return Task.FromResult(JobOccurrenceResult.OverlapBlocked);
             EnsureCapacity();
             var now = _timeProvider.GetUtcNow();
-            _jobs[initial.JobId] = initial with
+            StoreJob(initial with
             {
                 CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc,
                 LastUpdatedUtc = now
-            };
-            return Task.FromResult(true);
+            });
+            return Task.FromResult(JobOccurrenceResult.Created);
         }
     }
 
@@ -44,7 +49,9 @@ public sealed partial class InMemoryJobRuntimeStore
         lock (_lock)
         {
             var now = _timeProvider.GetUtcNow();
-            var candidates = _jobs.Values.Where(s => (jobId is null || s.JobId == jobId)
+            if (_active.Count == 0)
+                return Task.FromResult<JobState?>(null);
+            var candidates = _active.Values.Where(s => (jobId is null || s.JobId == jobId)
                     && (s.RequiredNodeId is null || s.RequiredNodeId == request.NodeId)
                     && s.JobType is not null && request.JobTypes.Contains(s.JobType, StringComparer.Ordinal)
                     && ((s.Status is JobStatus.Queued or JobStatus.Scheduled && (s.AvailableUtc ?? s.CreatedUtc) <= now)
@@ -53,18 +60,20 @@ public sealed partial class InMemoryJobRuntimeStore
                 .ThenBy(s => s.CreatedUtc).ThenBy(s => s.JobId, StringComparer.Ordinal);
             foreach (var state in candidates)
             {
-                if (state.CancellationRequested || state.Attempt >= state.MaxAttempts)
+                bool expired = state.Attempt == 0 && state.RequiredNodeId is not null && state.ExpiresUtc <= now;
+                if (expired || state.CancellationRequested || state.Attempt >= state.MaxAttempts)
                 {
-                    _jobs[state.JobId] = state with
+                    StoreJob(state with
                     {
-                        Status = state.CancellationRequested ? JobStatus.Cancelled : JobStatus.Failed,
-                        Error = state.CancellationRequested ? null : "Execution attempts exhausted after lease expiration.",
+                        Status = expired || state.CancellationRequested ? JobStatus.Cancelled : JobStatus.Failed,
+                        Error = expired || state.CancellationRequested ? null : "Execution attempts exhausted after lease expiration.",
+                        ResultMessage = expired ? "Unclaimed per-node occurrence expired." : null,
                         CompletedUtc = now,
                         LastUpdatedUtc = now,
                         NodeId = null,
                         ClaimToken = null,
                         LeaseExpiresUtc = null
-                    };
+                    });
                     continue;
                 }
 
@@ -79,7 +88,7 @@ public sealed partial class InMemoryJobRuntimeStore
                     LastUpdatedUtc = now,
                     Attempt = state.Attempt + 1
                 };
-                _jobs[state.JobId] = claimed;
+                StoreJob(claimed);
                 return Task.FromResult<JobState?>(claimed);
             }
 
@@ -98,7 +107,7 @@ public sealed partial class InMemoryJobRuntimeStore
                 return Task.FromResult(false);
 
             var kind = state.CancellationRequested ? JobCompletionKind.Cancelled : completion.Kind;
-            bool retry = kind == JobCompletionKind.Failed && state.Attempt < state.MaxAttempts;
+            bool retry = kind == JobCompletionKind.Failed && completion.Retryable && state.Attempt < state.MaxAttempts;
             var status = kind switch
             {
                 JobCompletionKind.Succeeded => JobStatus.Completed,
@@ -107,18 +116,19 @@ public sealed partial class InMemoryJobRuntimeStore
                 JobCompletionKind.Failed => retry ? JobStatus.Queued : JobStatus.Failed,
                 _ => throw new ArgumentOutOfRangeException(nameof(completion))
             };
-            _jobs[jobId] = state with
+            StoreJob(state with
             {
                 Status = status,
-                Error = completion.Error,
+                Error = kind == JobCompletionKind.Failed ? completion.Error : null,
+                ResultMessage = completion.Message,
                 NodeId = null,
                 ClaimToken = null,
                 LeaseExpiresUtc = null,
                 LastUpdatedUtc = now,
                 CompletedUtc = status == JobStatus.Queued ? null : now,
-                AvailableUtc = retry ? now.AddSeconds(Math.Min(300, 10 * Math.Pow(2, Math.Min(10, state.Attempt - 1)))) : now,
+                AvailableUtc = retry ? now.Add(state.RetryPolicy.GetDelay(state.Attempt)) : now,
                 Progress = status == JobStatus.Completed ? 100 : state.Progress
-            };
+            });
             return Task.FromResult(true);
         }
     }
@@ -132,7 +142,7 @@ public sealed partial class InMemoryJobRuntimeStore
             var now = _timeProvider.GetUtcNow();
             if (!TryGetOwnedJob(jobId, claimToken, now, out var state))
                 return Task.FromResult(false);
-            _jobs[jobId] = state with { LeaseExpiresUtc = now.Add(lease), LastUpdatedUtc = now };
+            StoreJob(state with { LeaseExpiresUtc = now.Add(lease), LastUpdatedUtc = now });
             return Task.FromResult(true);
         }
     }
@@ -147,7 +157,7 @@ public sealed partial class InMemoryJobRuntimeStore
             var now = _timeProvider.GetUtcNow();
             if (!TryGetOwnedJob(jobId, claimToken, now, out var state))
                 return Task.FromResult(false);
-            _jobs[jobId] = state with { Progress = percent ?? state.Progress, ProgressMessage = message ?? state.ProgressMessage, LastUpdatedUtc = now };
+            StoreJob(state with { Progress = percent ?? state.Progress, ProgressMessage = message ?? state.ProgressMessage, LastUpdatedUtc = now });
             return Task.FromResult(true);
         }
     }

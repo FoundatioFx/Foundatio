@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -43,6 +44,9 @@ public sealed record ScheduledJobDefinition
     public TimeSpan? MisfireWindow { get; init; }
     /// <summary>Maximum TOTAL run attempts for a failed occurrence before it ends in Failed. Default 3.</summary>
     public int MaxAttempts { get; init; } = 3;
+    public JobRetryPolicy RetryPolicy { get; init; } = new();
+    /// <summary>Retires unclaimed per-node occurrences after this interval; active executions are unaffected.</summary>
+    public TimeSpan UnclaimedLifetime { get; init; } = TimeSpan.FromDays(1);
 
     /// <summary>Serialized arguments copied into each occurrence.</summary>
     public ReadOnlyMemory<byte>? Payload { get; init; }
@@ -60,6 +64,8 @@ public sealed record ScheduledJobDefinition
         ArgumentException.ThrowIfNullOrWhiteSpace(Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(JobType);
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxAttempts, 1);
+        RetryPolicy.Validate();
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(UnclaimedLifetime, TimeSpan.Zero);
         if (!Enum.IsDefined(Scope)) throw new ArgumentOutOfRangeException(nameof(Scope));
         if (!Enum.IsDefined(Overlap)) throw new ArgumentOutOfRangeException(nameof(Overlap));
         ArgumentOutOfRangeException.ThrowIfNegative(Revision);
@@ -92,6 +98,8 @@ public sealed class CronJobOptions
 
     /// <summary>Maximum TOTAL run attempts for a failed occurrence before reaching Failed. Default 3.</summary>
     public int MaxAttempts { get; set; } = 3;
+    public JobRetryPolicy RetryPolicy { get; set; } = new();
+    public TimeSpan UnclaimedLifetime { get; set; } = TimeSpan.FromDays(1);
 
     /// <summary>Whether the schedule is active. Default true.</summary>
     public bool Enabled { get; set; } = true;
@@ -191,14 +199,16 @@ public static class ScheduledJobManagerExtensions
 
 public sealed class ScheduledJobManager : IScheduledJobManager
 {
+    private readonly string? _nodeId;
     private readonly IScheduledJobStore _scheduleStore;
     private readonly IJobRuntimeStore _store;
     private readonly IJobTypeRegistry _jobTypes;
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
 
-    public ScheduledJobManager(IScheduledJobStore scheduleStore, IJobRuntimeStore store, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null, TimeProvider? timeProvider = null)
+    public ScheduledJobManager(IScheduledJobStore scheduleStore, IJobRuntimeStore store, IJobTypeRegistry? jobTypes = null, ISerializer? serializer = null, TimeProvider? timeProvider = null, string? nodeId = null)
     {
+        _nodeId = nodeId;
         _scheduleStore = scheduleStore ?? throw new ArgumentNullException(nameof(scheduleStore));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _jobTypes = jobTypes ?? new JobTypeRegistry();
@@ -283,7 +293,9 @@ public sealed class ScheduledJobManager : IScheduledJobManager
             ScheduleName = definition.Name,
             JobType = definition.JobType,
             MaxAttempts = definition.MaxAttempts,
-            RequiredNodeId = definition.Scope == ScheduledJobScope.PerNode ? NodeIdentity.Current : null,
+            RequiredNodeId = definition.Scope == ScheduledJobScope.PerNode ? NodeIdentity.RequireStable(_nodeId) : null,
+            ExpiresUtc = definition.Scope == ScheduledJobScope.PerNode ? now.Add(definition.UnclaimedLifetime) : null,
+            RetryPolicy = definition.RetryPolicy,
             Payload = definition.Payload,
             PayloadType = definition.PayloadType,
             Status = JobStatus.Queued,
@@ -291,10 +303,10 @@ public sealed class ScheduledJobManager : IScheduledJobManager
             LastUpdatedUtc = now,
             ScheduledForUtc = now
         };
-        if (!await _store.CreateOccurrenceAsync(occurrence, definition.Overlap == OverlapPolicy.AllowConcurrent, cancellationToken).ConfigureAwait(false))
+        if (await _store.CreateOccurrenceAsync(occurrence, definition.Overlap == OverlapPolicy.AllowConcurrent, cancellationToken).ConfigureAwait(false) != JobOccurrenceResult.Created)
             throw new JobException($"Scheduled job {name} already has pending or running work.");
 
-        return new JobHandle(jobId, _store, _store.RequestCancellationAsync);
+        return new JobHandle(jobId, _store, _store.RequestCancellationAsync, _timeProvider);
     }
 }
 
@@ -315,14 +327,30 @@ public sealed class JobScheduleProcessor
     private readonly IScheduledJobStore _scheduleStore;
     private readonly IJobRuntimeStore _store;
     private readonly TimeProvider _timeProvider;
-    private readonly string _nodeId;
+    private readonly string? _nodeId;
+    private readonly ConcurrentDictionary<string, CachedSchedule> _cache = new(StringComparer.Ordinal);
+    private sealed class CachedSchedule(ScheduledJobDefinition definition)
+    {
+        public ScheduledJobDefinition Definition { get; } = definition;
+        public CronExpression Cron { get; } = ParseCron(definition.Cron);
+        public TimeZoneInfo TimeZone { get; } = TimeZoneInfo.FindSystemTimeZoneById(definition.TimeZoneId);
+        private long _lastConfirmedTicks;
+        public DateTimeOffset LastConfirmed => new(Interlocked.Read(ref _lastConfirmedTicks), TimeSpan.Zero);
+        public void Confirm(DateTimeOffset occurrence)
+        {
+            long ticks = occurrence.UtcTicks;
+            long previous;
+            do { previous = Interlocked.Read(ref _lastConfirmedTicks); if (previous >= ticks) return; }
+            while (Interlocked.CompareExchange(ref _lastConfirmedTicks, ticks, previous) != previous);
+        }
+    }
 
     public JobScheduleProcessor(IScheduledJobStore scheduleStore, IJobRuntimeStore store, JobScheduleProcessorOptions? options = null)
     {
         _scheduleStore = scheduleStore ?? throw new ArgumentNullException(nameof(scheduleStore));
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _timeProvider = options?.TimeProvider ?? TimeProvider.System;
-        _nodeId = options?.NodeId ?? NodeIdentity.Current;
+        _nodeId = options?.NodeId ?? NodeIdentity.Configured;
     }
 
     public Task<IReadOnlyList<JobState>> EnqueueDueOccurrencesAsync(CancellationToken cancellationToken = default)
@@ -335,13 +363,17 @@ public sealed class JobScheduleProcessor
         cancellationToken.ThrowIfCancellationRequested();
 
         var scheduled = new List<JobState>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         await foreach (var definition in EnumerateSchedulesAsync(cancellationToken).ConfigureAwait(false))
         {
+            seen.Add(definition.Name);
             if (!definition.Enabled)
                 continue;
 
-            var cron = ParseCron(definition.Cron);
-            var timeZone = TimeZoneInfo.FindSystemTimeZoneById(definition.TimeZoneId);
+            var cached = _cache.AddOrUpdate(definition.Name, _ => new CachedSchedule(definition),
+                (_, previous) => previous.Definition.Revision == definition.Revision && previous.Definition.Cron == definition.Cron && previous.Definition.TimeZoneId == definition.TimeZoneId ? previous : new CachedSchedule(definition));
+            var cron = cached.Cron;
+            var timeZone = cached.TimeZone;
             var window = definition.MisfireWindow ?? DefaultMisfireWindow;
             if (window < TimeSpan.Zero)
                 throw new ArgumentOutOfRangeException(nameof(definition), window, "MisfireWindow must be greater than or equal to zero.");
@@ -360,6 +392,8 @@ public sealed class JobScheduleProcessor
 
             foreach (var occurrence in occurrences)
             {
+                if (occurrence <= cached.LastConfirmed)
+                    continue;
                 var state = new JobState
                 {
                     JobId = CreateOccurrenceId(definition.Name, occurrence, scopeKey),
@@ -367,7 +401,9 @@ public sealed class JobScheduleProcessor
                     ScheduleName = definition.Name,
                     JobType = definition.JobType,
                     MaxAttempts = definition.MaxAttempts,
-                    RequiredNodeId = definition.Scope == ScheduledJobScope.PerNode ? _nodeId : null,
+                    RequiredNodeId = definition.Scope == ScheduledJobScope.PerNode ? NodeIdentity.RequireStable(_nodeId) : null,
+                    ExpiresUtc = definition.Scope == ScheduledJobScope.PerNode ? utcNow.Add(definition.UnclaimedLifetime) : null,
+                    RetryPolicy = definition.RetryPolicy,
                     Payload = definition.Payload,
                     PayloadType = definition.PayloadType,
                     Status = JobStatus.Queued,
@@ -375,11 +411,16 @@ public sealed class JobScheduleProcessor
                     LastUpdatedUtc = utcNow,
                     ScheduledForUtc = occurrence
                 };
-                if (await _store.CreateOccurrenceAsync(state, definition.Overlap == OverlapPolicy.AllowConcurrent, cancellationToken).ConfigureAwait(false))
+                var result = await _store.CreateOccurrenceAsync(state, definition.Overlap == OverlapPolicy.AllowConcurrent, cancellationToken).ConfigureAwait(false);
+                if (result != JobOccurrenceResult.OverlapBlocked)
+                    cached.Confirm(occurrence);
+                if (result == JobOccurrenceResult.Created)
                     scheduled.Add(state);
             }
         }
 
+        foreach (string name in _cache.Keys)
+            if (!seen.Contains(name)) _cache.TryRemove(name, out _);
         return scheduled;
     }
 
@@ -399,7 +440,7 @@ public sealed class JobScheduleProcessor
 
     private string GetScopeKey(ScheduledJobDefinition definition)
     {
-        return definition.Scope == ScheduledJobScope.PerNode ? _nodeId : "global";
+        return definition.Scope == ScheduledJobScope.PerNode ? NodeIdentity.RequireStable(_nodeId) : "global";
     }
 
     private static string CreateOccurrenceId(string name, DateTimeOffset scheduledForUtc, string scopeKey)

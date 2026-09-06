@@ -346,7 +346,7 @@ public class JobSchedulerTests
         var probe = new JobSchedulerProbe();
         var services = new ServiceCollection().AddLogging().AddSingleton(probe);
         services.AddJobWorker();
-        services.AddFoundatio().Jobs.UseInMemory().Jobs.AddJobType<ScheduledProbeJob>("probe");
+        services.AddFoundatio().Jobs.UseInMemory().AddJobType<ScheduledProbeJob>("probe");
         services.AddJobWorker();
         await using var provider = services.BuildServiceProvider();
         var hosted = Assert.Single(provider.GetServices<IHostedService>());

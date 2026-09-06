@@ -16,7 +16,7 @@ public static class TestingFoundatioBuilderExtensions
     /// the container to await quiescence (<see cref="MessagingTestHarness.WaitForIdleAsync"/>) and assert on the
     /// messages that were sent, published, handled, retried, or dead-lettered.
     /// </summary>
-    public static FoundatioBuilder UseTestHarness(this FoundatioBuilder.MessagingBuilder builder)
+    public static FoundatioBuilder.MessagingBuilder UseTestHarness(this FoundatioBuilder.MessagingBuilder builder)
     {
         var services = ((IFoundatioBuilder)builder).Services;
         services.TryAddSingleton(sp => new MessagingTestHarness(
@@ -32,7 +32,7 @@ public static class TestingFoundatioBuilderExtensions
     /// and run work to completion (<see cref="JobsTestHarness.RunAllQueuedAsync"/> /
     /// <see cref="JobsTestHarness.RunDueAsync"/> / <see cref="JobsTestHarness.RunToCompletionAsync"/>).
     /// </summary>
-    public static FoundatioBuilder UseTestHarness(this FoundatioBuilder.JobsBuilder builder)
+    public static FoundatioBuilder.JobsBuilder UseTestHarness(this FoundatioBuilder.JobsBuilder builder)
     {
         var services = ((IFoundatioBuilder)builder).Services;
         services.TryAddSingleton(sp => new JobsTestHarness(

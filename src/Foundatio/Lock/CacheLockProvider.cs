@@ -60,7 +60,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     private async Task EnsureTopicSubscriptionAsync()
     {
-        if (_isSubscribed || _messageBus is null)
+        if (_isSubscribed || _messageBus is null || !_messageBus.SupportsTemporarySubscriptions)
             return;
 
         using (await _lock.LockAsync().AnyContext())
