@@ -2,6 +2,8 @@
 
 A sustained-load harness for the unreleased messaging API. It complements the existing BenchmarkDotNet microbenchmarks with acknowledged queue throughput, pub/sub fanout, end-to-end latency, allocations, CPU/GC, backlog and delivery validation.
 
+See [measured results and findings](RESULTS.md) for the checked-in baseline, the timer-retention fix it exposed, and unresolved native crash evidence.
+
 ## Run locally
 
 Requires .NET 10, PowerShell 7 and Docker. Start disposable, isolated brokers; the compose file limits each broker to four CPUs and enables Redis AOF with `appendfsync everysec`.
@@ -21,13 +23,15 @@ docker compose -f benchmarks/Messaging/docker-compose.yml down -v
 Profiles:
 
 - `smoke`: one second each of concurrent queues and four-way fanout; correctness only.
-- `standard`: serial queues, concurrent queues, one-subscriber events and four-subscriber fanout. Payload is 1 KiB, with three seconds of warmup followed by fifteen seconds of publishing by default.
+- `standard`: serial queues, concurrent queues, one-subscriber events and four-subscriber fanout. Payload is 1 KiB, with up to three seconds of warmup followed by fifteen seconds of publishing by default. Warmup is capped at one million inputs; the measured publishing window must complete in full.
 - `extended`: 16 KiB queue/fanout payloads and ten-input queue/fanout batch API calls.
 - `soak`: two-minute concurrent queue and four-subscriber fanout runs per implementation.
 
 The standard profile runs 20 configurations × 3 repetitions = 60 fresh processes. Allow roughly 20–30 minutes, including warmup, broker setup, draining and cleanup. Trials run sequentially in seeded shuffled order, so two contenders never load the same broker simultaneously. Time windows exclude topology creation, startup, warmup, cleanup and JSON report generation. Do not build, run tests, profile, or run other workloads concurrently with measurements.
 
 Results go to a timestamped `results/` directory: individual JSON/log files, throughput ranges and medians in `summary.md`, `summary.csv`, runtime information and repository state. The measurement executable exits nonzero for send/receive failures, missing or invalid deliveries, duplicates, timeout, cleanup failure or exhausted tracking capacity. Invalid trials are excluded from successful summaries and listed explicitly. Inspect failures before comparing throughput.
+
+Each matrix invocation requires an empty output directory. This preserves earlier trials and prevents an old successful JSON file from being mistaken for the result of a new worker that crashed.
 
 ## What is compared
 
