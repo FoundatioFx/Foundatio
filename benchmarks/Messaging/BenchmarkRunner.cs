@@ -44,7 +44,7 @@ public static class BenchmarkRunner
             if (options.WarmupSeconds > 0)
             {
                 var warmup = await PhaseAsync(options.WarmupSeconds, true);
-                if (!Valid(warmup)) throw new InvalidOperationException("Warmup failed: " + (warmup.Error ?? $"missing={warmup.Missing}, invalid={warmup.Invalid}, duplicates={warmup.Duplicates}"));
+                if (!Valid(warmup)) throw new InvalidOperationException("Warmup failed: " + (warmup.Error ?? $"missing={warmup.Missing}, invalid={warmup.Invalid}, duplicates={warmup.Duplicates}, firstInvalid={tracker?.FirstInvalid}"));
             }
             measurement = await PhaseAsync(options.DurationSeconds, false);
             if (!Valid(measurement)) error = measurement.Error ?? "Delivery validation failed or the tracking limit was reached.";
@@ -58,7 +58,7 @@ public static class BenchmarkRunner
         }
         if (measurement is not null && tracker is not null)
         {
-            measurement = measurement with { Duplicates = tracker.Duplicates, Invalid = tracker.InvalidDeliveries, Missing = tracker.ExpectedInputs * options.DeliveryCopies - tracker.UniqueDeliveries };
+            measurement = measurement with { Duplicates = tracker.Duplicates, Invalid = tracker.InvalidDeliveries, FirstInvalid = tracker.FirstInvalid, Missing = tracker.ExpectedInputs * options.DeliveryCopies - tracker.UniqueDeliveries };
             if (!Valid(measurement) && error is null) error = "Delivery validation failed during shutdown.";
         }
         var result = new BenchmarkResult { Options = options, StartedUtc = startedUtc, ResourcePrefix = prefix, Environment = environment, Success = error is null, Error = error, Measurement = measurement };
@@ -115,6 +115,7 @@ public static class BenchmarkRunner
             return new PhaseResult
             {
                 Error = phaseError,
+                FirstInvalid = phaseTracker.FirstInvalid,
                 Inputs = phaseTracker.ExpectedInputs,
                 Deliveries = phaseTracker.UniqueDeliveries,
                 Duplicates = phaseTracker.Duplicates,

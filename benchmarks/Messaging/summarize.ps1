@@ -11,6 +11,12 @@ $results = @(Get-ChildItem $Directory -Filter 'round*.json' | ForEach-Object {
     $o = $result.Options
     [pscustomobject]@{ File = $_.Name; Key = "$($o.Engine)/$($o.Transport) $($o.Scenario) p$($o.ProducerConcurrency) c$($o.ConsumerConcurrency) s$($o.DeliveryCopies) $($o.PayloadBytes)B b$($o.BatchSize) r$($o.RatePerSecond) w$($o.MaxOutstanding) pf$($o.Prefetch)"; Result = $result }
 })
+$environments = @($results | Where-Object { $_.Result.Success } | ForEach-Object {
+    $e = $_.Result.Environment
+    $o = $_.Result.Options
+    "$($e.Runtime)|$($e.OS)|$($e.Architecture)|$($e.LogicalProcessors)|$($e.ServerGC)|$($e.Foundatio)|$($e.MassTransit)|$($e.SqsSdk)|$($e.SnsSdk)|$($o.DurationSeconds)|$($o.WarmupSeconds)|$($o.MaxMessages)"
+} | Select-Object -Unique)
+if ($environments.Count -gt 1) { throw 'Results mix runtime, library, duration or tracking configurations. Summarize each configuration in a separate directory.' }
 $rows = @($results | Where-Object { $_.Result.Success } | Group-Object Key | ForEach-Object {
     $metrics = @($_.Group.Result.Measurement)
     [pscustomobject]@{

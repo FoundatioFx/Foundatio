@@ -36,6 +36,7 @@ if ($Profile -eq 'extended') {
 }
 if ($Profile -eq 'smoke') { $Seconds = 1; $Warmup = 1; $Repetitions = 1; $workloads = @($workloads[1], $workloads[3]) }
 if ($Profile -eq 'soak') { $Seconds = 120; $Warmup = 5; $Repetitions = 1; $workloads = @($workloads[1], $workloads[3]) }
+$maxMessages = if ($Profile -eq 'soak') { 100000000 } else { 20000000 }
 $cases = foreach ($engine in $Engines) {
     if ($engine -notin @('foundatio-memory', 'masstransit-memory', 'foundatio-redis', 'foundatio-sqs', 'masstransit-sqs')) { throw "Unknown engine $engine" }
     foreach ($workload in $workloads) { [pscustomobject]@{ Engine = $engine; Workload = $workload } }
@@ -53,7 +54,7 @@ foreach ($round in 1..$Repetitions) {
         $arguments = @($dll, '--engine', $parts[0], '--transport', $parts[1], '--scenario', $w.Scenario,
             '--seconds', $Seconds, '--warmup', $Warmup, '--producers', $w.Producers, '--consumers', $w.Consumers,
             '--prefetch', $w.Consumers, '--subscribers', $w.Subscribers, '--payload', $w.Payload, '--batch', $w.Batch,
-            '--outstanding', 1024, '--max-messages', 20000000, '--output', (Join-Path $OutputDirectory "$name.json"))
+            '--outstanding', 1024, '--max-messages', $maxMessages, '--output', (Join-Path $OutputDirectory "$name.json"))
         try { & dotnet @arguments > (Join-Path $OutputDirectory "$name.log") 2>&1 }
         catch {
             $failures++

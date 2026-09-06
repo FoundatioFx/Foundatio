@@ -14,6 +14,8 @@ public sealed class DeliveryTracker : IDisposable
     private readonly SemaphoreSlim _window;
     private long _unique, _duplicates, _invalid, _expected, _completed;
     private long _lastDelivery;
+    private string? _firstInvalid;
+    public string? FirstInvalid => Volatile.Read(ref _firstInvalid);
     public LatencyHistogram Latency { get; } = new();
     public long UniqueDeliveries => Volatile.Read(ref _unique);
     public long Duplicates => Volatile.Read(ref _duplicates);
@@ -49,13 +51,16 @@ public sealed class DeliveryTracker : IDisposable
     {
         if (message.RunId != _runId || (uint)subscriber >= _subscribers || (uint)message.Sequence >= _remaining.Length
             || !String.Equals(message.Payload, _payload, StringComparison.Ordinal))
-        { Interlocked.Increment(ref _invalid); return; }
+        {
+            Interlocked.CompareExchange(ref _firstInvalid, $"run={message.RunId}, expectedRun={_runId}, subscriber={subscriber}/{_subscribers}, sequence={message.Sequence}, payloadLength={message.Payload?.Length}/{_payload.Length}", null);
+            Interlocked.Increment(ref _invalid); return;
+        }
         long bit = ((long)message.Sequence * _subscribers) + subscriber;
         int mask = 1 << (int)(bit % 32);
         if ((Interlocked.Or(ref _seen[bit / 32], mask) & mask) != 0)
         { Interlocked.Increment(ref _duplicates); return; }
         if (Volatile.Read(ref _remaining[message.Sequence]) <= 0)
-        { Interlocked.Increment(ref _invalid); return; }
+        { Interlocked.CompareExchange(ref _firstInvalid, $"Unregistered sequence {message.Sequence}, subscriber={subscriber}", null); Interlocked.Increment(ref _invalid); return; }
         long now = Stopwatch.GetTimestamp();
         Latency.RecordMicroseconds((long)(Stopwatch.GetElapsedTime(message.StartedTimestamp, now).TotalMicroseconds));
         Interlocked.Exchange(ref _lastDelivery, now);
