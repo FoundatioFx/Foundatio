@@ -424,6 +424,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse()
+    {
+        return base.RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse();
+    }
+
+    [Fact]
     public override Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
     {
         return base.ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue();
@@ -469,6 +475,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
+    }
+
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
+    {
+        return base.ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey();
     }
 
     [Fact]

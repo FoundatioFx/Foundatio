@@ -384,7 +384,7 @@ public class MessageQueueTests
             if (expectedAttempt < 3)
             {
                 await received.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.FromMinutes(1) }, cancellationToken);
-                Assert.Equal(1, await processor.DispatchDueAsync(now.AddMinutes(expectedAttempt * 2), cancellationToken: cancellationToken));
+                Assert.Equal(1, await processor.DispatchDueAsync(now.AddMinutes(expectedAttempt * 2d), cancellationToken: cancellationToken));
             }
             else
             {

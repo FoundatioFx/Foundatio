@@ -290,6 +290,7 @@ Validate a custom transport or job store against the shared conformance suites i
 
 ## Gotchas
 
+- **Redis lifetime**: UseRedis registers a shared container-owned multiplexer by default. Custom connections should use a singleton factory so DI disposes them after hosted work stops. An already-created singleton instance stays caller-owned; dispose the host before disposing that connection.
 - **Shared Redis connection**: messaging and jobs share one multiplexer. Configure ConnectionStrings:Redis, provide one explicit UseRedis connection string, or register the multiplexer. Conflicting explicit strings fail at registration; omit connectionString when using an existing multiplexer.
 
 - **Explicit receiving intent**: `AddConsumer` registers queued work; `AddSubscriber(..., "stable-group")` registers a durable event subscription. Replicas in the same group compete. DI AddSubscriber requires a nonblank name; use AddTemporarySubscriber explicitly for temporary listeners. Dynamic unnamed subscriptions require expiring-subscription support (in-memory/Redis); AWS requires a durable name.

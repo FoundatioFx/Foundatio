@@ -449,8 +449,8 @@ services.AddSingleton<ILockProvider>(sp =>
 ### With Redis
 
 ```csharp
-services.AddSingleton<IConnectionMultiplexer>(
-    await ConnectionMultiplexer.ConnectAsync("localhost:6379")
+services.AddSingleton<IConnectionMultiplexer>(sp =>
+    ConnectionMultiplexer.Connect("localhost:6379")
 );
 
 services.AddSingleton<ICacheClient>(sp =>

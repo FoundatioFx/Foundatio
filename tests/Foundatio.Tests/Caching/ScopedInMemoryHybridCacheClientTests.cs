@@ -438,6 +438,12 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse()
+    {
+        return base.RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse();
+    }
+
+    [Fact]
     public override Task RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
     {
         return base.RemoveIfEqualAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
@@ -489,6 +495,12 @@ public class ScopedInMemoryHybridCacheClientTests : HybridCacheClientTestBase
     public override Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
+    }
+
+    [Fact]
+    public override Task ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
+    {
+        return base.ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey();
     }
 
     [Fact]

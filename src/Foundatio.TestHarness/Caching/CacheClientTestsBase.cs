@@ -2126,6 +2126,26 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task RemoveIfEqualAsync_WithNonExistentKey_ReturnsFalse()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Act
+            bool result = await cache.RemoveIfEqualAsync("remove-if-equal-nonexistent", "123");
+
+            // Assert
+            Assert.False(result);
+            Assert.False(await cache.ExistsAsync("remove-if-equal-nonexistent"));
+        }
+    }
+
     public virtual async Task ReplaceAsync_WithExistingKey_ReturnsTrueAndReplacesValue()
     {
         var cache = GetCacheClient();
@@ -2329,6 +2349,26 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.Equal(200, (await cache.GetAsync<int>("statusCode")).Value);
             Assert.Equal(299, (await cache.GetAsync<int>("StatusCode")).Value);
             Assert.Equal(202, (await cache.GetAsync<int>("STATUSCODE")).Value);
+        }
+    }
+
+    public virtual async Task ReplaceIfEqualAsync_WithNonExistentKey_ReturnsFalseAndDoesNotCreateKey()
+    {
+        // Arrange
+        var cache = GetCacheClient();
+        if (cache is null)
+            return;
+
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Act
+            bool result = await cache.ReplaceIfEqualAsync("replace-if-equal-nonexistent", "new-value", "old-value");
+
+            // Assert
+            Assert.False(result);
+            Assert.False(await cache.ExistsAsync("replace-if-equal-nonexistent"));
         }
     }
 

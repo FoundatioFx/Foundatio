@@ -57,6 +57,8 @@ Use `ICacheClient` for cache operations, `IFileStorage` for files, and `ILockPro
 
 Add [durable jobs](jobs.md) only when you need handles, progress, cancellation, stored retries, or schedules. `AddFoundatioWorker(...)` hosts the required worker, scheduler, and delayed-message dispatcher roles. [Individual hosting methods](dependency-injection.md#choose-host-roles-explicitly) support running those roles in separate processes.
 
+For Redis, the builder shares and owns one connection by default. If you supply your own, keep it alive until the host has stopped; see [connection lifetime](dependency-injection.md#redis-connection-lifetime).
+
 ## Next steps
 
 - [Worker queues](queues.md) for competing consumers and migration from `IQueue<T>`.

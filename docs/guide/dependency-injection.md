@@ -48,6 +48,22 @@ public sealed class ProcessOrderHandler(OrderService orders) : IMessageHandler<P
 }
 ```
 
+## Redis connection lifetime
+
+`Messaging.UseRedis()` and `Jobs.UseRedis()` register one shared, container-owned connection by default. The host disposes it after background services stop. To supply a custom connection, register `IConnectionMultiplexer` with a singleton factory and omit `connectionString` on the provider calls:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+    ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!));
+builder.Services.AddFoundatioWorker(foundatio => foundatio
+    .Messaging.UseRedis()
+    .Messaging.AddConsumer<ProcessOrder, ProcessOrderHandler>()
+    .Jobs.UseRedis()
+    .Jobs.AddJobType<GenerateReportJob>("generate-report.v1"));
+```
+
+The explicit connection example uses `StackExchange.Redis` and `Microsoft.Extensions.DependencyInjection`. A connection passed as an already-created singleton instance remains caller-owned: dispose the host first, then dispose that connection. Never dispose a shared connection while handlers, workers, or lock-release operations are still using it.
+
 ## Providers and testing
 
 Swap `.Messaging.UseInMemory()` for a supported production transport, or `.Jobs.UseInMemory()` for a durable store. Check the [provider matrix](messaging.md#provider-guarantees): ordering, temporary subscriptions, native delays, and dead-letter administration are not identical across brokers.
