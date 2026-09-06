@@ -44,7 +44,7 @@ public class TopologyModeTests
         await using var bus = new MessageBus(transport, new MessageBusOptions { Topology = TopologyMode.Validate, OwnsTransport = false });
 
         await Assert.ThrowsAsync<MessageBusException>(() => bus.PublishAsync(new TopologyEvent { Data = "hello" }, cancellationToken: cancellationToken));
-        await Assert.ThrowsAsync<MessageBusException>(() => bus.SubscribeAsync<TopologyEvent>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken));
+        await Assert.ThrowsAsync<MessageBusException>(() => bus.SubscribeAsync<TopologyEvent>((_, _) => Task.CompletedTask, new() { Subscription = "missing" }, cancellationToken: cancellationToken));
 
         Assert.False(await transport.ExistsAsync(DestinationAddress.ForTopic("topology-event"), cancellationToken));
     }

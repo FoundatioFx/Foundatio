@@ -48,7 +48,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
             // each hybrid client gets its own copy instead of instances competing for one.
             _invalidationSubscription = await _messageBus.SubscribeAsync<InvalidateCache>(
                 (context, _) => OnRemoteCacheItemExpiredAsync(context.Message),
-                new MessageSubscriptionOptions { PerInstance = true, Deliveries = MessageDeliveries.Published },
+                new MessageSubscriptionOptions(),
                 _disposedCancellationTokenSource.Token).AnyContext();
             return true;
         }, AsyncLazyFlags.RetryOnFailure | AsyncLazyFlags.ExecuteOnCallingThread);

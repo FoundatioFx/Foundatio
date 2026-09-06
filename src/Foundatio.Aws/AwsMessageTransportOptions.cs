@@ -15,9 +15,6 @@ public class AwsMessageTransportOptions
     /// <summary>Custom service endpoint, e.g. <c>http://localhost:4566</c> for LocalStack.</summary>
     public string? ServiceUrl { get; set; }
 
-    /// <summary>Create queues/topics/subscriptions on demand when sending or receiving (in addition to explicit provisioning).</summary>
-    public bool AutoCreateDestinations { get; set; } = true;
-
     /// <summary>
     /// Optional prefix applied to the underlying SQS queue and SNS topic names (not the logical destination names used
     /// by callers). Useful to isolate runs/environments on a shared broker — e.g. a unique prefix per conformance run

@@ -7,14 +7,13 @@ using Foundatio.Extensions;
 using Foundatio.Jobs;
 using Foundatio.Lock;
 using Foundatio.Messaging;
-using Legacy = Foundatio.Messaging.Legacy;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Legacy = Foundatio.Messaging.Legacy;
 
 namespace Foundatio;
 
@@ -27,6 +26,7 @@ public static class FoundatioServicesExtensions
     /// <returns></returns>
     public static FoundatioBuilder AddFoundatio(this IServiceCollection services)
     {
+        ArgumentNullException.ThrowIfNull(services);
         return new FoundatioBuilder(services);
     }
 }
@@ -260,6 +260,8 @@ public class FoundatioBuilder : IFoundatioBuilder
         /// </summary>
         public MessagingBuilder ConfigureTopology(TopologyMode mode)
         {
+            if (!Enum.IsDefined(mode))
+                throw new ArgumentOutOfRangeException(nameof(mode));
             _topologyMode = mode;
             return this;
         }
@@ -330,68 +332,93 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseTransport(Func<IServiceProvider, IMessageTransport> factory)
         {
+            ArgumentNullException.ThrowIfNull(factory);
             RegisterMessagingRuntime(factory);
             return _builder;
         }
 
-        /// <summary>
-        /// Registers a handler for messages of type <typeparamref name="TMessage"/>. Registration carries no topology
-        /// decision — the caller's verb on <see cref="IMessageBus"/> decides delivery: a <c>SendAsync</c> is processed
-        /// by exactly one handler instance across the fleet (competing consumers), and a <c>PublishAsync</c> is received
-        /// once per subscribing service (a scaled service's instances compete), or by every instance when
-        /// <see cref="MessageSubscriptionOptions.PerInstance"/> is set. The handler is resolved from DI in its own scope
-        /// per message (so it can inject scoped dependencies); throwing triggers the retry/dead-letter policy. A single
-        /// hosted service starts and stops all registered handlers — a running generic host (WebApplication/Host) is
-        /// REQUIRED; in a process that never starts hosted services the handlers never attach.
-        /// </summary>
-        public FoundatioBuilder AddHandler<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
+        /// <summary>Runs queued work in a scoped handler. Replicas compete for the same queue.</summary>
+        public FoundatioBuilder AddConsumer<TMessage, THandler>(Action<MessageConsumerOptions>? configure = null)
             where TMessage : class where THandler : class, IMessageHandler<TMessage>
         {
             _services.TryAddScoped<THandler>();
-            // Each handler class is its own subscriber group ("{service}.{handler}"), so every handler registered for
-            // an event type receives its own copy of each published message.
-            return AddHandlerRegistration<TMessage>(typeof(THandler).Name, static (sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct),
-                options =>
-                {
-                    configure?.Invoke(options);
-                    options.SubscriptionQualifier ??= typeof(THandler).Name;
-                });
+            return AddConsumer<TMessage>((sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct), configure);
         }
 
-        /// <summary>
-        /// Registers a delegate handler for messages of type <typeparamref name="TMessage"/>; see
-        /// <see cref="AddHandler{TMessage, THandler}"/> for the delivery semantics.
-        /// </summary>
-        public FoundatioBuilder AddHandler<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
+        /// <summary>Runs queued work in a delegate handler.</summary>
+        public FoundatioBuilder AddConsumer<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageConsumerOptions>? configure = null)
             where TMessage : class
         {
             ArgumentNullException.ThrowIfNull(handler);
-            return AddHandlerRegistration<TMessage>(null, (_, message, ct) => handler(message, ct), configure);
+            return AddConsumer<TMessage>((_, message, ct) => handler(message, ct), configure);
         }
 
-        private FoundatioBuilder AddHandlerRegistration<TMessage>(string? handlerName, Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, Action<MessageSubscriptionOptions>? configure)
+        private FoundatioBuilder AddConsumer<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, Action<MessageConsumerOptions>? configure)
             where TMessage : class
         {
-            string suffix = handlerName is null ? String.Empty : $" -> {handlerName}";
+            var options = new MessageConsumerOptions();
+            configure?.Invoke(options);
+            options.Validate();
+            return AddHandlerRegistration($"consumer:{typeof(TMessage).Name}", (sp, ct) =>
+                sp.GetRequiredService<IMessageBus>().ConsumeAsync<TMessage>((message, token) => dispatch(sp, message, token), options, ct));
+        }
+
+        /// <summary>
+        /// Receives published events in a scoped handler. Supply a stable subscription name for durable delivery
+        /// shared by replicas. Use AddTemporarySubscriber for a temporary subscription on every instance.
+        /// </summary>
+        public FoundatioBuilder AddSubscriber<TMessage, THandler>(string subscription, Action<MessageSubscriptionOptions>? configure = null)
+            where TMessage : class where THandler : class, IMessageHandler<TMessage>
+        {
+            _services.TryAddScoped<THandler>();
+            return AddSubscriber<TMessage>((sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct), subscription, configure);
+        }
+
+        /// <summary>Receives published events in a delegate handler on a named durable subscription.</summary>
+        public FoundatioBuilder AddSubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, string subscription, Action<MessageSubscriptionOptions>? configure = null)
+            where TMessage : class
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            return AddSubscriber<TMessage>((_, message, ct) => handler(message, ct), subscription, configure);
+        }
+
+        /// <summary>Receives a copy of each event for this process using an expiring subscription. Requires provider support.</summary>
+        public FoundatioBuilder AddTemporarySubscriber<TMessage, THandler>(Action<MessageSubscriptionOptions>? configure = null)
+            where TMessage : class where THandler : class, IMessageHandler<TMessage>
+        {
+            _services.TryAddScoped<THandler>();
+            return AddSubscriber<TMessage>((sp, message, ct) => DispatchAsync<TMessage, THandler>(sp, message, ct), null, configure, temporary: true);
+        }
+
+        /// <summary>Receives events in a delegate using an expiring subscription. Requires provider support.</summary>
+        public FoundatioBuilder AddTemporarySubscriber<TMessage>(Func<IMessageContext<TMessage>, CancellationToken, Task> handler, Action<MessageSubscriptionOptions>? configure = null)
+            where TMessage : class
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            return AddSubscriber<TMessage>((_, message, ct) => handler(message, ct), null, configure, temporary: true);
+        }
+
+        private FoundatioBuilder AddSubscriber<TMessage>(Func<IServiceProvider, IMessageContext<TMessage>, CancellationToken, Task> dispatch, string? subscription, Action<MessageSubscriptionOptions>? configure, bool temporary = false)
+            where TMessage : class
+        {
+            if (!temporary)
+                ArgumentException.ThrowIfNullOrWhiteSpace(subscription);
+            var options = new MessageSubscriptionOptions { Subscription = subscription };
+            configure?.Invoke(options);
+            options.Validate();
+            if (options.Subscription != subscription)
+                throw new ArgumentException("Set the durable name with the subscription argument. Use AddTemporarySubscriber for a temporary subscription.", nameof(configure));
+            return AddHandlerRegistration($"subscriber:{typeof(TMessage).Name}", (sp, ct) =>
+                sp.GetRequiredService<IMessageBus>().SubscribeAsync<TMessage>((message, token) => dispatch(sp, message, token), options, ct));
+        }
+
+        private FoundatioBuilder AddHandlerRegistration(string description, Func<IServiceProvider, CancellationToken, Task<IMessageSubscription>> start)
+        {
             _services.AddSingleton(new MessageHandlerRegistration
             {
-                Description = $"handler:{typeof(TMessage).Name}{suffix}",
-                StartAsync = async (sp, ct) =>
-                {
-                    var options = new MessageSubscriptionOptions();
-                    configure?.Invoke(options);
-                    return await sp.GetRequiredService<IMessageBus>()
-                        .SubscribeAsync<TMessage>((message, c) => dispatch(sp, message, c), options, ct).ConfigureAwait(false);
-                }
+                Description = description,
+                StartAsync = async (sp, ct) => await start(sp, ct).ConfigureAwait(false)
             });
-
-            // The validator must precede the handler host so a missing transport fails with the actionable message,
-            // not the handler host's bare unresolved-service error.
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(FoundatioStartupValidationService)))
-                _services.AddSingleton<IHostedService, FoundatioStartupValidationService>();
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessageHandlerHostedService)))
-                _services.AddSingleton<IHostedService, MessageHandlerHostedService>();
-
             return _builder;
         }
 
@@ -411,10 +438,6 @@ public class FoundatioBuilder : IFoundatioBuilder
             RegisterMessageTopology();
             RegisterMessageClients();
 
-            // Startup topology (Ensure/Validate) must run for publish-only apps too, so it is its own hosted service
-            // rather than riding the handler host.
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(MessagingTopologyStartupService)))
-                _services.AddSingleton<IHostedService, MessagingTopologyStartupService>();
         }
 
         private void RegisterRoutingServices()
@@ -484,6 +507,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseRuntimeStore(IJobRuntimeStore store)
         {
+            ArgumentNullException.ThrowIfNull(store);
             _services.ReplaceSingleton(_ => store);
             RegisterJobServices();
             return _builder;
@@ -491,6 +515,7 @@ public class FoundatioBuilder : IFoundatioBuilder
 
         public FoundatioBuilder UseRuntimeStore(Func<IServiceProvider, IJobRuntimeStore> factory)
         {
+            ArgumentNullException.ThrowIfNull(factory);
             _services.ReplaceSingleton(factory);
             RegisterJobServices();
             return _builder;
@@ -504,67 +529,45 @@ public class FoundatioBuilder : IFoundatioBuilder
             return _builder;
         }
 
-        public FoundatioBuilder AddJobType<TJob>(string name) where TJob : IJob
+        public FoundatioBuilder AddJobType<TJob>(string? name = null) where TJob : IJob
         {
-            ArgumentException.ThrowIfNullOrEmpty(name);
-            _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
+            JobArgumentContract.ValidateType(typeof(TJob));
+            if (name is not null)
+                ArgumentException.ThrowIfNullOrWhiteSpace(name);
+            _services.AddSingleton(new JobTypeRegistration(name ?? typeof(TJob).FullName ?? typeof(TJob).Name, typeof(TJob)));
             return _builder;
         }
 
         /// <summary>
         /// Registers a recurring (CRON) job. The schedule is materialized once into the shared runtime store per
         /// occurrence, so <see cref="CronJobOptions.Scope"/> decides fan-out (Global = one instance per tick,
-        /// PerNode = every instance per tick). Scheduled automatically when the runtime pump starts — no manual
+        /// PerNode = every instance per tick). Scheduled when the job scheduler starts — no manual
         /// <see cref="IScheduledJobStore.ScheduleAsync"/> call needed. Requires a runtime store (<see cref="UseRuntimeStore(IJobRuntimeStore)"/>
         /// / <see cref="UseInMemory"/>).
         /// </summary>
         public FoundatioBuilder AddCronJob<TJob>(string cronSchedule, Action<CronJobOptions>? configure = null) where TJob : IJob
-        {
-            ArgumentException.ThrowIfNullOrEmpty(cronSchedule);
+            => AddCronJob(typeof(TJob), cronSchedule, null, configure);
 
+        /// <summary>Declares a recurring job with arguments constrained to its typed job contract.</summary>
+        public FoundatioBuilder AddCronJob<TJob, TArgs>(string cronSchedule, TArgs arguments, Action<CronJobOptions>? configure = null)
+            where TJob : IJob<TArgs> where TArgs : class
+            => AddCronJob(typeof(TJob), cronSchedule, arguments, configure);
+
+        private FoundatioBuilder AddCronJob(Type jobType, string cronSchedule, object? arguments, Action<CronJobOptions>? configure)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(cronSchedule);
+            JobScheduleProcessor.ValidateCron(cronSchedule);
+            JobArgumentContract.Validate(jobType, arguments);
             var options = new CronJobOptions();
             configure?.Invoke(options);
-            string name = options.Name ?? ScheduledJobDefinition.DefaultNameFor(typeof(TJob));
-
-            // Fail at registration, not at pump start: a cron typo otherwise costs one scrolled-past ERROR line and a
-            // job that silently never fires.
-            JobScheduleProcessor.ValidateCron(cronSchedule);
-
-            // Duplicate schedule names silently last-win at the scheduler; catch them here where both call sites are visible.
-            if (_services.Any(d => d.ImplementationInstance is ScheduledJobDefinition existing && String.Equals(existing.Name, name, StringComparison.Ordinal)))
-                throw new InvalidOperationException($"A CRON job named \"{name}\" is already registered. Give one of them an explicit CronJobOptions.Name.");
-
-            _services.AddSingleton(new JobTypeRegistration(name, typeof(TJob)));
-            _services.AddSingleton(new ScheduledJobDefinition
-            {
-                Name = name,
-                Cron = cronSchedule,
-                JobType = typeof(TJob),
-                Scope = options.Scope,
-                Overlap = options.Overlap,
-                MisfireWindow = options.MisfireWindow,
-                MaxAttempts = options.MaxAttempts,
-                Enabled = options.Enabled,
-                TimeZone = options.TimeZone,
-                Arguments = options.Arguments
-            });
-
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(FoundatioStartupValidationService)))
-                _services.AddSingleton<IHostedService, FoundatioStartupValidationService>();
-
-            return _builder;
-        }
-
-        /// <summary>
-        /// Tunes the auto-registered runtime pump (cadence, batch size, or <see cref="JobRuntimePumpOptions.Enabled"/>
-        /// to opt out of automatic pumping and take manual control).
-        /// </summary>
-        public FoundatioBuilder ConfigureRuntimePump(Action<JobRuntimePumpOptions> configure)
-        {
-            ArgumentNullException.ThrowIfNull(configure);
-            var options = new JobRuntimePumpOptions();
-            configure(options);
-            _services.ReplaceSingleton(_ => options);
+            var registration = new ScheduledJobRegistration(jobType, cronSchedule, options, arguments);
+            registration.Validate();
+            if (_services.Any(d => d.ImplementationInstance is ScheduledJobRegistration existing && existing.Name == registration.Name))
+                throw new InvalidOperationException($"A CRON job named {registration.Name} is already registered. Give one an explicit CronJobOptions.Name.");
+            if (!_services.Any(d => d.ImplementationInstance is JobTypeRegistration existing && existing.JobType == jobType))
+                _services.AddSingleton(new JobTypeRegistration(jobType.FullName ?? jobType.Name, jobType));
+            _services.AddSingleton(registration);
+            _services.AddSingleton(sp => registration.Create(sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>() ?? DefaultSerializer.Instance));
             return _builder;
         }
 
@@ -573,31 +576,17 @@ public class FoundatioBuilder : IFoundatioBuilder
             _services.ReplaceSingleton<IJobTypeRegistry>(sp => new JobTypeRegistry(sp.GetServices<JobTypeRegistration>()));
             _services.ReplaceSingleton<IJobMonitor>(sp => sp.GetRequiredService<IJobRuntimeStore>());
             _services.ReplaceSingleton<IJobClient>(sp => new JobClient(sp.GetRequiredService<IJobRuntimeStore>(), sp.GetService<TimeProvider>(), sp.GetRequiredService<IJobTypeRegistry>(), sp.GetService<ISerializer>()));
-            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, sp.GetService<TimeProvider>(), jobTypes: sp.GetRequiredService<IJobTypeRegistry>(), serializer: sp.GetService<ISerializer>(),
-                maxConcurrency: sp.GetService<JobRuntimePumpOptions>()?.WorkerConcurrency ?? 1));
-            _services.ReplaceSingleton<IScheduledJobStore, InMemoryScheduledJobStore>();
+            _services.ReplaceSingleton<IJobWorker>(sp => new JobWorker(sp.GetRequiredService<IJobRuntimeStore>(), sp, new JobWorkerOptions { TimeProvider = sp.GetService<TimeProvider>(), JobTypes = sp.GetRequiredService<IJobTypeRegistry>(), Serializer = sp.GetService<ISerializer>(), MaxConcurrency = sp.GetService<JobWorkerOptions>()?.MaxConcurrency ?? 1 }));
+            _services.ReplaceSingleton<IScheduledJobStore>(sp => sp.GetRequiredService<IJobRuntimeStore>());
             _services.ReplaceSingleton<IScheduledJobManager>(sp => new ScheduledJobManager(
                 sp.GetRequiredService<IScheduledJobStore>(),
                 sp.GetRequiredService<IJobRuntimeStore>(),
                 sp.GetRequiredService<IJobTypeRegistry>(),
                 sp.GetService<ISerializer>(),
                 sp.GetService<TimeProvider>()));
-            _services.ReplaceSingleton(sp => new JobScheduleProcessor(
-                sp.GetRequiredService<IScheduledJobStore>(),
-                sp.GetRequiredService<IJobRuntimeStore>(),
-                sp.GetRequiredService<IJobWorker>(),
-                sp.GetService<TimeProvider>(),
-                transport: sp.GetService<IMessageTransport>(),
-                jobTypes: sp.GetRequiredService<IJobTypeRegistry>(),
-                serializer: sp.GetService<ISerializer>()));
+            _services.ReplaceSingleton(sp => new JobScheduleProcessor(sp.GetRequiredService<IScheduledJobStore>(), sp.GetRequiredService<IJobRuntimeStore>(), new JobScheduleProcessorOptions { TimeProvider = sp.GetService<TimeProvider>() }));
 
-            // A runtime store is inert without something draining it, so register the pump alongside the store: in a
-            // hosted process it runs jobs and the messaging delayed-delivery fallback automatically (no separate
-            // AddJobRuntimeService call); in a non-hosted process the IHostedService is simply never started. Guarded so
-            // repeated UseRuntimeStore/UseInMemory calls don't stack multiple pumps. Options default unless
-            // AddJobRuntimeService (or a registered JobRuntimePumpOptions) overrides them.
-            if (!_services.Any(s => s.ServiceType == typeof(IHostedService) && s.ImplementationType == typeof(JobRuntimePumpService)))
-                _services.AddSingleton<IHostedService, JobRuntimePumpService>();
+
         }
     }
 

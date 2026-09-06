@@ -2,6 +2,7 @@ namespace Foundatio.Messaging;
 
 public static class KnownHeaders
 {
+    public const string MessageId = "message.id";
     public const string MessageType = "message.type";
     public const string ContentType = "message.content_type";
     public const string CorrelationId = "message.correlation_id";

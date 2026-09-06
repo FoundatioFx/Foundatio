@@ -23,6 +23,188 @@ namespace Foundatio.Tests.Jobs;
 /// </remarks>
 public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
 {
+    [Fact]
+    public virtual async Task CreateIfAbsentAsync_UnspecifiedTimestamps_UsesStoreClockAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState { JobId = "clock", Name = "work", JobType = "work.v1" }, token);
+        var state = await store.GetAsync("clock", token);
+        Assert.NotNull(state);
+        Assert.Equal(time.GetUtcNow(), state.CreatedUtc);
+        Assert.Equal(time.GetUtcNow(), state.LastUpdatedUtc);
+        Assert.NotNull(await store.ClaimJobAsync("clock", new JobClaimRequest { NodeId = "node", JobTypes = ["work.v1"] }, token));
+    }
+
+    [Fact]
+    public virtual async Task Schedules_PageByNameWithoutLoadingOtherDefinitionsAsync()
+    {
+        var store = CreateStore(new FakeTimeProvider());
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestContext.Current.CancellationToken;
+        foreach (var name in new[] { "e", "a", "d", "b", "c" })
+            await store.ScheduleAsync(new ScheduledJobDefinition { Name = name, Cron = "0 0 * * *", JobType = "work.v1" }, token);
+        var first = await store.GetSchedulesAsync(new ScheduleQuery { Limit = 2 }, token);
+        var second = await store.GetSchedulesAsync(new ScheduleQuery { Limit = 2, AfterName = first[^1].Name }, token);
+        var third = await store.GetSchedulesAsync(new ScheduleQuery { Limit = 2, AfterName = second[^1].Name }, token);
+        Assert.Equal(new[] { "a", "b", "c", "d", "e" }, first.Concat(second).Concat(third).Select(d => d.Name));
+    }
+
+    [Fact]
+    public virtual async Task Schedules_ReconciliationPreservesEditsAndRejectsStaleWritersAsync()
+    {
+        var store = CreateStore(new FakeTimeProvider());
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var schedules = Assert.IsAssignableFrom<IScheduledJobStore>(store);
+        var token = TestContext.Current.CancellationToken;
+        var declared = new ScheduledJobDefinition { Name = "nightly", Cron = "0 3 * * *", JobType = "work.v1", ConfigurationVersion = 1 };
+        await schedules.ReconcileAsync(declared, token);
+        var initial = await schedules.GetScheduleAsync("nightly", token);
+        Assert.NotNull(initial);
+        Assert.Equal(1, initial.Revision);
+        await schedules.ScheduleAsync(initial with { Enabled = false, Cron = "0 4 * * *" }, token);
+        await schedules.ReconcileAsync(declared, token);
+        var edited = await schedules.GetScheduleAsync("nightly", token);
+        Assert.NotNull(edited);
+        Assert.False(edited.Enabled);
+        Assert.Equal("0 4 * * *", edited.Cron);
+        await Assert.ThrowsAsync<JobException>(() => schedules.ScheduleAsync(initial with { Cron = "0 5 * * *" }, token));
+        await Assert.ThrowsAsync<JobException>(() => schedules.ReconcileAsync(declared with { Cron = "0 6 * * *" }, token));
+        await schedules.ReconcileAsync(declared with { Cron = "0 6 * * *", ConfigurationVersion = 2 }, token);
+        await schedules.ReconcileAsync(declared, token);
+        var latest = await schedules.GetScheduleAsync("nightly", token);
+        Assert.NotNull(latest);
+        Assert.Equal("0 6 * * *", latest.Cron);
+        Assert.True(latest.Enabled);
+        Assert.Equal(2, latest.ConfigurationVersion);
+        Assert.Equal(3, latest.Revision);
+    }
+
+    [Fact]
+    public virtual async Task ScheduledDispatches_LeasedHeadDoesNotHideEligibleWorkAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestContext.Current.CancellationToken;
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = "first",
+            Destination = DestinationAddress.ForQueue("work"),
+            Body = ReadOnlyMemory<byte>.Empty,
+            DueUtc = time.GetUtcNow()
+        }, token);
+        Assert.Single(await store.ClaimDueDispatchesAsync(time.GetUtcNow(), 1, "first-claim", TimeSpan.FromMinutes(1), token));
+        await store.ScheduleDispatchAsync(new ScheduledDispatchState
+        {
+            DispatchId = "second",
+            Destination = DestinationAddress.ForQueue("work"),
+            Body = ReadOnlyMemory<byte>.Empty,
+            DueUtc = time.GetUtcNow()
+        }, token);
+        Assert.Equal("second", Assert.Single(await store.ClaimDueDispatchesAsync(time.GetUtcNow(), 1, "second-claim", TimeSpan.FromMinutes(1), token)).DispatchId);
+
+        time.Advance(TimeSpan.FromMinutes(2));
+        await store.CompleteDispatchAsync("first", "first-claim", token);
+        var reclaimed = await store.ClaimDueDispatchesAsync(time.GetUtcNow(), 10, "fresh-claim", TimeSpan.FromMinutes(1), token);
+        Assert.Equal(2, reclaimed.Count);
+        await store.ReleaseDispatchAsync("first", "first-claim", time.GetUtcNow().AddDays(1), token);
+        await store.CompleteDispatchAsync("first", "first-claim", token);
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(2, (await store.ClaimDueDispatchesAsync(time.GetUtcNow(), 10, "another-claim", TimeSpan.FromMinutes(1), token)).Count);
+    }
+
+    [Fact]
+    public virtual async Task CreateOccurrenceAsync_AtomicallyPreventsOverlapAndHonorsNodeAffinityAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        if (store is null)
+        {
+            Assert.Skip("Job runtime store not configured.");
+            return;
+        }
+
+        var token = TestCancellationToken;
+        var occurrence = NewJob(time, "occurrence-1") with { JobType = "work.v1", ScheduleName = "periodic", RequiredNodeId = "node-a" };
+        var creates = await Task.WhenAll(Enumerable.Range(0, 20).Select(i => store.CreateOccurrenceAsync(occurrence with { JobId = $"occurrence-{i}" }, cancellationToken: token)));
+        Assert.Single(creates.Where(created => created));
+        var request = new JobClaimRequest { NodeId = "node-b", JobTypes = new[] { "work.v1" } };
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        var claimed = await store.ClaimNextAsync(request with { NodeId = "node-a" }, token);
+        Assert.NotNull(claimed);
+        Assert.True(await store.CompleteJobAsync(claimed.JobId, claimed.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        Assert.True(await store.CreateOccurrenceAsync(occurrence with { JobId = "next-occurrence" }, cancellationToken: token));
+    }
+
+    [Fact]
+    public virtual async Task ClaimNextAsync_FiltersEligibilityAndFencesRepeatedWorkerIdentityAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        if (store is null)
+        {
+            Assert.Skip("Job runtime store not configured.");
+            return;
+        }
+
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(NewJob(time, "other") with { JobType = "other.v1" }, token);
+        await store.CreateIfAbsentAsync(NewJob(time, "eligible") with { JobType = "work.v1" }, token);
+        var request = new JobClaimRequest { NodeId = "same-node", JobTypes = new[] { "work.v1" }, Lease = TimeSpan.FromSeconds(10) };
+        var first = await store.ClaimNextAsync(request, token);
+        Assert.NotNull(first);
+        Assert.Equal("eligible", first.JobId);
+        Assert.NotEmpty(first.ClaimToken!);
+        Assert.Equal(1, first.Attempt);
+        Assert.Null(await store.ClaimNextAsync(request, token));
+
+        time.Advance(TimeSpan.FromSeconds(11));
+        var second = await store.ClaimNextAsync(request, token);
+        Assert.NotNull(second);
+        Assert.NotEqual(first.ClaimToken, second.ClaimToken);
+        Assert.Equal(2, second.Attempt);
+        Assert.False(await store.CompleteJobAsync(first.JobId, first.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        Assert.False(await store.RenewJobLeaseAsync(first.JobId, first.ClaimToken!, request.Lease, token));
+        Assert.False(await store.ReportJobProgressAsync(first.JobId, first.ClaimToken!, 99, "stale", token));
+        Assert.True(await store.CompleteJobAsync(second.JobId, second.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        Assert.Equal(JobStatus.Completed, (await store.GetAsync("eligible", token))!.Status);
+        Assert.Equal(JobStatus.Queued, (await store.GetAsync("other", token))!.Status);
+    }
+
+    [Fact]
+    public virtual async Task CompleteJobAsync_FailurePersistsRetryAvailabilityAndBudgetAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        if (store is null)
+        {
+            Assert.Skip("Job runtime store not configured.");
+            return;
+        }
+
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(NewJob(time, "retry") with { JobType = "work.v1", MaxAttempts = 2 }, token);
+        var request = new JobClaimRequest { NodeId = "worker", JobTypes = new[] { "work.v1" } };
+        var first = await store.ClaimNextAsync(request, token);
+        Assert.NotNull(first);
+        Assert.True(await store.CompleteJobAsync(first.JobId, first.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Failed, Error = "temporary" }, token));
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        var pending = await store.GetAsync(first.JobId, token);
+        Assert.NotNull(pending);
+        Assert.Equal(JobStatus.Queued, pending.Status);
+        Assert.NotNull(pending.AvailableUtc);
+        Assert.Null(pending.CompletedUtc);
+        time.Advance(pending.AvailableUtc.Value - time.GetUtcNow());
+        var second = await store.ClaimNextAsync(request, token);
+        Assert.NotNull(second);
+        Assert.True(await store.CompleteJobAsync(second.JobId, second.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Failed, Error = "permanent" }, token));
+        Assert.Equal(JobStatus.Failed, (await store.GetAsync(second.JobId, token))!.Status);
+        Assert.Null(await store.ClaimNextAsync(request, token));
+    }
+
     protected JobRuntimeStoreConformanceTests(ITestOutputHelper output) : base(output) { }
 
     /// <summary>Creates a fresh, isolated store bound to <paramref name="timeProvider"/>, or null when unavailable.</summary>
@@ -31,7 +213,7 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
     protected static JobState NewJob(TimeProvider time, string id, string name = "conformance-job", JobStatus status = JobStatus.Queued)
     {
         var now = time.GetUtcNow();
-        return new JobState { JobId = id, Name = name, Status = status, CreatedUtc = now, LastUpdatedUtc = now };
+        return new JobState { JobId = id, Name = name, JobType = "work.v1", Status = status, CreatedUtc = now, LastUpdatedUtc = now };
     }
 
     [Fact]
@@ -57,7 +239,8 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
             Progress = 10,
             ProgressMessage = "starting",
             Attempt = 1,
-            ScheduledForUtc = created.AddMinutes(1)
+            ScheduledForUtc = created.AddMinutes(1),
+            AvailableUtc = created.AddMinutes(1)
         };
         await store.CreateIfAbsentAsync(job, ct);
 
@@ -79,44 +262,32 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         await store.CreateIfAbsentAsync(job with { Name = "overwritten" }, ct);
         Assert.Equal("emailer", (await store.GetAsync("job-1", ct))!.Name);
 
-        // A transition from the wrong current status must fail and leave state untouched.
-        Assert.False(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, cancellationToken: ct));
-        Assert.Equal(JobStatus.Queued, (await store.GetAsync("job-1", ct))!.Status);
-
-        // Happy-path transition applies the patch atomically (status + node + lease + started + attempt delta).
-        var lease = time.GetUtcNow().AddMinutes(5);
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Queued, JobStatus.Processing,
-            new JobStatePatch { NodeId = "node-a", LeaseExpiresUtc = lease, StartedUtc = created, AttemptDelta = 1 }, cancellationToken: ct));
+        var request = new JobClaimRequest { NodeId = "node-a", JobTypes = new[] { "Acme.EmailJob" } };
+        Assert.Null(await store.ClaimJobAsync("job-1", request, ct));
+        time.Advance(TimeSpan.FromMinutes(1));
+        var claimed = await store.ClaimJobAsync("job-1", request, ct);
+        Assert.NotNull(claimed);
+        Assert.Equal(JobStatus.Processing, claimed.Status);
+        Assert.Equal("node-a", claimed.NodeId);
+        Assert.Equal(time.GetUtcNow().AddMinutes(5), claimed.LeaseExpiresUtc);
+        Assert.Equal(2, claimed.Attempt);
+        Assert.Equal(time.GetUtcNow(), claimed.StartedUtc);
+        Assert.True(await store.ReportJobProgressAsync("job-1", claimed.ClaimToken!, 55, "halfway", ct));
         got = await store.GetAsync("job-1", ct);
-        Assert.Equal(JobStatus.Processing, got!.Status);
-        Assert.Equal("node-a", got.NodeId);
-        Assert.Equal(lease, got.LeaseExpiresUtc);
-        Assert.Equal(2, got.Attempt);
-        Assert.Equal(created, got.StartedUtc);
-
-        // expectedNodeId guards the transition: a stale worker (wrong node) cannot overwrite the owner's state.
-        Assert.False(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed, expectedNodeId: "node-b", cancellationToken: ct));
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("job-1", ct))!.Status);
-
-        // Correct owner completes and clears the lease/node.
-        var completedAt = time.GetUtcNow();
-        Assert.True(await store.TryTransitionAsync("job-1", JobStatus.Processing, JobStatus.Completed,
-            new JobStatePatch { ClearNodeId = true, ClearLeaseExpiresUtc = true, CompletedUtc = completedAt }, expectedNodeId: "node-a", cancellationToken: ct));
+        Assert.Equal(55, got!.Progress);
+        Assert.Equal("halfway", got.ProgressMessage);
+        Assert.False(await store.CompleteJobAsync("job-1", "wrong-claim", new JobCompletion { Kind = JobCompletionKind.Succeeded }, ct));
+        Assert.True(await store.CompleteJobAsync("job-1", claimed.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, ct));
         got = await store.GetAsync("job-1", ct);
         Assert.Equal(JobStatus.Completed, got!.Status);
         Assert.Null(got.NodeId);
+        Assert.Null(got.ClaimToken);
         Assert.Null(got.LeaseExpiresUtc);
-        Assert.Equal(completedAt, got.CompletedUtc);
+        Assert.Equal(time.GetUtcNow(), got.CompletedUtc);
+        Assert.False(await store.ReportJobProgressAsync("job-1", claimed.ClaimToken!, 12, "late", ct));
+        Assert.False(await store.RenewJobLeaseAsync("job-1", claimed.ClaimToken!, request.Lease, ct));
 
-        // Progress, attempt, and cancellation are independent of transitions.
         await store.CreateIfAbsentAsync(NewJob(time, "job-2", "worker"), ct);
-        await store.SetProgressAsync("job-2", 55, "halfway", ct);
-        await store.IncrementAttemptAsync("job-2", ct);
-        got = await store.GetAsync("job-2", ct);
-        Assert.Equal(55, got!.Progress);
-        Assert.Equal("halfway", got.ProgressMessage);
-        Assert.Equal(1, got.Attempt);
-
         Assert.False(await store.IsCancellationRequestedAsync("job-2", ct));
         Assert.True(await store.RequestCancellationAsync("job-2", ct));
         Assert.True(await store.IsCancellationRequestedAsync("job-2", ct));
@@ -140,13 +311,13 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var ct = TestCancellationToken;
         var t = time.GetUtcNow();
 
-        // Distinct LastUpdatedUtc values make the default newest-first ordering (and limit) deterministic.
+        // Monitoring uses stable ID ordering, independent of execution progress updates.
         await store.CreateIfAbsentAsync(NewJob(time, "a", "alpha", JobStatus.Queued) with { LastUpdatedUtc = t }, ct);
         await store.CreateIfAbsentAsync(NewJob(time, "b", "alpha", JobStatus.Processing) with { LastUpdatedUtc = t.AddSeconds(1) }, ct);
         await store.CreateIfAbsentAsync(NewJob(time, "c", "beta", JobStatus.Queued) with { LastUpdatedUtc = t.AddSeconds(2) }, ct);
 
         var byName = await store.QueryAsync(new JobQuery { Name = "alpha" }, ct);
-        Assert.Equal(["b", "a"], byName.Select(j => j.JobId));
+        Assert.Equal(["a", "b"], byName.Select(j => j.JobId));
 
         var byStatus = await store.QueryAsync(new JobQuery { Status = JobStatus.Queued }, ct);
         Assert.Equal(new HashSet<string> { "a", "c" }, byStatus.Select(j => j.JobId).ToHashSet());
@@ -157,111 +328,61 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var all = await store.QueryAsync(new JobQuery(), ct);
         Assert.Equal(new HashSet<string> { "a", "b", "c" }, all.Select(j => j.JobId).ToHashSet());
 
-        // Limit is honored against the newest-first ordering, so the most recently updated row wins.
+        // Continue with the returned cursor and the same filters.
         var limited = await store.QueryAsync(new JobQuery { Limit = 1 }, ct);
-        Assert.Equal("c", Assert.Single(limited).JobId);
+        Assert.Equal("a", Assert.Single(limited).JobId);
+        var next = await store.QueryAsync(new JobQuery { Limit = 1, AfterJobId = limited.ContinuationToken }, ct);
+        Assert.Equal("b", Assert.Single(next).JobId);
 
-        // ExcludeOccurrences filters out CRON occurrences (ScheduledForUtc set) so the generic worker's Queued query
-        // never claims scheduler-owned jobs.
-        await store.CreateIfAbsentAsync(NewJob(time, "d", "alpha", JobStatus.Queued) with { LastUpdatedUtc = t.AddSeconds(3), ScheduledForUtc = t }, ct);
-        var adHocQueued = await store.QueryAsync(new JobQuery { Status = JobStatus.Queued, ExcludeOccurrences = true }, ct);
-        Assert.Equal(new HashSet<string> { "a", "c" }, adHocQueued.Select(j => j.JobId).ToHashSet()); // "d" excluded (occurrence)
-        var adHocAlpha = await store.QueryAsync(new JobQuery { Name = "alpha", ExcludeOccurrences = true }, ct);
-        Assert.Equal(new HashSet<string> { "a", "b" }, adHocAlpha.Select(j => j.JobId).ToHashSet()); // "d" excluded (occurrence)
+
     }
 
     [Fact]
-    public virtual async Task Leasing_ClaimRenewReleaseAndStealAsync()
+    public virtual async Task CleanupAsync_OnlyRemovesExpiredTerminalJobsAsync()
     {
         var time = new FakeTimeProvider();
         var store = CreateStore(time);
-        if (store is null)
-        {
-            Assert.Skip("Job runtime store not configured.");
-            return;
-        }
-
-        var ct = TestCancellationToken;
-        await store.CreateIfAbsentAsync(NewJob(time, "job-1"), ct);
-
-        var claimedAt = time.GetUtcNow();
-        Assert.True(await store.TryClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(5), ct));
-        var got = await store.GetAsync("job-1", ct);
-        Assert.Equal("node-a", got!.NodeId);
-        Assert.Equal(claimedAt.AddMinutes(5), got.LeaseExpiresUtc);
-
-        // The current owner can re-claim/renew; a different node cannot while the lease is live.
-        Assert.True(await store.TryClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(5), ct));
-        Assert.False(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(5), ct));
-
-        // RenewClaim is owner-scoped.
-        Assert.False(await store.RenewClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(10), ct));
-        Assert.True(await store.RenewClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(10), ct));
-        Assert.Equal(time.GetUtcNow().AddMinutes(10), (await store.GetAsync("job-1", ct))!.LeaseExpiresUtc);
-
-        // A renewed lease is not stealable: after the lease would have lapsed the owner renews, so a competing steal
-        // must fail rather than act on a stale expired-lease observation (the steal CAS must see the renew → no double-run).
-        time.Advance(TimeSpan.FromMinutes(11));
-        Assert.True(await store.RenewClaimAsync("job-1", "node-a", TimeSpan.FromMinutes(10), ct));
-        Assert.False(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(5), ct));
-        Assert.Equal("node-a", (await store.GetAsync("job-1", ct))!.NodeId);
-
-        // Once the renewed lease itself lapses, another node may steal the claim.
-        time.Advance(TimeSpan.FromMinutes(11));
-        Assert.True(await store.TryClaimAsync("job-1", "node-b", TimeSpan.FromMinutes(5), ct));
-        Assert.Equal("node-b", (await store.GetAsync("job-1", ct))!.NodeId);
-
-        // Release is owner-scoped and clears the lease.
-        Assert.False(await store.ReleaseClaimAsync("job-1", "node-a", ct));
-        Assert.True(await store.ReleaseClaimAsync("job-1", "node-b", ct));
-        got = await store.GetAsync("job-1", ct);
-        Assert.Null(got!.NodeId);
-        Assert.Null(got.LeaseExpiresUtc);
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(NewJob(time, "completed"), token);
+        await store.CreateIfAbsentAsync(NewJob(time, "cancelled"), token);
+        await store.CreateIfAbsentAsync(NewJob(time, "queued"), token);
+        var claim = await store.ClaimJobAsync("completed", new JobClaimRequest { NodeId = "node", JobTypes = ["work.v1"] }, token);
+        Assert.NotNull(claim);
+        await store.CompleteJobAsync("completed", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token);
+        await store.RequestCancellationAsync("cancelled", token);
+        time.Advance(TimeSpan.FromDays(6));
+        Assert.Equal(0, await store.CleanupAsync(cancellationToken: token));
+        time.Advance(TimeSpan.FromDays(2));
+        Assert.Equal(1, await store.CleanupAsync(1, token));
+        Assert.Equal(1, await store.CleanupAsync(1, token));
+        Assert.Equal("queued", Assert.Single(await store.QueryAsync(new JobQuery(), token)).JobId);
+        Assert.NotNull(await store.ClaimJobAsync("queued", new JobClaimRequest { NodeId = "node", JobTypes = ["work.v1"] }, token));
     }
 
     [Fact]
-    public virtual async Task StaleRecovery_ReclaimsExpiredButNotLiveOrCronAsync()
+    public virtual async Task Leasing_RenewalPreventsRecoveryAndInterruptionReturnsWorkAsync()
     {
         var time = new FakeTimeProvider();
         var store = CreateStore(time);
-        if (store is null)
-        {
-            Assert.Skip("Job runtime store not configured.");
-            return;
-        }
-
-        var ct = TestCancellationToken;
-        var now = time.GetUtcNow();
-
-        JobState Processing(string id, DateTimeOffset lease, string node = "node-a", DateTimeOffset? scheduledFor = null) =>
-            NewJob(time, id, "worker", JobStatus.Processing) with { NodeId = node, LeaseExpiresUtc = lease, ScheduledForUtc = scheduledFor };
-
-        await store.CreateIfAbsentAsync(Processing("plain", now.AddMinutes(-1)), ct);
-        await store.CreateIfAbsentAsync(Processing("cron", now.AddMinutes(-1), scheduledFor: now), ct);
-        await store.CreateIfAbsentAsync(Processing("live", now.AddMinutes(10)), ct);
-
-        // Only the plain expired job is recoverable: the live lease and the CRON occurrence are excluded.
-        var expired = await store.GetExpiredProcessingAsync(now, 100, ct);
-        Assert.Equal("plain", Assert.Single(expired).JobId);
-
-        // Reclaim re-queues it (still owned by node-a, lease still expired).
-        Assert.True(await store.TryReclaimExpiredAsync("plain", now, "node-a", JobStatus.Queued,
-            new JobStatePatch { ClearNodeId = true, ClearLeaseExpiresUtc = true, AttemptDelta = 1 }, ct));
-        var got = await store.GetAsync("plain", ct);
-        Assert.Equal(JobStatus.Queued, got!.Status);
-        Assert.Null(got.NodeId);
-        Assert.Equal(1, got.Attempt);
-
-        // Renew-during-reclaim race: a job whose owner renewed since the scan must NOT be reclaimed (lease no longer expired).
-        await store.CreateIfAbsentAsync(Processing("renewed", now.AddMinutes(-1)), ct);
-        Assert.True(await store.RenewClaimAsync("renewed", "node-a", TimeSpan.FromMinutes(10), ct));
-        Assert.False(await store.TryReclaimExpiredAsync("renewed", now, "node-a", JobStatus.Queued, cancellationToken: ct));
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("renewed", ct))!.Status);
-
-        // Owner mismatch since the scan also blocks the reclaim.
-        await store.CreateIfAbsentAsync(Processing("reowned", now.AddMinutes(-1), node: "node-b"), ct);
-        Assert.False(await store.TryReclaimExpiredAsync("reowned", now, "node-a", JobStatus.Queued, cancellationToken: ct));
-        Assert.Equal("node-b", (await store.GetAsync("reowned", ct))!.NodeId);
+        Assert.SkipWhen(store is null, "Store unavailable");
+        var token = TestContext.Current.CancellationToken;
+        await store.CreateIfAbsentAsync(NewJob(time, "job-1"), token);
+        var request = new JobClaimRequest { NodeId = "node-a", JobTypes = new[] { "work.v1" }, Lease = TimeSpan.FromMinutes(1) };
+        var first = await store.ClaimJobAsync("job-1", request, token);
+        Assert.NotNull(first);
+        Assert.Null(await store.ClaimJobAsync("job-1", request, token));
+        time.Advance(TimeSpan.FromSeconds(30));
+        Assert.True(await store.RenewJobLeaseAsync("job-1", first.ClaimToken!, request.Lease, token));
+        time.Advance(TimeSpan.FromSeconds(40));
+        Assert.Null(await store.ClaimJobAsync("job-1", request with { NodeId = "node-b" }, token));
+        Assert.True(await store.CompleteJobAsync("job-1", first.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Interrupted }, token));
+        var second = await store.ClaimJobAsync("job-1", request with { NodeId = "node-b" }, token);
+        Assert.NotNull(second);
+        Assert.NotEqual(first.ClaimToken, second.ClaimToken);
+        Assert.Equal("node-b", second.NodeId);
+        Assert.Equal(2, second.Attempt);
+        Assert.False(await store.CompleteJobAsync("job-1", first.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
     }
 
     [Fact]
@@ -285,13 +406,12 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var due = new ScheduledDispatchState
         {
             DispatchId = "d1",
-            Kind = ScheduledDispatchKind.JobOccurrence,
-            JobName = "jobs",
+            Kind = ScheduledDispatchKind.QueueMessage,
+            Destination = DestinationAddress.ForQueue("jobs"),
             Body = body,
             Headers = headers,
             Options = options,
-            DueUtc = t.AddMinutes(-1),
-            JobId = "job-x"
+            DueUtc = t.AddMinutes(-1)
         };
         var future = new ScheduledDispatchState
         {
@@ -304,21 +424,20 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         await store.ScheduleDispatchAsync(due, ct);
         await store.ScheduleDispatchAsync(future, ct);
         // Re-scheduling the same id is a no-op (must not overwrite the dispatch).
-        await store.ScheduleDispatchAsync(due with { JobName = "overwritten" }, ct);
+        await store.ScheduleDispatchAsync(due with { Destination = DestinationAddress.ForQueue("overwritten") }, ct);
 
         // Only the due dispatch is claimed; the full payload round-trips and the attempt counter increments.
         var claimed = await store.ClaimDueDispatchesAsync(t, 100, "node-a", TimeSpan.FromMinutes(5), ct);
         var d = Assert.Single(claimed);
         Assert.Equal("d1", d.DispatchId);
-        Assert.Equal(ScheduledDispatchKind.JobOccurrence, d.Kind);
-        Assert.Equal("jobs", d.JobName);
+        Assert.Equal(ScheduledDispatchKind.QueueMessage, d.Kind);
+        Assert.Equal(DestinationAddress.ForQueue("jobs"), d.Destination);
         Assert.Equal(body, d.Body.ToArray());
         Assert.Equal("acme", d.Headers["tenant"]);
         Assert.Equal("order.created", d.Headers["message.type"]);
         Assert.Equal(MessagePriority.High, d.Options.Priority);
         Assert.Equal("node-a", d.ClaimOwner);
         Assert.Equal(1, d.Attempts);
-        Assert.Equal("job-x", d.JobId);
 
         // A competing claim sees nothing while the lease is live (and d2 is not yet due).
         Assert.Empty(await store.ClaimDueDispatchesAsync(t, 100, "node-b", TimeSpan.FromMinutes(5), ct));
@@ -336,8 +455,8 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         var recurring = new ScheduledDispatchState
         {
             DispatchId = "d3",
-            Kind = ScheduledDispatchKind.JobOccurrence,
-            JobName = "cron",
+            Kind = ScheduledDispatchKind.QueueMessage,
+            Destination = DestinationAddress.ForQueue("cron"),
             Body = body,
             DueUtc = t.AddMinutes(20)
         };
@@ -369,18 +488,10 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         // Many nodes race to claim the same unclaimed job: exactly one may win, and the store must agree on the owner.
         await store.CreateIfAbsentAsync(NewJob(time, "claim-race"), ct);
         var claims = await Task.WhenAll(Enumerable.Range(0, contenders)
-            .Select(i => Task.Run(() => store.TryClaimAsync("claim-race", $"node-{i}", TimeSpan.FromMinutes(5), ct), ct)));
-        Assert.Equal(1, claims.Count(won => won));
+            .Select(i => Task.Run(() => store.ClaimJobAsync("claim-race", new JobClaimRequest { NodeId = $"node-{i}", JobTypes = new[] { "work.v1" } }, ct), ct)));
+        Assert.Equal(1, claims.Count(claimed => claimed is not null));
         var ownedBy = (await store.GetAsync("claim-race", ct))!.NodeId;
         Assert.StartsWith("node-", ownedBy);
-
-        // Many nodes race the same Queued -> Processing transition: optimistic concurrency must admit exactly one.
-        await store.CreateIfAbsentAsync(NewJob(time, "transition-race"), ct);
-        var transitions = await Task.WhenAll(Enumerable.Range(0, contenders)
-            .Select(i => Task.Run(() => store.TryTransitionAsync("transition-race", JobStatus.Queued, JobStatus.Processing,
-                new JobStatePatch { NodeId = $"node-{i}" }, cancellationToken: ct), ct)));
-        Assert.Equal(1, transitions.Count(won => won));
-        Assert.Equal(JobStatus.Processing, (await store.GetAsync("transition-race", ct))!.Status);
 
         // A single due dispatch contested by many claimers must be handed to exactly one.
         await store.ScheduleDispatchAsync(new ScheduledDispatchState

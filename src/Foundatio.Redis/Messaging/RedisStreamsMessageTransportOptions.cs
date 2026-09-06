@@ -17,8 +17,8 @@ public class RedisStreamsMessageTransportOptions
     /// <summary>How long a received message stays invisible to other consumers before it can be reclaimed (the lease).</summary>
     public TimeSpan DefaultVisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
-    /// <summary>Approximate <c>MAXLEN</c> cap applied on <c>XADD</c> (null = no trimming). Trimming can drop un-acked entries; keep ample headroom.</summary>
-    public int? MaxStreamLength { get; set; }
+    /// <summary>Maximum retained messages per destination. Sends fail at capacity; unread or pending work is never trimmed.</summary>
+    public int MaxPendingMessages { get; set; } = 100_000;
 
     /// <summary>This node's consumer name within every group (defaults to a stable per-instance id). Distinct instances are competing consumers.</summary>
     public string? ConsumerName { get; set; }

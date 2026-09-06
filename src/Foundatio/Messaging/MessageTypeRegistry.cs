@@ -43,17 +43,6 @@ public sealed class MessageTypeRegistry : IMessageTypeRegistry
         if (_nameToType.TryGetValue(name, out var registered))
             return registered;
 
-        var type = Type.GetType(name, throwOnError: false);
-        if (type is not null)
-            return type;
-
-        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            type = assembly.GetType(name, throwOnError: false);
-            if (type is not null)
-                return type;
-        }
-
         return null;
     }
 

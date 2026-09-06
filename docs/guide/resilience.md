@@ -488,7 +488,6 @@ var resilientCache = new ResilientCacheClient(
 ```csharp
 public class ResilientQueueProcessor
 {
-    private readonly IQueue<WorkItem> _queue;
     private readonly IResiliencePolicy _policy;
 
     public async Task ProcessAsync(WorkItem item)

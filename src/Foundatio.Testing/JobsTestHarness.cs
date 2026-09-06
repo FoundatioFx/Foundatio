@@ -5,8 +5,7 @@ using System.Threading.Tasks;
 namespace Foundatio.Jobs.Testing;
 
 /// <summary>
-/// Deterministic job tests without the runtime pump: the harness wraps the real in-memory job runtime with the auto
-/// pump disabled, so the test decides exactly when queued jobs run (<see cref="RunAllQueuedAsync"/>), when CRON
+/// Deterministic job tests over the real in-memory runtime without hosted workers. Tests decide when queued jobs run (<see cref="RunAllQueuedAsync"/>), when CRON
 /// occurrences materialize and execute (<see cref="RunDueAsync"/> with a fixed "now"), and when a single job is
 /// driven to its terminal state (<see cref="RunToCompletionAsync"/>) — no polling loop ever races the assertions.
 /// <code>
@@ -44,27 +43,42 @@ public sealed class JobsTestHarness
     /// <summary>Read access to job state for assertions.</summary>
     public IJobMonitor Monitor => _store;
 
-    /// <summary>Runs every currently-queued job to a settled state in this call. Returns the number completed.</summary>
-    public Task<int> RunAllQueuedAsync(CancellationToken cancellationToken = default)
+    /// <summary>Runs all currently eligible queued jobs, across batches. Future delayed retries remain queued.</summary>
+    public async Task<int> RunAllQueuedAsync(CancellationToken cancellationToken = default)
     {
-        return _worker.RunQueuedAsync(cancellationToken: cancellationToken);
+        using var timeout = new CancellationTokenSource(DefaultRunTimeout);
+        using var operation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeout.Token);
+        int total = 0;
+        try
+        {
+            while (true)
+            {
+                operation.Token.ThrowIfCancellationRequested();
+                int executed = await _worker.RunQueuedAsync(cancellationToken: operation.Token).WaitAsync(operation.Token).ConfigureAwait(false);
+                total += executed;
+                if (executed < 100)
+                    return total;
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeout.IsCancellationRequested)
+        {
+            throw new TimeoutException("Queued jobs did not become idle within 30 seconds. Check for a blocked job or work that continually enqueues more jobs.");
+        }
     }
 
     /// <summary>
-    /// One deterministic scheduler tick: materializes every CRON occurrence due at <paramref name="now"/> (real now
-    /// when null), then claims and executes the due dispatches — occurrences run and delayed messages materialize in
-    /// this call, exactly as one pump pass would. Returns the number of dispatches (occurrences plus scheduled
-    /// messages) completed.
+    /// Materializes CRON occurrences due at the supplied time and runs all currently eligible queued jobs.
+    /// Scheduled messages are drained separately through ScheduledMessageDispatcher.
     /// </summary>
     public async Task<int> RunDueAsync(DateTimeOffset? now = null, CancellationToken cancellationToken = default)
     {
         var utcNow = now ?? DateTimeOffset.UtcNow;
         await _processor.EnqueueDueOccurrencesAsync(utcNow, cancellationToken).ConfigureAwait(false);
-        return await _processor.RunDueOccurrencesAsync(utcNow, cancellationToken: cancellationToken).ConfigureAwait(false);
+        return await RunAllQueuedAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Runs worker passes until the handle's job reaches a terminal state (Completed, Failed, Cancelled, or
+    /// Runs only the handle's job until it reaches a terminal state (Completed, Failed, Cancelled, or
     /// DeadLettered) and returns that state. Throws <see cref="TimeoutException"/> naming the job's current status
     /// when it is still non-terminal after 30s.
     /// </summary>
@@ -76,7 +90,7 @@ public sealed class JobsTestHarness
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await _worker.RunQueuedAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            await _worker.RunAsync(handle.JobId, cancellationToken).ConfigureAwait(false);
 
             var state = await handle.GetStateAsync(cancellationToken).ConfigureAwait(false);
             if (state is { Status: JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled or JobStatus.DeadLettered })

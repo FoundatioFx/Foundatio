@@ -1,18 +1,19 @@
-using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Linq;
 using System.Threading.Channels;
+using System.Threading.Tasks;
+using System.Threading;
+using System;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsProvisioning, ITransportInfo
+public sealed partial class InMemoryMessageTransport : IMessageTransport, ISupportsPull, ISupportsPush, ISupportsVisibilityTimeout, ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats, ISupportsEphemeralSubscriptions, ITransportInfo
 {
     private static readonly TimeSpan _defaultLockRenewal = TimeSpan.FromMinutes(1);
 
@@ -77,7 +78,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         {
             var message = messages[index];
             // Each message gets a unique id so per-message settlement never aliases across distinct messages.
-            string messageId = message.MessageId ?? Guid.NewGuid().ToString("N");
+            string messageId = Guid.NewGuid().ToString("N");
             var stored = CreateStoredMessage(key, messageId, message, options);
             EnqueueForDestination(key, stored);
 
@@ -247,33 +248,73 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct)
+    public Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        ct.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(destination);
-        ArgumentNullException.ThrowIfNull(request);
-
+        query ??= new DeadLetterQuery();
+        query.Validate();
         if (!_destinations.TryGetValue(ReceivableKey(destination), out var state))
             return Task.FromResult<IReadOnlyList<TransportEntry>>([]);
-
-        int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
-        var entries = new List<TransportEntry>(maxMessages);
-        while (entries.Count < maxMessages && state.TryReadDeadletter(out var message))
-        {
-            entries.Add(new TransportEntry
+        var entries = state.Deadletters.Values.Where(m => query.AfterId is null || StringComparer.Ordinal.Compare(m.Id, query.AfterId) > 0)
+            .OrderBy(m => m.Id, StringComparer.Ordinal).Take(query.Limit).Select(message => new TransportEntry
             {
                 Id = message.Id,
+                ApplicationMessageId = message.ApplicationMessageId,
+                ContentType = message.ContentType,
                 Destination = destination,
                 Body = message.Body,
                 Headers = message.Headers,
                 DeliveryCount = message.DeliveryCount,
                 EnqueuedUtc = message.EnqueuedUtc,
-                Receipt = new Receipt { TransportState = null }
-            });
-        }
-
+                Receipt = default
+            }).ToArray();
         return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
+    }
+
+    public Task<bool> DeleteDeadLetteredAsync(DestinationAddress destination, string id, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (!_destinations.TryGetValue(ReceivableKey(destination), out var state))
+            return Task.FromResult(false);
+        lock (state.Deadletters)
+            return Task.FromResult(state.Deadletters.TryRemove(id, out _));
+    }
+
+    public Task<bool> ReplayDeadLetteredAsync(DestinationAddress source, string id, DestinationAddress target, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (target.Role is not (DestinationRole.Queue or DestinationRole.Topic))
+            throw new ArgumentException("Replay targets must be a queue or topic.", nameof(target));
+        if (!_destinations.TryGetValue(ReceivableKey(source), out var state))
+            return Task.FromResult(false);
+        lock (state.Deadletters)
+        {
+            if (!state.Deadletters.TryGetValue(id, out var message))
+                return Task.FromResult(false);
+            var headers = MessageHeaders.Create(message.Headers.Where(h => !h.Key.Equals(KnownHeaders.Attempts, StringComparison.OrdinalIgnoreCase)
+                && !h.Key.Equals(KnownHeaders.Expiration, StringComparison.OrdinalIgnoreCase)
+                && !h.Key.StartsWith("message.dead_letter.", StringComparison.OrdinalIgnoreCase)));
+            string key = StorageKey(target);
+            var replayed = CreateStoredMessage(key, Guid.NewGuid().ToString("N"), new TransportMessage
+            {
+                MessageId = message.ApplicationMessageId,
+                Body = message.Body,
+                Headers = headers,
+                ContentType = message.ContentType
+            }, new TransportSendOptions());
+            EnqueueForDestination(key, replayed);
+            state.Deadletters.TryRemove(id, out _);
+            return Task.FromResult(true);
+        }
     }
 
     public Task<IPushSubscription> SubscribeAsync(DestinationAddress source, Func<TransportEntry, CancellationToken, Task> onMessage, PushOptions options, CancellationToken ct)
@@ -321,29 +362,34 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             var address = declaration.Address;
             ArgumentNullException.ThrowIfNull(address);
 
-            switch (address.Role)
+            lock (_temporarySubscriptions)
             {
-                case DestinationRole.Queue:
-                    GetOrAddDestination(StorageKey(address));
-                    break;
-                case DestinationRole.Topic:
-                    _roles.TryAdd(StorageKey(address), DestinationRole.Topic);
-                    _topicSubscriptions.GetOrAdd(StorageKey(address), static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
-                    break;
-                case DestinationRole.Subscription:
-                    if (String.IsNullOrEmpty(address.Topic))
-                        throw new ArgumentException("A subscription declaration must specify its owning topic.", nameof(declarations));
+                switch (address.Role)
+                {
+                    case DestinationRole.Queue:
+                        GetOrAddDestination(StorageKey(address));
+                        break;
+                    case DestinationRole.Topic:
+                        _roles.TryAdd(StorageKey(address), DestinationRole.Topic);
+                        _topicSubscriptions.GetOrAdd(StorageKey(address), static _ => new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase));
+                        break;
+                    case DestinationRole.Subscription:
+                        if (String.IsNullOrEmpty(address.Topic))
+                            throw new ArgumentException("A subscription declaration must specify its owning topic.", nameof(declarations));
 
-                    AddTopicSubscription(address.Topic, StorageKey(address));
-                    break;
-                case DestinationRole.Binding:
-                    if (String.IsNullOrEmpty(address.Topic))
-                        throw new ArgumentException("A binding declaration must specify a source topic.", nameof(declarations));
+                        AddTopicSubscription(address.Topic, StorageKey(address));
+                        break;
+                    case DestinationRole.Binding:
+                        if (String.IsNullOrEmpty(address.Topic))
+                            throw new ArgumentException("A binding declaration must specify a source topic.", nameof(declarations));
 
-                    AddTopicSubscription(address.Topic, StorageKey(address));
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException(nameof(declarations), address.Role, "Unsupported destination role.");
+                        AddTopicSubscription(address.Topic, StorageKey(address));
+                        break;
+                    default:
+                        throw new ArgumentOutOfRangeException(nameof(declarations), address.Role, "Unsupported destination role.");
+                }
+                if (declaration.AutoDeleteAfter is { } lease)
+                    CreateTemporarySubscription(address, lease);
             }
         }
 
@@ -356,7 +402,19 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         ct.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(destination);
 
-        string key = StorageKey(destination);
+        lock (_temporarySubscriptions)
+        {
+            string key = StorageKey(destination);
+            if (_temporarySubscriptions.Remove(key, out var lease))
+                lease.Timer.Dispose();
+            DeleteDestination(key);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private void DeleteDestination(string key)
+    {
         _roles.TryRemove(key, out _);
         if (_destinations.TryRemove(key, out var removed))
             removed.Complete();
@@ -365,7 +423,6 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         foreach (var subscriptions in _topicSubscriptions.Values)
             subscriptions.TryRemove(key, out _);
 
-        return Task.CompletedTask;
     }
 
     public Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct)
@@ -379,6 +436,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
     public ValueTask DisposeAsync()
     {
+        DisposeTemporarySubscriptions();
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return ValueTask.CompletedTask;
 
@@ -564,7 +622,10 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             entry = new TransportEntry
             {
                 Id = message.Id,
+                ApplicationMessageId = message.ApplicationMessageId,
+                ContentType = message.ContentType,
                 Destination = source,
+                LockExpiresUtc = visibilityExpiresUtc,
                 Body = message.Body,
                 Headers = message.Headers,
                 DeliveryCount = message.DeliveryCount,
@@ -607,6 +668,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         return new StoredMessage(
             messageId,
+            message.MessageId,
+            message.ContentType,
             destination,
             message.Body.ToArray(),
             headers,
@@ -673,6 +736,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
     private sealed record StoredMessage(
         string Id,
+        string? ApplicationMessageId,
+        string? ContentType,
         string Destination,
         ReadOnlyMemory<byte> Body,
         MessageHeaders Headers,
@@ -693,10 +758,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions())
         ];
 
-        private readonly Channel<StoredMessage> _deadletterChannel = Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions());
+        public ConcurrentDictionary<string, StoredMessage> Deadletters { get; } = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _availableMessages = new(0);
         private long _queuedCount;
-        private long _deadletterCount;
         private int _isCompleted;
 
         public ConcurrentDictionary<string, InFlightMessage> InFlight { get; } = new(StringComparer.Ordinal);
@@ -707,7 +771,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
         public long Deadlettered;
 
         public long QueuedCount => Volatile.Read(ref _queuedCount);
-        public long DeadletterCount => Volatile.Read(ref _deadletterCount);
+        public long DeadletterCount => Deadletters.Count;
 
         public void Enqueue(StoredMessage message)
         {
@@ -746,23 +810,10 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
 
         public void Deadletter(StoredMessage message)
         {
-            if (!_deadletterChannel.Writer.TryWrite(message))
+            if (Volatile.Read(ref _isCompleted) == 1)
                 throw new InvalidOperationException("The destination is no longer accepting dead-letter messages.");
-
-            Interlocked.Increment(ref _deadletterCount);
+            Deadletters[message.Id] = message;
             Interlocked.Increment(ref Deadlettered);
-        }
-
-        public bool TryReadDeadletter(out StoredMessage message)
-        {
-            if (_deadletterChannel.Reader.TryRead(out message!))
-            {
-                Interlocked.Decrement(ref _deadletterCount);
-                return true;
-            }
-
-            message = null!;
-            return false;
         }
 
         public void ReclaimExpired(DateTimeOffset now)
@@ -788,7 +839,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport, ISupportsPull,
             foreach (var channel in _channels)
                 channel.Writer.TryComplete();
 
-            _deadletterChannel.Writer.TryComplete();
+            Deadletters.Clear();
         }
 
         private static UnboundedChannelOptions CreateChannelOptions()

@@ -1,0 +1,49 @@
+name: Provider conformance
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  providers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:8.6-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      localstack:
+        image: localstack/localstack:3.8.1
+        env:
+          SERVICES: sqs,sns
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl --fail http://localhost:4566/_localstack/health"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 24
+    env:
+      FOUNDATIO_REDIS_CONNECTION_STRING: localhost:6379
+      FOUNDATIO_AWS_CONNECTION_STRING: serviceurl=http://localhost:4566;accesskey=test;secretkey=test;region=us-east-1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build providers and shared conformance tests
+        run: |
+          dotnet build tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj --configuration Release
+          dotnet build tests/Foundatio.Aws.Tests/Foundatio.Aws.Tests.csproj --configuration Release
+      - name: Redis transport and job store conformance
+        run: dotnet tests/Foundatio.Redis.Tests/bin/Release/net10.0/Foundatio.Redis.Tests.dll -noLogo -noColor
+      - name: SQS and SNS conformance against LocalStack
+        run: dotnet tests/Foundatio.Aws.Tests/bin/Release/net10.0/Foundatio.Aws.Tests.dll -noLogo -noColor

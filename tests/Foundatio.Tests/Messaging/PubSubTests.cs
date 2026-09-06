@@ -7,7 +7,6 @@ using Foundatio.AsyncEx;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Foundatio.Tests.Extensions;
-using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -44,18 +43,19 @@ public class PubSubTests
 
         await firstReceived.WaitAsync(TimeSpan.FromSeconds(2));
         await secondReceived.WaitAsync(TimeSpan.FromSeconds(2));
-        var firstStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(first.Topic, first.Subscription), cancellationToken);
-        var secondStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(second.Topic, second.Subscription), cancellationToken);
+        var firstStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(first.Source.Topic!, first.Source.Name), cancellationToken);
+        var secondStats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(second.Source.Topic!, second.Source.Name), cancellationToken);
         Assert.Equal(1, firstStats.Completed);
         Assert.Equal(1, secondStats.Completed);
     }
 
     [Fact]
-    public async Task SubscribeAsync_WithSameSubscriptionAndDifferentKeys_CompetesOnTransportSubscriptionAsync()
+    public async Task SubscribeAsync_WithSameSubscriptionOnTwoReplicas_CompetesAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var transport = new InMemoryMessageTransport();
-        await using var pubSub = new MessageBus(transport);
+        await using var pubSub = new MessageBus(transport, new() { OwnsTransport = false });
+        await using var replica = new MessageBus(transport, new() { OwnsTransport = false });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(10));
         var received = new AsyncCountdownEvent(2);
@@ -70,13 +70,11 @@ public class PubSubTests
 
         await using var first = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
         {
-            Subscription = "billing-service",
-            Key = "node-a"
+            Subscription = "billing-service"
         }, cts.Token);
-        await using var second = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
+        await using var second = await replica.SubscribeAsync(handler, new MessageSubscriptionOptions
         {
-            Subscription = "billing-service",
-            Key = "node-b"
+            Subscription = "billing-service"
         }, cts.Token);
 
         await pubSub.PublishBatchAsync([
@@ -85,12 +83,12 @@ public class PubSubTests
         ], cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        await WaitForCompletedAsync(transport, DestinationAddress.ForSubscription(first.Topic, first.Subscription), 2, cancellationToken);
+        await WaitForCompletedAsync(transport, DestinationAddress.ForSubscription(first.Source.Topic!, first.Source.Name), 2, cancellationToken);
 
-        Assert.Equal(first.Topic, second.Topic);
-        Assert.Equal(first.Subscription, second.Subscription);
+        Assert.Equal(first.Source.Topic!, second.Source.Topic!);
+        Assert.Equal(first.Source.Name, second.Source.Name);
         Assert.Equal(first.Source, second.Source); // same topic + subscription -> one shared transport source
-        Assert.NotEqual(first.Key, second.Key);
+
         Assert.Equal(2, deliveriesByMessageId.Count);
         Assert.All(deliveriesByMessageId.Values, count => Assert.Equal(1, count));
     }
@@ -126,7 +124,7 @@ public class PubSubTests
             return Task.CompletedTask;
         }, new MessageSubscriptionOptions { Topic = "payments", Subscription = "shared" }, cts.Token);
 
-        Assert.Equal(orders.Subscription, payments.Subscription); // same logical subscription identity
+        Assert.Equal(orders.Source.Name, payments.Source.Name); // same logical subscription identity
         Assert.NotEqual(orders.Source, payments.Source);          // but distinct topic-qualified transport sources
 
         // Publish one message to each topic. Each subscriber must receive only its own topic's message — proving both
@@ -167,7 +165,7 @@ public class PubSubTests
         ], cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Source.Topic!, subscription.Source.Name), cancellationToken);
         Assert.Equal(2, stats.Completed);
     }
 
@@ -228,7 +226,7 @@ public class PubSubTests
         await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new MessagePublishOptions { Delay = TimeSpan.FromMinutes(1) }, cancellationToken);
 
         await Assert.ThrowsAsync<TimeoutException>(async () => await received.WaitAsync(TimeSpan.FromMilliseconds(50)));
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
+        Assert.Equal(1, await processor.DispatchDueAsync(DateTimeOffset.UtcNow.AddMinutes(2), cancellationToken: cancellationToken));
         await received.WaitAsync(TimeSpan.FromSeconds(2));
 
     }
@@ -259,38 +257,20 @@ public class PubSubTests
         await pubSub.PublishAsync(new PreviewEvent { Data = "retry" }, cancellationToken: cancellationToken);
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
-        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Source.Topic!, subscription.Source.Name), cancellationToken);
         Assert.Equal(1, stats.Completed);
         Assert.Equal(1, stats.Abandoned);
     }
 
 
     [Fact]
-    public async Task SubscribeAsync_WithSameKeyAndSameRegistration_SharesTheUnderlyingConsumerAsync()
+    public async Task SubscribeAsync_WithDuplicateRegistration_ThrowsAsync()
     {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        await using var pubSub = new MessageBus(new InMemoryMessageTransport());
-        int handled = 0;
-        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<IMessageContext<PreviewEvent>, CancellationToken, Task> handler = (_, _) =>
-        {
-            Interlocked.Increment(ref handled);
-            received.TrySetResult();
-            return Task.CompletedTask;
-        };
-
-        // Registering the same key + handler + options twice is idempotent: both handles refer to the one underlying
-        // consumer, so a published message is handled exactly once.
-        await using var first = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
-        await using var second = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
-
-        Assert.Equal(first.Key, second.Key);
-        Assert.Equal(first.Source, second.Source);
-
-        await pubSub.PublishAsync(new PreviewEvent { Data = "once" }, cancellationToken: cancellationToken);
-        await received.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
-        await Task.Delay(250, cancellationToken);
-        Assert.Equal(1, Volatile.Read(ref handled));
+        var token = TestContext.Current.CancellationToken;
+        await using var bus = new MessageBus(new InMemoryMessageTransport());
+        Func<IMessageContext<PreviewEvent>, CancellationToken, Task> handler = (_, _) => Task.CompletedTask;
+        await using var first = await bus.SubscribeAsync(handler, new() { Subscription = "billing" }, token);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => bus.SubscribeAsync(handler, new() { Subscription = "billing" }, token));
     }
 
     [Fact]
@@ -299,10 +279,10 @@ public class PubSubTests
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var pubSub = new MessageBus(new InMemoryMessageTransport());
 
-        await using var first = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken);
+        await using var first = await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Subscription = "same-key" }, cancellationToken);
 
         await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Subscription = "same-key", Key = "shared" }, cancellationToken));
+            await pubSub.SubscribeAsync<PreviewEvent>((_, _) => Task.CompletedTask, new MessageSubscriptionOptions { Subscription = "same-key" }, cancellationToken));
     }
 
     [Fact]
@@ -315,7 +295,6 @@ public class PubSubTests
         await using var first = await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
         {
             Subscription = "same-key",
-            Key = "shared",
             DeadLetterWhen = static ex => ex is InvalidOperationException
         }, cancellationToken);
 
@@ -326,7 +305,6 @@ public class PubSubTests
             await pubSub.SubscribeAsync(handler, new MessageSubscriptionOptions
             {
                 Subscription = "same-key",
-                Key = "shared",
                 DeadLetterWhen = static ex => ex is ArgumentException
             }, cancellationToken));
     }
@@ -338,7 +316,6 @@ public class PubSubTests
         await using var transport = new InMemoryMessageTransport();
         var routing = new MessageRoutingOptionsBuilder()
             .MapTopic("order-events", typeof(IGroupedEvent))
-            .UseSubscriptionIdentity("billing-service")
             .Build();
         await using var pubSub = new MessageBus(transport, new MessageBusOptions { Router = new DefaultMessageRouter(routing) });
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -353,7 +330,7 @@ public class PubSubTests
 
             received.Signal();
             return Task.CompletedTask;
-        }, new MessageSubscriptionOptions { RouteType = typeof(IGroupedEvent) }, cts.Token);
+        }, new MessageSubscriptionOptions { Topic = "order-events", Subscription = "billing-service" }, cts.Token);
 
         await pubSub.PublishBatchAsync(new object[]
         {
@@ -363,13 +340,13 @@ public class PubSubTests
 
         await received.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal("order-events", subscription.Topic);
-        Assert.Equal("billing-service", subscription.Subscription);
-        Assert.Equal("order-events/billing-service", subscription.Source); // topic-qualified transport source
+        Assert.Equal("order-events", subscription.Source.Topic!);
+        Assert.Equal("billing-service", subscription.Source.Name);
+        Assert.Equal("order-events/billing-service", subscription.Source.Key); // topic-qualified transport source
         Assert.Contains(typeof(PreviewEvent).FullName!, messageTypes);
         Assert.Contains(typeof(OtherEvent).FullName!, messageTypes);
 
-        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Topic, subscription.Subscription), cancellationToken);
+        var stats = await transport.GetStatsAsync(DestinationAddress.ForSubscription(subscription.Source.Topic!, subscription.Source.Name), cancellationToken);
         Assert.Equal(2, stats.Completed);
     }
 
@@ -390,7 +367,7 @@ public class PubSubTests
         await pubSub.PublishAsync(new PreviewEvent { Data = "later" }, new MessagePublishOptions { Delay = TimeSpan.FromMinutes(5) }, cancellationToken);
 
         Assert.Equal(0, transport.SendCount);
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(DateTimeOffset.UtcNow.AddMinutes(10), cancellationToken: cancellationToken));
+        Assert.Equal(1, await processor.DispatchDueAsync(DateTimeOffset.UtcNow.AddMinutes(10), cancellationToken: cancellationToken));
         Assert.Equal(1, transport.SendCount);
         Assert.Equal(DestinationRole.Topic, transport.LastDestination?.Role);
         Assert.Null(transport.LastSendOptions?.DeliverAt); // the store dispatches it as due; the delay is spent, not forwarded
@@ -417,11 +394,9 @@ public class PubSubTests
         Assert.Equal(expected, finalStats.Completed);
     }
 
-    private static JobScheduleProcessor CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
+    private static ScheduledMessageDispatcher CreateDispatchProcessor(IJobRuntimeStore store, IMessageTransport transport)
     {
-        var serviceProvider = new ServiceCollection().BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        return new JobScheduleProcessor(new InMemoryScheduledJobStore(), store, worker, nodeId: "node-a", transport: transport);
+        return new ScheduledMessageDispatcher(store, transport);
     }
 
     // Mirrors AWS SQS/SNS: native delayed delivery on queues only. Topic sends with a future DeliverAt throw, so a

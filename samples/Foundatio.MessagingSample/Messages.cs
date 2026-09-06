@@ -16,7 +16,7 @@ public class ProcessOrder
 
 /// <summary>
 /// An event, delivered with <c>bus.PublishAsync</c> — each subscribing service receives one copy (and this sample's
-/// handler opts into PerInstance, so every replica gets its own).
+/// handler uses the durable announcements group, whose replicas compete).
 /// </summary>
 [MessageRoute("announcements")]
 public class Announcement

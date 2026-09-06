@@ -1,27 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Messaging;
 using Foundatio.Utility;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Foundatio.Messaging;
-
-/// <summary>
-/// One declarative message-handler registration: a description for logging and a factory that starts the underlying
-/// queue consumer or pub/sub subscription and returns it for disposal on shutdown. Built by the <c>AddHandler</c>
-/// builder methods, which bind the message type at compile time (one registration per delivery verb).
-/// </summary>
-internal sealed class MessageHandlerRegistration
-{
-    public required string Description { get; init; }
-    public required Func<IServiceProvider, CancellationToken, Task<IAsyncDisposable>> StartAsync { get; init; }
-}
-
-/// <summary>The DI-selected <see cref="TopologyMode"/>, applied at startup and by the message clients on use.</summary>
-internal sealed record MessagingTopologyOptions(TopologyMode Mode);
+namespace Foundatio.Extensions.Hosting.Messaging;
 
 /// <summary>
 /// Applies the app's declared topology at startup for EVERY app with a configured transport — including publish-only
@@ -93,6 +82,8 @@ internal sealed class MessageHandlerHostedService : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        if (_registrations.Any() && _serviceProvider.GetService<IMessageBus>() is null)
+            throw new InvalidOperationException("Message consumers were registered but no message transport is configured. Call AddFoundatio().Messaging.UseTransport(...) or UseInMemory().");
         try
         {
             foreach (var registration in _registrations)

@@ -18,17 +18,9 @@ public sealed record MessageRouteContext
     public string? OperationOverride { get; init; }
 }
 
-public sealed record MessageSubscriptionContext
-{
-    public required Type MessageType { get; init; }
-    public required string Topic { get; init; }
-    public string? OperationOverride { get; init; }
-}
-
 public interface IMessageRouter
 {
     string ResolveRoute(MessageRouteContext context);
-    string ResolveSubscription(MessageSubscriptionContext context);
 }
 
 public sealed record MessageRouteMap
@@ -45,8 +37,6 @@ public sealed class MessageRoutingOptions
 
     public string? DefaultQueueDestination { get; set; }
     public string? DefaultPubSubTopic { get; set; }
-    public string? SubscriptionIdentity { get; set; }
-    public string? ServiceIdentity { get; set; }
     public Func<MessageRouteContext, string>? Convention { get; set; }
 
     public IReadOnlyList<DestinationDeclaration> GetTopologyDeclarations()
@@ -128,22 +118,6 @@ public sealed class MessageRoutingOptionsBuilder
         return Map(MessageRouteRole.PubSubTopic, topic, messageTypes);
     }
 
-    public MessageRoutingOptionsBuilder UseSubscriptionIdentity(string subscription)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(subscription);
-        _options.SubscriptionIdentity = subscription;
-        RebuildSubscriptionDeclarations();
-        return this;
-    }
-
-    public MessageRoutingOptionsBuilder UseServiceIdentity(string serviceIdentity)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(serviceIdentity);
-        _options.ServiceIdentity = serviceIdentity;
-        RebuildSubscriptionDeclarations();
-        return this;
-    }
-
     public MessageRoutingOptionsBuilder UseConvention(Func<MessageRouteContext, string> convention)
     {
         _options.Convention = convention ?? throw new ArgumentNullException(nameof(convention));
@@ -191,41 +165,8 @@ public sealed class MessageRoutingOptionsBuilder
     private void DeclareTopic(string topic)
     {
         _options.Declare(new DestinationDeclaration { Address = DestinationAddress.ForTopic(topic) });
-        DeclareSubscription(topic);
     }
 
-    private void RebuildSubscriptionDeclarations()
-    {
-        _options.RemoveDeclarations(d => d.Address.Role == DestinationRole.Subscription);
-
-        if (!String.IsNullOrEmpty(_options.DefaultPubSubTopic))
-            DeclareSubscription(_options.DefaultPubSubTopic);
-
-        foreach (string topic in _options.RouteMaps
-            .Where(m => m.Role == MessageRouteRole.PubSubTopic)
-            .Select(m => m.Route)
-            .Distinct(StringComparer.Ordinal))
-        {
-            DeclareSubscription(topic);
-        }
-    }
-
-    private void DeclareSubscription(string topic)
-    {
-        string? subscription = _options.SubscriptionIdentity ?? _options.ServiceIdentity;
-        if (String.IsNullOrEmpty(subscription))
-            return;
-
-        DeclareSubscription(topic, subscription);
-    }
-
-    private void DeclareSubscription(string topic, string subscription)
-    {
-        // The SAME canonical address the runtime subscribe path ensures and receives from — declaring the bare
-        // subscription name here while the runtime used a topic-qualified string is exactly the topology-vs-runtime
-        // identity mismatch DestinationAddress exists to prevent.
-        _options.Declare(new DestinationDeclaration { Address = DestinationAddress.ForSubscription(topic, subscription) });
-    }
 }
 
 public sealed class DefaultMessageRouter : IMessageRouter
@@ -280,38 +221,4 @@ public sealed class DefaultMessageRouter : IMessageRouter
         return MessageRoutingConventions.ToKebabCase(context.MessageType.Name);
     }
 
-    public string ResolveSubscription(MessageSubscriptionContext context)
-    {
-        ArgumentNullException.ThrowIfNull(context);
-        ArgumentNullException.ThrowIfNull(context.MessageType);
-        ArgumentException.ThrowIfNullOrEmpty(context.Topic);
-
-        if (!String.IsNullOrEmpty(context.OperationOverride))
-            return context.OperationOverride;
-
-        if (!String.IsNullOrEmpty(_options.SubscriptionIdentity))
-            return _options.SubscriptionIdentity;
-
-        if (context.MessageType.GetCustomAttribute<MessageRouteAttribute>()?.Subscription is { Length: > 0 } subscription)
-            return subscription;
-
-        if (!String.IsNullOrEmpty(_options.ServiceIdentity))
-            return _options.ServiceIdentity;
-
-        return GetDefaultServiceIdentity();
-    }
-
-
-    private static string GetDefaultServiceIdentity()
-    {
-        string? configured = Environment.GetEnvironmentVariable("FOUNDATIO_SUBSCRIPTION_ID");
-        if (!String.IsNullOrEmpty(configured))
-            return configured;
-
-        configured = Environment.GetEnvironmentVariable("FOUNDATIO_SERVICE_ID");
-        if (!String.IsNullOrEmpty(configured))
-            return configured;
-
-        return MessageRoutingConventions.ToKebabCase(AppDomain.CurrentDomain.FriendlyName);
-    }
 }

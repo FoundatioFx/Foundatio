@@ -31,7 +31,7 @@ public sealed record RetryPolicy
     /// Marks a handler failure as unrecoverable: when the predicate returns true the message is dead-lettered
     /// immediately instead of retried (a poison message should not burn its attempt budget). Deserialization failures
     /// are always unrecoverable regardless of this predicate. A subscription's
-    /// <see cref="MessageSubscriptionOptions.DeadLetterWhen"/> overrides this default.
+    /// <see cref="MessageHandlerOptions.DeadLetterWhen"/> overrides this default.
     /// </summary>
     public Func<Exception, bool>? DeadLetterWhen { get; init; }
 
@@ -117,6 +117,9 @@ public sealed record RejectOptions
 public interface IMessageContext
 {
     string Id { get; }
+
+    /// <summary>Broker-assigned ID for diagnostics; may change when a message is re-sent.</summary>
+    string BrokerMessageId { get; }
     ReadOnlyMemory<byte> Body { get; }
     MessageHeaders Headers { get; }
     string? CorrelationId { get; }

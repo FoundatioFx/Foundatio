@@ -2,17 +2,22 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Foundatio;
+using Foundatio.Extensions.Hosting.Jobs;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
 
 public class JobSchedulerTests
 {
+    private static JobTypeRegistry CreateJobRegistry() => new(typeof(JobSchedulerTests).GetNestedTypes(System.Reflection.BindingFlags.NonPublic)
+        .Where(t => t.IsClass && !t.IsAbstract && typeof(IJob).IsAssignableFrom(t))
+        .Select(t => new JobTypeRegistration(t.FullName!, t)));
+
     [Fact]
     public async Task EnqueueDueOccurrencesAsync_WhenOccurrenceIsDue_CreatesSingleGlobalOccurrenceAsync()
     {
@@ -26,7 +31,7 @@ public class JobSchedulerTests
         {
             Name = "nightly",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob)
+            JobType = typeof(ScheduledProbeJob).FullName!
         }, cancellationToken);
 
         var first = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
@@ -34,13 +39,13 @@ public class JobSchedulerTests
 
         var dispatch = Assert.Single(first);
         Assert.Empty(second);
-        Assert.Equal("nightly:20260101000000:global", dispatch.DispatchId);
-        Assert.Equal(ScheduledDispatchKind.JobOccurrence, dispatch.Kind);
-        Assert.Equal("nightly", dispatch.Headers["job.name"]);
+        Assert.Equal("nightly:20260101000000:global", dispatch.JobId);
+        Assert.Equal("nightly", dispatch.Name);
+        Assert.Empty(await store.ClaimDueDispatchesAsync(now, 100, "other-node", TimeSpan.FromMinutes(1), cancellationToken));
 
         var state = await store.GetAsync(dispatch.JobId!, cancellationToken);
         Assert.NotNull(state);
-        Assert.Equal(JobStatus.Scheduled, state.Status);
+        Assert.Equal(JobStatus.Queued, state.Status);
         Assert.Equal(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), state.ScheduledForUtc);
     }
 
@@ -57,7 +62,7 @@ public class JobSchedulerTests
         {
             Name = "frequent",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob),
+            JobType = typeof(ScheduledProbeJob).FullName!,
             Overlap = OverlapPolicy.AllowConcurrent,
             MisfireWindow = TimeSpan.FromMinutes(10)
         }, cancellationToken);
@@ -73,40 +78,6 @@ public class JobSchedulerTests
     }
 
     [Fact]
-    public async Task JobRuntimeService_RunsQueuedJobsAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var probe = new JobSchedulerProbe();
-        var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
-        var store = new InMemoryJobRuntimeStore();
-        var scheduler = new InMemoryScheduledJobStore();
-        var registry = new JobTypeRegistry([new JobTypeRegistration("probe", typeof(ScheduledProbeJob))]);
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a", jobTypes: registry);
-        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a", jobTypes: registry);
-        var client = new JobClient(store, jobTypes: registry);
-
-        var service = new Foundatio.Extensions.Hosting.Jobs.JobRuntimeService(processor, worker,
-            options: new Foundatio.Extensions.Hosting.Jobs.JobRuntimeServiceOptions { PollInterval = TimeSpan.FromMilliseconds(50) });
-
-        await ((Microsoft.Extensions.Hosting.IHostedService)service).StartAsync(cancellationToken);
-        try
-        {
-            var handle = await client.EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
-
-            JobState? state = null;
-            for (int i = 0; i < 100 && (state = await handle.GetStateAsync(cancellationToken))?.Status != JobStatus.Completed; i++)
-                await Task.Delay(50, cancellationToken);
-
-            Assert.Equal(JobStatus.Completed, state?.Status);
-            Assert.Equal(1, probe.RunCount);
-        }
-        finally
-        {
-            await ((Microsoft.Extensions.Hosting.IHostedService)service).StopAsync(cancellationToken);
-        }
-    }
-
-    [Fact]
     public async Task RunDueOccurrencesAsync_WhenOccurrenceIsDue_RunsConfiguredJobAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -116,19 +87,19 @@ public class JobSchedulerTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
+        var processor = new JobScheduleProcessor(scheduler, store, new JobScheduleProcessorOptions { NodeId = "node-a" });
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
         await scheduler.ScheduleAsync(new ScheduledJobDefinition
         {
             Name = "nightly",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob)
+            JobType = typeof(ScheduledProbeJob).FullName!
         }, cancellationToken);
         var scheduled = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
 
-        int completed = await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
+        int completed = await worker.RunQueuedAsync(cancellationToken: cancellationToken);
 
         var dispatch = Assert.Single(scheduled);
         var state = await store.GetAsync(dispatch.JobId!, cancellationToken);
@@ -154,15 +125,15 @@ public class JobSchedulerTests
         {
             Name = "per-node",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob),
+            JobType = typeof(ScheduledProbeJob).FullName!,
             Scope = ScheduledJobScope.PerNode
         }, cancellationToken);
 
         var first = await nodeA.EnqueueDueOccurrencesAsync(now, cancellationToken);
         var second = await nodeB.EnqueueDueOccurrencesAsync(now, cancellationToken);
 
-        Assert.Equal("per-node:20260101000000:node-a", Assert.Single(first).DispatchId);
-        Assert.Equal("per-node:20260101000000:node-b", Assert.Single(second).DispatchId);
+        Assert.Equal("per-node:20260101000000:node-a", Assert.Single(first).JobId);
+        Assert.Equal("per-node:20260101000000:node-b", Assert.Single(second).JobId);
 
         var states = await store.QueryAsync(new JobQuery { Name = "per-node" }, cancellationToken);
         Assert.Equal(2, states.Count);
@@ -181,7 +152,7 @@ public class JobSchedulerTests
         {
             Name = "daily",
             Cron = "0 0 * * *",
-            JobType = typeof(ScheduledProbeJob),
+            JobType = typeof(ScheduledProbeJob).FullName!,
             MisfireWindow = TimeSpan.FromMinutes(10)
         }, cancellationToken);
 
@@ -200,7 +171,7 @@ public class JobSchedulerTests
         var scheduler = new InMemoryScheduledJobStore();
         var store = new InMemoryJobRuntimeStore();
         await using var transport = new InMemoryMessageTransport();
-        var processor = CreateProcessor(scheduler, store, "node-a", transport);
+        var dispatcher = new ScheduledMessageDispatcher(store, transport);
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         await store.ScheduleDispatchAsync(new ScheduledDispatchState
@@ -212,13 +183,13 @@ public class JobSchedulerTests
             DueUtc = now
         }, cancellationToken);
 
-        int completed = await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
+        int completed = await dispatcher.DispatchDueAsync(now, cancellationToken: cancellationToken);
 
         Assert.Equal(1, completed);
         var pull = Assert.IsAssignableFrom<ISupportsPull>(transport);
         var entries = await pull.ReceiveAsync(DestinationAddress.ForQueue("work"), new ReceiveRequest { MaxMessages = 1, MaxWaitTime = TimeSpan.FromMilliseconds(50) }, cancellationToken);
         var entry = Assert.Single(entries);
-        Assert.Equal("delayed-message", entry.Id);
+        Assert.Equal("delayed-message", entry.ApplicationMessageId);
         Assert.Equal("hello"u8.ToArray(), entry.Body.ToArray());
     }
 
@@ -227,35 +198,37 @@ public class JobSchedulerTests
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var scheduler = new InMemoryScheduledJobStore();
-        var store = new InMemoryJobRuntimeStore();
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero));
+        var store = new InMemoryJobRuntimeStore(time);
         var probe = new JobSchedulerProbe();
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry(), TimeProvider = time });
+        var processor = new JobScheduleProcessor(scheduler, store, new JobScheduleProcessorOptions { NodeId = "node-a" });
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
 
         await scheduler.ScheduleAsync(new ScheduledJobDefinition
         {
             Name = "nightly",
             Cron = "* * * * *",
-            JobType = typeof(FailingScheduledJob),
+            JobType = typeof(FailingScheduledJob).FullName!,
             MaxAttempts = 2
         }, cancellationToken);
         var scheduled = await processor.EnqueueDueOccurrencesAsync(now, cancellationToken);
         var dispatch = Assert.Single(scheduled);
 
-        Assert.Equal(0, await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
         var retried = await store.GetAsync(dispatch.JobId!, cancellationToken);
         Assert.NotNull(retried);
-        Assert.Equal(JobStatus.Scheduled, retried.Status);
+        Assert.Equal(JobStatus.Queued, retried.Status);
         Assert.Equal(1, retried.Attempt);
 
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(now.AddMinutes(2), cancellationToken: cancellationToken));
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
         var deadlettered = await store.GetAsync(dispatch.JobId!, cancellationToken);
         Assert.NotNull(deadlettered);
-        Assert.Equal(JobStatus.DeadLettered, deadlettered.Status);
+        Assert.Equal(JobStatus.Failed, deadlettered.Status);
         Assert.Equal(2, deadlettered.Attempt);
         Assert.Equal(2, probe.RunCount);
     }
@@ -270,8 +243,8 @@ public class JobSchedulerTests
         await using var serviceProvider = new ServiceCollection()
             .AddSingleton(probe)
             .BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
-        var processor = new JobScheduleProcessor(scheduler, store, worker, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
+        var processor = new JobScheduleProcessor(scheduler, store, new JobScheduleProcessorOptions { NodeId = "node-a" });
         var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
         const string jobId = "nightly:20260101000000:global";
 
@@ -279,7 +252,7 @@ public class JobSchedulerTests
         {
             Name = "nightly",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob),
+            JobType = typeof(ScheduledProbeJob).FullName!,
             MaxAttempts = 2
         }, cancellationToken);
         await store.CreateIfAbsentAsync(new JobState
@@ -287,22 +260,15 @@ public class JobSchedulerTests
             JobId = jobId,
             Name = "nightly",
             Status = JobStatus.Processing,
+            JobType = typeof(ScheduledProbeJob).FullName,
+            MaxAttempts = 2,
             Attempt = 1,
             NodeId = "node-b",
             LeaseExpiresUtc = now.AddMinutes(-1),
             ScheduledForUtc = now.AddSeconds(-30)
         }, cancellationToken);
-        await store.ScheduleDispatchAsync(new ScheduledDispatchState
-        {
-            DispatchId = jobId,
-            Kind = ScheduledDispatchKind.JobOccurrence,
-            JobName = "nightly",
-            Body = Array.Empty<byte>(),
-            DueUtc = now,
-            JobId = jobId
-        }, cancellationToken);
 
-        Assert.Equal(1, await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
 
         var state = await store.GetAsync(jobId, cancellationToken);
         Assert.NotNull(state);
@@ -312,13 +278,13 @@ public class JobSchedulerTests
     }
 
     [Fact]
-    public async Task RunQueuedAsync_DoesNotClaimScheduledOccurrencesAsync()
+    public async Task RunQueuedAsync_ClaimsScheduledOccurrencesThroughTheSameWorkerAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var store = new InMemoryJobRuntimeStore();
         var probe = new JobSchedulerProbe();
         await using var serviceProvider = new ServiceCollection().AddSingleton(probe).BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: "node-a");
+        var worker = new JobWorker(store, serviceProvider, new JobWorkerOptions { NodeId = "node-a", JobTypes = CreateJobRegistry() });
 
         // A CRON occurrence sitting in Queued (the scheduler transitioned it Scheduled->Queued) must NOT be claimed by
         // the generic worker — only the scheduler runs occurrences, with its own retry/dead-letter accounting.
@@ -331,30 +297,9 @@ public class JobSchedulerTests
             ScheduledForUtc = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)
         }, cancellationToken);
 
-        Assert.Equal(0, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
-        Assert.Equal(0, probe.RunCount);
-        Assert.Equal(JobStatus.Queued, (await store.GetAsync("nightly:20260101000000:global", cancellationToken))!.Status);
-    }
-
-    [Fact]
-    public async Task RunDueOccurrencesAsync_WhenOccurrenceIsTerminal_RetiresDispatchInsteadOfReschedulingAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var scheduler = new InMemoryScheduledJobStore();
-        var store = new InMemoryJobRuntimeStore();
-        var processor = CreateProcessor(scheduler, store, "node-a");
-        var now = new DateTimeOffset(2026, 1, 1, 0, 0, 30, TimeSpan.Zero);
-        const string jobId = "nightly:20260101000000:global";
-
-        await scheduler.ScheduleAsync(new ScheduledJobDefinition { Name = "nightly", Cron = "* * * * *", JobType = typeof(ScheduledProbeJob) }, cancellationToken);
-        // A worker completed the occurrence but crashed before retiring its dispatch: a terminal job with a live dispatch.
-        await store.CreateIfAbsentAsync(new JobState { JobId = jobId, Name = "nightly", Status = JobStatus.Completed, ScheduledForUtc = now.AddSeconds(-30) }, cancellationToken);
-        await store.ScheduleDispatchAsync(new ScheduledDispatchState { DispatchId = jobId, Kind = ScheduledDispatchKind.JobOccurrence, JobName = "nightly", Body = Array.Empty<byte>(), DueUtc = now, JobId = jobId }, cancellationToken);
-
-        await processor.RunDueOccurrencesAsync(now, cancellationToken: cancellationToken);
-
-        // The dispatch for a terminal occurrence must be retired, not rescheduled +1min and re-claimed forever.
-        Assert.Empty(await store.ClaimDueDispatchesAsync(now.AddMinutes(5), 10, "node-b", TimeSpan.FromMinutes(5), cancellationToken));
+        Assert.Equal(1, await worker.RunQueuedAsync(cancellationToken: cancellationToken));
+        Assert.Equal(1, probe.RunCount);
+        Assert.Equal(JobStatus.Completed, (await store.GetAsync("nightly:20260101000000:global", cancellationToken))!.Status);
     }
 
     [Fact]
@@ -372,7 +317,7 @@ public class JobSchedulerTests
         {
             Name = "per-node",
             Cron = "* * * * *",
-            JobType = typeof(ScheduledProbeJob),
+            JobType = typeof(ScheduledProbeJob).FullName!,
             Scope = ScheduledJobScope.PerNode // default Overlap = SkipIfRunning, which runs the active-occurrence check
         }, cancellationToken);
 
@@ -385,90 +330,44 @@ public class JobSchedulerTests
     }
 
     [Fact]
-    public async Task AddFoundatio_WithRuntimeStore_AutoRegistersAndRunsPumpAsync()
+    public async Task UseRuntimeStore_RegistersClientsWithoutStartingWorkersAsync()
     {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var probe = new JobSchedulerProbe();
-        var services = new ServiceCollection().AddSingleton(probe);
-        var foundatio = services.AddFoundatio();
-        foundatio.Jobs.UseInMemory();
-        foundatio.Jobs.AddJobType<ScheduledProbeJob>("probe");
+        var services = new ServiceCollection();
+        services.AddFoundatio().Jobs.UseInMemory();
         await using var provider = services.BuildServiceProvider();
+        Assert.Empty(provider.GetServices<IHostedService>());
+        Assert.NotNull(provider.GetRequiredService<IJobClient>());
+    }
 
-        // Configuring a runtime store auto-registers the pump — no separate AddJobRuntimeService — so a hosted process
-        // runs IJobClient-submitted jobs (and drains delayed messaging) without extra wiring.
-        var pump = Assert.Single(provider.GetServices<IHostedService>().OfType<JobRuntimePumpService>());
-        await pump.StartAsync(cancellationToken);
+    [Fact]
+    public async Task AddJobWorker_ExplicitlyRunsQueuedJobsAndRegistersOnceAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var probe = new JobSchedulerProbe();
+        var services = new ServiceCollection().AddLogging().AddSingleton(probe);
+        services.AddJobWorker();
+        services.AddFoundatio().Jobs.UseInMemory().Jobs.AddJobType<ScheduledProbeJob>("probe");
+        services.AddJobWorker();
+        await using var provider = services.BuildServiceProvider();
+        var hosted = Assert.Single(provider.GetServices<IHostedService>());
+        await hosted.StartAsync(token);
         try
         {
-            var handle = await provider.GetRequiredService<IJobClient>().EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
-
+            var handle = await provider.GetRequiredService<IJobClient>().EnqueueAsync<ScheduledProbeJob>(cancellationToken: token);
             JobState? state = null;
-            for (int i = 0; i < 100 && (state = await handle.GetStateAsync(cancellationToken))?.Status != JobStatus.Completed; i++)
-                await Task.Delay(50, cancellationToken);
-
+            for (int i = 0; i < 100 && (state = await handle.GetStateAsync(token))?.Status != JobStatus.Completed; i++)
+                await Task.Delay(50, token);
             Assert.Equal(JobStatus.Completed, state?.Status);
             Assert.Equal(1, probe.RunCount);
         }
         finally
         {
-            await pump.StopAsync(cancellationToken);
+            await hosted.StopAsync(token);
         }
     }
 
-    [Fact]
-    public async Task ConfigureRuntimePump_Disabled_DoesNotPumpAsync()
-    {
-        var cancellationToken = TestContext.Current.CancellationToken;
-        var probe = new JobSchedulerProbe();
-        var services = new ServiceCollection().AddSingleton(probe);
-        var foundatio = services.AddFoundatio();
-        foundatio.Jobs.UseInMemory();
-        foundatio.Jobs.AddJobType<ScheduledProbeJob>("probe");
-        foundatio.Jobs.ConfigureRuntimePump(o => o.Enabled = false); // opt out of automatic pumping
-        await using var provider = services.BuildServiceProvider();
-
-        var pump = Assert.Single(provider.GetServices<IHostedService>().OfType<JobRuntimePumpService>());
-        await pump.StartAsync(cancellationToken);
-        try
-        {
-            var handle = await provider.GetRequiredService<IJobClient>().EnqueueAsync<ScheduledProbeJob>(cancellationToken: cancellationToken);
-
-            // With the pump disabled, the job is never claimed: it stays Queued and the job never runs.
-            await Task.Delay(300, cancellationToken);
-            Assert.Equal(JobStatus.Queued, (await handle.GetStateAsync(cancellationToken))!.Status);
-            Assert.Equal(0, probe.RunCount);
-        }
-        finally
-        {
-            await pump.StopAsync(cancellationToken);
-        }
-    }
-
-    [Fact]
-    public async Task AddJobRuntimeService_BeforeUseRuntimeStore_RegistersExactlyOnePumpAsync()
-    {
-        var services = new ServiceCollection().AddSingleton(new JobSchedulerProbe());
-        // Hosting-first ordering must not stack a second pump: AddJobRuntimeService only tunes the single core pump.
-        Foundatio.Extensions.Hosting.Jobs.JobHostExtensions.AddJobRuntimeService(services, o => o.PollInterval = TimeSpan.FromMilliseconds(25));
-        services.AddFoundatio().Jobs.UseInMemory();
-        await using var provider = services.BuildServiceProvider();
-
-        var hostedServices = provider.GetServices<IHostedService>().ToList();
-        Assert.Single(hostedServices.OfType<JobRuntimePumpService>());
-        Assert.Empty(hostedServices.OfType<Foundatio.Extensions.Hosting.Jobs.JobRuntimeService>());
-        // The options passed to AddJobRuntimeService are carried onto that single pump.
-        Assert.Equal(TimeSpan.FromMilliseconds(25), provider.GetRequiredService<JobRuntimePumpOptions>().PollInterval);
-    }
-
-    private static JobScheduleProcessor CreateProcessor(IScheduledJobStore scheduler, IJobRuntimeStore store, string nodeId, IMessageTransport? transport = null)
-    {
-        var serviceProvider = new ServiceCollection()
-            .AddSingleton(new JobSchedulerProbe())
-            .BuildServiceProvider();
-        var worker = new JobWorker(store, serviceProvider, nodeId: nodeId);
-        return new JobScheduleProcessor(scheduler, store, worker, nodeId: nodeId, transport: transport);
-    }
+    private static JobScheduleProcessor CreateProcessor(IScheduledJobStore scheduler, IJobRuntimeStore store, string nodeId)
+        => new(scheduler, store, new JobScheduleProcessorOptions { NodeId = nodeId });
 
     private sealed class JobSchedulerProbe
     {

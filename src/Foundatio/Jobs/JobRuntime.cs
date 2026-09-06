@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Foundatio.Jobs;
 
@@ -39,8 +38,7 @@ public enum JobStatus
 public enum ScheduledDispatchKind
 {
     QueueMessage,
-    PubSubMessage,
-    JobOccurrence
+    PubSubMessage
 }
 
 public sealed record JobState
@@ -58,9 +56,19 @@ public sealed record JobState
     public int? Progress { get; init; }
     public string? ProgressMessage { get; init; }
     public int Attempt { get; init; }
+    /// <summary>Total execution attempts allowed, including retries and crash recovery.</summary>
+    public int MaxAttempts { get; init; } = 3;
+    /// <summary>Earliest execution time, including persisted retry delays.</summary>
+    public DateTimeOffset? AvailableUtc { get; init; }
+    /// <summary>Unique ownership token for the current execution; changes on every claim.</summary>
+    public string? ClaimToken { get; init; }
+    /// <summary>Optional node affinity for per-node scheduled work.</summary>
+    public string? RequiredNodeId { get; init; }
+    /// <summary>Schedule that created this occurrence; null for ad hoc jobs.</summary>
+    public string? ScheduleName { get; init; }
     public string? NodeId { get; init; }
-    public DateTimeOffset CreatedUtc { get; init; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset LastUpdatedUtc { get; init; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CreatedUtc { get; init; }
+    public DateTimeOffset LastUpdatedUtc { get; init; }
     public DateTimeOffset? StartedUtc { get; init; }
     public DateTimeOffset? CompletedUtc { get; init; }
     public DateTimeOffset? LeaseExpiresUtc { get; init; }
@@ -69,40 +77,21 @@ public sealed record JobState
     public DateTimeOffset? ScheduledForUtc { get; init; }
 }
 
-/// <summary>
-/// Store-author SPI: consumed by <see cref="IJobRuntimeStore"/> implementations to apply atomic state transitions;
-/// application code never constructs one.
-/// </summary>
-public sealed record JobStatePatch
-{
-    public JobStatus? Status { get; init; }
-    public string? JobType { get; init; }
-    public int? Progress { get; init; }
-    public string? ProgressMessage { get; init; }
-    public string? Error { get; init; }
-    public int AttemptDelta { get; init; }
-    public string? NodeId { get; init; }
-    public bool ClearNodeId { get; init; }
-    public DateTimeOffset? LeaseExpiresUtc { get; init; }
-    public bool ClearLeaseExpiresUtc { get; init; }
-    public DateTimeOffset? LastUpdatedUtc { get; init; }
-    public DateTimeOffset? StartedUtc { get; init; }
-    public DateTimeOffset? CompletedUtc { get; init; }
-    public bool? CancellationRequested { get; init; }
-}
-
 public sealed record JobQuery
 {
     public string? Name { get; init; }
     public JobStatus? Status { get; init; }
     public int Limit { get; init; } = 100;
 
-    /// <summary>
-    /// When true, CRON occurrences (jobs with <see cref="JobState.ScheduledForUtc"/> set) are excluded. The job
-    /// scheduler is the sole executor of occurrences, so the generic worker must not claim them — otherwise it would
-    /// run them without the per-definition retry/dead-letter accounting that lives in the scheduler.
-    /// </summary>
-    public bool ExcludeOccurrences { get; init; }
+    /// <summary>Continue after the token returned by the preceding page, using the same filters.</summary>
+    public string? AfterJobId { get; init; }
+
+    public void Validate()
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(Limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(Limit, 1000);
+    }
+
 }
 
 public sealed record ScheduledDispatchState
@@ -110,11 +99,8 @@ public sealed record ScheduledDispatchState
     public required string DispatchId { get; init; }
     public ScheduledDispatchKind Kind { get; init; }
 
-    /// <summary>The transport destination for queue/pub-sub message dispatches; null for job occurrences.</summary>
+    /// <summary>The transport destination for a queue message or publication.</summary>
     public DestinationAddress? Destination { get; init; }
-
-    /// <summary>The scheduled job definition name for <see cref="ScheduledDispatchKind.JobOccurrence"/> dispatches; null for message dispatches.</summary>
-    public string? JobName { get; init; }
 
     public required ReadOnlyMemory<byte> Body { get; init; }
     public MessageHeaders Headers { get; init; } = MessageHeaders.Empty;
@@ -123,11 +109,12 @@ public sealed record ScheduledDispatchState
     public string? ClaimOwner { get; init; }
     public DateTimeOffset? ClaimExpiresUtc { get; init; }
     public int Attempts { get; init; }
-    public string? JobId { get; init; }
 }
 
 public sealed record JobRequestOptions
 {
+    /// <summary>Total execution attempts, including retries. Default three.</summary>
+    public int MaxAttempts { get; init; } = 3;
     public string? JobId { get; init; }
     public string? Name { get; init; }
 }
@@ -136,6 +123,7 @@ public sealed record JobTypeRegistration(string Name, Type JobType);
 
 public interface IJobTypeRegistry
 {
+    IReadOnlyCollection<string> Names { get; }
     string GetName(Type jobType);
     Type Resolve(string name);
 }
@@ -153,6 +141,8 @@ public sealed class JobTypeRegistry : IJobTypeRegistry
         foreach (var registration in registrations ?? [])
             Add(registration);
     }
+
+    public IReadOnlyCollection<string> Names => _nameToType.Keys;
 
     public string GetName(Type jobType)
     {
@@ -172,21 +162,7 @@ public sealed class JobTypeRegistry : IJobTypeRegistry
         if (_nameToType.TryGetValue(name, out var registered))
             return registered;
 
-        var jobType = Type.GetType(name, throwOnError: false);
-        if (jobType is null)
-        {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                jobType = assembly.GetType(name, throwOnError: false);
-                if (jobType is not null)
-                    break;
-            }
-        }
-
-        if (jobType is null || !typeof(IJob).IsAssignableFrom(jobType))
-            throw new JobException($"Job type \"{name}\" could not be resolved to an IJob implementation.");
-
-        return jobType;
+        throw new JobException($"Job type \"{name}\" is not registered. Register each worker job with AddFoundatio().Jobs.AddJobType<TJob>().");
     }
 
     private void Add(JobTypeRegistration registration)
@@ -240,20 +216,20 @@ public sealed class JobHandle
 public sealed class JobExecutionContext
 {
     private readonly IJobRuntimeStore? _store;
-    private readonly string _nodeId;
+    private readonly string _claimToken;
     private readonly TimeSpan _lease;
     private readonly ReadOnlyMemory<byte>? _payload;
     private readonly string? _payloadType;
     private readonly ISerializer? _serializer;
     private readonly object? _detachedArguments;
 
-    internal JobExecutionContext(string jobId, int attempt, CancellationToken cancellationToken, IJobRuntimeStore store, string nodeId, TimeSpan lease, ReadOnlyMemory<byte>? payload = null, string? payloadType = null, ISerializer? serializer = null)
+    internal JobExecutionContext(string jobId, int attempt, CancellationToken cancellationToken, IJobRuntimeStore store, string claimToken, TimeSpan lease, ReadOnlyMemory<byte>? payload = null, string? payloadType = null, ISerializer? serializer = null)
     {
         JobId = jobId;
         Attempt = attempt;
         CancellationToken = cancellationToken;
         _store = store;
-        _nodeId = nodeId;
+        _claimToken = claimToken;
         _lease = lease;
         _payload = payload;
         _payloadType = payloadType;
@@ -271,7 +247,7 @@ public sealed class JobExecutionContext
         Attempt = attempt;
         CancellationToken = cancellationToken;
         _store = null;
-        _nodeId = String.Empty;
+        _claimToken = String.Empty;
         _lease = TimeSpan.Zero;
         _detachedArguments = arguments;
     }
@@ -318,8 +294,12 @@ public sealed class JobExecutionContext
         return args ?? throw new InvalidOperationException($"Job \"{JobId}\" arguments (stored type \"{_payloadType}\") deserialized to null as \"{typeof(TArgs).FullName}\".");
     }
 
-    public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
-        => _store?.SetProgressAsync(JobId, percent, message, cancellationToken) ?? Task.CompletedTask;
+    public async Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        if (_store is not null && !await _store.ReportJobProgressAsync(JobId, _claimToken, percent, message, cancellationToken).AnyContext())
+            throw new JobException($"Job {JobId} no longer owns its execution lease.");
+    }
 
     /// <summary>
     /// Forces an immediate lease renewal. Long-running jobs do NOT need to call this — the worker renews the lease
@@ -327,7 +307,7 @@ public sealed class JobExecutionContext
     /// to observe lease health explicitly (a false return means another node now owns the job).
     /// </summary>
     public Task<bool> RenewLeaseAsync(CancellationToken cancellationToken = default)
-        => _store?.RenewClaimAsync(JobId, _nodeId, _lease, cancellationToken) ?? Task.FromResult(true);
+        => _store?.RenewJobLeaseAsync(JobId, _claimToken, _lease, cancellationToken) ?? Task.FromResult(true);
 
     public Task<bool> IsCancellationRequestedAsync(CancellationToken cancellationToken = default)
         => _store?.IsCancellationRequestedAsync(JobId, cancellationToken) ?? Task.FromResult(CancellationToken.IsCancellationRequested);
@@ -336,7 +316,7 @@ public sealed class JobExecutionContext
 public interface IJobMonitor
 {
     Task<JobState?> GetAsync(string jobId, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<JobState>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
+    Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
 }
 
 public interface IJobClient
@@ -348,7 +328,7 @@ public interface IJobClient
     /// <see cref="JobState.Payload"/> via the runtime's serializer and surface to the job through
     /// <see cref="JobExecutionContext.GetArguments{TArgs}"/>.
     /// </summary>
-    Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob where TArgs : class;
+    Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob<TArgs> where TArgs : class;
 
     Task<JobHandle> EnqueueAsync(Type jobType, JobRequestOptions? options = null, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
@@ -358,14 +338,11 @@ public interface IJobWorker
 {
     Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default);
     Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default);
-    // Reclaims jobs stuck in Processing past their lease (a worker that crashed mid-run): re-queues them while attempts
-    // remain, otherwise dead-letters them. Returns the number recovered.
-    Task<int> RecoverStaleAsync(int maxAttempts, int limit = 100, CancellationToken cancellationToken = default);
 }
 
 /// <summary>
 /// Durable storage for time-gated dispatches: delayed messages beyond a transport's native ceiling, store-parked
-/// retry delays, and CRON occurrence triggers. This is the only store contract the messaging client depends on —
+/// retry delays, and delayed publication. This is the only store contract the messaging client depends on —
 /// a provider that offers durable scheduling without the full job runtime implements just this.
 /// </summary>
 public interface IScheduledDispatchStore
@@ -382,51 +359,42 @@ public interface IScheduledDispatchStore
 /// <summary>
 /// The full job runtime store: job state persistence, queries, lease/ownership management, cancellation signaling,
 /// and scheduled-dispatch storage. The state/lease/cancellation members are deliberately one contract — transitions
-/// verify ownership atomically (see <see cref="TryTransitionAsync"/> / <see cref="TryReclaimExpiredAsync"/>), so
+/// verify current unexpired claim tokens atomically, so
 /// splitting them would break the compare-and-set semantics correctness depends on.
 /// </summary>
-public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore
+public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore, IScheduledJobStore
 {
+    /// <summary>Atomically creates an occurrence, enforcing its unique ID and optional overlap exclusion.</summary>
+    Task<bool> CreateOccurrenceAsync(JobState initial, bool allowOverlap = false, CancellationToken cancellationToken = default);
+    /// <summary>Atomically claims the oldest eligible due job, including recoverable expired executions.</summary>
+    Task<JobState?> ClaimNextAsync(JobClaimRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Atomically claims a specific eligible job.</summary>
+    Task<JobState?> ClaimJobAsync(string jobId, JobClaimRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Completes, retries, cancels, or returns work only while the supplied claim is still valid.</summary>
+    Task<bool> CompleteJobAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default);
+    /// <summary>Renews only the current, unexpired execution claim.</summary>
+    Task<bool> RenewJobLeaseAsync(string jobId, string claimToken, TimeSpan lease, CancellationToken cancellationToken = default);
+    /// <summary>Updates progress only for the current, unexpired execution claim.</summary>
+    Task<bool> ReportJobProgressAsync(string jobId, string claimToken, int? percent = null, string? message = null, CancellationToken cancellationToken = default);
+    /// <summary>Removes up to limit terminal jobs completed more than seven days ago. IDs remain deduplicated until removal.</summary>
+    Task<int> CleanupAsync(int limit = 1000, CancellationToken cancellationToken = default);
     Task CreateIfAbsentAsync(JobState initial, CancellationToken cancellationToken = default);
-    // When expectedNodeId is non-null, the transition only succeeds if the job is currently owned by that node.
-    // Worker terminal transitions pass their node id so a stale worker whose lease was reclaimed cannot overwrite
-    // the new owner's state. Relational stores implement this as one atomic conditional statement
-    // (UPDATE ... WHERE status = expected AND owner matches), never a read followed by a write.
-    Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default);
-    // Claim only when unowned or lease-expired — a single atomic conditional statement in a relational store
-    // (UPDATE ... WHERE owner IS NULL OR lease expired), never read-then-write.
-    Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
-    // Renew only while still owned by nodeId — a single atomic conditional statement in a relational store
-    // (UPDATE ... WHERE owner = nodeId), never read-then-write.
-    Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default);
-    // Release only while still owned by nodeId — a single atomic conditional statement in a relational store
-    // (UPDATE ... WHERE owner = nodeId), never read-then-write.
-    Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default);
-    // Returns plain (non-CRON-occurrence) jobs in Processing whose lease has expired as of <paramref name="now"/>
-    // (their owning worker is presumed dead), so the runtime can reclaim them. CRON occurrences are excluded — the
-    // scheduler recovers those with its own per-definition retry budget.
-    Task<IReadOnlyList<JobState>> GetExpiredProcessingAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default);
-    // Atomically reclaims a stale Processing job: the transition applies only if the job is STILL owned by
-    // <paramref name="expectedNodeId"/> and its lease is STILL expired as of <paramref name="now"/>. This closes the
-    // race where the owning worker renews its lease between a stale scan and the reclaim (which would otherwise
-    // re-queue a live job and double-run it). Relational stores implement this as one atomic conditional statement
-    // (UPDATE ... WHERE owner = expected AND lease expired), never read-then-write.
-    Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default);
-    Task SetProgressAsync(string jobId, int? percent = null, string? message = null, CancellationToken cancellationToken = default);
-    Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default);
     Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default);
     Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken cancellationToken = default);
 }
 
-public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
+public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
 {
     private readonly ConcurrentDictionary<string, JobState> _jobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ScheduledDispatchState> _dispatches = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
+    private readonly int _maxJobs;
 
-    public InMemoryJobRuntimeStore(TimeProvider? timeProvider = null)
+    public InMemoryJobRuntimeStore(TimeProvider? timeProvider = null, int maxJobs = 100000)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxJobs, 1);
+        _maxJobs = maxJobs;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -435,12 +403,18 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
         ArgumentNullException.ThrowIfNull(initial);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var now = _timeProvider.GetUtcNow();
-        _jobs.TryAdd(initial.JobId, initial with
+        lock (_lock)
         {
-            CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc,
-            LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc
-        });
+            if (_jobs.ContainsKey(initial.JobId))
+                return Task.CompletedTask;
+            EnsureCapacity();
+            var now = _timeProvider.GetUtcNow();
+            _jobs.TryAdd(initial.JobId, initial with
+            {
+                CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc,
+                LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc
+            });
+        }
 
         return Task.CompletedTask;
     }
@@ -452,174 +426,39 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
         return Task.FromResult(state);
     }
 
-    public Task<IReadOnlyList<JobState>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+    public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         cancellationToken.ThrowIfCancellationRequested();
 
-        IEnumerable<JobState> results = _jobs.Values;
-        if (!String.IsNullOrEmpty(query.Name))
-            results = results.Where(s => String.Equals(s.Name, query.Name, StringComparison.Ordinal));
-
-        if (query.Status is { } status)
-            results = results.Where(s => s.Status == status);
-
-        if (query.ExcludeOccurrences)
-            results = results.Where(s => s.ScheduledForUtc is null);
-
-        return Task.FromResult<IReadOnlyList<JobState>>(results
-            .OrderByDescending(s => s.LastUpdatedUtc)
-            .Take(Math.Max(1, query.Limit))
-            .ToArray());
+        query.Validate();
+        var candidates = _jobs.Values
+            .Where(s => (query.Name is null || s.Name == query.Name) && (query.Status is null || s.Status == query.Status))
+            .Where(s => query.AfterJobId is null || StringComparer.Ordinal.Compare(s.JobId, query.AfterJobId) > 0)
+            .OrderBy(s => s.JobId, StringComparer.Ordinal).Take(query.Limit + 1).ToArray();
+        return Task.FromResult(new JobPage(candidates.Take(query.Limit).ToArray(), candidates.Length > query.Limit ? candidates[query.Limit - 1].JobId : null));
     }
 
-    public Task<bool> TryTransitionAsync(string jobId, JobStatus expectedStatus, JobStatus newStatus, JobStatePatch? patch = null, string? expectedNodeId = null, CancellationToken cancellationToken = default)
+    private void EnsureCapacity()
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        if (_jobs.Count >= _maxJobs)
+            throw new JobException($"Job storage capacity ({_maxJobs}) reached. Run cleanup or increase capacity before enqueueing more work.");
+    }
 
+    public Task<int> CleanupAsync(int limit = 1000, CancellationToken cancellationToken = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
+        cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
-            if (!_jobs.TryGetValue(jobId, out var current) || current.Status != expectedStatus)
-                return Task.FromResult(false);
-
-            if (expectedNodeId is not null && !String.Equals(current.NodeId, expectedNodeId, StringComparison.Ordinal))
-                return Task.FromResult(false);
-
-            _jobs[jobId] = ApplyPatch(current, patch) with
-            {
-                Status = newStatus,
-                LastUpdatedUtc = patch?.LastUpdatedUtc ?? _timeProvider.GetUtcNow()
-            };
-            return Task.FromResult(true);
+            var cutoff = _timeProvider.GetUtcNow().AddDays(-7);
+            var expired = _jobs.Values.Where(s => s.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled or JobStatus.DeadLettered)
+                .Where(s => s.CompletedUtc <= cutoff).OrderBy(s => s.CompletedUtc).Take(limit).ToArray();
+            foreach (var state in expired)
+                _jobs.TryRemove(state.JobId, out _);
+            return Task.FromResult(expired.Length);
         }
-    }
-
-    public Task<bool> TryClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(nodeId);
-
-        lock (_lock)
-        {
-            if (!_jobs.TryGetValue(jobId, out var current))
-                return Task.FromResult(false);
-
-            var now = _timeProvider.GetUtcNow();
-            if (!String.IsNullOrEmpty(current.NodeId) && current.LeaseExpiresUtc is { } leaseExpires && leaseExpires > now && current.NodeId != nodeId)
-                return Task.FromResult(false);
-
-            _jobs[jobId] = current with
-            {
-                NodeId = nodeId,
-                LeaseExpiresUtc = now.Add(lease),
-                LastUpdatedUtc = now
-            };
-            return Task.FromResult(true);
-        }
-    }
-
-    public Task<bool> RenewClaimAsync(string jobId, string nodeId, TimeSpan lease, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_lock)
-        {
-            if (!_jobs.TryGetValue(jobId, out var current) || current.NodeId != nodeId)
-                return Task.FromResult(false);
-
-            var now = _timeProvider.GetUtcNow();
-            _jobs[jobId] = current with
-            {
-                LeaseExpiresUtc = now.Add(lease),
-                LastUpdatedUtc = now
-            };
-            return Task.FromResult(true);
-        }
-    }
-
-    public Task<bool> ReleaseClaimAsync(string jobId, string nodeId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_lock)
-        {
-            if (!_jobs.TryGetValue(jobId, out var current) || current.NodeId != nodeId)
-                return Task.FromResult(false);
-
-            _jobs[jobId] = current with
-            {
-                NodeId = null,
-                LeaseExpiresUtc = null,
-                LastUpdatedUtc = _timeProvider.GetUtcNow()
-            };
-            return Task.FromResult(true);
-        }
-    }
-
-    public Task<IReadOnlyList<JobState>> GetExpiredProcessingAsync(DateTimeOffset now, int limit, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        lock (_lock)
-        {
-            var expired = _jobs.Values
-                // Exclude CRON occurrences (ScheduledForUtc set): the scheduler owns their recovery via its own
-                // per-definition retry budget. This path only recovers plain IJobClient-submitted jobs.
-                .Where(s => s.Status == JobStatus.Processing && s.ScheduledForUtc is null && s.LeaseExpiresUtc is { } lease && lease <= now)
-                .OrderBy(s => s.LeaseExpiresUtc)
-                .Take(Math.Max(1, limit))
-                .ToArray();
-
-            return Task.FromResult<IReadOnlyList<JobState>>(expired);
-        }
-    }
-
-    public Task<bool> TryReclaimExpiredAsync(string jobId, DateTimeOffset now, string expectedNodeId, JobStatus newStatus, JobStatePatch? patch = null, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        ArgumentException.ThrowIfNullOrEmpty(expectedNodeId);
-
-        lock (_lock)
-        {
-            if (!_jobs.TryGetValue(jobId, out var current))
-                return Task.FromResult(false);
-
-            // Re-check (atomically, under the lock) the conditions the stale scan saw: still Processing, still owned by
-            // the same node, and the lease is still expired. A renewal or re-claim that landed since the scan fails one
-            // of these and the reclaim is skipped.
-            if (current.Status != JobStatus.Processing || !String.Equals(current.NodeId, expectedNodeId, StringComparison.Ordinal))
-                return Task.FromResult(false);
-
-            if (current.LeaseExpiresUtc is not { } lease || lease > now)
-                return Task.FromResult(false);
-
-            _jobs[jobId] = ApplyPatch(current, patch) with
-            {
-                Status = newStatus,
-                LastUpdatedUtc = patch?.LastUpdatedUtc ?? _timeProvider.GetUtcNow()
-            };
-            return Task.FromResult(true);
-        }
-    }
-
-    public Task SetProgressAsync(string jobId, int? percent = null, string? message = null, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        UpdateJob(jobId, state => state with
-        {
-            Progress = percent ?? state.Progress,
-            ProgressMessage = message ?? state.ProgressMessage,
-            LastUpdatedUtc = _timeProvider.GetUtcNow()
-        });
-
-        return Task.CompletedTask;
-    }
-
-    public Task IncrementAttemptAsync(string jobId, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        UpdateJob(jobId, state => state with { Attempt = state.Attempt + 1, LastUpdatedUtc = _timeProvider.GetUtcNow() });
-        return Task.CompletedTask;
     }
 
     public Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
@@ -628,6 +467,8 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
         return Task.FromResult(UpdateJob(jobId, state => state with
         {
             CancellationRequested = true,
+            Status = state.Status is JobStatus.Queued or JobStatus.Scheduled ? JobStatus.Cancelled : state.Status,
+            CompletedUtc = state.Status is JobStatus.Queued or JobStatus.Scheduled ? _timeProvider.GetUtcNow() : state.CompletedUtc,
             LastUpdatedUtc = _timeProvider.GetUtcNow()
         }));
     }
@@ -681,7 +522,7 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
 
         lock (_lock)
         {
-            if (_dispatches.TryGetValue(dispatchId, out var dispatch) && dispatch.ClaimOwner == nodeId)
+            if (_dispatches.TryGetValue(dispatchId, out var dispatch) && dispatch.ClaimOwner == nodeId && dispatch.ClaimExpiresUtc > _timeProvider.GetUtcNow())
                 _dispatches.TryRemove(dispatchId, out _);
         }
 
@@ -694,7 +535,7 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
 
         lock (_lock)
         {
-            if (_dispatches.TryGetValue(dispatchId, out var dispatch) && dispatch.ClaimOwner == nodeId)
+            if (_dispatches.TryGetValue(dispatchId, out var dispatch) && dispatch.ClaimOwner == nodeId && dispatch.ClaimExpiresUtc > _timeProvider.GetUtcNow())
             {
                 _dispatches[dispatchId] = dispatch with
                 {
@@ -720,27 +561,7 @@ public sealed class InMemoryJobRuntimeStore : IJobRuntimeStore
         }
     }
 
-    private JobState ApplyPatch(JobState state, JobStatePatch? patch)
-    {
-        if (patch is null)
-            return state;
 
-        return state with
-        {
-            Status = patch.Status ?? state.Status,
-            JobType = patch.JobType ?? state.JobType,
-            Progress = patch.Progress ?? state.Progress,
-            ProgressMessage = patch.ProgressMessage ?? state.ProgressMessage,
-            Error = patch.Error ?? state.Error,
-            Attempt = state.Attempt + patch.AttemptDelta,
-            NodeId = patch.ClearNodeId ? null : patch.NodeId ?? state.NodeId,
-            LeaseExpiresUtc = patch.ClearLeaseExpiresUtc ? null : patch.LeaseExpiresUtc ?? state.LeaseExpiresUtc,
-            LastUpdatedUtc = patch.LastUpdatedUtc ?? state.LastUpdatedUtc,
-            StartedUtc = patch.StartedUtc ?? state.StartedUtc,
-            CompletedUtc = patch.CompletedUtc ?? state.CompletedUtc,
-            CancellationRequested = patch.CancellationRequested ?? state.CancellationRequested
-        };
-    }
 }
 
 public sealed class JobClient : IJobClient
@@ -763,7 +584,7 @@ public sealed class JobClient : IJobClient
         return EnqueueCoreAsync(typeof(TJob), args: null, options, cancellationToken);
     }
 
-    public Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob where TArgs : class
+    public Task<JobHandle> EnqueueAsync<TJob, TArgs>(TArgs args, JobRequestOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob<TArgs> where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(args);
         return EnqueueCoreAsync(typeof(TJob), args, options, cancellationToken);
@@ -780,7 +601,9 @@ public sealed class JobClient : IJobClient
         if (!typeof(IJob).IsAssignableFrom(jobType))
             throw new ArgumentException("Job type must implement IJob.", nameof(jobType));
 
+        JobArgumentContract.Validate(jobType, args);
         options ??= new JobRequestOptions();
+        ArgumentOutOfRangeException.ThrowIfLessThan(options.MaxAttempts, 1);
         string jobId = options.JobId ?? Guid.NewGuid().ToString("N");
         string name = options.Name ?? jobType.Name;
         var now = _timeProvider.GetUtcNow();
@@ -790,6 +613,7 @@ public sealed class JobClient : IJobClient
             JobId = jobId,
             Name = name,
             JobType = _jobTypes.GetName(jobType),
+            MaxAttempts = options.MaxAttempts,
             // Explicitly typed: the byte[] -> ReadOnlyMemory conversion maps a null array to an EMPTY memory, which
             // would make an argless job look like it carries a zero-byte payload.
             Payload = args is null ? null : (ReadOnlyMemory<byte>?)_serializer.SerializeToBytes(args),
@@ -840,355 +664,4 @@ public sealed record JobWorkerOptions
     public TimeSpan? CancellationPollInterval { get; init; }
     public ISerializer? Serializer { get; init; }
     public int MaxConcurrency { get; init; } = 1;
-}
-
-public sealed class JobWorker : IJobWorker
-{
-    private static readonly TimeSpan DefaultLease = TimeSpan.FromMinutes(5);
-    private static readonly TimeSpan DefaultCancellationPollInterval = TimeSpan.FromSeconds(1);
-
-    private readonly IJobRuntimeStore _store;
-    private readonly IServiceProvider _serviceProvider;
-    private readonly TimeProvider _timeProvider;
-    private readonly IJobTypeRegistry _jobTypes;
-    private readonly ISerializer _serializer;
-    private readonly string _nodeId;
-    private readonly TimeSpan _lease;
-    private readonly TimeSpan _cancellationPollInterval;
-    private readonly int _maxConcurrency;
-
-    /// <summary>Preferred overload for hand-wiring: the optional dependencies come in as one options record.</summary>
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, JobWorkerOptions? options = null)
-        : this(store, serviceProvider, options?.TimeProvider, options?.NodeId, options?.Lease, options?.JobTypes, options?.CancellationPollInterval, options?.Serializer, options?.MaxConcurrency ?? 1)
-    {
-    }
-
-    public JobWorker(IJobRuntimeStore store, IServiceProvider serviceProvider, TimeProvider? timeProvider = null, string? nodeId = null, TimeSpan? lease = null, IJobTypeRegistry? jobTypes = null, TimeSpan? cancellationPollInterval = null, ISerializer? serializer = null, int maxConcurrency = 1)
-    {
-        _store = store ?? throw new ArgumentNullException(nameof(store));
-        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
-        _timeProvider = timeProvider ?? TimeProvider.System;
-        _jobTypes = jobTypes ?? new JobTypeRegistry();
-        _serializer = serializer ?? DefaultSerializer.Instance;
-        _nodeId = !String.IsNullOrEmpty(nodeId) ? nodeId : NodeIdentity.Current;
-        _lease = lease ?? DefaultLease;
-
-        // Default 1 preserves per-node ordering and today's behavior; raise for I/O-bound jobs. Each in-flight job
-        // still gets its own DI scope, lease renewal, and cancellation watcher.
-        _maxConcurrency = Math.Max(1, maxConcurrency);
-
-        // Cooperative cancellation is observed by polling the runtime store. The default is intentionally
-        // conservative (one poll per second per running job) so a real store isn't hammered when many jobs run
-        // concurrently; callers that need snappier cancellation can opt into a tighter interval.
-        var pollInterval = cancellationPollInterval ?? DefaultCancellationPollInterval;
-        _cancellationPollInterval = pollInterval > TimeSpan.Zero ? pollInterval : DefaultCancellationPollInterval;
-    }
-
-    public async Task<int> RunQueuedAsync(int limit = 100, CancellationToken cancellationToken = default)
-    {
-        var queued = await _store.QueryAsync(new JobQuery
-        {
-            Status = JobStatus.Queued,
-            Limit = limit,
-            // The scheduler owns CRON occurrences (retry/dead-letter accounting); the generic worker must skip them.
-            ExcludeOccurrences = true
-        }, cancellationToken).ConfigureAwait(false);
-
-        if (_maxConcurrency <= 1)
-        {
-            int sequentialCompleted = 0;
-            foreach (var state in queued)
-            {
-                if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
-                    sequentialCompleted++;
-            }
-
-            return sequentialCompleted;
-        }
-
-        // Bounded pool: at most _maxConcurrency jobs in flight; a slot frees the moment a job settles, so one slow
-        // job never idles the rest of the batch. Claims are TryTransition-guarded, so concurrency cannot double-run.
-        int completed = 0;
-        using var slots = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
-        var inFlight = new List<Task>(queued.Count);
-
-        foreach (var state in queued)
-        {
-            await slots.WaitAsync(cancellationToken).ConfigureAwait(false);
-            inFlight.Add(Task.Run(async () =>
-            {
-                try
-                {
-                    if (await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false))
-                        Interlocked.Increment(ref completed);
-                }
-                finally
-                {
-                    slots.Release();
-                }
-            }, CancellationToken.None));
-        }
-
-        await Task.WhenAll(inFlight).ConfigureAwait(false);
-        return completed;
-    }
-
-    public async Task<bool> RunAsync(string jobId, CancellationToken cancellationToken = default)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(jobId);
-
-        var state = await _store.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-        return state is not null && await RunJobStateAsync(state, cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<int> RecoverStaleAsync(int maxAttempts, int limit = 100, CancellationToken cancellationToken = default)
-    {
-        var now = _timeProvider.GetUtcNow();
-        var stale = await _store.GetExpiredProcessingAsync(now, limit, cancellationToken).ConfigureAwait(false);
-
-        int recovered = 0;
-        foreach (var state in stale)
-        {
-            if (String.IsNullOrEmpty(state.NodeId))
-                continue;
-
-            // TryReclaimExpiredAsync re-verifies (atomically) that the job is still owned by the same presumed-dead
-            // node and its lease is still expired, so a worker that renewed between the scan and here is not yanked out
-            // from under itself (no double-run). Attempts are incremented per run, so a job that keeps crashing is
-            // dead-lettered once it has consumed its attempt budget instead of being re-queued forever.
-            //
-            // Budget semantics: `maxAttempts` is the TOTAL number of attempts, so dead-letter at
-            // Attempt >= maxAttempts. (CRON occurrences use ScheduledJobDefinition.MaxAttempts with the SAME total
-            // semantics and are excluded from this path via GetExpiredProcessingAsync; the scheduler owns their recovery.)
-            bool transitioned = state.Attempt >= maxAttempts
-                ? await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.DeadLettered, new JobStatePatch
-                {
-                    Error = $"Lease expired after {state.Attempt} attempt(s) without completion.",
-                    ClearNodeId = true,
-                    ClearLeaseExpiresUtc = true,
-                    CompletedUtc = now,
-                    LastUpdatedUtc = now
-                }, cancellationToken).ConfigureAwait(false)
-                : await _store.TryReclaimExpiredAsync(state.JobId, now, state.NodeId, JobStatus.Queued, new JobStatePatch
-                {
-                    ClearNodeId = true,
-                    ClearLeaseExpiresUtc = true,
-                    LastUpdatedUtc = now
-                }, cancellationToken).ConfigureAwait(false);
-
-            if (transitioned)
-                recovered++;
-        }
-
-        return recovered;
-    }
-
-    private async Task<bool> RunJobStateAsync(JobState state, CancellationToken cancellationToken)
-    {
-        if (state.Status != JobStatus.Queued)
-            return false;
-
-        var now = _timeProvider.GetUtcNow();
-        if (!await _store.TryTransitionAsync(state.JobId, JobStatus.Queued, JobStatus.Processing, new JobStatePatch
-        {
-            NodeId = _nodeId,
-            StartedUtc = now,
-            LeaseExpiresUtc = now.Add(_lease),
-            AttemptDelta = 1
-        }, cancellationToken: cancellationToken).ConfigureAwait(false))
-        {
-            return false;
-        }
-
-        var jobTag = new KeyValuePair<string, object?>("job", state.Name);
-        JobInstruments.Started.Add(1, jobTag);
-
-        using var linkedCancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        // Lease renewal and cancellation polling are supervised loops owned by this run — started here, stopped and
-        // awaited when the run ends — not fire-and-forget timers whose failures would vanish unobserved.
-        using var supervisionCancellationTokenSource = new CancellationTokenSource();
-        var leaseLoop = Task.Run(() => RunLeaseRenewalLoopAsync(state.JobId, linkedCancellationTokenSource, supervisionCancellationTokenSource.Token), CancellationToken.None);
-        var cancellationLoop = Task.Run(() => RunCancellationPollLoopAsync(state.JobId, linkedCancellationTokenSource, supervisionCancellationTokenSource.Token), CancellationToken.None);
-
-        try
-        {
-            var jobType = ResolveJobType(state);
-
-            // Hand the job its execution context (identity, attempt, typed payload, progress, heartbeat, cancellation).
-            // The store was already incremented to this attempt by the Queued -> Processing transition above.
-            var context = new JobExecutionContext(state.JobId, state.Attempt + 1, linkedCancellationTokenSource.Token, _store, _nodeId, _lease, state.Payload, state.PayloadType, _serializer);
-
-            var result = await ExecuteJobAsync(jobType, context).ConfigureAwait(false);
-            var completedAt = _timeProvider.GetUtcNow();
-
-            if (result.IsCancelled)
-            {
-                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Cancelled, new JobStatePatch
-                {
-                    Error = result.Message,
-                    CompletedUtc = completedAt,
-                    ClearNodeId = true,
-                    ClearLeaseExpiresUtc = true
-                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-            else if (result.IsSuccess)
-            {
-                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Completed, new JobStatePatch
-                {
-                    CompletedUtc = completedAt,
-                    ClearNodeId = true,
-                    ClearLeaseExpiresUtc = true,
-                    Progress = 100
-                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-            else
-            {
-                await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
-                {
-                    Error = result.Message,
-                    CompletedUtc = completedAt,
-                    ClearNodeId = true,
-                    ClearLeaseExpiresUtc = true
-                }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            }
-
-            if (result.IsCancelled)
-                JobInstruments.Cancelled.Add(1, jobTag);
-            else if (result.IsSuccess)
-                JobInstruments.Completed.Add(1, jobTag);
-            else
-                JobInstruments.Failed.Add(1, jobTag);
-
-            JobInstruments.RunTime.Record((completedAt - now).TotalMilliseconds, jobTag);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            var failedAt = _timeProvider.GetUtcNow();
-            await _store.TryTransitionAsync(state.JobId, JobStatus.Processing, JobStatus.Failed, new JobStatePatch
-            {
-                Error = ex.Message,
-                CompletedUtc = failedAt,
-                ClearNodeId = true,
-                ClearLeaseExpiresUtc = true
-            }, expectedNodeId: _nodeId, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-            JobInstruments.Failed.Add(1, jobTag);
-            JobInstruments.RunTime.Record((failedAt - now).TotalMilliseconds, jobTag);
-            throw;
-        }
-        finally
-        {
-            // Stop and await the supervision loops so no renewal/poll outlives its run (and so their final state is
-            // observed rather than dropped on the floor). The loops never throw; they classify failures themselves.
-            await supervisionCancellationTokenSource.CancelAsync().ConfigureAwait(false);
-            await Task.WhenAll(leaseLoop, cancellationLoop).ConfigureAwait(false);
-        }
-    }
-
-    // Every execution gets its own async DI scope, owned for exactly the run: scoped services (DbContexts, units of
-    // work) resolve per run and are disposed when it ends, instead of silently resolving as effective singletons from
-    // the root container. A bare provider without scope support (custom IServiceProvider) runs unscoped.
-    private async Task<JobResult> ExecuteJobAsync(Type jobType, JobExecutionContext context)
-    {
-        if (_serviceProvider.GetService(typeof(IServiceScopeFactory)) is IServiceScopeFactory scopeFactory)
-        {
-            await using var scope = scopeFactory.CreateAsyncScope();
-            var job = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(scope.ServiceProvider, jobType);
-            return await job.TryRunAsync(context).ConfigureAwait(false);
-        }
-
-        var unscoped = (IJob)ActivatorUtilities.GetServiceOrCreateInstance(_serviceProvider, jobType);
-        return await unscoped.TryRunAsync(context).ConfigureAwait(false);
-    }
-
-    private Type ResolveJobType(JobState state)
-    {
-        if (String.IsNullOrEmpty(state.JobType))
-            throw new JobException($"Job \"{state.JobId}\" does not have a job type and cannot be executed by a worker.");
-
-        try
-        {
-            return _jobTypes.Resolve(state.JobType);
-        }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
-        {
-            throw new JobException($"Job type \"{state.JobType}\" for job \"{state.JobId}\" could not be resolved to an IJob implementation.", ex);
-        }
-    }
-
-    // Lease renewal supervises its own failures. A clean "renewal denied" means the lease was lost to another node.
-    // Renewal that keeps THROWING (a store outage) is treated the same once the lease window passes without one
-    // success — the lease has lapsed on the broker's clock too, so another node may already have reclaimed the job,
-    // and letting this run continue would double-execute its side effects. Both paths cancel the run; the terminal
-    // transition (guarded by expectedNodeId) then cannot overwrite the new owner's state.
-    private async Task RunLeaseRenewalLoopAsync(string jobId, CancellationTokenSource jobCancellation, CancellationToken supervision)
-    {
-        // Renew well before the lease elapses so a slow-but-alive worker keeps ownership and is not reclaimed.
-        var interval = TimeSpan.FromMilliseconds(Math.Max(250, _lease.TotalMilliseconds / 3));
-        long lastSuccessTimestamp = _timeProvider.GetTimestamp();
-
-        while (!supervision.IsCancellationRequested)
-        {
-            await _timeProvider.SafeDelay(interval, supervision).ConfigureAwait(false);
-            if (supervision.IsCancellationRequested)
-                return;
-
-            try
-            {
-                if (!await _store.RenewClaimAsync(jobId, _nodeId, _lease, CancellationToken.None).ConfigureAwait(false))
-                {
-                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
-                    return;
-                }
-
-                lastSuccessTimestamp = _timeProvider.GetTimestamp();
-            }
-            catch (Exception)
-            {
-                // Transient store failure: retry next tick — but never outlive the lease on hope.
-                if (_timeProvider.GetElapsedTime(lastSuccessTimestamp) >= _lease)
-                {
-                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
-                    return;
-                }
-            }
-        }
-    }
-
-    // Cancellation polling keeps polling through store failures (a missed poll only delays cooperative cancellation,
-    // it cannot double-run anything), and stops when the run ends or cancellation is observed.
-    private async Task RunCancellationPollLoopAsync(string jobId, CancellationTokenSource jobCancellation, CancellationToken supervision)
-    {
-        while (!supervision.IsCancellationRequested)
-        {
-            await _timeProvider.SafeDelay(_cancellationPollInterval, supervision).ConfigureAwait(false);
-            if (supervision.IsCancellationRequested)
-                return;
-
-            try
-            {
-                if (await _store.IsCancellationRequestedAsync(jobId, CancellationToken.None).ConfigureAwait(false))
-                {
-                    await CancelRunAsync(jobCancellation).ConfigureAwait(false);
-                    return;
-                }
-            }
-            catch (Exception)
-            {
-            }
-        }
-    }
-
-    private static async Task CancelRunAsync(CancellationTokenSource jobCancellation)
-    {
-        try
-        {
-            await jobCancellation.CancelAsync().ConfigureAwait(false);
-        }
-        catch (ObjectDisposedException)
-        {
-            // The run already completed and disposed its token source; nothing left to cancel.
-        }
-    }
 }

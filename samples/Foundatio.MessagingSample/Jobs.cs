@@ -7,15 +7,14 @@ public sealed record ReportArgs(string Format, string RequestedBy);
 
 /// <summary>
 /// A durable, on-demand job (submitted via <c>POST /reports</c> with typed <see cref="ReportArgs"/>). It runs on
-/// whichever instance's runtime pump claims it, reads its arguments back with
+/// whichever instance's job worker claims it, reads its arguments back with
 /// <c>context.GetArguments&lt;ReportArgs&gt;()</c>, and reports progress through its
 /// <see cref="JobExecutionContext"/> so <c>GET /reports/{id}</c> can observe it.
 /// </summary>
-public sealed class GenerateReportJob(InstanceInfo instance, ILogger<GenerateReportJob> logger) : IJob
+public sealed class GenerateReportJob(InstanceInfo instance, ILogger<GenerateReportJob> logger) : IJob<ReportArgs>
 {
-    public async Task<JobResult> RunAsync(JobExecutionContext context)
+    public async Task<JobResult> RunAsync(ReportArgs args, JobExecutionContext context)
     {
-        var args = context.GetArguments<ReportArgs>();
         logger.LogInformation("[{Instance}] generating {Format} report {JobId} for {RequestedBy}", instance.Id, args.Format, context.JobId, args.RequestedBy);
 
         for (int percent = 25; percent <= 100; percent += 25)

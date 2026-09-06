@@ -42,7 +42,8 @@ public sealed record RecordedMessage
 /// var services = new ServiceCollection();
 /// services.AddFoundatio()
 ///     .Messaging.UseTestHarness()
-///     .Messaging.AddHandler&lt;OrderPlaced, SendConfirmationHandler&gt;();
+///     .Messaging.AddSubscriber&lt;OrderPlaced, SendConfirmationHandler&gt;("confirmation");
+/// services.AddMessageConsumers();
 /// // start hosted services, then:
 /// await bus.PublishAsync(new OrderPlaced(42));
 /// await harness.WaitForIdleAsync();

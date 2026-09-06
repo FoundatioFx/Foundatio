@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -113,6 +112,12 @@ public sealed record TransportEntry
     /// <summary>The broker-assigned message id — stable across redeliveries of the same message.</summary>
     public required string Id { get; init; }
 
+    /// <summary>The caller-supplied TransportMessage.MessageId, preserved independently of the broker ID.</summary>
+    public string? ApplicationMessageId { get; init; }
+
+    /// <summary>The media type of the original serialized body.</summary>
+    public string? ContentType { get; init; }
+
     /// <summary>The source address the entry was received from (the queue or subscription, never the owning topic).</summary>
     public required DestinationAddress Destination { get; init; }
 
@@ -125,6 +130,9 @@ public sealed record TransportEntry
     public int DeliveryCount { get; init; } = 1;
 
     public DateTimeOffset? EnqueuedUtc { get; init; }
+
+    /// <summary>Expiry of this delivery's lease. Null means the delivery has no expiring lease.</summary>
+    public DateTimeOffset? LockExpiresUtc { get; init; }
 
     /// <summary>The settlement token for this delivery; see <see cref="Receipt"/>.</summary>
     public required Receipt Receipt { get; init; }
@@ -203,6 +211,9 @@ public sealed record DestinationDeclaration
     /// <summary>The canonical identity of the destination to provision — the SAME address the runtime later sends to,
     /// receives from, and asks stats for, so provisioning and runtime can never disagree on a destination's identity.</summary>
     public required DestinationAddress Address { get; init; }
+
+    /// <summary>For temporary subscriptions, the lease after which the subscription and backlog expire without renewal.</summary>
+    public TimeSpan? AutoDeleteAfter { get; init; }
 
     // Provider-specific creation arguments for transports that provision destinations (e.g. RabbitMQ queue arguments).
     // Retry and dead-letter behavior is owned by the core RetryPolicy, not declared here, so destinations stay simple.
@@ -338,9 +349,13 @@ public interface ISupportsDeadLetter : IMessageTransport
 {
     Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct = default);
 
-    // Reads dead-lettered entries for a destination so callers can inspect raw payloads (including poison messages
-    // that never deserialized) and the dead-letter reason header. Read entries are removed from the dead-letter store.
-    Task<IReadOnlyList<TransportEntry>> ReceiveDeadLetteredAsync(DestinationAddress destination, ReceiveRequest request, CancellationToken ct = default);
+    /// <summary>Inspects raw dead letters without consuming them.</summary>
+    Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default);
+    /// <summary>Explicitly removes one dead letter by its broker ID. Returns false if it no longer exists.</summary>
+    Task<bool> DeleteDeadLetteredAsync(DestinationAddress destination, string id, CancellationToken cancellationToken = default);
+    /// <summary>Replays a dead letter to an explicit queue or topic, preserving its application ID and resetting retry headers.</summary>
+    Task<bool> ReplayDeadLetteredAsync(DestinationAddress source, string id, DestinationAddress target, CancellationToken cancellationToken = default);
+
 }
 
 public interface ISupportsLockRenewal : IMessageTransport
@@ -373,4 +388,11 @@ public interface ISupportsProvisioning : IMessageTransport
 public interface IPushSubscription : IAsyncDisposable
 {
     DestinationAddress Source { get; }
+}
+
+/// <summary>Temporary subscriptions whose ownership expires after a listener crashes.</summary>
+public interface ISupportsEphemeralSubscriptions : ISupportsProvisioning
+{
+    /// <summary>Extends an existing unexpired subscription lease. Returns false after ownership expires.</summary>
+    Task<bool> RenewSubscriptionAsync(DestinationAddress source, TimeSpan lease, CancellationToken cancellationToken = default);
 }

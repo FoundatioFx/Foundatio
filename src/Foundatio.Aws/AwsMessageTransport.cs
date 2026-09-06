@@ -1,19 +1,19 @@
-using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
-using System.Threading;
+using System.Text;
 using System.Threading.Tasks;
-using Amazon.SQS;
+using System.Threading;
+using System;
 using Amazon.SQS.Model;
-using Amazon.SimpleNotificationService;
+using Amazon.SQS;
 using Amazon.SimpleNotificationService.Model;
+using Amazon.SimpleNotificationService;
 using SnsMessageAttributeValue = Amazon.SimpleNotificationService.Model.MessageAttributeValue;
-using SqsMessageAttributeValue = Amazon.SQS.Model.MessageAttributeValue;
 using SqsMessage = Amazon.SQS.Model.Message;
+using SqsMessageAttributeValue = Amazon.SQS.Model.MessageAttributeValue;
 
 namespace Foundatio.Messaging;
 
@@ -34,6 +34,8 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 {
     private const string HeadersAttributeName = "fnd.headers";
     private const string EncodingAttributeName = "fnd.encoding";
+    private const string MessageIdAttributeName = "fnd.id";
+    private const string ContentTypeAttributeName = "fnd.content_type";
 
     // Well-known headers surfaced as native message attributes (in addition to the authoritative JSON blob) so brokers
     // can filter/route on them — e.g. SNS subscription filter policies match on native attributes.
@@ -101,17 +103,24 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
                 throw new NotSupportedException($"Transport \"{nameof(AwsMessageTransport)}\" does not support delayed delivery for Topic destinations (SNS has no native delay). Register a job runtime store so delayed publishes use the scheduled-dispatch fallback.");
 
             string topicArn = await ResolveTopicArnAsync(destination.Name, ct).ConfigureAwait(false);
-            foreach (var message in messages)
+            try
             {
-                var (body, encoding) = EncodeBody(message);
-                var response = await _sns.Value.PublishAsync(new PublishRequest
+                foreach (var message in messages)
                 {
-                    TopicArn = topicArn,
-                    Message = body,
-                    MessageAttributes = BuildAttributes(message.Headers, encoding, static value => new SnsMessageAttributeValue { DataType = "String", StringValue = value })
-                }, ct).ConfigureAwait(false);
+                    var (body, encoding) = EncodeBody(message);
+                    var response = await _sns.Value.PublishAsync(new PublishRequest
+                    {
+                        TopicArn = topicArn,
+                        Message = body,
+                        MessageAttributes = BuildAttributes(message, encoding, static value => new SnsMessageAttributeValue { DataType = "String", StringValue = value })
+                    }, ct).ConfigureAwait(false);
 
-                items.Add(new SendItemResult { MessageId = response.MessageId });
+                    items.Add(new SendItemResult { MessageId = response.MessageId });
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new TransportSendException(items.Count, ex);
             }
 
             return new SendResult { Items = items };
@@ -119,20 +128,27 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
         string queueUrl = await ResolveQueueUrlAsync(destination, ct).ConfigureAwait(false);
         int? delaySeconds = ToDelaySeconds(options.DeliverAt);
-        foreach (var message in messages)
+        try
         {
-            var (body, encoding) = EncodeBody(message);
-            var request = new SendMessageRequest
+            foreach (var message in messages)
             {
-                QueueUrl = queueUrl,
-                MessageBody = body,
-                MessageAttributes = BuildAttributes(message.Headers, encoding, static value => new SqsMessageAttributeValue { DataType = "String", StringValue = value })
-            };
-            if (delaySeconds is { } delay)
-                request.DelaySeconds = delay;
+                var (body, encoding) = EncodeBody(message);
+                var request = new SendMessageRequest
+                {
+                    QueueUrl = queueUrl,
+                    MessageBody = body,
+                    MessageAttributes = BuildAttributes(message, encoding, static value => new SqsMessageAttributeValue { DataType = "String", StringValue = value })
+                };
+                if (delaySeconds is { } delay)
+                    request.DelaySeconds = delay;
 
-            var response = await _sqs.Value.SendMessageAsync(request, ct).ConfigureAwait(false);
-            items.Add(new SendItemResult { MessageId = response.MessageId });
+                var response = await _sqs.Value.SendMessageAsync(request, ct).ConfigureAwait(false);
+                items.Add(new SendItemResult { MessageId = response.MessageId });
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new TransportSendException(items.Count, ex);
         }
 
         return new SendResult { Items = items };
@@ -162,6 +178,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         if (request.MaxWaitTime is { } wait)
             sqsRequest.WaitTimeSeconds = (int)Math.Clamp(wait.TotalSeconds, 0, 20);
 
+        var receiveStarted = DateTimeOffset.UtcNow;
         var response = await _sqs.Value.ReceiveMessageAsync(sqsRequest, ct).ConfigureAwait(false);
         if (response.Messages is not { Count: > 0 })
             return [];
@@ -172,7 +189,10 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
             entries.Add(new TransportEntry
             {
                 Id = message.MessageId,
+                ApplicationMessageId = GetAttribute(message.MessageAttributes, MessageIdAttributeName),
+                ContentType = GetAttribute(message.MessageAttributes, ContentTypeAttributeName),
                 Destination = source,
+                LockExpiresUtc = receiveStarted.AddSeconds(sqsRequest.VisibilityTimeout.GetValueOrDefault()),
                 Body = DecodeBody(message.Body, GetAttribute(message.MessageAttributes, EncodingAttributeName)),
                 Headers = FromSqsAttributes(message.MessageAttributes),
                 DeliveryCount = GetReceiveCount(message),
@@ -218,6 +238,8 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
         foreach (var declaration in declarations)
         {
+            if (declaration.AutoDeleteAfter is not null)
+                throw new NotSupportedException("SQS/SNS do not provide expiring subscription resources. Use an explicitly named durable subscription.");
             switch (declaration.Address.Role)
             {
                 case DestinationRole.Topic:
@@ -238,36 +260,91 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(destination);
-
         if (destination.Role == DestinationRole.Topic)
         {
-            if (_topicArns.TryRemove(destination.Name, out string? arn))
+            string? arn = await FindTopicArnAsync(destination.Name, ct).ConfigureAwait(false);
+            if (arn is not null)
                 await _sns.Value.DeleteTopicAsync(arn, ct).ConfigureAwait(false);
+            _topicArns.TryRemove(destination.Name, out _);
             return;
         }
 
-        // Queue and subscription destinations are both backed by an SQS queue named from the address key.
-        if (_queueUrls.TryRemove(destination.Key, out string? url))
-            await _sqs.Value.DeleteQueueAsync(url, ct).ConfigureAwait(false);
+        if (destination.Topic is { Length: > 0 } topic)
+        {
+            string? topicArn = await FindTopicArnAsync(topic, ct).ConfigureAwait(false);
+            if (topicArn is not null)
+            {
+                string queueArn = topicArn[..topicArn.LastIndexOf(':')].Replace(":sns:", ":sqs:", StringComparison.Ordinal) + ":" + ResourceName(destination.Key);
+                string? subscriptionArn = await FindSubscriptionArnAsync(topicArn, queueArn, ct).ConfigureAwait(false);
+                if (subscriptionArn is not null)
+                    await _sns.Value.UnsubscribeAsync(subscriptionArn, ct).ConfigureAwait(false);
+            }
+        }
+        try
+        {
+            var response = await _sqs.Value.GetQueueUrlAsync(ResourceName(destination.Key), ct).ConfigureAwait(false);
+            await _sqs.Value.DeleteQueueAsync(response.QueueUrl, ct).ConfigureAwait(false);
+        }
+        catch (QueueDoesNotExistException)
+        {
+        }
+        _queueUrls.TryRemove(destination.Key, out _);
     }
 
     public async Task<bool> ExistsAsync(DestinationAddress destination, CancellationToken ct)
     {
         ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(destination);
-
         if (destination.Role == DestinationRole.Topic)
-            return _topicArns.ContainsKey(destination.Name);
-
+            return await FindTopicArnAsync(destination.Name, ct).ConfigureAwait(false) is not null;
         try
         {
-            await _sqs.Value.GetQueueUrlAsync(ResourceName(destination.Key), ct).ConfigureAwait(false);
-            return true;
+            var queue = await _sqs.Value.GetQueueUrlAsync(ResourceName(destination.Key), ct).ConfigureAwait(false);
+            if (destination.Topic is not { Length: > 0 } topic)
+                return true;
+            string? topicArn = await FindTopicArnAsync(topic, ct).ConfigureAwait(false);
+            if (topicArn is null)
+                return false;
+            string queueArn = await GetQueueArnAsync(queue.QueueUrl, ct).ConfigureAwait(false);
+            return await FindSubscriptionArnAsync(topicArn, queueArn, ct).ConfigureAwait(false) is not null;
         }
         catch (QueueDoesNotExistException)
         {
             return false;
         }
+    }
+
+    private async Task<string?> FindTopicArnAsync(string name, CancellationToken ct)
+    {
+        string resourceName = ResourceName(name);
+        string? nextToken = null;
+        do
+        {
+            var page = await _sns.Value.ListTopicsAsync(new ListTopicsRequest { NextToken = nextToken }, ct).ConfigureAwait(false);
+            foreach (var topic in page.Topics ?? [])
+            {
+                if (topic.TopicArn.EndsWith(":" + resourceName, StringComparison.Ordinal))
+                    return topic.TopicArn;
+            }
+            nextToken = page.NextToken;
+        } while (!String.IsNullOrEmpty(nextToken));
+        return null;
+    }
+
+    private async Task<string?> FindSubscriptionArnAsync(string topicArn, string queueArn, CancellationToken ct)
+    {
+        string? nextToken = null;
+        do
+        {
+            var page = await _sns.Value.ListSubscriptionsByTopicAsync(new ListSubscriptionsByTopicRequest { TopicArn = topicArn, NextToken = nextToken }, ct).ConfigureAwait(false);
+            foreach (var subscription in page.Subscriptions ?? [])
+            {
+                if (subscription.Protocol == "sqs" && subscription.Endpoint == queueArn)
+                    return subscription.SubscriptionArn;
+            }
+            nextToken = page.NextToken;
+        } while (!String.IsNullOrEmpty(nextToken));
+        return null;
     }
 
     public async Task<MessageDestinationStats> GetStatsAsync(DestinationAddress destination, CancellationToken ct)
@@ -332,7 +409,7 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
     // (Name for queues, "topic/subscription" for subscriptions), so provisioning and every runtime path resolve the
     // same physical queue from the same address.
     private Task<string> ResolveQueueUrlAsync(DestinationAddress address, CancellationToken ct) =>
-        ResolveQueueUrlAsync(address, allowCreate: _options.AutoCreateDestinations, ct);
+        ResolveQueueUrlAsync(address, allowCreate: false, ct);
 
     private async Task<string> ResolveQueueUrlAsync(DestinationAddress address, bool allowCreate, CancellationToken ct)
     {
@@ -355,10 +432,10 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
         }
     }
 
-    // Implicit resolution (send/receive paths) honors AutoCreateDestinations; explicit provisioning via EnsureAsync
-    // always creates — that call IS the administrative intent the option exists to withhold from the data paths.
+    // Sending and receiving resolve existing resources; explicit provisioning via EnsureAsync
+    // creates missing resources according to the caller's topology policy.
     private Task<string> ResolveTopicArnAsync(string name, CancellationToken ct) =>
-        ResolveTopicArnAsync(name, allowCreate: _options.AutoCreateDestinations, ct);
+        ResolveTopicArnAsync(name, allowCreate: false, ct);
 
     private async Task<string> ResolveTopicArnAsync(string name, bool allowCreate, CancellationToken ct)
     {
@@ -375,12 +452,12 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
 
         // Auto-create is disabled (locked-down broker): look the topic up instead of creating it, and fail loudly when
         // it has not been provisioned out of band.
-        var existing = await _sns.Value.FindTopicAsync(ResourceName(name)).ConfigureAwait(false);
+        var existing = await FindTopicArnAsync(name, ct).ConfigureAwait(false);
         if (existing is null)
-            throw new InvalidOperationException($"SNS topic \"{ResourceName(name)}\" does not exist and {nameof(AwsMessageTransportOptions.AutoCreateDestinations)} is disabled. Provision it out of band or enable auto-creation.");
+            throw new InvalidOperationException($"SNS topic \"{ResourceName(name)}\" does not exist and implicit creation is disabled. Provision it with EnsureAsync or through the message bus topology policy.");
 
-        _topicArns[name] = existing.TopicArn;
-        return existing.TopicArn;
+        _topicArns[name] = existing;
+        return existing;
     }
 
     // SQS queue / SNS topic names allow only [A-Za-z0-9_-] (max 80 chars). Most logical names already conform, but a
@@ -512,13 +589,19 @@ public sealed class AwsMessageTransport : IMessageTransport, ISupportsPull, ISup
                 || contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static Dictionary<string, TAttribute> BuildAttributes<TAttribute>(MessageHeaders headers, string encoding, Func<string, TAttribute> stringAttribute)
+    private static Dictionary<string, TAttribute> BuildAttributes<TAttribute>(TransportMessage message, string encoding, Func<string, TAttribute> stringAttribute)
     {
+        var headers = message.Headers;
         var attributes = new Dictionary<string, TAttribute>(StringComparer.Ordinal)
         {
             [HeadersAttributeName] = stringAttribute(MessageHeaders.SerializeToJson(headers)),
             [EncodingAttributeName] = stringAttribute(encoding)
         };
+
+        if (!String.IsNullOrEmpty(message.MessageId))
+            attributes[MessageIdAttributeName] = stringAttribute(message.MessageId);
+        if (!String.IsNullOrEmpty(message.ContentType))
+            attributes[ContentTypeAttributeName] = stringAttribute(message.ContentType);
 
         foreach (string name in WellKnownNativeHeaders)
         {

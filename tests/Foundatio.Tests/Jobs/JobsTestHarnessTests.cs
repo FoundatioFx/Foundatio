@@ -11,6 +11,33 @@ namespace Foundatio.Tests.Jobs;
 public class JobsTestHarnessTests
 {
     [Fact]
+    public async Task RunAllQueued_MoreThanOneBatch_DrainsAllReadyJobsAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var (provider, probe) = CreateProvider();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<JobsTestHarness>();
+        for (int i = 0; i < 201; i++)
+            await harness.Client.EnqueueAsync<CounterJob>(cancellationToken: token);
+        Assert.Equal(201, await harness.RunAllQueuedAsync(token));
+        Assert.Equal(201, probe.RunCount);
+    }
+
+    [Fact]
+    public async Task RunToCompletion_LeavesOtherJobsQueuedAsync()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var (provider, probe) = CreateProvider();
+        await using var _ = provider;
+        var harness = provider.GetRequiredService<JobsTestHarness>();
+        var other = await harness.Client.EnqueueAsync<CounterJob>(cancellationToken: token);
+        var target = await harness.Client.EnqueueAsync<GreetingJob, GreetingArgs>(new GreetingArgs { Name = "ada" }, cancellationToken: token);
+        Assert.Equal(JobStatus.Completed, (await harness.RunToCompletionAsync(target, token)).Status);
+        Assert.Equal(JobStatus.Queued, (await other.GetStateAsync(token))!.Status);
+        Assert.Equal(0, probe.RunCount);
+    }
+
+    [Fact]
     public async Task RunAllQueued_RunsEnqueuedJobsToCompletionAsync()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
@@ -19,7 +46,7 @@ public class JobsTestHarnessTests
         var harness = provider.GetRequiredService<JobsTestHarness>();
 
         // The harness disables the auto pump, so nothing runs until the test says so.
-        Assert.False(provider.GetRequiredService<JobRuntimePumpOptions>().Enabled);
+        Assert.Empty(provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>());
 
         var handle = await harness.Client.EnqueueAsync<CounterJob>(cancellationToken: cancellationToken);
         Assert.Equal(JobStatus.Queued, (await harness.Monitor.GetAsync(handle.JobId, cancellationToken))!.Status);
@@ -46,7 +73,7 @@ public class JobsTestHarnessTests
         {
             Name = "every-minute",
             Cron = "* * * * *",
-            JobType = typeof(CounterJob)
+            JobType = typeof(CounterJob).FullName!
         }, cancellationToken);
 
         // One deterministic tick at a fixed "now": the 00:00:00 occurrence falls due within the misfire window and
@@ -84,7 +111,7 @@ public class JobsTestHarnessTests
         var probe = new Probe();
         var services = new ServiceCollection();
         services.AddSingleton(probe);
-        services.AddFoundatio().Jobs.UseTestHarness();
+        services.AddFoundatio().Jobs.UseTestHarness().Jobs.AddJobType<CounterJob>().Jobs.AddJobType<GreetingJob>();
         return (services.BuildServiceProvider(), probe);
     }
 
@@ -116,15 +143,15 @@ public class JobsTestHarnessTests
         public string? Name { get; set; }
     }
 
-    private sealed class GreetingJob : IJob
+    private sealed class GreetingJob : IJob<GreetingArgs>
     {
         private readonly Probe _probe;
 
         public GreetingJob(Probe probe) => _probe = probe;
 
-        public Task<JobResult> RunAsync(JobExecutionContext context)
+        public Task<JobResult> RunAsync(GreetingArgs arguments, JobExecutionContext context)
         {
-            _probe.Greeted(context.GetArguments<GreetingArgs>().Name);
+            _probe.Greeted(arguments.Name);
             return Task.FromResult(JobResult.Success);
         }
     }

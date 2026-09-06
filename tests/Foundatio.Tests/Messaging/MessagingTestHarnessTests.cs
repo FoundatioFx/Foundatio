@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Messaging;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +23,14 @@ public class MessagingTestHarnessTests
         await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
 
         var handled = new List<string>();
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((context, _) =>
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((context, _) =>
+        {
+            lock (handled)
+                handled.Add(context.Message.Id);
+            return Task.CompletedTask;
+        }, cancellationToken: cancellationToken);
+
+        await using var events = await bus.SubscribeAsync<HarnessOrder>((context, _) =>
         {
             lock (handled)
                 handled.Add(context.Message.Id);
@@ -61,11 +69,11 @@ public class MessagingTestHarnessTests
         await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
 
         int attempts = 0;
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((_, _) =>
         {
             Interlocked.Increment(ref attempts);
             throw new InvalidOperationException("always fails");
-        }, new MessageSubscriptionOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.Zero }, cancellationToken);
+        }, new MessageConsumerOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.Zero }, cancellationToken);
 
         await bus.SendAsync(new HarnessOrder { Id = "poison" }, cancellationToken: cancellationToken);
         await harness.WaitForIdleAsync(cancellationToken: cancellationToken);
@@ -91,12 +99,12 @@ public class MessagingTestHarnessTests
         await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
 
         int attempts = 0;
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((_, _) =>
         {
             if (Interlocked.Increment(ref attempts) == 1)
                 throw new InvalidOperationException("fails once");
             return Task.CompletedTask;
-        }, new MessageSubscriptionOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(500) }, cancellationToken);
+        }, new MessageConsumerOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMilliseconds(500) }, cancellationToken);
 
         await bus.SendAsync(new HarnessOrder { Id = "retry-me" }, cancellationToken: cancellationToken);
 
@@ -110,7 +118,7 @@ public class MessagingTestHarnessTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => harness.WaitForIdleAsync(TimeSpan.FromMilliseconds(-2), cancellationToken));
 
         // A destination that never drains fails with the busy destinations named.
-        await using var stuck = await bus.SubscribeAsync<HarnessOther>((_, handlerToken) => Task.Delay(Timeout.Infinite, handlerToken),
+        await using var stuck = await bus.ConsumeAsync<HarnessOther>((_, handlerToken) => Task.Delay(Timeout.Infinite, handlerToken),
             cancellationToken: cancellationToken);
         await bus.SendAsync(new HarnessOther { Id = "stuck" }, cancellationToken: cancellationToken);
 
@@ -125,7 +133,7 @@ public class MessagingTestHarnessTests
         await using var harness = new MessagingTestHarness();
         await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false });
 
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
 
         await bus.SendAsync(new HarnessOrder { Id = "one" }, cancellationToken: cancellationToken);
         await bus.SendAsync(new HarnessOrder { Id = "two" }, cancellationToken: cancellationToken);
@@ -154,11 +162,11 @@ public class MessagingTestHarnessTests
         // Zero backoff makes the whole retry cycle run without any wall-clock delay — the sleep-free way to test the
         // retry/dead-letter path (no fake clock to advance).
         int attempts = 0;
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((_, _) =>
         {
             Interlocked.Increment(ref attempts);
             throw new InvalidOperationException("always fails");
-        }, new MessageSubscriptionOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.Zero }, cancellationToken);
+        }, new MessageConsumerOptions { MaxAttempts = 3, RedeliveryBackoff = _ => TimeSpan.Zero }, cancellationToken);
 
         await bus.SendAsync(new HarnessOrder { Id = "poison" }, cancellationToken: cancellationToken);
 
@@ -182,12 +190,12 @@ public class MessagingTestHarnessTests
         await using var bus = new MessageBus(harness.Transport, new MessageBusOptions { OwnsTransport = false, TimeProvider = timeProvider });
 
         int attempts = 0;
-        await using var subscription = await bus.SubscribeAsync<HarnessOrder>((_, _) =>
+        await using var subscription = await bus.ConsumeAsync<HarnessOrder>((_, _) =>
         {
             if (Interlocked.Increment(ref attempts) == 1)
                 throw new InvalidOperationException("fails once");
             return Task.CompletedTask;
-        }, new MessageSubscriptionOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMinutes(5) }, cancellationToken);
+        }, new MessageConsumerOptions { MaxAttempts = 2, RedeliveryBackoff = _ => TimeSpan.FromMinutes(5) }, cancellationToken);
 
         await bus.SendAsync(new HarnessOrder { Id = "clockwork" }, cancellationToken: cancellationToken);
 
@@ -219,7 +227,7 @@ public class MessagingTestHarnessTests
 
         // Once a subscriber attaches (and drains the parked command), the queue is no longer unconsumed; the topic
         // publish stays listed — it was dropped for having zero subscriptions at publish time.
-        await using var subscription = await bus.SubscribeAsync<HarnessOther>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
+        await using var subscription = await bus.ConsumeAsync<HarnessOther>((_, _) => Task.CompletedTask, cancellationToken: cancellationToken);
         await harness.WaitForIdleAsync(cancellationToken: cancellationToken);
 
         Assert.Single(harness.Handled<HarnessOther>());
@@ -236,8 +244,9 @@ public class MessagingTestHarnessTests
         services.AddLogging();
         services.AddFoundatio()
             .Messaging.UseTestHarness()
-            .Messaging.AddHandler<HarnessOrder, RecordingOrderHandler>();
+            .Messaging.AddConsumer<HarnessOrder, RecordingOrderHandler>();
 
+        services.AddMessageConsumers();
         await using var provider = services.BuildServiceProvider();
         var hosted = provider.GetServices<IHostedService>().ToList();
         foreach (var service in hosted)

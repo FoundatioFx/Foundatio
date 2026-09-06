@@ -19,6 +19,34 @@ public class AwsMessageTransportTests
         return new AwsMessageTransport(options);
     }
 
+    [Theory]
+    [InlineData(DestinationRole.Queue)]
+    [InlineData(DestinationRole.Topic)]
+    [InlineData(DestinationRole.Subscription)]
+    public async Task Provisioning_FreshInstanceValidatesAndDeletesExistingResourcesAsync(DestinationRole role)
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("FOUNDATIO_AWS_CONNECTION_STRING");
+        Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "FOUNDATIO_AWS_CONNECTION_STRING not set.");
+        var options = AwsMessageTransportOptions.FromConnectionString(connectionString);
+        options.ResourcePrefix = $"cold-{Guid.NewGuid():N}-";
+        var token = TestContext.Current.CancellationToken;
+        await using var first = new AwsMessageTransport(options);
+        await using var second = new AwsMessageTransport(options);
+        var destination = role switch
+        {
+            DestinationRole.Queue => DestinationAddress.ForQueue("work"),
+            DestinationRole.Topic => DestinationAddress.ForTopic("events"),
+            _ => DestinationAddress.ForSubscription("events", "audit")
+        };
+        await first.EnsureAsync([new DestinationDeclaration { Address = destination }], token);
+        Assert.True(await second.ExistsAsync(destination, token));
+        await second.DeleteAsync(destination, token);
+        Assert.False(await first.ExistsAsync(destination, token));
+        await second.DeleteAsync(destination, token);
+        if (role == DestinationRole.Subscription)
+            await first.DeleteAsync(DestinationAddress.ForTopic("events"), token);
+    }
+
     [Fact]
     public async Task TextContentBody_RoundTripsThroughSqsAsync()
     {

@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../../src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Foundatio\Foundatio.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
     <ProjectReference Include="..\..\src\Foundatio.Aws\Foundatio.Aws.csproj" />
