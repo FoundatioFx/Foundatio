@@ -1,15 +1,15 @@
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using System.Threading;
-using System;
 using Foundatio.AsyncEx;
 using Foundatio.Utility;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Foundatio.Messaging;
 
@@ -105,7 +105,12 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         ArgumentNullException.ThrowIfNull(source);
 
         int maxMessages = request.MaxMessages <= 0 ? 1 : request.MaxMessages;
-        var state = GetOrAddDestination(ReceivableKey(source));
+        if (!_destinations.TryGetValue(ReceivableKey(source), out var state))
+        {
+            if (source.Role == DestinationRole.Subscription)
+                throw new MessageDestinationNotFoundException(source, new InvalidOperationException("The subscription must be provisioned before receiving."));
+            state = GetOrAddDestination(ReceivableKey(source));
+        }
         var entries = new List<TransportEntry>(maxMessages);
         DateTimeOffset? waitUntil = request.MaxWaitTime is { } waitTime && waitTime > TimeSpan.Zero
             ? _timeProvider.GetUtcNow().Add(waitTime)

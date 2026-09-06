@@ -82,7 +82,7 @@ The misfire window defaults to one minute and is limited to one day. Only ticks 
 
 ### Persisted edits and deployment reconciliation
 
-`IScheduledJobManager` lists, inspects, reschedules, enables/disables, removes, and manually triggers schedules. `TriggerAsync(name)` returns a durable job handle. `ScheduleAsync<TJob, TArgs>` creates a typed runtime schedule.
+`IScheduledJobManager` lists, inspects, reschedules, enables/disables, removes, and manually triggers schedules. `TriggerAsync(name)` returns a durable job handle. `ScheduleAsync<TJob, TArgs>` creates a typed runtime schedule. Register its job with `Jobs.AddJobType<TJob>()` on producers and workers first; the DI-configured manager rejects unknown job types before persisting a schedule, with the same validation as `IJobClient`.
 
 Updates to `ScheduledJobDefinition` use its `Revision`; a stale update fails rather than silently replacing another operator's edit. Declarative configuration has a separate `ConfigurationVersion`. Restarting the same deployment preserves runtime edits. Changing a declaration requires increasing that configuration version; older deployments cannot overwrite newer definitions. An intentional higher version applies the new declaration and advances the stored revision.
 

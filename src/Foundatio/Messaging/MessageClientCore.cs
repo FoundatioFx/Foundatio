@@ -190,7 +190,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         var sendOptions = BuildSendOptions(options);
         string messageId = options.MessageId ?? Guid.NewGuid().ToString("N");
-        var transportMessage = CreateTransportMessage(message, messageType, options, messageId);
+        var transportMessage = CreateTransportMessage(message, options, messageId);
 
         // Produce-side routing visibility: the consume side logs its effective topology at subscribe time, and this
         // is its counterpart for "where did my message actually go" debugging.
@@ -236,7 +236,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             string messageId = item?.MessageId ?? Guid.NewGuid().ToString("N");
             ArgumentException.ThrowIfNullOrWhiteSpace(messageId);
             messageIds.Add(messageId);
-            transportMessages.Add((messageIds.Count - 1, CreateTransportMessage(message, messageType, options with { Headers = item?.Headers ?? options.Headers }, messageId)));
+            transportMessages.Add((messageIds.Count - 1, CreateTransportMessage(message, options with { Headers = item?.Headers ?? options.Headers }, messageId)));
         }
 
         var outcomes = messageIds.Select(id => new MessageSendOutcome(id, MessageSendStatus.NotAttempted)).ToArray();
@@ -771,12 +771,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Message {entry.Id} uses {contentType}, but this consumer expects {_contentType}. Configure the same serializer on producers and consumers.", null);
         }
 
-        // For an interface/base route the body cannot be deserialized as T directly. Resolve the concrete payload type
+        // For an interface, abstract or object route, resolve the concrete payload type
         // from the message-type header via the registry and deserialize that, then hand it back as T (the concrete
         // instance is assignable to T). Exact concrete routes deserialize as T directly.
         Type targetType = typeof(T);
         string? typeName = entry.Headers.GetValueOrDefault(KnownHeaders.MessageType);
-        if (typeof(T).IsInterface || typeof(T).IsAbstract)
+        if (IsCatchAll(typeof(T)))
         {
             var resolved = String.IsNullOrEmpty(typeName) ? null : _typeRegistry.Resolve(typeName);
             if (resolved is null || !typeof(T).IsAssignableFrom(resolved))
@@ -821,12 +821,12 @@ internal sealed class MessageClientCore : IAsyncDisposable
     }
 
 
-    private TransportMessage CreateTransportMessage(object message, Type messageType, MessageEnvelopeOptions options, string messageId)
+    private TransportMessage CreateTransportMessage(object message, MessageEnvelopeOptions options, string messageId)
     {
         var headers = (options.Headers ?? MessageHeaders.Empty).ToBuilder()
             .Set(KnownHeaders.MessageId, messageId)
             .Set(KnownHeaders.ContentType, _contentType)
-            .Set(KnownHeaders.MessageType, _typeRegistry.GetName(messageType))
+            .Set(KnownHeaders.MessageType, _typeRegistry.GetName(message.GetType()))
             .Set(KnownHeaders.Priority, options.Priority.ToString());
 
         if (!String.IsNullOrEmpty(options.CorrelationId))
@@ -1011,7 +1011,6 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private static void RecordSent(DestinationAddress destination, IReadOnlyList<SendItemResult> items)
     {
-        // Every returned item was accepted (send is throw-on-failure).
         if (items.Count > 0)
             MessagingInstruments.Sent.Add(items.Count, new KeyValuePair<string, object?>("destination", destination.Key));
     }

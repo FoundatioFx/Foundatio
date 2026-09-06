@@ -304,9 +304,9 @@ public interface ITransportInfo
 public interface IMessageTransport : IAsyncDisposable
 {
     /// <summary>
-    /// Delivers the messages to the destination. Throw-on-failure: any failure throws rather than returning a failed
-    /// item, so every item in the returned <see cref="SendResult"/> was accepted. A multi-message send is NOT atomic —
-    /// earlier messages may already be delivered when a later one throws.
+    /// Delivers the messages to the destination and reports one indexed outcome per input, including rejected or
+    /// unknown outcomes. A multi-message send is not atomic. If an exception interrupts a partially accepted batch,
+    /// use <see cref="TransportSendException"/> to preserve known outcomes; an ordinary exception leaves acceptance unknown.
     /// </summary>
     /// <remarks>
     /// A future <see cref="TransportSendOptions.DeliverAt"/> the transport cannot honor natively must be refused with

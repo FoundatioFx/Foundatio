@@ -12,6 +12,26 @@ namespace Foundatio.Tests.Messaging;
 public class SubscriptionRecoveryTests
 {
     [Fact]
+    public async Task NamedSubscription_DeletedWhileListening_RebindsAndSignalsGap()
+    {
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var bus = new MessageBus(transport, new() { OwnsTransport = false });
+        var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var subscription = await bus.SubscribeAsync<Event>((_, _) => { received.TrySetResult(); return Task.CompletedTask; }, new() { Topic = "events", Subscription = "audit" }, token);
+        await subscription.WaitUntilReadyAsync(token);
+        await transport.DeleteAsync(subscription.Source, token);
+
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (subscription.RecoveryVersion == 0)
+            await Task.Delay(10, timeout.Token);
+        await subscription.WaitUntilReadyAsync(timeout.Token);
+        await bus.PublishAsync(new Event(), new() { Topic = "events" }, token);
+
+        await received.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+    }
+
+    [Fact]
     public async Task TemporarySubscription_TransientRenewalFailure_RetriesWithinLease()
     {
         var token = TestContext.Current.CancellationToken;

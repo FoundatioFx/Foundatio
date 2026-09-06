@@ -3,7 +3,7 @@ using Foundatio.Messaging;
 namespace Foundatio.MessagingSample;
 
 /// <summary>
-/// A command / unit of work, delivered with <c>bus.SendAsync</c> — exactly one running instance handles each one.
+/// A command / unit of work, delivered with <c>bus.SendAsync</c> — running instances compete for deliveries. Handlers must tolerate redelivery.
 /// The <see cref="MessageRouteAttribute"/> names the destination ("orders"); without it the kebab-cased type name
 /// ("process-order") is used.
 /// </summary>
