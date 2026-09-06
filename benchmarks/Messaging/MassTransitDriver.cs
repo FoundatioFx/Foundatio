@@ -23,7 +23,7 @@ public sealed class MassTransitDriver(BenchmarkOptions options, string prefix) :
                     if (AwsResources.LocalCredentials is { } credentials) h.Credentials(credentials);
                     h.Config(AwsResources.SqsConfig); h.Config(AwsResources.SnsConfig);
                 });
-                cfg.Message<LoadMessage>(m => m.SetEntityName("events"));
+                cfg.Message<LoadMessage>(m => m.SetEntityName(prefix + "events"));
                 for (int group = 0; group < options.DeliveryCopies; group++)
                 {
                     int subscriber = group;

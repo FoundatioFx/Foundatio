@@ -14,6 +14,7 @@ public sealed record BenchmarkResult
 public sealed record PhaseResult
 {
     public string? Error { get; init; }
+    public string? FirstInvalid { get; init; }
     public long Inputs { get; init; }
     public long Deliveries { get; init; }
     public long Duplicates { get; init; }

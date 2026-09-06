@@ -45,6 +45,7 @@ public class MeasurementTests
         tracker.Record(0, new("run", 9, 1, "body"));
         Assert.Equal(3, tracker.InvalidDeliveries);
         Assert.Equal(0, tracker.UniqueDeliveries);
+        Assert.Contains("run=other, expectedRun=run", tracker.FirstInvalid);
     }
 
     [Fact]

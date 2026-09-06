@@ -33,7 +33,7 @@ public sealed record BenchmarkOptions
         if (ProducerConcurrency is < 1 or > 1024 || ConsumerConcurrency is < 1 or > 1024 || Prefetch is < 1 or > 4096) throw new ArgumentException("Invalid concurrency or prefetch.");
         if (Subscribers is < 1 or > 32 || PayloadBytes is < 0 or > 131072 || BatchSize is < 1 or > 64) throw new ArgumentException("Invalid fanout, payload size or batch size.");
         if (MaxOutstanding < ProducerConcurrency * BatchSize || MaxOutstanding > 1_000_000) throw new ArgumentException("Outstanding window must hold one entire batch for every producer, and cannot exceed one million inputs.");
-        if (MaxMessages < MaxOutstanding || MaxMessages > 20_000_000 || RatePerSecond < 0) throw new ArgumentException("Invalid tracking capacity or offered rate.");
+        if (MaxMessages < MaxOutstanding || MaxMessages > 100_000_000 || RatePerSecond < 0) throw new ArgumentException("Invalid tracking capacity or offered rate.");
     }
 
     public static BenchmarkOptions Parse(string[] args)
