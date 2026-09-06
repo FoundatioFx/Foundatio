@@ -1,5 +1,7 @@
 # Messaging and job runtime measurements
 
+For sustained queue and pub/sub load tests, including Redis, SQS/SNS and MassTransit comparisons, see the [distributed messaging results](Messaging/RESULTS.md) and [reproduction instructions](Messaging/README.md).
+
 Measured locally on September 6, 2026 with .NET 10.0.11, SDK 10.0.111, BenchmarkDotNet 0.15.8 and an AMD Ryzen AI 9 HX 470 Linux host. These are development measurements, not production sizing promises. ShortRun timing intervals are wide on this shared machine; allocation differences and removal of history-dependent work are the stronger evidence.
 
 ## Small-header construction and serialization
