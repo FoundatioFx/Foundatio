@@ -17,6 +17,11 @@ $environments = @($results | Where-Object { $_.Result.Success } | ForEach-Object
     "$($e.Runtime)|$($e.OS)|$($e.Architecture)|$($e.LogicalProcessors)|$($e.ServerGC)|$($e.Foundatio)|$($e.MassTransit)|$($e.SqsSdk)|$($e.SnsSdk)|$($o.DurationSeconds)|$($o.WarmupSeconds)|$($o.MaxMessages)"
 } | Select-Object -Unique)
 if ($environments.Count -gt 1) { throw 'Results mix runtime, library, duration or tracking configurations. Summarize each configuration in a separate directory.' }
+$awsEnvironments = @($results | Where-Object { $_.Result.Success -and $_.Result.Options.Transport -eq 'sqs' } | ForEach-Object {
+    $e = $_.Result.Environment
+    "$($e.Broker)|$($e.AwsMode)|$($e.AwsRegion)"
+} | Select-Object -Unique)
+if ($awsEnvironments.Count -gt 1) { throw 'Results mix AWS modes or regions. Summarize LocalStack and each AWS region in separate directories.' }
 $rows = @($results | Where-Object { $_.Result.Success } | Group-Object Key | ForEach-Object {
     $metrics = @($_.Group.Result.Measurement)
     [pscustomobject]@{
@@ -37,7 +42,12 @@ $rows = @($results | Where-Object { $_.Result.Success } | Group-Object Key | For
     }
 })
 $rows | Export-Csv (Join-Path $Directory 'summary.csv') -NoTypeInformation
-$lines = @('# Messaging benchmark results', '', 'Medians across successful fresh-process trials; ranges are observed throughput variation. Latency includes broker acknowledgement. Fanout deliveries/s counts each subscriber copy. Allocation/CPU include the client and measurement harness, and exclude broker processes. These are local measurements, not cloud sizing claims.', '',
+$lines = @('# Messaging benchmark results', '', 'Medians across successful fresh-process trials; ranges are observed throughput variation. Latency includes broker acknowledgement. Fanout deliveries/s counts each subscriber copy. Allocation/CPU include the client and measurement harness, and exclude broker processes. Results describe this client and broker configuration; LocalStack results do not predict AWS service performance.', '')
+if ($awsEnvironments.Count -eq 1) {
+    $aws = ($results | Where-Object { $_.Result.Success -and $_.Result.Options.Transport -eq 'sqs' } | Select-Object -First 1).Result.Environment
+    $lines += @("AWS target: $($aws.Broker); mode: $($aws.AwsMode); region: $($aws.AwsRegion).", '')
+}
+$lines += @(
 '| Case | Trials | Inputs/s (min-max) | Deliveries/s | p50 / p95 / p99 ms | Bytes/input | CPU ms/input |',
 '| --- | ---: | ---: | ---: | ---: | ---: | ---: |')
 foreach ($row in $rows) { $lines += "| $($row.Case) | $($row.Trials) | $($row.InputsPerSecond) ($($row.MinInputsPerSecond)-$($row.MaxInputsPerSecond)) | $($row.DeliveriesPerSecond) | $($row.P50Milliseconds) / $($row.P95Milliseconds) / $($row.P99Milliseconds) | $($row.BytesPerInput) | $($row.CpuMillisecondsPerInput) |" }
