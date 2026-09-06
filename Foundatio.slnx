@@ -26,6 +26,8 @@
   </Folder>
   <Folder Name="/Benchmarks/">
     <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+    <Project Path="benchmarks/Messaging/Foundatio.Messaging.Benchmarks.csproj" />
+    <Project Path="benchmarks/Messaging.Tests/Foundatio.Messaging.Benchmarks.Tests.csproj" />
   </Folder>
   <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
