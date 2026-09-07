@@ -1,0 +1,12 @@
+{
+  "trials": 93,
+  "inputs": 82408651,
+  "acknowledged_deliveries": 215044147,
+  "missing": 0,
+  "duplicates": 0,
+  "invalid": 0,
+  "worker_failures": 0,
+  "unique_resource_prefixes": 93,
+  "source_revision": "77c20ea354919fd25ae300e49c5de7f3ed8da598",
+  "coreclr_sha256": "3ebe90cd92b1edf6742a41fa921a0c6326216fd1cca45fdb5e055bea33351bea"
+}
