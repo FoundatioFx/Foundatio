@@ -13,6 +13,120 @@ namespace Foundatio.Tests.Messaging;
 public class FailureHandlingTests
 {
     [Fact]
+    public async Task ConsumeAsync_SettledHandlerCleanup_DoesNotHoldConsumerCapacity()
+    {
+        var token = TestContext.Current.CancellationToken;
+        await using var transport = new InMemoryMessageTransport();
+        await using var bus = new MessageBus(transport);
+        using var finishCleanup = new ManualResetEventSlim();
+        var cleanupStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var third = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        await using var subscription = await bus.ConsumeAsync<FailingItem>((_, ct) =>
+        {
+            int call = Interlocked.Increment(ref calls);
+            if (call == 1)
+                ct.Register(() => { cleanupStarted.TrySetResult(); finishCleanup.Wait(token); });
+            else if (call == 2) second.TrySetResult();
+            else third.TrySetResult();
+            return Task.CompletedTask;
+        }, cancellationToken: token);
+        try
+        {
+            await bus.SendBatchAsync(new[] { new FailingItem(), new FailingItem(), new FailingItem() }, cancellationToken: token);
+            await cleanupStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+            await second.Task.WaitAsync(TimeSpan.FromSeconds(1), token);
+            await Task.Delay(100, token);
+            Assert.False(third.Task.IsCompleted);
+        }
+        finally { finishCleanup.Set(); }
+        await third.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_ConcurrentPulls_SharesCapacityAndCancelsPendingRequests()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new Mock<ISupportsPull>();
+        var info = transport.As<ITransportInfo>();
+        info.SetupGet(t => t.SupportedRoles).Returns(new HashSet<DestinationRole> { DestinationRole.Queue });
+        info.Setup(t => t.GetCapabilities(It.IsAny<DestinationAddress>())).Returns(new TransportCapabilities
+        {
+            MaxReceiveBatchSize = 2,
+            MaxConcurrentReceives = 4
+        });
+        var full = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int reserved = 0;
+        int calls = 0;
+        int cancelled = 0;
+        transport.Setup(t => t.ReceiveAsync(It.IsAny<DestinationAddress>(), It.IsAny<ReceiveRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (DestinationAddress _, ReceiveRequest request, CancellationToken ct) =>
+            {
+                Assert.InRange(request.MaxMessages, 1, 2);
+                Interlocked.Increment(ref calls);
+                int total = Interlocked.Add(ref reserved, request.MaxMessages);
+                Assert.InRange(total, 1, 5);
+                if (total == 5) full.TrySetResult();
+                try { await Task.Delay(Timeout.InfiniteTimeSpan, ct); }
+                finally { Interlocked.Increment(ref cancelled); }
+                return (IReadOnlyList<TransportEntry>)Array.Empty<TransportEntry>();
+            });
+        await using var bus = new MessageBus(transport.Object);
+        var subscription = await bus.ConsumeAsync((_, _) => Task.CompletedTask,
+            new MessageConsumerOptions { Destination = "work", MaxConcurrency = 5 }, token);
+        try
+        {
+            await full.Task.WaitAsync(TimeSpan.FromSeconds(2), token);
+            Assert.Equal(3, Volatile.Read(ref calls));
+        }
+        finally { await subscription.DisposeAsync(); }
+        Assert.Equal(3, Volatile.Read(ref cancelled));
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_BatchCapacityReturns_ReceivesWithoutWaitingForCollectionTimeout()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new Mock<ISupportsPull>();
+        var info = transport.As<ITransportInfo>();
+        info.SetupGet(t => t.SupportedRoles).Returns(new HashSet<DestinationRole> { DestinationRole.Queue });
+        info.Setup(t => t.GetCapabilities(It.IsAny<DestinationAddress>())).Returns(new TransportCapabilities
+        {
+            MaxReceiveBatchSize = 2,
+            ReceiveBatchDelay = TimeSpan.FromSeconds(10)
+        });
+        var contexts = new ConcurrentDictionary<string, IMessageContext>();
+        var full = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replacement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int next = 0;
+        transport.Setup(t => t.CompleteAsync(It.IsAny<TransportEntry>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        transport.Setup(t => t.ReceiveAsync(It.IsAny<DestinationAddress>(), It.IsAny<ReceiveRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((DestinationAddress source, ReceiveRequest request, CancellationToken _) =>
+            {
+                var entries = new List<TransportEntry>();
+                for (int i = 0; i < request.MaxMessages && next < 4; i++)
+                    entries.Add(new TransportEntry { Id = (++next).ToString(), Destination = source, Body = ReadOnlyMemory<byte>.Empty, Receipt = default });
+                return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
+            });
+        await using var bus = new MessageBus(transport.Object);
+        await using var subscription = await bus.ConsumeAsync((context, _) =>
+        {
+            contexts[context.BrokerMessageId] = context;
+            if (context.BrokerMessageId == "2") full.TrySetResult();
+            if (context.BrokerMessageId == "4") replacement.TrySetResult();
+            return Task.CompletedTask;
+        }, new MessageConsumerOptions { Destination = "work", MaxConcurrency = 2, AckMode = AckMode.Manual }, token);
+        await full.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        await contexts["1"].CompleteAsync(token);
+        await Task.Delay(100, token);
+        Assert.False(replacement.Task.IsCompleted);
+        await contexts["2"].CompleteAsync(token);
+        await replacement.Task.WaitAsync(TimeSpan.FromSeconds(1), token);
+        foreach (var context in contexts.Values) await context.CompleteAsync(token);
+    }
+
+    [Fact]
     public async Task ConsumeAsync_BatchedPulls_FillsConcurrencyAndDoesNotWaitForSlowHandler()
     {
         var token = TestContext.Current.CancellationToken;

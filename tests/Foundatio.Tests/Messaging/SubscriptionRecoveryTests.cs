@@ -12,6 +12,53 @@ namespace Foundatio.Tests.Messaging;
 public class SubscriptionRecoveryTests
 {
     [Fact]
+    public async Task ConcurrentReceives_DestinationDisappears_CancelsSiblingBeforeReprovisioning()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new Mock<IMessageTransport>();
+        transport.As<ITransportInfo>().SetupGet(t => t.SupportedRoles).Returns(new HashSet<DestinationRole> { DestinationRole.Queue });
+        transport.As<ITransportInfo>().Setup(t => t.GetCapabilities(It.IsAny<DestinationAddress>()))
+            .Returns(new TransportCapabilities { MaxReceiveBatchSize = 1, MaxConcurrentReceives = 2 });
+        var siblingStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var siblingCancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int receives = 0;
+        int provisions = 0;
+        transport.As<ISupportsProvisioning>().Setup(t => t.EnsureAsync(It.IsAny<IReadOnlyList<DestinationDeclaration>>(), It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                if (Interlocked.Increment(ref provisions) > 1)
+                {
+                    Assert.True(siblingCancelled.Task.IsCompleted);
+                    recovered.TrySetResult();
+                }
+                return Task.CompletedTask;
+            });
+        transport.As<ISupportsPull>().Setup(t => t.ReceiveAsync(It.IsAny<DestinationAddress>(), It.IsAny<ReceiveRequest>(), It.IsAny<CancellationToken>()))
+            .Returns(async (DestinationAddress source, ReceiveRequest _, CancellationToken ct) =>
+            {
+                int call = Interlocked.Increment(ref receives);
+                if (call == 1)
+                {
+                    await siblingStarted.Task.WaitAsync(ct);
+                    throw new MessageDestinationNotFoundException(source, new InvalidOperationException("Queue deleted"));
+                }
+                if (call == 2)
+                {
+                    siblingStarted.TrySetResult();
+                    try { await Task.Delay(Timeout.InfiniteTimeSpan, ct); }
+                    finally { siblingCancelled.TrySetResult(); }
+                }
+                return (IReadOnlyList<TransportEntry>)Array.Empty<TransportEntry>();
+            });
+        await using var bus = new MessageBus(transport.Object);
+        await using var subscription = await bus.ConsumeAsync((_, _) => Task.CompletedTask,
+            new MessageConsumerOptions { Destination = "work", MaxConcurrency = 2 }, token);
+        await recovered.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        Assert.True(subscription.RecoveryVersion > 0);
+    }
+
+    [Fact]
     public async Task NamedSubscription_DeletedWhileListening_RebindsAndSignalsGap()
     {
         var token = TestContext.Current.CancellationToken;

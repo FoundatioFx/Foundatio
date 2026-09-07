@@ -32,6 +32,7 @@ namespace Foundatio.Messaging;
 public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
     ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsProvisioning, ISupportsStats, ITransportInfo
 {
+    private const string EnvelopeAttributeName = "fnd.envelope";
     private const string HeadersAttributeName = "fnd.headers";
     private const string EncodingAttributeName = "fnd.encoding";
     private const string MessageIdAttributeName = "fnd.id";
@@ -74,7 +75,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
 
     // Capabilities differ by role: SQS queues take a native DelaySeconds (15-minute cap), SNS topics have no native
     // delay at all — a delayed publish must route through the runtime-store fallback, never silently drop the delay.
-    // The 256 KB body limit applies to both services.
+    // SQS accepts up to 1 MiB; SNS accepts up to 256 KiB, including message attributes.
     private static readonly TransportCapabilities _queueCapabilities = new()
     {
         DelayedDelivery = true,
@@ -82,6 +83,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         MaxMessageBytes = 1048576,
         MaxBatchSize = 10,
         MaxReceiveBatchSize = 10,
+        MaxConcurrentReceives = 4,
         ReceiveBatchDelay = TimeSpan.FromMilliseconds(1)
     };
 
@@ -140,11 +142,27 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         {
             ReadOnlyMemory<byte> body;
             MessageHeaders headers;
+            string? applicationMessageId = GetAttribute(message.MessageAttributes, MessageIdAttributeName);
+            string? contentType = GetAttribute(message.MessageAttributes, ContentTypeAttributeName);
             Exception? envelopeError = null;
             try
             {
-                body = DecodeBody(message.Body ?? throw new FormatException("Missing message body."), GetAttribute(message.MessageAttributes, EncodingAttributeName));
-                headers = FromSqsAttributes(message.MessageAttributes);
+                string encodedBody = message.Body ?? throw new FormatException("Missing message body.");
+                if (GetAttribute(message.MessageAttributes, EnvelopeAttributeName) is { } envelopeJson)
+                {
+                    var envelope = JsonSerializer.Deserialize<AwsEnvelope>(envelopeJson);
+                    if (envelope is null || envelope.Version != 1 || envelope.Encoding is not ("text" or "base64") || envelope.Headers is null)
+                        throw new FormatException("Invalid or unsupported Foundatio AWS envelope.");
+                    body = DecodeBody(encodedBody, envelope.Encoding);
+                    headers = MessageHeaders.Create(envelope.Headers);
+                    applicationMessageId = envelope.MessageId;
+                    contentType = envelope.ContentType;
+                }
+                else
+                {
+                    body = DecodeBody(encodedBody, GetAttribute(message.MessageAttributes, EncodingAttributeName));
+                    headers = FromSqsAttributes(message.MessageAttributes);
+                }
             }
             catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException)
             {
@@ -158,8 +176,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
             entries.Add(new TransportEntry
             {
                 Id = message.MessageId,
-                ApplicationMessageId = GetAttribute(message.MessageAttributes, MessageIdAttributeName),
-                ContentType = GetAttribute(message.MessageAttributes, ContentTypeAttributeName),
+                ApplicationMessageId = applicationMessageId,
+                ContentType = contentType,
                 Destination = source,
                 LockExpiresUtc = receiveStarted.AddSeconds(sqsRequest.VisibilityTimeout.GetValueOrDefault()),
                 Body = body,
@@ -571,14 +589,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         var headers = message.Headers;
         var attributes = new Dictionary<string, TAttribute>(StringComparer.Ordinal)
         {
-            [HeadersAttributeName] = stringAttribute(MessageHeaders.SerializeToJson(headers)),
-            [EncodingAttributeName] = stringAttribute(encoding)
+            [EnvelopeAttributeName] = stringAttribute(JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers)))
         };
-
-        if (!String.IsNullOrEmpty(message.MessageId))
-            attributes[MessageIdAttributeName] = stringAttribute(message.MessageId);
-        if (!String.IsNullOrEmpty(message.ContentType))
-            attributes[ContentTypeAttributeName] = stringAttribute(message.ContentType);
 
         foreach (string name in WellKnownNativeHeaders)
         {
@@ -594,6 +606,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     {
         return attributes is not null && attributes.TryGetValue(name, out var value) ? value.StringValue : null;
     }
+
+    private sealed record AwsEnvelope(int Version, string Encoding, string? MessageId, string? ContentType, IReadOnlyDictionary<string, string>? Headers);
 
     private static MessageHeaders FromSqsAttributes(Dictionary<string, SqsMessageAttributeValue>? attributes)
     {
