@@ -435,6 +435,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken, Action<bool>? receivingHealth = null)
     {
         maxConcurrency = Math.Max(1, maxConcurrency);
+        var capabilities = (_transport as ITransportInfo)?.GetCapabilities(source);
+        int batchSize = Math.Clamp(capabilities?.MaxReceiveBatchSize ?? maxConcurrency, 1, maxConcurrency);
+        var batchDelay = capabilities?.ReceiveBatchDelay ?? TimeSpan.Zero;
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         var inFlight = new ConcurrentDictionary<Task, byte>();
         int consecutiveReceiveFailures = 0;
@@ -444,19 +447,23 @@ internal sealed class MessageClientCore : IAsyncDisposable
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Block for a free slot before receiving so we never pull more than we can process concurrently.
+                int claimed = 0;
                 try
                 {
                     await slots.WaitAsync(cancellationToken).AnyContext();
+                    claimed = 1;
+                    if (batchDelay > TimeSpan.Zero && slots.CurrentCount < batchSize - 1)
+                        await Task.Delay(batchDelay, _timeProvider, cancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
+                    ReleaseSlots(slots, claimed);
                     break;
                 }
 
                 // Opportunistically claim any other idle slots so a transport that supports batch receive can still
                 // pull a batch while keeping per-message slot release. WaitAsync(Zero) is a non-blocking try-acquire.
-                int claimed = 1;
-                while (claimed < maxConcurrency && await slots.WaitAsync(TimeSpan.Zero).AnyContext())
+                while (claimed < batchSize && await slots.WaitAsync(TimeSpan.Zero).AnyContext())
                     claimed++;
 
                 var pollWindow = TimeSpan.FromSeconds(1);

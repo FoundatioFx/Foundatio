@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,6 +12,71 @@ namespace Foundatio.Tests.Messaging;
 
 public class FailureHandlingTests
 {
+    [Fact]
+    public async Task ConsumeAsync_BatchedPulls_FillsConcurrencyAndDoesNotWaitForSlowHandler()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new Mock<ISupportsPull>();
+        var info = transport.As<ITransportInfo>();
+        info.SetupGet(t => t.SupportedRoles).Returns(new HashSet<DestinationRole> { DestinationRole.Queue });
+        info.Setup(t => t.GetCapabilities(It.IsAny<DestinationAddress>())).Returns(new TransportCapabilities
+        {
+            MaxReceiveBatchSize = 2,
+            ReceiveBatchDelay = TimeSpan.FromMilliseconds(1)
+        });
+        var contexts = new ConcurrentDictionary<string, IMessageContext>();
+        var full = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var replacement = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        int next = 0;
+        transport.Setup(t => t.CompleteAsync(It.IsAny<TransportEntry>(), It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        transport.Setup(t => t.ReceiveAsync(It.IsAny<DestinationAddress>(), It.IsAny<ReceiveRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((DestinationAddress source, ReceiveRequest request, CancellationToken _) =>
+            {
+                Assert.InRange(request.MaxMessages, 1, 2);
+                var entries = new List<TransportEntry>();
+                for (int i = 0; i < request.MaxMessages && next < 9; i++)
+                    entries.Add(new TransportEntry { Id = (++next).ToString(), Destination = source, Body = ReadOnlyMemory<byte>.Empty, Receipt = default });
+                return Task.FromResult<IReadOnlyList<TransportEntry>>(entries);
+            });
+        await using var bus = new MessageBus(transport.Object);
+        await using var subscription = await bus.ConsumeAsync((context, _) =>
+        {
+            contexts[context.BrokerMessageId] = context;
+            if (contexts.Count == 8) full.TrySetResult();
+            if (context.BrokerMessageId == "9") replacement.TrySetResult();
+            return Task.CompletedTask;
+        }, new MessageConsumerOptions { Destination = "work", MaxConcurrency = 8, AckMode = AckMode.Manual }, token);
+        await full.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        Assert.Equal(8, next);
+        Assert.False(replacement.Task.IsCompleted);
+        await contexts["2"].CompleteAsync(token);
+        await replacement.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        Assert.False(contexts["1"].IsHandled);
+        foreach (var context in contexts.Values)
+            await context.CompleteAsync(token);
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_TransportReceiveLimit_CapsEachPull()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var transport = new Mock<ISupportsPull>();
+        var info = transport.As<ITransportInfo>();
+        info.SetupGet(t => t.SupportedRoles).Returns(new HashSet<DestinationRole> { DestinationRole.Queue });
+        info.Setup(t => t.GetCapabilities(It.IsAny<DestinationAddress>())).Returns(new TransportCapabilities { MaxReceiveBatchSize = 2 });
+        var received = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        transport.Setup(t => t.ReceiveAsync(It.IsAny<DestinationAddress>(), It.IsAny<ReceiveRequest>(), It.IsAny<CancellationToken>()))
+            .Returns((DestinationAddress _, ReceiveRequest request, CancellationToken _) =>
+            {
+                received.TrySetResult(request.MaxMessages);
+                return Task.FromResult<IReadOnlyList<TransportEntry>>(Array.Empty<TransportEntry>());
+            });
+        await using var bus = new MessageBus(transport.Object);
+        await using var subscription = await bus.ConsumeAsync((_, _) => Task.CompletedTask,
+            new MessageConsumerOptions { Destination = "work", MaxConcurrency = 8 }, token);
+        Assert.Equal(2, await received.Task.WaitAsync(TimeSpan.FromSeconds(5), token));
+    }
+
     [Theory]
     [InlineData(TopologyMode.Ensure)]
     [InlineData(TopologyMode.Validate)]

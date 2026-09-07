@@ -277,6 +277,12 @@ public sealed record TransportCapabilities
     /// <summary>Maximum messages per <see cref="IMessageTransport.SendAsync"/> call; null means unbounded. The core chunks larger sends.</summary>
     public int? MaxBatchSize { get; init; }
 
+    /// <summary>Maximum entries per pull receive; null means no transport-specific limit.</summary>
+    public int? MaxReceiveBatchSize { get; init; }
+
+    /// <summary>Optional brief wait for concurrently settling deliveries to free a fuller receive batch. Defaults to no wait.</summary>
+    public TimeSpan ReceiveBatchDelay { get; init; }
+
     /// <summary>Maximum message body size in bytes; null means unbounded. The core rejects oversized messages up front.</summary>
     public long? MaxMessageBytes { get; init; }
 }
