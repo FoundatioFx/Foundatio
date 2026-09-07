@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Foundatio.Messaging.Benchmarks;
@@ -15,6 +16,7 @@ public static class BenchmarkRunner
         var environment = new Dictionary<string, string>
         {
             ["Runtime"] = RuntimeInformation.FrameworkDescription,
+            ["CoreClrSha256"] = RuntimeFingerprint(),
             ["OS"] = RuntimeInformation.OSDescription,
             ["Architecture"] = RuntimeInformation.ProcessArchitecture.ToString(),
             ["LogicalProcessors"] = Environment.ProcessorCount.ToString(),
@@ -193,6 +195,15 @@ public static class BenchmarkRunner
                 catch (OperationCanceledException) when (sampling.IsCancellationRequested) { }
             }
         }
+    }
+
+    private static string RuntimeFingerprint()
+    {
+        string? directory = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        string name = OperatingSystem.IsWindows() ? "coreclr.dll" : OperatingSystem.IsMacOS() ? "libcoreclr.dylib" : "libcoreclr.so";
+        if (directory is null || !File.Exists(Path.Combine(directory, name))) return "unavailable";
+        using var file = File.OpenRead(Path.Combine(directory, name));
+        return Convert.ToHexString(SHA256.HashData(file));
     }
 
     private static bool Valid(PhaseResult result) => result.Error is null && result.Inputs > 0 && result.Missing == 0 && result.Invalid == 0 && result.Duplicates == 0 && !result.HitTrackingLimit;

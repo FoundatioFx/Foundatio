@@ -14,7 +14,7 @@ $results = @(Get-ChildItem $Directory -Filter 'round*.json' | ForEach-Object {
 $environments = @($results | Where-Object { $_.Result.Success } | ForEach-Object {
     $e = $_.Result.Environment
     $o = $_.Result.Options
-    "$($e.Runtime)|$($e.OS)|$($e.Architecture)|$($e.LogicalProcessors)|$($e.ServerGC)|$($e.Foundatio)|$($e.MassTransit)|$($e.SqsSdk)|$($e.SnsSdk)|$($o.DurationSeconds)|$($o.WarmupSeconds)|$($o.MaxMessages)"
+    "$($e.Runtime)|$($e.CoreClrSha256)|$($e.OS)|$($e.Architecture)|$($e.LogicalProcessors)|$($e.ServerGC)|$($e.Foundatio)|$($e.MassTransit)|$($e.SqsSdk)|$($e.SnsSdk)|$($o.DurationSeconds)|$($o.WarmupSeconds)|$($o.MaxMessages)"
 } | Select-Object -Unique)
 if ($environments.Count -gt 1) { throw 'Results mix runtime, library, duration or tracking configurations. Summarize each configuration in a separate directory.' }
 $awsEnvironments = @($results | Where-Object { $_.Result.Success -and $_.Result.Options.Transport -eq 'sqs' } | ForEach-Object {
