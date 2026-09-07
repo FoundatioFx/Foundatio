@@ -1,0 +1,14 @@
+# Messaging benchmark results
+
+Medians across successful fresh-process trials; ranges are observed throughput variation. Latency includes broker acknowledgement. Fanout deliveries/s counts each subscriber copy. Allocation/CPU include the client and measurement harness, and exclude broker processes. Results describe this client and broker configuration; LocalStack results do not predict AWS service performance.
+
+AWS target: SQS/SNS custom endpoint; mode: localstack; region: us-east-1.
+
+| Case | Trials | Inputs/s (min-max) | Deliveries/s | p50 / p95 / p99 ms | Bytes/input | CPU ms/input |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| foundatio/sqs pubsub p32 c32 s1 1024B b1 r0 w1024 pf32 | 3 | 1295.2 (1200-1298.8) | 1295.2 | 761.855 / 1081.343 / 1097.727 | 40829.3 | 0.4379 |
+| foundatio/sqs pubsub p32 c8 s4 1024B b1 r0 w1024 pf8 | 3 | 317.1 (307.5-324.5) | 1268.5 | 2981.887 / 3833.855 / 4063.231 | 190644.7 | 1.4163 |
+| foundatio/sqs queue p1 c1 s1 1024B b1 r0 w1024 pf1 | 3 | 385.3 (383.9-397.2) | 385.3 | 2293.759 / 2686.975 / 2697.86 | 138927.6 | 1.1456 |
+| foundatio/sqs queue p32 c32 s1 1024B b1 r0 w1024 pf32 | 3 | 2327.7 (2296.4-2365.1) | 2327.7 | 421.887 / 491.519 / 785.794 | 59291.9 | 0.3206 |
+
+Failed trials: 0.

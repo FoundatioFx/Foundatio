@@ -1,0 +1,3 @@
+"Case","Trials","InputsPerSecond","MinInputsPerSecond","MaxInputsPerSecond","DeliveriesPerSecond","P50Milliseconds","P95Milliseconds","P99Milliseconds","BytesPerInput","CpuMillisecondsPerInput","PeakWorkingSetMiB","TotalInputs","Duplicates","Missing"
+"foundatio/sqs pubsub p32 c8 s4 1024B b1 r100 w1024 pf8","1","99.8","99.8","99.8","399.1","55.295","274.431","438.271","396204.2","4.0287","119","3000","0","0"
+"foundatio/sqs queue p32 c32 s1 1024B b1 r100 w1024 pf32","1","100","100","100","100","5.055","6.975","7.999","55241.7","2.3713","109.5","3000","0","0"
