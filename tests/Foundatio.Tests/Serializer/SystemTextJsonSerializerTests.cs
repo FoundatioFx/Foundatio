@@ -44,6 +44,8 @@ public class SystemTextJsonSerializerTests : SerializerTestsBase
     [InlineData("\"2026-09-07T00:00:00+03:00\"")]
     [InlineData("{\"value\":42}")]
     [InlineData("[1,2,3]")]
+    [InlineData("\uFEFF42")]
+    [InlineData("\uFEFF{\"value\":42}")]
     public void Deserialize_BytesAndSlicedMemory_MatchesStreamNormalization(string json)
     {
         ISerializer serializer = new SystemTextJsonSerializer();
