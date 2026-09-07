@@ -22,6 +22,8 @@ dotnet benchmarks/Messaging.Tests/bin/Release/net10.0/Foundatio.Messaging.Benchm
 docker compose -f benchmarks/Messaging/docker-compose.yml down -v
 ```
 
+Use `-DotnetPath /path/to/dotnet` to select the worker runtime host; builds still use the SDK on `PATH`. Results record the CoreCLR binary SHA-256, and the summarizer rejects mixed runtime builds even if they report the same .NET version.
+
 Profiles:
 
 - `smoke`: one second each of concurrent queues and four-way fanout; correctness only.

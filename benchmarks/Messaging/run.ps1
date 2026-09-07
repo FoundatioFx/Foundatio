@@ -5,6 +5,7 @@ param(
     [int]$Warmup = 3,
     [string[]]$Engines = @('foundatio-memory', 'masstransit-memory', 'foundatio-redis', 'foundatio-sqs', 'masstransit-sqs'),
     [string]$OutputDirectory = (Join-Path $PSScriptRoot ('results/' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
+    [string]$DotnetPath = 'dotnet',
     [switch]$NoBuild
 )
 $ErrorActionPreference = 'Stop'
@@ -16,7 +17,7 @@ if (@(Get-ChildItem -Force $OutputDirectory).Count -gt 0) { throw 'OutputDirecto
 if (-not $NoBuild) { & dotnet build (Join-Path $PSScriptRoot 'Foundatio.Messaging.Benchmarks.csproj') -c Release --nologo }
 $dll = Join-Path $PSScriptRoot 'bin/Release/net10.0/Foundatio.Messaging.Benchmarks.dll'
 if (-not (Test-Path $dll)) { throw 'Build the benchmark before using -NoBuild.' }
-& dotnet --info | Set-Content (Join-Path $OutputDirectory 'dotnet-info.txt')
+& $DotnetPath --info | Set-Content (Join-Path $OutputDirectory 'dotnet-info.txt')
 & git -C $PSScriptRoot rev-parse HEAD | Set-Content (Join-Path $OutputDirectory 'revision.txt')
 & git -C $PSScriptRoot status --short | Set-Content (Join-Path $OutputDirectory 'working-tree.txt')
 if (Test-Path '/proc/cpuinfo') { Get-Content '/proc/cpuinfo' | Select-Object -First 30 | Set-Content (Join-Path $OutputDirectory 'cpu.txt') }
@@ -57,7 +58,7 @@ foreach ($round in 1..$Repetitions) {
             '--seconds', $Seconds, '--warmup', $Warmup, '--producers', $w.Producers, '--consumers', $w.Consumers,
             '--prefetch', $w.Consumers, '--subscribers', $w.Subscribers, '--payload', $w.Payload, '--batch', $w.Batch,
             '--outstanding', 1024, '--max-messages', $maxMessages, '--output', (Join-Path $OutputDirectory "$name.json"))
-        try { & dotnet @arguments > (Join-Path $OutputDirectory "$name.log") 2>&1 }
+        try { & $DotnetPath @arguments > (Join-Path $OutputDirectory "$name.log") 2>&1 }
         catch {
             $failures++
             $resultPath = Join-Path $OutputDirectory "$name.json"
