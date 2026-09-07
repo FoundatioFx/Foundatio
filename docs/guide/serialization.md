@@ -36,6 +36,8 @@ public interface ITextSerializer : ISerializer { }
 
 This abstraction allows you to swap serializers without changing your code.
 
+Serializers can optionally implement `IBufferSerializer` to serialize directly to an owned byte array and deserialize from `ReadOnlyMemory<byte>`. `SerializeToBytes` and the byte-array/memory `Deserialize` extensions select this path automatically. The default `SystemTextJsonSerializer` supports it, avoiding intermediate streams and payload copies with no configuration changes. Existing stream-only serializers continue to work. Buffer implementations must preserve their stream serializer's options and null handling, return independently owned output, and never retain or modify the input memory.
+
 ## Extension Methods
 
 The `SerializerExtensions` class provides convenient methods for common serialization scenarios:
