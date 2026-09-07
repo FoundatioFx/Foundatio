@@ -276,6 +276,42 @@ public class AwsBatchTests
         Assert.Equal(MessageSendStatus.Accepted, Assert.Single(second.Items).Status);
     }
 
+    [Fact]
+    public async Task CompleteAsync_ReceiveCapacityIsFilled_FlushesWithoutWaitingForImpossibleEntries()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var sqs = CreateSqs();
+        var requests = new ConcurrentBag<DeleteMessageBatchRequest>();
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ReceiveMessageRequest request, CancellationToken _) => new ReceiveMessageResponse
+            {
+                Messages = Enumerable.Range(0, request.MaxNumberOfMessages.GetValueOrDefault()).Select(i => new Message
+                {
+                    MessageId = i.ToString(),
+                    ReceiptHandle = "receipt" + i,
+                    Body = "e30="
+                }).ToList()
+            });
+        sqs.Setup(s => s.DeleteMessageBatchAsync(It.IsAny<DeleteMessageBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DeleteMessageBatchRequest request, CancellationToken _) =>
+            {
+                requests.Add(request);
+                return new DeleteMessageBatchResponse { Successful = request.Entries.Select(e => new DeleteMessageBatchResultEntry { Id = e.Id }).ToList() };
+            });
+        await using var transport = new AwsMessageTransport(new() { BatchDelay = TimeSpan.FromMilliseconds(100) }, sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        var entries = await transport.ReceiveAsync(DestinationAddress.ForQueue("test"), new ReceiveRequest { MaxMessages = 2 }, token);
+        await Task.WhenAll(entries.Select(e => transport.CompleteAsync(e, token))).WaitAsync(TimeSpan.FromMilliseconds(75), token);
+        Assert.Equal(2, Assert.Single(requests).Entries.Count);
+
+        entries = await transport.ReceiveAsync(DestinationAddress.ForQueue("test"), new ReceiveRequest { MaxMessages = 4 }, token);
+        var pending = entries.Take(2).Select(e => transport.CompleteAsync(e, token)).ToList();
+        await Task.Delay(25, token);
+        Assert.Single(requests);
+        pending.AddRange(entries.Skip(2).Select(e => transport.CompleteAsync(e, token)));
+        await Task.WhenAll(pending).WaitAsync(TimeSpan.FromMilliseconds(75), token);
+        Assert.Contains(requests, request => request.Entries.Count == 4);
+    }
+
     private static Mock<IAmazonSQS> CreateSqs()
     {
         var sqs = new Mock<IAmazonSQS>();
