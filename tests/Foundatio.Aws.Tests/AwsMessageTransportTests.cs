@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
 using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
@@ -45,6 +48,58 @@ public class AwsMessageTransportTests
         await second.DeleteAsync(destination, token);
         if (role == DestinationRole.Subscription)
             await first.DeleteAsync(DestinationAddress.ForTopic("events"), token);
+    }
+
+    [Fact]
+    public async Task NativeMessageHeaders_CustomTenantFilter_DeliversMatchingMessagesAsync()
+    {
+        string? connectionString = Environment.GetEnvironmentVariable("FOUNDATIO_AWS_CONNECTION_STRING");
+        Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "FOUNDATIO_AWS_CONNECTION_STRING not set.");
+        var options = AwsMessageTransportOptions.FromConnectionString(connectionString);
+        Assert.SkipWhen(String.IsNullOrEmpty(options.ServiceUrl), "This filter propagation smoke test requires LocalStack.");
+        options.ResourcePrefix = $"filter-{Guid.NewGuid():N}-";
+        options.NativeMessageHeaders = ["tenant.id"];
+        var config = new AmazonSimpleNotificationServiceConfig
+        {
+            ServiceURL = options.ServiceUrl,
+            AuthenticationRegion = (options.Region ?? Amazon.RegionEndpoint.USEast1).SystemName
+        };
+        using var sns = options.Credentials is { } credentials ? new AmazonSimpleNotificationServiceClient(credentials, config) : new AmazonSimpleNotificationServiceClient(config);
+        await using var transport = new AwsMessageTransport(options);
+        var topic = DestinationAddress.ForTopic("events");
+        var subscription = DestinationAddress.ForSubscription("events", "audit");
+        var token = TestContext.Current.CancellationToken;
+        try
+        {
+            await transport.EnsureAsync([new DestinationDeclaration { Address = subscription }], token);
+            string topicArn = (await sns.CreateTopicAsync(new CreateTopicRequest { Name = options.ResourcePrefix + "events" }, token)).TopicArn;
+            var binding = Assert.Single((await sns.ListSubscriptionsByTopicAsync(new ListSubscriptionsByTopicRequest { TopicArn = topicArn }, token)).Subscriptions);
+            await sns.SetSubscriptionAttributesAsync(new SetSubscriptionAttributesRequest
+            {
+                SubscriptionArn = binding.SubscriptionArn,
+                AttributeName = "FilterPolicy",
+                AttributeValue = "{\"tenant.id\":[\"allowed\"]}"
+            }, token);
+            var sent = await transport.SendAsync(topic,
+                [Message("allowed"), Message("denied")], new(), token);
+            Assert.All(sent.Items, item => Assert.Equal(MessageSendStatus.Accepted, item.Status));
+            var message = Assert.Single(await transport.ReceiveAsync(subscription, new ReceiveRequest { MaxMessages = 10, MaxWaitTime = TimeSpan.FromSeconds(2) }, token));
+            Assert.Equal("allowed", message.Headers["tenant.id"]);
+            await transport.CompleteAsync(message, token);
+            Assert.Empty(await transport.ReceiveAsync(subscription, new ReceiveRequest { MaxMessages = 10, MaxWaitTime = TimeSpan.FromSeconds(1) }, token));
+        }
+        finally
+        {
+            await transport.DeleteAsync(subscription, token);
+            await transport.DeleteAsync(topic, token);
+        }
+
+        static TransportMessage Message(string tenant) => new()
+        {
+            Body = Encoding.UTF8.GetBytes("{}"),
+            ContentType = "application/json",
+            Headers = MessageHeaders.Create(new Dictionary<string, string> { ["tenant.id"] = tenant })
+        };
     }
 
     [Fact]

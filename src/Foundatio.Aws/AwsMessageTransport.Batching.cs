@@ -34,7 +34,7 @@ public sealed partial class AwsMessageTransport
         {
             results[index] = new SendItemResult { Index = index, Status = MessageSendStatus.NotAttempted };
             var (body, encoding) = EncodeBody(messages[index]);
-            var attributes = BuildAttributes(messages[index], encoding, static value => value);
+            var attributes = BuildAttributes(messages[index], encoding);
             int bytes = Encoding.UTF8.GetByteCount(body);
             foreach (var pair in attributes)
                 bytes = checked(bytes + Encoding.UTF8.GetByteCount(pair.Key) + Encoding.UTF8.GetByteCount(pair.Value) + 6);

@@ -38,14 +38,11 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     private const string MessageIdAttributeName = "fnd.id";
     private const string ContentTypeAttributeName = "fnd.content_type";
 
-    // Well-known headers surfaced as native message attributes (in addition to the authoritative JSON blob) so brokers
-    // can filter/route on them — e.g. SNS subscription filter policies match on native attributes.
-    private static readonly string[] WellKnownNativeHeaders = [KnownHeaders.MessageType, KnownHeaders.Priority, KnownHeaders.CorrelationId];
-
     private static readonly IReadOnlySet<DestinationRole> _supportedRoles =
         new HashSet<DestinationRole> { DestinationRole.Queue, DestinationRole.Topic, DestinationRole.Subscription, DestinationRole.Binding };
 
     private readonly AwsMessageTransportOptions _options;
+    private readonly string[] _nativeMessageHeaders;
     private readonly Lazy<IAmazonSQS> _sqs;
     private readonly Lazy<IAmazonSimpleNotificationService> _sns;
     private readonly ConcurrentDictionary<string, string> _queueUrls = new(StringComparer.Ordinal);
@@ -57,6 +54,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         options.Validate();
+        _nativeMessageHeaders = options.NativeMessageHeaders.ToArray();
         _sqs = new Lazy<IAmazonSQS>(CreateSqsClient);
         _sns = new Lazy<IAmazonSimpleNotificationService>(CreateSnsClient);
     }
@@ -584,19 +582,19 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
                 || contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static Dictionary<string, TAttribute> BuildAttributes<TAttribute>(TransportMessage message, string encoding, Func<string, TAttribute> stringAttribute)
+    private Dictionary<string, string> BuildAttributes(TransportMessage message, string encoding)
     {
         var headers = message.Headers;
-        var attributes = new Dictionary<string, TAttribute>(StringComparer.Ordinal)
+        var attributes = new Dictionary<string, string>(_nativeMessageHeaders.Length + 1, StringComparer.Ordinal)
         {
-            [EnvelopeAttributeName] = stringAttribute(JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers)))
+            [EnvelopeAttributeName] = JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers))
         };
 
-        foreach (string name in WellKnownNativeHeaders)
+        foreach (string name in _nativeMessageHeaders)
         {
             string? value = headers.GetValueOrDefault(name);
             if (!String.IsNullOrEmpty(value))
-                attributes[name] = stringAttribute(value);
+                attributes[name] = value;
         }
 
         return attributes;
