@@ -36,7 +36,13 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
             AllowSynchronousContinuations = false,
             FullMode = BoundedChannelFullMode.Wait
         });
-        _worker = Task.Run(RunAsync);
+        if (ExecutionContext.IsFlowSuppressed())
+            _worker = Task.Run(RunAsync);
+        else
+        {
+            using (ExecutionContext.SuppressFlow())
+                _worker = Task.Run(RunAsync);
+        }
     }
 
     public async Task<TResult> ExecuteAsync(T value, CancellationToken cancellationToken)
@@ -59,6 +65,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
     private async Task RunAsync()
     {
         var executing = new List<Task>(_concurrency);
+        int previousBatchSize = 0;
         try
         {
             while (await _channel.Reader.WaitToReadAsync(_stop.Token).ConfigureAwait(false))
@@ -69,9 +76,12 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
                     await Task.WhenAny(executing).ConfigureAwait(false);
                     executing.RemoveAll(static task => task.IsCompleted);
                 }
-                var batch = await ReadBatchAsync(_delayWhenIdle || executing.Count > 0).ConfigureAwait(false);
+                var batch = await ReadBatchAsync(executing.Count > 0 || (_delayWhenIdle && previousBatchSize != 1)).ConfigureAwait(false);
                 if (batch.Count > 0)
+                {
+                    previousBatchSize = batch.Count;
                     executing.Add(ExecuteBatchAsync(batch));
+                }
             }
         }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested)

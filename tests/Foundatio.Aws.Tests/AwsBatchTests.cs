@@ -17,6 +17,27 @@ namespace Foundatio.Aws.Tests;
 public class AwsBatchTests
 {
     [Fact]
+    public async Task SendAsync_AutomaticBatcher_DoesNotRetainCallerExecutionContext()
+    {
+        var caller = new AsyncLocal<string?> { Value = "first-request" };
+        var observed = new ConcurrentQueue<string?>();
+        var sqs = CreateSqs();
+        sqs.Setup(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SendMessageBatchRequest request, CancellationToken _) =>
+            {
+                observed.Enqueue(caller.Value);
+                return Accepted(request);
+            });
+        await using var transport = new AwsMessageTransport(new(), sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        await transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("one")], new(), TestContext.Current.CancellationToken);
+        caller.Value = "second-request";
+        await transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("two")], new(), TestContext.Current.CancellationToken);
+        Assert.Equal(2, observed.Count);
+        Assert.All(observed, Assert.Null);
+        Assert.Equal("second-request", caller.Value);
+    }
+
+    [Fact]
     public async Task SendAsync_LargerExplicitBatch_PreservesIndicesAcrossRequestsAndCancellation()
     {
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
@@ -155,29 +176,47 @@ public class AwsBatchTests
     [Fact]
     public async Task SendAsync_CancelOneInFlightCaller_DoesNotCancelOtherMessages()
     {
+        var occupied = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowBatch = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        SendMessageBatchRequest? sharedRequest = null;
+        CancellationToken sharedToken = default;
         var sqs = CreateSqs();
         sqs.Setup(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()))
             .Returns(async (SendMessageBatchRequest request, CancellationToken ct) =>
             {
+                if (request.Entries[0].MessageBody == "occupy")
+                {
+                    occupied.TrySetResult();
+                    await allowBatch.Task.WaitAsync(ct);
+                    return Accepted(request);
+                }
+                sharedRequest = request;
+                sharedToken = ct;
                 entered.TrySetResult();
                 await release.Task.WaitAsync(ct);
                 return Accepted(request);
             });
-        await using var transport = new AwsMessageTransport(new(), sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        await using var transport = new AwsMessageTransport(new() { MaxConcurrentBatches = 1 }, sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
         using var canceled = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var occupying = transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("occupy")], new(), TestContext.Current.CancellationToken);
+        await occupied.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
         var first = transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("first")], new(), canceled.Token);
         var second = transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("second")], new(), TestContext.Current.CancellationToken);
         try
         {
+            allowBatch.TrySetResult();
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+            Assert.Equal(["first", "second"], sharedRequest!.Entries.Select(e => e.MessageBody));
             await canceled.CancelAsync();
             var canceledResult = await first.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
             Assert.Equal(MessageSendStatus.Unknown, Assert.Single(canceledResult.Items).Status);
             Assert.False(second.IsCompleted);
+            Assert.False(sharedToken.IsCancellationRequested);
         }
         finally { release.TrySetResult(); }
+        Assert.Equal(MessageSendStatus.Accepted, Assert.Single((await occupying).Items).Status);
         Assert.Equal(MessageSendStatus.Accepted, Assert.Single((await second).Items).Status);
     }
 

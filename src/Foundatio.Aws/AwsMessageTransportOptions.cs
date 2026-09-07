@@ -28,10 +28,10 @@ public class AwsMessageTransportOptions
     /// <summary>Coalesce concurrent single sends, publishes and acknowledgements into native AWS batches.</summary>
     public bool EnableBatching { get; set; } = true;
 
-    /// <summary>Maximum time to collect a partial batch. Zero batches only operations already waiting.</summary>
+    /// <summary>Maximum time to collect a partial batch; idle single-operation streams dispatch immediately. Zero batches only operations already waiting.</summary>
     public TimeSpan BatchDelay { get; set; } = TimeSpan.FromMilliseconds(1);
 
-    /// <summary>Maximum concurrent batch requests per destination and operation (send or acknowledge).</summary>
+    /// <summary>Maximum concurrent automatically collected requests per destination and operation (send or acknowledge).</summary>
     public int MaxConcurrentBatches { get; set; } = 4;
 
     /// <summary>Maximum buffered operations per destination and operation. Further callers await capacity.</summary>
