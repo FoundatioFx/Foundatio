@@ -48,9 +48,9 @@ public sealed partial class AwsMessageTransport
         string address = topic ? await ResolveTopicArnAsync(destination.Name, ct).ConfigureAwait(false) : await ResolveQueueUrlAsync(destination, ct).ConfigureAwait(false);
         for (int offset = 0; offset < prepared.Count;)
         {
-            var batch = new List<PreparedMessage>(10);
+            var batch = new List<PreparedMessage>(_options.MaxBatchSize);
             int bytes = 0;
-            while (offset < prepared.Count && batch.Count < 10 && bytes + prepared[offset].Bytes <= maximumBytes)
+            while (offset < prepared.Count && batch.Count < _options.MaxBatchSize && bytes + prepared[offset].Bytes <= maximumBytes)
             {
                 var entry = prepared[offset++];
                 batch.Add(entry);

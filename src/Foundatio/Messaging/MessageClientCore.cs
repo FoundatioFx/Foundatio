@@ -55,6 +55,12 @@ internal sealed record ListenerConfig
     public bool Ephemeral { get; init; }
     public AckMode AckMode { get; init; } = AckMode.Auto;
     public int MaxConcurrency { get; init; } = 1;
+    public int? PrefetchCount { get; init; }
+    public TimeSpan? ReceiveBatchDelay { get; init; }
+    public TimeSpan VisibilityTimeout { get; init; } = TimeSpan.FromMinutes(1);
+    public bool AutoRenewLock { get; init; } = true;
+    public TimeSpan ShutdownTimeout { get; init; }
+    public bool WaitForManualSettlement { get; init; } = true;
     // Null falls back to the client's default RetryPolicy.
     public int? MaxAttempts { get; init; }
     public Func<int, TimeSpan>? RedeliveryBackoff { get; init; }
@@ -273,33 +279,43 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public Task<MessageListenerHandle> StartListenerAsync(ListenerConfig config, Func<IMessageContext, CancellationToken, Task> handler, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(handler);
-        return RegisterConsumerAsync(config, async (entry, token) =>
+        return RegisterConsumerAsync(config, async (entry, lease, token) =>
         {
-            var received = CreateMessageContext(entry, token);
+            var received = CreateMessageContext(entry, token, lease);
             await HandleMessageAsync(received, config, handler, token).AnyContext();
         }, cancellationToken);
     }
 
+    public Task<MessageListenerHandle> StartOutcomeListenerAsync(ListenerConfig config, Func<IMessageContext, CancellationToken, ValueTask<MessageOutcome>> handler, CancellationToken cancellationToken)
+        => RegisterConsumerAsync(config, (entry, lease, token) => HandleMessageOutcomeAsync(CreateMessageContext(entry, token, lease), config, handler, token), cancellationToken);
+
+    public Task<MessageListenerHandle> StartOutcomeListenerAsync<T>(ListenerConfig config, Func<IMessageContext<T>, CancellationToken, ValueTask<MessageOutcome>> handler, CancellationToken cancellationToken) where T : class
+        => RegisterConsumerAsync(config, async (entry, lease, token) =>
+        {
+            var received = await CreateMessageContextAsync<T>(entry, token, lease).AnyContext();
+            await HandleMessageOutcomeAsync(received, config, handler, token).AnyContext();
+        }, cancellationToken);
+
     public Task<IReceivedMessage<T>?> ReceiveAsync<T>(DestinationAddress source, TimeSpan wait, CancellationToken cancellationToken) where T : class
     {
         return ReceiveCoreAsync<IReceivedMessage<T>>(source, wait, async (entry, cancellation, supervision) =>
-            new ReceivedMessage<T>(await CreateMessageContextAsync<T>(entry, cancellation.Token).AnyContext(), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct)), cancellationToken);
+            new ReceivedMessage<T>(await CreateMessageContextAsync<T>(entry, cancellation.Token, supervision).AnyContext(), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct)), cancellationToken);
     }
 
     public Task<IReceivedMessage?> ReceiveAsync(DestinationAddress source, TimeSpan wait, CancellationToken cancellationToken)
     {
         return ReceiveCoreAsync<IReceivedMessage>(source, wait, (entry, cancellation, supervision) =>
-            Task.FromResult<IReceivedMessage>(new ReceivedMessage(CreateMessageContext(entry, cancellation.Token), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct))), cancellationToken);
+            Task.FromResult<IReceivedMessage>(new ReceivedMessage(CreateMessageContext(entry, cancellation.Token, supervision), cancellation, supervision, ct => ReturnUnsettledAsync(entry, ct))), cancellationToken);
     }
 
     private async Task<T?> ReceiveCoreAsync<T>(DestinationAddress source, TimeSpan wait,
-        Func<TransportEntry, CancellationTokenSource, Task<bool>, Task<T>> create, CancellationToken cancellationToken) where T : class
+        Func<TransportEntry, CancellationTokenSource, MessageDeliveryLease, Task<T>> create, CancellationToken cancellationToken) where T : class
     {
         ThrowIfDisposed();
         ArgumentOutOfRangeException.ThrowIfLessThan(wait, TimeSpan.Zero);
         var pull = RequirePull();
         var cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeCancellation.Token);
-        Task<bool> supervision = Task.FromResult(false);
+        MessageDeliveryLease? supervision = null;
         bool transferred = false;
         try
         {
@@ -311,7 +327,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             if (entries.Count == 0)
                 return null;
 
-            supervision = SuperviseLeaseAsync(entries[0], cancellation);
+            supervision = new MessageDeliveryLease(_transport, entries[0], TimeSpan.FromMinutes(1), true, _timeProvider, _logger, cancellation);
             var received = await create(entries[0], cancellation, supervision).AnyContext();
             transferred = true;
             return received;
@@ -321,7 +337,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             if (!transferred)
             {
                 await cancellation.CancelAsync().AnyContext();
-                await supervision.AnyContext();
+                if (supervision is not null) await supervision.DisposeAsync().AnyContext();
                 cancellation.Dispose();
             }
         }
@@ -330,9 +346,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
     public Task<MessageListenerHandle> StartListenerAsync<T>(ListenerConfig config, Func<IMessageContext<T>, CancellationToken, Task> handler, CancellationToken cancellationToken) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
-        return RegisterConsumerAsync(config, async (entry, token) =>
+        return RegisterConsumerAsync(config, async (entry, lease, token) =>
         {
-            var received = await CreateMessageContextAsync<T>(entry, token).AnyContext();
+            var received = await CreateMessageContextAsync<T>(entry, token, lease).AnyContext();
             await HandleMessageAsync(received, config, handler, token).AnyContext();
         }, cancellationToken);
     }
@@ -358,7 +374,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     // Multiple typed consumers can share one destination. They attach to a single per-source listener whose loop
     // demultiplexes each message to the consumer registered for its type; a type with no registered consumer is
     // handled by HandleUnmatchedAsync. Duplicate registration on one endpoint is rejected.
-    private async Task<MessageListenerHandle> RegisterConsumerAsync(ListenerConfig config, Func<TransportEntry, CancellationToken, Task> dispatch, CancellationToken cancellationToken)
+    private async Task<MessageListenerHandle> RegisterConsumerAsync(ListenerConfig config, Func<TransportEntry, MessageDeliveryLease, CancellationToken, Task> dispatch, CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
@@ -432,18 +448,28 @@ internal sealed class MessageClientCore : IAsyncDisposable
     // (no head-of-line blocking) and steady-state utilization stays at the configured concurrency. A failure while
     // receiving or while processing a single entry (including a poison message that was already dead-lettered) must
     // never tear down the loop, otherwise one bad message or a transient transport blip silently stops consumption.
-    private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, CancellationToken, Task> onMessage, int maxConcurrency, CancellationToken cancellationToken, Action<bool>? receivingHealth = null)
+    private async Task RunPullLoopAsync(DestinationAddress source, ISupportsPull pull, Func<TransportEntry, MessageDeliveryLease, CancellationToken, Task> onMessage, ListenerConfig endpoint, CancellationToken cancellationToken, Action<bool>? receivingHealth = null)
     {
-        maxConcurrency = Math.Max(1, maxConcurrency);
+        int maxConcurrency = Math.Max(1, endpoint.MaxConcurrency);
         var capabilities = (_transport as ITransportInfo)?.GetCapabilities(source);
         int batchSize = Math.Clamp(capabilities?.MaxReceiveBatchSize ?? maxConcurrency, 1, maxConcurrency);
-        var batchDelay = capabilities?.ReceiveBatchDelay ?? TimeSpan.Zero;
+        if (endpoint.PrefetchCount is { } prefetch)
+            batchSize = Math.Min(batchSize, prefetch);
+        var batchDelay = endpoint.ReceiveBatchDelay.HasValue ? TimeSpan.Zero : capabilities?.ReceiveBatchDelay ?? TimeSpan.Zero;
+        int largestReceivedBatch = 0;
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         var inFlight = new ConcurrentDictionary<Task, byte>();
         var cleanupSlots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         using var collecting = new SemaphoreSlim(1, 1);
         using var receivingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var receivingToken = receivingCancellation.Token;
+        using var processingCancellation = new CancellationTokenSource();
+        var processingToken = processingCancellation.Token;
+        using var stopRegistration = receivingToken.Register(() =>
+        {
+            if (endpoint.ShutdownTimeout == TimeSpan.Zero) processingCancellation.Cancel();
+            else processingCancellation.CancelAfter(endpoint.ShutdownTimeout);
+        });
         int receiveConcurrency = Math.Clamp(capabilities?.MaxConcurrentReceives ?? 1, 1, (maxConcurrency - 1) / batchSize + 1);
         try
         {
@@ -474,6 +500,13 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     {
                         await collecting.WaitAsync(cancellationToken).AnyContext();
                         collectingBatch = true;
+                        if (endpoint.ReceiveBatchDelay is { } collectionDelay && collectionDelay > TimeSpan.Zero
+                            && maxConcurrency - slots.CurrentCount >= (maxConcurrency + 1) / 2
+                            && slots.CurrentCount < largestReceivedBatch)
+                        {
+                            await Task.WhenAny(Task.WhenAll(inFlight.Keys.ToArray()), Task.Delay(collectionDelay, _timeProvider, cancellationToken)).AnyContext();
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
                         await slots.WaitAsync(cancellationToken).AnyContext();
                         claimed = 1;
                         long batchStart = batchDelay > TimeSpan.Zero ? Stopwatch.GetTimestamp() : 0;
@@ -512,9 +545,18 @@ internal sealed class MessageClientCore : IAsyncDisposable
                             MaxMessages = claimed,
                             MaxWaitTime = pollWindow
                         };
-                        entries = _transport is ISupportsVisibilityTimeout visibility
-                            ? await visibility.ReceiveAsync(source, request, TimeSpan.FromMinutes(1), cancellationToken).AnyContext()
-                            : await pull.ReceiveAsync(source, request, cancellationToken).AnyContext();
+                        var receive = _transport is ISupportsVisibilityTimeout visibility
+                            ? visibility.ReceiveAsync(source, request, endpoint.VisibilityTimeout, cancellationToken)
+                            : pull.ReceiveAsync(source, request, cancellationToken);
+                        try { entries = await receive.WaitAsync(cancellationToken).AnyContext(); }
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                        {
+                            var cleanup = ReleaseLateReceiveAsync(receive);
+                            // Join cooperative receive cancellation before disposal completes, while a provider that
+                            // ignores cancellation gets a bounded grace period and releases its late deliveries separately.
+                            await Task.WhenAny(cleanup, Task.Delay(TimeSpan.FromMilliseconds(50))).AnyContext();
+                            throw;
+                        }
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
@@ -550,6 +592,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     // over-returns would otherwise release more slots than acquired (breaching the cap / overflowing the
                     // semaphore). Any over-returned entries are left unsettled and redeliver after their visibility window.
                     int toProcess = Math.Min(entries.Count, claimed);
+                    largestReceivedBatch = Math.Max(largestReceivedBatch, toProcess);
                     ReleaseSlots(slots, claimed - toProcess); // return slots we claimed but won't fill (always >= 0)
 
                     // An empty poll should have blocked for MaxWaitTime; a transport that returns empty early (or
@@ -563,7 +606,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
                     for (int index = 0; index < toProcess; index++)
                     {
-                        var task = SafeProcessAsync(entries[index], onMessage, source, cancellationToken, slots, cleanupSlots);
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
+                            await ReturnUnsettledAsync(entries[index], cleanup.Token).AnyContext();
+                            (_transport as IMessageProcessingObserver)?.ProcessingFinished(entries[index]);
+                            slots.Release();
+                            continue;
+                        }
+                        var task = SafeProcessAsync(entries[index], onMessage, source, processingToken, slots, cleanupSlots, endpoint);
                         if (!task.IsCompleted)
                         {
                             inFlight[task] = 0;
@@ -586,48 +637,42 @@ internal sealed class MessageClientCore : IAsyncDisposable
             slots.Release(count);
     }
 
-    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, CancellationToken cancellationToken, SemaphoreSlim? slots = null, SemaphoreSlim? cleanupSlots = null)
+    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, MessageDeliveryLease, CancellationToken, Task> onMessage, DestinationAddress source, CancellationToken cancellationToken, SemaphoreSlim? slots = null, SemaphoreSlim? cleanupSlots = null, ListenerConfig? endpoint = null)
     {
+        (_transport as IMessageProcessingObserver)?.ProcessingStarted(entry);
         using var deliveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var supervision = SuperviseLeaseAsync(entry, deliveryCancellation);
+        await using var lease = new MessageDeliveryLease(_transport, entry, endpoint?.VisibilityTimeout ?? TimeSpan.FromMinutes(1),
+            endpoint?.AutoRenewLock ?? true, _timeProvider, _logger, deliveryCancellation);
         try
         {
             deliveryCancellation.Token.ThrowIfCancellationRequested();
-            await onMessage(entry, deliveryCancellation.Token).AnyContext();
+            await onMessage(entry, lease, deliveryCancellation.Token).AnyContext();
         }
-        catch (OperationCanceledException) when (deliveryCancellation.IsCancellationRequested)
-        {
-            bool leaseLost = await supervision.AnyContext();
-            if (cancellationToken.IsCancellationRequested && !leaseLost)
-            {
-                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
-                await ReturnUnsettledAsync(entry, cleanup.Token).AnyContext();
-            }
-        }
-        catch (UnhandledMessageTypeException)
-        {
-            // Already settled AND classified (WARN-retryable / ERROR-terminal) by HandleUnmatchedAsync; re-logging
-            // here would emit an ERROR for every retryable attempt.
-        }
+        catch (OperationCanceledException) when (deliveryCancellation.IsCancellationRequested) { }
+        catch (UnhandledMessageTypeException) { }
         catch (Exception ex)
         {
-            // The message has already been settled (dead-lettered on deserialize failure, abandoned/dead-lettered on
-            // handler error); swallowing here keeps the loop alive for the next message.
             _logger.LogError(ex, "Error processing message \"{MessageId}\" from \"{Source}\": {Message}", entry.Id, source, ex.Message);
         }
         finally
         {
+            if (cancellationToken.IsCancellationRequested && !lease.IsLost && !lease.IsSettled)
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
+                await ReturnUnsettledAsync(entry, cleanup.Token).AnyContext();
+            }
+            lease.Settled();
             var cancellation = deliveryCancellation.CancelAsync();
-            // Bound deferred cleanup separately so slow cancellation callbacks cannot retain unlimited deliveries.
             if (cleanupSlots is not null)
                 await cleanupSlots.WaitAsync().AnyContext();
             try
             {
                 slots?.Release();
                 await cancellation.AnyContext();
-                await supervision.AnyContext();
+                await lease.Completion.AnyContext();
             }
             finally { cleanupSlots?.Release(); }
+            (_transport as IMessageProcessingObserver)?.ProcessingFinished(entry);
         }
     }
 
@@ -644,61 +689,29 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
     }
 
-    private async Task<bool> SuperviseLeaseAsync(TransportEntry entry, CancellationTokenSource deliveryCancellation)
+    private async Task ReleaseLateReceiveAsync(Task<IReadOnlyList<TransportEntry>> receive)
     {
-        if (entry.LockExpiresUtc is not { } expires)
-            return false;
-
-        var token = deliveryCancellation.Token;
-        var duration = TimeSpan.FromMinutes(1);
-        if (_transport is ISupportsVisibilityTimeout { MaxVisibilityTimeout: { } maximum } && duration > maximum)
-            duration = maximum;
-
         try
         {
-            while (!token.IsCancellationRequested)
+            foreach (var entry in await receive.AnyContext())
             {
-                var remaining = expires - _timeProvider.GetUtcNow();
-                if (remaining <= TimeSpan.Zero)
-                    throw new ReceiptExpiredException();
-
-                if (_transport is not ISupportsLockRenewal renewal)
-                {
-                    await Task.Delay(remaining, _timeProvider, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                    if (token.IsCancellationRequested)
-                        return expires <= _timeProvider.GetUtcNow();
-                    throw new ReceiptExpiredException();
-                }
-
-                await Task.Delay(remaining / 2, _timeProvider, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                if (token.IsCancellationRequested)
-                    return expires <= _timeProvider.GetUtcNow();
-                var started = _timeProvider.GetUtcNow();
-                remaining = expires - started;
-                if (remaining <= TimeSpan.Zero)
-                    throw new ReceiptExpiredException();
-
-                using var deadline = new CancellationTokenSource(remaining, _timeProvider);
-                using var renewalCancellation = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
-                await renewal.RenewLockAsync(entry, duration, renewalCancellation.Token)
-                    .WaitAsync(remaining, _timeProvider, token).AnyContext();
-                expires = started.Add(duration);
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5), _timeProvider);
+                await ReturnUnsettledAsync(entry, cleanup.Token).AnyContext();
+                (_transport as IMessageProcessingObserver)?.ProcessingFinished(entry);
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
-        {
-            return expires <= _timeProvider.GetUtcNow();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Lease lost for message {MessageId} from {Source}; cancelling its handler", entry.Id, entry.Destination);
-            await deliveryCancellation.CancelAsync().AnyContext();
-            return true;
-        }
-        return expires <= _timeProvider.GetUtcNow();
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { _logger.LogWarning(exception, "Receive finished after its listener stopped"); }
     }
 
     private async Task HandleMessageAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, Task> handler, CancellationToken cancellationToken) where TMessage : IMessageContext
+        => await HandleMessageOutcomeAsync(message, config, async (context, token) =>
+        {
+            await handler(context, token).AnyContext();
+            return MessageOutcome.Success;
+        }, cancellationToken).AnyContext();
+
+    private async Task HandleMessageOutcomeAsync<TMessage>(TMessage message, ListenerConfig config, Func<TMessage, CancellationToken, ValueTask<MessageOutcome>> handler, CancellationToken cancellationToken) where TMessage : IMessageContext
     {
         // Re-establish the producer's trace context on the consumer side so a cross-process trace continues here
         // instead of breaking at the transport boundary.
@@ -706,11 +719,18 @@ internal sealed class MessageClientCore : IAsyncDisposable
         long startTimestamp = Stopwatch.GetTimestamp();
         try
         {
-            await handler(message, cancellationToken).AnyContext();
+            var outcome = await handler(message, cancellationToken).AnyContext();
+            if (outcome.Kind is MessageOutcomeKind.Retry or MessageOutcomeKind.DeadLetter)
+            {
+                await outcome.SettleFailureAsync(message, config.MaxAttempts ?? _retryPolicy.MaxAttempts, config.RedeliveryBackoff ?? _retryPolicy.Backoff, cancellationToken).AnyContext();
+                return;
+            }
+            if (outcome.Kind == MessageOutcomeKind.Unsettled)
+                return;
 
             if (config.AckMode == AckMode.Auto && !message.IsHandled)
                 await message.CompleteAsync(cancellationToken).AnyContext();
-            else if (config.AckMode == AckMode.Manual && message is MessageContext context)
+            else if (config.AckMode == AckMode.Manual && config.WaitForManualSettlement && message is MessageContext context)
                 await context.WaitForSettlementAsync(cancellationToken).AnyContext();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -744,7 +764,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
             // A retry that can still happen is a warning; the terminal decision (unrecoverable or attempts exhausted)
             // is the error worth alerting on.
-            if (unrecoverable || message.Attempts >= maxAttempts)
+            if (unrecoverable || maxAttempts >= 0 && message.Attempts >= maxAttempts)
                 _logger.LogError(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}); dead-lettering: {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
             else
                 _logger.LogWarning(ex, "Handler failed for message \"{MessageId}\" from \"{Source}\" (attempt {Attempt} of {MaxAttempts}); will retry: {Message}", message.Id, config.Source, message.Attempts, maxAttempts, ex.Message);
@@ -785,21 +805,17 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (message.IsHandled)
             return Task.CompletedTask;
 
-        if (unrecoverable || message.Attempts >= maxAttempts)
-            return message.RejectAsync(new RejectOptions { Terminal = true, Reason = deadLetterReason, Exception = exception }, cancellationToken);
-
-        // Policy-driven delays are best-effort: a transport that can't honor the delay redelivers immediately rather
-        // than failing the settle (an explicit caller-requested delay stays strict).
-        return message.RejectAsync(new RejectOptions { RedeliveryDelay = backoff?.Invoke(message.Attempts), BestEffortDelay = true }, cancellationToken);
+        var outcome = unrecoverable ? MessageOutcome.DeadLetter(deadLetterReason, exception) : MessageOutcome.Retry(deadLetterReason, exception);
+        return outcome.SettleFailureAsync(message, maxAttempts, backoff, cancellationToken);
     }
 
-    private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken)
+    private MessageContext CreateMessageContext(TransportEntry entry, CancellationToken cancellationToken, MessageDeliveryLease? lease = null)
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
-        return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger, _topologyMode);
+        return new MessageContext(_transport, entry, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger, _topologyMode, lease);
     }
 
-    private async Task<IMessageContext<T>> CreateMessageContextAsync<T>(TransportEntry entry, CancellationToken cancellationToken) where T : class
+    private async Task<IMessageContext<T>> CreateMessageContextAsync<T>(TransportEntry entry, CancellationToken cancellationToken, MessageDeliveryLease? lease = null) where T : class
     {
         MessagingInstruments.Received.Add(1, new KeyValuePair<string, object?>("source", entry.Destination.Key));
 
@@ -854,7 +870,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Message \"{entry.Id}\" deserialized to null.", null);
         }
 
-        return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger, _topologyMode);
+        return new MessageContext<T>(_transport, entry, message, cancellationToken, _runtimeStore, _timeProvider, _retryPolicy.DeadLetterDestination, _logger, _topologyMode, lease);
     }
 
     private Task DeadLetterPoisonMessageAsync(TransportEntry entry, string reason, Exception? exception, CancellationToken cancellationToken)
@@ -1098,7 +1114,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
     {
         public required string Key { get; init; }
         public required ListenerConfig Config { get; init; }
-        public required Func<TransportEntry, CancellationToken, Task> Dispatch { get; init; }
+        public required Func<TransportEntry, MessageDeliveryLease, CancellationToken, Task> Dispatch { get; init; }
         public required bool IsCatchAll { get; init; }
         public required string? TypeName { get; init; }
     }
@@ -1116,6 +1132,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         private readonly ConcurrentDictionary<string, ConsumerGroup> _byType = new(StringComparer.Ordinal);
         private readonly ConsumerGroup _catchAll = new();
         private int _maxConcurrency = 1;
+        private ListenerConfig? _endpoint;
         private bool _ephemeral;
         private Task? _loop;
         private int _status = (int)MessageSubscriptionStatus.Starting;
@@ -1158,12 +1175,21 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 if (_consumers.IsEmpty)
                 {
                     _maxConcurrency = desired;
+                    _endpoint = registration.Config;
                     _ephemeral = registration.Config.Ephemeral;
                     created = true;
                 }
                 else if (desired != _maxConcurrency)
                 {
                     throw new InvalidOperationException($"Source \"{_source}\" is already consumed with MaxConcurrency {_maxConcurrency}; a conflicting MaxConcurrency {desired} was requested. Consumers sharing a destination must use the same MaxConcurrency.");
+                }
+                else if (_endpoint is { } endpoint && (endpoint.PrefetchCount != registration.Config.PrefetchCount
+                    || endpoint.ReceiveBatchDelay != registration.Config.ReceiveBatchDelay
+                    || endpoint.VisibilityTimeout != registration.Config.VisibilityTimeout
+                    || endpoint.AutoRenewLock != registration.Config.AutoRenewLock
+                    || endpoint.ShutdownTimeout != registration.Config.ShutdownTimeout))
+                {
+                    throw new InvalidOperationException($"Consumers sharing '{_source}' must agree on receive, lease, and shutdown settings.");
                 }
 
                 handle = new MessageListenerHandle(_source, registration.Key, () => RemoveConsumerAsync(registration.Key), () => Status, () => RecoveryVersion, WaitUntilReadyAsync);
@@ -1234,7 +1260,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         {
             if (_core._transport is ISupportsPull pull)
             {
-                await _core.RunPullLoopAsync(_source, pull, DispatchAsync, _maxConcurrency, cancellationToken, healthy =>
+                await _core.RunPullLoopAsync(_source, pull, DispatchAsync, _endpoint!, cancellationToken, healthy =>
                 {
                     int previous = Interlocked.Exchange(ref _status, (int)(healthy ? MessageSubscriptionStatus.Healthy : MessageSubscriptionStatus.Recovering));
                     if (!healthy && previous == (int)MessageSubscriptionStatus.Healthy)
@@ -1243,7 +1269,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 return;
             }
             await using var push = await ((ISupportsPush)_core._transport).SubscribeAsync(_source,
-                (entry, token) => _core.SafeProcessAsync(entry, DispatchAsync, _source, token),
+                (entry, token) => _core.SafeProcessAsync(entry, DispatchAsync, _source, token, endpoint: _endpoint),
                 new PushOptions { MaxConcurrentMessages = _maxConcurrency }, cancellationToken).AnyContext();
             await Task.Delay(Timeout.Infinite, cancellationToken).AnyContext();
         }
@@ -1347,7 +1373,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             }
         }
 
-        private async Task DispatchAsync(TransportEntry entry, CancellationToken token)
+        private async Task DispatchAsync(TransportEntry entry, MessageDeliveryLease lease, CancellationToken token)
         {
             if (entry.EnvelopeError is { } error)
             {
@@ -1361,7 +1387,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
                 return;
             }
 
-            await registration.Dispatch(entry, token).AnyContext();
+            await registration.Dispatch(entry, lease, token).AnyContext();
         }
 
         private ConsumerRegistration? Resolve(TransportEntry entry)
@@ -1398,9 +1424,11 @@ internal class MessageContext : IMessageContext
     private readonly TopologyMode _topologyMode;
     private int _isHandled;
     private TaskCompletionSource? _settled;
+    private readonly MessageDeliveryLease? _lease;
 
-    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null, TopologyMode topologyMode = TopologyMode.Ensure)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null, TopologyMode topologyMode = TopologyMode.Ensure, MessageDeliveryLease? lease = null)
     {
+        _lease = lease;
         _transport = transport;
         _entry = entry;
         _runtimeStore = runtimeStore;
@@ -1412,6 +1440,9 @@ internal class MessageContext : IMessageContext
     }
 
     public string Id => _entry.ApplicationMessageId ?? _entry.Headers.GetValueOrDefault(KnownHeaders.MessageId) ?? _entry.Id;
+    public DestinationAddress Destination => _entry.Destination;
+    public DateTimeOffset? EnqueuedUtc => _entry.EnqueuedUtc;
+    public bool IsLeaseLost => _lease?.IsLost == true;
     public string BrokerMessageId => _entry.Id;
     public ReadOnlyMemory<byte> Body => _entry.Body;
     public MessageHeaders Headers => _entry.Headers;
@@ -1440,6 +1471,7 @@ internal class MessageContext : IMessageContext
         {
             await _transport.CompleteAsync(_entry, cancellationToken).AnyContext();
             Volatile.Write(ref _isHandled, 2);
+            _lease?.Settled();
             Volatile.Read(ref _settled)?.TrySetResult();
             MessagingInstruments.Completed.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination.Key));
         }
@@ -1462,6 +1494,7 @@ internal class MessageContext : IMessageContext
         {
             await RejectCoreAsync(options, cancellationToken).AnyContext();
             Volatile.Write(ref _isHandled, 2);
+            _lease?.Settled();
             Volatile.Read(ref _settled)?.TrySetResult();
             var counter = options?.Terminal == true ? MessagingInstruments.DeadLettered : MessagingInstruments.Abandoned;
             counter.Add(1, new KeyValuePair<string, object?>("source", _entry.Destination.Key));
@@ -1540,6 +1573,8 @@ internal class MessageContext : IMessageContext
 
     public Task RenewLockAsync(TimeSpan? duration = null, CancellationToken cancellationToken = default)
     {
+        if (_lease is not null)
+            return _lease.RenewAsync(duration, cancellationToken == default ? CancellationToken : cancellationToken);
         return _transport is ISupportsLockRenewal lockRenewal
             ? lockRenewal.RenewLockAsync(_entry, duration, cancellationToken == default ? CancellationToken : cancellationToken)
             : throw new NotSupportedException($"Transport \"{_transport.GetType().Name}\" does not support lock renewal.");
@@ -1547,7 +1582,7 @@ internal class MessageContext : IMessageContext
 
     internal static async Task DeadLetterAsync(IMessageTransport transport, TransportEntry entry, string? reason, string? deadLetterDestination, ILogger logger, CancellationToken cancellationToken, TopologyMode topologyMode = TopologyMode.Ensure)
     {
-        if (transport is ISupportsDeadLetter deadLetter)
+        if (transport is ISupportsDeadLetterSink deadLetter)
         {
             await deadLetter.DeadLetterAsync(entry, reason, cancellationToken).AnyContext();
             return;
@@ -1646,8 +1681,8 @@ internal class MessageContext : IMessageContext
 
 internal sealed class MessageContext<T> : MessageContext, IMessageContext<T> where T : class
 {
-    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null, TopologyMode topologyMode = TopologyMode.Ensure)
-        : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination, logger, topologyMode)
+    public MessageContext(IMessageTransport transport, TransportEntry entry, T message, CancellationToken cancellationToken, IScheduledDispatchStore? runtimeStore = null, TimeProvider? timeProvider = null, string? deadLetterDestination = null, ILogger? logger = null, TopologyMode topologyMode = TopologyMode.Ensure, MessageDeliveryLease? lease = null)
+        : base(transport, entry, cancellationToken, runtimeStore, timeProvider, deadLetterDestination, logger, topologyMode, lease)
     {
         Message = message;
     }

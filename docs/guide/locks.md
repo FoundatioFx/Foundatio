@@ -676,3 +676,7 @@ if (lck is not null)
 - [Jobs](./jobs) - Background jobs with distributed locking
 - [Resilience](./resilience) - Retry policies for lock acquisition
 - [Serialization](./serialization) - Serializer configuration and performance
+
+## Native Redis resource locks
+
+`foundatio.Locking.UseRedis()` registers `RedisLockProvider` using the application's shared `IConnectionMultiplexer`. Acquisition uses Redis `SET NX` with expiration; renewal and release compare the ownership token atomically. `LockOwnershipLostException` signals that a holder may no longer extend its lease. Expired holders cannot release a successor's lock. These are leased resource locks, not deduplication or fencing of external writes. Configure distinct key prefixes for unrelated applications.

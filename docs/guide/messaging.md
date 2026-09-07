@@ -153,3 +153,25 @@ SQS/SNS support varies by destination role. Do not infer topic capabilities from
 ## Migration
 
 The former publish-only interfaces live under `Foundatio.Messaging.Legacy`; `Messaging.AddLegacyAdapter()` adapts them to this bus. Legacy `IQueue<T>` workers migrate to an explicit consumer and `SendAsync`. There is no `Deliveries.Both`, handler-name-derived subscriber identity, or `PerInstance` flag. Choose `AddConsumer` or `AddSubscriber`, and use a stable service identity or explicit names for durable subscribers.
+
+## Broker-driven execution tracking
+
+For queues that need progress, cancellation, and operational history, configure `.Messaging.UseInMemoryExecutionTracking()` or `.Messaging.UseRedisExecutionTracking()`. This registers `IMessageExecutionStore`; it does not create runnable jobs, a job worker, or a second scheduler. Delivery remains owned by the message bus.
+
+`MessageExecutionPipeline` runs a raw delivery callback with `MessageProcessingContext`, applies returned `MessageOutcome` values, and persists only confirmed settlement. Pass it to a manual-ack raw `ConsumeAsync` endpoint with `WaitForManualSettlement = false`. The producer creates a unique execution state before sending and puts its ID in `ExecutionHeaders.ExecutionId`. Integrations such as Foundatio.Mediator perform this composition automatically.
+
+Processing claims and subsequent progress/status writes are fenced by the broker attempt number. A terminal execution is not started again. Expired history does not block valid broker work; progress/history updates then become no-ops. Tracking is not persistent deduplication or exactly-once delivery. Broker acceptance and persistence are separate operations; uncertain sends and acknowledgments remain nonterminal. Application side effects must tolerate retries.
+
+Endpoint options own `MaxConcurrency`, `PrefetchCount`, `VisibilityTimeout`, `AutoRenewLock`, and `ShutdownTimeout`. Manual and automatic renewal share one conservative delivery deadline. Lost ownership cancels processing. Stopping receiving allows admitted handlers to drain within the configured shutdown timeout.
+
+`ConsumeWithOutcomeAsync` accepts `MessageOutcome.Success`, `Retry`, `DeadLetter`, or `Unsettled` without requiring expected application failures to throw exceptions.
+
+## Per-node broadcasts
+
+`SubscribeNodeAsync` receives an independent best-effort copy on each running node, acknowledging before callbacks. Memory and Redis use native expiring subscriptions. AWS creates a tagged SQS queue and SNS subscription, heartbeats ownership, cleans up on disposal, and reaps stale resources when another node starts. AWS managed resources do not advertise native TTL expiration. Configure IAM for the required resource lifecycle, tagging, and discovery operations, including when durable topology is externally provisioned.
+
+Use this for invalidation and UI refresh signals. A disconnected, paused, or restarting node may miss events and should refresh authoritative state. Use durable service subscriptions for work that needs replay and retries.
+
+## Operational recovery
+
+`MessageAdministration` supplies statistics, bounded dead-letter inspection, deletion, and replay through native capabilities. Providers without native inspection use bounded receive/hold/release. Scans stop at 1,000 messages or ten seconds; their cleanup has an independent timeout. A successful replacement send precedes deleting the original. That fallback is not transactional and an uncertain send can produce a duplicate. Callers may prepare fresh execution metadata for an operator replay while retaining the failed history.

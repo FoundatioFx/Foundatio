@@ -30,7 +30,7 @@ namespace Foundatio.Messaging;
 /// of, so those capabilities are intentionally not implemented (the core owns retry/dead-lettering).
 /// </remarks>
 public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
-    ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsProvisioning, ISupportsStats, ITransportInfo
+    ISupportsManagedNodeSubscriptions, ISupportsLockRenewal, ISupportsRedeliveryDelay, ISupportsProvisioning, ISupportsStats, ITransportInfo
 {
     private const string EnvelopeAttributeName = "fnd.envelope";
     private const string HeadersAttributeName = "fnd.headers";
@@ -48,7 +48,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     private readonly ConcurrentDictionary<string, string> _queueUrls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, string> _topicArns = new(StringComparer.Ordinal);
     private int _isDisposed;
-    private readonly bool _ownsClients = true;
+    private readonly bool _ownsSqs = true;
+    private readonly bool _ownsSns = true;
 
     public AwsMessageTransport(AwsMessageTransportOptions options)
     {
@@ -66,7 +67,16 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         ArgumentNullException.ThrowIfNull(sns);
         _sqs = new Lazy<IAmazonSQS>(() => sqs);
         _sns = new Lazy<IAmazonSimpleNotificationService>(() => sns);
-        _ownsClients = false;
+        _ownsSqs = false;
+        _ownsSns = false;
+    }
+
+    /// <summary>Uses a caller-owned SQS client; SNS is created lazily only when needed.</summary>
+    public AwsMessageTransport(AwsMessageTransportOptions options, IAmazonSQS sqs) : this(options)
+    {
+        ArgumentNullException.ThrowIfNull(sqs);
+        _sqs = new Lazy<IAmazonSQS>(() => sqs);
+        _ownsSqs = false;
     }
 
     public AwsMessageTransport(string connectionString) : this(AwsMessageTransportOptions.FromConnectionString(connectionString)) { }
@@ -119,7 +129,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
             MaxNumberOfMessages = Math.Clamp(request.MaxMessages <= 0 ? 1 : request.MaxMessages, 1, 10),
             VisibilityTimeout = (int)Math.Clamp(visibility.TotalSeconds, 0, 43200),
             MessageAttributeNames = ["All"],
-            MessageSystemAttributeNames = ["ApproximateReceiveCount"]
+            MessageSystemAttributeNames = ["ApproximateReceiveCount", "SentTimestamp"]
         };
         if (request.MaxWaitTime is { } wait)
             sqsRequest.WaitTimeSeconds = (int)Math.Clamp(wait.TotalSeconds, 0, 20);
@@ -181,6 +191,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
                 ContentType = contentType,
                 Destination = source,
                 LockExpiresUtc = receiveStarted.AddSeconds(sqsRequest.VisibilityTimeout.GetValueOrDefault()),
+                EnqueuedUtc = message.Attributes is not null && message.Attributes.TryGetValue("SentTimestamp", out var timestamp) && Int64.TryParse(timestamp, out long milliseconds)
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds) : null,
                 Body = body,
                 Headers = headers,
                 EnvelopeError = envelopeError,
@@ -247,7 +259,14 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
                     await EnsureSubscriptionAsync(declaration.Address, ct).ConfigureAwait(false);
                     break;
                 default:
-                    await ResolveQueueUrlAsync(declaration.Address, allowCreate: true, ct).ConfigureAwait(false);
+                    ValidateQueueArguments(declaration.ProviderArguments);
+                    string url = await ResolveQueueUrlAsync(declaration.Address, allowCreate: true, ct).ConfigureAwait(false);
+                    if (declaration.ProviderArguments is { Count: > 0 } arguments)
+                        await _sqs.Value.SetQueueAttributesAsync(new SetQueueAttributesRequest
+                        {
+                            QueueUrl = url,
+                            Attributes = new Dictionary<string, string>(arguments)
+                        }, ct).ConfigureAwait(false);
                     break;
             }
         }
@@ -357,7 +376,8 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         return new MessageDestinationStats
         {
             Queued = response.ApproximateNumberOfMessages,
-            Working = response.ApproximateNumberOfMessagesNotVisible
+            Working = response.ApproximateNumberOfMessagesNotVisible,
+            Delayed = response.ApproximateNumberOfMessagesDelayed
         };
     }
 
@@ -367,9 +387,9 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
             return;
 
         await DisposeBatchersAsync().ConfigureAwait(false);
-        if (_ownsClients && _sqs.IsValueCreated)
+        if (_ownsSqs && _sqs.IsValueCreated)
             _sqs.Value.Dispose();
-        if (_ownsClients && _sns.IsValueCreated)
+        if (_ownsSns && _sns.IsValueCreated)
             _sns.Value.Dispose();
     }
 
@@ -591,7 +611,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         var headers = message.Headers;
         string envelope = JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers));
         int bytes = checked(Encoding.UTF8.GetByteCount(body) + AttributeBytes(EnvelopeAttributeName, envelope));
-        foreach (string name in _nativeMessageHeaders)
+        foreach (string name in NativeHeaders(headers))
         {
             string? value = headers.GetValueOrDefault(name);
             if (!String.IsNullOrEmpty(value))
@@ -602,13 +622,20 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         static int AttributeBytes(string name, string value) => checked(Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 6);
     }
 
+    private IEnumerable<string> NativeHeaders(MessageHeaders headers)
+    {
+        if (!_options.ExposeAllNativeHeaders) return _nativeMessageHeaders;
+        var names = headers.Keys.Where(AwsMessageTransportOptions.IsValidNativeHeader).Union(_nativeMessageHeaders, StringComparer.Ordinal).ToArray();
+        return names.Length <= 9 ? names : _nativeMessageHeaders;
+    }
+
     private Dictionary<string, TAttribute> BuildAttributes<TAttribute>(PreparedMessage message, Func<string, TAttribute> createAttribute)
     {
         var attributes = new Dictionary<string, TAttribute>(_nativeMessageHeaders.Length + 1, StringComparer.Ordinal)
         {
             [EnvelopeAttributeName] = createAttribute(message.Envelope)
         };
-        foreach (string name in _nativeMessageHeaders)
+        foreach (string name in NativeHeaders(message.Headers))
         {
             string? value = message.Headers.GetValueOrDefault(name);
             if (!String.IsNullOrEmpty(value))

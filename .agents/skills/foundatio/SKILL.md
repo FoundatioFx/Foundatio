@@ -358,3 +358,11 @@ Validate a custom transport or job store against the shared conformance suites i
 | `Foundatio.Xunit` | xUnit v2 test logging, retry attributes |
 | `Foundatio.Xunit.v3` | xUnit v3 test logging, retry attributes |
 | `Foundatio.DataProtection` | ASP.NET Core Data Protection key storage via `IFileStorage` |
+
+## Broker execution integration
+
+- Optional broker execution history uses `IMessageExecutionStore` with `.Messaging.UseInMemoryExecutionTracking()` or `.UseRedisExecutionTracking()`. `MessageExecutionPipeline` and native `MessageProcessingContext` support progress, cancellation, and attempt-fenced state. Do not enqueue the same delivery through `IJobRuntimeStore`; the bus owns receiving and settlement.
+- `ConsumeWithOutcomeAsync` handles returned Success/Retry/DeadLetter/Unsettled outcomes. Endpoint receive capacity, visibility, automatic renewal, and graceful drain are configured with MessageHandlerOptions.
+- `SubscribeNodeAsync` supplies independent best-effort node broadcasts. AWS uses managed tagged resources and startup stale cleanup, not native TTL. Acknowledge-before-callback intentionally allows lost notifications.
+- Native `MessageAdministration` owns bounded dead-letter inspection/replay. Send-before-delete is at least once, not atomic. Optional replay preparation can create fresh tracked execution IDs.
+- `.Locking.UseRedis()` uses native RedisLockProvider with ownership-checked renewal/release. It coordinates live resource ownership, not persistent duplicate detection.

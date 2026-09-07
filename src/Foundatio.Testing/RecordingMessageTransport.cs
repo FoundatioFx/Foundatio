@@ -14,12 +14,16 @@ namespace Foundatio.Messaging.Testing;
 /// </summary>
 internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,
     ISupportsDeadLetter, ISupportsRedeliveryDelay, ISupportsLockRenewal, ISupportsStats,
-    ISupportsEphemeralSubscriptions, ITransportInfo
+    ISupportsEphemeralSubscriptions, ITransportInfo, IMessageProcessingObserver
 {
     // A delayed redelivery lives only in the inner transport's timer until it fires — neither queued nor in flight —
     // so idle detection would report quiescent while a retry is pending. Give the timer this long past its due time to
     // materialize the redelivered message back into stats before the pending marker is dropped.
     private static readonly TimeSpan _redeliveryGrace = TimeSpan.FromMilliseconds(250);
+
+    private readonly ConcurrentDictionary<Receipt, DestinationAddress> _processing = new();
+    public void ProcessingStarted(TransportEntry entry) => _processing[entry.Receipt] = entry.Destination;
+    public void ProcessingFinished(TransportEntry entry) => _processing.TryRemove(entry.Receipt, out _);
 
     private readonly InMemoryMessageTransport _inner;
     private readonly TimeProvider _timeProvider;
@@ -201,8 +205,9 @@ internal sealed class RecordingMessageTransport : IMessageTransport, ISupportsPu
         {
             var stats = await _inner.GetStatsAsync(address, ct).ConfigureAwait(false);
             long queued = stats.Queued + scheduled.GetValueOrDefault(address);
-            if (queued > 0 || stats.Working > 0)
-                pending.Add((address.Key, queued, stats.Working));
+            long working = Math.Max(stats.Working, _processing.Values.LongCount(source => source == address));
+            if (queued > 0 || working > 0)
+                pending.Add((address.Key, queued, working));
         }
 
         return pending;
