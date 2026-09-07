@@ -2,7 +2,7 @@
 
 A sustained-load harness for the unreleased messaging API. It complements the existing BenchmarkDotNet microbenchmarks with acknowledged queue throughput, pub/sub fanout, end-to-end latency, allocations, CPU/GC, backlog and delivery validation.
 
-See the [messaging pipeline follow-up](PIPELINE_RESULTS.md) for the latest same-runtime comparisons, low-load latency and sustained-load validation. The [AWS automatic batching report](AWS_BATCHING_RESULTS.md) retains the previous measurements. See [measured results and findings](RESULTS.md) for the checked-in baseline, the timer-retention fix it exposed, and unresolved native crash evidence.
+See the [allocation profiling follow-up](ALLOCATION_RESULTS.md) for buffer serialization, AWS allocation changes, repeated comparisons and sustained-load validation. The [messaging pipeline follow-up](PIPELINE_RESULTS.md) covers the preceding same-runtime comparisons and low-load latency. The [AWS automatic batching report](AWS_BATCHING_RESULTS.md) retains earlier measurements. See [measured results and findings](RESULTS.md) for the checked-in baseline, the timer-retention fix it exposed, and unresolved native crash evidence.
 
 ## Run locally
 

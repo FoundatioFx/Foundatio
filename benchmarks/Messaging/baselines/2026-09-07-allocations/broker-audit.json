@@ -1,0 +1,26 @@
+{
+  "Utc": "2026-09-07T17:33:12.183021+00:00",
+  "Containers": [
+    {
+      "Name": "foundatio-messaging-perf-localstack-1",
+      "Id": "e6cf284255f1a698d4e2af9fd846762d9067353496f01cde00b3e4c1aedc3267",
+      "Image": "localstack/localstack:3.8.1",
+      "ImageId": "sha256:b279c01f4cfb8f985a482e4014cabc1e2697b9d7a6c8c8db2e40f4d9f93687c7",
+      "NanoCpus": 4000000000,
+      "MemoryLimit": 3221225472
+    },
+    {
+      "Name": "foundatio-messaging-perf-redis-1",
+      "Id": "5a7b36f38e024e98d45becded6e5572c6c55b4834b7a8767a9033aabdb2df225",
+      "Image": "redis:8.6-alpine",
+      "ImageId": "sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763",
+      "NanoCpus": 4000000000,
+      "MemoryLimit": 2147483648
+    }
+  ],
+  "BenchmarkQueues": [],
+  "BenchmarkTopics": [],
+  "BenchmarkRedisKeys": [],
+  "RemainingConformanceQueues": 28,
+  "RemainingConformanceTopics": 2
+}
