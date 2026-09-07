@@ -1,0 +1,11 @@
+[
+  {
+    "pid": 460472,
+    "crash_capture": {
+      "DOTNET_DbgEnableMiniDump": "1",
+      "DOTNET_DbgMiniDumpType": "4",
+      "DOTNET_DbgMiniDumpName": "/tmp/foundatio-fastest/confirmed-crashes/%e_%p_%t.dmp",
+      "DOTNET_EnableCrashReport": "1"
+    }
+  }
+]
