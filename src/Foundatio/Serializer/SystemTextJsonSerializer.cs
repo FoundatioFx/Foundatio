@@ -37,7 +37,11 @@ public class SystemTextJsonSerializer : ITextSerializer, IBufferSerializer
         if (data.IsEmpty)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
-        object? result = JsonSerializer.Deserialize(data.Span, objectType, _deserializeOptions);
+        var utf8 = data.Span;
+        if (utf8.StartsWith("\uFEFF"u8))
+            utf8 = utf8[3..];
+
+        object? result = JsonSerializer.Deserialize(utf8, objectType, _deserializeOptions);
         return result is JsonElement element ? ConvertJsonElement(element) : result;
     }
 
