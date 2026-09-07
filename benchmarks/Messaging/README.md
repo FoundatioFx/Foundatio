@@ -2,7 +2,7 @@
 
 A sustained-load harness for the unreleased messaging API. It complements the existing BenchmarkDotNet microbenchmarks with acknowledged queue throughput, pub/sub fanout, end-to-end latency, allocations, CPU/GC, backlog and delivery validation.
 
-See [measured results and findings](RESULTS.md) for the checked-in baseline, the timer-retention fix it exposed, and unresolved native crash evidence.
+See the [AWS automatic batching follow-up](AWS_BATCHING_RESULTS.md) for the latest SQS/SNS comparison. See [measured results and findings](RESULTS.md) for the checked-in baseline, the timer-retention fix it exposed, and unresolved native crash evidence.
 
 ## Run locally
 

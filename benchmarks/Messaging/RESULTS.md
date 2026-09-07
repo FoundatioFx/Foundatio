@@ -1,5 +1,7 @@
 # Distributed messaging performance results
 
+The [AWS batching follow-up](AWS_BATCHING_RESULTS.md) contains the newer optimized SQS/SNS measurements. The tables below preserve the original baseline.
+
 Measured September 6, 2026. The sustained workload exposed and helped fix excessive timer retention in the in-memory transport. Foundatio leads the concurrent in-memory cases; MassTransit leads the concurrent SQS/SNS emulator cases. Serial queues provide counterexamples to any claim of a universal winner.
 
 141 benchmark trials are retained: 139 succeeded and 2 failed. Successful trials accounted for 170,917,727 inputs and 311,455,223 unique acknowledged deliveries. These totals include the retained before measurements and the loopback control, and exclude warmup.
