@@ -19,6 +19,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _worker;
     private int _disposed;
+    private int _activeRequests;
 
     public AwsRequestBatcher(AwsMessageTransportOptions options, int maximumBytes, Func<T, int> size,
         Func<IReadOnlyList<T>, CancellationToken, Task<TResult[]>> execute, bool delayWhenIdle = true)
@@ -76,7 +77,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
                     await Task.WhenAny(executing).ConfigureAwait(false);
                     executing.RemoveAll(static task => task.IsCompleted);
                 }
-                var batch = await ReadBatchAsync(executing.Count > 0 || (_delayWhenIdle && previousBatchSize != 1)).ConfigureAwait(false);
+                var batch = await ReadBatchAsync(Volatile.Read(ref _activeRequests) > 0 || (_delayWhenIdle && previousBatchSize != 1)).ConfigureAwait(false);
                 if (batch.Count > 0)
                 {
                     previousBatchSize = batch.Count;
@@ -100,8 +101,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
     {
         var batch = new List<Pending>(10);
         int bytes = 0;
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        deadline.CancelAfter(_delay);
+        Task? deadline = null;
         try
         {
             while (batch.Count < 10)
@@ -120,11 +120,18 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
                     batch.Add(pending);
                     bytes += size;
                 }
-                else if (!waitForMore || _delay == TimeSpan.Zero || !await _channel.Reader.WaitToReadAsync(deadline.Token).ConfigureAwait(false))
-                    break;
+                else
+                {
+                    if (!waitForMore || _delay == TimeSpan.Zero)
+                        break;
+                    deadline ??= Task.Delay(_delay, _stop.Token);
+                    var available = _channel.Reader.WaitToReadAsync(_stop.Token).AsTask();
+                    if (await Task.WhenAny(available, deadline).ConfigureAwait(false) != available || !await available.ConfigureAwait(false))
+                        break;
+                }
             }
         }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested)
         {
         }
         return batch;
@@ -142,7 +149,10 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
             var values = new T[batch.Count];
             for (int i = 0; i < batch.Count; i++)
                 values[i] = batch[i].Value;
-            var results = await _execute(values, timeout.Token).ConfigureAwait(false);
+            TResult[] results;
+            Interlocked.Increment(ref _activeRequests);
+            try { results = await _execute(values, timeout.Token).ConfigureAwait(false); }
+            finally { Interlocked.Decrement(ref _activeRequests); }
             if (results.Length != batch.Count)
                 throw new MessageBusException("AWS returned an incomplete batch result.");
             for (int i = 0; i < batch.Count; i++)

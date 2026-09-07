@@ -17,7 +17,7 @@ export FOUNDATIO_AWS_CONNECTION_STRING="serviceurl=http://localhost:4566;accessk
 dotnet test tests/Foundatio.Aws.Tests/Foundatio.Aws.Tests.csproj
 ```
 
-When `FOUNDATIO_AWS_CONNECTION_STRING` is **not** set, every test is skipped (so the project is safe in CI without a broker).
+When `FOUNDATIO_AWS_CONNECTION_STRING` is **not** set, broker integration tests are skipped. Mocked batching, envelope and configuration tests still run.
 
 To run against real AWS, set the connection string to real credentials/region (omit `serviceurl`), e.g.
 `accesskey=...;secretkey=...;region=us-east-1`.

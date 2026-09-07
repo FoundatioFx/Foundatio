@@ -280,6 +280,9 @@ public sealed record TransportCapabilities
     /// <summary>Maximum entries per pull receive; null means no transport-specific limit.</summary>
     public int? MaxReceiveBatchSize { get; init; }
 
+    /// <summary>Maximum parallel pull requests per source. All requests share the consumer concurrency budget.</summary>
+    public int MaxConcurrentReceives { get; init; } = 1;
+
     /// <summary>Optional brief wait for concurrently settling deliveries to free a fuller receive batch. Defaults to no wait.</summary>
     public TimeSpan ReceiveBatchDelay { get; init; }
 

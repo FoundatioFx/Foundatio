@@ -440,119 +440,143 @@ internal sealed class MessageClientCore : IAsyncDisposable
         var batchDelay = capabilities?.ReceiveBatchDelay ?? TimeSpan.Zero;
         var slots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
         var inFlight = new ConcurrentDictionary<Task, byte>();
-        int consecutiveReceiveFailures = 0;
-
+        var cleanupSlots = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        using var collecting = new SemaphoreSlim(1, 1);
+        using var receivingCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var receivingToken = receivingCancellation.Token;
+        int receiveConcurrency = Math.Clamp(capabilities?.MaxConcurrentReceives ?? 1, 1, (maxConcurrency - 1) / batchSize + 1);
         try
         {
-            while (!cancellationToken.IsCancellationRequested)
+            var receivers = new Task[receiveConcurrency];
+            for (int i = 0; i < receivers.Length; i++)
+                receivers[i] = ReceiveAsync(receivingToken);
+            await Task.WhenAll(receivers).AnyContext();
+        }
+        finally
+        {
+            await Task.WhenAll(inFlight.Keys.ToArray()).AnyContext();
+            slots.Dispose();
+            cleanupSlots.Dispose();
+        }
+
+        async Task ReceiveAsync(CancellationToken cancellationToken)
+        {
+            int consecutiveReceiveFailures = 0;
+
+            try
             {
-                // Block for a free slot before receiving so we never pull more than we can process concurrently.
-                int claimed = 0;
-                try
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    await slots.WaitAsync(cancellationToken).AnyContext();
-                    claimed = 1;
-                    if (batchDelay > TimeSpan.Zero && slots.CurrentCount < batchSize - 1)
-                        await Task.Delay(batchDelay, _timeProvider, cancellationToken).AnyContext();
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    ReleaseSlots(slots, claimed);
-                    break;
-                }
-
-                // Opportunistically claim any other idle slots so a transport that supports batch receive can still
-                // pull a batch while keeping per-message slot release. WaitAsync(Zero) is a non-blocking try-acquire.
-                while (claimed < batchSize && await slots.WaitAsync(TimeSpan.Zero).AnyContext())
-                    claimed++;
-
-                var pollWindow = TimeSpan.FromSeconds(1);
-                long pollStart = _timeProvider.GetTimestamp();
-                IReadOnlyList<TransportEntry> entries;
-                try
-                {
-                    var request = new ReceiveRequest
+                    // Block for a free slot before receiving so we never pull more than we can process concurrently.
+                    int claimed = 0;
+                    bool collectingBatch = false;
+                    try
                     {
-                        MaxMessages = claimed,
-                        MaxWaitTime = pollWindow
-                    };
-                    entries = _transport is ISupportsVisibilityTimeout visibility
-                        ? await visibility.ReceiveAsync(source, request, TimeSpan.FromMinutes(1), cancellationToken).AnyContext()
-                        : await pull.ReceiveAsync(source, request, cancellationToken).AnyContext();
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    ReleaseSlots(slots, claimed);
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    ReleaseSlots(slots, claimed);
-                    InvalidateProvisioning(source);
-                    receivingHealth?.Invoke(false);
-                    if (ex is MessageDestinationNotFoundException) throw;
-
-                    // The first failure of an outage is the alert; repeats at 1/s would be a firehose, so they
-                    // de-escalate to WARN (with a running count) until a receive succeeds again.
-                    consecutiveReceiveFailures++;
-                    if (consecutiveReceiveFailures == 1)
-                        _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
-                    else
-                        _logger.LogWarning(ex, "Error receiving from \"{Source}\" ({ConsecutiveFailures} consecutive); retrying: {Message}", source, consecutiveReceiveFailures, ex.Message);
-
-                    await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
-                    continue;
-                }
-
-                if (consecutiveReceiveFailures > 0) receivingHealth?.Invoke(true);
-                if (consecutiveReceiveFailures > 1)
-                    _logger.LogInformation("Receiving from \"{Source}\" recovered after {ConsecutiveFailures} consecutive failures", source, consecutiveReceiveFailures);
-                consecutiveReceiveFailures = 0;
-
-                // We hold exactly `claimed` slots and release one per processed entry, so never process more than we
-                // claimed: a well-behaved transport returns <= MaxMessages, but a transport that ignores MaxMessages and
-                // over-returns would otherwise release more slots than acquired (breaching the cap / overflowing the
-                // semaphore). Any over-returned entries are left unsettled and redeliver after their visibility window.
-                int toProcess = Math.Min(entries.Count, claimed);
-                ReleaseSlots(slots, claimed - toProcess); // return slots we claimed but won't fill (always >= 0)
-
-                // An empty poll should have blocked for MaxWaitTime; a transport that returns empty early (or
-                // synchronously) would otherwise hot-spin this loop, so sleep out the remainder of the window.
-                if (toProcess == 0)
-                {
-                    var remaining = pollWindow - _timeProvider.GetElapsedTime(pollStart);
-                    if (remaining > TimeSpan.Zero)
-                        await _timeProvider.SafeDelay(remaining, cancellationToken).AnyContext();
-                }
-
-                for (int index = 0; index < toProcess; index++)
-                {
-                    var task = ProcessAndReleaseSlotAsync(entries[index], onMessage, source, slots, cancellationToken);
-                    if (!task.IsCompleted)
+                        await collecting.WaitAsync(cancellationToken).AnyContext();
+                        collectingBatch = true;
+                        await slots.WaitAsync(cancellationToken).AnyContext();
+                        claimed = 1;
+                        long batchStart = batchDelay > TimeSpan.Zero ? Stopwatch.GetTimestamp() : 0;
+                        while (claimed < batchSize)
+                        {
+                            if (await slots.WaitAsync(TimeSpan.Zero).AnyContext())
+                            {
+                                claimed++;
+                                continue;
+                            }
+                            if (batchDelay <= TimeSpan.Zero)
+                                break;
+                            var remaining = batchDelay - Stopwatch.GetElapsedTime(batchStart);
+                            if (remaining <= TimeSpan.Zero || !await slots.WaitAsync(TimeSpan.FromMilliseconds(Math.Ceiling(remaining.TotalMilliseconds)), cancellationToken).AnyContext())
+                                break;
+                            claimed++;
+                        }
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                     {
-                        inFlight[task] = 0;
-                        _ = task.ContinueWith(static (t, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(t, out _), inFlight, TaskScheduler.Default);
+                        ReleaseSlots(slots, claimed);
+                        break;
+                    }
+                    finally
+                    {
+                        if (collectingBatch) collecting.Release();
+                    }
+
+                    var pollWindow = TimeSpan.FromSeconds(1);
+                    long pollStart = _timeProvider.GetTimestamp();
+                    IReadOnlyList<TransportEntry> entries;
+                    try
+                    {
+                        var request = new ReceiveRequest
+                        {
+                            MaxMessages = claimed,
+                            MaxWaitTime = pollWindow
+                        };
+                        entries = _transport is ISupportsVisibilityTimeout visibility
+                            ? await visibility.ReceiveAsync(source, request, TimeSpan.FromMinutes(1), cancellationToken).AnyContext()
+                            : await pull.ReceiveAsync(source, request, cancellationToken).AnyContext();
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        ReleaseSlots(slots, claimed);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        ReleaseSlots(slots, claimed);
+                        InvalidateProvisioning(source);
+                        receivingHealth?.Invoke(false);
+                        if (ex is MessageDestinationNotFoundException) throw;
+
+                        // The first failure of an outage is the alert; repeats at 1/s would be a firehose, so they
+                        // de-escalate to WARN (with a running count) until a receive succeeds again.
+                        consecutiveReceiveFailures++;
+                        if (consecutiveReceiveFailures == 1)
+                            _logger.LogError(ex, "Error receiving from \"{Source}\"; retrying: {Message}", source, ex.Message);
+                        else
+                            _logger.LogWarning(ex, "Error receiving from \"{Source}\" ({ConsecutiveFailures} consecutive); retrying: {Message}", source, consecutiveReceiveFailures, ex.Message);
+
+                        await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), cancellationToken).AnyContext();
+                        continue;
+                    }
+
+                    if (consecutiveReceiveFailures > 0) receivingHealth?.Invoke(true);
+                    if (consecutiveReceiveFailures > 1)
+                        _logger.LogInformation("Receiving from \"{Source}\" recovered after {ConsecutiveFailures} consecutive failures", source, consecutiveReceiveFailures);
+                    consecutiveReceiveFailures = 0;
+
+                    // We hold exactly `claimed` slots and release one per processed entry, so never process more than we
+                    // claimed: a well-behaved transport returns <= MaxMessages, but a transport that ignores MaxMessages and
+                    // over-returns would otherwise release more slots than acquired (breaching the cap / overflowing the
+                    // semaphore). Any over-returned entries are left unsettled and redeliver after their visibility window.
+                    int toProcess = Math.Min(entries.Count, claimed);
+                    ReleaseSlots(slots, claimed - toProcess); // return slots we claimed but won't fill (always >= 0)
+
+                    // An empty poll should have blocked for MaxWaitTime; a transport that returns empty early (or
+                    // synchronously) would otherwise hot-spin this loop, so sleep out the remainder of the window.
+                    if (toProcess == 0)
+                    {
+                        var remaining = pollWindow - _timeProvider.GetElapsedTime(pollStart);
+                        if (remaining > TimeSpan.Zero)
+                            await _timeProvider.SafeDelay(remaining, cancellationToken).AnyContext();
+                    }
+
+                    for (int index = 0; index < toProcess; index++)
+                    {
+                        var task = SafeProcessAsync(entries[index], onMessage, source, cancellationToken, slots, cleanupSlots);
+                        if (!task.IsCompleted)
+                        {
+                            inFlight[task] = 0;
+                            _ = task.ContinueWith(static (t, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(t, out _), inFlight, TaskScheduler.Default);
+                        }
                     }
                 }
             }
-        }
-        finally
-        {
-            // Drain in-flight handlers before the semaphore is disposed so their slot releases never hit a disposed handle.
-            await Task.WhenAll(inFlight.Keys.ToArray()).AnyContext();
-            slots.Dispose();
-        }
-    }
-
-    private async Task ProcessAndReleaseSlotAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, SemaphoreSlim slots, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await SafeProcessAsync(entry, onMessage, source, cancellationToken).AnyContext();
-        }
-        finally
-        {
-            slots.Release();
+            catch
+            {
+                await receivingCancellation.CancelAsync().AnyContext();
+                throw;
+            }
         }
     }
 
@@ -562,7 +586,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
             slots.Release(count);
     }
 
-    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, CancellationToken cancellationToken)
+    private async Task SafeProcessAsync(TransportEntry entry, Func<TransportEntry, CancellationToken, Task> onMessage, DestinationAddress source, CancellationToken cancellationToken, SemaphoreSlim? slots = null, SemaphoreSlim? cleanupSlots = null)
     {
         using var deliveryCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var supervision = SuperviseLeaseAsync(entry, deliveryCancellation);
@@ -593,8 +617,17 @@ internal sealed class MessageClientCore : IAsyncDisposable
         }
         finally
         {
-            await deliveryCancellation.CancelAsync().AnyContext();
-            await supervision.AnyContext();
+            var cancellation = deliveryCancellation.CancelAsync();
+            // Bound deferred cleanup separately so slow cancellation callbacks cannot retain unlimited deliveries.
+            if (cleanupSlots is not null)
+                await cleanupSlots.WaitAsync().AnyContext();
+            try
+            {
+                slots?.Release();
+                await cancellation.AnyContext();
+                await supervision.AnyContext();
+            }
+            finally { cleanupSlots?.Release(); }
         }
     }
 
@@ -631,11 +664,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
                 if (_transport is not ISupportsLockRenewal renewal)
                 {
-                    await Task.Delay(remaining, _timeProvider, token).AnyContext();
+                    await Task.Delay(remaining, _timeProvider, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                    if (token.IsCancellationRequested)
+                        return expires <= _timeProvider.GetUtcNow();
                     throw new ReceiptExpiredException();
                 }
 
-                await Task.Delay(remaining / 2, _timeProvider, token).AnyContext();
+                await Task.Delay(remaining / 2, _timeProvider, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (token.IsCancellationRequested)
+                    return expires <= _timeProvider.GetUtcNow();
                 var started = _timeProvider.GetUtcNow();
                 remaining = expires - started;
                 if (remaining <= TimeSpan.Zero)
