@@ -20,6 +20,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
     private readonly Task _worker;
     private int _disposed;
     private int _activeRequests;
+    private int _observedBatchSize;
 
     public AwsRequestBatcher(AwsMessageTransportOptions options, int maximumBytes, Func<T, int> size,
         Func<IReadOnlyList<T>, CancellationToken, Task<TResult[]>> execute, bool delayWhenIdle = true)
@@ -43,6 +44,19 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
         {
             using (ExecutionContext.SuppressFlow())
                 _worker = Task.Run(RunAsync);
+        }
+    }
+
+    public void ObserveBatchSize(int count)
+    {
+        count = Math.Clamp(count, 1, 10);
+        int previous = Volatile.Read(ref _observedBatchSize);
+        while (previous < count)
+        {
+            int observed = Interlocked.CompareExchange(ref _observedBatchSize, count, previous);
+            if (observed == previous)
+                break;
+            previous = observed;
         }
     }
 
@@ -122,7 +136,8 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
                 }
                 else
                 {
-                    if (!waitForMore || _delay == TimeSpan.Zero)
+                    int observedBatchSize = Volatile.Read(ref _observedBatchSize);
+                    if (!waitForMore || _delay == TimeSpan.Zero || (observedBatchSize > 0 && batch.Count >= observedBatchSize))
                         break;
                     deadline ??= Task.Delay(_delay, _stop.Token);
                     var available = _channel.Reader.WaitToReadAsync(_stop.Token).AsTask();

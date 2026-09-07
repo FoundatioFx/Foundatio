@@ -135,6 +135,9 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         if (response.Messages is not { Count: > 0 })
             return [];
 
+        if (_options.EnableBatching)
+            GetDeleteBatcher(queueUrl).ObserveBatchSize(sqsRequest.MaxNumberOfMessages.GetValueOrDefault(1));
+
         var entries = new List<TransportEntry>(response.Messages.Count);
         foreach (var message in response.Messages)
         {
