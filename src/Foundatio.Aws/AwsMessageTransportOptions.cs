@@ -25,6 +25,33 @@ public class AwsMessageTransportOptions
     /// <summary>Default receive visibility timeout when none is supplied. Maps to the SQS visibility window.</summary>
     public TimeSpan DefaultVisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>Coalesce concurrent single sends, publishes and acknowledgements into native AWS batches.</summary>
+    public bool EnableBatching { get; set; } = true;
+
+    /// <summary>Maximum time to collect a partial batch. Zero batches only operations already waiting.</summary>
+    public TimeSpan BatchDelay { get; set; } = TimeSpan.FromMilliseconds(1);
+
+    /// <summary>Maximum concurrent batch requests per destination and operation (send or acknowledge).</summary>
+    public int MaxConcurrentBatches { get; set; } = 4;
+
+    /// <summary>Maximum buffered operations per destination and operation. Further callers await capacity.</summary>
+    public int MaxPendingBatchMessages { get; set; } = 100;
+
+    /// <summary>Timeout for a shared AWS batch request and for draining batchers during transport disposal.</summary>
+    public TimeSpan BatchTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    internal void Validate()
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(BatchDelay, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(BatchDelay, TimeSpan.FromMilliseconds(100));
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaxConcurrentBatches, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxConcurrentBatches, 64);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaxPendingBatchMessages, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxPendingBatchMessages, 1_000_000);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(BatchTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(BatchTimeout, TimeSpan.FromMinutes(5));
+    }
+
     /// <summary>
     /// Parses a connection string of the form
     /// <c>serviceurl=http://localhost:4566;accesskey=...;secretkey=...;region=us-east-1</c> into options. Any subset of

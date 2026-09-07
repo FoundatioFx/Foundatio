@@ -89,6 +89,10 @@ await bus.SendBatchAsync<SendReceipt>([
 
 AWS uses native batches of up to ten, respecting encoded payload/attribute limits and retaining mixed per-entry outcomes. Redis pipelines bounded batches (64 by default, configurable up to 256). Durable retry and dead-letter source records are removed only after verified acceptance.
 
+Concurrent AWS sends, publishes and acknowledgements are automatically combined into native batches. Applications keep using the ordinary single-message methods, and completion still waits for the broker's per-entry response. Each destination has separate send and acknowledgement buffers: 100 buffered messages and four concurrent requests by default; additional callers await capacity. Partial batches wait up to one millisecond; an idle SQS sender can dispatch immediately. `AwsMessageTransportOptions` exposes `EnableBatching`, `BatchDelay`, `MaxPendingBatchMessages`, `MaxConcurrentBatches` and `BatchTimeout` (30 seconds) for explicit tuning. Disabling automatic batching leaves explicit batch sends available.
+
+Canceling a caller does not cancel other messages sharing its AWS request. Buffered canceled operations are skipped; cancellation after dispatch can leave an unknown send outcome. Disposal drains admitted operations within the batch timeout. Missing or failed delete results never count as acknowledgements. The AWS receiver caps each pull at ten and briefly collects newly freed consumer slots to avoid many small requests, while keeping `MaxConcurrency` as a strict bound on unacknowledged deliveries.
+
 For long-lived contracts, register versioned wire names on producers and consumers:
 
 ```csharp

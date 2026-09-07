@@ -55,6 +55,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     public AwsMessageTransport(AwsMessageTransportOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        options.Validate();
         _sqs = new Lazy<IAmazonSQS>(CreateSqsClient);
         _sns = new Lazy<IAmazonSimpleNotificationService>(CreateSnsClient);
     }
@@ -79,7 +80,9 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         DelayedDelivery = true,
         MaxDeliveryDelay = TimeSpan.FromMinutes(15), // SQS DelaySeconds maximum
         MaxMessageBytes = 1048576,
-        MaxBatchSize = 10
+        MaxBatchSize = 10,
+        MaxReceiveBatchSize = 10,
+        ReceiveBatchDelay = TimeSpan.FromMilliseconds(1)
     };
 
     private static readonly TransportCapabilities _topicCapabilities = new()
@@ -174,7 +177,15 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
     {
         ThrowIfDisposed();
         string queueUrl = await ResolveQueueUrlAsync(entry.Destination, ct).ConfigureAwait(false);
-        await _sqs.Value.DeleteMessageAsync(queueUrl, GetReceiptHandle(entry), ct).ConfigureAwait(false);
+        string receipt = GetReceiptHandle(entry);
+        if (!_options.EnableBatching)
+        {
+            await _sqs.Value.DeleteMessageAsync(queueUrl, receipt, ct).ConfigureAwait(false);
+            return;
+        }
+        var error = await GetDeleteBatcher(queueUrl).ExecuteAsync(receipt, ct).ConfigureAwait(false);
+        if (error is not null)
+            throw error;
     }
 
     public Task AbandonAsync(TransportEntry entry, CancellationToken ct = default)
@@ -336,12 +347,11 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
         if (Interlocked.Exchange(ref _isDisposed, 1) == 1)
             return;
 
+        await DisposeBatchersAsync().ConfigureAwait(false);
         if (_ownsClients && _sqs.IsValueCreated)
             _sqs.Value.Dispose();
         if (_ownsClients && _sns.IsValueCreated)
             _sns.Value.Dispose();
-
-        await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 
     private async Task EnsureSubscriptionAsync(DestinationAddress address, CancellationToken ct)
