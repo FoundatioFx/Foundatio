@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Amazon;
 using Amazon.Runtime;
 
@@ -22,6 +23,12 @@ public class AwsMessageTransportOptions
     /// </summary>
     public string ResourcePrefix { get; set; } = "";
 
+    /// <summary>
+    /// Headers to also expose as native AWS message attributes for SNS filters or external consumers.
+    /// Empty by default; all headers remain available in the Foundatio envelope. At most nine names are allowed.
+    /// </summary>
+    public IReadOnlyCollection<string> NativeMessageHeaders { get; set; } = [];
+
     /// <summary>Default receive visibility timeout when none is supplied. Maps to the SQS visibility window.</summary>
     public TimeSpan DefaultVisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -42,6 +49,13 @@ public class AwsMessageTransportOptions
 
     internal void Validate()
     {
+        ArgumentNullException.ThrowIfNull(NativeMessageHeaders);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(NativeMessageHeaders.Count, 9, nameof(NativeMessageHeaders));
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string name in NativeMessageHeaders)
+            if (!IsValidNativeHeader(name) || !names.Add(name))
+                throw new ArgumentException("Native message header names must be unique AWS attribute names, without AWS., Amazon. or fnd. prefixes.", nameof(NativeMessageHeaders));
+
         ArgumentOutOfRangeException.ThrowIfLessThan(BatchDelay, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(BatchDelay, TimeSpan.FromMilliseconds(100));
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxConcurrentBatches, 1);
@@ -50,6 +64,18 @@ public class AwsMessageTransportOptions
         ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxPendingBatchMessages, 1_000_000);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(BatchTimeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(BatchTimeout, TimeSpan.FromMinutes(5));
+    }
+
+    private static bool IsValidNativeHeader(string name)
+    {
+        if (String.IsNullOrEmpty(name) || name.Length > 256 || name[0] == '.' || name[^1] == '.' || name.Contains("..", StringComparison.Ordinal)
+            || name.StartsWith("AWS.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Amazon.", StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith("fnd.", StringComparison.OrdinalIgnoreCase))
+            return false;
+        foreach (char c in name)
+            if (!(Char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.'))
+                return false;
+        return true;
     }
 
     /// <summary>

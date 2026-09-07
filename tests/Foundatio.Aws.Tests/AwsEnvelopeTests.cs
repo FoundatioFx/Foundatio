@@ -16,10 +16,39 @@ namespace Foundatio.Aws.Tests;
 public class AwsEnvelopeTests
 {
     [Theory]
-    [InlineData("application/json", "{\"name\":\"héllo 世界\"}")]
-    [InlineData("application/octet-stream", "binary")]
-    [InlineData(null, "unknown")]
-    public async Task SendAndReceiveAsync_CompactEnvelope_PreservesPayloadMetadataAndNativeFilters(string? contentType, string text)
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("fnd.envelope")]
+    [InlineData("FND.custom")]
+    [InlineData("AWS.trace")]
+    [InlineData("Amazon.id")]
+    [InlineData(".leading")]
+    [InlineData("trailing.")]
+    [InlineData("two..dots")]
+    [InlineData("bad name")]
+    [InlineData("résumé")]
+    public void Constructor_InvalidNativeHeader_FailsBeforeConnecting(string? header)
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = [header!] }));
+    }
+
+    [Fact]
+    public void Constructor_ExcessiveDuplicateOrMissingNativeHeaders_RejectsConfiguration()
+    {
+        Assert.ThrowsAny<ArgumentException>(() => new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = Enumerable.Range(0, 10).Select(i => "header" + i).ToArray() }));
+        Assert.ThrowsAny<ArgumentException>(() => new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = ["header", "header"] }));
+        Assert.ThrowsAny<ArgumentException>(() => new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = [new string('a', 257)] }));
+        Assert.ThrowsAny<ArgumentException>(() => new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = null! }));
+    }
+
+    [Theory]
+    [InlineData("application/json", "{\"name\":\"héllo 世界\"}", false)]
+    [InlineData("application/json", "{\"name\":\"héllo 世界\"}", true)]
+    [InlineData("application/octet-stream", "binary", false)]
+    [InlineData("application/octet-stream", "binary", true)]
+    [InlineData(null, "unknown", false)]
+    [InlineData(null, "unknown", true)]
+    public async Task SendAndReceiveAsync_CompactEnvelope_PreservesPayloadMetadataAndNativeFilters(string? contentType, string text, bool nativeHeaders)
     {
         var token = TestContext.Current.CancellationToken;
         var body = contentType == "application/octet-stream" ? Enumerable.Range(0, 256).Select(i => (byte)i).ToArray() : Encoding.UTF8.GetBytes(text);
@@ -43,11 +72,14 @@ public class AwsEnvelopeTests
             });
         sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(() => new ReceiveMessageResponse { Messages = [new Message { MessageId = "broker-id", ReceiptHandle = "receipt", Body = sent!.MessageBody, MessageAttributes = sent.MessageAttributes }] });
-        await using var transport = new AwsMessageTransport(new(), sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        string[] nativeNames = nativeHeaders ? [KnownHeaders.MessageType, KnownHeaders.Priority, KnownHeaders.CorrelationId, "Mixed-Case"] : [];
+        var configuredNames = nativeNames.ToArray();
+        await using var transport = new AwsMessageTransport(new AwsMessageTransportOptions { NativeMessageHeaders = configuredNames }, sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        if (configuredNames.Length > 0) configuredNames[0] = "fnd.envelope";
         await transport.SendAsync(DestinationAddress.ForQueue("test"), [new TransportMessage { Body = body, ContentType = contentType, MessageId = "application-id", Headers = headers }], new(), token);
-        Assert.Equal(4, sent!.MessageAttributes.Count);
+        Assert.Equal(nativeNames.Length + 1, sent!.MessageAttributes.Count);
         Assert.Contains("fnd.envelope", sent.MessageAttributes.Keys);
-        foreach (string key in new[] { KnownHeaders.MessageType, KnownHeaders.Priority, KnownHeaders.CorrelationId })
+        foreach (string key in nativeNames)
             Assert.Equal(headers[key], sent.MessageAttributes[key].StringValue);
         if (contentType == "application/json") Assert.Equal(text, sent.MessageBody);
         var received = Assert.Single(await transport.ReceiveAsync(DestinationAddress.ForQueue("test"), new(), token));
