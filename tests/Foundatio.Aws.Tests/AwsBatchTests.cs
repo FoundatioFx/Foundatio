@@ -16,6 +16,50 @@ namespace Foundatio.Aws.Tests;
 
 public class AwsBatchTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SendAsync_OversizedSingleMessage_RejectsBeforeResolvingDestination(bool batching)
+    {
+        var sqs = CreateSqs();
+        await using var transport = new AwsMessageTransport(new() { EnableBatching = batching }, sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+
+        var result = Assert.Single((await transport.SendAsync(DestinationAddress.ForQueue("test"), [Text(new string('é', 600_000))], new(), TestContext.Current.CancellationToken)).Items);
+
+        Assert.Equal(0, result.Index);
+        Assert.Equal(MessageSendStatus.Rejected, result.Status);
+        Assert.Equal("MessageTooLarge", result.ErrorCode);
+        Assert.False(result.Retryable);
+        sqs.Verify(s => s.GetQueueUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        sqs.Verify(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(true, "missing")]
+    [InlineData(false, "missing")]
+    [InlineData(true, "duplicate")]
+    [InlineData(false, "duplicate")]
+    [InlineData(true, "unknown")]
+    [InlineData(false, "unknown")]
+    public async Task SendAsync_UnconfirmedSingleResponse_ReportsUnknown(bool batching, string outcome)
+    {
+        var sqs = CreateSqs();
+        sqs.Setup(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendMessageBatchResponse
+            {
+                Successful = outcome == "missing" ? [] : outcome == "duplicate"
+                    ? [new() { Id = "0", MessageId = "one" }, new() { Id = "0", MessageId = "two" }]
+                    : [new() { Id = "1", MessageId = "unknown" }]
+            });
+        await using var transport = new AwsMessageTransport(new() { EnableBatching = batching }, sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+
+        var result = Assert.Single((await transport.SendAsync(DestinationAddress.ForQueue("test"), [Text("body")], new(), TestContext.Current.CancellationToken)).Items);
+
+        Assert.Equal(0, result.Index);
+        Assert.Equal(MessageSendStatus.Unknown, result.Status);
+        Assert.Null(result.MessageId);
+    }
+
     [Fact]
     public async Task SendAsync_AutomaticBatcher_DoesNotRetainCallerExecutionContext()
     {

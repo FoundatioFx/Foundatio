@@ -15,6 +15,28 @@ namespace Foundatio.Aws.Tests;
 
 public class AwsEnvelopeTests
 {
+    [Fact]
+    public async Task ReceiveAsync_SystemAttributes_RequestsOnlyDeliveryCount()
+    {
+        var sqs = new Mock<IAmazonSQS>();
+        sqs.Setup(s => s.GetQueueUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new GetQueueUrlResponse { QueueUrl = "http://test/queue" });
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ReceiveMessageRequest request, CancellationToken _) =>
+            {
+                Assert.Equal(["ApproximateReceiveCount"], request.MessageSystemAttributeNames);
+                Assert.Equal(["All"], request.MessageAttributeNames);
+                return new ReceiveMessageResponse
+                {
+                    Messages = [new Message { MessageId = "id", ReceiptHandle = "receipt", Body = "e30=", Attributes = new() { ["ApproximateReceiveCount"] = "3" } }]
+                };
+            });
+        await using var transport = new AwsMessageTransport(new(), sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+
+        var entry = Assert.Single(await transport.ReceiveAsync(DestinationAddress.ForQueue("test"), new(), TestContext.Current.CancellationToken));
+
+        Assert.Equal(3, entry.DeliveryCount);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

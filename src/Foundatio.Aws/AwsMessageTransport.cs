@@ -119,7 +119,7 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
             MaxNumberOfMessages = Math.Clamp(request.MaxMessages <= 0 ? 1 : request.MaxMessages, 1, 10),
             VisibilityTimeout = (int)Math.Clamp(visibility.TotalSeconds, 0, 43200),
             MessageAttributeNames = ["All"],
-            MessageSystemAttributeNames = ["All"]
+            MessageSystemAttributeNames = ["ApproximateReceiveCount"]
         };
         if (request.MaxWaitTime is { } wait)
             sqsRequest.WaitTimeSeconds = (int)Math.Clamp(wait.TotalSeconds, 0, 20);
@@ -585,21 +585,35 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
                 || contentType.StartsWith("text/", StringComparison.OrdinalIgnoreCase));
     }
 
-    private Dictionary<string, string> BuildAttributes(TransportMessage message, string encoding)
+    private PreparedMessage PrepareMessage(int index, TransportMessage message, DateTimeOffset? deliverAt)
     {
+        var (body, encoding) = EncodeBody(message);
         var headers = message.Headers;
-        var attributes = new Dictionary<string, string>(_nativeMessageHeaders.Length + 1, StringComparer.Ordinal)
-        {
-            [EnvelopeAttributeName] = JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers))
-        };
-
+        string envelope = JsonSerializer.Serialize(new AwsEnvelope(1, encoding, message.MessageId, message.ContentType, headers));
+        int bytes = checked(Encoding.UTF8.GetByteCount(body) + AttributeBytes(EnvelopeAttributeName, envelope));
         foreach (string name in _nativeMessageHeaders)
         {
             string? value = headers.GetValueOrDefault(name);
             if (!String.IsNullOrEmpty(value))
-                attributes[name] = value;
+                bytes = checked(bytes + AttributeBytes(name, value));
         }
+        return new PreparedMessage(index, body, envelope, headers, bytes, deliverAt);
 
+        static int AttributeBytes(string name, string value) => checked(Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value) + 6);
+    }
+
+    private Dictionary<string, TAttribute> BuildAttributes<TAttribute>(PreparedMessage message, Func<string, TAttribute> createAttribute)
+    {
+        var attributes = new Dictionary<string, TAttribute>(_nativeMessageHeaders.Length + 1, StringComparer.Ordinal)
+        {
+            [EnvelopeAttributeName] = createAttribute(message.Envelope)
+        };
+        foreach (string name in _nativeMessageHeaders)
+        {
+            string? value = message.Headers.GetValueOrDefault(name);
+            if (!String.IsNullOrEmpty(value))
+                attributes[name] = createAttribute(value);
+        }
         return attributes;
     }
 

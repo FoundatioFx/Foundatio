@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace Foundatio.Serializer;
 
-public class SystemTextJsonSerializer : ITextSerializer
+public class SystemTextJsonSerializer : ITextSerializer, IBufferSerializer
 {
     private readonly JsonSerializerOptions _serializeOptions;
     private readonly JsonSerializerOptions _deserializeOptions;
@@ -22,6 +22,23 @@ public class SystemTextJsonSerializer : ITextSerializer
         // Use direct stream serialization (more efficient than Utf8JsonWriter)
         // Handles null values correctly (writes "null")
         JsonSerializer.Serialize(output, value, value?.GetType() ?? typeof(object), _serializeOptions);
+    }
+
+    /// <inheritdoc />
+    byte[] IBufferSerializer.SerializeToBytes(object? value)
+    {
+        return JsonSerializer.SerializeToUtf8Bytes(value, value?.GetType() ?? typeof(object), _serializeOptions);
+    }
+
+    /// <inheritdoc />
+    object? IBufferSerializer.Deserialize(ReadOnlyMemory<byte> data, Type objectType)
+    {
+        ArgumentNullException.ThrowIfNull(objectType);
+        if (data.IsEmpty)
+            throw new ArgumentException("Data cannot be empty.", nameof(data));
+
+        object? result = JsonSerializer.Deserialize(data.Span, objectType, _deserializeOptions);
+        return result is JsonElement element ? ConvertJsonElement(element) : result;
     }
 
     public object? Deserialize(Stream data, Type objectType)

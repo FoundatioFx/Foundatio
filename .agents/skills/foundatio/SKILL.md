@@ -327,6 +327,8 @@ Validate a custom transport or job store against the shared conformance suites i
 
 `ITextSerializer` extends `ISerializer` for human-readable formats (JSON). `ISerializer` covers binary formats. Default is `SystemTextJsonSerializer` (included in core).
 
+`IBufferSerializer` is optional: byte-array/memory extensions use it automatically, while stream-only serializers retain the existing fallback. The default JSON serializer supports it with identical options and primitive normalization. Implementations return owned output and never retain or modify input memory; callers need no configuration changes.
+
 | Package | Provides |
 | ------- | -------- |
 | `Foundatio.JsonNet` | `JsonNetSerializer` : `ITextSerializer` (Newtonsoft.Json) |
