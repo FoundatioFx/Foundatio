@@ -16,14 +16,14 @@ namespace Foundatio.Aws.Tests;
 public class AwsEnvelopeTests
 {
     [Fact]
-    public async Task ReceiveAsync_SystemAttributes_RequestsOnlyDeliveryCount()
+    public async Task ReceiveAsync_SystemAttributes_RequestsDeliveryCountAndEnqueueTime()
     {
         var sqs = new Mock<IAmazonSQS>();
         sqs.Setup(s => s.GetQueueUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new GetQueueUrlResponse { QueueUrl = "http://test/queue" });
         sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ReceiveMessageRequest request, CancellationToken _) =>
             {
-                Assert.Equal(["ApproximateReceiveCount"], request.MessageSystemAttributeNames);
+                Assert.Equal(["ApproximateReceiveCount", "SentTimestamp"], request.MessageSystemAttributeNames);
                 Assert.Equal(["All"], request.MessageAttributeNames);
                 return new ReceiveMessageResponse
                 {

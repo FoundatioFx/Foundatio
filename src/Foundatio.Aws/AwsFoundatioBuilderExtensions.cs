@@ -19,7 +19,7 @@ public static class AwsFoundatioBuilderExtensions
     {
         return builder.UseTransport(sp =>
         {
-            var options = new AwsMessageTransportOptions();
+            var options = new AwsMessageTransportOptions { LoggerFactory = sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>() };
             BindFromConfiguration(options, sp.GetService<IConfiguration>()?.GetSection("Aws"));
             configure?.Invoke(options);
             return new AwsMessageTransport(options);

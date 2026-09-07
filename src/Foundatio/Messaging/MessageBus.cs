@@ -47,6 +47,24 @@ public abstract class MessageHandlerOptions
     /// <summary>Maximum in-flight messages across this endpoint's handlers on this process. Default 1.</summary>
     public int MaxConcurrency { get; set; } = 1;
 
+    /// <summary>Maximum entries requested in one receive, additionally bounded by free concurrency and provider limits.</summary>
+    public int? PrefetchCount { get; set; }
+
+    /// <summary>Optional bounded delay for collecting capacity after a partially filled batch. Null uses the provider policy.</summary>
+    public TimeSpan? ReceiveBatchDelay { get; set; }
+
+    /// <summary>Initial and automatically renewed delivery lease. Default one minute.</summary>
+    public TimeSpan VisibilityTimeout { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>Renew active delivery leases automatically. Lease loss still cancels processing when disabled.</summary>
+    public bool AutoRenewLock { get; set; } = true;
+
+    /// <summary>Time admitted handlers may finish after receiving stops. Zero cancels immediately.</summary>
+    public TimeSpan ShutdownTimeout { get; set; }
+
+    /// <summary>Keep manual deliveries active until explicit settlement. False releases processing on handler return.</summary>
+    public bool WaitForManualSettlement { get; set; } = true;
+
     /// <summary>Maximum delivery attempts. Null uses the bus retry policy.</summary>
     public int? MaxAttempts { get; set; }
 
@@ -62,8 +80,13 @@ public abstract class MessageHandlerOptions
     internal void Validate()
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(MaxConcurrency, 1);
+        if (PrefetchCount is { } prefetch)
+            ArgumentOutOfRangeException.ThrowIfLessThan(prefetch, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(VisibilityTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(ShutdownTimeout, TimeSpan.Zero);
+        if (ReceiveBatchDelay is { } batchDelay) ArgumentOutOfRangeException.ThrowIfLessThan(batchDelay, TimeSpan.Zero);
         if (MaxAttempts is { } attempts)
-            ArgumentOutOfRangeException.ThrowIfLessThan(attempts, 1);
+            ArgumentOutOfRangeException.ThrowIfEqual(attempts, 0);
         if (!Enum.IsDefined(AckMode))
             throw new ArgumentOutOfRangeException(nameof(AckMode));
         if (this is MessageConsumerOptions { Destination: { } destination })
@@ -133,6 +156,13 @@ internal interface IMessageBatchItem
 
 public interface IMessageBus : IAsyncDisposable
 {
+    /// <summary>Consumes work with an explicit outcome; core applies the endpoint retry and settlement policy.</summary>
+    Task<IMessageSubscription> ConsumeWithOutcomeAsync<T>(Func<IMessageContext<T>, CancellationToken, ValueTask<MessageOutcome>> handler, MessageConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
+        => throw new NotSupportedException("This message bus does not support outcome handlers.");
+
+    /// <summary>Consumes raw deliveries with an explicit outcome and core-owned retry and settlement.</summary>
+    Task<IMessageSubscription> ConsumeWithOutcomeAsync(Func<IMessageContext, CancellationToken, ValueTask<MessageOutcome>> handler, MessageConsumerOptions options, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This message bus does not support outcome handlers.");
     /// <summary>Whether per-instance, automatically expiring event subscriptions are available.</summary>
     bool SupportsTemporarySubscriptions => false;
     /// <summary>Receives queued work directly. Dispose an unsettled delivery to return it for redelivery.</summary>
@@ -140,6 +170,10 @@ public interface IMessageBus : IAsyncDisposable
 
     /// <summary>Receives a raw message from an explicit queue without deserializing its body.</summary>
     Task<IReceivedMessage?> ReceiveAsync(MessageReceiveOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>Receives one best-effort copy on this node, acknowledging before callbacks. Independent nodes do not compete.</summary>
+    Task<IMessageSubscription> SubscribeNodeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageNodeSubscriptionOptions options, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("This bus does not support node subscriptions.");
 
     /// <summary>Enqueues work for a competing consumer. Returns its application message ID.</summary>
     Task<string> SendAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class;
@@ -219,15 +253,50 @@ public sealed record MessageBusOptions
 public sealed class MessageBus : IMessageBus
 {
     private readonly MessageClientCore _core;
+    private readonly IMessageTransport _transport;
     private readonly ILogger _logger;
 
     public MessageBus(IMessageTransport transport, MessageBusOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(transport);
+        _transport = transport;
         options ??= new MessageBusOptions();
         _logger = (options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<MessageBus>();
         _core = new MessageClientCore(transport, options.Serializer, options.Router, options.RuntimeStore, options.TimeProvider, _logger,
             static (message, inner) => inner is null ? new MessageBusException(message) : new MessageBusException(message, inner), options.RetryPolicy, options.OwnsTransport, options.MessageTypes, options.ContentType, options.Topology);
+    }
+
+    /// <inheritdoc />
+    public async Task<IMessageSubscription> SubscribeNodeAsync(Func<IMessageContext, CancellationToken, Task> handler, MessageNodeSubscriptionOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+        IManagedNodeSubscription? owner = null;
+        if (_transport is ISupportsManagedNodeSubscriptions managed)
+            owner = await managed.OpenNodeSubscriptionAsync(options, cancellationToken).ConfigureAwait(false);
+        else if (_transport is not ISupportsEphemeralSubscriptions)
+            throw new NotSupportedException("The transport supports neither expiring nor managed node subscriptions.");
+        try
+        {
+            var consumer = await SubscribeAsync(async (message, token) =>
+            {
+                await message.CompleteAsync(token).ConfigureAwait(false);
+                await handler(message, token).ConfigureAwait(false);
+            }, new MessageSubscriptionOptions
+            {
+                Topic = options.Topic,
+                Subscription = owner?.Source.Name,
+                MaxConcurrency = options.MaxConcurrency,
+                AckMode = AckMode.Manual
+            }, cancellationToken).ConfigureAwait(false);
+            return owner is null ? consumer : new NodeMessageSubscription(consumer, owner);
+        }
+        catch
+        {
+            if (owner is not null) await owner.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public Task<string> SendAsync<T>(T message, MessageSendOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -301,6 +370,20 @@ public sealed class MessageBus : IMessageBus
 
     public bool SupportsTemporarySubscriptions => _core.SupportsTemporarySubscriptions;
 
+    public Task<IMessageSubscription> ConsumeWithOutcomeAsync<T>(Func<IMessageContext<T>, CancellationToken, ValueTask<MessageOutcome>> handler, MessageConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        return ConsumeCoreAsync(options ?? new(), typeof(T), (config, token) => _core.StartOutcomeListenerAsync(config, handler, token), cancellationToken);
+    }
+
+    public Task<IMessageSubscription> ConsumeWithOutcomeAsync(Func<IMessageContext, CancellationToken, ValueTask<MessageOutcome>> handler, MessageConsumerOptions options, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.Destination);
+        return ConsumeCoreAsync(options, typeof(object), (config, token) => _core.StartOutcomeListenerAsync(config, handler, token), cancellationToken);
+    }
+
     public Task<IMessageSubscription> ConsumeAsync<T>(Func<IMessageContext<T>, CancellationToken, Task> handler, MessageConsumerOptions? options = null, CancellationToken cancellationToken = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -368,6 +451,12 @@ public sealed class MessageBus : IMessageBus
             MessageType = messageType,
             AckMode = options.AckMode,
             MaxConcurrency = options.MaxConcurrency,
+            PrefetchCount = options.PrefetchCount,
+            ReceiveBatchDelay = options.ReceiveBatchDelay,
+            VisibilityTimeout = options.VisibilityTimeout,
+            AutoRenewLock = options.AutoRenewLock,
+            ShutdownTimeout = options.ShutdownTimeout,
+            WaitForManualSettlement = options.WaitForManualSettlement,
             MaxAttempts = options.MaxAttempts,
             RedeliveryBackoff = options.RedeliveryBackoff,
             DeadLetterWhen = options.DeadLetterWhen

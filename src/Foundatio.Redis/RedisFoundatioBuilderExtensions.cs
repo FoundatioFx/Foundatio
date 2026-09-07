@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +62,29 @@ public static class RedisFoundatioBuilderExtensions
             });
         });
         return builder.UseTransport(sp => new RedisStreamsMessageTransport(sp.GetRequiredService<RedisStreamsMessageTransportOptions>()));
+    }
+
+    /// <summary>Shares progress, cancellation and history for broker-delivered executions through Redis.</summary>
+    public static FoundatioBuilder.MessagingBuilder UseRedisExecutionTracking(this FoundatioBuilder.MessagingBuilder builder,
+        Action<RedisMessageExecutionStoreOptions>? configure = null, string? connectionString = null)
+    {
+        var services = ((IFoundatioBuilder)builder).Services;
+        EnsureConnection(services, connectionString);
+        services.AddSingleton<IMessageExecutionStore>(sp =>
+        {
+            var options = new RedisMessageExecutionStoreOptions();
+            configure?.Invoke(options);
+            return new RedisMessageExecutionStore(sp.GetRequiredService<IConnectionMultiplexer>(), options, sp.GetService<TimeProvider>());
+        });
+        return builder;
+    }
+
+    /// <summary>Coordinates resources across workers with ownership-checked Redis locks.</summary>
+    public static FoundatioBuilder UseRedis(this FoundatioBuilder.LockingBuilder builder, string keyPrefix = "fnd:locks:", string? connectionString = null)
+    {
+        var services = ((IFoundatioBuilder)builder).Services;
+        EnsureConnection(services, connectionString);
+        return builder.Use(sp => new RedisLockProvider(sp.GetRequiredService<IConnectionMultiplexer>(), keyPrefix));
     }
 
     private static void EnsureConnection(IServiceCollection services, string? connectionString)

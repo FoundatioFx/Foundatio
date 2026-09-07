@@ -163,6 +163,8 @@ public sealed record MessageDestinationStats
     // e.g. SQS ApproximateNumberOf*).
     public long Queued { get; init; }
     public long Working { get; init; }
+    /// <summary>Messages awaiting delayed redelivery, when the provider can report this gauge.</summary>
+    public long? Delayed { get; init; }
     public long Deadletter { get; init; }
 
     // Lifetime counters. Not universally available — a transport that does not track a counter leaves it null (e.g.
@@ -372,9 +374,14 @@ public interface ISupportsRedeliveryDelay : IMessageTransport
     Task AbandonAsync(TransportEntry entry, TimeSpan redeliveryDelay, CancellationToken ct = default);
 }
 
-public interface ISupportsDeadLetter : IMessageTransport
+/// <summary>A native dead-letter destination, independently of non-destructive administration support.</summary>
+public interface ISupportsDeadLetterSink : IMessageTransport
 {
     Task DeadLetterAsync(TransportEntry entry, string? reason, CancellationToken ct = default);
+}
+
+public interface ISupportsDeadLetter : ISupportsDeadLetterSink
+{
 
     /// <summary>Inspects raw dead letters without consuming them.</summary>
     Task<IReadOnlyList<TransportEntry>> PeekDeadLetteredAsync(DestinationAddress destination, DeadLetterQuery? query = null, CancellationToken cancellationToken = default);

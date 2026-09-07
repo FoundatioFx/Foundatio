@@ -38,7 +38,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
     private readonly ConcurrentDictionary<string, DestinationState> _destinations = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, DestinationRole> _roles = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _topicSubscriptions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<ITimer, byte> _redeliveryTimers = new();
+    private readonly ConcurrentDictionary<ITimer, string> _redeliveryTimers = new();
     private readonly ConcurrentDictionary<string, byte> _warnedDroppedTopics = new(StringComparer.OrdinalIgnoreCase);
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
@@ -339,6 +339,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         {
             Queued = state.QueuedCount,
             Working = state.InFlight.Count,
+            Delayed = _redeliveryTimers.Values.LongCount(key => key == ReceivableKey(destination)),
             Deadletter = state.DeadletterCount,
             Enqueued = Volatile.Read(ref state.Enqueued),
             Dequeued = Volatile.Read(ref state.Dequeued),
@@ -502,9 +503,10 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
             }
             catch (ObjectDisposedException) { }
             catch (InvalidOperationException) { } // destination was deleted / completed between scheduling and firing
-        }, null, delay, Timeout.InfiniteTimeSpan);
+        }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
 
-        _redeliveryTimers[timer] = 0;
+        _redeliveryTimers[timer] = destination;
+        timer.Change(delay, Timeout.InfiniteTimeSpan);
 
         // A redelivery scheduled right as the transport disposes could otherwise leak its timer; clean up the race.
         if (Volatile.Read(ref _isDisposed) == 1 && _redeliveryTimers.TryRemove(timer, out _))

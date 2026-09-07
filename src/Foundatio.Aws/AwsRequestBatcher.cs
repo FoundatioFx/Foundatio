@@ -13,6 +13,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
     private readonly Func<T, int> _size;
     private readonly int _maximumBytes;
     private readonly int _concurrency;
+    private readonly int _maxBatchSize;
     private readonly TimeSpan _delay;
     private readonly TimeSpan _timeout;
     private readonly bool _delayWhenIdle;
@@ -30,6 +31,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
         _execute = execute;
         _delayWhenIdle = delayWhenIdle;
         _concurrency = options.MaxConcurrentBatches;
+        _maxBatchSize = options.MaxBatchSize;
         _delay = options.BatchDelay;
         _timeout = options.BatchTimeout;
         _channel = Channel.CreateBounded<Pending>(new BoundedChannelOptions(options.MaxPendingBatchMessages)
@@ -49,7 +51,7 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
 
     public void ObserveBatchSize(int count)
     {
-        count = Math.Clamp(count, 1, 10);
+        count = Math.Clamp(count, 1, _maxBatchSize);
         int previous = Volatile.Read(ref _observedBatchSize);
         while (previous < count)
         {
@@ -113,12 +115,12 @@ internal sealed class AwsRequestBatcher<T, TResult> : IAsyncDisposable
 
     private async Task<List<Pending>> ReadBatchAsync(bool waitForMore)
     {
-        var batch = new List<Pending>(10);
+        var batch = new List<Pending>(_maxBatchSize);
         int bytes = 0;
         Task? deadline = null;
         try
         {
-            while (batch.Count < 10)
+            while (batch.Count < _maxBatchSize)
             {
                 if (_channel.Reader.TryPeek(out var pending))
                 {

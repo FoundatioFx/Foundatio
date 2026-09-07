@@ -21,10 +21,13 @@ public sealed record MessageReceiveOptions
     public TimeSpan WaitTime { get; init; }
 }
 
-internal class ReceivedMessage(IMessageContext context, CancellationTokenSource cancellation, Task<bool> supervision, Func<CancellationToken, Task> abandon) : IReceivedMessage
+internal class ReceivedMessage(IMessageContext context, CancellationTokenSource cancellation, MessageDeliveryLease supervision, Func<CancellationToken, Task> abandon) : IReceivedMessage
 {
     private int _disposed;
     public string Id => context.Id;
+    public DestinationAddress? Destination => context.Destination;
+    public DateTimeOffset? EnqueuedUtc => context.EnqueuedUtc;
+    public bool IsLeaseLost => context.IsLeaseLost;
     public string BrokerMessageId => context.BrokerMessageId;
     public ReadOnlyMemory<byte> Body => context.Body;
     public MessageHeaders Headers => context.Headers;
@@ -58,7 +61,8 @@ internal class ReceivedMessage(IMessageContext context, CancellationTokenSource 
         try
         {
             await cancellation.CancelAsync().AnyContext();
-            bool leaseLost = await supervision.AnyContext();
+            await supervision.DisposeAsync().AnyContext();
+            bool leaseLost = supervision.IsLost;
             if (!context.IsHandled && !leaseLost)
             {
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -68,13 +72,12 @@ internal class ReceivedMessage(IMessageContext context, CancellationTokenSource 
         finally
         {
             await cancellation.CancelAsync().AnyContext();
-            await supervision.AnyContext();
             cancellation.Dispose();
         }
     }
 }
 
-internal sealed class ReceivedMessage<T>(IMessageContext<T> context, CancellationTokenSource cancellation, Task<bool> supervision, Func<CancellationToken, Task> abandon)
+internal sealed class ReceivedMessage<T>(IMessageContext<T> context, CancellationTokenSource cancellation, MessageDeliveryLease supervision, Func<CancellationToken, Task> abandon)
     : ReceivedMessage(context, cancellation, supervision, abandon), IReceivedMessage<T> where T : class
 {
     public T Message => context.Message;

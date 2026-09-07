@@ -7,6 +7,9 @@ namespace Foundatio.Messaging;
 
 public class AwsMessageTransportOptions
 {
+    /// <summary>Optional logging for managed node lifecycle operations.</summary>
+    public Microsoft.Extensions.Logging.ILoggerFactory? LoggerFactory { get; set; }
+
     /// <summary>AWS credentials. When null, the SDK's default credential chain is used.</summary>
     public AWSCredentials? Credentials { get; set; }
 
@@ -29,6 +32,12 @@ public class AwsMessageTransportOptions
     /// </summary>
     public IReadOnlyCollection<string> NativeMessageHeaders { get; set; } = [];
 
+    /// <summary>Expose all valid headers when they fit AWS's attribute limit; otherwise retain only explicitly selected native headers.</summary>
+    public bool ExposeAllNativeHeaders { get; set; }
+
+    /// <summary>Maximum entries in a native batch, between one and ten.</summary>
+    public int MaxBatchSize { get; set; } = 10;
+
     /// <summary>Default receive visibility timeout when none is supplied. Maps to the SQS visibility window.</summary>
     public TimeSpan DefaultVisibilityTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -50,6 +59,8 @@ public class AwsMessageTransportOptions
     internal void Validate()
     {
         ArgumentNullException.ThrowIfNull(NativeMessageHeaders);
+        ArgumentOutOfRangeException.ThrowIfLessThan(MaxBatchSize, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(MaxBatchSize, 10);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(NativeMessageHeaders.Count, 9, nameof(NativeMessageHeaders));
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (string name in NativeMessageHeaders)
@@ -66,7 +77,7 @@ public class AwsMessageTransportOptions
         ArgumentOutOfRangeException.ThrowIfGreaterThan(BatchTimeout, TimeSpan.FromMinutes(5));
     }
 
-    private static bool IsValidNativeHeader(string name)
+    internal static bool IsValidNativeHeader(string name)
     {
         if (String.IsNullOrEmpty(name) || name.Length > 256 || name[0] == '.' || name[^1] == '.' || name.Contains("..", StringComparison.Ordinal)
             || name.StartsWith("AWS.", StringComparison.OrdinalIgnoreCase) || name.StartsWith("Amazon.", StringComparison.OrdinalIgnoreCase)

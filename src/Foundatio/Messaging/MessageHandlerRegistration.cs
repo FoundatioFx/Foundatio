@@ -16,4 +16,5 @@ internal sealed class MessageHandlerRegistration
 }
 
 /// <summary>The DI-selected <see cref="TopologyMode"/>, applied at startup and by the message clients on use.</summary>
-internal sealed record MessagingTopologyOptions(TopologyMode Mode);
+/// <summary>The effective topology policy selected for this messaging client.</summary>
+public sealed record MessagingTopologyOptions(TopologyMode Mode);

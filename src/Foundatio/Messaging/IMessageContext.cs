@@ -116,6 +116,12 @@ public sealed record RejectOptions
 
 public interface IMessageContext
 {
+    /// <summary>The receiving destination, when supplied by the bus.</summary>
+    DestinationAddress? Destination => null;
+    /// <summary>Original broker enqueue time, when available.</summary>
+    DateTimeOffset? EnqueuedUtc => null;
+    /// <summary>Whether this delivery lost ownership. A stale worker must not settle it.</summary>
+    bool IsLeaseLost => false;
     string Id { get; }
 
     /// <summary>Broker-assigned ID for diagnostics; may change when a message is re-sent.</summary>
