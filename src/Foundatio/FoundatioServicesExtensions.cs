@@ -362,13 +362,6 @@ public class FoundatioBuilder : IFoundatioBuilder
             return this;
         }
 
-        /// <summary>Tracks broker-delivered executions in this process. The broker remains the only source of runnable work.</summary>
-        public MessagingBuilder UseInMemoryExecutionTracking()
-        {
-            _services.ReplaceSingleton<IMessageExecutionStore>(sp => new InMemoryMessageExecutionStore(sp.GetService<TimeProvider>()));
-            return this;
-        }
-
         public MessagingBuilder UseTransport(IMessageTransport transport)
         {
             ArgumentNullException.ThrowIfNull(transport);
