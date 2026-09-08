@@ -1,3 +1,4 @@
+using Foundatio.Jobs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -174,7 +175,7 @@ public sealed class InMemoryMessageExecutionStore : IMessageExecutionStore
         return Task.CompletedTask;
     }
 
-    public Task<MessageExecutionCounters> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default)
+    public Task<JobCounterStats> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default)
     {
         var now = _timeProvider.GetUtcNow();
         var effectiveWindow = window ?? TimeSpan.FromHours(24);
@@ -182,7 +183,7 @@ public sealed class InMemoryMessageExecutionStore : IMessageExecutionStore
         var endHour = TruncateToHour(now);
 
         var totals = new Dictionary<string, long>();
-        var buckets = new List<MessageExecutionCounterBucket>();
+        var buckets = new List<JobCounterBucket>();
 
         for (var hour = startHour; hour <= endHour; hour = hour.AddHours(1))
         {
@@ -198,10 +199,10 @@ public sealed class InMemoryMessageExecutionStore : IMessageExecutionStore
                 }
             }
 
-            buckets.Add(new MessageExecutionCounterBucket { Hour = hour, Counters = counters });
+            buckets.Add(new JobCounterBucket { Hour = hour, Counters = counters });
         }
 
-        return Task.FromResult(new MessageExecutionCounters { Totals = totals, Buckets = buckets });
+        return Task.FromResult(new JobCounterStats { Totals = totals, Buckets = buckets });
     }
 
     private static string GetBucketKey(string queueName, DateTimeOffset timestamp)

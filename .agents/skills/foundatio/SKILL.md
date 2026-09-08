@@ -361,7 +361,7 @@ Validate a custom transport or job store against the shared conformance suites i
 
 ## Broker execution integration
 
-- Optional broker execution history uses `IMessageExecutionStore` with `.Messaging.UseInMemoryExecutionTracking()` or `.UseRedisExecutionTracking()`. `MessageExecutionPipeline` and native `MessageProcessingContext` support progress, cancellation, and attempt-fenced state. Do not enqueue the same delivery through `IJobRuntimeStore`; the bus owns receiving and settlement.
+- Optional broker history uses the normal job store: `.Jobs.UseInMemory()` / `.Jobs.UseRedis()`, `IJobRuntimeStore`, `JobState`, and `IJobMonitor`. Create records with `ExecutionOwner = Broker`; runtime claims and recovery exclude them. `BeginBrokerAttemptAsync` returns a fresh claim token for `ReportJobProgressAsync` / `CompleteJobAsync`. Broker delivery leases stay in the message bus. `MessageExecutionPipeline` and `MessageProcessingContext` connect processing to the shared job store without scheduling the same work twice.
 - `ConsumeWithOutcomeAsync` handles returned Success/Retry/DeadLetter/Unsettled outcomes. Endpoint receive capacity, visibility, automatic renewal, and graceful drain are configured with MessageHandlerOptions.
 - `SubscribeNodeAsync` supplies independent best-effort node broadcasts. AWS uses managed tagged resources and startup stale cleanup, not native TTL. Acknowledge-before-callback intentionally allows lost notifications.
 - Native `MessageAdministration` owns bounded dead-letter inspection/replay. Send-before-delete is at least once, not atomic. Optional replay preparation can create fresh tracked execution IDs.

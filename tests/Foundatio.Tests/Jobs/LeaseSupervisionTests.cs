@@ -78,6 +78,15 @@ public class LeaseSupervisionTests
         public bool DenyRenewals { get; set; }
         public bool ThrowOnRenewals { get; set; }
 
+        public bool IsShared => _inner.IsShared;
+        public Task<long> CountAsync(JobQuery query, CancellationToken cancellationToken = default) => _inner.CountAsync(query, cancellationToken);
+        public Task<JobState?> BeginBrokerAttemptAsync(string jobId, int attempt, string nodeId, CancellationToken cancellationToken = default) => _inner.BeginBrokerAttemptAsync(jobId, attempt, nodeId, cancellationToken);
+        public Task<bool> MarkEnqueueUnknownAsync(string jobId, string error, CancellationToken cancellationToken = default) => _inner.MarkEnqueueUnknownAsync(jobId, error, cancellationToken);
+        public Task<bool> HeartbeatJobAsync(string jobId, string claimToken, CancellationToken cancellationToken = default) => _inner.HeartbeatJobAsync(jobId, claimToken, cancellationToken);
+        public Task<bool> RemoveAsync(string jobId, CancellationToken cancellationToken = default) => _inner.RemoveAsync(jobId, cancellationToken);
+        public Task IncrementCounterAsync(string name, string counterName, long value = 1, CancellationToken cancellationToken = default) => _inner.IncrementCounterAsync(name, counterName, value, cancellationToken);
+        public Task<JobCounterStats> GetCounterStatsAsync(string name, TimeSpan? window = null, CancellationToken cancellationToken = default) => _inner.GetCounterStatsAsync(name, window, cancellationToken);
+
         public Task ScheduleAsync(ScheduledJobDefinition definition, CancellationToken ct = default) => _inner.ScheduleAsync(definition, ct);
         public Task ReconcileAsync(ScheduledJobDefinition definition, CancellationToken ct = default) => _inner.ReconcileAsync(definition, ct);
         public Task<ScheduledJobDefinition?> GetScheduleAsync(string name, CancellationToken ct = default) => _inner.GetScheduleAsync(name, ct);

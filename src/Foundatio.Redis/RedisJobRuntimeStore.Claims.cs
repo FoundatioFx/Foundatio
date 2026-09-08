@@ -15,13 +15,14 @@ public sealed partial class RedisJobRuntimeStore
     {
         ArgumentNullException.ThrowIfNull(initial);
         ArgumentException.ThrowIfNullOrWhiteSpace(initial.ScheduleName);
+        if (initial.ExecutionOwner != JobExecutionOwner.Runtime) throw new ArgumentException("Scheduled occurrences must be owned by the job runtime.", nameof(initial));
         ArgumentException.ThrowIfNullOrWhiteSpace(initial.JobType);
         cancellationToken.ThrowIfCancellationRequested();
         ValidatePayload(initial.Payload?.Length ?? 0);
         initial.RetryPolicy.Validate();
         var now = _timeProvider.GetUtcNow();
         var state = initial with { CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc, LastUpdatedUtc = now };
-        const string script = """
+        const string script = MonitoringFunctions + "\n" + """
             if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
             if ARGV[2] == '0' and redis.call('SCARD', KEYS[6]) > 0 then return 2 end
             redis.call('ZREMRANGEBYSCORE', KEYS[7], '-inf', ARGV[5])
@@ -37,6 +38,7 @@ public sealed partial class RedisJobRuntimeStore
             redis.call('ZADD', KEYS[4], 0, ARGV[1])
             redis.call('ZADD', KEYS[5], ARGV[3], ARGV[1])
             redis.call('SADD', KEYS[6], ARGV[1])
+            syncMonitoring(KEYS[1])
             return 1
             """;
         var arguments = new List<RedisValue> { state.JobId, allowOverlap ? "1" : "0", Ticks(state.AvailableUtc ?? state.CreatedUtc), _options.MaxActiveJobs, Ticks(now), _options.MaxDeduplicationRecords };
@@ -75,7 +77,7 @@ public sealed partial class RedisJobRuntimeStore
             if not id then return {} end
             local job = ARGV[5] .. 'job:' .. id
             local status = redis.call('HGET', job, 'status')
-            if status ~= 'Queued' and status ~= 'Scheduled' and status ~= 'Processing' then
+            if redis.call('HGET', job, 'executionOwner') == 'Broker' or (status ~= 'Queued' and status ~= 'Scheduled' and status ~= 'Processing') then
                 redis.call('ZREM', key, id)
             else
                 local due = redis.call('HGET', job, status == 'Processing' and 'leaseExpiresUtc' or 'availableUtc')
@@ -100,6 +102,7 @@ public sealed partial class RedisJobRuntimeStore
                         redis.call('ZREM', key, id)
                         local active = redis.call('HGET', job, 'activeScheduleKey')
                         if active then redis.call('SREM', active, id) end
+                        syncMonitoring(job)
                         finishJob(job, id, ARGV[5], now, tonumber(ARGV[7]), tonumber(ARGV[8]), tonumber(ARGV[9]))
                     else
                         redis.call('HSET', job, 'status', 'Processing', 'nodeId', ARGV[2], 'claimToken', ARGV[3],
@@ -108,6 +111,7 @@ public sealed partial class RedisJobRuntimeStore
                         redis.call('ZADD', ARGV[5] .. 'status:Processing', 0, id)
                         redis.call('ZADD', key, ARGV[4], id)
                         redis.call('ZREM', ARGV[5] .. 'unclaimed', id)
+                        syncMonitoring(job)
                         return redis.call('HGETALL', job)
                     end
                 end
@@ -117,7 +121,26 @@ public sealed partial class RedisJobRuntimeStore
         """;
 
     private const string CompleteJobScript = RetentionFunctions + "\n" + """
+        if expireJob(KEYS[1], tonumber(ARGV[2])) then return 0 end
         if redis.call('HGET', KEYS[1], 'status') ~= 'Processing' or redis.call('HGET', KEYS[1], 'claimToken') ~= ARGV[1] then return 0 end
+        if redis.call('HGET', KEYS[1], 'executionOwner') == 'Broker' then
+            local kind = tonumber(ARGV[3])
+            local status = kind == 0 and 'Completed' or kind == 2 and 'Cancelled' or (kind == 3 or (kind == 1 and ARGV[7] == '1')) and 'RetryPending' or 'Failed'
+            local id = redis.call('HGET', KEYS[1], 'jobId')
+            redis.call('ZREM', ARGV[5] .. 'status:Processing', id)
+            redis.call('ZADD', ARGV[5] .. 'status:' .. status, 0, id)
+            redis.call('HSET', KEYS[1], 'status', status, 'lastUpdatedUtc', ARGV[2], 'error', ARGV[4], 'resultMessage', ARGV[6])
+            redis.call('HDEL', KEYS[1], 'claimToken', 'leaseExpiresUtc', 'availableUtc')
+            refreshBrokerHistory(KEYS[1], tonumber(ARGV[2]))
+            syncMonitoring(KEYS[1])
+            if status ~= 'RetryPending' then
+                redis.call('HSET', KEYS[1], 'completedUtc', ARGV[2])
+                if status == 'Completed' then redis.call('HSET', KEYS[1], 'progress', 100) end
+                redis.call('ZADD', ARGV[5] .. 'terminal', ARGV[2], id)
+                finishJob(KEYS[1], id, ARGV[5], tonumber(ARGV[2]), tonumber(ARGV[9]), tonumber(ARGV[10]), tonumber(ARGV[11]))
+            end
+            return 1
+        end
         if tonumber(redis.call('HGET', KEYS[1], 'leaseExpiresUtc') or '0') <= tonumber(ARGV[2]) then return 0 end
         local kind = tonumber(ARGV[3])
         if redis.call('HGET', KEYS[1], 'cancellationRequested') == '1' then kind = 2 end
@@ -154,6 +177,7 @@ public sealed partial class RedisJobRuntimeStore
             redis.call('ZADD', ARGV[5] .. 'terminal', ARGV[2], id)
             finishJob(KEYS[1], id, ARGV[5], tonumber(ARGV[2]), tonumber(ARGV[9]), tonumber(ARGV[10]), tonumber(ARGV[11]))
         end
+        syncMonitoring(KEYS[1])
         return 1
         """;
 
@@ -166,12 +190,15 @@ public sealed partial class RedisJobRuntimeStore
         return 1
         """;
 
-    private const string ReportJobProgressScript = """
+    private const string ReportJobProgressScript = MonitoringFunctions + "\n" + """
+        if expireJob(KEYS[1], tonumber(ARGV[2])) then return 0 end
         if redis.call('HGET', KEYS[1], 'status') ~= 'Processing' or redis.call('HGET', KEYS[1], 'claimToken') ~= ARGV[1] then return 0 end
-        if tonumber(redis.call('HGET', KEYS[1], 'leaseExpiresUtc') or '0') <= tonumber(ARGV[2]) then return 0 end
+        if redis.call('HGET', KEYS[1], 'executionOwner') ~= 'Broker' and tonumber(redis.call('HGET', KEYS[1], 'leaseExpiresUtc') or '0') <= tonumber(ARGV[2]) then return 0 end
         if ARGV[3] ~= '' then redis.call('HSET', KEYS[1], 'progress', ARGV[3]) end
         if ARGV[4] == '1' then redis.call('HSET', KEYS[1], 'progressMessage', ARGV[5]) end
-        redis.call('HSET', KEYS[1], 'lastUpdatedUtc', ARGV[2])
+        redis.call('HSET', KEYS[1], 'lastUpdatedUtc', ARGV[2], 'lastHeartbeatUtc', ARGV[2])
+        refreshBrokerHistory(KEYS[1], tonumber(ARGV[2]))
+        syncMonitoring(KEYS[1])
         return 1
         """;
 

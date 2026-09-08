@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -9,48 +10,60 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Foundatio.Messaging;
 
 /// <summary>
-/// Executes a broker delivery with optional progress, cancellation, history, and per-attempt state fencing.
-/// The message bus remains the sole owner of receiving and delivery leases; this pipeline creates no runnable jobs.
+/// Executes broker deliveries with optional job progress, cancellation, and history.
+/// The broker owns delivery leases and retries; the job store records each attempt without scheduling it.
 /// </summary>
 public sealed class MessageExecutionPipeline
 {
     private static readonly TimeSpan OperationTimeout = TimeSpan.FromSeconds(30);
     private readonly MessageExecutionOptions _options;
-    private readonly IMessageExecutionStore? _store;
+    private readonly IJobRuntimeStore? _store;
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
 
-    public MessageExecutionPipeline(MessageExecutionOptions options, IMessageExecutionStore? store = null, TimeProvider? timeProvider = null, ILogger? logger = null)
+    public MessageExecutionPipeline(MessageExecutionOptions options, IJobRuntimeStore? store = null, TimeProvider? timeProvider = null, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.QueueName);
         ArgumentOutOfRangeException.ThrowIfEqual(options.MaxAttempts, 0);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.CancellationPollInterval, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.StateRetention, TimeSpan.Zero);
         if (options.TrackProgress && store is null)
-            throw new ArgumentException("Execution tracking requires an IMessageExecutionStore.", nameof(store));
+            throw new ArgumentException("Execution tracking requires a job store. Configure AddFoundatio().Jobs.UseInMemory() or Jobs.UseRedis().", nameof(store));
         _options = options;
         _store = store;
         _time = timeProvider ?? TimeProvider.System;
         _logger = logger ?? NullLogger.Instance;
     }
 
-    /// <summary>Runs application processing and persists only confirmed settlement outcomes.</summary>
+    /// <summary>Processes a delivery, recording terminal job state only after confirmed broker settlement.</summary>
     public async Task ProcessAsync(IMessageContext delivery, Func<MessageProcessingContext, CancellationToken, ValueTask<MessageOutcome>> handler, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(handler);
-        string? jobId = _options.TrackProgress && _store is not null ? delivery.Headers.GetValueOrDefault(_options.ExecutionIdHeader) : null;
-        if (_options.MaxAttempts >= 0 && delivery.Attempts > _options.MaxAttempts)
+        string? jobId = _options.TrackProgress ? delivery.Headers.GetValueOrDefault(_options.ExecutionIdHeader) : null;
+        JobState? attempt = null;
+        if (jobId is not null)
         {
-            await DeadLetterAsync(delivery, jobId, $"Exceeded max attempts ({_options.MaxAttempts})").AnyContext();
-            return;
+            attempt = await RunAsync(ct => _store!.BeginBrokerAttemptAsync(jobId, delivery.Attempts, _options.WorkerId, ct), cancellationToken).AnyContext();
+            if (attempt is null)
+            {
+                var state = await RunAsync(ct => _store!.GetAsync(jobId, ct), cancellationToken).AnyContext();
+                if (state is not null)
+                {
+                    if (state.Status is JobStatus.Completed or JobStatus.Failed or JobStatus.Cancelled or JobStatus.DeadLettered)
+                        await SettleAsync(delivery.CompleteAsync, delivery).AnyContext();
+                    else
+                        await SettleAsync(ct => delivery.RejectAsync(new RejectOptions { RedeliveryDelay = _options.RetryBackoff(delivery.Attempts) }, ct), delivery).AnyContext();
+                    return;
+                }
+                _logger.LogWarning("Job history {JobId} expired before delivery; processing continues without retained history", jobId);
+            }
         }
 
         using var processing = CancellationTokenSource.CreateLinkedTokenSource(delivery.CancellationToken, cancellationToken);
         var token = processing.Token;
-        Task? poll = null;
         long started = Stopwatch.GetTimestamp();
+        Task? poll = attempt is null ? null : PollCancellationAsync(attempt, processing);
         var context = new MessageProcessingContext
         {
             Body = delivery.Body,
@@ -70,142 +83,107 @@ public sealed class MessageExecutionPipeline
             OnReportProgress = async ct =>
             {
                 await delivery.RenewLockAsync(_options.VisibilityTimeout, ct).AnyContext();
-                if (jobId is not null)
-                    await UpdateAsync(t => _store!.HeartbeatAsync(jobId, t, delivery.Attempts, _options.StateRetention), ct).AnyContext();
+                if (attempt is not null)
+                    await RecordAsync(t => _store!.HeartbeatJobAsync(attempt.JobId, attempt.ClaimToken!, t), ct).AnyContext();
             },
-            OnReportDetailedProgress = jobId is null ? null : async (percent, message, ct) =>
+            OnReportDetailedProgress = attempt is null ? null : async (percent, message, ct) =>
             {
-                if (await IsCancelledAsync(jobId, ct).AnyContext())
+                if (await IsCancelledAsync(attempt.JobId, ct).AnyContext())
                     throw new OperationCanceledException("Job cancellation was requested.");
-                await UpdateAsync(t => _store!.UpdateJobProgressAsync(jobId, Math.Clamp(percent, 0, 100), message, _options.StateRetention, t, delivery.Attempts), ct).AnyContext();
-                await UpdateAsync(t => _store!.HeartbeatAsync(jobId, t, delivery.Attempts, _options.StateRetention), ct).AnyContext();
+                await RecordAsync(t => _store!.ReportJobProgressAsync(attempt.JobId, attempt.ClaimToken!, Math.Clamp(percent, 0, 100), message, t), ct).AnyContext();
             }
         };
+        JobCompletion completion = new() { Kind = JobCompletionKind.Interrupted };
         try
         {
-            if (jobId is not null)
+            if (attempt?.CancellationRequested == true)
             {
-                if (await IsCancelledAsync(jobId, token).AnyContext())
+                if (await SettleAsync(delivery.CompleteAsync, delivery).AnyContext())
+                    completion = new() { Kind = JobCompletionKind.Cancelled };
+            }
+            else if (_options.MaxAttempts > 0 && delivery.Attempts > _options.MaxAttempts)
+                completion = await DeadLetterAsync(delivery, $"Exceeded max attempts ({_options.MaxAttempts})").AnyContext();
+            else
+            {
+                var outcome = await handler(context, token).AnyContext();
+                if (!context.IsCompleted && !context.IsAbandoned)
                 {
-                    if (await SettleAsync(delivery.CompleteAsync, delivery).AnyContext())
-                        await StatusAsync(jobId, MessageExecutionStatus.Cancelled, delivery.Attempts).AnyContext();
-                    return;
-                }
-                poll = PollCancellationAsync(jobId, delivery.Attempts, processing);
-                bool accepted = await RunAsync(ct => _store!.UpdateJobStatusAsync(jobId, MessageExecutionStatus.Processing,
-                    startedUtc: _time.GetUtcNow(), attempt: delivery.Attempts, expiry: _options.StateRetention, cancellationToken: ct, workerId: _options.WorkerId), token).AnyContext();
-                if (!accepted)
-                {
-                    var state = await RunAsync(ct => _store!.GetJobStateAsync(jobId, ct), token).AnyContext();
-                    if (state?.Status is MessageExecutionStatus.Completed or MessageExecutionStatus.Failed or MessageExecutionStatus.Cancelled)
-                        await SettleAsync(delivery.CompleteAsync, delivery).AnyContext();
-                    else if (state is not null)
-                        await RetryAsync(delivery).AnyContext();
-                    // Tracking retention must not become a second delivery scheduler. Expired history
-                    // does not prevent broker-owned work from running; state updates become no-ops.
-                    if (state is not null) return;
-                    _logger.LogWarning("Execution history {JobId} expired before delivery; processing continues without retained history", jobId);
+                    if (outcome.Kind == MessageOutcomeKind.Retry)
+                        completion = await FailureAsync(delivery, outcome.Reason ?? "Processing failed").AnyContext();
+                    else if (outcome.Kind == MessageOutcomeKind.DeadLetter)
+                        completion = await DeadLetterAsync(delivery, outcome.Reason ?? "Processing rejected").AnyContext();
+                    else if (_options.AutoComplete && outcome.Kind != MessageOutcomeKind.Unsettled)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        await SettleAsync(context.CompleteAsync, delivery).AnyContext();
+                    }
                 }
             }
-
-            var outcome = await handler(context, token).AnyContext();
-            if (!context.IsCompleted && !context.IsAbandoned)
-            {
-                if (outcome.Kind == MessageOutcomeKind.Retry)
-                {
-                    await FailureAsync(delivery, jobId, outcome.Reason ?? "Processing failed", Stopwatch.GetElapsedTime(started)).AnyContext();
-                    return;
-                }
-                if (outcome.Kind == MessageOutcomeKind.DeadLetter)
-                {
-                    await DeadLetterAsync(delivery, jobId, outcome.Reason ?? "Processing rejected").AnyContext();
-                    return;
-                }
-            }
-            if (context.IsAbandoned) return;
-            token.ThrowIfCancellationRequested();
-            if (_options.AutoComplete && !context.IsCompleted && outcome.Kind != MessageOutcomeKind.Unsettled)
-                await SettleAsync(context.CompleteAsync, delivery).AnyContext();
-            if (!context.IsCompleted)
-                await StatusAsync(jobId, MessageExecutionStatus.RetryPending, delivery.Attempts, "Handler finished without confirmed acknowledgment; delivery may recur.").AnyContext();
         }
         catch (OperationCanceledException) when (delivery.IsLeaseLost) { }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             if (!context.IsCompleted && !context.IsAbandoned)
-            {
                 await SettleAsync(ct => delivery.RejectAsync(new RejectOptions { RedeliveryDelay = TimeSpan.Zero }, ct), delivery).AnyContext();
-                await StatusAsync(jobId, MessageExecutionStatus.RetryPending, delivery.Attempts).AnyContext();
-            }
         }
         catch (OperationCanceledException)
         {
-            if (context.IsCompleted || context.IsAbandoned) return;
-            if (jobId is not null && await IsCancelledAsync(jobId, CancellationToken.None).AnyContext())
+            if (!context.IsCompleted && !context.IsAbandoned)
             {
-                if (await SettleAsync(delivery.CompleteAsync, delivery).AnyContext())
-                    await StatusAsync(jobId, MessageExecutionStatus.Cancelled, delivery.Attempts).AnyContext();
+                if (attempt is not null && await IsCancelledAsync(attempt.JobId, CancellationToken.None).AnyContext())
+                {
+                    if (await SettleAsync(delivery.CompleteAsync, delivery).AnyContext())
+                        completion = new() { Kind = JobCompletionKind.Cancelled };
+                }
+                else completion = await FailureAsync(delivery, "Processing was cancelled").AnyContext();
             }
-            else
-                await FailureAsync(delivery, jobId, "Processing was cancelled", Stopwatch.GetElapsedTime(started)).AnyContext();
         }
         catch (Exception exception)
         {
             _logger.LogError(exception, "Processing failed for {MessageId} at {Queue} on attempt {Attempt}", delivery.Id, _options.QueueName, delivery.Attempts);
             if (!delivery.IsLeaseLost && !context.IsCompleted && !context.IsAbandoned)
-                await FailureAsync(delivery, jobId, exception.Message, Stopwatch.GetElapsedTime(started)).AnyContext();
+                completion = await FailureAsync(delivery, exception.Message).AnyContext();
         }
         finally
         {
             await processing.CancelAsync().AnyContext();
             if (poll is not null) await poll.AnyContext();
-            if (context.IsCompleted)
+            if (context.IsCompleted) completion = new() { Kind = JobCompletionKind.Succeeded };
+            if (attempt is not null)
+                await RecordAsync(ct => _store!.CompleteJobAsync(attempt.JobId, attempt.ClaimToken!, completion, ct)).AnyContext();
+            var outcome = completion.Kind switch
             {
-                _options.OnProcessed?.Invoke(MessageOutcomeKind.Success, Stopwatch.GetElapsedTime(started));
-                if (jobId is not null)
-                    await UpdateAsync(ct => _store!.UpdateJobStatusAsync(jobId, MessageExecutionStatus.Completed, attempt: delivery.Attempts,
-                        completedUtc: _time.GetUtcNow(), progress: 100, expiry: _options.StateRetention, cancellationToken: ct)).AnyContext();
-                await CounterAsync("processed").AnyContext();
+                JobCompletionKind.Succeeded => MessageOutcomeKind.Success,
+                JobCompletionKind.Failed when !completion.Retryable => MessageOutcomeKind.DeadLetter,
+                JobCompletionKind.Failed => MessageOutcomeKind.Retry,
+                _ => (MessageOutcomeKind?)null
+            };
+            if (outcome is { } kind)
+            {
+                _options.OnProcessed?.Invoke(kind, Stopwatch.GetElapsedTime(started));
+                if (_store is not null)
+                    await RecordAsync(ct => _store.IncrementCounterAsync(_options.QueueName, kind == MessageOutcomeKind.Success ? "processed" : kind == MessageOutcomeKind.DeadLetter ? "dead_lettered" : "failed", 1, ct)).AnyContext();
             }
-            else if (context.IsAbandoned)
-                await StatusAsync(jobId, MessageExecutionStatus.RetryPending, delivery.Attempts).AnyContext();
         }
     }
 
-    private async Task FailureAsync(IMessageContext delivery, string? jobId, string reason, TimeSpan elapsed)
+    private async Task<JobCompletion> FailureAsync(IMessageContext delivery, string reason)
     {
         if (_options.AutoComplete && _options.MaxAttempts > 0 && delivery.Attempts >= _options.MaxAttempts)
-            await DeadLetterAsync(delivery, jobId, reason).AnyContext();
-        else
-        {
-            if (_options.AutoComplete) await RetryAsync(delivery).AnyContext();
-            await StatusAsync(jobId, MessageExecutionStatus.RetryPending, delivery.Attempts, reason).AnyContext();
-        }
-        _options.OnProcessed?.Invoke(MessageOutcomeKind.Retry, elapsed);
-        await CounterAsync("failed").AnyContext();
+            return await DeadLetterAsync(delivery, reason).AnyContext();
+        if (_options.AutoComplete)
+            await SettleAsync(ct => delivery.RejectAsync(new RejectOptions { RedeliveryDelay = _options.RetryBackoff(delivery.Attempts) }, ct), delivery).AnyContext();
+        return new() { Kind = JobCompletionKind.Failed, Error = reason };
     }
 
-    private async Task DeadLetterAsync(IMessageContext delivery, string? jobId, string reason)
-    {
-        if (!await SettleAsync(ct => MessageOutcome.DeadLetter(reason).SettleFailureAsync(delivery, _options.MaxAttempts, _options.RetryBackoff, ct), delivery).AnyContext())
-        {
-            await StatusAsync(jobId, MessageExecutionStatus.RetryPending, delivery.Attempts, reason).AnyContext();
-            return;
-        }
-        _options.OnProcessed?.Invoke(MessageOutcomeKind.DeadLetter, TimeSpan.Zero);
-        await StatusAsync(jobId, MessageExecutionStatus.Failed, delivery.Attempts, reason).AnyContext();
-        await CounterAsync("dead_lettered").AnyContext();
-    }
+    private async Task<JobCompletion> DeadLetterAsync(IMessageContext delivery, string reason)
+        => await SettleAsync(ct => MessageOutcome.DeadLetter(reason).SettleFailureAsync(delivery, _options.MaxAttempts, _options.RetryBackoff, ct), delivery).AnyContext()
+            ? new() { Kind = JobCompletionKind.Failed, Retryable = false, Error = reason }
+            : new() { Kind = JobCompletionKind.Interrupted, Error = reason };
 
-    private Task<bool> RetryAsync(IMessageContext delivery) => SettleAsync(ct => delivery.RejectAsync(new RejectOptions { RedeliveryDelay = _options.RetryBackoff(delivery.Attempts) }, ct), delivery);
     private Task<bool> IsCancelledAsync(string jobId, CancellationToken token) => RunAsync(ct => _store!.IsCancellationRequestedAsync(jobId, ct), token);
-    private Task CounterAsync(string name) => _store is null ? Task.CompletedTask : UpdateAsync(ct => _store.IncrementCounterAsync(_options.QueueName, name, 1, ct));
-    private Task StatusAsync(string? jobId, MessageExecutionStatus status, int attempt, string? error = null)
-        => jobId is null ? Task.CompletedTask : UpdateAsync(ct => _store!.UpdateJobStatusAsync(jobId, status, attempt: attempt,
-            completedUtc: status is MessageExecutionStatus.Completed or MessageExecutionStatus.Failed or MessageExecutionStatus.Cancelled ? _time.GetUtcNow() : null,
-            errorMessage: error, expiry: _options.StateRetention, cancellationToken: ct));
 
-    private async Task PollCancellationAsync(string jobId, int attempt, CancellationTokenSource processing)
+    private async Task PollCancellationAsync(JobState attempt, CancellationTokenSource processing)
     {
         var token = processing.Token;
         while (!token.IsCancellationRequested)
@@ -213,15 +191,15 @@ public sealed class MessageExecutionPipeline
             try
             {
                 await Task.Delay(_options.CancellationPollInterval, _time, token).AnyContext();
-                if (await IsCancelledAsync(jobId, token).AnyContext())
+                if (await IsCancelledAsync(attempt.JobId, token).AnyContext())
                 {
                     await processing.CancelAsync().AnyContext();
                     return;
                 }
-                await UpdateAsync(ct => _store!.HeartbeatAsync(jobId, ct, attempt, _options.StateRetention), token).AnyContext();
+                await RecordAsync(ct => _store!.HeartbeatJobAsync(attempt.JobId, attempt.ClaimToken!, ct), token).AnyContext();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { return; }
-            catch (Exception exception) { _logger.LogWarning(exception, "Unable to poll execution {JobId}; retrying", jobId); }
+            catch (Exception exception) { _logger.LogWarning(exception, "Unable to poll job {JobId}; retrying", attempt.JobId); }
         }
     }
 
@@ -234,24 +212,28 @@ public sealed class MessageExecutionPipeline
             return false;
         }
     }
-    private Task UpdateAsync(Func<CancellationToken, Task<bool>> operation, CancellationToken cancellationToken = default)
-        => UpdateAsync(async ct => { _ = await operation(ct).AnyContext(); }, cancellationToken);
 
-    private async Task UpdateAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
+    private Task RecordAsync(Func<CancellationToken, Task<bool>> operation, CancellationToken cancellationToken = default)
+        => RecordAsync(async ct => { _ = await operation(ct).AnyContext(); }, cancellationToken);
+
+    private async Task RecordAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
     {
         try { await RunAsync(operation, cancellationToken).AnyContext(); }
-        catch (Exception exception) { _logger.LogWarning(exception, "Unable to update execution state at {Queue}", _options.QueueName); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (Exception exception) { _logger.LogWarning(exception, "Unable to persist job history for {Queue}", _options.QueueName); }
     }
+
     private async Task RunAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
     {
-        using var timeout = new CancellationTokenSource(OperationTimeout, _time);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+        using var deadline = new CancellationTokenSource(OperationTimeout, _time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         await operation(linked.Token).WaitAsync(linked.Token).AnyContext();
     }
+
     private async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken = default)
     {
-        using var timeout = new CancellationTokenSource(OperationTimeout, _time);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+        using var deadline = new CancellationTokenSource(OperationTimeout, _time);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         return await operation(linked.Token).WaitAsync(linked.Token).AnyContext();
     }
 }

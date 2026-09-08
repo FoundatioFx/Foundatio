@@ -156,7 +156,7 @@ The former publish-only interfaces live under `Foundatio.Messaging.Legacy`; `Mes
 
 ## Broker-driven execution tracking
 
-For queues that need progress, cancellation, and operational history, configure `.Messaging.UseInMemoryExecutionTracking()` or `.Messaging.UseRedisExecutionTracking()`. This registers `IMessageExecutionStore`; it does not create runnable jobs, a job worker, or a second scheduler. Delivery remains owned by the message bus.
+For queues that need progress, cancellation, and operational history, configure `.Jobs.UseInMemory()` or `.Jobs.UseRedis()`. Tracked deliveries use the existing `IJobRuntimeStore`, `JobState`, and `IJobMonitor`. Set `ExecutionOwner = JobExecutionOwner.Broker` when recording enqueue acceptance: the ordinary job worker cannot claim or recover these records. The message bus owns delivery leases and settlement, while each delivery attempt gets a fresh token for atomic progress and completion updates. Registering the store starts no job worker or scheduler.
 
 `MessageExecutionPipeline` runs a raw delivery callback with `MessageProcessingContext`, applies returned `MessageOutcome` values, and persists only confirmed settlement. Pass it to a manual-ack raw `ConsumeAsync` endpoint with `WaitForManualSettlement = false`. The producer creates a unique execution state before sending and puts its ID in `ExecutionHeaders.ExecutionId`. Integrations such as Foundatio.Mediator perform this composition automatically.
 
