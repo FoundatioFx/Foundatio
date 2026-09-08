@@ -493,7 +493,7 @@ public interface IJobRuntimeStore : IJobMonitor, IScheduledDispatchStore, ISched
 
 public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
 {
-    private readonly ConcurrentDictionary<string, JobState> _jobs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, JobState> _jobs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ScheduledDispatchState> _dispatches = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
@@ -691,7 +691,7 @@ public sealed partial class InMemoryJobRuntimeStore : IJobRuntimeStore
             PurgeBrokerHistory();
             PurgeDeduplication();
             var now = _timeProvider.GetUtcNow();
-            foreach (var state in _jobs.Values.Where(s => s.ExecutionOwner == JobExecutionOwner.Runtime && s.RequiredNodeId is not null && s.Attempt == 0 && s.Status is JobStatus.Queued or JobStatus.Scheduled && s.ExpiresUtc <= now).Take(limit))
+            foreach (var state in _jobs.Values.Where(s => s.ExecutionOwner == JobExecutionOwner.Runtime && s.RequiredNodeId is not null && s.Attempt == 0 && s.Status is JobStatus.Queued or JobStatus.Scheduled && s.ExpiresUtc <= now).Take(limit).ToArray())
                 StoreJob(state with { Status = JobStatus.Cancelled, CompletedUtc = now, LastUpdatedUtc = now, ResultMessage = "Unclaimed per-node occurrence expired." });
             return Task.FromResult(TrimHistory(limit));
         }
