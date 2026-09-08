@@ -61,10 +61,12 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
         ArgumentNullException.ThrowIfNull(initial);
         cancellationToken.ThrowIfCancellationRequested();
         ValidatePayload(initial.Payload?.Length ?? 0);
+        initial.Validate();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         initial.RetryPolicy.Validate();
         var now = _timeProvider.GetUtcNow();
         var state = initial with { CreatedUtc = initial.CreatedUtc == default ? now : initial.CreatedUtc, LastUpdatedUtc = initial.LastUpdatedUtc == default ? now : initial.LastUpdatedUtc };
-        const string script = """
+        const string script = MonitoringFunctions + "\n" + """
             if redis.call('EXISTS', KEYS[1]) == 1 then return 0 end
             redis.call('ZREMRANGEBYSCORE', KEYS[6], '-inf', ARGV[6])
             if redis.call('ZSCORE', KEYS[6], ARGV[1]) then return 0 end
@@ -86,9 +88,11 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
                 local completed = redis.call('HGET', KEYS[1], 'completedUtc')
                 if completed then redis.call('ZADD', KEYS[5], completed, ARGV[1]) end
             end
+            refreshBrokerHistory(KEYS[1], tonumber(ARGV[6]))
+            syncMonitoring(KEYS[1])
             return 1
             """;
-        var args = new List<RedisValue> { state.JobId, _options.MaxActiveJobs, Ticks(state.Status == JobStatus.Processing ? state.LeaseExpiresUtc ?? now : state.AvailableUtc ?? state.CreatedUtc), state.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing ? "1" : "0", _options.MaxDeduplicationRecords, Ticks(now), state.CompletedUtc is { } completed ? Ticks(completed.Add(_options.DeduplicationRetention)) : "+inf" };
+        var args = new List<RedisValue> { state.JobId, _options.MaxActiveJobs, Ticks(state.Status == JobStatus.Processing ? state.LeaseExpiresUtc ?? now : state.AvailableUtc ?? state.CreatedUtc), state.Status is JobStatus.Queued or JobStatus.Scheduled or JobStatus.Processing or JobStatus.RetryPending or JobStatus.EnqueueUnknown ? "1" : "0", _options.MaxDeduplicationRecords, Ticks(now), state.CompletedUtc is { } completed ? Ticks(completed.Add(_options.DeduplicationRetention)) : "+inf" };
         foreach (var field in ToHash(state)) { args.Add(field.Name); args.Add(field.Value); }
         var result = await _db.ScriptEvaluateAsync(script, new RedisKey[] { JobKey(state.JobId), AllKey, StatusKey(state.Status), NameKey(state.Name), TerminalKey, DeduplicationKey, UnclaimedKey }, args.ToArray()).ConfigureAwait(false);
         ThrowIfCapacityExceeded((long)result);
@@ -97,6 +101,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
     public async Task<JobState?> GetAsync(string jobId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         var entries = await _db.HashGetAllAsync(JobKey(jobId)).ConfigureAwait(false);
         return entries.Length == 0 ? null : FromHash(entries);
     }
@@ -106,6 +111,8 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
         ArgumentNullException.ThrowIfNull(query);
         query.Validate();
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
+        if (query.NewestFirst) return await QueryNewestAsync(query, cancellationToken).ConfigureAwait(false);
         var index = query.Name is not null ? NameKey(query.Name) : query.Status is { } status ? StatusKey(status) : AllKey;
         const string script = """
             local ids = redis.call('ZRANGEBYLEX', KEYS[1], ARGV[1], '+', 'LIMIT', 0, 1001)
@@ -113,7 +120,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
             for i = 1, math.min(#ids, 1000) do
                 local id = ids[i]
                 local job = ARGV[2] .. id
-                if ARGV[3] == '' or redis.call('HGET', job, 'status') == ARGV[3] then
+                if (ARGV[3] == '' or redis.call('HGET', job, 'status') == ARGV[3]) and (ARGV[5] == '' or redis.call('HGET', job, 'queueName') == ARGV[5]) then
                     table.insert(result, redis.call('HGETALL', job))
                 end
                 if #result >= tonumber(ARGV[4]) or i == 1000 then
@@ -123,7 +130,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
             end
             return {cursor, result}
             """;
-        var raw = (RedisResult[])(await _db.ScriptEvaluateAsync(script, new RedisKey[] { index }, new RedisValue[] { query.AfterJobId is null ? "-" : "(" + query.AfterJobId, $"{_prefix}job:", query.Status?.ToString() ?? "", query.Limit }).ConfigureAwait(false))!;
+        var raw = (RedisResult[])(await _db.ScriptEvaluateAsync(script, new RedisKey[] { index }, new RedisValue[] { query.AfterJobId is null ? "-" : "(" + query.AfterJobId, $"{_prefix}job:", query.Status?.ToString() ?? "", query.Limit, query.QueueName ?? "" }).ConfigureAwait(false))!;
         var states = ((RedisResult[])raw[1]!).Select(ReadJobSnapshot).ToArray();
         string? cursor = (string?)raw[0];
         return new JobPage(states, String.IsNullOrEmpty(cursor) ? null : cursor);
@@ -137,7 +144,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
         return FromHash(fields);
     }
 
-    private const string RetentionFunctions = """
+    private const string RetentionFunctions = MonitoringFunctions + "\n" + """
         local function trimHistory(prefix, now, maximum, retention, limit)
             if limit <= 0 then return 0 end
             local terminal = prefix .. 'terminal'
@@ -148,19 +155,15 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
                 if count - removed <= maximum and tonumber(candidates[i+1]) > now - retention then break end
                 local id = candidates[i]
                 local job = prefix .. 'job:' .. id
-                local status = redis.call('HGET', job, 'status')
-                local name = redis.call('HGET', job, 'name')
-                if status then redis.call('ZREM', prefix .. 'status:' .. status, id) end
-                if name then redis.call('ZREM', prefix .. 'name:' .. name, id) end
-                redis.call('ZREM', prefix .. 'all', id)
-                redis.call('ZREM', terminal, id)
-                redis.call('DEL', job)
+                forgetJob(job, prefix, id)
                 removed = removed + 1
             end
             return removed
         end
         local function finishJob(job, id, prefix, now, maximum, retention, dedupRetention)
-            redis.call('ZADD', prefix .. 'deduplication', string.format('%.0f', now + dedupRetention), id)
+            if redis.call('HGET', job, 'executionOwner') ~= 'Broker' then
+                redis.call('ZADD', prefix .. 'deduplication', string.format('%.0f', now + dedupRetention), id)
+            end
             redis.call('ZREM', prefix .. 'unclaimed', id)
             return trimHistory(prefix, now, maximum, retention, 1000)
         end
@@ -183,6 +186,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
     public async Task<JobRuntimeStoreStats> GetStatsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         var raw = (RedisResult[])(await _db.ScriptEvaluateAsync("return {redis.call('ZCARD', KEYS[1]), redis.call('ZCARD', KEYS[2]), redis.call('ZCARD', KEYS[3]), redis.call('ZCARD', KEYS[4])}",
             [AllKey, TerminalKey, DeduplicationKey, DueKey]).ConfigureAwait(false))!;
         return new JobRuntimeStoreStats((long)raw[0] - (long)raw[1], (long)raw[1], (long)raw[2], (long)raw[3]);
@@ -193,6 +197,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
         ArgumentOutOfRangeException.ThrowIfLessThan(limit, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(limit, 1000);
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         const string script = RetentionFunctions + "\n" + """
             local now, prefix = tonumber(ARGV[1]), ARGV[3]
             redis.call('ZREMRANGEBYSCORE', KEYS[3], '-inf', ARGV[1])
@@ -206,6 +211,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
                     redis.call('ZADD', prefix .. 'status:Cancelled', 0, id)
                     redis.call('HSET', job, 'status', 'Cancelled', 'completedUtc', ARGV[1], 'lastUpdatedUtc', ARGV[1], 'resultMessage', 'Unclaimed per-node occurrence expired.')
                     redis.call('ZADD', KEYS[1], ARGV[1], id)
+                    syncMonitoring(job)
                     local ready, active = redis.call('HGET', job, 'readyKey'), redis.call('HGET', job, 'activeScheduleKey')
                     if ready then redis.call('ZREM', ready, id) end
                     if active then redis.call('SREM', active, id) end
@@ -223,11 +229,13 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
     public async Task<bool> RequestCancellationAsync(string jobId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         const string script = RetentionFunctions + "\n" + """
             if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
             local status = redis.call('HGET', KEYS[1], 'status')
+            if redis.call('HGET', KEYS[1], 'executionOwner') == 'Broker' and (status == 'Completed' or status == 'Failed' or status == 'Cancelled' or status == 'DeadLettered') then return 0 end
             redis.call('HSET', KEYS[1], 'cancellationRequested', '1', 'lastUpdatedUtc', ARGV[2])
-            if status == 'Queued' or status == 'Scheduled' then
+            if redis.call('HGET', KEYS[1], 'executionOwner') ~= 'Broker' and (status == 'Queued' or status == 'Scheduled') then
                 redis.call('HSET', KEYS[1], 'status', 'Cancelled', 'completedUtc', ARGV[2])
                 redis.call('ZREM', KEYS[2], ARGV[1])
                 redis.call('ZREM', KEYS[3], ARGV[1])
@@ -239,6 +247,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
                 if active then redis.call('SREM', active, ARGV[1]) end
                 finishJob(KEYS[1], ARGV[1], ARGV[3], tonumber(ARGV[2]), tonumber(ARGV[4]), tonumber(ARGV[5]), tonumber(ARGV[6]))
             end
+            syncMonitoring(KEYS[1])
             return 1
             """;
         var result = await _db.ScriptEvaluateAsync(script,
@@ -250,6 +259,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
     public async Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
         var value = await _db.HashGetAsync(JobKey(jobId), "cancellationRequested").ConfigureAwait(false);
         return value == "1";
     }
@@ -347,6 +357,7 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
         {
             new("jobId", state.JobId),
             new("name", state.Name),
+            new("executionOwner", state.ExecutionOwner.ToString()),
             new("status", state.Status.ToString()),
             new("attempt", state.Attempt),
             new("maxAttempts", state.MaxAttempts),
@@ -360,10 +371,15 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
             new("lastUpdatedUtc", Ticks(state.LastUpdatedUtc))
         };
 
+        if (state.QueueName is not null) entries.Add(new("queueName", state.QueueName));
+        if (state.Metadata is not null) entries.Add(new("metadata", JsonSerializer.Serialize(state.Metadata)));
+        if (state.LastHeartbeatUtc is { } heartbeat) entries.Add(new("lastHeartbeatUtc", Ticks(heartbeat)));
+        if (state.HistoryRetention is { } retention) entries.Add(new("historyRetention", retention.Ticks));
+        if (state.HistoryExpiresUtc is { } historyExpiry) entries.Add(new("historyExpiresUtc", Ticks(historyExpiry)));
         if (state.JobType is not null)
         {
             entries.Add(new("jobType", state.JobType));
-            entries.Add(new("readyKey", ReadyKey(state.JobType, state.RequiredNodeId).ToString()));
+            if (state.ExecutionOwner == JobExecutionOwner.Runtime) entries.Add(new("readyKey", ReadyKey(state.JobType, state.RequiredNodeId).ToString()));
         }
         if (state.ExpiresUtc is { } expires) entries.Add(new("expiresUtc", Ticks(expires)));
         if (state.RequiredNodeId is not null) entries.Add(new("requiredNodeId", state.RequiredNodeId));
@@ -398,6 +414,12 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
             JobId = (string)Get("jobId")!,
             Name = (string)Get("name")!,
             JobType = ToStringOrNull(Get("jobType")),
+            ExecutionOwner = Get("executionOwner") == "Broker" ? JobExecutionOwner.Broker : JobExecutionOwner.Runtime,
+            QueueName = ToStringOrNull(Get("queueName")),
+            Metadata = Get("metadata").IsNullOrEmpty ? null : JsonSerializer.Deserialize<Dictionary<string, string>>((string)Get("metadata")!),
+            LastHeartbeatUtc = ParseTime(Get("lastHeartbeatUtc")),
+            HistoryRetention = Get("historyRetention").IsNullOrEmpty ? null : TimeSpan.FromTicks((long)Get("historyRetention")),
+            HistoryExpiresUtc = ParseTime(Get("historyExpiresUtc")),
             Payload = Get("payload").IsNullOrEmpty ? null : Convert.FromBase64String((string)Get("payload")!),
             PayloadType = ToStringOrNull(Get("payloadType")),
             Status = Enum.Parse<JobStatus>((string)Get("status")!),

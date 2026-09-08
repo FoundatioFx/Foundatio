@@ -1,3 +1,4 @@
+using Foundatio.Jobs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -33,7 +34,7 @@ public sealed class RedisMessageExecutionStore : IMessageExecutionStore
     public bool IsShared => true;
 
     private const string MetadataFieldPrefix = "meta:";
-    private static readonly TimeSpan MessageExecutionCounterBucketRetention = TimeSpan.FromHours(48);
+    private static readonly TimeSpan JobCounterBucketRetention = TimeSpan.FromHours(48);
 
     private readonly IConnectionMultiplexer _redis;
     private readonly RedisMessageExecutionStoreOptions _options;
@@ -131,14 +132,14 @@ public sealed class RedisMessageExecutionStore : IMessageExecutionStore
     public Task IncrementCounterAsync(string queueName, string counterName, long value = 1, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
-        var bucketKey = MessageExecutionCounterBucketKey(queueName, _timeProvider.GetUtcNow());
+        var bucketKey = JobCounterBucketKey(queueName, _timeProvider.GetUtcNow());
 
         // Increment and retention refresh form one atomic server operation, without MULTI/EXEC overhead.
         return db.ScriptEvaluateAsync(RedisMessageExecutionScripts.IncrementCounter, [bucketKey],
-            [counterName, value, (long)MessageExecutionCounterBucketRetention.TotalMilliseconds]).WaitAsync(cancellationToken);
+            [counterName, value, (long)JobCounterBucketRetention.TotalMilliseconds]).WaitAsync(cancellationToken);
     }
 
-    public async Task<MessageExecutionCounters> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default)
+    public async Task<JobCounterStats> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default)
     {
         var db = _redis.GetDatabase();
         var now = _timeProvider.GetUtcNow();
@@ -153,11 +154,11 @@ public sealed class RedisMessageExecutionStore : IMessageExecutionStore
         var batch = db.CreateBatch();
         var tasks = new Task<HashEntry[]>[hours.Count];
         for (int i = 0; i < hours.Count; i++)
-            tasks[i] = batch.HashGetAllAsync(MessageExecutionCounterBucketKey(queueName, hours[i]));
+            tasks[i] = batch.HashGetAllAsync(JobCounterBucketKey(queueName, hours[i]));
         batch.Execute();
 
         var totals = new Dictionary<string, long>();
-        var buckets = new List<MessageExecutionCounterBucket>(hours.Count);
+        var buckets = new List<JobCounterBucket>(hours.Count);
 
         for (int i = 0; i < hours.Count; i++)
         {
@@ -174,10 +175,10 @@ public sealed class RedisMessageExecutionStore : IMessageExecutionStore
                 }
             }
 
-            buckets.Add(new MessageExecutionCounterBucket { Hour = hours[i], Counters = counters });
+            buckets.Add(new JobCounterBucket { Hour = hours[i], Counters = counters });
         }
 
-        return new MessageExecutionCounters { Totals = totals, Buckets = buckets };
+        return new JobCounterStats { Totals = totals, Buckets = buckets };
     }
 
     public async Task<IReadOnlyList<MessageExecutionState>> GetJobsByStatusAsync(string queueName, MessageExecutionStatus status, int skip = 0, int take = 50, CancellationToken cancellationToken = default)
@@ -288,7 +289,7 @@ public sealed class RedisMessageExecutionStore : IMessageExecutionStore
     private string CancelKey(string jobId) => $"{_keyPrefix}:{jobId}:cancel";
     private string QueueSetKey(string queueName) => $"{_keyPrefix}:queues:{queueName}";
     private string StatusSetKey(string queueName, MessageExecutionStatus status) => $"{_keyPrefix}:queues:{queueName}:status:{(int)status}";
-    private string MessageExecutionCounterBucketKey(string queueName, DateTimeOffset timestamp) => $"{_keyPrefix}:counters:{queueName}:{TruncateToHour(timestamp):yyyy-MM-ddTHH}";
+    private string JobCounterBucketKey(string queueName, DateTimeOffset timestamp) => $"{_keyPrefix}:counters:{queueName}:{TruncateToHour(timestamp):yyyy-MM-ddTHH}";
 
     private static DateTimeOffset TruncateToHour(DateTimeOffset timestamp)
         => new(timestamp.Year, timestamp.Month, timestamp.Day, timestamp.Hour, 0, 0, TimeSpan.Zero);

@@ -21,8 +21,6 @@ public sealed record MessageExecutionOptions
     public bool TrackProgress { get; init; }
     /// <summary>Header containing the producer-created execution identifier.</summary>
     public string ExecutionIdHeader { get; init; } = "message.execution.id";
-    /// <summary>Retention refreshed by execution state updates.</summary>
-    public TimeSpan StateRetention { get; init; } = TimeSpan.FromHours(24);
     /// <summary>Interval between cooperative cancellation checks and execution heartbeats.</summary>
     public TimeSpan CancellationPollInterval { get; init; } = TimeSpan.FromSeconds(5);
     /// <summary>Process identity recorded when an attempt starts.</summary>

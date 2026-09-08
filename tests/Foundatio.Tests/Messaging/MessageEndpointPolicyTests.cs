@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
+using Foundatio.Jobs;
 using Moq;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -14,7 +15,7 @@ public class MessageEndpointPolicyTests
     [Fact]
     public async Task ExpiredTrackingHistory_DoesNotPreventBrokerWorkFromRunning()
     {
-        var store = new InMemoryMessageExecutionStore();
+        var store = new InMemoryJobRuntimeStore();
         var delivery = new Mock<IMessageContext>();
         delivery.SetupGet(value => value.Headers).Returns(MessageHeaders.Create(new Dictionary<string, string> { [ExecutionHeaders.ExecutionId] = "expired" }));
         delivery.SetupGet(value => value.Attempts).Returns(1);
@@ -28,7 +29,7 @@ public class MessageEndpointPolicyTests
         }, TestContext.Current.CancellationToken);
         Assert.True(invoked);
         delivery.Verify(value => value.CompleteAsync(It.IsAny<CancellationToken>()), Times.Once);
-        Assert.Null(await store.GetJobStateAsync("expired", TestContext.Current.CancellationToken));
+        Assert.Null(await store.GetAsync("expired", TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -57,16 +58,21 @@ public class MessageEndpointPolicyTests
         Assert.True(delivery.IsLeaseLost);
     }
 
-    [Fact]
-    public async Task FailedAcknowledgment_DoesNotPersistCompletion()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedAcknowledgment_DoesNotPersistCompletion(bool cancellationRequested)
     {
-        var store = new InMemoryMessageExecutionStore();
-        await store.SetJobStateAsync(new MessageExecutionState
+        var store = new InMemoryJobRuntimeStore();
+        await store.CreateIfAbsentAsync(new JobState
         {
             JobId = "ack-failure",
+            Name = "exports",
+            ExecutionOwner = JobExecutionOwner.Broker,
             QueueName = "exports",
-            MessageType = "Export",
-            Status = MessageExecutionStatus.Queued,
+            PayloadType = "Export",
+            CancellationRequested = cancellationRequested,
+            Status = JobStatus.Queued,
             CreatedUtc = DateTimeOffset.UtcNow,
             LastUpdatedUtc = DateTimeOffset.UtcNow
         }, cancellationToken: TestContext.Current.CancellationToken);
@@ -76,7 +82,7 @@ public class MessageEndpointPolicyTests
         delivery.Setup(value => value.CompleteAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new TimeoutException("Unknown broker acknowledgment"));
         var pipeline = new MessageExecutionPipeline(new MessageExecutionOptions { QueueName = "exports", TrackProgress = true }, store);
         await pipeline.ProcessAsync(delivery.Object, (_, _) => ValueTask.FromResult(MessageOutcome.Success), TestContext.Current.CancellationToken);
-        Assert.Equal(MessageExecutionStatus.RetryPending, (await store.GetJobStateAsync("ack-failure", TestContext.Current.CancellationToken))!.Status);
+        Assert.Equal(JobStatus.RetryPending, (await store.GetAsync("ack-failure", TestContext.Current.CancellationToken))!.Status);
     }
 
     [Fact]

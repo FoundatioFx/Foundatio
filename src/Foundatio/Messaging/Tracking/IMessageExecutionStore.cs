@@ -1,3 +1,4 @@
+using Foundatio.Jobs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -52,7 +53,7 @@ public interface IMessageExecutionStore
     Task IncrementCounterAsync(string queueName, string counterName, long value = 1, CancellationToken cancellationToken = default);
 
     /// <summary>Reads hourly operational counters within the requested time window.</summary>
-    Task<MessageExecutionCounters> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default);
+    Task<JobCounterStats> GetCounterStatsAsync(string queueName, TimeSpan? window = null, CancellationToken cancellationToken = default);
 
     /// <summary>Reads executions by status in descending creation order.</summary>
     Task<IReadOnlyList<MessageExecutionState>> GetJobsByStatusAsync(string queueName, MessageExecutionStatus status, int skip = 0, int take = 50, CancellationToken cancellationToken = default);

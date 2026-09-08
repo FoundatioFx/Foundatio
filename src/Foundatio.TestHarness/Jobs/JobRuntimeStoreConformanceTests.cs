@@ -24,6 +24,147 @@ namespace Foundatio.Tests.Jobs;
 public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
 {
     [Fact]
+    public virtual async Task BrokerHistoryPressure_ReleasesCapacityAndExpiredIdentityAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { MaxActiveJobs = 1, MaxHistoryJobs = 1, MaxDeduplicationRecords = 2 });
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        for (int i = 0; i < 5; i++)
+        {
+            var id = $"broker-{i}";
+            await store.CreateIfAbsentAsync(new JobState { JobId = id, Name = "exports", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromMinutes(1) }, token);
+            var claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync(id, 1, "worker", token));
+            Assert.True(await store.CompleteJobAsync(id, claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+            time.Advance(TimeSpan.FromSeconds(1));
+        }
+        Assert.Equal(new JobRuntimeStoreStats(0, 1, 1, 0), await store.GetStatsAsync(token));
+        time.Advance(TimeSpan.FromMinutes(2));
+        await store.CreateIfAbsentAsync(new JobState { JobId = "broker-4", Name = "new", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromMinutes(1) }, token);
+        Assert.Equal("new", (await store.GetAsync("broker-4", token))!.Name);
+        time.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(new JobRuntimeStoreStats(0, 0, 0, 0), await store.GetStatsAsync(token));
+    }
+
+    [Fact]
+    public virtual async Task BrokerAndRuntimeJobs_ShareQueriesMetadataAndCountersAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState { JobId = "runtime", Name = "reports", JobType = "work" }, token);
+        for (int i = 0; i < 28; i++)
+        {
+            time.Advance(TimeSpan.FromMilliseconds(1));
+            await store.CreateIfAbsentAsync(new JobState
+            {
+                JobId = $"broker-{i:D2}",
+                Name = "reports",
+                ExecutionOwner = JobExecutionOwner.Broker,
+                QueueName = "exports",
+                PayloadType = "Export",
+                HistoryRetention = TimeSpan.FromDays(1),
+                Metadata = new Dictionary<string, string> { ["tenant"] = "acme" }
+            }, token);
+        }
+        Assert.Equal(29, await store.CountAsync(new JobQuery { Name = "reports" }, token));
+        Assert.Equal(28, await store.CountAsync(new JobQuery { QueueName = "exports" }, token));
+        var query = new JobQuery { QueueName = "exports", NewestFirst = true, Limit = 25 };
+        var first = await store.QueryAsync(query, token);
+        var second = await store.QueryAsync(query with { Skip = 25 }, token);
+        Assert.Equal(25, first.Count);
+        Assert.Equal(3, second.Count);
+        Assert.Equal("broker-27", first[0].JobId);
+        Assert.Equal("broker-02", second[0].JobId);
+        Assert.Empty(first.Select(j => j.JobId).Intersect(second.Select(j => j.JobId)));
+        Assert.All(first, job => Assert.Equal("acme", job.Metadata!["tenant"]));
+        var claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker-00", 1, "worker", token));
+        Assert.Equal(1, await store.CountAsync(query with { Status = JobStatus.Processing }, token));
+        Assert.Equal("broker-00", Assert.Single(await store.QueryAsync(query with { Status = JobStatus.Processing }, token)).JobId);
+        Assert.Equal(27, await store.CountAsync(query with { Status = JobStatus.Queued }, token));
+        await store.IncrementCounterAsync("exports", "processed", 2, token);
+        time.Advance(TimeSpan.FromHours(1));
+        await store.IncrementCounterAsync("exports", "processed", 3, token);
+        var counters = await store.GetCounterStatsAsync("exports", cancellationToken: token);
+        Assert.Equal(5, counters.Totals["processed"]);
+        Assert.Equal(2, counters.Buckets.Count(bucket => bucket.Counters.ContainsKey("processed")));
+        Assert.True(await store.RemoveAsync(claim.JobId, token));
+        Assert.Equal(0, await store.CountAsync(query with { Status = JobStatus.Processing }, token));
+    }
+
+    [Fact]
+    public virtual async Task BrokerJobs_ShareMonitoringButNeverEnterRuntimeClaimsAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = "broker",
+            Name = "work",
+            JobType = "work",
+            QueueName = "exports",
+            ExecutionOwner = JobExecutionOwner.Broker,
+            HistoryRetention = TimeSpan.FromHours(1)
+        }, token);
+        var request = new JobClaimRequest { NodeId = "runtime", JobTypes = ["work"] };
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        Assert.Null(await store.ClaimJobAsync("broker", request, token));
+        var first = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker", 1, "worker", token));
+        Assert.Null(await store.BeginBrokerAttemptAsync("broker", 1, "duplicate", token));
+        Assert.True(await store.ReportJobProgressAsync("broker", first.ClaimToken!, 25, "Running", token));
+        Assert.False(await store.RenewJobLeaseAsync("broker", first.ClaimToken!, TimeSpan.FromMinutes(1), token));
+        time.Advance(TimeSpan.FromMinutes(5));
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        var second = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker", 2, "replacement", token));
+        Assert.NotEqual(first.ClaimToken, second.ClaimToken);
+        Assert.False(await store.ReportJobProgressAsync("broker", first.ClaimToken!, 90, cancellationToken: token));
+        Assert.False(await store.CompleteJobAsync("broker", first.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        Assert.True(await store.CompleteJobAsync("broker", second.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Interrupted }, token));
+        Assert.Equal(JobStatus.RetryPending, (await store.GetAsync("broker", token))!.Status);
+        Assert.False(await store.ReportJobProgressAsync("broker", second.ClaimToken!, 90, cancellationToken: token));
+        Assert.Null(await store.ClaimNextAsync(request, token));
+        Assert.Null(await store.BeginBrokerAttemptAsync("broker", 2, "duplicate", token));
+        var third = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker", 3, "worker", token));
+        Assert.True(await store.CompleteJobAsync("broker", third.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        Assert.Equal(JobStatus.Completed, Assert.Single(await store.QueryAsync(new JobQuery { QueueName = "exports", NewestFirst = true }, token)).Status);
+        Assert.Equal(1, await store.CountAsync(new JobQuery { QueueName = "exports", Status = JobStatus.Completed }, token));
+        Assert.False(await store.MarkEnqueueUnknownAsync("broker", "Late send timeout", token));
+        Assert.Null(await store.BeginBrokerAttemptAsync("broker", 4, "late", token));
+    }
+
+    [Fact]
+    public virtual async Task BrokerCancellationAndRetention_DoNotScheduleOrCancelRuntimeJobsAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        await store.CreateIfAbsentAsync(new JobState { JobId = "runtime", Name = "work", JobType = "work" }, token);
+        await store.CreateIfAbsentAsync(new JobState { JobId = "broker", Name = "work", JobType = "work", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromMinutes(1) }, token);
+        Assert.True(await store.RequestCancellationAsync("broker", token));
+        Assert.Equal(JobStatus.Queued, (await store.GetAsync("broker", token))!.Status);
+        Assert.False(await store.RemoveAsync("runtime", token));
+        var claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker", 1, "worker", token));
+        Assert.True(claim.CancellationRequested);
+        Assert.True(await store.ReportJobProgressAsync("broker", claim.ClaimToken!, 50, cancellationToken: token));
+        Assert.True(await store.IsCancellationRequestedAsync("broker", token));
+        Assert.True(await store.CompleteJobAsync("broker", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Interrupted }, token));
+        Assert.Equal(JobStatus.RetryPending, (await store.GetAsync("broker", token))!.Status);
+        claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("broker", 2, "replacement", token));
+        Assert.True(claim.CancellationRequested);
+        Assert.True(await store.CompleteJobAsync("broker", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Cancelled }, token));
+        Assert.False(await store.RequestCancellationAsync("broker", token));
+        time.Advance(TimeSpan.FromMinutes(2));
+        await store.CleanupAsync(cancellationToken: token);
+        Assert.Null(await store.GetAsync("broker", token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { QueueName = "exports" }, token));
+        Assert.Equal("runtime", (await store.ClaimNextAsync(new JobClaimRequest { NodeId = "node", JobTypes = ["work"] }, token))!.JobId);
+    }
+
+    [Fact]
     public virtual async Task RetentionPressure_EvictsHistoryAndPreservesIdempotencyAsync()
     {
         var time = new FakeTimeProvider();

@@ -11,6 +11,7 @@ public sealed partial class InMemoryJobRuntimeStore
     {
         ArgumentNullException.ThrowIfNull(initial);
         ArgumentException.ThrowIfNullOrWhiteSpace(initial.ScheduleName);
+        if (initial.ExecutionOwner != JobExecutionOwner.Runtime) throw new ArgumentException("Scheduled occurrences must be owned by the job runtime.", nameof(initial));
         cancellationToken.ThrowIfCancellationRequested();
         lock (_lock)
         {
@@ -51,7 +52,7 @@ public sealed partial class InMemoryJobRuntimeStore
             var now = _timeProvider.GetUtcNow();
             if (_active.Count == 0)
                 return Task.FromResult<JobState?>(null);
-            var candidates = _active.Values.Where(s => (jobId is null || s.JobId == jobId)
+            var candidates = _active.Values.Where(s => s.ExecutionOwner == JobExecutionOwner.Runtime && (jobId is null || s.JobId == jobId)
                     && (s.RequiredNodeId is null || s.RequiredNodeId == request.NodeId)
                     && s.JobType is not null && request.JobTypes.Contains(s.JobType, StringComparer.Ordinal)
                     && ((s.Status is JobStatus.Queued or JobStatus.Scheduled && (s.AvailableUtc ?? s.CreatedUtc) <= now)
@@ -106,14 +107,15 @@ public sealed partial class InMemoryJobRuntimeStore
             if (!TryGetOwnedJob(jobId, claimToken, now, out var state))
                 return Task.FromResult(false);
 
-            var kind = state.CancellationRequested ? JobCompletionKind.Cancelled : completion.Kind;
-            bool retry = kind == JobCompletionKind.Failed && completion.Retryable && state.Attempt < state.MaxAttempts;
+            bool broker = state.ExecutionOwner == JobExecutionOwner.Broker;
+            var kind = !broker && state.CancellationRequested ? JobCompletionKind.Cancelled : completion.Kind;
+            bool retry = kind == JobCompletionKind.Failed && completion.Retryable && (broker || state.Attempt < state.MaxAttempts);
             var status = kind switch
             {
                 JobCompletionKind.Succeeded => JobStatus.Completed,
                 JobCompletionKind.Cancelled => JobStatus.Cancelled,
-                JobCompletionKind.Interrupted => JobStatus.Queued,
-                JobCompletionKind.Failed => retry ? JobStatus.Queued : JobStatus.Failed,
+                JobCompletionKind.Interrupted => broker ? JobStatus.RetryPending : JobStatus.Queued,
+                JobCompletionKind.Failed => retry ? (broker ? JobStatus.RetryPending : JobStatus.Queued) : JobStatus.Failed,
                 _ => throw new ArgumentOutOfRangeException(nameof(completion))
             };
             StoreJob(state with
@@ -121,12 +123,12 @@ public sealed partial class InMemoryJobRuntimeStore
                 Status = status,
                 Error = kind == JobCompletionKind.Failed ? completion.Error : null,
                 ResultMessage = completion.Message,
-                NodeId = null,
+                NodeId = broker ? state.NodeId : null,
                 ClaimToken = null,
                 LeaseExpiresUtc = null,
                 LastUpdatedUtc = now,
-                CompletedUtc = status == JobStatus.Queued ? null : now,
-                AvailableUtc = retry ? now.Add(state.RetryPolicy.GetDelay(state.Attempt)) : now,
+                CompletedUtc = status is JobStatus.Queued or JobStatus.RetryPending ? null : now,
+                AvailableUtc = broker ? null : retry ? now.Add(state.RetryPolicy.GetDelay(state.Attempt)) : now,
                 Progress = status == JobStatus.Completed ? 100 : state.Progress
             });
             return Task.FromResult(true);
@@ -142,6 +144,7 @@ public sealed partial class InMemoryJobRuntimeStore
             var now = _timeProvider.GetUtcNow();
             if (!TryGetOwnedJob(jobId, claimToken, now, out var state))
                 return Task.FromResult(false);
+            if (state.ExecutionOwner == JobExecutionOwner.Broker) return Task.FromResult(false);
             StoreJob(state with { LeaseExpiresUtc = now.Add(lease), LastUpdatedUtc = now });
             return Task.FromResult(true);
         }
@@ -157,7 +160,7 @@ public sealed partial class InMemoryJobRuntimeStore
             var now = _timeProvider.GetUtcNow();
             if (!TryGetOwnedJob(jobId, claimToken, now, out var state))
                 return Task.FromResult(false);
-            StoreJob(state with { Progress = percent ?? state.Progress, ProgressMessage = message ?? state.ProgressMessage, LastUpdatedUtc = now });
+            StoreJob(state with { Progress = percent ?? state.Progress, ProgressMessage = message ?? state.ProgressMessage, LastHeartbeatUtc = now, LastUpdatedUtc = now });
             return Task.FromResult(true);
         }
     }
@@ -166,7 +169,8 @@ public sealed partial class InMemoryJobRuntimeStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
+        PurgeBrokerHistory();
         return _jobs.TryGetValue(jobId, out state!) && state.Status == JobStatus.Processing
-            && state.ClaimToken == claimToken && state.LeaseExpiresUtc > now;
+            && state.ClaimToken == claimToken && (state.ExecutionOwner == JobExecutionOwner.Broker || state.LeaseExpiresUtc > now);
     }
 }

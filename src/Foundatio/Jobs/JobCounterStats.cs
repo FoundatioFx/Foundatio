@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-namespace Foundatio.Messaging;
+namespace Foundatio.Jobs;
 
 /// <summary>
 /// Counter statistics for a queue, including totals and per-hour buckets for sparkline rendering.
 /// </summary>
-public sealed record MessageExecutionCounters
+public sealed record JobCounterStats
 {
     /// <summary>
     /// Sum of all counters across the requested time window.
@@ -20,13 +20,13 @@ public sealed record MessageExecutionCounters
     /// Per-hour counter values ordered oldest to newest, suitable for sparkline rendering.
     /// Each bucket represents one UTC hour.
     /// </summary>
-    public required IReadOnlyList<MessageExecutionCounterBucket> Buckets { get; init; }
+    public required IReadOnlyList<JobCounterBucket> Buckets { get; init; }
 }
 
 /// <summary>
 /// Counter values for a single hour.
 /// </summary>
-public sealed record MessageExecutionCounterBucket
+public sealed record JobCounterBucket
 {
     /// <summary>
     /// The UTC hour this bucket represents (truncated to the hour).
