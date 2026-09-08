@@ -72,7 +72,7 @@ public sealed partial class InMemoryJobRuntimeStore
     private void ForgetJob(JobState state)
     {
         if (state.HistoryExpiresUtc is { } expires) _brokerExpiry.Remove((expires, state.JobId));
-        _jobs.TryRemove(state.JobId, out _);
+        _jobs.Remove(state.JobId);
         if (IsActive(state)) _activeJobs--;
         _active.Remove(state.JobId);
         if (state.ExecutionOwner == JobExecutionOwner.Broker) _deduplication.Remove(state.JobId);
