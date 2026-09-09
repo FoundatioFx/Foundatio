@@ -13,6 +13,26 @@ namespace Foundatio.Tests.Messaging;
 
 public class WireContractTests
 {
+    [Fact]
+    public void HeaderBuilder_ReusedAfterBuild_PreservesEveryPublishedSnapshot()
+    {
+        var builder = MessageHeaders.Empty.ToBuilder().Set("tenant", "first");
+        var first = builder.Build();
+        builder.Set("TENANT", "second").Add("trace", "123");
+        var second = builder.Build();
+        builder.Remove("tenant");
+        builder.SetIfMissing("trace", "ignored").SetIfMissing("extra", "value");
+        var third = builder.Build();
+        Assert.Equal("first", first["tenant"]);
+        Assert.Single(first);
+        Assert.Equal("second", second["tenant"]);
+        Assert.Equal(2, second.Count);
+        Assert.False(third.ContainsKey("tenant"));
+        Assert.Equal("123", third["trace"]);
+        Assert.Equal("value", third["extra"]);
+        Assert.Equal(2, third.Count);
+    }
+
     [Theory]
     [InlineData(false, 0)]
     [InlineData(false, 1)]

@@ -190,7 +190,9 @@ public sealed class MessageExecutionPipeline
         {
             try
             {
-                await Task.Delay(_options.CancellationPollInterval, _time, token).AnyContext();
+                await Task.Delay(_options.CancellationPollInterval, _time, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (token.IsCancellationRequested)
+                    return;
                 if (await IsCancelledAsync(attempt.JobId, token).AnyContext())
                 {
                     await processing.CancelAsync().AnyContext();
@@ -226,14 +228,16 @@ public sealed class MessageExecutionPipeline
     private async Task RunAsync(Func<CancellationToken, Task> operation, CancellationToken cancellationToken = default)
     {
         using var deadline = new CancellationTokenSource(OperationTimeout, _time);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        await operation(linked.Token).WaitAsync(linked.Token).AnyContext();
+        using var linked = cancellationToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token) : null;
+        var token = linked?.Token ?? deadline.Token;
+        await operation(token).WaitAsync(token).AnyContext();
     }
 
     private async Task<T> RunAsync<T>(Func<CancellationToken, Task<T>> operation, CancellationToken cancellationToken = default)
     {
         using var deadline = new CancellationTokenSource(OperationTimeout, _time);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
-        return await operation(linked.Token).WaitAsync(linked.Token).AnyContext();
+        using var linked = cancellationToken.CanBeCanceled ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token) : null;
+        var token = linked?.Token ?? deadline.Token;
+        return await operation(token).WaitAsync(token).AnyContext();
     }
 }

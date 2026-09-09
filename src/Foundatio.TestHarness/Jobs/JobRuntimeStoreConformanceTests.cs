@@ -24,6 +24,79 @@ namespace Foundatio.Tests.Jobs;
 public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
 {
     [Fact]
+    public virtual async Task BrokerAdmission_ReclaimsExpiredHistoryAcrossCleanupBatchesAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { MaxActiveJobs = 129, MaxDeduplicationRecords = 129 });
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        for (int i = 0; i < 129; i++)
+            await store.CreateIfAbsentAsync(new JobState { JobId = $"expired-{i}", Name = "exports", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromMinutes(1) }, token);
+        time.Advance(TimeSpan.FromMinutes(1));
+        await store.CreateIfAbsentAsync(new JobState { JobId = "new", Name = "exports", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromMinutes(1) }, token);
+        Assert.Equal(new JobRuntimeStoreStats(1, 0, 1, 0), await store.GetStatsAsync(token));
+        Assert.Equal("new", Assert.Single(await store.QueryAsync(new JobQuery { NewestFirst = true }, token)).JobId);
+    }
+
+    [Fact]
+    public virtual async Task BrokerMonitoring_PreservesOrderAndCountsAcrossProgressRetryAndRemovalAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time);
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        const string name = "reports:月次";
+        const string queue = "exports:é";
+        await store.CreateIfAbsentAsync(new JobState { JobId = "older", Name = name, QueueName = queue, ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromHours(1) }, token);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await store.CreateIfAbsentAsync(new JobState { JobId = "newer", Name = name, QueueName = queue, ExecutionOwner = JobExecutionOwner.Broker, HistoryRetention = TimeSpan.FromHours(1) }, token);
+        var claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("older", 1, "worker", token));
+        time.Advance(TimeSpan.FromMinutes(30));
+        Assert.True(await store.ReportJobProgressAsync("older", claim.ClaimToken!, 50, "Halfway", token));
+        Assert.True(await store.CompleteJobAsync("older", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Failed }, token));
+        claim = Assert.IsType<JobState>(await store.BeginBrokerAttemptAsync("older", 2, "worker", token));
+        Assert.True(await store.CompleteJobAsync("older", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+
+        foreach (var query in new[] { new JobQuery(), new JobQuery { Name = name }, new JobQuery { QueueName = queue }, new JobQuery { Name = name, QueueName = queue } })
+        {
+            Assert.Equal(2, await store.CountAsync(query, token));
+            Assert.Equal(new[] { "newer", "older" }, (await store.QueryAsync(query with { NewestFirst = true }, token)).Select(job => job.JobId));
+            Assert.Equal(1, await store.CountAsync(query with { Status = JobStatus.Completed }, token));
+            Assert.Equal(1, await store.CountAsync(query with { Status = JobStatus.Queued }, token));
+            Assert.Equal(0, await store.CountAsync(query with { Status = JobStatus.Processing }, token));
+            Assert.Equal(0, await store.CountAsync(query with { Status = JobStatus.RetryPending }, token));
+        }
+
+        time.Advance(TimeSpan.FromMinutes(31));
+        Assert.Equal("older", Assert.Single(await store.QueryAsync(new JobQuery { QueueName = queue, NewestFirst = true }, token)).JobId);
+        Assert.True(await store.RemoveAsync("older", token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { Name = name }, token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { QueueName = queue, Status = JobStatus.Completed }, token));
+    }
+
+    [Fact]
+    public virtual async Task CleanupAsync_RespectsBatchLimitAndRetentionBoundaryAsync()
+    {
+        var time = new FakeTimeProvider();
+        var store = CreateStore(time, new JobRuntimeStoreOptions { HistoryRetention = TimeSpan.FromMinutes(1), MaxHistoryJobs = 10 });
+        Assert.SkipWhen(store is null, "Job runtime store not configured.");
+        var token = TestCancellationToken;
+        for (int i = 0; i < 4; i++)
+        {
+            await store.CreateIfAbsentAsync(NewJob(time, $"job-{i}"), token);
+            var claim = Assert.IsType<JobState>(await store.ClaimJobAsync($"job-{i}", new JobClaimRequest { NodeId = "node", JobTypes = ["work.v1"] }, token));
+            Assert.True(await store.CompleteJobAsync(claim.JobId, claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Succeeded }, token));
+        }
+        time.Advance(TimeSpan.FromSeconds(59));
+        Assert.Equal(0, await store.CleanupAsync(2, token));
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.Equal(2, await store.CleanupAsync(2, token));
+        Assert.Equal(2, await store.CountAsync(new JobQuery { Status = JobStatus.Completed }, token));
+        Assert.Equal(2, await store.CleanupAsync(2, token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery(), token));
+    }
+
+    [Fact]
     public virtual async Task BrokerHistoryPressure_ReleasesCapacityAndExpiredIdentityAsync()
     {
         var time = new FakeTimeProvider();

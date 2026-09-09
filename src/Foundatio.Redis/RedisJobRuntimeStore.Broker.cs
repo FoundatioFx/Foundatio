@@ -20,15 +20,23 @@ public sealed partial class RedisJobRuntimeStore
             local id = redis.call('HGET', job, 'jobId')
             local prefix = string.sub(job, 1, #job - #id - 4)
             local keys = {prefix .. 'created', prefix .. 'created-status:' .. status}
-            local name = redis.call('HGET', job, 'name')
-            if name then
-                table.insert(keys, prefix .. 'created-name:' .. hex(name))
-                table.insert(keys, prefix .. 'created-name:' .. hex(name) .. ':' .. status)
+            local name = redis.call('HGET', job, 'monitorName')
+            if not name then
+                local value = redis.call('HGET', job, 'name')
+                if value then name = hex(value); redis.call('HSET', job, 'monitorName', name) end
             end
-            local queue = redis.call('HGET', job, 'queueName')
+            if name then
+                table.insert(keys, prefix .. 'created-name:' .. name)
+                table.insert(keys, prefix .. 'created-name:' .. name .. ':' .. status)
+            end
+            local queue = redis.call('HGET', job, 'monitorQueue')
+            if not queue then
+                local value = redis.call('HGET', job, 'queueName')
+                if value then queue = hex(value); redis.call('HSET', job, 'monitorQueue', queue) end
+            end
             if queue then
-                table.insert(keys, prefix .. 'created-queue:' .. hex(queue))
-                table.insert(keys, prefix .. 'created-queue:' .. hex(queue) .. ':' .. status)
+                table.insert(keys, prefix .. 'created-queue:' .. queue)
+                table.insert(keys, prefix .. 'created-queue:' .. queue .. ':' .. status)
             end
             return keys, prefix, id
         end
@@ -40,17 +48,27 @@ public sealed partial class RedisJobRuntimeStore
             redis.call('ZREM', prefix .. 'broker-expiry', id)
         end
         local function syncMonitoring(job)
-            local status = redis.call('HGET', job, 'status')
+            local values = redis.call('HMGET', job, 'status', 'monitorStatus', 'createdUtc', 'historyExpiresUtc', 'monitorExpiry', 'jobId')
+            local status, previous = values[1], values[2]
             if not status then return end
-            local keys, prefix, id = monitoringKeys(job, status)
-            if redis.call('HGET', job, 'monitorStatus') ~= status then
-                removeMonitoring(job)
-                local created = redis.call('HGET', job, 'createdUtc')
-                for _, key in ipairs(keys) do redis.call('ZADD', key, created, id) end
+            local id = values[6]
+            local prefix = string.sub(job, 1, #job - #id - 4)
+            if previous ~= status then
+                local keys = monitoringKeys(job, status)
+                for i = 1, #keys, 2 do
+                    if not previous then redis.call('ZADD', keys[i], values[3], id)
+                    else
+                        local oldKey = keys[i] .. (i == 1 and '-status:' or ':') .. previous
+                        redis.call('ZREM', oldKey, id)
+                    end
+                    redis.call('ZADD', keys[i+1], values[3], id)
+                end
                 redis.call('HSET', job, 'monitorStatus', status)
             end
-            local expiry = redis.call('HGET', job, 'historyExpiresUtc')
-            if expiry then redis.call('ZADD', prefix .. 'broker-expiry', expiry, id) end
+            if values[4] and values[4] ~= values[5] then
+                redis.call('ZADD', prefix .. 'broker-expiry', values[4], id)
+                redis.call('HSET', job, 'monitorExpiry', values[4])
+            end
         end
         local function refreshBrokerHistory(job, now)
             if redis.call('HGET', job, 'executionOwner') ~= 'Broker' then return end
@@ -75,6 +93,16 @@ public sealed partial class RedisJobRuntimeStore
             local _, prefix, id = monitoringKeys(job, redis.call('HGET', job, 'status'))
             forgetJob(job, prefix, id)
             return true
+        end
+        local function purgeBrokerHistory(prefix, now, limit)
+            local expiry = prefix .. 'broker-expiry'
+            local ids = redis.call('ZRANGEBYSCORE', expiry, '-inf', now, 'LIMIT', 0, limit)
+            for _, id in ipairs(ids) do
+                local job = prefix .. 'job:' .. id
+                if redis.call('HGET', job, 'executionOwner') == 'Broker' then forgetJob(job, prefix, id) end
+                redis.call('ZREM', expiry, id)
+            end
+            return #ids
         end
         """;
 
@@ -134,13 +162,7 @@ public sealed partial class RedisJobRuntimeStore
     private async Task PurgeBrokerHistoryAsync(CancellationToken cancellationToken)
     {
         const string script = MonitoringFunctions + "\n" + """
-            local ids = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, 128)
-            for _, id in ipairs(ids) do
-                local job = ARGV[2] .. 'job:' .. id
-                if redis.call('HGET', job, 'executionOwner') == 'Broker' then forgetJob(job, ARGV[2], id) end
-                redis.call('ZREM', KEYS[1], id)
-            end
-            return #ids
+            return purgeBrokerHistory(ARGV[2], tonumber(ARGV[1]), 128)
             """;
         while ((long)await _db.ScriptEvaluateAsync(script, [$"{_prefix}broker-expiry"], [Ticks(_timeProvider.GetUtcNow()), _prefix]).WaitAsync(cancellationToken).ConfigureAwait(false) == 128)
             cancellationToken.ThrowIfCancellationRequested();

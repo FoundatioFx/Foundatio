@@ -226,10 +226,7 @@ public sealed partial class RedisJobRuntimeStore
         var values = (RedisResult[])result!;
         if (values.Length == 0)
             return null;
-        var fields = new HashEntry[values.Length / 2];
-        for (int index = 0; index < fields.Length; index++)
-            fields[index] = new HashEntry((string)values[index * 2]!, (string)values[index * 2 + 1]!);
-        return FromHash(fields);
+        return ReadJobSnapshot(result);
     }
 
     public Task<bool> CompleteJobAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default)
