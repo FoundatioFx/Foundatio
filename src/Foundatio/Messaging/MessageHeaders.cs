@@ -78,7 +78,7 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
 
     public Builder ToBuilder()
     {
-        return new Builder(_headers);
+        return new Builder(this);
     }
 
     public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
@@ -96,9 +96,10 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
         private Dictionary<string, string> _headers;
         private MessageHeaders? _snapshot;
 
-        internal Builder(IEnumerable<KeyValuePair<string, string>> headers)
+        internal Builder(MessageHeaders headers)
         {
-            _headers = new Dictionary<string, string>(headers, StringComparer.OrdinalIgnoreCase);
+            _headers = headers._headers;
+            _snapshot = headers;
         }
 
         public Builder Add(string key, string value)

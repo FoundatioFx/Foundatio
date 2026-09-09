@@ -13,6 +13,29 @@ namespace Foundatio.Tests.Messaging;
 public class MessageEndpointPolicyTests
 {
     [Fact]
+    public async Task ConcurrentExplicitCompletion_SettlesTheDeliveryOnce()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var delivery = new Mock<IMessageContext>();
+        delivery.SetupGet(value => value.Headers).Returns(MessageHeaders.Empty);
+        delivery.Setup(value => value.CompleteAsync(It.IsAny<CancellationToken>())).Returns(release.Task);
+        var pipeline = new MessageExecutionPipeline(new MessageExecutionOptions { QueueName = "exports" });
+        await pipeline.ProcessAsync(delivery.Object, async (context, ct) =>
+        {
+            var first = context.CompleteAsync(ct);
+            var second = context.CompleteAsync(ct);
+            Assert.False(context.IsCompleted);
+            release.TrySetResult();
+            await Task.WhenAll(first, second);
+            Assert.True(context.IsCompleted);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => context.AbandonAsync(ct));
+            return MessageOutcome.Success;
+        }, token);
+        delivery.Verify(value => value.CompleteAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task TrackedCancellation_PollsAndStopsTheRunningHandler()
     {
         var token = TestContext.Current.CancellationToken;

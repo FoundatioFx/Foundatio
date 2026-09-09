@@ -16,7 +16,7 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _processing;
     private readonly CancellationTokenSource _renewal = new();
-    private readonly SemaphoreSlim _gate = new(1);
+    private SemaphoreSlim? _gate;
     private long _expiresTicks;
     private int _lost;
     private int _settled;
@@ -53,7 +53,8 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(duration), $"The transport supports a maximum lease of {maximum}.");
         if (_transport is not ISupportsLockRenewal renewal)
             throw new NotSupportedException($"Transport {_transport.GetType().Name} does not support delivery lease renewal.");
-        await _gate.WaitAsync(cancellationToken).AnyContext();
+        var gate = LazyInitializer.EnsureInitialized(ref _gate, static () => new SemaphoreSlim(1));
+        await gate.WaitAsync(cancellationToken).AnyContext();
         try
         {
             if (IsSettled || IsLost || Remaining <= TimeSpan.Zero)
@@ -65,7 +66,7 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
             await renewal.RenewLockAsync(_entry, extension, operation.Token).WaitAsync(operation.Token).AnyContext();
             Interlocked.Exchange(ref _expiresTicks, started.Add(extension).UtcTicks);
         }
-        finally { _gate.Release(); }
+        finally { gate.Release(); }
     }
 
     private async Task MonitorAsync(bool autoRenew)

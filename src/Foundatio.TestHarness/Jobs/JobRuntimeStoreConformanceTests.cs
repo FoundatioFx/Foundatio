@@ -230,7 +230,12 @@ public abstract class JobRuntimeStoreConformanceTests : TestWithLoggingBase
         Assert.True(claim.CancellationRequested);
         Assert.True(await store.CompleteJobAsync("broker", claim.ClaimToken!, new JobCompletion { Kind = JobCompletionKind.Cancelled }, token));
         Assert.False(await store.RequestCancellationAsync("broker", token));
-        time.Advance(TimeSpan.FromMinutes(2));
+        time.Advance(TimeSpan.FromSeconds(59));
+        Assert.True(await store.IsCancellationRequestedAsync("broker", token));
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.False(await store.IsCancellationRequestedAsync("broker", token));
+        Assert.False(await store.IsCancellationRequestedAsync("missing", token));
+        Assert.False(await store.IsCancellationRequestedAsync("runtime", token));
         await store.CleanupAsync(cancellationToken: token);
         Assert.Null(await store.GetAsync("broker", token));
         Assert.Equal(0, await store.CountAsync(new JobQuery { QueueName = "exports" }, token));

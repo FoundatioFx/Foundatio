@@ -167,7 +167,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         var receipt = GetReceipt(entry);
         var state = GetExistingDestination(receipt.Destination);
 
-        if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+        if (!state.InFlight.TryRemove(receipt, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
         Interlocked.Increment(ref state.Completed);
@@ -183,7 +183,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         var receipt = GetReceipt(entry);
         var state = GetExistingDestination(receipt.Destination);
 
-        if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+        if (!state.InFlight.TryRemove(receipt, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
         Interlocked.Increment(ref state.Abandoned);
@@ -205,7 +205,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         var receipt = GetReceipt(entry);
         var state = GetExistingDestination(receipt.Destination);
 
-        if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+        if (!state.InFlight.TryRemove(receipt, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
         Interlocked.Increment(ref state.Abandoned);
@@ -224,7 +224,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         var receipt = GetReceipt(entry);
         var state = GetExistingDestination(receipt.Destination);
 
-        if (!state.InFlight.TryGetValue(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+        if (!state.InFlight.TryGetValue(receipt, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
         // Renewal only extends a finite visibility window. A message received without a window holds an indefinite
@@ -233,7 +233,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
             return Task.CompletedTask;
 
         var renewed = inFlight with { VisibilityExpiresUtc = _timeProvider.GetUtcNow().Add(duration ?? _defaultLockRenewal) };
-        if (!state.InFlight.TryUpdate(receipt.LockToken, renewed, inFlight))
+        if (!state.InFlight.TryUpdate(receipt, renewed, inFlight))
             throw new ReceiptExpiredException();
 
         return Task.CompletedTask;
@@ -248,7 +248,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         var receipt = GetReceipt(entry);
         var state = GetExistingDestination(receipt.Destination);
 
-        if (!state.InFlight.TryRemove(receipt.LockToken, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
+        if (!state.InFlight.TryRemove(receipt, out var inFlight) || !String.Equals(inFlight.Message.Id, entry.Id, StringComparison.Ordinal))
             throw new ReceiptExpiredException();
 
         // Dead-letter with the caller's entry headers (which may carry forensics stamped by the core), not the
@@ -579,9 +579,9 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
 
             // The receipt carries the internal (role-qualified) key so settlement resolves the same state; the entry's
             // Destination stays the caller-facing source address.
-            var receipt = new InMemoryReceipt(ReceivableKey(source), Guid.NewGuid().ToString("N"));
+            var receipt = new InMemoryReceipt(state.Key);
             DateTimeOffset? visibilityExpiresUtc = visibility is { } window ? _timeProvider.GetUtcNow().Add(window) : null;
-            state.InFlight[receipt.LockToken] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
+            state.InFlight[receipt] = new InFlightMessage(message, receipt, visibilityExpiresUtc);
             Interlocked.Increment(ref state.Dequeued);
 
             if (visibility is not null)
@@ -661,7 +661,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
     private DestinationState GetOrAddDestination(string key)
     {
         _roles.TryAdd(key, RoleForKey(key));
-        return _destinations.GetOrAdd(key, static _ => new DestinationState());
+        return _destinations.GetOrAdd(key, static name => new DestinationState(name));
     }
 
     private DestinationState GetExistingDestination(string key)
@@ -715,10 +715,17 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
 
     private sealed record InFlightMessage(StoredMessage Message, InMemoryReceipt Receipt, DateTimeOffset? VisibilityExpiresUtc);
 
-    private sealed record InMemoryReceipt(string Destination, string LockToken);
-
-    private sealed class DestinationState
+    // Receipt identity is the lock token: each delivery gets a fresh object, so a stale receipt
+    // cannot settle a redelivery, even when it carries the same message id.
+    private sealed class InMemoryReceipt(string destination)
     {
+        public string Destination { get; } = destination;
+    }
+
+    private sealed class DestinationState(string key)
+    {
+        public string Key { get; } = key;
+
         private readonly Channel<StoredMessage>[] _channels =
         [
             Channel.CreateUnbounded<StoredMessage>(CreateChannelOptions()),
@@ -731,7 +738,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
         private long _queuedCount;
         private int _isCompleted;
 
-        public ConcurrentDictionary<string, InFlightMessage> InFlight { get; } = new(StringComparer.Ordinal);
+        public ConcurrentDictionary<InMemoryReceipt, InFlightMessage> InFlight { get; } = new();
         public long Enqueued;
         public long Dequeued;
         public long Completed;
