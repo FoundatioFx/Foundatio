@@ -27,6 +27,34 @@ public class RedisJobStoreIntegrationTests
         .Select(t => new JobTypeRegistration(t.FullName!, t)));
 
     [Fact]
+    public async Task BrokerMonitoring_ExistingRecordsWithoutCachedKeys_KeepTheirIndexesAsync()
+    {
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        string prefix = $"test:legacy-monitoring:{Guid.NewGuid():N}:";
+        var time = new FakeTimeProvider();
+        var store = new RedisJobRuntimeStore(new RedisJobRuntimeStoreOptions { ConnectionMultiplexer = connection, KeyPrefix = prefix, TimeProvider = time });
+        await store.CreateIfAbsentAsync(new JobState
+        {
+            JobId = "legacy", Name = "résumé", QueueName = "exports/日本語", ExecutionOwner = JobExecutionOwner.Broker,
+            HistoryRetention = TimeSpan.FromMinutes(1), HistoryExpiresUtc = time.GetUtcNow().AddMinutes(1)
+        }, token);
+        await connection.GetDatabase().HashDeleteAsync(prefix + "job:legacy", ["monitorName", "monitorQueue", "monitorExpiry"]);
+
+        var attempt = await store.BeginBrokerAttemptAsync("legacy", 1, "worker", token);
+        Assert.NotNull(attempt);
+        Assert.Equal(1, await store.CountAsync(new JobQuery { Name = "résumé", Status = JobStatus.Processing }, token));
+        Assert.Equal(1, await store.CountAsync(new JobQuery { QueueName = "exports/日本語", Status = JobStatus.Processing }, token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { Status = JobStatus.Queued }, token));
+        Assert.Equal("legacy", Assert.Single(await store.QueryAsync(new JobQuery { QueueName = "exports/日本語" }, token)).JobId);
+        time.Advance(TimeSpan.FromMinutes(1));
+        Assert.Null(await store.GetAsync("legacy", token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { Name = "résumé" }, token));
+        Assert.Equal(0, await store.CountAsync(new JobQuery { QueueName = "exports/日本語" }, token));
+    }
+
+    [Fact]
     public async Task CreateIfAbsentAsync_ConcurrentAdmission_EnforcesCapacityAtomicallyAsync()
     {
         var connection = RedisTestConnection.Multiplexer;

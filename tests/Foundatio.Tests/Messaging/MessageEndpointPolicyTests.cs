@@ -13,6 +13,33 @@ namespace Foundatio.Tests.Messaging;
 public class MessageEndpointPolicyTests
 {
     [Fact]
+    public async Task TrackedCancellation_PollsAndStopsTheRunningHandler()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var time = new FakeTimeProvider();
+        var store = new InMemoryJobRuntimeStore(time);
+        await store.CreateIfAbsentAsync(new JobState { JobId = "cancel", Name = "exports", QueueName = "exports", ExecutionOwner = JobExecutionOwner.Broker }, token);
+        var delivery = new Mock<IMessageContext>();
+        delivery.SetupGet(value => value.Headers).Returns(MessageHeaders.Empty.ToBuilder().Set(ExecutionHeaders.ExecutionId, "cancel").Build());
+        delivery.SetupGet(value => value.Attempts).Returns(1);
+        delivery.Setup(value => value.CompleteAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pipeline = new MessageExecutionPipeline(new MessageExecutionOptions { QueueName = "exports", TrackProgress = true, CancellationPollInterval = TimeSpan.FromSeconds(1) }, store, time);
+        var processing = pipeline.ProcessAsync(delivery.Object, async (_, ct) =>
+        {
+            entered.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            return MessageOutcome.Success;
+        }, token);
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), token);
+        Assert.True(await store.RequestCancellationAsync("cancel", token));
+        time.Advance(TimeSpan.FromSeconds(1));
+        await processing.WaitAsync(TimeSpan.FromSeconds(5), token);
+        Assert.Equal(JobStatus.Cancelled, (await store.GetAsync("cancel", token))!.Status);
+        delivery.Verify(value => value.CompleteAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task ExpiredTrackingHistory_DoesNotPreventBrokerWorkFromRunning()
     {
         var store = new InMemoryJobRuntimeStore();

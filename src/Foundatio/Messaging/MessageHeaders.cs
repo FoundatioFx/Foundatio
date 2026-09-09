@@ -93,7 +93,8 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
 
     public sealed class Builder
     {
-        private readonly Dictionary<string, string> _headers;
+        private Dictionary<string, string> _headers;
+        private MessageHeaders? _snapshot;
 
         internal Builder(IEnumerable<KeyValuePair<string, string>> headers)
         {
@@ -104,6 +105,7 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
         {
             ArgumentException.ThrowIfNullOrEmpty(key);
             ArgumentNullException.ThrowIfNull(value);
+            EnsureWritable();
             _headers.Add(key, value);
             return this;
         }
@@ -112,6 +114,7 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
         {
             ArgumentException.ThrowIfNullOrEmpty(key);
             ArgumentNullException.ThrowIfNull(value);
+            EnsureWritable();
             _headers[key] = value;
             return this;
         }
@@ -120,19 +123,34 @@ public sealed class MessageHeaders : IReadOnlyDictionary<string, string>
         {
             ArgumentException.ThrowIfNullOrEmpty(key);
             ArgumentNullException.ThrowIfNull(value);
-            _headers.TryAdd(key, value);
+            if (!_headers.ContainsKey(key))
+            {
+                EnsureWritable();
+                _headers.Add(key, value);
+            }
             return this;
         }
 
         public bool Remove(string key)
         {
             ArgumentException.ThrowIfNullOrEmpty(key);
+            if (!_headers.ContainsKey(key))
+                return false;
+            EnsureWritable();
             return _headers.Remove(key);
         }
 
         public MessageHeaders Build()
         {
-            return Create(_headers);
+            return _headers.Count == 0 ? Empty : _snapshot ??= new MessageHeaders(_headers);
+        }
+
+        private void EnsureWritable()
+        {
+            if (_snapshot is null)
+                return;
+            _headers = new Dictionary<string, string>(_headers, StringComparer.OrdinalIgnoreCase);
+            _snapshot = null;
         }
     }
 }
