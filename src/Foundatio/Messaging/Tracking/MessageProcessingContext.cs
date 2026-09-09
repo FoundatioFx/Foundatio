@@ -8,7 +8,7 @@ namespace Foundatio.Messaging;
 /// <summary>Execution progress, cancellation and explicit settlement for a broker-delivered message.</summary>
 public class MessageProcessingContext
 {
-    private readonly SemaphoreSlim _settlementGate = new(1);
+    private SemaphoreSlim? _settlementGate;
     private int _settlement;
 
     /// <summary>The serialized application payload.</summary>
@@ -63,7 +63,7 @@ public class MessageProcessingContext
     public string? JobId { get; init; }
 
     /// <summary>Message headers, including correlation, propagated context, and replay lineage.</summary>
-    public IReadOnlyDictionary<string, string> Headers { get; init; } = new Dictionary<string, string>();
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = MessageHeaders.Empty;
 
     /// <summary>
     /// Delegate invoked by <see cref="ReportProgressAsync(CancellationToken)"/> to signal that the handler
@@ -159,7 +159,8 @@ public class MessageProcessingContext
 
     private async Task SettleAsync(int outcome, Func<CancellationToken, Task>? operation, CancellationToken cancellationToken)
     {
-        await _settlementGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var gate = LazyInitializer.EnsureInitialized(ref _settlementGate, static () => new SemaphoreSlim(1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             if (_settlement == outcome)
@@ -173,7 +174,7 @@ public class MessageProcessingContext
         }
         finally
         {
-            _settlementGate.Release();
+            gate.Release();
         }
     }
 

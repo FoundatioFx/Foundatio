@@ -1,0 +1,18 @@
+{
+  "redis-64": {
+    "before": {
+      "MessagesPerSecond": 6379.68,
+      "AllocatedBytesPerMessage": 47323.214,
+      "AcceptanceP99Milliseconds": 11.335,
+      "HandlerCompletionP99Milliseconds": 2045.964,
+      "CpuMilliseconds": 16474.052
+    },
+    "after": {
+      "MessagesPerSecond": 6503.424,
+      "AllocatedBytesPerMessage": 45838.555,
+      "AcceptanceP99Milliseconds": 10.706,
+      "HandlerCompletionP99Milliseconds": 1990.683,
+      "CpuMilliseconds": 14290.472
+    }
+  }
+}

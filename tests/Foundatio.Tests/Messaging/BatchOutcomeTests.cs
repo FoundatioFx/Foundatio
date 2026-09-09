@@ -11,6 +11,42 @@ namespace Foundatio.Tests.Messaging;
 public class BatchOutcomeTests
 {
     [Theory]
+    [InlineData(MessageSendStatus.Rejected, false)]
+    [InlineData(MessageSendStatus.Unknown, false)]
+    [InlineData(MessageSendStatus.NotAttempted, false)]
+    [InlineData(MessageSendStatus.Rejected, true)]
+    [InlineData(MessageSendStatus.Unknown, true)]
+    public async Task SendAsync_PartialAcceptance_PreservesTheApplicationIdAndProviderOutcome(MessageSendStatus status, bool throws)
+    {
+        var transport = new Mock<IMessageTransport>();
+        var item = new SendItemResult { Index = 0, MessageId = "broker-id", Status = status, ErrorCode = "Unavailable", ErrorMessage = "Retry later", Retryable = true };
+        var send = transport.Setup(t => t.SendAsync(It.IsAny<DestinationAddress>(), It.IsAny<IReadOnlyList<TransportMessage>>(), It.IsAny<TransportSendOptions>(), It.IsAny<CancellationToken>()));
+        if (throws) send.ThrowsAsync(new TransportSendException([item], new TimeoutException()));
+        else send.ReturnsAsync(new SendResult { Items = [item] });
+        await using var bus = new MessageBus(transport.Object);
+        var failure = await Assert.ThrowsAsync<MessageSendException>(() => bus.SendAsync(new Event(), new MessageSendOptions { MessageId = "application-id" }, TestContext.Current.CancellationToken));
+        var outcome = Assert.Single(failure.Outcomes);
+        Assert.Equal("application-id", outcome.MessageId);
+        Assert.Equal(status, outcome.Status);
+        Assert.Equal("Unavailable", outcome.ErrorCode);
+        Assert.Equal("Retry later", outcome.ErrorMessage);
+        Assert.True(outcome.Retryable);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task SendAsync_InvalidProviderIndex_DoesNotReportAcceptance(int index)
+    {
+        var transport = new Mock<IMessageTransport>();
+        transport.Setup(t => t.SendAsync(It.IsAny<DestinationAddress>(), It.IsAny<IReadOnlyList<TransportMessage>>(), It.IsAny<TransportSendOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SendResult { Items = [new SendItemResult { Index = index, Status = MessageSendStatus.Accepted }] });
+        await using var bus = new MessageBus(transport.Object);
+        var failure = await Assert.ThrowsAsync<MessageSendException>(() => bus.SendAsync(new Event(), cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal(MessageSendStatus.Unknown, Assert.Single(failure.Outcomes).Status);
+    }
+
+    [Theory]
     [InlineData(-1)]
     [InlineData(1)]
     public void EnsureAccepted_InvalidInputIndex_RejectsResult(int index)

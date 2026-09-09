@@ -31,6 +31,14 @@ public class WireContractTests
         Assert.Equal("123", third["trace"]);
         Assert.Equal("value", third["extra"]);
         Assert.Equal(2, third.Count);
+
+        var copy = first.ToBuilder();
+        copy.SetIfMissing("TENANT", "ignored");
+        Assert.False(copy.Remove("missing"));
+        Assert.Equal("first", copy.Build()["tenant"]);
+        copy.Set("tenant", "copy");
+        Assert.Equal("first", first["tenant"]);
+        Assert.Equal("copy", copy.Build()["tenant"]);
     }
 
     [Theory]

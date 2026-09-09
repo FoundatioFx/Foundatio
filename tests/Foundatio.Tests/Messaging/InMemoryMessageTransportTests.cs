@@ -61,6 +61,9 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
             var redelivered = Assert.Single(await pending.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
             Assert.Equal(entry.Id, redelivered.Id);
             Assert.Equal(2, redelivered.DeliveryCount);
+            await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.CompleteAsync(entry, TestCancellationToken));
+            await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.AbandonAsync(entry, TestCancellationToken));
+            await Assert.ThrowsAsync<ReceiptExpiredException>(() => transport.RenewLockAsync(entry, TimeSpan.FromSeconds(2), TestCancellationToken));
             await transport.CompleteAsync(redelivered, TestCancellationToken);
             time.Clock.Advance(TimeSpan.FromSeconds(1));
         }

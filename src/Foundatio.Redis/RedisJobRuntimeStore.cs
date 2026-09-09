@@ -269,9 +269,11 @@ public sealed partial class RedisJobRuntimeStore : IJobRuntimeStore
     public async Task<bool> IsCancellationRequestedAsync(string jobId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await PurgeBrokerHistoryAsync(cancellationToken).ConfigureAwait(false);
-        var value = await _db.HashGetAsync(JobKey(jobId), "cancellationRequested").ConfigureAwait(false);
-        return value == "1";
+        const string script = MonitoringFunctions + "\n" + """
+            if expireJob(KEYS[1], tonumber(ARGV[1])) then return 0 end
+            return redis.call('HGET', KEYS[1], 'cancellationRequested') == '1' and 1 or 0
+            """;
+        return (long)await _db.ScriptEvaluateAsync(script, [JobKey(jobId)], [Ticks(_timeProvider.GetUtcNow())]).WaitAsync(cancellationToken).ConfigureAwait(false) == 1;
     }
 
     public async Task ScheduleDispatchAsync(ScheduledDispatchState dispatch, CancellationToken cancellationToken = default)

@@ -200,7 +200,8 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
         // Produce-side routing visibility: the consume side logs its effective topology at subscribe time, and this
         // is its counterpart for "where did my message actually go" debugging.
-        _logger.LogDebug("Sending {MessageType} to {Destination}", messageType.Name, destination);
+        if (_logger.IsEnabled(LogLevel.Debug))
+            _logger.LogDebug("Sending {MessageType} to {Destination}", messageType.Name, destination);
 
         if (ensureDestination is not null)
             await ensureDestination(destination, cancellationToken).AnyContext();
@@ -208,7 +209,7 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (await TryScheduleAsync(kind, destination, [transportMessage], sendOptions, cancellationToken).AnyContext())
             return messageId;
 
-        await SendChunkedAsync(destination, [transportMessage], sendOptions, cancellationToken).AnyContext();
+        await SendOneAsync(destination, transportMessage, sendOptions, cancellationToken).AnyContext();
         return messageId;
     }
 
@@ -1005,6 +1006,43 @@ internal sealed class MessageClientCore : IAsyncDisposable
             throw _exceptionFactory($"Delayed delivery requires either native delayed-delivery support from transport \"{_transport.GetType().Name}\" for {destination.Role} destinations (within its supported maximum) or a registered job runtime store.", null);
 
         return true;
+    }
+
+    private async Task SendOneAsync(DestinationAddress destination, TransportMessage message, TransportSendOptions options, CancellationToken cancellationToken)
+    {
+        if (CapabilitiesFor(destination).MaxMessageBytes is { } maximum && message.Body.Length > maximum)
+            throw _exceptionFactory($"Message of {message.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maximum} bytes for destination \"{destination}\".", null);
+
+        bool attempted = false;
+        IReadOnlyList<SendItemResult>? reported = null;
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            attempted = true;
+            var result = await _transport.SendAsync(destination, [message], options, cancellationToken).AnyContext();
+            if (result.Items.Count != 1)
+                throw new MessageBusException("The transport did not return one acceptance result per message.");
+            var item = result.Items[0];
+            if (item.Index is not (null or 0) || !Enum.IsDefined(item.Status))
+                throw new MessageBusException("Transport returned invalid or duplicate result indexes.");
+            reported = result.Items;
+            if (item.Status != MessageSendStatus.Accepted)
+                throw new MessageBusException("The provider rejected or could not confirm part of the batch.");
+            RecordSent(destination, result.Items);
+        }
+        catch (Exception exception)
+        {
+            InvalidateProvisioning(destination);
+            if (exception is MessageSendException) throw;
+            MessageSendOutcome[] outcomes = [new(message.MessageId!, attempted ? MessageSendStatus.Unknown : MessageSendStatus.NotAttempted)];
+            if (reported is not null)
+                ApplyOutcomes(reported, outcomes, 0, 1);
+            if (exception is TransportSendException { Items: { } indexed })
+                ApplyOutcomes(indexed, outcomes, 0, 1);
+            else if (exception is TransportSendException { AcceptedCount: < 1 } partial)
+                outcomes[0] = outcomes[0] with { Status = partial.AcceptedCount == 0 ? MessageSendStatus.Unknown : MessageSendStatus.NotAttempted };
+            throw new MessageSendException(outcomes, exception);
+        }
     }
 
     private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
