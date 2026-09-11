@@ -816,7 +816,31 @@ public class ImportJob : JobBase
 
 ### Retry vs Permanent Failure
 
-Distinguish between transient errors (retry is useful) and permanent errors (retry would loop forever):
+Distinguish between transient errors (retry is useful) and permanent errors (retry would loop forever). Whether returning a failed `JobResult` actually triggers a retry depends on the job type:
+
+- **Queue-processed jobs** (`QueueJobBase<T>`, `WorkItemJob`) -- a non-success result abandons the queue entry, which re-queues it for retry and eventually moves it to the [dead letter queue](./queues#dead-letter-queue) once `Retries` is exhausted. Return `FailedWithMessage`/`FromException` only for errors you want retried; for permanent errors, log it yourself and return `JobResult.Success` (or `SuccessWithMessage`) so the entry completes instead of retrying forever and dead-lettering.
+
+```csharp
+protected override async Task<JobResult> ProcessQueueEntryAsync(QueueEntryContext<T> context)
+{
+    try
+    {
+        await DoWorkAsync(context.CancellationToken);
+        return JobResult.Success;
+    }
+    catch (TransientException ex)
+    {
+        return JobResult.FailedWithMessage(ex.Message); // entry is abandoned, retried, and eventually dead-lettered
+    }
+    catch (PermanentException ex)
+    {
+        _logger.LogError(ex, "Permanent failure, not retrying");
+        return JobResult.Success; // complete the entry instead of retrying/dead-lettering
+    }
+}
+```
+
+- **Standalone/manual jobs** (`JobBase`, a one-off `RunAsync()`/`RunInConsoleAsync()` run, or scheduled/cron jobs via `Foundatio.Extensions.Hosting`) -- there is no built-in retry or dead letter queue. A failed result just reflects the outcome: an error-level log entry, a non-zero exit code from `RunInConsoleAsync`, or a failed run in the scheduled job history. Returning `FailedWithMessage`/`FromException` for a permanent error is correct here; nothing inside Foundatio retries it, and any retry decision belongs to whatever runs the job (a scheduler, CI pipeline, or Kubernetes restart policy).
 
 ```csharp
 protected override async Task<JobResult> RunInternalAsync(JobContext context)
@@ -826,14 +850,10 @@ protected override async Task<JobResult> RunInternalAsync(JobContext context)
         await DoWorkAsync(context.CancellationToken);
         return JobResult.Success;
     }
-    catch (TransientException ex)
+    catch (Exception ex)
     {
-        return JobResult.FailedWithMessage(ex.Message); // framework retries
-    }
-    catch (PermanentException ex)
-    {
-        _logger.LogError(ex, "Permanent failure — not retrying");
-        return JobResult.Success; // return success to prevent retry loop
+        // Nothing in Foundatio retries a standalone job -- return the real outcome either way
+        return JobResult.FromException(ex);
     }
 }
 ```
