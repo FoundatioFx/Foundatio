@@ -1,266 +1,68 @@
-# Getting Started
+# Getting started
 
-This guide will walk you through installing Foundatio and using your first abstractions.
+Foundatio supplies swappable caching, file storage, locking, messaging, and background job building blocks. Start with in-memory implementations, then choose a production provider for the contracts your application needs.
 
-## Installation
+The messaging and durable job APIs shown here are the current unreleased redesign. Existing published provider packages may still use the earlier queue/pub-sub APIs; see the [migration guide](messaging.md#migration).
 
-Foundatio is available on [NuGet](https://www.nuget.org/packages?q=Foundatio). Install the core package:
+## Run the example
 
-```bash
-dotnet add package Foundatio
+From a checkout of this revision:
+
+```powershell
+dotnet run --project samples/Foundatio.QuickstartSample
 ```
 
-For specific implementations, install the corresponding packages:
+The sample starts a host, sends a command, publishes an event, runs a typed job with progress, and schedules a CRON cleanup. It requires no external services. Add `-- --verify` to check message handling, a delayed job, cancellation and an automatic CRON occurrence, then exit.
 
-```bash
-# Redis implementations
-dotnet add package Foundatio.Redis
+## A message worker
 
-# Azure Storage (Queues, Blobs)
-dotnet add package Foundatio.AzureStorage
-
-# Azure Service Bus (Queues, Messaging)
-dotnet add package Foundatio.AzureServiceBus
-
-# AWS (SQS, S3)
-dotnet add package Foundatio.AWS
-
-# RabbitMQ (Messaging)
-dotnet add package Foundatio.RabbitMQ
-
-# Kafka (Messaging)
-dotnet add package Foundatio.Kafka
-
-# Aliyun OSS (Storage)
-dotnet add package Foundatio.Aliyun
-
-# MinIO (S3-compatible Storage)
-dotnet add package Foundatio.Minio
-
-# SSH/SFTP (Storage)
-dotnet add package Foundatio.Storage.SshNet
-```
-
-## Basic Setup
-
-### 1. Register Services
-
-Configure Foundatio services in your application's dependency injection container:
-
-```csharp
-using Foundatio.Caching;
-using Foundatio.Messaging;
-using Foundatio.Lock;
-using Foundatio.Storage;
-using Foundatio.Queues;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Register core services
-builder.Services.AddSingleton<ICacheClient, InMemoryCacheClient>();
-builder.Services.AddSingleton<IMessageBus, InMemoryMessageBus>();
-builder.Services.AddSingleton<IFileStorage, InMemoryFileStorage>();
-
-// Register lock provider (depends on cache and message bus)
-builder.Services.AddSingleton<ILockProvider>(sp =>
-    new CacheLockProvider(
-        sp.GetRequiredService<ICacheClient>(),
-        sp.GetRequiredService<IMessageBus>()
-    )
-);
-
-// Register queues
-builder.Services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new InMemoryQueue<WorkItem>()
-);
-
-var app = builder.Build();
-```
-
-### 2. Use the Services
-
-Inject and use the services in your application:
-
-```csharp
-public class OrderService
-{
-    private readonly ICacheClient _cache;
-    private readonly IQueue<OrderWorkItem> _queue;
-    private readonly ILockProvider _locker;
-    private readonly IMessageBus _messageBus;
-
-    public OrderService(
-        ICacheClient cache,
-        IQueue<OrderWorkItem> queue,
-        ILockProvider locker,
-        IMessageBus messageBus)
-    {
-        _cache = cache;
-        _queue = queue;
-        _locker = locker;
-        _messageBus = messageBus;
-    }
-
-    public async Task<Order> CreateOrderAsync(CreateOrderRequest request)
-    {
-        // Use distributed lock to prevent duplicate orders
-        await using var lck = await _locker.AcquireAsync($"order:{request.CustomerId}");
-        if (lck == null)
-            throw new InvalidOperationException("Could not acquire lock");
-
-        // Create order
-        var order = new Order { Id = Guid.NewGuid(), CustomerId = request.CustomerId };
-
-        // Cache the order
-        await _cache.SetAsync($"order:{order.Id}", order, TimeSpan.FromHours(1));
-
-        // Queue for background processing
-        await _queue.EnqueueAsync(new OrderWorkItem { OrderId = order.Id });
-
-        // Publish event for other services
-        await _messageBus.PublishAsync(new OrderCreatedEvent { OrderId = order.Id });
-
-        return order;
-    }
-}
-```
-
-## Switching to Production Implementations
-
-When moving to production, swap in-memory implementations for distributed ones:
-
-```csharp
-using Foundatio.Redis.Cache;
-using Foundatio.Redis.Messaging;
-using Foundatio.Redis.Queues;
-using StackExchange.Redis;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Configure a container-owned Redis connection
-builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
-    ConnectionMultiplexer.Connect("localhost:6379"));
-
-// Use Redis implementations
-builder.Services.AddSingleton<ICacheClient>(sp =>
-    new RedisCacheClient(o => o.ConnectionMultiplexer =
-        sp.GetRequiredService<IConnectionMultiplexer>())
-);
-
-builder.Services.AddSingleton<IMessageBus>(sp =>
-    new RedisMessageBus(o => o.Subscriber =
-        sp.GetRequiredService<IConnectionMultiplexer>().GetSubscriber())
-);
-
-builder.Services.AddSingleton<IQueue<WorkItem>>(sp =>
-    new RedisQueue<WorkItem>(o => o.ConnectionMultiplexer =
-        sp.GetRequiredService<IConnectionMultiplexer>())
-);
-```
-
-Your application code remains unchanged - only the DI registration changes!
-
-## Working with Extension Methods
-
-Foundatio provides convenient extension methods through `FoundatioServicesExtensions`:
+Reference `Foundatio` and `Foundatio.Extensions.Hosting` from this revision. `AddFoundatioWorker` is in the `Foundatio` namespace. The full message and handler definitions are in the quickstart sample above.
 
 ```csharp
 using Foundatio;
+using Foundatio.Messaging;
+using Microsoft.Extensions.Hosting;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = Host.CreateApplicationBuilder(args);
+builder.Services.AddFoundatioWorker(foundatio => foundatio
+    .UseServiceName("billing")
+    .ConfigureMessaging(messaging => messaging.UseInMemory()
+        .AddConsumer<SendReceipt, SendReceiptHandler>()
+        .AddSubscriber<OrderPlaced, OrderPlacedHandler>()));
 
-// Add Foundatio with default in-memory implementations
-builder.Services.AddFoundatio();
-
-// Or configure with options
-builder.Services.AddFoundatio(options =>
-{
-    options.UseInMemoryCache();
-    options.UseInMemoryMessageBus();
-    options.UseInMemoryQueues();
-    options.UseInMemoryStorage();
-});
+await builder.Build().RunAsync();
 ```
 
-## Sample Application
+Handlers implement `IMessageHandler<T>`. Send work with `IMessageBus.SendAsync`; publish events with `PublishAsync`. Queue consumers compete. A named event subscription receives one copy for its group, and replicas in that group compete. Handlers must tolerate duplicate delivery.
 
-Here's a complete example showing all major abstractions working together:
+For a producer-only API, use `AddFoundatio().Messaging.UseInMemory()` instead. `AddFoundatio()` registers clients; `AddFoundatioWorker(...)` also starts background processing when the host starts. See [Messaging](messaging.md) for complete handler examples and delivery guarantees.
+
+## Choose the operation
+
+| You need to… | Use | Register on the worker |
+| --- | --- | --- |
+| Hand work to one available consumer | `bus.SendAsync(message)` | `AddConsumer<T, THandler>()` |
+| Notify each interested service | `bus.PublishAsync(message)` | `AddSubscriber<T, THandler>()` with a stable service name |
+| Track execution, progress, cancellation, or schedules | `jobs.EnqueueAsync<TJob, TArgs>(args)` | `AddJobType<TJob>("job-name.v1")` |
+
+## Add the infrastructure you need
 
 ```csharp
-using Foundatio.Caching;
-using Foundatio.Lock;
-using Foundatio.Messaging;
-using Foundatio.Queues;
-using Foundatio.Storage;
-
-// Setup services
-var cache = new InMemoryCacheClient();
-var messageBus = new InMemoryMessageBus();
-var storage = new InMemoryFileStorage();
-var locker = new CacheLockProvider(cache, messageBus);
-var queue = new InMemoryQueue<WorkItem>();
-
-// Subscribe to messages
-await messageBus.SubscribeAsync<WorkCompleted>(msg =>
-{
-    Console.WriteLine($"Work completed: {msg.ItemId}");
-});
-
-// Store a file
-await storage.SaveFileAsync("config.json", """{"setting": "value"}""");
-
-// Queue work
-await queue.EnqueueAsync(new WorkItem { Id = "item-1" });
-
-// Process queue with locking
-while (true)
-{
-    var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
-    if (entry == null) break;
-
-    // Acquire lock for this item
-    await using var lck = await locker.AcquireAsync($"work:{entry.Value.Id}");
-    if (lck != null)
-    {
-        // Cache progress
-        await cache.SetAsync($"progress:{entry.Value.Id}", "processing");
-
-        // Do work...
-
-        // Complete entry
-        await entry.CompleteAsync();
-
-        // Publish completion event
-        await messageBus.PublishAsync(new WorkCompleted { ItemId = entry.Value.Id });
-    }
-    else
-    {
-        // Couldn't get lock, abandon for retry
-        await entry.AbandonAsync();
-    }
-}
-
-public record WorkItem { public string Id { get; init; } }
-public record WorkCompleted { public string ItemId { get; init; } }
+builder.Services.AddFoundatio()
+    .Caching.UseInMemory()
+    .Storage.UseFolder("data")
+    .Locking.UseCache();
 ```
 
-## Next Steps
+Use `ICacheClient` for cache operations, `IFileStorage` for files, and `ILockProvider` for distributed coordination. Dispose streams and acquired locks. In-memory data is process-local and does not survive restarts.
 
-Now that you have the basics working, explore more advanced features:
+Add [durable jobs](jobs.md) only when you need handles, progress, cancellation, stored retries, or schedules. `AddFoundatioWorker(...)` hosts the required worker, scheduler, and delayed-message dispatcher roles. [Individual hosting methods](dependency-injection.md#choose-host-roles-explicitly) support running those roles in separate processes.
 
-- [Caching](./caching) - Deep dive into caching patterns
-- [Queues](./queues) - Queue processing and behaviors
-- [Locks](./locks) - Distributed locking strategies
-- [Messaging](./messaging) - Pub/sub patterns
-- [Storage](./storage) - File storage operations
-- [Jobs](./jobs) - Background job processing
-- [Resilience](./resilience) - Retry policies and circuit breakers
+For Redis, the builder shares and owns one connection by default. If you supply your own, keep it alive until the host has stopped; see [connection lifetime](dependency-injection.md#redis-connection-lifetime).
 
-## LLM-Friendly Documentation
+## Next steps
 
-For AI assistants and Large Language Models, we provide optimized documentation formats:
-
-- [📜 LLMs Index](/llms.txt) - Quick reference with links to all sections
-- [📖 Complete Documentation](/llms-full.txt) - All docs in one LLM-friendly file
-
-These files follow the [llmstxt.org](https://llmstxt.org/) standard and contain the same information as this documentation in a format optimized for AI consumption.
+- [Worker queues](queues.md) for competing consumers and migration from `IQueue<T>`.
+- [Messaging](messaging.md) for pub/sub identity, serialization, topology, retries, and provider behavior.
+- [Durable jobs](jobs.md) for typed work, CRON definitions, monitoring, and retention.
+- [Caching](caching.md), [storage](storage.md), and [locks](locks.md) for other infrastructure contracts.

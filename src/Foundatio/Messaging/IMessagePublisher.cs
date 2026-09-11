@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Foundatio.Messaging;
+namespace Foundatio.Messaging.Legacy;
 
 /// <summary>
 /// Publishes messages to all subscribers listening for the message type.

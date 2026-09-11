@@ -72,12 +72,13 @@ var value = await cache.GetAsync<int>("test");
 ### Queues
 
 ```csharp
-using Foundatio.Queues;
+using Foundatio.Messaging;
 
-IQueue<SimpleWorkItem> queue = new InMemoryQueue<SimpleWorkItem>();
-
-await queue.EnqueueAsync(new SimpleWorkItem { Data = "Hello" });
-var workItem = await queue.DequeueAsync();
+await using var bus = new MessageBus(new InMemoryMessageTransport());
+await bus.SendAsync(new SimpleWorkItem { Data = "Hello" });
+await using var workItem = await bus.ReceiveAsync<SimpleWorkItem>();
+if (workItem is not null)
+    await workItem.CompleteAsync();
 ```
 
 [Learn more about Queues →](./guide/queues)
@@ -89,7 +90,7 @@ using Foundatio.Lock;
 
 ILockProvider locker = new CacheLockProvider(
     new InMemoryCacheClient(),
-    new InMemoryMessageBus()
+    new MessageBus(new InMemoryMessageTransport())
 );
 
 await using var lck = await locker.AcquireAsync("resource");
@@ -107,10 +108,9 @@ await ProcessAsync();
 ```csharp
 using Foundatio.Messaging;
 
-IMessageBus messageBus = new InMemoryMessageBus();
-await messageBus.SubscribeAsync<SimpleMessage>(msg => {
-  // Got message
-});
+IMessageBus messageBus = new MessageBus(new InMemoryMessageTransport());
+await using var subscription = await messageBus.SubscribeAsync<SimpleMessage>((context, token) =>
+    ProcessAsync(context.Message, token));
 
 await messageBus.PublishAsync(new SimpleMessage { Data = "Hello" });
 ```

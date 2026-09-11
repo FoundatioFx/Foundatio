@@ -1,0 +1,5 @@
+"Case","Trials","InputsPerSecond","MinInputsPerSecond","MaxInputsPerSecond","DeliveriesPerSecond","P50Milliseconds","P95Milliseconds","P99Milliseconds","BytesPerInput","CpuMillisecondsPerInput","PeakWorkingSetMiB","TotalInputs","Duplicates","Missing"
+"foundatio/sqs pubsub p32 c32 s1 1024B b1 r0 w1024 pf32","3","314.8","256.2","341.9","314.8","3276.799","4128.767","4194.303","81818","1.0594","145.2","9815","0","0"
+"foundatio/sqs pubsub p32 c8 s4 1024B b1 r0 w1024 pf8","3","99.3","88.9","100.6","397.1","8912.895","9830.399","10092.543","377842.6","2.3404","133.3","5526","0","0"
+"foundatio/sqs queue p1 c1 s1 1024B b1 r0 w1024 pf1","3","377.2","376.8","402.1","377.2","2260.991","2818.047","2829.273","127042.1","0.8903","102.1","13581","0","0"
+"foundatio/sqs queue p32 c32 s1 1024B b1 r0 w1024 pf32","3","712.8","703.4","732.2","712.8","1327.103","1703.935","1749.397","109019.1","0.7151","133.2","23011","0","0"

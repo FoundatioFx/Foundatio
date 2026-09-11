@@ -38,3 +38,6 @@ _NCrunch_*
 .idea
 
 .cursor/rules/
+
+# Sustained messaging benchmark run artifacts
+/benchmarks/Messaging/results/

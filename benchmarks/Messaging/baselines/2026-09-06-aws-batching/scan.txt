@@ -1,0 +1,27 @@
+AWS hot-path scan execution checklist (two partial transport files):
+- IndexOf string without comparison: 0
+- Substring: 0
+- StartsWith or EndsWith string without comparison: 0
+- Contains string without comparison: 0
+- async void: 0
+- new HttpClient: 0
+- new JsonSerializerOptions: 0
+- static Dictionary: 0
+- static FrozenDictionary: 0
+- new List: 3
+- new Dictionary: 5
+- CurrentCulture comparer: 0
+- LINQ select/filter: 3
+- LINQ Any/All: 1
+- ToLower/ToUpper culture sensitive: 0
+- three Replace calls on one line: 0
+- params: 0
+- LINQ char predicate: 0
+- sync waits: 0
+- Regex constructions: 0
+- string.Format: 0
+- Task.Run: 0
+- class declarations: 2
+- sealed class declarations: 2
+- JSON calls: 2
+- Replace: 1

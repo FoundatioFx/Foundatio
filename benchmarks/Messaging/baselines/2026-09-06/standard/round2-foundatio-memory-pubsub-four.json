@@ -1,0 +1,17 @@
+{
+  "Error": "Worker exited without a result. RUN fperf-6b4027ac3eba foundatio/memory/pubsub\nFatal error.\nInternal CLR error. (0x80131506)\n[createdump] Gathering state for process 2967013 dotnet\n[createdump] Crashing thread 2d461f signal 6 (0006)\n[createdump] Writing minidump to file /tmp/foundatio-perf-dumps/dotnet_2967013_1788728719.dmp\n[createdump] Written 233418752 bytes (56987 pages) to core file\n[createdump] Target process is alive\n[createdump] Dump successfully written in 234ms",
+  "Success": false,
+  "Options": {
+    "ProducerConcurrency": 32,
+    "BatchSize": 1,
+    "MaxOutstanding": 1024,
+    "Transport": "memory",
+    "DeliveryCopies": 4,
+    "Engine": "foundatio",
+    "Prefetch": 8,
+    "PayloadBytes": 1024,
+    "ConsumerConcurrency": 8,
+    "Scenario": "pubsub",
+    "RatePerSecond": 0
+  }
+}

@@ -1,5 +1,10 @@
 # Redis Implementation
 
+::: info Provider API versions
+The queue and publish-only bus examples below describe the earlier external provider packages. This unreleased revision uses `IMessageTransport` with explicit queue consumers and event subscribers; see the [current messaging matrix](../messaging.md#provider-guarantees) and [durable job store guide](../jobs.md). Earlier provider implementations do not implement the new SPI automatically. Cache and file-storage examples retain their existing contracts.
+:::
+
+
 Foundatio provides Redis implementations for caching, queues, messaging, locks, and file storage. Redis enables distributed scenarios across multiple processes and servers.
 
 ## Overview
@@ -701,3 +706,7 @@ Redis/Valkey replication is asynchronous. When using `PreferReplica`, reads may 
 ## GitHub Repository
 
 - [Foundatio.Redis](https://github.com/FoundatioFx/Foundatio.Redis) - View source code and contribute
+
+## Shared connection configuration
+
+Messaging and jobs share one `IConnectionMultiplexer`. Set `ConnectionStrings:Redis` in configuration, register a multiplexer yourself, or supply `connectionString` on one `UseRedis` call. Repeating the same explicit string is allowed; conflicting strings fail during registration. When a multiplexer is already registered, omit `connectionString` so that connection is used.

@@ -36,6 +36,8 @@ public interface ITextSerializer : ISerializer { }
 
 This abstraction allows you to swap serializers without changing your code.
 
+Serializers can optionally implement `IBufferSerializer` to serialize directly to an owned byte array and deserialize from `ReadOnlyMemory<byte>`. `SerializeToBytes` and the byte-array/memory `Deserialize` extensions select this path automatically. The default `SystemTextJsonSerializer` supports it, avoiding intermediate streams and payload copies with no configuration changes. Existing stream-only serializers continue to work. Buffer implementations must preserve their stream serializer's options and null handling, return independently owned output, and never retain or modify the input memory.
+
 ## Extension Methods
 
 The `SerializerExtensions` class provides convenient methods for common serialization scenarios:
@@ -105,8 +107,7 @@ var jsonOptions = new JsonSerializerOptions
 var serializer = new SystemTextJsonSerializer(jsonOptions);
 
 var cache = new InMemoryCacheClient(o => o.Serializer = serializer);
-var queue = new InMemoryQueue<WorkItem>(o => o.Serializer = serializer);
-var messageBus = new InMemoryMessageBus(o => o.Serializer = serializer);
+var messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Serializer = serializer });
 ```
 
 ## Global Default Serializer
@@ -119,7 +120,7 @@ DefaultSerializer.Instance = new SystemTextJsonSerializer(myJsonOptions);
 
 // Now all new instances use your custom serializer
 var cache = new InMemoryCacheClient(); // Uses your custom serializer
-var queue = new InMemoryQueue<WorkItem>(); // Uses your custom serializer
+var messageBus = new MessageBus(new InMemoryMessageTransport()); // Uses your custom serializer
 ```
 
 **How it works:**
@@ -254,11 +255,8 @@ var serializer = new MessagePackSerializer();
 // Caching
 var cache = new InMemoryCacheClient(o => o.Serializer = serializer);
 
-// Queues
-var queue = new InMemoryQueue<WorkItem>(o => o.Serializer = serializer);
-
-// Messaging
-var messageBus = new InMemoryMessageBus(o => o.Serializer = serializer);
+// Queued work and pub/sub
+var messageBus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Serializer = serializer });
 
 // Storage (for metadata serialization)
 var storage = new InMemoryFileStorage(o => o.Serializer = serializer);

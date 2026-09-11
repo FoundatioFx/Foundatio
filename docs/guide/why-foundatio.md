@@ -23,12 +23,12 @@ Write your code against interfaces, not implementations:
 public class OrderProcessor
 {
     private readonly ICacheClient _cache;
-    private readonly IQueue<Order> _queue;
+    private readonly IMessageBus _bus;
 
-    public OrderProcessor(ICacheClient cache, IQueue<Order> queue)
+    public OrderProcessor(ICacheClient cache, IMessageBus bus)
     {
         _cache = cache;
-        _queue = queue;
+        _bus = bus;
     }
 }
 ```
@@ -54,15 +54,15 @@ public async Task Should_Process_Order_With_Caching()
 {
     // Arrange - use in-memory implementations
     var cache = new InMemoryCacheClient();
-    var queue = new InMemoryQueue<Order>();
-    var processor = new OrderProcessor(cache, queue);
+    using var bus = new MessageBus(new InMemoryMessageTransport());
+    var processor = new OrderProcessor(cache, bus);
 
     // Act
     await processor.ProcessAsync(new Order { Id = 1 });
 
     // Assert
     var cached = await cache.GetAsync<Order>("order:1");
-    Assert.NotNull(cached);
+    Assert.True(cached.HasValue);
 }
 ```
 
@@ -79,8 +79,7 @@ Start coding immediately without external dependencies:
 ```csharp
 // Works out of the box - no Redis, no Azure, no AWS
 var cache = new InMemoryCacheClient();
-var queue = new InMemoryQueue<WorkItem>();
-var messageBus = new InMemoryMessageBus();
+var messageBus = new MessageBus(new InMemoryMessageTransport());
 var storage = new InMemoryFileStorage();
 ```
 

@@ -1,0 +1,128 @@
+{
+  "Files": [
+    "src/Foundatio/Serializer/ISerializer.cs",
+    "src/Foundatio/Serializer/IBufferSerializer.cs",
+    "src/Foundatio/Serializer/SystemTextJsonSerializer.cs",
+    "src/Foundatio.Aws/AwsMessageTransport.Batching.cs",
+    "src/Foundatio.Aws/AwsMessageTransport.cs"
+  ],
+  "Recipes": [
+    {
+      "Recipe": "IndexOf literal without comparison",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Substring",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "StartsWith or EndsWith literal without comparison",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Contains literal without comparison",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "ToLower or ToUpper without culture",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Three Replace calls on one line",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "params",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "LINQ character predicate",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "new HttpClient",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "new JsonSerializerOptions",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "async void",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Static dictionary",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Static frozen dictionary",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "new List",
+      "Count": 5,
+      "Hits": [
+        "src/Foundatio.Aws/AwsMessageTransport.cs:141:        var entries = new List<TransportEntry>(response.Messages.Count);",
+        "src/Foundatio.Aws/AwsMessageTransport.Batching.cs:35:        var prepared = new List<PreparedMessage>(messages.Count);",
+        "src/Foundatio.Aws/AwsMessageTransport.Batching.cs:51:            var batch = new List<PreparedMessage>(10);",
+        "src/Foundatio.Aws/AwsMessageTransport.Batching.cs:133:            var entries = new List<PublishBatchRequestEntry>(batch.Count);",
+        "src/Foundatio.Aws/AwsMessageTransport.Batching.cs:147:            var entries = new List<SendMessageBatchRequestEntry>(batch.Count);"
+      ]
+    },
+    {
+      "Recipe": "new Dictionary",
+      "Count": 5,
+      "Hits": [
+        "src/Foundatio.Aws/AwsMessageTransport.cs:172:                headers = MessageHeaders.Create(new Dictionary<string, string>",
+        "src/Foundatio.Aws/AwsMessageTransport.cs:391:            Attributes = new Dictionary<string, string> { [\"Policy\"] = BuildQueuePolicy(queueArn, topicArn) }",
+        "src/Foundatio.Aws/AwsMessageTransport.cs:399:            Attributes = new Dictionary<string, string> { [\"RawMessageDelivery\"] = \"true\" },",
+        "src/Foundatio.Aws/AwsMessageTransport.cs:529:                    Condition = new { ArnEquals = new Dictionary<string, string> { [\"aws:SourceArn\"] = topicArn } }",
+        "src/Foundatio.Aws/AwsMessageTransport.cs:607:        var attributes = new Dictionary<string, TAttribute>(_nativeMessageHeaders.Length + 1, StringComparer.Ordinal)"
+      ]
+    },
+    {
+      "Recipe": "CurrentCulture comparer",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "LINQ chains",
+      "Count": 0,
+      "Hits": []
+    },
+    {
+      "Recipe": "Unsealed public or internal class declarations",
+      "Count": 1,
+      "Hits": [
+        "src/Foundatio/Serializer/SystemTextJsonSerializer.cs:7:public class SystemTextJsonSerializer : ITextSerializer, IBufferSerializer"
+      ]
+    },
+    {
+      "Recipe": "Sealed class declarations",
+      "Count": 2,
+      "Hits": [
+        "src/Foundatio.Aws/AwsMessageTransport.cs:32:public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPull, ISupportsVisibilityTimeout,",
+        "src/Foundatio.Aws/AwsMessageTransport.Batching.cs:16:public sealed partial class AwsMessageTransport"
+      ]
+    },
+    {
+      "Recipe": "Synchronous task waits",
+      "Count": 0,
+      "Hits": []
+    }
+  ]
+}

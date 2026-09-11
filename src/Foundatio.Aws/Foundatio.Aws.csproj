@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>AWS (SQS/SNS) IMessageTransport for Foundatio messaging. Temporary in-repo provider for validating the redesigned transport contract against a real broker.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.SQS" Version="4.0.2.28" />
+    <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.2.30" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
+</Project>

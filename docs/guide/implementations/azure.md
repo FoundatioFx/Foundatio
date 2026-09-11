@@ -1,5 +1,10 @@
 # Foundatio.AzureStorage / Foundatio.AzureServiceBus
 
+::: info Provider API versions
+The queue and publish-only bus examples below describe the earlier external provider packages. This unreleased revision uses `IMessageTransport` with explicit queue consumers and event subscribers; see the [current messaging matrix](../messaging.md#provider-guarantees) and [durable job store guide](../jobs.md). Earlier provider implementations do not implement the new SPI automatically. Cache and file-storage examples retain their existing contracts.
+:::
+
+
 Foundatio provides Azure implementations for storage, queuing, and messaging using Azure Blob Storage, Azure Storage Queues, and Azure Service Bus. [View source on GitHub →](https://github.com/FoundatioFx/Foundatio.AzureStorage) | [AzureServiceBus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus)
 
 ## Overview
