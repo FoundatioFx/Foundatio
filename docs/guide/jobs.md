@@ -442,7 +442,7 @@ public record DeleteEntityWorkItem
 | `JobId` | Unique identifier for this job run |
 | `WorkItemLock` | Optional distributed lock for the work item |
 | `CancellationToken` | Signals that processing should stop |
-| `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing |
+| `Result` | Set to `JobResult.FailedWithMessage(...)` to indicate failure without throwing. As with `QueueJobBase`, a non-success `Result` abandons and retries the entry -- see [Retry vs Permanent Failure](#retry-vs-permanent-failure) |
 | `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus` |
 | `RenewLockAsync()` | Extends the work item lock lease |
 
