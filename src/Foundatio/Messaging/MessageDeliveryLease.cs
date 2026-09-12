@@ -15,7 +15,13 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
     private readonly TimeProvider _time;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _processing;
-    private readonly CancellationTokenSource _renewal = new();
+    private readonly object _monitorGate = new();
+    private readonly ITimer? _firstCheck;
+    private readonly bool _autoRenew;
+    private CancellationTokenSource? _renewal;
+    private Task _completion = Task.CompletedTask;
+    private Task _stopping = Task.CompletedTask;
+    private bool _stopped;
     private SemaphoreSlim? _gate;
     private long _expiresTicks;
     private int _lost;
@@ -31,10 +37,19 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
         _logger = logger;
         _processing = processing;
         _expiresTicks = entry.LockExpiresUtc?.UtcTicks ?? DateTimeOffset.MaxValue.UtcTicks;
-        Completion = entry.LockExpiresUtc is null ? Task.CompletedTask : MonitorAsync(autoRenew);
+        _autoRenew = autoRenew;
+        if (entry.LockExpiresUtc is not null)
+        {
+            // Most deliveries settle before their first lease check. A timer keeps supervision active
+            // even for a blocking handler, without starting an async loop for every short delivery.
+            _firstCheck = time.CreateTimer(static state => ((MessageDeliveryLease)state!).StartMonitor(), this,
+                Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+            var delay = autoRenew && transport is ISupportsLockRenewal ? Remaining / 2 : Remaining;
+            _firstCheck.Change(delay > TimeSpan.Zero ? delay : TimeSpan.Zero, Timeout.InfiniteTimeSpan);
+        }
     }
 
-    public Task Completion { get; }
+    public Task Completion { get { lock (_monitorGate) return _completion; } }
     public bool IsLost => Volatile.Read(ref _lost) != 0 || !IsSettled && Remaining <= TimeSpan.Zero;
     public bool IsSettled => Volatile.Read(ref _settled) != 0;
     private TimeSpan Remaining => new(Interlocked.Read(ref _expiresTicks) - _time.GetUtcNow().UtcTicks);
@@ -42,7 +57,43 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
     public void Settled()
     {
         Interlocked.Exchange(ref _settled, 1);
-        _renewal.Cancel();
+        StopMonitoring();
+    }
+
+    private void StopMonitoring()
+    {
+        lock (_monitorGate)
+        {
+            if (_stopped) return;
+            _stopped = true;
+            _firstCheck?.Dispose();
+            _stopping = _renewal?.CancelAsync() ?? Task.CompletedTask;
+        }
+    }
+
+    private void StartMonitor()
+    {
+        TaskCompletionSource completion;
+        CancellationToken token;
+        lock (_monitorGate)
+        {
+            if (_stopped) return;
+            _renewal = new CancellationTokenSource();
+            token = _renewal.Token;
+            completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _completion = completion.Task;
+        }
+        _ = RunMonitorAsync(completion, token);
+    }
+
+    private async Task RunMonitorAsync(TaskCompletionSource completion, CancellationToken token)
+    {
+        try
+        {
+            await MonitorAsync(token).AnyContext();
+            completion.TrySetResult();
+        }
+        catch (Exception exception) { completion.TrySetException(exception); }
     }
 
     public async Task RenewAsync(TimeSpan? duration, CancellationToken cancellationToken)
@@ -69,20 +120,22 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
         finally { gate.Release(); }
     }
 
-    private async Task MonitorAsync(bool autoRenew)
+    private async Task MonitorAsync(CancellationToken token)
     {
-        var token = _renewal.Token;
         bool retry = false;
+        bool firstCheck = true;
         try
         {
             while (!token.IsCancellationRequested)
             {
                 var remaining = Remaining;
                 if (remaining <= TimeSpan.Zero) break;
-                bool canRenew = autoRenew && _transport is ISupportsLockRenewal;
+                bool canRenew = _autoRenew && _transport is ISupportsLockRenewal;
                 var delay = !canRenew ? remaining : retry
                     ? TimeSpan.FromTicks(Math.Min(TimeSpan.TicksPerSecond, remaining.Ticks / 4)) : remaining / 2;
-                await Task.Delay(delay, _time, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                if (!firstCheck)
+                    await Task.Delay(delay, _time, token).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+                firstCheck = false;
                 if (token.IsCancellationRequested) return;
                 if (Remaining <= TimeSpan.Zero) break;
                 if (!canRenew) continue;
@@ -111,9 +164,10 @@ internal sealed class MessageDeliveryLease : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        await _renewal.CancelAsync().AnyContext();
+        StopMonitoring();
+        await _stopping.AnyContext();
         await Completion.AnyContext();
-        _renewal.Dispose();
+        _renewal?.Dispose();
         // Explicit renewal may still be unwinding after settlement. SemaphoreSlim owns no wait handle here.
     }
 }
