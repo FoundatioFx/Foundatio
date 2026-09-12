@@ -1,0 +1,76 @@
+{
+  "Prefix": "recovery-6aa4c9bd1dcf4d7d8f984951ad3ed2ac",
+  "Runtime": ".NET 10.0.12",
+  "ProducerSeconds": 600,
+  "ElapsedSeconds": 601.2048925,
+  "Accepted": 69354,
+  "Completed": 69314,
+  "QueuedCancelled": 20,
+  "RunningCancelled": 20,
+  "RunningCancellationMilliseconds": 5037.8638,
+  "InterruptedAtKill": 32,
+  "RetriedJobs": 32,
+  "HandlerInvocations": 69366,
+  "DuplicateEffectAttempts": 0,
+  "Pending": 0,
+  "Failed": 0,
+  "DeadLettered": 0,
+  "Snapshots": [
+    {
+      "Phase": "killed",
+      "ElapsedSeconds": 0.691541,
+      "ProcessId": 3980853,
+      "Count": 32,
+      "Workers": []
+    },
+    {
+      "Phase": "cancelled",
+      "ElapsedSeconds": 6.2457078,
+      "ProcessId": 0,
+      "Count": 40,
+      "Workers": [
+        {
+          "Id": 3980986,
+          "WorkingSet64": 125853696,
+          "PeakWorkingSet64": 125853696
+        },
+        {
+          "Id": 3980987,
+          "WorkingSet64": 107061248,
+          "PeakWorkingSet64": 107061248
+        }
+      ]
+    },
+    {
+      "Phase": "graceful-stop",
+      "ElapsedSeconds": 26.3027001,
+      "ProcessId": 3980987,
+      "Count": 0,
+      "Workers": [
+        {
+          "Id": 3980986,
+          "WorkingSet64": 132513792,
+          "PeakWorkingSet64": 132513792
+        }
+      ]
+    },
+    {
+      "Phase": "drained",
+      "ElapsedSeconds": 601.2036094,
+      "ProcessId": 0,
+      "Count": 69314,
+      "Workers": [
+        {
+          "Id": 3980986,
+          "WorkingSet64": 133586944,
+          "PeakWorkingSet64": 133586944
+        },
+        {
+          "Id": 3983917,
+          "WorkingSet64": 126136320,
+          "PeakWorkingSet64": 126136320
+        }
+      ]
+    }
+  ]
+}

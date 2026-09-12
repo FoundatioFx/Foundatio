@@ -1,39 +1,29 @@
-# Job tracking and messaging performance — September 8, 2026
+# Messaging and job tracking — September 12, 2026
 
-This follow-up reduces per-message work without changing application APIs. It builds on Foundatio `54006ac7` and Mediator `ff9c155`; measured source/binary fingerprints are in the linked raw data. Mediator core still matches main `a148013`.
+This pass removes lease-monitoring work from short deliveries while preserving renewal, expiry, cancellation and settlement races. The asynchronous monitor starts at the first scheduled lease check; a timer supervises the delivery from admission. Six new regressions cover its lifecycle.
 
-- Single-message sends avoid successful-batch bookkeeping while preserving acceptance uncertainty and provider failure details.
-- Header builders share immutable snapshots until an edit; automatic settlement and unused lease renewal avoid allocating semaphores.
-- In-memory receipts use object identity instead of generating a GUID for every delivery. Stale receipts still cannot settle or renew a redelivery.
-- Redis cancellation combines targeted expiry and the cancellation read in one atomic operation.
-- The Mediator extension caches immutable registration metadata and skips empty provider enumeration; ordinary middleware and scoped dependencies still run per invocation.
+External project references now preserve Release/Debug configuration through the entire graph. Previously a Release Mediator solution build could copy Debug native dependencies. The integration's CI smoke check now rejects unoptimized benchmark assemblies.
 
-## Measurements
+## Performance
 
-Median jobs/second through the native Mediator integration, system .NET 10.0.11, Release:
+Fresh-process medians on system .NET 10.0.12, Release, comparing the previous native implementation with this change:
 
-| Workload | Before | After | Allocated bytes/job, before → after |
-| --- | ---: | ---: | ---: |
-| In memory, concurrency 1 | 81,347 | 87,539 | 10,195 → 8,685 |
-| In memory, concurrency 8 | 80,149 | 84,685 | 9,852 → 8,333 |
-| In memory, concurrency 64 | 100,073 | 97,236 | 9,847 → 8,353 |
-| In memory and tracking, concurrency 64 | 31,049 | 30,584 | 17,049 → 15,533 |
-| LocalStack SQS, concurrency 64 | 2,809 | 2,846 | 48,011 → 47,013 |
-| In memory + Redis tracking, concurrency 64 | 5,898 | 5,409 | 47,360 → 45,831 |
-| LocalStack SQS + Redis tracking, concurrency 64 | 2,498 | 2,445 | 85,479 → 84,388 |
+| Workload | PR #149 jobs/s | Before jobs/s | After jobs/s | Allocated bytes/job, before → after |
+| --- | ---: | ---: | ---: | ---: |
+| In memory, concurrency 64 | 181,195 | 95,696 | 100,346 | 8,358 → 7,928 |
+| In memory, tracked, concurrency 64 | 36,658 | 33,238 | 34,111 | 15,535 → 15,146 |
+| In memory, concurrency 1 | 110,805 | 93,045 | 100,537 | 8,686 → 8,271 |
+| In memory, concurrency 8 | 177,069 | 84,916 | 91,161 | 8,340 → 7,934 |
+| SQS / LocalStack, concurrency 64 | 2,788 | 3,065 | 2,968 | 47,026 → 46,623 |
+| In memory + Redis tracking, concurrency 64 | 10,619 | 7,757 | 7,600 | 45,852 → 45,450 |
+| SQS / LocalStack + Redis tracking, concurrency 64 | 2,702 | 2,653 | 2,582 | 84,285 → 83,930 |
 
-Untracked memory allocations fall **15%**, memory tracking **9%**, and Redis tracking **3%**. Throughput improves **8% at concurrency 1** and **6% at concurrency 8**. High-concurrency memory and LocalStack are near the baseline; this pass does not establish a throughput gain there.
+Untracked in-memory throughput improves **5–8%**, allocations fall **about 5%**, and concurrency-64 process CPU falls **17%**. Longer tracked-memory runs are level. Redis tracking is **4% slower** in five longer alternating pairs, with **5% less CPU** and **1% fewer allocated bytes**; no Redis/SQS speedup is claimed. Default 1 ms receive collection improves about **7%**. The bus-only diagnosis drops from **4,870 to 4,250 bytes/delivery**; layer timings are not independently subtractable costs.
 
-Redis short runs varied: an exploratory batch favored the change, while the table measured 8.3% lower throughput. Five additional alternating pairs of **30,000 Redis-tracked jobs** measured **6,380 → 6,503 jobs/s**, **47,323 → 45,839 bytes/job**, and **16,474 → 14,290 ms process CPU** (13% less). Acceptance p99 was 11.34 → 10.71 ms. The evidence supports lower allocation/CPU cost, with no consistent throughput gain. The longer runs are separate evidence and do not replace the table's shorter workload.
+The main matrix verifies **4.32M jobs** in 63 runs. Thirty longer/default checks verify another **3.2M**. Each matrix cell uses three rotating trials, 1,000 warmup messages and a 256-character payload. Timing includes broker drain and tracked completion. LocalStack is not production AWS capacity. [Method, latency, CPU, raw data, source fingerprints and excluded mixed-build trials](https://github.com/FoundatioFx/Foundatio.Mediator/tree/codex/core-distributed-alternative/benchmarks/Foundatio.Mediator.Distributed.Benchmarks/comparison/production-pass-2026-09-12). [Raw native-side data](baselines/job-tracking-production-2026-09-12) and [previous measurements](baselines/job-tracking-pass2-2026-09-08).
 
-Each table cell has three rotating fresh-process repetitions, a 1,000-message warmup and a 256-character payload. Counts: 200,000 memory/concurrency 64; 100,000 at concurrency 1/8; 50,000 memory tracked; 10,000 with Redis and/or LocalStack. Timing includes broker drain and retained tracked completion. Startup, warmup and shutdown are excluded. Redis 7 and LocalStack 3.8.1 ran locally on the same shared Linux host; LocalStack does not estimate production AWS capacity.
+## Correctness
 
-[Raw data and fingerprints](baselines/job-tracking-pass2-2026-09-08) and the [complete Mediator comparison](https://github.com/FoundatioFx/Foundatio.Mediator/tree/codex/core-distributed-alternative/benchmarks/Foundatio.Mediator.Distributed.Benchmarks/comparison/optimization-pass2-2026-09-08) retain latency, PR #149 results and exploratory batches. PR #149 remains faster and leaner in memory. The preceding index/history optimization remains documented in [its original report](https://github.com/FoundatioFx/Foundatio.Mediator/tree/codex/core-distributed-alternative/benchmarks/Foundatio.Mediator.Distributed.Benchmarks/comparison/optimization-2026-09-08).
+Full build and **2,235 Foundatio tests pass**, with 24 existing skips and the existing AppHost ASPIRE010 warning. **756 Mediator tests**, 23 browser scenarios, Quickstart, console, frontend and docs checks pass. Mediator core still matches main exactly.
 
-## Correctness and recovery
-
-The full Foundatio build and **2,229 tests pass**, with 24 existing skips and the existing AppHost ASPIRE010 warning. Mediator builds with zero warnings and **756 tests pass**. Added coverage checks cancellation at exact history expiry, partial/malformed send results, immutable snapshots, overlapping settlement, stale receipt settlement/renewal, and repeated scoped header restoration.
-
-The final comparison completed **63 successful runs and 4.32M measured jobs** without missing or duplicate delivery. One additional PR #149 trial and one Mediator build hit the previously observed CLR abort and passed their same-runtime retries; failures remain in the evidence. No runtime installation changed.
-
-A separate two-minute LocalStack/Redis arrival test accepted **46,504 jobs**: **46,464 completed**, **20 cancelled while queued**, and **20 while running**. A process was killed with **32 handlers in flight**; all 32 retried after replacement. Another worker gracefully stopped and restarted while arrivals continued. No pending, failed, dead-lettered or acceptance-unknown jobs remained. The application effect was idempotent, with zero duplicate effect attempts observed; delivery remains at least once. The linked full report includes the reproducible recovery harness.
+A ten-minute LocalStack/Redis run accepted **69,354 jobs**; **69,314 completed** and **40 were intentionally cancelled**. All **32** deliveries interrupted by a worker crash retried after replacement; another worker restarted gracefully during arrivals. Nothing remained pending or failed, and no duplicate effects were observed. The harness implements idempotent effects and does not claim exactly-once delivery. Real AWS deployment validation and a longer staging soak remain release work.
