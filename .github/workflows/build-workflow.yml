@@ -71,7 +71,7 @@ jobs:
       env:
         MINIMUM_MAJOR_MINOR: ${{ inputs.minimum-major-minor }}
       run: |
-        dotnet tool install --global minver-cli --version 7.0.0
+        dotnet tool install --global minver-cli --version 8.0.0
         minver_args="--tag-prefix v --default-pre-release-identifiers preview.${GIT_BRANCH_SUFFIX}0"
         if [ -n "$MINIMUM_MAJOR_MINOR" ]; then
           minver_args="$minver_args --minimum-major-minor $MINIMUM_MAJOR_MINOR"
