@@ -1,0 +1,54 @@
+{
+  "foundatioMain": "99901a483f3da43e16dd47d72956e23853ee8ebb",
+  "mediatorMain": "3f76a7ee889a3111d8c081cf562aea16ccd13c13",
+  "previousPublishedFoundatio": "7e6e0a1928eca505f6f8ebd3572a3c323fe31292",
+  "previousPublishedMediator": "673102f6d7f2b9577dddf43bce088d28934fd606",
+  "rebasedBeforeFoundatio": "7726d474fa1994dbaddec91cbc90a458acf4def6",
+  "rebasedBeforeMediator": "45401e6b01cd1a1d71990c7780936d9fc0cd485b",
+  "pr149": "89bd6d1504b83d03de156b08f24fb578aa8bc97f",
+  "runtimeExecutable": "/usr/bin/dotnet",
+  "sdk": "10.0.112",
+  "binaries": {
+    "before": {
+      "Foundatio.Mediator.Distributed.Benchmarks.dll": "b6df55e61e77dbec2f1b80483fb9a69950104fc4a53a1f19155d48b604b54c59",
+      "Foundatio.Redis.dll": "b32e1f9cf36bb69d314cddef3384d50da27868f9e211b82e1ef37b22a79842de",
+      "Foundatio.Mediator.Distributed.dll": "203c2d02c3214e156c9c687b1b8837b3854e6a568409b9d0d387f68c8fc770ac",
+      "Foundatio.Mediator.Abstractions.dll": "f636737d98866455bf8eb150d878f1220b62fa79813f4b9b8b1512157bcb31c5",
+      "Foundatio.Aws.dll": "550fbef89423d0dcd4d43f1d92e68516e8598de21726c02ec9d17e5f76996d3e",
+      "Foundatio.dll": "0aebf424a114f31e7554b16dc14a7a82c8ce131bbfcc16ac01890f8252072afe"
+    },
+    "recovery": {
+      "Foundatio.Redis.dll": "ed87796e54577be9518519843db95fd527d748625d39216ab514c889cfd45f59",
+      "Foundatio.Mediator.Distributed.dll": "baf2aca52b3a629409a4cfc70b8423e896dc6e752860ec8ed5e48152c4fc86c2",
+      "Foundatio.Mediator.Abstractions.dll": "f636737d98866455bf8eb150d878f1220b62fa79813f4b9b8b1512157bcb31c5",
+      "Foundatio.dll": "b9c6bb92bef2fe8e86a7bad65e1addccaeaee7663e75a9c047351f8aaaa45d6c",
+      "Foundatio.Aws.dll": "c0625097a02a49cd5ecb1a0124e03b4f8fea8a95135340a4dc35b2a432bb5a5a"
+    },
+    "excludedMixedBuild": {
+      "Foundatio.Mediator.Distributed.Benchmarks.dll": "c942560dc62e389bccf52420b56762ff075efdb81d2e20ab9d17721662a25d16",
+      "Foundatio.dll": "c0844dce22d36580a7df6b846faa6439790c96d387fff30d2626da059ef980cb",
+      "Foundatio.Redis.dll": "944380d9550a7fdf926ea4541f866520d2c9c0df96344a282b8f71cad355cd55",
+      "Foundatio.Aws.dll": "ed4c30ededdd6136b1e7dfe9d78d06f46e8e9813cdbb509805d5f86f5a3c1470",
+      "Foundatio.Mediator.Distributed.dll": "c209b252ae7a26c00265ffd7ec6432b415a0ffc269e4a22ae87d14870c5829d4",
+      "Foundatio.Mediator.Abstractions.dll": "f636737d98866455bf8eb150d878f1220b62fa79813f4b9b8b1512157bcb31c5"
+    },
+    "after": {
+      "Foundatio.Mediator.Distributed.Benchmarks.dll": "2d7ca1371c3e2ddea5cffaa6959bd458f0ebc955cde1db932e93e51205508957",
+      "Foundatio.Redis.dll": "1104232a274b019b6269b6467ceb5836167aaf7ee673076a66c065d29cc4a6e3",
+      "Foundatio.Mediator.Distributed.dll": "3ec4f5a3ea39f807151bb85063c19b05b7b9d71ddf6cabcdf0350e472ae211b9",
+      "Foundatio.dll": "c035a4447aa5a40459bf63bdd80413a7d71ff2ba810de0d4689995c9d5252642",
+      "Foundatio.Aws.dll": "4b42ec1b46f10d642fcb39d91737b424035f19a97a4e750477d2d0815ed65b75",
+      "Foundatio.Mediator.Abstractions.dll": "f636737d98866455bf8eb150d878f1220b62fa79813f4b9b8b1512157bcb31c5"
+    }
+  },
+  "source": {
+    "/tmp/foundatio-core-alternative/src/Foundatio/Messaging/MessageDeliveryLease.cs": "76833ec9308a59533e8d6198af29132769492fe1f5c6e3f8d78bcbf600d9e6b2",
+    "/tmp/foundatio-core-alternative/tests/Foundatio.Tests/Messaging/MessageDeliveryLeaseTests.cs": "a1d69d05f94ab9f43471ad1ad8970d55f3587d07f702d14c534985e4363cf8cc",
+    "/tmp/mediator-core-alternative/benchmarks/Foundatio.Mediator.Distributed.Benchmarks/Program.cs": "8254fba4cc53f8c784d9a98c46c54d9b1c9b7b47cd96b778d4c25cbde653c7a1",
+    "/tmp/foundatio-core-alternative/build/common.props": "18030a483005bde3763bd8f736470015c76b96f7cba469136bc4a81b5ebd7b0e",
+    "/tmp/mediator-core-alternative/build/foundatio-core.props": "6596d364da1e333631ab0cc1040852022c590db046187964425d13224d593a00",
+    "/tmp/mediator-core-alternative/.github/workflows/build.yml": "622360f6ce9d9fcad6d9023091a67f755804bb5eb01b02144bf73c2592230a21"
+  },
+  "runtime": ".NET 10.0.12",
+  "afterRuntimeCommit": "e583f953"
+}

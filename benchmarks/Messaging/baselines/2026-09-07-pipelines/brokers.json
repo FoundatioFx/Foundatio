@@ -1,0 +1,18 @@
+[
+  {
+    "name": "foundatio-messaging-perf-localstack-1",
+    "image_id": "sha256:b279c01f4cfb8f985a482e4014cabc1e2697b9d7a6c8c8db2e40f4d9f93687c7",
+    "image": "localstack/localstack:3.8.1",
+    "nano_cpus": 4000000000,
+    "memory_limit_bytes": 3221225472,
+    "started_at": "2026-09-07T04:59:25.251690302Z"
+  },
+  {
+    "name": "foundatio-messaging-perf-redis-1",
+    "image_id": "sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763",
+    "image": "redis:8.6-alpine",
+    "nano_cpus": 4000000000,
+    "memory_limit_bytes": 2147483648,
+    "started_at": "2026-09-07T04:59:25.355597207Z"
+  }
+]

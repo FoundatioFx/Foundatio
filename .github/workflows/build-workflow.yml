@@ -122,18 +122,23 @@ jobs:
     - name: Publish CI Packages
       if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
       run: |
+        # CI-feed publishing is best-effort: a feed rejecting one package (e.g. GitHub Packages returns 403 when the
+        # package name is linked to a different repo) must not fail a build whose compile and tests passed. Each
+        # failure surfaces as a warning annotation instead. Release publishing to NuGet (below) stays strict.
         for package in $(find . -name "*.nupkg" | grep -v "minver" | grep -v "/EmptyFiles/"); do
 
           # GitHub
           if [ -n "${{ secrets.GITHUB_TOKEN }}" ]; then
             echo "${0##*/}": Pushing $package to GitHub...
-            dotnet nuget push $package --source https://nuget.pkg.github.com/${{ inputs.org }}/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+            dotnet nuget push $package --source https://nuget.pkg.github.com/${{ inputs.org }}/index.json --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate \
+              || echo "::warning::Failed to push ${package##*/} to GitHub Packages; continuing"
           fi
 
           # Feedz (remove once GitHub supports anonymous access)
           if [ -n "${{ secrets.FEEDZ_KEY }}" ]; then
             echo "${0##*/}": Pushing $package to Feedz...
-            dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate
+            dotnet nuget push $package --source https://f.feedz.io/foundatio/foundatio/nuget --api-key ${{ secrets.FEEDZ_KEY }} --skip-duplicate \
+              || echo "::warning::Failed to push ${package##*/} to Feedz; continuing"
           fi
 
         done

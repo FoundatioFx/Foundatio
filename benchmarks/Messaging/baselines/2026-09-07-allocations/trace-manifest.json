@@ -1,0 +1,62 @@
+[
+  {
+    "Name": "before-1024",
+    "Samples": 10785,
+    "WeightedBytes": 1153217056,
+    "EventsLost": 0,
+    "SamplesWithoutStacks": 0,
+    "TraceSha256": "df2706d7c6f94d26cfb7fac7d7185bee9544ab443ffb3ffc428ea468d1784c16",
+    "WindowMilliseconds": [
+      12000,
+      30000
+    ]
+  },
+  {
+    "Name": "before-16384",
+    "Samples": 38098,
+    "WeightedBytes": 4476364296,
+    "EventsLost": 0,
+    "SamplesWithoutStacks": 0,
+    "TraceSha256": "1fa5966a79bcc78feacba0ca2fb974bbeea6a90e59928c77df64461d1b0da728",
+    "WindowMilliseconds": [
+      12000,
+      30000
+    ]
+  },
+  {
+    "Name": "masstransit-16384",
+    "Samples": 44678,
+    "WeightedBytes": 5233375600,
+    "EventsLost": 0,
+    "SamplesWithoutStacks": 0,
+    "TraceSha256": "ef785c7e8face7199a011bfafdab871979cb8778f7b6d4f0260745174ff18b54",
+    "WindowMilliseconds": [
+      12000,
+      30000
+    ]
+  },
+  {
+    "Name": "after-1024",
+    "Samples": 11176,
+    "WeightedBytes": 1195244928,
+    "EventsLost": 0,
+    "SamplesWithoutStacks": 0,
+    "TraceSha256": "fb1f359f2be932f09fad6faf46fe6f69ccef8324a1d36d8d1a39f99f22fe2621",
+    "WindowMilliseconds": [
+      12000,
+      30000
+    ]
+  },
+  {
+    "Name": "after-16384",
+    "Samples": 33820,
+    "WeightedBytes": 3962598120,
+    "EventsLost": 0,
+    "SamplesWithoutStacks": 0,
+    "TraceSha256": "8fc37458282bf17f988696a10d4dd4c767a73065750ed9e276c4a23f4b433af9",
+    "WindowMilliseconds": [
+      12000,
+      30000
+    ]
+  }
+]

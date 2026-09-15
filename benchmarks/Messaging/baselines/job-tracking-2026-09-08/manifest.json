@@ -1,0 +1,31 @@
+{
+  "runtime": "/usr/bin/dotnet (.NET 10.0.11, Ubuntu package)",
+  "baselineMediator": "1623285b131d08d4c9aa006b6e8042e3006e2c5e",
+  "baselineFoundatio": "9288e40bfc7fb41a27697132a550c36080189a01",
+  "pr149": "89bd6d1504b83d03de156b08f24fb578aa8bc97f",
+  "mediatorMain": "a1480132d701b93c64edcc9a776573c94d1a2153",
+  "foundatioSourceSha256": "71ca870537add27cedece374a244020a1000e1e7a545d4d598c258b7b16f49e9",
+  "mediatorSourceSha256": "d714bdd460723472b90204353d4a2a3f9687c0908768e40673245b4a558d2ea7",
+  "binaryHashes": {
+    "pr149": {
+      "Foundatio.Mediator.Abstractions.dll": "2e875f87d0730cae886d5f9ad1883e75cda1883621bbcf02d0d967ca82e40fd3",
+      "Foundatio.Mediator.Distributed.Aws.dll": "9b23123c4ced306c1c62e9c71362db161b72dc280517a1bd7637e4cd3e383d6a",
+      "Foundatio.Mediator.Distributed.Redis.dll": "0d69009172b2dfd9a9ceb009de3d3c837b66d669ffce2e00c26d9eacdda984f0",
+      "Foundatio.Mediator.Distributed.dll": "2083b1a1eec1498212a9011f6935a9801d6e058f18cff9b565e5207f85cbd665"
+    },
+    "before": {
+      "Foundatio.Aws.dll": "046a5ed5937e8f5e323cbda2b5c9cc9446991d7d137125f4d2a0b4d8ef460d1a",
+      "Foundatio.Mediator.Abstractions.dll": "b2dfa05db70b7d45fcb94bfcf4c67a47c3f9f35d4aef06680a5bb6c6f12934be",
+      "Foundatio.Mediator.Distributed.dll": "043b11114f6a16f91bad2b77815b43901ff07eb167352dc6df88e119e0f5ce92",
+      "Foundatio.Redis.dll": "f8f536e7d9e3a9b9f6d695c800f22827f492b704aef8e4a897a3486f347d7063",
+      "Foundatio.dll": "24d71042553df3bceacda7a4319cebf56a785007af97065f10b229847e2465be"
+    },
+    "after": {
+      "Foundatio.Aws.dll": "023b7aec1714a3283574795166d6d6a8f3bdf1b8ec89b9e80f36e5e18d2a8fc1",
+      "Foundatio.Mediator.Abstractions.dll": "b2dfa05db70b7d45fcb94bfcf4c67a47c3f9f35d4aef06680a5bb6c6f12934be",
+      "Foundatio.Mediator.Distributed.dll": "e441b70853253de8f685056f17f8f1991ee34b95b60eca19605ddcf4a4092964",
+      "Foundatio.Redis.dll": "a0b59934fc88ac412b0db075d7f8fc29207f313dd3b718331708e726071384f0",
+      "Foundatio.dll": "2a3fab2a7aa793b094e98b79fa5ebc025cf41cb736d0c29020bb9a935f17563f"
+    }
+  }
+}

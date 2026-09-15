@@ -16,6 +16,9 @@
     <AssemblyOriginatorKeyFile>..\build\Foundatio.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="Messaging/**/*.cs;Messaging.Tests/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8"/>
     <PackageReference Include="RhoMicro.BdnLogging" Version="1.0.3" />

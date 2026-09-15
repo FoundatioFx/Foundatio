@@ -60,7 +60,7 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
 
     private async Task EnsureTopicSubscriptionAsync()
     {
-        if (_isSubscribed || _messageBus is null)
+        if (_isSubscribed || _messageBus is null || !_messageBus.SupportsTemporarySubscriptions)
             return;
 
         using (await _lock.LockAsync().AnyContext())
@@ -69,7 +69,10 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
                 return;
 
             _logger.LogTrace("Subscribing to cache lock released");
-            await _messageBus.SubscribeAsync<CacheLockReleased>(OnLockReleasedAsync).AnyContext();
+            // Lock-released notifications are events every waiting node must see: published-only and per-instance.
+            await _messageBus.SubscribeAsync<CacheLockReleased>(
+                (context, token) => OnLockReleasedAsync(context.Message, token),
+                new MessageSubscriptionOptions()).AnyContext();
             _isSubscribed = true;
             _logger.LogTrace("Subscribed to cache lock released");
         }

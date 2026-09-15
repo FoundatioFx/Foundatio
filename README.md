@@ -28,9 +28,11 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 | [**File Storage**](https://foundatio.dev/guide/storage) | Unified file API for disk, S3, Azure Blob, and more |
 | [**Resilience**](https://foundatio.dev/guide/resilience) | Retry policies, circuit breakers, and timeouts |
 
+The messaging and job APIs on this branch are unreleased. Use the [getting started guide](docs/guide/getting-started.md) and [quickstart sample](samples/Foundatio.QuickstartSample) from the same revision. Published provider packages may still implement the earlier APIs.
+
 ## 🚀 Quick Start
 
-```bash
+```powershell
 dotnet add package Foundatio
 ```
 
@@ -40,10 +42,15 @@ ICacheClient cache = new InMemoryCacheClient();
 await cache.SetAsync("user:123", user, TimeSpan.FromMinutes(5));
 var cached = await cache.GetAsync<User>("user:123");
 
-// Queuing
-IQueue<WorkItem> queue = new InMemoryQueue<WorkItem>();
-await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
-var entry = await queue.DequeueAsync();
+// Queued work
+using var messageBus = new MessageBus(new InMemoryMessageTransport());
+await messageBus.SendAsync(new WorkItem { Data = "Hello" });
+await using var delivery = await messageBus.ReceiveAsync<WorkItem>();
+if (delivery is not null)
+{
+    Console.WriteLine(delivery.Message.Data);
+    await delivery.CompleteAsync();
+}
 
 // File Storage
 IFileStorage storage = new InMemoryFileStorage();
@@ -54,7 +61,11 @@ ILockProvider locker = new CacheLockProvider(cache, messageBus);
 await using var handle = await locker.AcquireAsync("resource-key");
 ```
 
+For a hosted worker, configure consumers, named event subscribers, and optional jobs in one `AddFoundatioWorker(...)` callback. Producer-only applications use `AddFoundatio()`; see [dependency injection](docs/guide/dependency-injection.md).
+
 ## 📦 Provider Implementations
+
+This table describes the broader provider ecosystem. This unreleased transport contract is currently implemented by in-memory, Redis Streams, and AWS SQS/SNS; see the [current capability matrix](docs/guide/messaging.md#provider-guarantees).
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
 |----------|---------|--------|-----------|---------|-------|
@@ -94,7 +105,7 @@ await using var handle = await locker.AcquireAsync("resource-key");
 
 Want the latest CI build before it hits NuGet? Add the Feedz source and install the pre-release version:
 
-```bash
+```powershell
 dotnet nuget add source https://f.feedz.io/foundatio/foundatio/nuget -n foundatio-feedz
 dotnet add package Foundatio --prerelease
 ```

@@ -29,6 +29,9 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
     private readonly AsyncLazy<bool> _lazySubscription;
+    private IMessageSubscription? _invalidationSubscription;
+    private long _subscriptionVersion;
+    private readonly SemaphoreSlim _subscriptionRecovery = new(1, 1);
     private long _localCacheHits;
     private long _invalidateCacheCalls;
     private bool _isDisposed;
@@ -41,10 +44,16 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _resiliencePolicyProvider = distributedCacheClient.GetResiliencePolicyProvider() ?? localCacheOptions?.ResiliencePolicyProvider ?? DefaultResiliencePolicyProvider.Instance;
         _distributedCache = distributedCacheClient;
         _messageBus = messageBus;
+        if (!messageBus.SupportsTemporarySubscriptions)
+            throw new NotSupportedException("HybridCacheClient requires per-instance invalidation subscriptions. Use an in-memory or Redis messaging transport with TopologyMode.Ensure.");
         _lazySubscription = new AsyncLazy<bool>(async () =>
         {
-            await _messageBus.SubscribeAsync<InvalidateCache>(
-                OnRemoteCacheItemExpiredAsync, _disposedCancellationTokenSource.Token).AnyContext();
+            // Invalidations are events every node must see: published-only (no queue channel) and per-instance so
+            // each hybrid client gets its own copy instead of instances competing for one.
+            _invalidationSubscription = await _messageBus.SubscribeAsync<InvalidateCache>(
+                (context, _) => OnRemoteCacheItemExpiredAsync(context.Message),
+                new MessageSubscriptionOptions(),
+                _disposedCancellationTokenSource.Token).AnyContext();
             return true;
         }, AsyncLazyFlags.RetryOnFailure | AsyncLazyFlags.ExecuteOnCallingThread);
         localCacheOptions ??= new InMemoryCacheClientOptions
@@ -65,9 +74,23 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
     TimeProvider IHaveTimeProvider.TimeProvider => _timeProvider;
     IResiliencePolicyProvider IHaveResiliencePolicyProvider.ResiliencePolicyProvider => _resiliencePolicyProvider;
 
-    private Task EnsureSubscribedAsync()
+    private async Task EnsureSubscribedAsync()
     {
-        return _lazySubscription.Task;
+        await _lazySubscription.Task.AnyContext();
+        await _invalidationSubscription!.WaitUntilReadyAsync(_disposedCancellationTokenSource.Token).AnyContext();
+        long version = _invalidationSubscription.RecoveryVersion;
+        if (Interlocked.Read(ref _subscriptionVersion) == version)
+            return;
+        await _subscriptionRecovery.WaitAsync(_disposedCancellationTokenSource.Token).AnyContext();
+        try
+        {
+            if (_subscriptionVersion != version)
+            {
+                await _localCache.RemoveAllAsync().AnyContext();
+                Interlocked.Exchange(ref _subscriptionVersion, version);
+            }
+        }
+        finally { _subscriptionRecovery.Release(); }
     }
 
     private Task OnRemoteCacheItemExpiredAsync(InvalidateCache message)
@@ -806,6 +829,7 @@ public class HybridCacheClient : IHybridCacheClient, IHaveTimeProvider, IHaveLog
         _isDisposed = true;
         _disposedCancellationTokenSource.Cancel();
         _disposedCancellationTokenSource.Dispose();
+        _invalidationSubscription?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         _localCache.Dispose();
     }
 
