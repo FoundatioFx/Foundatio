@@ -629,13 +629,16 @@ services.AddJob<CleanupJob>();
 services.AddJob<CleanupJob>(o => o
     .Interval(TimeSpan.FromHours(1))
     .WaitForStartupActions()
+    .StartupActionsTimeout(TimeSpan.FromMinutes(15))
     .InitialDelay(TimeSpan.FromSeconds(30)));
 
 // Parallel queue processing
 services.AddJob<OrderProcessorJob>(o => o.InstanceCount(4));
 ```
 
-The builder exposes: `Name`, `Description`, `JobFactory`, `RunContinuous`, `Interval`, `InitialDelay`, `IterationLimit`, `InstanceCount`, and `WaitForStartupActions`.
+The builder exposes: `Name`, `Description`, `JobFactory`, `RunContinuous`, `Interval`, `InitialDelay`, `IterationLimit`, `InstanceCount`, `WaitForStartupActions`, and `StartupActionsTimeout`.
+
+When `WaitForStartupActions` is enabled, the hosted job waits for startup actions to complete before running. `StartupActionsTimeout` controls how long it waits; when unset, the default is five minutes. The wait checks startup state once per second. If startup actions fail, the timeout expires, or the host shuts down, the job does not start or retry automatically. This option applies to hosted jobs registered with `AddJob`; scheduled jobs have their own startup wait behavior.
 
 ### Cron Job Scheduling
 
