@@ -1,0 +1,72 @@
+name: Lease consistency validation
+on:
+  push:
+    branches: [audit/lease-consistency-20260922]
+    paths: [.github/workflows/lease-consistency.yml]
+permissions:
+  contents: write
+defaults:
+  run:
+    shell: bash
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          path: product
+          ref: 394a97fa61418e88b4f94d20cf91410ca4bd011a
+          fetch-depth: 0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          repository: FoundatioFx/Foundatio.Repositories
+          path: harness
+          ref: 9823ea52d03968da70e2245eaab69fed24f36bcd
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Prove the stale-owner failure and validate both repairs
+        working-directory: product
+        run: |
+          set -euo pipefail
+          mkdir -p ../evidence
+          python ../harness/.audit/consistency/upstream.py . tests
+          dotnet build Foundatio.slnx -c Release > ../evidence/red-build.log 2>&1
+          set +e
+          dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj -c Release --no-build --filter-class '*CacheLockRenewalTests' > ../evidence/red.log 2>&1
+          result=$?
+          set -e
+          cat ../evidence/red.log
+          test "$result" -eq 2
+          grep -Eq 'failed: 3' ../evidence/red.log
+          python ../harness/.audit/consistency/upstream.py . fix
+          python ../harness/.audit/consistency/upstream-expiry.py .
+          dotnet format whitespace . --folder --include src/Foundatio/Lock/CacheLockProvider.cs src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheLockRenewalTests.cs
+          dotnet build Foundatio.slnx -c Release | tee ../evidence/green-build.log
+          dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj -c Release --no-build --filter-class '*CacheLockRenewalTests' '*InMemoryLockTests' '*InMemoryCacheClientTests' | tee ../evidence/green.log
+          dotnet format whitespace . --folder --verify-no-changes --include src/Foundatio/Lock/CacheLockProvider.cs src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheLockRenewalTests.cs
+      - name: Stage a clean product branch
+        working-directory: product
+        run: |
+          set -euo pipefail
+          git config user.name 'Blake Niemyjski'
+          git config user.email 'bniemyjski@gmail.com'
+          git add src tests docs
+          git diff --cached --check
+          git commit -m 'fix: reject renewal of lost and expired cache leases'
+          test -z "$(git status --porcelain)"
+          git diff --exit-code 394a97fa61418e88b4f94d20cf91410ca4bd011a HEAD -- .github
+          git push origin HEAD:refs/heads/fix/cache-lease-ownership-20260922
+          git log -1 --format='%H %s' | tee ../evidence/commit.txt
+          git diff --binary 394a97fa61418e88b4f94d20cf91410ca4bd011a HEAD > ../evidence/candidate.patch
+          git bundle create ../evidence/candidate.bundle HEAD
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: lease-consistency-evidence
+          path: evidence
+          retention-days: 7
