@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -1692,6 +1693,80 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         Assert.Equal("key", item.Key);
         Assert.Equal("value", item.Value);
+    }
+
+    [Fact]
+    public async Task Items_WhenRead_DoesNotChangeEvictionOrder()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.MaxItems(2).TimeProvider(timeProvider).LoggerFactory(Log));
+        await cache.SetAsync("first", "1");
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+        await cache.SetAsync("second", "2");
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        Assert.Equal(2, cache.Items.Count);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+        await cache.SetAsync("third", "3");
+
+        // Assert
+        Assert.False(await cache.ExistsAsync("first"));
+        Assert.True(await cache.ExistsAsync("second"));
+        Assert.True(await cache.ExistsAsync("third"));
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithExistingList_DoesNotMutatePreviouslyReadValue()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { "a" });
+        var previouslyRead = (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value;
+
+        // Act
+        await cache.ListAddAsync("set", new[] { "b" });
+        await cache.ListRemoveAsync("set", new[] { "a" });
+
+        // Assert
+        Assert.Equal(["a"], previouslyRead!.Keys);
+        var current = await cache.GetListAsync<string>("set");
+        Assert.Equal(["b"], current.Value);
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithConcurrentRequests_DoesNotLoseValues()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        const int values = 1000;
+
+        // Act
+        await Parallel.ForEachAsync(Enumerable.Range(0, values), TestCancellationToken,
+            async (i, _) => await cache.ListAddAsync("set", new[] { i }));
+
+        // Assert
+        var result = await cache.GetListAsync<int>("set");
+        Assert.Equal(values, result.Value.Count);
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.SetAsync<object>("key", 1);
+        var replacement = new List<int> { 1 };
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync<object>("key", replacement, 1);
+        replacement.Add(2);
+
+        // Assert
+        Assert.True(replaced);
+        var cached = await cache.GetAsync<List<int>>("key");
+        Assert.Equal([1], cached.Value);
     }
 
     [Fact]

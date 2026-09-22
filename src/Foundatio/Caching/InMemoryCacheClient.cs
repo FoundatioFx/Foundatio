@@ -753,7 +753,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }, (existingKey, existingEntry) =>
             {
                 wasNewEntry = false;
-                if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
+                if (CopyListValues<string>(existingEntry) is not { } dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
 
                 oldSize = existingEntry.Size;
@@ -790,7 +790,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }, (existingKey, existingEntry) =>
             {
                 wasNewEntry = false;
-                if (existingEntry.Value is not IDictionary<T, DateTime?> dictionary)
+                if (CopyListValues<T>(existingEntry) is not { } dictionary)
                     throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
 
                 oldSize = existingEntry.Size;
@@ -809,6 +809,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             await StartMaintenanceAsync().AnyContext();
             return items.Count;
         }
+    }
+
+    /// <summary>
+    /// Returns a private copy of an entry's list values that can be modified and published with
+    /// <see cref="CacheEntry.WithValue"/>, or <c>null</c> if the entry does not hold a list.
+    /// </summary>
+    private static Dictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
+    {
+        return entry.StoredValue switch
+        {
+            Dictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            IDictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary),
+            _ => null
+        };
     }
 
     private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey)
@@ -838,7 +852,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return Task.FromResult(ListRemove(key, new HashSet<string>([stringValue])));
 
         var items = new HashSet<T>(values.Where(v => v is not null));
-        if (items.Count == 0)
+        if (items.Count is 0)
             return Task.FromResult<long>(0);
 
         return Task.FromResult(ListRemove(key, items));
@@ -848,15 +862,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         while (_memory.TryGetValue(key, out var existingEntry))
         {
-            if (existingEntry.Value is not IDictionary<T, DateTime?> { Count: > 0 } dictionary)
+            if (CopyListValues<T>(existingEntry) is not { Count: > 0 } dictionary)
                 return 0;
 
             int expired = ExpireListValues(dictionary, key);
             long removed = items.Count(dictionary.Remove);
-            if (expired == 0 && removed == 0)
+            if (expired is 0 && removed is 0)
                 return 0;
 
-            if (dictionary.Count == 0)
+            if (dictionary.Count is 0)
             {
                 if (!TryRemoveEntry(new KeyValuePair<string, CacheEntry>(key, existingEntry)))
                     continue;
@@ -1036,9 +1050,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
+        var replacement = CreateEntry(value, expiresAt);
+        if (replacement is null)
+            return false;
+
         bool wasExpectedValue = false;
         long oldSize = 0;
-        long newSize = 0;
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
             wasExpectedValue = false;
@@ -1048,15 +1065,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             wasExpectedValue = true;
             oldSize = existingEntry.Size;
-            newSize = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
-            return existingEntry.WithValue(value, expiresAt, newSize);
+            return replacement;
         });
 
         success = success && wasExpectedValue;
 
         // Update memory size tracking if the value was replaced
-        if (_shouldTrackMemory && wasExpectedValue && oldSize != newSize)
-            UpdateMemorySize(newSize - oldSize);
+        if (success)
+            UpdateMemorySize(replacement.Size - oldSize);
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1664,6 +1680,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         /// <summary>
+        /// The stored payload without cloning. It is shared with every reader and must never be mutated.
+        /// </summary>
+        internal object? StoredValue => _cacheValue;
+
+        /// <summary>
         /// Returns a copy of this entry with a new expiration. The value is shared, not cloned again.
         /// </summary>
         internal CacheEntry WithExpiration(DateTime? expiresAt)
@@ -1673,12 +1694,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         /// <summary>
         /// Returns a copy of this entry with a new value, size and expiration, marked as modified now.
+        /// The value is stored as-is, so it must be an instance nothing else references.
         /// </summary>
         internal CacheEntry WithValue(object? value, DateTime? expiresAt, long size)
         {
-            var copy = new CacheEntry(this, _shouldClone ? value.DeepClone() : value, expiresAt, size, _timeProvider.GetUtcNow().Ticks);
-            copy.LastAccessTicks = copy.LastModifiedTicks;
-            return copy;
+            long utcNowTicks = _timeProvider.GetUtcNow().Ticks;
+            return new CacheEntry(this, value, expiresAt, size, utcNowTicks) { LastAccessTicks = utcNowTicks };
         }
 
         [return: MaybeNull]
