@@ -22,7 +22,7 @@ jobs:
         with:
           repository: FoundatioFx/Foundatio.Repositories
           path: harness
-          ref: 6ebed35e2da125f549d56da58c972fc0ce0f30c6
+          ref: d9d3193a42aeaf933abffb20cef1adbd591a7851
           persist-credentials: false
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
         with:
@@ -44,23 +44,27 @@ jobs:
           test "$result" -eq 2
           grep -Eq 'failed: 2' ../evidence/red.log
           python ../harness/.audit/consistency/cache-atomicity.py . fix
-          dotnet format whitespace . --folder --include src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheConditionalRaceTests.cs
+          python ../harness/.audit/consistency/throttle-test-clock.py .
+          dotnet format whitespace . --folder --include src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheConditionalRaceTests.cs tests/Foundatio.Tests/Locks/InMemoryLockTests.cs
           dotnet build Foundatio.slnx -c Release | tee ../evidence/green-build.log
           dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj -c Release --no-build --filter-class '*CacheConditionalRaceTests' '*CacheLockRenewalTests' '*InMemoryLockTests' '*InMemoryCacheClientTests' | tee ../evidence/green.log
-          dotnet format whitespace . --folder --verify-no-changes --include src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheConditionalRaceTests.cs
-      - name: Stage clean candidate
+          dotnet format whitespace . --folder --verify-no-changes --include src/Foundatio/Caching/InMemoryCacheClient.cs tests/Foundatio.Tests/Locks/CacheConditionalRaceTests.cs tests/Foundatio.Tests/Locks/InMemoryLockTests.cs
+      - name: Stage clean logical commits
         working-directory: product
         run: |
           set -euo pipefail
           git config user.name 'Blake Niemyjski'
           git config user.email 'bniemyjski@gmail.com'
-          git add src tests
+          git add src tests/Foundatio.Tests/Locks/CacheConditionalRaceTests.cs
           git diff --cached --check
           git commit -m 'fix: make conditional cache lease mutations compare-and-swap safe'
+          git add tests/Foundatio.Tests/Locks/InMemoryLockTests.cs
+          git diff --cached --check
+          git commit -m 'test: make throttle period boundary checks deterministic'
           test -z "$(git status --porcelain)"
           git diff --exit-code 2f1c51e015b22c684d24fc78a4b80c27235e9ab2 HEAD -- .github
           git push origin HEAD:refs/heads/audit/lease-atomicity-candidate-${{ github.run_id }}
-          git log -1 --format='%H %s' | tee ../evidence/commit.txt
+          git log -2 --format='%H %s' | tee ../evidence/commit.txt
           git diff --binary 2f1c51e015b22c684d24fc78a4b80c27235e9ab2 HEAD > ../evidence/candidate.patch
           git bundle create ../evidence/candidate.bundle HEAD
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
