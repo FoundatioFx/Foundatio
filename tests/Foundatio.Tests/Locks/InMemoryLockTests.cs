@@ -1,4 +1,6 @@
 using System;
+using System.Threading;
+using Microsoft.Extensions.Time.Testing;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
@@ -83,9 +85,24 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override Task WillThrottleCallsAsync()
+    public override async Task WillThrottleCallsAsync()
     {
-        return base.WillThrottleCallsAsync();
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(time));
+        var period = TimeSpan.FromSeconds(2);
+        var provider = new ThrottlingLockProvider(cache, 25, period, time);
+        const string resource = "fixed-period";
+        for (int i = 0; i < 25; i++)
+        {
+            await using var lease = await provider.TryAcquireAsync(resource, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(lease);
+        }
+
+        // A cancelled wait probes the exhausted period without waiting for time to advance.
+        Assert.Null(await provider.TryAcquireAsync(resource, cancellationToken: new CancellationToken(true)));
+        time.Advance(period);
+        await using var nextPeriod = await provider.TryAcquireAsync(resource, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(nextPeriod);
     }
 
     [Fact]
