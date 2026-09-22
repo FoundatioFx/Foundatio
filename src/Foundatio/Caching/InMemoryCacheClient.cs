@@ -282,29 +282,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
-        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
-
-        bool wasExpectedValue = false;
-        bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
+        bool removed = false;
+        while (_memory.TryGetValue(key, out var entry))
         {
-            var currentValue = existingEntry.GetValue<T>();
-            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
-            {
-                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
-                existingEntry.ExpiresAt = DateTime.MinValue;
-                wasExpectedValue = true;
-            }
+            if (entry.IsExpired || !EqualityComparer<T>.Default.Equals(entry.GetValue<T>(), expected))
+                break;
 
-            return existingEntry;
-        });
+            // Remove only this exact entry. A concurrent replacement requires a new value comparison,
+            // not a success flag retained from a failed update factory invocation.
+            if (!((ICollection<KeyValuePair<string, CacheEntry>>)_memory).Remove(new KeyValuePair<string, CacheEntry>(key, entry)))
+                continue;
 
-        success = success && wasExpectedValue;
-
+            UpdateMemorySize(-entry.Size);
+            removed = true;
+            break;
+        }
         await StartMaintenanceAsync().AnyContext();
-
-        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-        return success;
+        _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, removed);
+        return removed;
     }
 
     public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
@@ -1109,52 +1104,35 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
-
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
             return false;
         }
 
-        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
-
         Interlocked.Increment(ref _writes);
-
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        bool wasExpectedValue = false;
-        long oldSize = 0;
-        long newSize = 0;
-        bool success = _memory.TryUpdate(key, (_, existingEntry) =>
+        var replacement = CreateEntry(value, expiresAt);
+        if (replacement is null)
+            return false;
+        bool replaced = false;
+        while (_memory.TryGetValue(key, out var entry))
         {
-            if (existingEntry.IsExpired)
-                return existingEntry;
+            if (entry.IsExpired || !EqualityComparer<T>.Default.Equals(entry.GetValue<T>(), expected))
+                break;
 
-            var currentValue = existingEntry.GetValue<T>();
-            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
-            {
-                oldSize = existingEntry.Size;
-                existingEntry.Value = value;
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
-                wasExpectedValue = true;
-                newSize = existingEntry.Size;
+            // Never mutate the comparison entry before CAS: update factories can run more than once,
+            // and a stale invocation must neither change an entry nor report another owner's success.
+            if (!_memory.TryUpdate(key, replacement, entry))
+                continue;
 
-                existingEntry.ExpiresAt = expiresAt;
-            }
-
-            return existingEntry;
-        });
-
-        success = success && wasExpectedValue;
-
-        // Update memory size tracking if the value was replaced
-        if (_shouldTrackMemory && wasExpectedValue && oldSize != newSize)
-            UpdateMemorySize(newSize - oldSize);
-
+            UpdateMemorySize(replacement.Size - entry.Size);
+            replaced = true;
+            break;
+        }
         await StartMaintenanceAsync().AnyContext();
-
-        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-
-        return success;
+        _logger.LogTrace("ReplaceIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, replaced);
+        return replaced;
     }
 
     public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
