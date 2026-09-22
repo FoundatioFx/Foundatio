@@ -244,13 +244,18 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         _logger.LogDebug("Released lock: {Resource}", resource);
     }
 
-    public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
+    /// <summary>Extends the lease only while it is still owned by the supplied lock ID.</summary>
+    /// <exception cref="LockException">The lease expired, was released, or belongs to another owner.</exception>
+    public async Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
         if (!timeUntilExpires.HasValue)
             timeUntilExpires = TimeSpan.FromMinutes(20);
 
         _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
-        return _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value)).AsTask();
+        bool renewed = await _resiliencePolicy.ExecuteAsync(async _ =>
+            await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value).AnyContext()).AnyContext();
+        if (!renewed)
+            throw new LockException($"Cannot renew lock '{resource}': the lease expired, was released, or is owned by another caller.");
     }
 
     private class ResetEventWithRefCount

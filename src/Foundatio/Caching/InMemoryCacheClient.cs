@@ -1126,6 +1126,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         long newSize = 0;
         bool success = _memory.TryUpdate(key, (_, existingEntry) =>
         {
+            if (existingEntry.IsExpired)
+                return existingEntry;
+
             var currentValue = existingEntry.GetValue<T>();
             if (EqualityComparer<T>.Default.Equals(currentValue, expected))
             {

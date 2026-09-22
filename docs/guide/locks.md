@@ -676,3 +676,10 @@ if (lck is not null)
 - [Jobs](./jobs) - Background jobs with distributed locking
 - [Resilience](./resilience) - Retry policies for lock acquisition
 - [Serialization](./serialization) - Serializer configuration and performance
+
+
+### Lost lease ownership
+
+`CacheLockProvider.RenewAsync` throws `LockException` when the cached lease no longer matches the original lock ID. An expired or released lease is not recreated, and another owner's lease is not extended or removed. Stop protected work after a renewal failure; do not interpret a failed compare-and-renew as successful renewal. This is an intentional behavior correction for callers that previously continued after losing ownership.
+
+Renewal is not a fencing token: it cannot revoke requests already submitted to an external service. Long-running workflows still need bounded independent renewal, durable operation identity, and recovery rules that retain uncertain work rather than authorizing destructive cleanup.
