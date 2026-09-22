@@ -773,7 +773,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         else
         {
             var items = new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k, _ => expiresAt);
-            if (items.Count == 0)
+            if (items.Count is 0)
                 return 0;
 
             var entry = CreateEntry(items, expiresAt);
@@ -936,10 +936,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (addOnly)
         {
-            _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
+            _memory.AddOrUpdate(key, _ =>
+            {
+                wasUpdated = true;
+                oldSize = 0;
+                return entry;
+            }, (existingKey, existingEntry) =>
             {
                 // NOTE: This update factory method will run multiple times if the key is already in the cache, especially during lock contention.
                 wasUpdated = false;
+                oldSize = 0;
 
                 // check to see if existing entry is expired
                 if (existingEntry.IsExpired)
@@ -960,7 +966,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         else if (_shouldTrackMemory)
         {
             // Capture only the size, not the whole entry
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
+            _memory.AddOrUpdate(key, _ =>
+            {
+                oldSize = 0;
+                return entry;
+            }, (_, existingEntry) =>
             {
                 oldSize = existingEntry.Size;
                 return entry;
@@ -1427,8 +1437,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 if (!TryRemoveEntry(entryToRemove))
                 {
-                    // The entry changed since it was selected; stop and let the next maintenance cycle retry
-                    break;
+                    // The entry changed since it was selected; count the attempt so the loop stays bounded and pick again
+                    removalCount++;
+                    continue;
                 }
 
                 if (entryToRemove.Value.IsExpired)
@@ -1604,9 +1615,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// A cache entry is never modified after it is published to the cache dictionary; changes are made by
-    /// publishing a copy (<see cref="WithValue"/>, <see cref="WithExpiration"/>). This lets conditional removals
-    /// compare by reference and guarantees the entry they checked is the entry they remove.
+    /// A cache entry's value, expiration and size never change after it is published to the cache dictionary;
+    /// changes publish a copy (<see cref="WithValue"/>, <see cref="WithExpiration"/>). This lets conditional removals
+    /// compare by reference and guarantees the entry they checked is the entry they remove. Only access metadata
+    /// (<see cref="LastAccessTicks"/>) is updated in place, and it does not participate in equality.
     /// </summary>
     private sealed class CacheEntry
     {

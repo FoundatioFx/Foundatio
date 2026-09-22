@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Microsoft.Extensions.Logging;
@@ -1569,39 +1570,24 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task DoMaintenanceAsync_WithPositiveTimezoneOffset_ShouldNotThrowOnDateTimeMinValue()
+    public async Task RemoveIfEqualAsync_ThenDoMaintenanceAsync_DoesNotLogErrors()
     {
-        // This test reproduces an issue where RemoveIfEqualAsync sets ExpiresAt to DateTime.MinValue,
-        // and DoMaintenanceAsync then compares it with a DateTimeOffset. When the system's local timezone
-        // has a positive offset (like Beirut UTC+2/+3), converting DateTime.MinValue to DateTimeOffset
-        // throws ArgumentOutOfRangeException because the resulting UTC time would be before year 0001.
-        //
-        // The bug is in InMemoryCacheClient.cs when checking the expiration:
-        //   if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
-        //
-        // When expiresAt is DateTime.MinValue (Kind=Unspecified) and utcNow is a DateTimeOffset,
-        // the implicit conversion of DateTime.MinValue to DateTimeOffset uses the system's local
-        // timezone offset. If that offset is positive, the conversion fails.
-
+        // Regression: RemoveIfEqualAsync used to leave an ExpiresAt = DateTime.MinValue tombstone, and comparing it
+        // during maintenance threw ArgumentOutOfRangeException in time zones with a positive UTC offset.
         var timeProvider = new FakeTimeProvider();
         var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
         using (cache)
         {
             await cache.RemoveAllAsync();
 
-            // Set up a cache entry and then remove it via RemoveIfEqualAsync
-            // This sets ExpiresAt to DateTime.MinValue on the entry
             await cache.SetAsync("test-key", "test-value", TimeSpan.FromMinutes(1));
             await cache.RemoveIfEqualAsync("test-key", "test-value");
 
-
-            // Advance time past the original expiration
             timeProvider.Advance(TimeSpan.FromSeconds(1));
 
             await cache.DoMaintenanceAsync();
 
-            // Check for the error log that indicates the bug
-            Assert.Null(Log.LogEntries.SingleOrDefault(l => l.LogLevel == LogLevel.Error));
+            Assert.DoesNotContain(Log.LogEntries, l => l.LogLevel is LogLevel.Error);
         }
     }
 
@@ -1623,7 +1609,120 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.True(result.HasValue);
         Assert.Equal("fresh", result.Value);
         Assert.Equal(50, cache.CurrentMemorySize);
-        Assert.DoesNotContain(Log.LogEntries, l => l.LogLevel == LogLevel.Error);
+        Assert.DoesNotContain(Log.LogEntries, l => l.LogLevel is LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task AddAsync_WithConcurrentAcquireAndRelease_TracksOwnershipAndMemory()
+    {
+        // Mirrors CacheLockProvider: AddAsync acquires, RemoveIfEqualAsync releases. An AddAsync that stores the
+        // key must report success, otherwise the key is orphaned with no owner.
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        int owners = 0;
+        int overlaps = 0;
+
+        await Parallel.ForEachAsync(Enumerable.Range(0, 2000), TestCancellationToken, async (i, _) =>
+        {
+            string owner = i.ToString();
+            if (!await cache.AddAsync("lock", owner))
+                return;
+
+            if (Interlocked.Increment(ref owners) > 1)
+                Interlocked.Increment(ref overlaps);
+
+            Interlocked.Decrement(ref owners);
+            Assert.True(await cache.RemoveIfEqualAsync("lock", owner));
+        });
+
+        Assert.Equal(0, overlaps);
+        Assert.False(await cache.ExistsAsync("lock"));
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        long total = 0;
+
+        // Act
+        await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
+            async (i, _) => Interlocked.Add(ref total, await cache.SetIfHigherAsync("key", (long)i)));
+
+        // Assert
+        Assert.Equal(1000, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(1000, total);
+    }
+
+    [Fact]
+    public async Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        await cache.SetAsync("key", 1001L);
+        long total = 0;
+
+        // Act
+        await Parallel.ForEachAsync(Enumerable.Range(1, 1000), TestCancellationToken,
+            async (i, _) => Interlocked.Add(ref total, await cache.SetIfLowerAsync("key", (long)i)));
+
+        // Assert
+        Assert.Equal(1, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(1000, total);
+    }
+
+    [Fact]
+    public async Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndUpdatesExpiration()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        await cache.SetAsync("key", 10L);
+
+        // Act
+        long difference = await cache.SetIfHigherAsync("key", 5L, TimeSpan.FromMinutes(5));
+
+        // Assert
+        Assert.Equal(0, difference);
+        Assert.Equal(10, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(5), await cache.GetExpirationAsync("key"));
+    }
+
+    [Fact]
+    public async Task SetExpirationAsync_WithExistingKey_PreservesValueAndMemorySize()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "value", TimeSpan.FromMinutes(1));
+        await cache.SetAsync("persistent", "value", TimeSpan.FromMinutes(1));
+
+        // Act
+        await cache.SetExpirationAsync("key", TimeSpan.FromMinutes(5));
+        await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?> { ["persistent"] = null });
+
+        // Assert
+        Assert.Equal("value", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(5), await cache.GetExpirationAsync("key"));
+        Assert.Null(await cache.GetExpirationAsync("persistent"));
+        Assert.Equal(100, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithMismatchedValue_KeepsEntryAndMemorySize()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "value");
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("key", "new", "other");
+
+        // Assert
+        Assert.False(replaced);
+        Assert.Equal("value", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(50, cache.CurrentMemorySize);
     }
 
     [Fact]
