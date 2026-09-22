@@ -1594,21 +1594,119 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             await cache.RemoveIfEqualAsync("test-key", "test-value");
 
 
-            // Advance time to ensure the entry is considered "infrequently accessed"
-            // (LastAccessTicks must be < utcNow - 300ms for maintenance to process it)
+            // Advance time past the original expiration
             timeProvider.Advance(TimeSpan.FromSeconds(1));
 
-            // Trigger another cache operation to start maintenance
-            // This causes DoMaintenanceAsync to iterate over entries including the one
-            // with ExpiresAt = DateTime.MinValue
-            await cache.SetAsync("trigger", "value");
-
-            // Wait a moment to allow maintenance to complete
-            await Task.Delay(100, TestCancellationToken);
+            await cache.DoMaintenanceAsync();
 
             // Check for the error log that indicates the bug
             Assert.Null(Log.LogEntries.SingleOrDefault(l => l.LogLevel == LogLevel.Error));
         }
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WhenExpiredEntryReplaced_KeepsLiveEntry()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "expired", TimeSpan.FromMilliseconds(100));
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        await cache.SetAsync("key", "fresh", TimeSpan.FromMinutes(5));
+
+        // Act
+        await cache.DoMaintenanceAsync();
+
+        // Assert
+        var result = await cache.GetAsync<string>("key");
+        Assert.True(result.HasValue);
+        Assert.Equal("fresh", result.Value);
+        Assert.Equal(50, cache.CurrentMemorySize);
+        Assert.DoesNotContain(Log.LogEntries, l => l.LogLevel == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WithExpiredEntry_RemovesEntryAndNotifies()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        await cache.SetAsync("key", "value", TimeSpan.FromMilliseconds(100));
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // Act
+        await cache.DoMaintenanceAsync();
+
+        // Assert
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        Assert.Equal(0, cache.Count);
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task RemoveIfEqualAsync_WithMatchingValue_ReleasesMemoryImmediately()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "value");
+        Assert.Equal(50, cache.CurrentMemorySize);
+
+        // Act
+        bool removed = await cache.RemoveIfEqualAsync("key", "value");
+
+        // Assert
+        Assert.True(removed);
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.False(await cache.ExistsAsync("key"));
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WhenLastValueRemoved_RemovesKeyAndReleasesMemory()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { "a" });
+        Assert.Equal(50, cache.CurrentMemorySize);
+
+        // Act
+        long removed = await cache.ListRemoveAsync("set", new[] { "a" });
+
+        // Assert
+        Assert.Equal(1, removed);
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.False(await cache.ExistsAsync("set"));
+    }
+
+    [Fact]
+    public async Task Items_WithCachedValue_ReturnsValueNotInternalEntry()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        await cache.SetAsync("key", "value");
+
+        // Act
+        var item = Assert.Single(cache.Items);
+
+        // Assert
+        Assert.Equal("key", item.Key);
+        Assert.Equal("value", item.Value);
+    }
+
+    [Fact]
+    public async Task IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        const int increments = 1000;
+
+        // Act
+        await Parallel.ForEachAsync(Enumerable.Range(0, increments), TestCancellationToken,
+            async (_, _) => await cache.IncrementAsync("counter", 1));
+
+        // Assert
+        Assert.Equal(increments, (await cache.GetAsync<long>("counter")).Value);
     }
 
     [Theory]
