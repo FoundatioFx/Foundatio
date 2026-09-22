@@ -575,8 +575,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (CopyListValues<T>(current) is not { } dictionary)
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
+            // Merge from the new entry's stored values, which were cloned when CloneValues is enabled
             ExpireListValues(dictionary, key);
-            foreach (var kvp in items)
+            foreach (var kvp in (Dictionary<T, DateTime?>)entry.StoredValue!)
                 dictionary[kvp.Key] = kvp.Value;
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
@@ -770,14 +771,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var replacement = CreateEntry(value, expiresAt);
-        if (replacement is null)
-            return false;
 
+        // Build the replacement only once the expected value matches, so a mismatch never pays for (or throws
+        // from) sizing and cloning the new value. It is built at most once, even when the update retries.
+        CacheEntry? replacement = null;
         bool success = UpdateEntry(key, current =>
-            current is not null && EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
-                ? (replacement, true)
-                : (current, false));
+        {
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
+
+            replacement ??= CreateEntry(value, expiresAt);
+            return replacement is null ? (current, false) : (replacement, true);
+        });
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1254,6 +1259,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// compare by reference and guarantees the entry they checked is the entry they remove. Only access metadata
     /// (<see cref="LastAccessTicks"/>) is updated in place, and it does not participate in equality.
     /// </summary>
+    /// <remarks>
+    /// Keep this a class with reference equality. <see cref="ConcurrentDictionary{TKey,TValue}"/> compares entries with
+    /// <see cref="EqualityComparer{T}.Default"/> in its compare-and-swap operations, so making this a record or
+    /// implementing <see cref="IEquatable{T}"/> would let <see cref="UpdateEntry{TResult}"/> replace or remove an
+    /// entry it never observed.
+    /// </remarks>
     internal sealed class CacheEntry
     {
         private readonly object? _cacheValue;

@@ -1106,6 +1106,23 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListAddAsync_WithCloneValues_StoresCopiesOfAddedValues()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { new SimpleModel { Data1 = "first" } });
+        var added = new SimpleModel { Data1 = "second" };
+
+        // Act
+        await cache.ListAddAsync("set", new[] { added });
+
+        // Assert
+        var stored = Assert.IsAssignableFrom<IDictionary<SimpleModel, DateTime?>>(GetEntry(cache, "set").StoredValue);
+        Assert.Equal(2, stored.Count);
+        Assert.DoesNotContain(stored.Keys, k => ReferenceEquals(k, added));
+    }
+
+    [Fact]
     public async Task ListAddAsync_WithExistingList_DoesNotMutatePreviouslyReadValue()
     {
         // Arrange
@@ -1666,6 +1683,25 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             await cache.RemoveAsync("key");
             Assert.Equal(0, cache.CurrentMemorySize);
         }
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithMismatchedOversizedValue_ReturnsFalseWithoutThrowing()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(50)
+            .ShouldThrowOnMaxEntrySizeExceeded()
+            .LoggerFactory(Log));
+        await cache.SetAsync("key", "small");
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("key", new string('x', 100), "other");
+
+        // Assert
+        Assert.False(replaced);
+        Assert.Equal("small", (await cache.GetAsync<string>("key")).Value);
     }
 
     [Fact]
