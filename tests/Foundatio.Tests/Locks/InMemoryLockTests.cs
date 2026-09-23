@@ -1,8 +1,11 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Lock;
 using Foundatio.Messaging;
+using Foundatio.Utility;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Locks;
@@ -143,14 +146,143 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock()
+    {
+        return base.RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock();
+    }
+
+    [Fact]
     public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
     {
         return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RenewAsync_WhenLeaseExpired_ThrowsLockException(bool acquiredByAnotherOwner)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        await using var staleLock = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        await using var newLock = acquiredByAnotherOwner
+            ? await locker.AcquireAsync("resource", TimeSpan.FromMinutes(10), cancellationToken: TestContext.Current.CancellationToken)
+            : null;
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => staleLock.RenewAsync());
+
+        // Assert
+        Assert.Equal(0, staleLock.RenewalCount);
+        Assert.Equal(acquiredByAnotherOwner, await locker.IsLockedAsync("resource"));
+        if (newLock is not null)
+        {
+            await staleLock.ReleaseAsync();
+            Assert.True(await locker.IsLockedAsync("resource"));
+            await newLock.RenewAsync();
+        }
+    }
+
+    [Fact]
+    public async Task RenewAsync_WithCurrentOwner_ExtendsLease()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        await using var lockInstance = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(30));
+
+        // Act
+        await lockInstance.RenewAsync(TimeSpan.FromMinutes(3));
+        timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // Assert
+        Assert.True(await locker.IsLockedAsync("resource"));
+        Assert.Equal(1, lockInstance.RenewalCount);
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_WithMultipleResources_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var inner = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        ILock? otherOwner = null;
+        var locker = new BeforeAcquireLockProvider(inner, timeProvider, async resource =>
+        {
+            // While "b" is being acquired, "a" expires and another owner takes it, so renewing "a" must fail
+            if (resource != "b")
+                return;
+
+            timeProvider.Advance(TimeSpan.FromMinutes(2));
+            otherOwner = await inner.AcquireAsync("a", TimeSpan.FromMinutes(10), cancellationToken: TestContext.Current.CancellationToken);
+        });
+
+        // Act
+        var lockInstance = await locker.TryAcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.Null(lockInstance);
+        Assert.False(await inner.IsLockedAsync("b"));
+        Assert.NotNull(otherOwner);
+        Assert.True(await inner.IsLockedAsync("a"));
+        await otherOwner.RenewAsync();
+    }
+
+    [Fact]
+    public async Task WillThrottleCallsAsync_WithControlledClock_ResetsEachPeriod()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var period = TimeSpan.FromSeconds(2);
+        var locker = new ThrottlingLockProvider(cache, 25, period, timeProvider, null, Log);
+        for (int i = 0; i < 25; i++)
+        {
+            await using var hit = await locker.TryAcquireAsync("resource", cancellationToken: TestContext.Current.CancellationToken);
+            Assert.NotNull(hit);
+        }
+
+        // Act & Assert: a cancelled token probes the exhausted period once without waiting for it to end
+        Assert.Null(await locker.TryAcquireAsync("resource", cancellationToken: new CancellationToken(true)));
+        timeProvider.Advance(period);
+        await using var nextPeriodHit = await locker.TryAcquireAsync("resource", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.NotNull(nextPeriodHit);
     }
 
     public void Dispose()
     {
         _cache.Dispose();
         _messageBus.Dispose();
+    }
+
+    private sealed class BeforeAcquireLockProvider(ILockProvider inner, TimeProvider timeProvider, Func<string, Task> beforeAcquire) : ILockProvider, IHaveTimeProvider
+    {
+        public TimeProvider TimeProvider => timeProvider;
+
+        public async Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+        {
+            await beforeAcquire(resource);
+            return await inner.AcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken);
+        }
+
+        public async Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default)
+        {
+            await beforeAcquire(resource);
+            return await inner.TryAcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken);
+        }
+
+        public Task<bool> IsLockedAsync(string resource) => inner.IsLockedAsync(resource);
+
+        public Task ReleaseAsync(string resource, string lockId) => inner.ReleaseAsync(resource, lockId);
+
+        public Task ReleaseAsync(string resource) => inner.ReleaseAsync(resource);
+
+        public Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null) => inner.RenewAsync(resource, lockId, timeUntilExpires);
     }
 }

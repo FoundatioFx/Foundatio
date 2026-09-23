@@ -652,6 +652,27 @@ public abstract class LockTestBase : TestWithLoggingBase
         Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
     }
 
+    public virtual async Task RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5)).AnyContext();
+        Assert.NotNull(lockInstance);
+        await lockInstance.ReleaseAsync().AnyContext();
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
+        Assert.Equal(0, lockInstance.RenewalCount);
+    }
+
     public virtual async Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
     {
         var locker = GetLockProvider();

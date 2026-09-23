@@ -262,9 +262,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
         bool success = UpdateEntry(key, current =>
-            current is not null && EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
-                ? (null, true)
-                : (current, false));
+        {
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
+
+            // Check expiry after the comparison: a lease that expired while it was being compared no longer
+            // belongs to the caller. Maintenance removes the entry and raises ItemExpired.
+            return current.IsExpired ? (current, false) : (null, true);
+        });
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
         return Task.FromResult(success);
@@ -778,6 +783,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool success = UpdateEntry(key, current =>
         {
             if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
+
+            // Check expiry after the comparison: a lease that expired while it was being compared must not be
+            // revived. Maintenance removes the entry and raises ItemExpired.
+            if (current.IsExpired)
                 return (current, false);
 
             replacement ??= CreateEntry(value, expiresAt);

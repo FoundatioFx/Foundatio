@@ -92,6 +92,10 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier.</param>
     /// <param name="lockId">The unique identifier of the lock to renew.</param>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="LockException">
+    /// The lock expired, was released, or is now held by another owner. Stop the protected work: renewal never
+    /// recreates or takes over a lock.
+    /// </exception>
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
 
@@ -104,6 +108,10 @@ public interface ILock : IAsyncDisposable
     /// Extends the lock expiration to prevent automatic release during long-running operations.
     /// </summary>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="LockException">
+    /// This lock expired, was released, or is now held by another owner. Stop the protected work: renewal never
+    /// recreates or takes over a lock.
+    /// </exception>
     Task RenewAsync(TimeSpan? timeUntilExpires = null);
 
     /// <summary>
@@ -308,7 +316,18 @@ public static class LockProviderExtensions
                 var locksToRenew = acquiredLocks.Where(al => al.LastRenewed < utcNow.Subtract(renewTime)).ToArray();
                 if (locksToRenew.Length > 0)
                 {
-                    await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                    try
+                    {
+                        await Task.WhenAll(locksToRenew.Select(al => al.Lock.RenewAsync(timeUntilExpires))).AnyContext();
+                    }
+                    catch (LockException ex)
+                    {
+                        // An earlier lock was lost while waiting for this one, so the set can no longer be held as a whole
+                        logger.LogWarning(ex, "Lost an acquired lock while acquiring {Resource}, releasing acquired locks", resource);
+                        await Task.WhenAll(acquiredLocks.Select(al => al.Lock).Append(l).Select(al => al.ReleaseAsync())).AnyContext();
+                        return null;
+                    }
+
                     locksToRenew.ForEach(al => al.LastRenewed = utcNow);
 
                     logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(al => al.Lock.Resource), renewTime);

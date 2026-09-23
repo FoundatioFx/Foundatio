@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Microsoft.Extensions.Logging;
@@ -1623,6 +1624,49 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WhenEntryExpiresDuringComparison_ReturnsFalse(bool replace)
+    {
+        // A lease that expires while its value is being compared must not be renewed or released by the stale owner
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        var owner = new ComparedValue("owner", () => timeProvider.Advance(TimeSpan.FromMinutes(2)));
+        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
+
+        // Act
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
+            : await cache.RemoveIfEqualAsync("lease", owner);
+
+        // Assert
+        Assert.False(changed);
+        Assert.False(await cache.ExistsAsync("lease"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WhenOwnerChangesDuringComparison_KeepsNewOwner(bool replace)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        var newOwner = CreateEntry(new ComparedValue("new-owner"), timeProvider, TimeSpan.FromMinutes(1));
+        var owner = new ComparedValue("owner", () => Publish(cache, "lease", newOwner));
+        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
+
+        // Act
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
+            : await cache.RemoveIfEqualAsync("lease", owner);
+
+        // Assert
+        Assert.False(changed);
+        Assert.Same(newOwner, GetEntry(cache, "lease"));
+    }
+
     [Fact]
     public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
     {
@@ -1639,6 +1683,23 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.True(replaced);
         var cached = await cache.GetAsync<List<int>>("key");
         Assert.Equal([1], cached.Value);
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithExpiredEntry_ReturnsFalseAndDoesNotRevive()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        Publish(cache, "lease", CreateEntry("owner", timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("lease", "owner", "owner", TimeSpan.FromMinutes(10));
+
+        // Assert
+        Assert.False(replaced);
+        Assert.False(await cache.ExistsAsync("lease"));
     }
 
     [Fact]
@@ -1991,6 +2052,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     private static void Publish(InMemoryCacheClient cache, string key, InMemoryCacheClient.CacheEntry entry)
     {
         cache.UpdateEntry<bool>(key, _ => (entry, true));
+    }
+
+    /// <summary>
+    /// A value whose first equality check runs <paramref name="duringFirstComparison"/>, so a test can change the
+    /// cache or the clock in the middle of a conditional operation's comparison, on the same thread.
+    /// </summary>
+    private sealed class ComparedValue(string id, Action? duringFirstComparison = null) : IEquatable<ComparedValue>
+    {
+        private Action? _duringFirstComparison = duringFirstComparison;
+
+        public string Id { get; } = id;
+
+        public bool Equals(ComparedValue? other)
+        {
+            Interlocked.Exchange(ref _duringFirstComparison, null)?.Invoke();
+            return other is not null && String.Equals(Id, other.Id, StringComparison.Ordinal);
+        }
+
+        public override bool Equals(object? obj) => obj is ComparedValue other && Equals(other);
+
+        public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Id);
     }
 
     [Theory]

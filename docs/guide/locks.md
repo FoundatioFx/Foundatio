@@ -250,6 +250,14 @@ if (lck is not null)
 }
 ```
 
+`RenewAsync` only extends a lock you still hold. If the lock expired, was released, or was taken by another owner, it throws `LockException` instead of recreating the lock. Treat that as lost ownership and stop the protected work, since another process may already be doing it.
+
+::: warning Behavior change
+Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock.
+:::
+
+A lock is not a fencing token. Losing it cannot cancel work you already sent to another system, so make those operations idempotent or check ownership again before each irreversible step.
+
 ### Automatic Renewal
 
 For very long operations, set up automatic renewal:
