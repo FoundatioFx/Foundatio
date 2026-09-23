@@ -55,7 +55,7 @@ builder.Services.AddSingleton<IFileStorage, InMemoryFileStorage>();
 builder.Services.AddSingleton<IQueue<OrderWorkItem>>(sp =>
     new InMemoryQueue<OrderWorkItem>());
 
-// Lock provider (message bus optional but enables faster lock release via pub/sub)
+// Lock provider (message bus optional but enables faster lock release)
 builder.Services.AddSingleton<ILockProvider>(sp =>
     new CacheLockProvider(
         sp.GetRequiredService<ICacheClient>(),
@@ -300,6 +300,7 @@ public class OrderServiceTests : TestLoggerBase
 
 ## Gotchas
 
+- **RabbitMQ contracts are version-specific**: The [central RabbitMQ guide](../../../docs/guide/implementations/rabbitmq.md) describes the unreleased companion provider PR #100 on broker 4.2.5. Do not assume new `RequireSuccessfulDispatch` / `RequirePublishRouting` / `RequireBrokerDelayedDelivery` options exist in released 13.0.4. Defaults remain best effort; the new exhaustion default retains work. Required topology, broker-budget/DLX policy, and consumer-scoped idempotency remain necessary. Keep full provider docs in the main Foundatio repository and link the companion branch before release.
 - **Lock returns null**: `TryAcquireAsync` returns `null` when the lock cannot be acquired -- always guard with `is not null` before doing work. `AcquireAsync` throws `LockAcquisitionTimeoutException` instead of returning null.
 - **Dispose streams and locks**: `ILock` is `IAsyncDisposable` -- use `await using`. Streams from `GetFileStreamAsync` are `IDisposable` -- use `using var`.
 - **Cache TTL floor**: Expiration values below 5ms are treated as already-expired and the key is silently removed. If you compute TTL dynamically (e.g., `expiresAt - now`), guard against near-zero values.
