@@ -5,7 +5,7 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100), not a claim about every released provider version. Its source baseline is [`7c1d477`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/7c1d47778779cbebd111efe0a6686721488c618d). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade.
+This guide describes [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100), not a claim about every released provider version. Its source baseline is [`084679c`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/084679cef829247ce8dcda3078d2846c9374f60c), including the cancellation follow-up. Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Exact executed verification remains in the implementation PR.
 :::
 
 ## Select the contract explicitly
@@ -93,11 +93,15 @@ Terminal copies preserve body and identity, remove expiration/scheduling delay, 
 
 Required dispatch snapshots matching live handlers, validates the typed body before invocation, and awaits their completion. A raw `IMessage` handler deliberately accepts the envelope and is responsible for its own schema/payload validation; do not use a raw catch-all to imply typed validation occurred.
 
-A removed local subscription does not block other matching live handlers. When no local subscribers remain, maintenance closes the consumer and unacknowledged work can return to a retained queue. An unmatched type while unrelated handlers remain is a strict-dispatch terminal failure. Ephemeral queue deletion and unsafe broker policies can still destroy that work.
+A removed local subscription does not block other matching live handlers. Cancellation removes its local registration and signals coordinated consumer cleanup rather than waiting only for the periodic health check. When no local subscribers remain, the consumer closes and unacknowledged work can return to a retained queue. An unmatched type while unrelated handlers remain is a strict-dispatch terminal failure. Ephemeral queue deletion and unsafe broker policies can still destroy that work.
 
-Multiple matching handlers in one bus share a broker delivery. A failed delivery can repeat a local handler that already succeeded; use idempotency or separate durable queues for independent retry boundaries. Return a task covering actual side effects. Async-void and internal fire-and-forget work cannot be protected by awaiting the handler task.
+A handler's own `OperationCanceledException`, while the delivery's transport lifetime remains active, is a handler failure. With `AcknowledgementStrategy.Automatic` it follows the finite retry/terminal policy, including strict dispatch, rather than entering indefinite retention solely because the handler timed out. `FireAndForget` cannot retry work that the broker already auto-acknowledged. Subscription cancellation and transport shutdown are different: they invalidate the relevant handling lifetime and must not acknowledge a replacement transport generation.
 
-A one-second maintenance loop repairs recoverable channel closure and consumer cancellation separately from client network recovery. Failed initialization rolls back its local registration and partial transport. Permanent declaration/permission faults remain explicit until corrected and subscription is retried.
+Multiple matching handlers in one bus share a broker delivery. A failed delivery can repeat a local handler that already succeeded; use idempotency or separate durable queues for independent retry boundaries. Return a task covering actual side effects. Async-void and internal fire-and-forget work cannot be protected by awaiting the handler task, and cancellation does not undo an external side effect already performed.
+
+A coordinated maintenance loop wakes on local subscription removal and otherwise checks recoverable channel/consumer state periodically. It does not replace the client's network recovery. Maintenance starts with initialization, and setup rechecks whether any local subscribers remain before registering a consumer. Failed initialization rolls back its local registration and partial transport. Permanent declaration/permission faults remain explicit until corrected and subscription is retried.
+
+A caller cancelling `SubscribeAsync` stops its own wait without cancelling shared setup needed by other callers. Any continuing setup task is observed; an abandoned caller must not leave a consumer with no local registration. Cancellation returning to a caller is not an atomic broker-consumer-stop acknowledgement. Coordinate a cutover using actual consumer state and retained topology; already auto-acknowledged deliveries cannot be recovered by cancellation.
 
 Delivery-generation invalidation prevents late completion from settling a replacement generation. Raw payloads are owned copies because a handler may outlive its transport callback. Shutdown signals cancellation and bounds individual waits, but cannot terminate arbitrary application code; apply the host's overall shutdown deadline separately.
 
