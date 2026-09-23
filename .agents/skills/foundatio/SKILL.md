@@ -23,6 +23,8 @@ query-docs(libraryId="/foundatiofx/foundatio", query="How to configure queue ret
 
 Query with specific questions, not single keywords. All provider docs (Redis, Azure, AWS, Kafka, etc.) are included in the main library.
 
+RabbitMQ configuration, delivery safety, and contributor verification live in this repository's [provider guides](../../../docs/guide/implementations/rabbitmq.md), not a second documentation tree in Foundatio.RabbitMQ. When working from a companion documentation branch, check its implementation PR and package availability instead of treating staged APIs as released.
+
 ## Core Interfaces
 
 | Interface | Purpose | In-Memory | Production |
@@ -137,7 +139,7 @@ await _messageBus.PublishAsync(new OrderCreated { OrderId = orderId });
 await _storage.SaveFileAsync("reports/monthly.pdf", pdfStream);
 
 using var stream = await _storage.GetFileStreamAsync("reports/monthly.pdf", StreamMode.Read);
-var exists = await _storage.ExistsAsync("reports/monthly.pdf");
+var exists = await _storage.ExistsAsync("reports/old-*");
 await _storage.DeleteFilesAsync("reports/old-*");
 ```
 
@@ -196,7 +198,6 @@ public class CleanupJob : JobBase
 `JobWithLockBase` acquires a distributed lock before each run. If the lock isn't available the run is cancelled. Implements `IJobWithOptions`.
 
 ```csharp
-[Job(Description = "Singleton maintenance", Interval = "5s")]
 public class MaintenanceJob : JobWithLockBase
 {
     private readonly ILockProvider _lockProvider;
@@ -300,6 +301,9 @@ public class OrderServiceTests : TestLoggerBase
 
 ## Gotchas
 
+- **RabbitMQ contracts are versioned**: The [4.2.5 delivery guide](../../../docs/guide/implementations/rabbitmq-delivery-safety.md) accompanies Foundatio.RabbitMQ#100. Check package availability. Its strict dispatch/routing/delay options are opt-ins; default broker auto-ack is best effort, and confirmed publication is not completed business processing.
+- **RabbitMQ topology and retries**: Specify the actual queue type and a stable subscription queue. A normal policy cannot convert queue type. Retry/terminal handoff and source ACK are not atomic; preserve IDs and use consumer-scoped idempotency. Quorum broker limits need their own safe terminal policy.
+- **RabbitMQ test ownership**: Keep provider tests on their Foundatio bases and shared Aspire collection; TLS runs in the normal Build. Do not add independent verification workflows or silently replace the pinned 4.2.5 broker. See the [verification guide](../../../docs/guide/implementations/rabbitmq-verification.md).
 - **Lock returns null**: `TryAcquireAsync` returns `null` when the lock cannot be acquired -- always guard with `is not null` before doing work. `AcquireAsync` throws `LockAcquisitionTimeoutException` instead of returning null.
 - **Dispose streams and locks**: `ILock` is `IAsyncDisposable` -- use `await using`. Streams from `GetFileStreamAsync` are `IDisposable` -- use `using var`.
 - **Cache TTL floor**: Expiration values below 5ms are treated as already-expired and the key is silently removed. If you compute TTL dynamically (e.g., `expiresAt - now`), guard against near-zero values.
