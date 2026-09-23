@@ -92,6 +92,10 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier.</param>
     /// <param name="lockId">The unique identifier of the lock to renew.</param>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="LockException">
+    /// The lease no longer belongs to <paramref name="lockId"/> or has already expired. Protected work must
+    /// stop when renewal fails; successful renewal is not a fencing token for operations already dispatched.
+    /// </exception>
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
 
@@ -104,6 +108,10 @@ public interface ILock : IAsyncDisposable
     /// Extends the lock expiration to prevent automatic release during long-running operations.
     /// </summary>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <exception cref="LockException">
+    /// This lock no longer owns the lease or the lease has expired. Callers must stop protected work rather
+    /// than continuing under stale ownership.
+    /// </exception>
     Task RenewAsync(TimeSpan? timeUntilExpires = null);
 
     /// <summary>

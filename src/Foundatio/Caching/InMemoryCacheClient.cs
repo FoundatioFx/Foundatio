@@ -1126,7 +1126,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (!_memory.TryUpdate(key, replacement, entry))
                 continue;
 
+            // The value comparison above can be paused long enough for the lease to expire before this
+            // compare-and-swap succeeds. Re-check the immutable prior entry after the successful CAS so an
+            // expired lease cannot be revived merely because the dictionary still contained the same entry.
             UpdateMemorySize(replacement.Size - entry.Size);
+            if (entry.IsExpired)
+            {
+                if (((ICollection<KeyValuePair<string, CacheEntry>>)_memory).Remove(new KeyValuePair<string, CacheEntry>(key, replacement)))
+                    UpdateMemorySize(-replacement.Size);
+
+                break;
+            }
+
             replaced = true;
             break;
         }

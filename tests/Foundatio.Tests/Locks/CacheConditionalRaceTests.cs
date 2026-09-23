@@ -40,6 +40,39 @@ public sealed class CacheConditionalRaceTests
         Assert.Same(replacementOwner, (await cache.GetAsync<GateValue>("lease")).Value);
     }
 
+    [Fact]
+    public async Task ReplaceIfEqualAsync_DoesNotRenewEntryThatExpiresDuringComparison()
+    {
+        var time = new Microsoft.Extensions.Time.Testing.FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(time).CloneValues(false));
+        using var release = new ManualResetEventSlim();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var original = new GateValue("owner", () =>
+        {
+            entered.TrySetResult();
+            if (!release.Wait(TimeSpan.FromSeconds(10)))
+                throw new TimeoutException("Test did not release the paused comparison.");
+        });
+
+        await cache.SetAsync("lease", original, TimeSpan.FromMinutes(1));
+        var pending = Task.Run(
+            () => cache.ReplaceIfEqualAsync("lease", new GateValue("renewed"), original, TimeSpan.FromMinutes(10)),
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            time.Advance(TimeSpan.FromMinutes(2));
+        }
+        finally
+        {
+            release.Set();
+        }
+
+        Assert.False(await pending);
+        Assert.False(await cache.ExistsAsync("lease"));
+    }
+
     private sealed class GateValue(string id, Action? beforeEquals = null) : IEquatable<GateValue>
     {
         public string Id { get; } = id;

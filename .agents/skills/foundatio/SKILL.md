@@ -155,6 +155,22 @@ if (lck is not null)
 // lock auto-released via IAsyncDisposable
 ```
 
+For long-running protected work, renew the lease periodically and treat a failed renewal as lost ownership:
+
+```csharp
+try
+{
+    await lck.RenewAsync(TimeSpan.FromMinutes(1));
+}
+catch (LockException)
+{
+    // Stop protected mutations immediately. Another owner may now hold the lease.
+    throw;
+}
+```
+
+CacheLockProvider renewal is conditional on the same lock id still owning a non-expired cache entry. Renewal can therefore throw LockException after expiry or takeover. A lease coordinates owners but is **not a storage fencing token**: already-dispatched external operations cannot be revoked merely by losing the lock. Safety-critical workflows should validate ownership before later mutation boundaries and make ambiguous external side effects recoverable.
+
 ### Resilience
 
 ```csharp
