@@ -36,9 +36,13 @@ Native xUnit switches differ from `dotnet test`/Microsoft.Testing.Platform switc
 
 ## Test conventions and ownership
 
-Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Focused tests use `TestWithLoggingBase`, `ITestOutputHelper`, inherited `TestCancellationToken`, and the test logger factory.
+Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Preserve inherited contract names and signatures. Shared behavior must use the virtual `GetMessageBus` factory so classic, quorum, and delayed-exchange subclasses exercise their own configuration. The priority verifier belongs in the shared base, not a concrete test class; the separate builder/direct-options matrix reuses it rather than duplicating its assertions.
 
-One `RabbitMqTestCollection` owns `AspireFixture`. Broker-dependent classes join that collection; configuration-only classes remain independent. The collection disposes its application builder and test certificates after execution rather than retaining a static application indefinitely.
+Focused tests use `TestWithLoggingBase`, `ITestOutputHelper`, inherited `TestCancellationToken`, and `Log` as the logger factory. Use structured `_logger` templates rather than interpolated text hidden inside a generic log field. Extend an existing relevant test class before adding another one. Configuration-only constructor guards belong in `RabbitMqMessageBusOptionsTests`, not a broker-dependent fixture.
+
+Name new standalone cases `Operation_State_ExpectedOutcome`, with an `Async` suffix for task-returning methods, for example `SubscribeAsync_WithFailedInitialization_RemovesRegistrationAndAllowsRetryAsync`. Group related construction, publication, subscription, and disposal cases logically in the source; put helper methods and nested test types after the cases. Source grouping does not impose runtime order: do not add a test-case orderer or make a test depend on another test's side effects. Parameterized cases retain their full argument matrix. Ordering tests must compare the actual received sequence, not sort it to manufacture a match.
+
+One `RabbitMqTestCollection` owns `AspireFixture`. Broker-dependent classes join that collection; configuration-only classes remain independent. The fixture disposes the built `DistributedApplication` first, then the testing builder, then test certificates, including on partially successful startup. Clearing owned references makes repeated disposal safe. Serializing tests that mutate shared broker resources is not an execution-order contract between cases.
 
 Infrastructure is required when `CI` or `GITHUB_ACTIONS` is `true` or `1`, or with `FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true`. A false local override cannot weaken CI. Optional local infrastructure failures may skip dependent cases, but those skips are not integration approval.
 
@@ -63,6 +67,7 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Terminal route | Missing, unbound, and full destinations retain work until repair. No-destination retention and explicit discard are distinct outcomes. Invalid retry metadata does not reset a budget. |
 | Broker dead-lettering | A separate quorum case checks its finite broker limit and at-least-once transfer with an initially unavailable route. Do not substitute client republishing for this test. |
 | Required dispatch | Unexpected malformed/unsupported/unmatched typed delivery uses the terminal policy. Cancelling one local subscription does not block another live handler. |
+| Cancellation | Distinguish a handler-local timeout from subscription cancellation and transport shutdown. Exercise retry/terminal outcomes under Automatic acknowledgements, permissive-mode controls, cancelled setup callers with another pending subscriber, and last-subscriber removal/resubscription. |
 | Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation for new work, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. |
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
@@ -74,6 +79,8 @@ Do not run these tests against production. They alter test alarms, close channel
 ## Evidence and acceptance
 
 Record the actual revision, dependency versions, broker versions, commands, complete test counts, and review findings in the provider PR. Require TLS and process-failure cases to execute. Confirm the exact final candidate passed and the base branch is current. Implementation, merge, release, and deployment are separate states.
+
+For a test-only refactor, reconcile the original and resulting case inventories so renames or moves cannot conceal lost coverage. For a defect regression, run it against the unchanged runtime first and verify the intended behavioral failure, then rerun the same case against the repair. A missing fixture, compiler error, or empty selection is not defect reproduction. Keep a newly added but unexecuted case distinct from a passing regression.
 
 Use [delivery-safety/adoption guidance](./rabbitmq-delivery-safety.md) for topology, terminal handling, and operational prerequisites. Tests execute on .NET 10/Linux in the reviewed setup; .NET 8 compilation is not its own broker-runtime matrix. Packaging/publication skipped by a PR build is not package validation. A passing test count does not prove every legacy chaos assertion or every production failure model.
 
