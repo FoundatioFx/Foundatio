@@ -139,7 +139,7 @@ await _messageBus.PublishAsync(new OrderCreated { OrderId = orderId });
 await _storage.SaveFileAsync("reports/monthly.pdf", pdfStream);
 
 using var stream = await _storage.GetFileStreamAsync("reports/monthly.pdf", StreamMode.Read);
-var exists = await _storage.ExistsAsync("reports/old-*");
+var exists = await _storage.ExistsAsync("reports/monthly.pdf");
 await _storage.DeleteFilesAsync("reports/old-*");
 ```
 
@@ -198,6 +198,7 @@ public class CleanupJob : JobBase
 `JobWithLockBase` acquires a distributed lock before each run. If the lock isn't available the run is cancelled. Implements `IJobWithOptions`.
 
 ```csharp
+[Job(Description = "Singleton maintenance", Interval = "5s")]
 public class MaintenanceJob : JobWithLockBase
 {
     private readonly ILockProvider _lockProvider;
