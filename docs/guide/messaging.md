@@ -147,11 +147,10 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, new MessageOptions
 {
     CorrelationId = "request-abc",
-    DeliveryDelay = TimeSpan.FromMinutes(30),
+    DeliveryDelay = TimeSpan.FromSeconds(30),
     Properties = new Dictionary<string, string>
     {
-        ["source"] = "order-service",
-        ["version"] = "1.0"
+        ["source"] = "order-service"
     }
 });
 
@@ -424,7 +423,7 @@ public class OrderSaga
         _messageBus.SubscribeAsync<OrderCreated>(async order =>
         {
             await ReserveInventoryAsync(order.OrderId);
-            await _messageBus.PublishAsync(new InventoryReserved { OrderId = orderId });
+            await _messageBus.PublishAsync(new InventoryReserved { OrderId = order.OrderId });
         });
 
         // Step 2: Inventory reserved -> Process payment
@@ -595,7 +594,7 @@ await messageBus.SubscribeAsync<IMessage>(async (message, ct) =>
     var traceState = message.Properties.GetValueOrDefault("TraceState");
 
     // Activity.Current is automatically set with the message's trace context
-    _logger.LogInformation("Processing message with trace {TraceId}", correlationId);
+    _logger.LogInformation("Processing message with trace {TraceId}", Activity.Current?.TraceId);
 });
 ```
 
@@ -1007,7 +1006,7 @@ What happens to messages that arrive while the bus is disposing depends on the p
 | **InMemoryMessageBus** | Completed normally | Dropped (no persistence) | Lost |
 | **AzureServiceBusMessageBus** | Completed; abandoned if bus disposes mid-handler (PeekLock) | Remain in topic for other subscribers | Persisted in Azure |
 | **KafkaMessageBus** | Completed; offset not committed if bus disposes mid-handler | Remain in partition (uncommitted offset) | Persisted in Kafka |
-| **RabbitMQMessageBus** | Automatic-acknowledgement mode can return unacknowledged work to a retained queue; FireAndForget cannot recover already auto-acked deliveries | Depends on routing, queue lifetime, and retention policy | Requires retained durable topology and suitable broker policy, not the provider defaults alone |
+| **RabbitMQMessageBus** | With `AcknowledgementStrategy.Automatic`, unacknowledged work can return to a retained queue; `FireAndForget` cannot recover already auto-acked deliveries | Depends on routing, queue lifetime, and retention policy | Requires retained durable topology and suitable broker policy, not the provider defaults alone |
 | **RedisMessageBus** | Completed normally | Dropped (pub/sub has no persistence) | Lost |
 | **SQSMessageBus** | Completed; message not deleted if bus disposes mid-handler | Remain in SQS queue | Persisted in SQS |
 
