@@ -98,6 +98,8 @@ await using var messageBus = new RabbitMQMessageBus(o => o
 
 The callback receives the fluent options builder. The defaults are best-effort pub/sub, including broker automatic acknowledgement and ordinary publisher confirms disabled. See the [RabbitMQ provider guide](./implementations/rabbitmq.md) and [delivery-safety guide](./implementations/rabbitmq-delivery-safety.md) for durable subscription requirements, retry/terminal outcomes, and the companion implementation's opt-in contracts. Those guides identify which behavior depends on the unreleased provider PR; a documentation branch is not a package release.
 
+The candidate changes Automatic-mode exhaustion without a typed terminal destination from discard to retention, which can block progress and increase backlog. Strict dispatch is opt-in and requires Automatic acknowledgement, a nonempty typed `DeadLetterExchange`, and discard disabled. Both classic and quorum support these provider contracts; only quorum adds replication and optional at-least-once broker DLX. Plan [capacity and backpressure](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) before adoption.
+
 ### RedisMessageBus
 
 Distributed messaging using Redis pub/sub (separate package):

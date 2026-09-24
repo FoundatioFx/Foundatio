@@ -7,7 +7,11 @@ title: RabbitMQ
 `RabbitMQMessageBus` implements `IMessageBus` using RabbitMQ and AMQP 0.9.1. It supports best-effort pub/sub and explicitly configured durable subscriptions; installing the provider alone does not establish reliable business processing.
 
 ::: warning Companion implementation
-This documentation branch accompanies [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100), reviewed against implementation revision [`7c1d477`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/7c1d47778779cbebd111efe0a6686721488c618d). New strict-delivery options and changed exhaustion behavior described here are not claimed to be in an already released NuGet package. Coordinate documentation publication with that implementation's merge/release and verify the package version used by your application.
+This documentation branch accompanies [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). New strict-delivery options and changed exhaustion behavior described here are not claimed to be in an already released NuGet package. Coordinate documentation publication with that implementation's merge/release and verify the package version used by your application. Revision-specific validation remains in the companion PRs.
+:::
+
+::: warning Breaking exhaustion behavior
+With `AcknowledgementStrategy.Automatic`, an exhausted delivery without a typed terminal destination is now retained by default instead of discarded. Retention can stop consumer progress and grow the backlog. Before adoption, provision quarantine, finite prefetch, capacity limits, and an operator repair procedure. `FireAndForget` remains the default. Strict dispatch remains opt-in and requires Automatic acknowledgements, a nonempty typed `DeadLetterExchange`, and discard disabled.
 :::
 
 ## Installation
@@ -52,7 +56,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `DeliveryLimit` | `2` | Application redelivery budget after the initial attempt; `-1` is unlimited. Broker enforcement is separate. |
 | `PrefetchCount` | `0` | With both prefetch options zero, the provider sends no QoS and broker defaults can apply. |
 
-The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/7c1d47778779cbebd111efe0a6686721488c618d/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API.
+The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/fix/99-tls-and-verification-foundation/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API.
 
 ## TLS and endpoints
 

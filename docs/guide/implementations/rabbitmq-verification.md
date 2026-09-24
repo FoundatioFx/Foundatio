@@ -34,13 +34,37 @@ FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true \
 
 Native xUnit switches differ from `dotnet test`/Microsoft.Testing.Platform switches. Do not mix them. A help invocation, empty selection, failed fixture, or skipped required test is not successful behavioral verification.
 
+## Run the interactive Aspire sample
+
+From the provider repository, build the delayed-plugin image as above, then start the shared AppHost:
+
+```bash
+dotnet run --project tests/Foundatio.RabbitMQ.AppHost --configuration Release \
+  -p:ReferenceFoundatioSource=false
+```
+
+Use the dashboard URL emitted by Aspire. The sample starts one publisher and two independent subscriptions on `sample-topic`:
+
+| Resource | Source queue | Quarantine exchange / queue |
+|---|---|---|
+| `subscriber-classic` | `sample-classic-orderevent` | `sample-classic-quarantine` / `sample-classic-quarantine-queue` |
+| `subscriber-quorum` | `sample-quorum-orderevent` | `sample-quorum-quarantine` / `sample-quorum-quarantine-queue` |
+
+Both subscribers use durable, nonexclusive, non-autodelete queues, Automatic acknowledgement, strict dispatch, prefetch 10, and application delivery limit 2. The sample explicitly provisions each direct quarantine exchange/queue with routing key `quarantine`; that is sample setup, not automatic provider provisioning. Both source and quarantine queues default to a 16 MiB ready-message byte limit and reject-publish overflow. `--max-length-bytes` changes the sample cap. Quorum additionally selects at-least-once broker DLX with a finite broker delivery limit.
+
+The publisher uses `--publisher-confirms --durable --require-routing`; each subscriber uses `--fail-every 5` to permanently fail every fifth order. Inspect actual consumer readiness before evaluating results: a running Aspire resource is not proof that its subscription is established. Confirm normal orders in both subscriber logs and failed orders in both quarantine queues, preserving event IDs. Classic retry remains local to its subscription; quorum retries through broker requeue. A publish confirmation cannot confirm that both logical subscriptions exist or have processed an event. Failed sample publications are logged and **not replayed**; this sample is not a durable outbox or a complete loss-reconciliation test.
+
+Use dashboard commands on the sample's chaos brokers to trigger disk/memory alarms, restore limits, or close connections. Commands target exact per-run container names. Alarm triggers capture the previous effective limit in bytes; restore commands restore that captured value. Each Docker invocation has a 30-second timeout. These commands deliberately disrupt only the sample environment; they do not test broker-storage loss or the separate TLS fixture.
+
+Before a drill, record queue types, policies, counts, consumer state, and selected event IDs. After restoring limits or connections, inspect actual alarms and confirm new publications, retained work, and quarantine transfer resume. A command reporting success alone is insufficient evidence. Keep original containers and the AppHost alive until restore is verified; captured limits belong to that run. Full shared-suite execution, including TLS, is still required after an interactive sample check.
+
 ## Test conventions and ownership
 
 Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Preserve inherited contract names and signatures. Shared behavior must use the virtual `GetMessageBus` factory so classic, quorum, and delayed-exchange subclasses exercise their own configuration. The priority verifier belongs in the shared base, not a concrete test class; the separate builder/direct-options matrix reuses it rather than duplicating its assertions.
 
 Focused tests use `TestWithLoggingBase`, `ITestOutputHelper`, inherited `TestCancellationToken`, and `Log` as the logger factory. Use structured `_logger` templates rather than interpolated text hidden inside a generic log field. Extend an existing relevant test class before adding another one. Configuration-only constructor guards belong in `RabbitMqMessageBusOptionsTests`, not a broker-dependent fixture.
 
-Name new standalone cases `Operation_State_ExpectedOutcome`, with an `Async` suffix for task-returning methods, for example `SubscribeAsync_WithFailedInitialization_RemovesRegistrationAndAllowsRetryAsync`. Group related construction, publication, subscription, and disposal cases logically in the source; put helper methods and nested test types after the cases. Source grouping does not impose runtime order: do not add a test-case orderer or make a test depend on another test's side effects. Parameterized cases retain their full argument matrix. Ordering tests must compare the actual received sequence, not sort it to manufacture a match.
+Name new standalone cases `Operation_State_ExpectedOutcome`, with an `Async` suffix for task-returning methods, for example `SubscribeAsync_WithFailedInitialization_RemovesRegistrationAndAllowsRetryAsync`. Keep test methods alphabetical within each class, with explicit Arrange/Act/Assert sections; put helper methods and nested test types after the cases. Alphabetical source order does not impose runtime order: do not add a test-case orderer or make a test depend on another test's side effects. Parameterized cases retain their full argument matrix. Ordering tests must compare the actual received sequence, not sort it to manufacture a match.
 
 One `RabbitMqTestCollection` owns `AspireFixture`. Broker-dependent classes join that collection; configuration-only classes remain independent. The fixture disposes the built `DistributedApplication` first, then the testing builder, then test certificates, including on partially successful startup. Clearing owned references makes repeated disposal safe. Serializing tests that mutate shared broker resources is not an execution-order contract between cases.
 
@@ -64,13 +88,15 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 |---|---|
 | Failed/ambiguous handoff | Original subscriber remains open and ACK-capable; original identity remains recoverable. Caller-observed failure after real broker acceptance accounts for duplicate copies. |
 | Subscription-local retry | Only the failed logical subscription retries; an independent successful subscription is not rebroadcast to. |
-| Terminal route | Missing, unbound, and full destinations retain work until repair. No-destination retention and explicit discard are distinct outcomes. Invalid retry metadata does not reset a budget. |
+| Terminal route | For classic and quorum, configured-but-missing, unbound, and full destinations retain work with unhealthy diagnostics until repair. Permissive Automatic no-destination retention and explicit discard are distinct outcomes. Invalid retry metadata does not reset a budget. |
 | Broker dead-lettering | A separate quorum case checks its finite broker limit and at-least-once transfer with an initially unavailable route. Do not substitute client republishing for this test. |
-| Required dispatch | Unexpected malformed/unsupported/unmatched typed delivery uses the terminal policy. Cancelling one local subscription does not block another live handler. |
+| Required dispatch | Constructor guards reject non-Automatic mode, discard, and null/empty/whitespace typed terminal exchanges, including a raw-only DLX. Unexpected malformed/unsupported/unmatched typed delivery uses the terminal policy. Cancelling one local subscription does not block another live handler. |
+| Capacity and permissions | A full classic source retains a failed retry until capacity returns; a full quarantine blocks transfer on either type. Restricted-role checks cover default-exchange write for classic retries and terminal-exchange write. Ready-message limits do not assert total disk bounds. |
 | Cancellation | Distinguish a handler-local timeout from subscription cancellation and transport shutdown. Exercise retry/terminal outcomes under Automatic acknowledgements, permissive-mode controls, cancelled setup callers with another pending subscriber, and last-subscriber removal/resubscription. |
 | Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation for new work, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. |
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
+| Priority on 4.2.5 | Classic cases exercise configured numeric priority; quorum cases exercise normal/high tiers without `x-max-priority`. Cover builder and direct options, omitted/zero priority, and prefetch effects. Do not assert later-broker semantics. |
 
 Handoff ambiguity is injected at the caller boundary around a real broker publication, not claimed as packet-level confirmation loss. Publisher-process termination does not establish replicated scheduling. Tests allow the real 4.2.5 dead-letter retry timer rather than changing it solely to hide a slow result.
 

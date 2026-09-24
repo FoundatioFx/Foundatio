@@ -14,7 +14,7 @@ The application retry/terminal behavior referenced here accompanies [Foundatio.R
 
 Quorum queues replicate state across their members and can continue operating with a majority available. They do not shard one hot queue into independent partitions, remove reconnection pauses, or guarantee zero loss for arbitrary publication, acknowledgement, retention, and storage policies. Classic queues on this baseline are node-local.
 
-Choose quorum when replicated retention is required and its operational/resource tradeoffs fit the workload. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native delayed retries from later broker versions are not available on the pinned baseline.
+Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native delayed retries from later broker versions are not available on the pinned baseline.
 
 ## Enabling quorum queues
 
@@ -30,12 +30,16 @@ await using var messageBus = new RabbitMQMessageBus(o => o
     .UseQuorumQueues()
     .AcknowledgementStrategy(AcknowledgementStrategy.Automatic)
     .PublisherConfirmsEnabled(true)
+    .RequirePublishRouting()
+    .RequireSuccessfulDispatch()
+    .DeadLetterExchange("events-quarantine", "processor", DeadLetterStrategy.AtLeastOnce)
+    .OverflowBehavior(QueueOverflowBehavior.RejectPublish)
     .PrefetchCount(10));
 ```
 
-Here `connectionString` is an `amqps` URI with the intended credentials/vhost, and all endpoint names must match trusted certificates. Do not place comma-separated hostnames inside a single AMQP URI. The example demonstrates topology selection, not a complete required-delivery policy; configure terminal handling and the broker budget as described below.
+Here `connectionString` is an `amqps` URI with the intended credentials/vhost, and all endpoint names must match trusted certificates. Before starting, provision a durable `events-quarantine` exchange and destination bound with routing key `processor`, verify broker DLX prerequisites, and apply [bounded source/quarantine policies](./rabbitmq-delivery-safety.md#capacity-and-backpressure). Constructing this bus does not provision quarantine or impose a disk bound. Do not place comma-separated hostnames inside a single AMQP URI.
 
-`UseQuorumQueues()` sets `x-queue-type=quorum`, disables exclusive/auto-delete, and supplies a broker delivery-limit argument. It does not force `IsDurable` back to true after an explicit false. Quorum retries below the application budget use rejection/redelivery; exhaustion and broker-budget enforcement have separate terminal paths. A delivery limit by itself does not create a DLQ or ensure safe transfer.
+`UseQuorumQueues()` sets `x-queue-type=quorum`, disables exclusive/auto-delete, and supplies a broker delivery-limit argument. It neither converts an existing queue nor forces `IsDurable` back to true after an explicit false. Quorum retries below the application budget use rejection/redelivery; exhaustion and broker-budget enforcement have separate terminal paths. A delivery limit by itself does not create a DLQ or ensure safe transfer.
 
 ## Migration challenge
 
@@ -57,10 +61,18 @@ o.Topic("events")
  .UseQuorumQueues();
 ```
 
-First inventory the actual source queue, consumers, bindings, ready/unacknowledged IDs, and retention policy. Provision the replacement with the intended quorum membership and terminal topology. Then choose a controlled overlap or a paused cutover:
+### Maintenance-window procedure
 
-- Binding both queues to the same fanout exchange copies new events to both. Plan deduplication and side-effect ownership before allowing both consumer groups to process them.
-- Pausing publication and draining the old queue avoids deliberate overlap but introduces a planned pause. Verify in-flight work and ambiguous producer outcomes before changing bindings.
+For a cutover without deliberate fanout overlap:
+
+1. Inventory the source queue, consumers, bindings, effective policies, quarantine, and expected event IDs. Rehearse rollback and record the intended new queue name, membership, finite broker budget, capacity, and restricted credentials.
+2. Pause producers during an agreed maintenance window. Reconcile in-flight confirms and durable outbox entries. Stop or account for delayed/scheduled publications that may arrive after the pause; stopping producers alone does not drain the delayed plugin.
+3. Leave old consumers running until ready and unacknowledged counts are zero and expected IDs are completed or durably quarantined. Repair blocked retry/terminal routes first. If work cannot drain, use a separately tested transfer/replay plan before proceeding.
+4. Stop old consumers and verify they have gone. Provision the new quorum queue and durable quarantine with the intended policies and bindings. Change `SubscriptionQueueName` and explicit queue type together. Never redeclare the existing classic queue as quorum.
+5. Remove the old fanout binding while publication remains paused. Start new consumers, verify actual queue type/members/policies/readiness, and send identified canary events. Confirm completion, terminal routing, and capacity rejection before resuming producers.
+6. Reconcile all expected IDs and monitor ready/unacknowledged/quarantine growth after resuming. Preserve the drained old queue and cutover record until the rollback window closes; delete only after explicit operational approval.
+
+Binding both queues to the same fanout exchange copies new events to both. If an overlap is intentionally chosen instead, establish consumer-scoped deduplication and side-effect ownership before both groups process traffic.
 
 Existing backlog is not moved automatically when a new queue is bound. Use a separately tested transfer/replay procedure where needed, preserve identity, and account for duplicates and acknowledgements. Do not delete the old queue until expected IDs are reconciled and rollback no longer needs it.
 
@@ -87,7 +99,7 @@ A parallel environment still requires a tested transfer/cutover plan, duplicate 
 | At-least-once broker DLX | Requires `RejectPublish` overflow, a DLX/destination, and broker prerequisites; duplicates remain possible. |
 | Native retry/consumer-timeout options | The provider options guarded for later quorum versions are rejected on this baseline. |
 
-Follow the [quorum budget section](./rabbitmq-delivery-safety.md#quorum-broker-and-application-budgets) for a safe finite broker budget or a deliberate unlimited-broker/finite-application choice. Raw administrator arguments are not silently overridden. Provision and test the terminal destination before sending required events.
+Follow the [quorum budget section](./rabbitmq-delivery-safety.md#quorum-broker-and-application-budgets): prefer a finite broker budget with at-least-once DLX and reject-publish. A raw `-1` broker limit is an expert opt-out, separate from the application budget. Direct-options raw limits are preserved; the builder's `UseQuorumQueues()` writes the current `DeliveryLimit`, so apply an intentional raw override afterward. Provision and test the terminal destination before sending required events.
 
 ## Verification and rollback
 
