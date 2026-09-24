@@ -190,10 +190,10 @@ try
 
     await DoWorkAsync();
 }
-catch (LockAcquisitionTimeoutException)
+catch (LockAcquisitionTimeoutException ex)
 {
     // Lock could not be acquired before the timeout elapsed.
-    _logger.LogWarning("Timed out waiting for lock");
+    _logger.LogWarning(ex, "Timed out waiting for lock: {Message}", ex.Message);
 }
 ```
 
@@ -255,7 +255,7 @@ if (lck is not null)
 A supplied renewal duration must be at least 5 milliseconds; a shorter duration throws `ArgumentOutOfRangeException` without changing the cache. Omitting the duration uses 20 minutes. Renewal is a no-op for `ThrottlingLockProvider` and `EmptyLock`; these do not provide renewable exclusive leases.
 
 ::: warning Behavior change
-Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock.
+Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock. Rejecting renewal durations below 5 milliseconds is also new; the cache already enforced this minimum, but previously could remove the key before checking ownership.
 :::
 
 A lock is not a fencing token. Losing it cannot cancel work you already sent to another system. Checking ownership before a write leaves a race between the check and the write; only validation enforced by the destination can fence a stale owner. Make operations idempotent where appropriate, but do not treat idempotency as exclusive ownership.
@@ -297,15 +297,16 @@ async Task RenewPeriodicallyAsync()
     {
         // Normal shutdown after work completes or is cancelled.
     }
-    catch
+    catch (Exception ex)
     {
+        _logger.LogWarning(ex, "Lock renewal failed: {Message}", ex.Message);
         await cts.CancelAsync();
         throw;
     }
 }
 ```
 
-The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. Cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
+The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. Cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
 
 ## Common Patterns
 

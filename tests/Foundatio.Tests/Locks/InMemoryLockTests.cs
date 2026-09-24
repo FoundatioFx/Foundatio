@@ -165,6 +165,25 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public async Task RenewAsync_WithMinimumDuration_RenewsCurrentOwner()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider));
+        var locker = new CacheLockProvider(cache, null, timeProvider);
+        await using var lease = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await lease.RenewAsync(TimeSpan.FromMilliseconds(5));
+
+        // Assert
+        Assert.True(await locker.IsLockedAsync("resource"));
+        Assert.Equal(1, lease.RenewalCount);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(6));
+        Assert.False(await locker.IsLockedAsync("resource"));
+    }
+
+    [Fact]
     public async Task TryAcquireAsync_WithMultipleResources_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {
         // Arrange

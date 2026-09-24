@@ -643,9 +643,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         long removed = UpdateEntry(key, current =>
         {
-            if (current is null || CopyListValues<T>(current) is not { Count: > 0 } dictionary)
+            if (current?.StoredValue is not IDictionary<T, DateTime?> { Count: > 0 } stored)
                 return (current, 0L);
 
+            // A missing-value removal needs no private copy unless expired values also need pruning.
+            // Use the stored dictionary's comparer, which may differ from the input set's comparer.
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            if (!items.Any(stored.ContainsKey) && !stored.Any(kvp => kvp.Value < utcNow))
+                return (current, 0L);
+
+            var dictionary = CopyListValues<T>(current)!;
             int expired = ExpireListValues(dictionary, key);
             long removedCount = items.Count(dictionary.Remove);
             if (expired is 0 && removedCount is 0)
@@ -1214,9 +1221,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         try
         {
+            // Sample UTC once per pass, using the same strict expiration boundary as reads.
+            // Concurrent enumeration is safe; remove only the observed entry, not a later replacement.
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
             foreach (var kvp in _memory)
             {
-                if (!kvp.Value.IsExpired || !TryRemoveEntry(kvp.Key, kvp.Value))
+                if (kvp.Value.ExpiresAt is not { } expiresAt || expiresAt >= utcNow || !TryRemoveEntry(kvp.Key, kvp.Value))
                     continue;
 
                 _logger.LogDebug("DoMaintenance: Removed expired key {Key}", kvp.Key);
