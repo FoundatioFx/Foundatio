@@ -36,14 +36,14 @@ Native xUnit switches differ from `dotnet test`/Microsoft.Testing.Platform switc
 
 ## Run the interactive Aspire sample
 
-From the provider repository, build the delayed-plugin image as above, then start the shared AppHost:
+From the provider repository, build the delayed-plugin image and solution as above, then start the shared AppHost:
 
 ```bash
 dotnet run --project tests/Foundatio.RabbitMQ.AppHost --configuration Release \
-  -p:ReferenceFoundatioSource=false
+  --no-build --launch-profile http
 ```
 
-Use the dashboard URL emitted by Aspire. The sample starts one publisher and two independent subscriptions on `sample-topic`:
+The HTTP launch profile is for the local development dashboard; use the URL emitted by Aspire. `--no-build` uses the completed solution build instead of selecting a sibling Foundatio source checkout through project-level build defaults. The sample starts one publisher and two independent subscriptions on `sample-topic`:
 
 | Resource | Source queue | Quarantine exchange / queue |
 |---|---|---|
@@ -87,13 +87,13 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Area | Required assertion |
 |---|---|
 | Failed/ambiguous handoff | Original subscriber remains open and ACK-capable; original identity remains recoverable. Caller-observed failure after real broker acceptance accounts for duplicate copies. |
-| Subscription-local retry | Only the failed logical subscription retries; an independent successful subscription is not rebroadcast to. |
+| Subscription-local retry | Only the failed logical subscription retries; an independent successful subscription is not rebroadcast to. Retry/terminal copies clear `CC`, `BCC`, and publisher `UserId` while preserving payload and logical identity. |
 | Terminal route | For classic and quorum, configured-but-missing, unbound, and full destinations retain work with unhealthy diagnostics until repair. Permissive Automatic no-destination retention and explicit discard are distinct outcomes. Invalid retry metadata does not reset a budget. |
 | Broker dead-lettering | A separate quorum case checks its finite broker limit and at-least-once transfer with an initially unavailable route. Do not substitute client republishing for this test. |
 | Required dispatch | Constructor guards reject non-Automatic mode, discard, and null/empty/whitespace typed terminal exchanges, including a raw-only DLX. Unexpected malformed/unsupported/unmatched typed delivery uses the terminal policy. Cancelling one local subscription does not block another live handler. |
 | Capacity and permissions | A full classic source retains a failed retry until capacity returns; a full quarantine blocks transfer on either type. Restricted-role checks cover default-exchange write for classic retries and terminal-exchange write. Ready-message limits do not assert total disk bounds. |
 | Cancellation | Distinguish a handler-local timeout from subscription cancellation and transport shutdown. Exercise retry/terminal outcomes under Automatic acknowledgements, permissive-mode controls, cancelled setup callers with another pending subscriber, and last-subscriber removal/resubscription. |
-| Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation for new work, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. |
+| Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. Exercise legacy subscription-removal hooks and busy transport locks; distinguish bounded disposal waits from eventual cleanup. |
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
 | Priority on 4.2.5 | Classic cases exercise configured numeric priority; quorum cases exercise normal/high tiers without `x-max-priority`. Cover builder and direct options, omitted/zero priority, and prefetch effects. Do not assert later-broker semantics. |

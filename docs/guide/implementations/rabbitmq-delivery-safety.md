@@ -106,7 +106,7 @@ Scope permissions to the intended virtual host and named resources; do not solve
 
 ## Retry and terminal handoffs
 
-Classic retries go through the default exchange to the **actual failed subscription queue**, not back through the original fanout exchange. The logical message ID and root identity are retained and the retry count increases. The initial scheduling header is removed so that delay is not reapplied.
+Classic retries go through the default exchange to the **actual failed subscription queue**, not back through the original fanout exchange. The logical message ID and root identity are retained and the retry count increases. Retry and terminal copies remove `CC`/`BCC` routing headers, the original publisher's `UserId`, and the initial scheduling header so they cannot redirect the handoff, require the original publishing identity, or reapply delay.
 
 Retry and terminal publications use a dedicated **confirmed, mandatory** channel even when ordinary publisher confirms are disabled. The original is acknowledged only after successful handoff. Missing exchanges, unroutable returns, negative confirmations, and ambiguous outcomes retain the original and retry the transfer with bounded backoff, without rerunning its application handler during that handoff loop.
 
@@ -140,7 +140,7 @@ A coordinated maintenance loop wakes on local subscription removal and otherwise
 
 A caller cancelling `SubscribeAsync` stops its own wait without cancelling shared setup needed by other callers. Any continuing setup task is observed; an abandoned caller must not leave a consumer with no local registration. Cancellation returning to a caller is not an atomic broker-consumer-stop acknowledgement. Coordinate a cutover using actual consumer state and retained topology; already auto-acknowledged deliveries cannot be recovered by cancellation.
 
-Delivery-generation invalidation prevents late completion from settling a replacement generation. Raw payloads are owned copies because a handler may outlive its transport callback. Shutdown signals cancellation and bounds individual waits, but cannot terminate arbitrary application code; apply the host's overall shutdown deadline separately.
+Delivery-generation invalidation prevents late completion from settling a replacement generation. Raw payloads are owned copies because a handler may outlive its transport callback. Shutdown signals cancellation and bounds individual cleanup waits, including transport-lock acquisition. Owned cleanup can continue after a wait expires; returning from disposal does not prove every transport has closed or arbitrary application code has stopped. Apply the host's overall shutdown deadline separately.
 
 `IsSubscriptionReady` reflects local registration, transport/consumer state, and retained-delivery blockage, not a proof of business progress. `LastSubscriptionError` reports setup/recovery errors; `LastDeliveryError` reports retained-delivery/handoff errors, not queue depth. Monitor ready/unacknowledged counts, quarantine growth, alarms, and actual completion. Do not endlessly restart a blocked consumer: redelivery can exhaust a broker budget.
 
