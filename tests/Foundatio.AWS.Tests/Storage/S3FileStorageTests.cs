@@ -244,7 +244,13 @@ public class S3FileStorageTests : FileStorageTestsBase
     {
         var client = storage is S3FileStorage s3Storage ? s3Storage.Client : null;
         Assert.NotNull(client);
-        await client.PutBucketAsync(BUCKET_NAME);
+        try
+        {
+            await client.PutBucketAsync(BUCKET_NAME);
+        }
+        catch (BucketAlreadyOwnedByYouException)
+        {
+        }
 
         await base.ResetAsync(storage);
     }

@@ -53,6 +53,8 @@ IFileStorage storage = new S3FileStorage(o => o
 await storage.SaveFileAsync("docs/readme.txt", "Hello World");
 ```
 
+The examples above point at [Floci](https://github.com/floci-io/floci), a free local AWS emulator. Run `docker compose up -d` from the repository root to start it on `http://localhost:4566`.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |

@@ -25,7 +25,7 @@ public class SQSMessageBusOptions : SharedMessageBusOptions
     public RegionEndpoint? Region { get; set; }
 
     /// <summary>
-    /// The service URL for LocalStack or custom endpoints. When set, overrides the region endpoint.
+    /// The service URL for local emulators (such as Floci) or custom endpoints. When set, overrides the region endpoint.
     /// </summary>
     public string? ServiceUrl { get; set; }
 
@@ -139,7 +139,7 @@ public class SQSMessageBusOptionsBuilder : SharedMessageBusOptionsBuilder<SQSMes
     }
 
     /// <summary>
-    /// Sets the service URL for LocalStack or custom endpoints.
+    /// Sets the service URL for local emulators (such as Floci) or custom endpoints.
     /// </summary>
     public SQSMessageBusOptionsBuilder ServiceUrl(string serviceUrl)
     {

@@ -203,7 +203,13 @@ public class ScopedS3StorageTests : FileStorageTestsBase
     {
         var client = storage is ScopedFileStorage { UnscopedStorage: S3FileStorage s3FileStorage } ? s3FileStorage.Client : null;
         Assert.NotNull(client);
-        await client.PutBucketAsync(BUCKET_NAME);
+        try
+        {
+            await client.PutBucketAsync(BUCKET_NAME);
+        }
+        catch (BucketAlreadyOwnedByYouException)
+        {
+        }
 
         await base.ResetAsync(storage);
     }
