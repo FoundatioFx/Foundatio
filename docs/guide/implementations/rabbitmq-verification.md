@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`856d0f4`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/856d0f47b0bb979c3abb875d9c2882c586b1a230).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`5607276`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/560727668bc72bfbf771d86c10dda25d71b7b283).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -68,7 +68,7 @@ Name new standalone cases `Operation_State_ExpectedOutcome`, with an `Async` suf
 
 One `RabbitMqTestCollection` owns `AspireFixture`. Broker-dependent classes join that collection; configuration-only classes remain independent. The fixture disposes the built `DistributedApplication` first, then the testing builder, then test certificates, including on partially successful startup. Clearing owned references makes repeated disposal safe. Serializing tests that mutate shared broker resources is not an execution-order contract between cases.
 
-Infrastructure is required when `CI` or `GITHUB_ACTIONS` is `true` or `1`, or with `FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true`. A false local override cannot weaken CI. Optional local infrastructure failures may skip dependent cases, but those skips are not integration approval.
+Infrastructure is required when `CI` or `GITHUB_ACTIONS` is `true` or `1`, or with `FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true`. A false local override cannot weaken CI. In an optional local run, a TLS certificate trust-store denial skips only TLS-dependent cases while the other brokers can run. Required runs still fail when TLS infrastructure is unavailable. Optional skips are not full-suite verification.
 
 Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trusted TLS brokers. Successful TLS traffic cases also check it. The untrusted TLS broker has the same exact image declaration; certificate validation is not bypassed merely to query its version. Version tags are compatibility pins, not immutable digests or security certification.
 
@@ -76,7 +76,7 @@ Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trust
 
 See [endpoint identity and port rules](./rabbitmq.md#tls-and-endpoints) for the production contract.
 
-The fixture generates two independent short-lived certificate authorities and server certificates. Only one public CA is added to the **current user's** root store and that exact certificate is removed during disposal. No system-wide trust change or `sudo` is required. Temporary server keys live in a private test directory, are mounted read-only into test containers, and are removed after the brokers stop. CA private keys are not written to disk.
+The fixture generates two independent short-lived certificate authorities and server certificates, writing temporary certificate and broker configuration files asynchronously with startup cancellation. Only one public CA is added to the **current user's** root store and that exact certificate is removed during disposal. No system-wide trust change or `sudo` is required. Temporary server keys live in a private test directory, are mounted read-only into test containers, and are removed after the brokers stop. CA private keys are not written to disk.
 
 Both brokers disable plaintext AMQP. The trusted certificate covers `localhost`, `127.0.0.1`, and `::1`, but not `127.0.0.2`. Strict probes distinguish wrong identity from an untrusted chain, with healthy controls before and after rejection. Timeout or connection refusal does not pass those assertions.
 
@@ -112,4 +112,4 @@ For a test-only refactor, reconcile the original and resulting case inventories 
 
 Use [delivery-safety/adoption guidance](./rabbitmq-delivery-safety.md) for topology, terminal handling, and operational prerequisites. Tests execute on .NET 10/Linux in the reviewed setup; .NET 8 compilation is not its own broker-runtime matrix. Packaging/publication skipped by a PR build is not package validation. A passing test count does not prove every legacy chaos assertion or every production failure model.
 
-This page describes how to verify; revision-specific results remain in [PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) and [issue #99](https://github.com/FoundatioFx/Foundatio.RabbitMQ/issues/99), not as permanent guarantees in the guide.
+This page describes how to verify; revision-specific results remain in the [provider review stack](./rabbitmq.md) and [issue #99](https://github.com/FoundatioFx/Foundatio.RabbitMQ/issues/99), not as permanent guarantees in the guide. Results from an earlier aggregate revision do not verify the current stack heads.

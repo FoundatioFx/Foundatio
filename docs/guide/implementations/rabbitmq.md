@@ -7,7 +7,7 @@ title: RabbitMQ
 `RabbitMQMessageBus` implements `IMessageBus` using RabbitMQ and AMQP 0.9.1. It supports best-effort pub/sub and explicitly configured durable subscriptions; installing the provider alone does not establish reliable business processing.
 
 ::: warning Companion implementation
-This documentation branch accompanies [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). New strict-delivery options and changed exhaustion behavior described here are not claimed to be in an already released NuGet package. Coordinate documentation publication with that implementation's merge/release and verify the package version used by your application. Implementation reference: [`856d0f4`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/856d0f47b0bb979c3abb875d9c2882c586b1a230). Revision-specific validation remains in the companion PRs.
+This documentation branch accompanies a provider review stack, in landing order: [#103: TLS endpoints](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/103) → [#104: broker verification](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) → [#105: delivery and recovery](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) → [#100: sample and documentation](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). PR #105 owns the runtime behavior and breaking exhaustion change. These contracts are not claimed to be in an already released NuGet package. Coordinate documentation publication with the stack's merge/release and verify the package version used by your application. Aggregate implementation reference: [`5607276`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/560727668bc72bfbf771d86c10dda25d71b7b283). Revision-specific validation remains in the companion PRs.
 :::
 
 ::: warning Breaking exhaustion behavior
@@ -56,7 +56,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `DeliveryLimit` | `2` | Application redelivery budget after the initial attempt; `-1` is unlimited. Broker enforcement is separate. |
 | `PrefetchCount` | `0` | With both prefetch options zero, the provider sends no QoS and broker defaults can apply. |
 
-The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/856d0f47b0bb979c3abb875d9c2882c586b1a230/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API.
+The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/560727668bc72bfbf771d86c10dda25d71b7b283/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API. For custom topology and metadata code, [`Foundatio.Utility.RabbitMQConstants`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/560727668bc72bfbf771d86c10dda25d71b7b283/src/Foundatio.RabbitMQ/Utility/RabbitMQConstants.cs) exposes shared header and queue-argument wire names.
 
 `IMessage.Properties` formats received numeric AMQP headers with `CultureInfo.InvariantCulture`: a numeric value of `1.5` becomes `"1.5"` even under `fr-FR`, rather than `"1,5"`. Byte-array headers still decode as UTF-8. Use invariant culture when parsing numeric property strings.
 
@@ -78,6 +78,8 @@ Here `connectionString` must be an `amqps` URI for the intended credentials and 
 For URI-only connections, an explicit URI port is preserved. A host-list entry without a port uses the scheme default: 5671 for `amqps`, 5672 for `amqp`, not a custom port from the URI. Duplicate host/port pairs are collapsed case-insensitively. Invalid ports and malformed entries are rejected. A null or empty list uses the URI endpoint; a nonempty list containing only unusable entries is rejected. Use `[IPv6]:port` for an IPv6 address with a port; bare IPv6 uses the scheme default. List order does not define primary/secondary preference.
 
 Strict identity checking and validation of previously ignored malformed ports can break an existing configuration. Correct the aliases/certificates/ports rather than disabling verification or downgrading to plaintext.
+
+For separate RabbitMQ.Client setup connections, the public [`Foundatio.Utility.RabbitMQEndpointResolver.CreateEndpoints(ConnectionFactory, IList<string>? hosts = null)`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/560727668bc72bfbf771d86c10dda25d71b7b283/src/Foundatio.RabbitMQ/Utility/RabbitMQEndpointResolver.cs) applies the same endpoint rules using the factory's URI. The subscriber sample calls this API from the compiled provider library when provisioning quarantine.
 
 ## Broker baseline and priority
 
@@ -116,4 +118,4 @@ Foundatio propagates correlation/trace metadata through its message abstraction.
 - [Messaging](../messaging.md)
 - [Serialization](../serialization.md)
 
-These guides are maintained in **FoundatioFx/Foundatio**. The provider repository keeps source, XML API comments, tests, and a short README linking here.
+These guides are maintained in **FoundatioFx/Foundatio**. The provider repository keeps source, XML API comments, tests, and a README linking here.
