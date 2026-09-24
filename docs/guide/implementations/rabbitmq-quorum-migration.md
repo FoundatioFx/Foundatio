@@ -7,7 +7,7 @@ title: RabbitMQ Quorum Queue Migration
 This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
 
 ::: warning Companion implementation
-The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`56afe87`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/56afe87dffbeb6dc9de339b86de5aa09f19a924e). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`7d01c8b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/7d01c8beec9fc798d36fe1d03d3e78976375f34b). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
 :::
 
 ## Why migrate?

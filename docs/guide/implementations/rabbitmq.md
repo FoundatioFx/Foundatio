@@ -7,7 +7,7 @@ title: RabbitMQ
 `RabbitMQMessageBus` implements `IMessageBus` using RabbitMQ and AMQP 0.9.1. It supports best-effort pub/sub and explicitly configured durable subscriptions; installing the provider alone does not establish reliable business processing.
 
 ::: warning Companion implementation
-This documentation branch accompanies a provider review stack, in landing order: [#103: TLS endpoints](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/103) → [#106: quorum priority](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) → [#104: broker verification](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) → [#105: delivery and recovery](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) → [#100: sample and documentation](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). PR #105 owns delivery/recovery behavior and breaking exhaustion change. These contracts are not claimed to be in an already released NuGet package. Coordinate documentation publication with the stack's merge/release and verify the package version used by your application. Aggregate implementation reference: [`56afe87`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/56afe87dffbeb6dc9de339b86de5aa09f19a924e). Revision-specific validation remains in the companion PRs.
+This documentation branch accompanies a provider review stack, in landing order: [#103: TLS endpoints](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/103) → [#106: quorum priority](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) → [#104: broker verification](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) → [#105: delivery and recovery](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) → [#100: sample and documentation](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). PR #105 owns delivery/recovery behavior and breaking exhaustion change. These contracts are not claimed to be in an already released NuGet package. Coordinate documentation publication with the stack's merge/release and verify the package version used by your application. Aggregate implementation reference: [`7d01c8b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/7d01c8beec9fc798d36fe1d03d3e78976375f34b). Revision-specific validation remains in the companion PRs.
 :::
 
 ::: warning Breaking exhaustion behavior
@@ -56,7 +56,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `DeliveryLimit` | `2` | Application redelivery budget after the initial attempt; `-1` is unlimited. Broker enforcement is separate. |
 | `PrefetchCount` | `0` | With both prefetch options zero, the provider sends no QoS and broker defaults can apply. |
 
-The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/56afe87dffbeb6dc9de339b86de5aa09f19a924e/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API. For custom topology and metadata code, [`Foundatio.Utility.RabbitMQConstants`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/56afe87dffbeb6dc9de339b86de5aa09f19a924e/src/Foundatio.RabbitMQ/Utility/RabbitMQConstants.cs) exposes shared header and queue-argument wire names.
+The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/7d01c8beec9fc798d36fe1d03d3e78976375f34b/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API. For custom topology and metadata code, [`Foundatio.Utility.RabbitMQConstants`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/7d01c8beec9fc798d36fe1d03d3e78976375f34b/src/Foundatio.RabbitMQ/Utility/RabbitMQConstants.cs) exposes shared header and queue-argument wire names.
 
 `IMessage.Properties` formats received numeric AMQP headers with `CultureInfo.InvariantCulture`: a numeric value of `1.5` becomes `"1.5"` even under `fr-FR`, rather than `"1,5"`. Byte-array headers still decode as UTF-8. Use invariant culture when parsing numeric property strings.
 
@@ -79,7 +79,7 @@ For URI-only connections, an explicit URI port is preserved. A host-list entry w
 
 Strict identity checking and validation of previously ignored malformed ports can break an existing configuration. Correct the aliases/certificates/ports rather than disabling verification or downgrading to plaintext.
 
-For separate RabbitMQ.Client setup connections, the public [`Foundatio.Utility.RabbitMQEndpointResolver.CreateEndpoints(ConnectionFactory, IList<string>? hosts = null)`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/56afe87dffbeb6dc9de339b86de5aa09f19a924e/src/Foundatio.RabbitMQ/Utility/RabbitMQEndpointResolver.cs) applies the same endpoint rules using the factory's URI. The subscriber sample calls this API from the compiled provider library when provisioning quarantine.
+For separate RabbitMQ.Client setup connections, the public [`Foundatio.Utility.RabbitMQEndpointResolver.CreateEndpoints(ConnectionFactory, IList<string>? hosts = null)`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/7d01c8beec9fc798d36fe1d03d3e78976375f34b/src/Foundatio.RabbitMQ/Utility/RabbitMQEndpointResolver.cs) applies the same endpoint rules using the factory's URI. The subscriber sample calls this API from the compiled provider library when provisioning quarantine.
 
 The resolver preserves client-certificate settings already configured on `ConnectionFactory.Ssl`: `CertPath`, `CertPassphrase`, `Certs`, `CertificateSelectionCallback`, and `ClientCertificateContext`, along with protocol and revocation settings. It sets each endpoint's server name to the actual host and forces `AcceptablePolicyErrors` to `None`. A non-null `CertificateValidationCallback` is rejected with `ArgumentException`, even if that callback intends to validate strictly. These settings apply to connections you create with the supplied factory; `RabbitMQMessageBusOptions` does not expose a separate client-certificate configuration option.
 
@@ -112,7 +112,7 @@ The plugin stores scheduled work on one broker node and routes it later. Publish
 
 ## Tracing
 
-Foundatio's application-level message spans use the `Foundatio` activity source. Add `RabbitMQ.Client.*` to collect the client's transport spans as well:
+Foundatio's message handler spans use the `Foundatio` activity source. Add `RabbitMQ.Client.*` to collect the client's transport spans as well:
 
 ```csharp
 services.AddOpenTelemetry().WithTracing(tracing =>
@@ -123,7 +123,9 @@ services.AddOpenTelemetry().WithTracing(tracing =>
 });
 ```
 
-Foundatio propagates correlation/trace metadata through its message abstraction. Do not assume two independently configured propagation mechanisms compose correctly; verify their interaction before adding another.
+When `MessageOptions.CorrelationId` is absent or empty, `MessageBusBase` copies `Activity.Current.Id` into it and copies a nonempty `Activity.Current.TraceStateString` into the `TraceState` message property. RabbitMQ sends the correlation ID in the AMQP `CorrelationId` basic property and `TraceState` in a header. Supplying a correlation ID skips both automatic copies.
+
+On receipt, Foundatio creates a handler activity parented to the received correlation ID and restores `TraceState`. `MessageBusBase` does not create a publish activity. Verify how any additional propagation mechanism interacts with this mapping before enabling it.
 
 ## Further guidance
 
