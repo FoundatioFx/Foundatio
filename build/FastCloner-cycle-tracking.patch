@@ -1,0 +1,90 @@
+diff --git a/src/FastCloner/Code/FastClonerCache.cs b/src/FastCloner/Code/FastClonerCache.cs
+index d8e10a6..1aef47e 100644
+--- a/src/FastCloner/Code/FastClonerCache.cs
++++ b/src/FastCloner/Code/FastClonerCache.cs
+@@ -49,7 +49,7 @@ internal static class ClonerCache<T>
+     }
+ 
+     #if MODERN_10
+-    private static readonly Lock sync = new Lock();
++    private static readonly System.Threading.Lock sync = new System.Threading.Lock();
+     #else
+     private static readonly object sync = new object();
+     #endif
+diff --git a/src/FastCloner/Code/FastClonerExprGenerator.cs b/src/FastCloner/Code/FastClonerExprGenerator.cs
+index 58f68e6..de8beba 100644
+--- a/src/FastCloner/Code/FastClonerExprGenerator.cs
++++ b/src/FastCloner/Code/FastClonerExprGenerator.cs
+@@ -347,7 +347,10 @@ internal static class FastClonerExprGenerator
+ 
+     internal static object? GenerateProcessMethod(Type realType, bool asObject) => GenerateProcessMethod(realType, asObject && realType.IsValueType(), new ExpressionPosition(0, 0));
+     public static bool IsListType(Type type) => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>);
+-    public static bool IsSetType(Type type) => type.GetInterfaces().Any(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ISet<>));
++    public static bool IsSetType(Type type) => GetSetInterface(type) is not null;
++
++    private static Type? GetSetInterface(Type type) =>
++        type.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ISet<>));
+ 
+     public static bool IsConcurrentBagOrQueue(Type type)
+     {
+@@ -921,9 +924,10 @@ internal static class FastClonerExprGenerator
+             return GenerateProcessConcurrentBagOrQueueMethod(type, position);
+         }
+ 
+-        if (IsSetType(type))
++        Type? setInterface = GetSetInterface(type);
++        if (setInterface is not null)
+         {
+-            return GenerateProcessSetMethod(type, position);
++            return GenerateProcessSetMethod(type, setInterface, position);
+         }
+ 
+         if (type.IsArray)
+@@ -1853,7 +1857,7 @@ internal static class FastClonerExprGenerator
+         ).Compile();
+     }
+ 
+-    private static object GenerateProcessSetMethod(Type type, ExpressionPosition position)
++    private static object GenerateProcessSetMethod(Type type, Type setInterface, ExpressionPosition position)
+     {
+         if (FastClonerCache.IsTypeIgnored(type))
+         {
+@@ -1862,7 +1866,7 @@ internal static class FastClonerExprGenerator
+             return Expression.Lambda<Func<object, FastCloneState, object>>(pFrom, pFrom, pState).Compile();
+         }
+ 
+-        Type elementType = type.GenericArguments()[0];
++        Type elementType = setInterface.GetGenericArguments()[0];
+         
+         // Fast path check first - avoid creating expressions if we don't need them
+         bool isImmutable = IsImmutableCollection(type);
+diff --git a/src/FastCloner/Code/FastClonerGenerator.cs b/src/FastCloner/Code/FastClonerGenerator.cs
+index 315bc77..15cab6c 100644
+--- a/src/FastCloner/Code/FastClonerGenerator.cs
++++ b/src/FastCloner/Code/FastClonerGenerator.cs
+@@ -466,16 +466,6 @@ internal static class FastClonerGenerator
+             return true;
+         }
+ 
+-        Type? payloadType = GetCollectionPayloadType(type);
+-        if (payloadType is not null)
+-        {
+-            if (FastClonerSafeTypes.CanReturnSameObject(payloadType))
+-                return false;
+-
+-            if (payloadType.IsValueType && !ValueTypeContainsReferenceFieldsCached(payloadType))
+-                return false;
+-        }
+-
+         Type[] fieldTypes = GetCycleFieldTypes(type);
+         for (int i = 0; i < fieldTypes.Length; i++)
+         {
+@@ -554,7 +544,7 @@ internal static class FastClonerGenerator
+         return null;
+     }
+ 
+-    private static bool TryGetGenericInterfaceArgument(Type type, Type genericInterfaceDefinition, int argIndex, out Type? argument)
++    private static bool TryGetGenericInterfaceArgument(Type type, Type genericInterfaceDefinition, int argIndex, [NotNullWhen(true)] out Type? argument)
+     {
+         if (type.IsGenericType && type.GetGenericTypeDefinition() == genericInterfaceDefinition)
+         {

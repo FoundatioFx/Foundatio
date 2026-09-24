@@ -46,6 +46,9 @@ Function UpdateFastCloner {
     try {
         Invoke-CheckedCommand git @("clone", "--branch", $tag, "--depth", "1", $repoUrl, $clonePath)
 
+        # Preserve integration fixes and track cycles in collection storage, not just payloads.
+        Invoke-CheckedCommand git @("apply", (Join-Path $work_dir "FastCloner-cycle-tracking.patch")) $clonePath
+
         Invoke-CheckedCommand dotnet @("build", $builderProject) $cloneSrcPath
         Invoke-CheckedCommand dotnet @(
             "run",
@@ -60,6 +63,13 @@ Function UpdateFastCloner {
             "--runtime-only", "true",
             "--self-check"
         ) $cloneSrcPath
+
+        Get-ChildItem $stagingPath -Recurse -Filter "*.cs" | ForEach-Object {
+            $content = [System.IO.File]::ReadAllText($_.FullName)
+            $warningFiles = @("AhoCorasick.cs", "FastCloneState.cs", "FastClonerCache.cs", "FastClonerExprGenerator.cs", "FastClonerGenerator.cs", "FieldAccessorGenerator.cs")
+            $nullable = if ($_.Name -in $warningFiles) { "#nullable enable annotations`n#nullable disable warnings" } else { "#nullable enable" }
+            [System.IO.File]::WriteAllText($_.FullName, "$nullable`n`n$content")
+        }
 
         if (Test-Path $destPath) {
             Remove-Item $destPath -Recurse -Force
