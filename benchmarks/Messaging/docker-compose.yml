@@ -1,0 +1,17 @@
+name: foundatio-messaging-perf
+services:
+  redis:
+    image: redis:8.6-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, everysec]
+    cpus: 4
+    mem_limit: 2g
+    ports:
+      - '127.0.0.1:16379:6379'
+  localstack:
+    image: localstack/localstack:3.8.1
+    cpus: 4
+    mem_limit: 3g
+    environment:
+      SERVICES: sqs,sns
+    ports:
+      - '127.0.0.1:24566:4566'

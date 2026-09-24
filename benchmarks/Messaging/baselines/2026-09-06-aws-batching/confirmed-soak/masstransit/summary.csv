@@ -1,0 +1,3 @@
+"Case","Trials","InputsPerSecond","MinInputsPerSecond","MaxInputsPerSecond","DeliveriesPerSecond","P50Milliseconds","P95Milliseconds","P99Milliseconds","BytesPerInput","CpuMillisecondsPerInput","PeakWorkingSetMiB","TotalInputs","Duplicates","Missing"
+"masstransit/sqs pubsub p32 c8 s4 1024B b1 r0 w1024 pf8","1","434","434","434","1736","2326.527","2719.743","2916.351","193997.3","1.3269","165.8","52464","0","0"
+"masstransit/sqs queue p32 c32 s1 1024B b1 r0 w1024 pf32","1","2652.4","2652.4","2652.4","2652.4","372.735","475.135","712.703","67426.2","0.3613","151.6","318875","0","0"

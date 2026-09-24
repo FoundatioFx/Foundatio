@@ -85,8 +85,7 @@ public static class SerializerExtensions
         if (data.Length == 0)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
-        using var stream = new MemoryStream(data);
-        var result = serializer.Deserialize(stream, typeof(T));
+        var result = serializer.Deserialize((ReadOnlyMemory<byte>)data, typeof(T));
         if (result is T typed)
             return typed;
 
@@ -104,8 +103,7 @@ public static class SerializerExtensions
         if (data.Length == 0)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
 
-        using var stream = new MemoryStream(data);
-        return serializer.Deserialize(stream, objectType);
+        return serializer.Deserialize((ReadOnlyMemory<byte>)data, objectType);
     }
 
     /// <summary>
@@ -140,6 +138,9 @@ public static class SerializerExtensions
         ArgumentNullException.ThrowIfNull(objectType);
         if (data.IsEmpty)
             throw new ArgumentException("Data cannot be empty.", nameof(data));
+
+        if (serializer is IBufferSerializer bufferSerializer)
+            return bufferSerializer.Deserialize(data, objectType);
 
         // Fast path: if the memory is backed by a managed array we can hand it straight to a
         // MemoryStream without copying. Otherwise fall back to a stream over the memory.
@@ -203,6 +204,9 @@ public static class SerializerExtensions
     public static byte[] SerializeToBytes<T>(this ISerializer serializer, T value)
     {
         ArgumentNullException.ThrowIfNull(serializer);
+
+        if (serializer is IBufferSerializer bufferSerializer)
+            return bufferSerializer.SerializeToBytes(value);
 
         // Serialize null values - underlying serializers handle this correctly
         // (produces "null" for JSON, nil marker for MessagePack)

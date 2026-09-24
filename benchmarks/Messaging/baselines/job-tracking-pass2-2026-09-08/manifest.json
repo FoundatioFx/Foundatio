@@ -1,0 +1,33 @@
+{
+  "runtime": "/usr/bin/dotnet (.NET 10.0.11, Ubuntu package)",
+  "baselineMediator": "ff9c1558c12259819f39d60db5b791874005f5e3",
+  "baselineFoundatio": "54006ac7a850c8cd297362cb21238366887a77f7",
+  "pr149": "89bd6d1504b83d03de156b08f24fb578aa8bc97f",
+  "mediatorMain": "a1480132d701b93c64edcc9a776573c94d1a2153",
+  "binaryHashes": {
+    "pr149": {
+      "Foundatio.Mediator.Abstractions.dll": "2e875f87d0730cae886d5f9ad1883e75cda1883621bbcf02d0d967ca82e40fd3",
+      "Foundatio.Mediator.Distributed.Aws.dll": "9b23123c4ced306c1c62e9c71362db161b72dc280517a1bd7637e4cd3e383d6a",
+      "Foundatio.Mediator.Distributed.Redis.dll": "0d69009172b2dfd9a9ceb009de3d3c837b66d669ffce2e00c26d9eacdda984f0",
+      "Foundatio.Mediator.Distributed.dll": "2083b1a1eec1498212a9011f6935a9801d6e058f18cff9b565e5207f85cbd665"
+    },
+    "before": {
+      "Foundatio.Aws.dll": "305496a7894bcd99a7cd56bc6cdd36c19ea3f65fc29cc7ebf2b84c90c9343f6a",
+      "Foundatio.Mediator.Abstractions.dll": "b2dfa05db70b7d45fcb94bfcf4c67a47c3f9f35d4aef06680a5bb6c6f12934be",
+      "Foundatio.Mediator.Distributed.Benchmarks.dll": "d942140b18709c9aa22afd53cc8874e329b54ca7cb47f10e2d3562d732f35c0a",
+      "Foundatio.Mediator.Distributed.dll": "8ac86259542eaea33996b1d9e506db980216e46404ed9e92636f9e73215b1a79",
+      "Foundatio.Redis.dll": "3b33d5cf508b30e6d213a8689b6ee10b99b3cddb559a3e5b8918e5b11b3f1f1c",
+      "Foundatio.dll": "578a50491ed8737162fd560e64fb5c6a5af6353ea062f36edb175272d0f455ba"
+    },
+    "after": {
+      "Foundatio.Aws.dll": "51a478b14341fddbce2412de3b5780395b620fc62d50887b01081a8156bdcc98",
+      "Foundatio.Mediator.Abstractions.dll": "3acd548e0cd2fa3fffabcd1877c29b6de94a73e6d4da6c2beae32fb9d46af7fa",
+      "Foundatio.Mediator.Distributed.Benchmarks.dll": "cf8918681897f7be49001a7b02eba4255d2af31b6d5f0abb6f5ada72643ebec7",
+      "Foundatio.Mediator.Distributed.dll": "ede5081842166c6dfed44a4235f78a876ba34746f414798afccc5dba95cda383",
+      "Foundatio.Redis.dll": "dc8566972b22cfadb0958a2a017b85544c6c8137582a26986d9854d943409555",
+      "Foundatio.dll": "1a7a4d1b07ceb2ec3bc59a92734e50d4ba807ac42bbb3d5fe69d9977f42879ac"
+    }
+  },
+  "foundatioSourceSha256": "753f5b39cda0093978f6c95bf35b13477382585ac0e082f4dbdfa73ba6387877",
+  "mediatorSourceSha256": "c22c0994c0c6b261cfc55428c3e94ae4e445137ca13b658f38b87b74331184b8"
+}

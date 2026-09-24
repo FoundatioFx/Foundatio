@@ -1,0 +1,26 @@
+{
+  "Trials": 76,
+  "Profiles": {
+    "aws-1024": 18,
+    "aws-16384": 18,
+    "memory": 12,
+    "redis-16384": 4,
+    "aws-soak": 4,
+    "memory-repeat": 10,
+    "redis-repeat": 6,
+    "aws-final-1024": 2,
+    "aws-final-16384": 2
+  },
+  "Inputs": 118134011,
+  "Deliveries": 167597066,
+  "Missing": 0,
+  "Duplicates": 0,
+  "Invalid": 0,
+  "WorkerFailures": 0,
+  "UniquePrefixes": 76,
+  "CandidateBinaryFilesVerified": 37,
+  "FinalBinaryFilesVerified": 37,
+  "ValidDiagnosticCaptures": 5,
+  "Runtime": ".NET 10.0.11",
+  "CoreClrSha256": "3EBE90CD92B1EDF6742A41FA921A0C6326216FD1CCA45FDB5E055BEA33351BEA"
+}

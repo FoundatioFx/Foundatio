@@ -1,0 +1,17 @@
+{
+  "Success": false,
+  "Options": {
+    "Scenario": "pubsub",
+    "ProducerConcurrency": 32,
+    "Transport": "redis",
+    "Engine": "foundatio",
+    "DeliveryCopies": 4,
+    "BatchSize": 1,
+    "ConsumerConcurrency": 8,
+    "MaxOutstanding": 1024,
+    "PayloadBytes": 1024,
+    "RatePerSecond": 0,
+    "Prefetch": 8
+  },
+  "Error": "Worker exited without a result. RUN fperf-fd29ab56ca9c foundatio/redis/pubsub\nPHASE warmup 5s\nFatal error.\nInternal CLR error. (0x80131506)\n[createdump] Gathering state for process 3077623 dotnet\n[createdump] Crashing thread 2ef630 signal 6 (0006)\n[createdump] Writing minidump to file /tmp/foundatio-perf-dumps/dotnet_3077623_1788731298.dmp\n[createdump] Written 335319040 bytes (81865 pages) to core file\n[createdump] Target process is alive\n[createdump] Dump successfully written in 283ms"
+}

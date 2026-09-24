@@ -49,91 +49,20 @@ var scopedCache = new ScopedCacheClient(
 );
 ```
 
-## Queue Configuration
+## Messaging and worker queue configuration
 
-### InMemoryQueue
-
-```csharp
-var queue = new InMemoryQueue<WorkItem>(options =>
-{
-    // Queue name/identifier
-    options.Name = "work-items";
-
-    // Work item timeout
-    options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-
-    // Retry settings
-    options.Retries = 3;
-    options.RetryDelay = TimeSpan.FromSeconds(30);
-
-    // Logger
-    options.LoggerFactory = loggerFactory;
-
-    // Serializer
-    options.Serializer = serializer;
-});
-```
-
-### RedisQueue
+Configure the bus once, then register explicit consumers or subscribers. Queue and topic capabilities differ by provider; unsupported delays require a scheduled-dispatch store and an explicitly hosted dispatcher.
 
 ```csharp
-var queue = new RedisQueue<WorkItem>(options =>
-{
-    // Redis connection
-    options.ConnectionMultiplexer = redis;
-
-    // Queue name
-    options.Name = "work-items";
-
-    // Work item timeout
-    options.WorkItemTimeout = TimeSpan.FromMinutes(5);
-
-    // Dead letter settings
-    options.DeadLetterTimeToLive = TimeSpan.FromDays(1);
-    options.DeadLetterMaxItems = 100;
-
-    // Retry settings
-    options.Retries = 3;
-    options.RetryDelay = TimeSpan.FromSeconds(30);
-
-    // Logger
-    options.LoggerFactory = loggerFactory;
-});
+builder.Services.AddFoundatioWorker(foundatio => foundatio
+    .Messaging.ConfigureRetry(policy => policy with { MaxAttempts = 5 })
+    .UseInMemory()
+    .AddConsumer<WorkItem, WorkItemHandler>(options => options.MaxConcurrency = 4));
 ```
 
-## Messaging Configuration
+Use `MessageBusOptions` when constructing a bus manually. Set `Topology` to `Ensure`, `Validate`, or `None`; set `Serializer` and matching `ContentType` when overriding serialization. Consumer concurrency belongs to an endpoint. Named subscriptions are durable; unnamed temporary subscriptions require provider support.
 
-### InMemoryMessageBus
-
-```csharp
-var messageBus = new InMemoryMessageBus(options =>
-{
-    // Logger
-    options.LoggerFactory = loggerFactory;
-
-    // Serializer
-    options.Serializer = serializer;
-});
-```
-
-### RedisMessageBus
-
-```csharp
-var messageBus = new RedisMessageBus(options =>
-{
-    // Redis subscriber
-    options.Subscriber = redis.GetSubscriber();
-
-    // Topic prefix
-    options.Topic = "myapp";
-
-    // Logger
-    options.LoggerFactory = loggerFactory;
-
-    // Serializer
-    options.Serializer = serializer;
-});
-```
+See [Messaging](messaging.md) for full configuration and provider limits. The former `InMemoryQueue`, `RedisQueue`, and publish-only message bus options do not configure the new transport runtime.
 
 ## Lock Configuration
 
@@ -298,38 +227,18 @@ var circuitBreaker = new CircuitBreakerBuilder()
     .Build();
 ```
 
-## Job Configuration
+## Job configuration
 
-### JobOptions
-
-```csharp
-var options = new JobOptions
-{
-    // Job name for logging
-    Name = "CleanupJob",
-
-    // Interval between runs
-    Interval = TimeSpan.FromHours(1),
-
-    // Maximum iterations (-1 for unlimited)
-    IterationLimit = -1,
-
-    // Initial run delay
-    InitialDelay = TimeSpan.FromMinutes(5)
-};
-
-await job.RunContinuousAsync(options, stoppingToken);
-```
-
-### JobRunner
+Register the store and eligible job types in a worker:
 
 ```csharp
-var runner = new JobRunner(
-    job: myJob,
-    instanceCount: 4,  // Number of parallel instances
-    interval: TimeSpan.FromSeconds(5)
-);
+builder.Services.AddFoundatioWorker(foundatio => foundatio
+    .Jobs.UseInMemory()
+    .AddJobType<CleanupJob>("cleanup.v1")
+    .AddCronJob<CleanupJob>("0 2 * * *"), jobConcurrency: 4);
 ```
+
+Set per-request `MaxAttempts` in `JobRequestOptions`; schedule definitions snapshot their own retry budget. Persisted schedule edits use revisions, and changed declarations require a higher `ConfigurationVersion`. See [Durable jobs](jobs.md) for retention, capacity, and deployment behavior.
 
 ## Serialization Configuration
 
@@ -345,7 +254,7 @@ var serializer = new SystemTextJsonSerializer(new JsonSerializerOptions
 
 // Apply to services
 var cache = new InMemoryCacheClient(o => o.Serializer = serializer);
-var queue = new InMemoryQueue<WorkItem>(o => o.Serializer = serializer);
+var bus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { Serializer = serializer });
 var storage = new InMemoryFileStorage(o => o.Serializer = serializer);
 ```
 
@@ -364,7 +273,7 @@ var loggerFactory = LoggerFactory.Create(builder =>
 
 // Apply to services
 var cache = new InMemoryCacheClient(o => o.LoggerFactory = loggerFactory);
-var queue = new InMemoryQueue<WorkItem>(o => o.LoggerFactory = loggerFactory);
+var bus = new MessageBus(new InMemoryMessageTransport(), new MessageBusOptions { LoggerFactory = loggerFactory });
 ```
 
 ## Environment Variables

@@ -23,14 +23,14 @@ public interface IHybridAwareCacheClient : ICacheClient
 public class HybridAwareCacheClient : IHybridAwareCacheClient, IHaveTimeProvider, IHaveLogger, IHaveLoggerFactory, IHaveResiliencePolicyProvider
 {
     protected readonly ICacheClient _distributedCache;
-    protected readonly IMessagePublisher _messagePublisher;
+    protected readonly IMessageBus _messagePublisher;
     private readonly string _cacheId = Guid.NewGuid().ToString("N");
     private readonly ILogger _logger;
     private readonly ILoggerFactory _loggerFactory;
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
 
-    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessagePublisher messagePublisher, ILoggerFactory? loggerFactory = null)
+    public HybridAwareCacheClient(ICacheClient distributedCacheClient, IMessageBus messagePublisher, ILoggerFactory? loggerFactory = null)
     {
         _loggerFactory = loggerFactory ?? distributedCacheClient.GetLoggerFactory() ?? NullLoggerFactory.Instance;
         _logger = _loggerFactory.CreateLogger<HybridAwareCacheClient>();

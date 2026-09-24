@@ -8,7 +8,7 @@ This document catalogs known behavioral differences across Foundatio provider im
 |-----------|----------|-------|-------|-----|----------|-------|-------|--------|--------|
 | `IFileStorage` | Full | Full | Full | Partial | — | — | Partial | Full | Full |
 | `IQueue<T>` | Full | Partial | Partial | Partial | — | — | — | — | — |
-| `IMessageBus` | Full | Full | Full | Partial | Full | Full | — | — | — |
+| Legacy pub/sub bus | Full | Full | Full | Partial | Full | Full | — | — | — |
 | `ICacheClient` | Full | Full | — | — | — | — | — | — | — |
 | `ILockProvider` | Full | Full | — | — | — | — | — | — | — |
 
@@ -106,7 +106,9 @@ This document catalogs known behavioral differences across Foundatio provider im
 
 ---
 
-## IMessageBus
+## Legacy pub/sub providers
+
+The tables below describe the former publish-only provider APIs. For current transport contracts, see the [messaging provider matrix](messaging.md#provider-guarantees). These older provider packages do not implement the new transport SPI.
 
 ### Delayed Message Delivery
 
