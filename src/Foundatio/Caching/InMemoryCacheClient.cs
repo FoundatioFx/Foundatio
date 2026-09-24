@@ -596,11 +596,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// Returns a private copy of an entry's list values that can be modified and published with
     /// <see cref="CacheEntry.WithValue"/>, or <c>null</c> if the entry does not hold a list.
     /// </summary>
-    private static Dictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
+    private static IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
     {
         return entry.StoredValue switch
         {
             Dictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedDictionary<T, DateTime?> dictionary => new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedList<T, DateTime?> dictionary => new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
+            ConcurrentDictionary<T, DateTime?> dictionary => new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
             IDictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary),
             _ => null
         };

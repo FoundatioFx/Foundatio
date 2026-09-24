@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -377,13 +378,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ListAddAsync_WithCustomComparer_PreservesComparerAcrossUpdates(bool cloneValues)
+    [InlineData(false, 0)]
+    [InlineData(false, 1)]
+    [InlineData(false, 2)]
+    [InlineData(false, 3)]
+    [InlineData(true, 0)]
+    [InlineData(true, 1)]
+    [InlineData(true, 2)]
+    [InlineData(true, 3)]
+    public async Task ListAddAsync_WithCustomComparer_PreservesComparerAcrossUpdates(bool cloneValues, int dictionaryType)
     {
         // Arrange
         using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues));
-        await cache.SetAsync("set", new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { ["first"] = null });
+        IDictionary<string, DateTime?> values = dictionaryType switch
+        {
+            0 => new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
+            1 => new SortedDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
+            2 => new SortedList<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
+            _ => new ConcurrentDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
+        };
+        values["first"] = null;
+        await cache.SetAsync("set", values);
 
         // Act
         await cache.ListAddAsync("set", new[] { "FIRST", "second" });
@@ -391,7 +406,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
         // Assert
         Assert.Equal(1, removed);
-        var stored = Assert.IsType<Dictionary<string, DateTime?>>((await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value);
+        var stored = (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value!;
+        Assert.IsType(values.GetType(), stored);
         Assert.Single(stored);
         Assert.True(stored.ContainsKey("FIRST"));
     }
