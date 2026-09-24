@@ -5,7 +5,7 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Aggregate implementation reference: [`62f87cc`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/62f87ccecbe8ff3b7f34af31692c9fd2ada841a1). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
+This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Aggregate implementation reference: [`56afe87`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/56afe87dffbeb6dc9de339b86de5aa09f19a924e). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
 :::
 
 ::: warning Breaking exhaustion behavior
@@ -148,11 +148,13 @@ Delivery-generation invalidation prevents late completion from settling a replac
 
 The provider's 4.2.5 test environment includes the independently versioned delayed-exchange plugin `4.2.0`. A specific unknown-exchange-type response or an existing regular fanout topic establishes that the topic cannot schedule. Other permission, declaration, and network failures propagate rather than silently selecting memory scheduling.
 
+On a detected RabbitMQ 4.3+ broker, the provider skips the incompatible plugin probe and selects the non-scheduling path. If the server version cannot be read, it attempts the probe. Publisher-channel replacement repeats version detection and the applicable delayed-exchange declaration/probe, so a previously cached result does not prevent redeclaring a deleted topic. Redeclaration does not restore scheduled messages lost with that exchange or broker storage. See the [version feature matrix](./rabbitmq.md#broker-baseline-and-priority).
+
 With `RequireBrokerDelayedDelivery`, unavailable broker scheduling rejects publication before creating a memory timer. Without it, the legacy in-process fallback logs a warning and remains best effort; pending work can be lost when the process stops.
 
 The plugin stores scheduled messages on one broker node and routes them later. Confirmation is not proof of future routing or replicated availability. Provision durable future queues/bindings. Use an application outbox or independently durable scheduler when broker storage loss, plugin removal, or routing changes must be covered. `RequirePublishRouting` is an immediate-publication contract and rejects nonzero delay; do not combine these modes expecting future-route confirmation.
 
-The provider's native delayed-retry and newer quorum consumer-timeout options require a later broker and are rejected on 4.2.5. No later-version feature is enabled by these examples.
+The provider's `UseDelayedRetries()` and `ConsumerTimeout()` options require RabbitMQ 4.3+ quorum queues and are rejected on 4.2.5. Native delayed retries apply linear backoff to returned deliveries; they do not schedule initial publications or replace the `DeliveryDelay` fallback. No later-version feature is enabled by these examples.
 
 ## Compatibility and rollout
 

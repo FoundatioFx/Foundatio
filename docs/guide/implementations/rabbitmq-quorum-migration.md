@@ -7,14 +7,14 @@ title: RabbitMQ Quorum Queue Migration
 This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
 
 ::: warning Companion implementation
-The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`62f87cc`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/62f87ccecbe8ff3b7f34af31692c9fd2ada841a1). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`56afe87`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/56afe87dffbeb6dc9de339b86de5aa09f19a924e). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
 :::
 
 ## Why migrate?
 
 Quorum queues replicate state across their members and can continue operating with a majority available. They do not shard one hot queue into independent partitions, remove reconnection pauses, or guarantee zero loss for arbitrary publication, acknowledgement, retention, and storage policies. Classic queues on this baseline are node-local.
 
-Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native delayed retries from later broker versions are not available on the pinned baseline.
+Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native quorum delayed retries require RabbitMQ 4.3+ and are not available on the pinned baseline; see the [version feature matrix](./rabbitmq.md#broker-baseline-and-priority).
 
 ## Enabling quorum queues
 
@@ -97,7 +97,7 @@ A parallel environment still requires a tested transfer/cutover plan, duplicate 
 | QoS | Per-consumer prefetch; do not use channel-global QoS for quorum. Tune from workload measurements. |
 | Broker delivery limit | Can act on connection-loss redeliveries as well as processing failures. Choose its terminal policy deliberately. |
 | At-least-once broker DLX | Requires `RejectPublish` overflow, a DLX/destination, and broker prerequisites; duplicates remain possible. |
-| Native retry/consumer-timeout options | The provider options guarded for later quorum versions are rejected on this baseline. |
+| Native retry/consumer-timeout options | `UseDelayedRetries()` and `ConsumerTimeout()` require 4.3+ quorum queues and are rejected on this baseline. |
 
 Follow the [quorum budget section](./rabbitmq-delivery-safety.md#quorum-broker-and-application-budgets): prefer a finite broker budget with at-least-once DLX and reject-publish. A raw `-1` broker limit is an expert opt-out, separate from the application budget. Direct-options raw limits are preserved; the builder's `UseQuorumQueues()` writes the current `DeliveryLimit`, so apply an intentional raw override afterward. Provision and test the terminal destination before sending required events.
 

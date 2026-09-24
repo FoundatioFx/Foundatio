@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`62f87cc`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/62f87ccecbe8ff3b7f34af31692c9fd2ada841a1).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`56afe87`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/56afe87dffbeb6dc9de339b86de5aa09f19a924e).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -76,6 +76,8 @@ Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trust
 
 See [endpoint identity and port rules](./rabbitmq.md#tls-and-endpoints) for the production contract.
 
+Resolver unit tests cover preservation of configured client-certificate settings and rejection of custom server-validation callbacks while keeping strict endpoint identity. These configuration tests do not establish a live client-certificate authentication test; the TLS brokers below verify server identity and trust.
+
 The fixture generates two independent short-lived certificate authorities and server certificates, writing temporary certificate and broker configuration files asynchronously with startup cancellation. Only one public CA is added to the **current user's** root store and that exact certificate is removed during disposal. No system-wide trust change or `sudo` is required. Temporary server keys live in a private test directory, are mounted read-only into test containers, and are removed after the brokers stop. CA private keys are not written to disk.
 
 Both brokers disable plaintext AMQP. The trusted certificate covers `localhost`, `127.0.0.1`, and `::1`, but not `127.0.0.2`. Strict probes distinguish wrong identity from an untrusted chain, with healthy controls before and after rejection. Timeout or connection refusal does not pass those assertions.
@@ -95,6 +97,7 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Cancellation | Distinguish a handler-local timeout from subscription cancellation and transport shutdown. Exercise retry/terminal outcomes under Automatic acknowledgements, permissive-mode controls, cancelled setup callers with another pending subscriber, and last-subscriber removal/resubscription. |
 | Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. Exercise legacy subscription-removal hooks and busy transport locks; distinguish bounded disposal waits from eventual cleanup. |
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
+| Delayed topology recovery | Delete the delayed topic, close the publisher channel, publish again with required broker scheduling, and assert the exchange was recreated. This does not prove that messages from the deleted exchange survived. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
 | Sample provisioning | Launch the subscriber process with an unavailable URI endpoint and a healthy replacement host. Verify quarantine setup and subscription readiness; a helper-only endpoint test is insufficient. |
 | Header culture | Convert numeric AMQP headers under a non-English culture such as `fr-FR` and assert invariant property strings; byte-array headers remain UTF-8 text. |
@@ -111,5 +114,7 @@ Record the actual revision, dependency versions, broker versions, commands, comp
 For a test-only refactor, reconcile the original and resulting case inventories so renames or moves cannot conceal lost coverage. For a defect regression, run it against the unchanged runtime first and verify the intended behavioral failure, then rerun the same case against the repair. A missing fixture, compiler error, or empty selection is not defect reproduction. Keep a newly added but unexecuted case distinct from a passing regression.
 
 Use [delivery-safety/adoption guidance](./rabbitmq-delivery-safety.md) for topology, terminal handling, and operational prerequisites. Tests execute on .NET 10/Linux in the reviewed setup; .NET 8 compilation is not its own broker-runtime matrix. Packaging/publication skipped by a PR build is not package validation. A passing test count does not prove every legacy chaos assertion or every production failure model.
+
+The documented 4.3+ quorum priorities, delayed retries, and consumer-timeout options remain separate from this 4.2.5 runtime matrix. Version guards and upstream documentation do not substitute for running against the deployed broker version.
 
 This page describes how to verify; revision-specific results remain in the [provider review stack](./rabbitmq.md) and [issue #99](https://github.com/FoundatioFx/Foundatio.RabbitMQ/issues/99), not as permanent guarantees in the guide. Results from an earlier aggregate revision do not verify the current stack heads.
