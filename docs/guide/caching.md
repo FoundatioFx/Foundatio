@@ -268,7 +268,7 @@ Conditional writes and list updates publish replacement entries atomically. `Rem
 
 `Items` returns cached values without changing eviction order. Values follow `CloneValues`: mutable values remain shared when cloning is disabled, so callers must not mutate them concurrently with cache operations.
 
-List updates copy the stored dictionary even when `CloneValues` is disabled to keep concurrent updates and previously returned lists isolated. Allocation cost grows with list size; batch values into one `ListAddAsync` or `ListRemoveAsync` call when possible. With cloning enabled, existing list values are reused internally and cloned when returned to callers.
+List updates preserve previously returned snapshots. With cloning disabled and either no sizing or built-in fixed sizing, large lists created through `ListAddAsync` share unchanged storage across updates; the key index is built on the first modification. Batch values into one call to reduce copying and retries. Custom sizing, cloning, or accessing the raw dictionary through `GetAsync` or `Items` uses dictionary copies instead. These copies grow with list size. With cloning enabled, existing list values are reused internally and cloned when returned to callers.
 
 ### HybridCacheClient
 

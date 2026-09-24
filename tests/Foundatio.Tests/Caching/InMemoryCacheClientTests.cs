@@ -327,6 +327,69 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.SetIfLowerAsync_WithFloatingPointDecimals_ComparesCorrectly();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithActualLargeListUpdates_DoesNotCopyEntireList(bool fixedSizing)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(false).TimeProvider(new FakeTimeProvider());
+            return fixedSizing ? o.WithFixedSizing(1000000, 64) : o;
+        });
+        await cache.ListAddAsync("small", Enumerable.Range(0, 10));
+        await cache.ListAddAsync("large", Enumerable.Range(0, 1000));
+        int[] item = [-1];
+        await UpdateAsync("small");
+        await UpdateAsync("large");
+
+        // Act
+        long smallAllocation = await MeasureAsync("small");
+        long largeAllocation = await MeasureAsync("large");
+
+        // Assert
+        Assert.True(largeAllocation <= smallAllocation + 8192,
+            $"Small updates should not copy every element: small={smallAllocation}, large={largeAllocation} bytes.");
+        Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("large")).Value);
+        Assert.Equal(fixedSizing ? 128 : 0, cache.CurrentMemorySize);
+
+        async Task UpdateAsync(string key)
+        {
+            await cache.ListAddAsync(key, item);
+            await cache.ListRemoveAsync(key, item);
+        }
+
+        async Task<long> MeasureAsync(string key)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            await UpdateAsync(key);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithBatchCrossingBlocks_PreservesValuesAndSnapshots()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 64));
+        var previous = (await cache.GetListAsync<int>("set")).Value!;
+
+        // Act
+        await cache.ListAddAsync("set", Enumerable.Range(32, 1000));
+        long removed = await cache.ListRemoveAsync("set", Enumerable.Range(16, 1000));
+        await cache.ListAddAsync("set", Enumerable.Range(2000, 1000));
+
+        // Assert
+        Assert.Equal(1000, removed);
+        Assert.Equal(Enumerable.Range(0, 64), previous);
+        var expected = Enumerable.Range(0, 16).Concat(Enumerable.Range(1016, 16)).Concat(Enumerable.Range(2000, 1000));
+        var current = (await cache.GetListAsync<int>("set")).Value!;
+        Assert.Equal(expected, current.OrderBy(value => value));
+        Assert.Equal(current.Skip(100).Take(100), (await cache.GetListAsync<int>("set", 2)).Value);
+    }
+
     [Fact]
     public async Task ListAddAsync_WithCloneValues_StoresCopiesOfAddedValues()
     {
@@ -456,9 +519,49 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListAddAsync_WithExposedDictionary_PreservesDirectMutationsAndPriorSnapshot()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 64));
+        await cache.ListAddAsync("set", new[] { 64 });
+        var exposed = (await cache.GetAsync<Dictionary<int, DateTime?>>("set")).Value!;
+        exposed[100] = null;
+
+        // Act
+        await cache.ListAddAsync("set", new[] { 101 });
+        await cache.ListRemoveAsync("set", new[] { 0 });
+
+        // Assert
+        var current = (await cache.GetListAsync<int>("set")).Value!;
+        Assert.Contains(100, current);
+        Assert.Contains(101, current);
+        Assert.DoesNotContain(0, current);
+        Assert.Contains(0, exposed.Keys);
+        Assert.DoesNotContain(101, exposed.Keys);
+    }
+
+    [Fact]
     public override Task ListAddAsync_WithInvalidArguments_ThrowsException()
     {
         return base.ListAddAsync_WithInvalidArguments_ThrowsException();
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithOverriddenFixedSizer_ValidatesReplacement()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(1000, 1)
+            .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count).MaxEntrySize(64));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 64));
+
+        // Act
+        long added = await cache.ListAddAsync("set", new[] { 64 });
+
+        // Assert
+        Assert.Equal(0, added);
+        Assert.Equal(64, cache.CurrentMemorySize);
+        Assert.Equal(Enumerable.Range(0, 64), (await cache.GetListAsync<int>("set")).Value);
     }
 
     [Theory]
@@ -490,6 +593,37 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(new[] { "a", "b" }, (await cache.GetListAsync<string>("key")).Value);
         Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
         Assert.Equal(10, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithRepeatedMixedBatches_MatchesSetModel(bool fixedSizing)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => fixedSizing ? o.WithFixedSizing(1000000, 64) : o);
+        var expected = new HashSet<int>(Enumerable.Range(0, 1000));
+        await cache.ListAddAsync("set", expected);
+        var random = new Random(570);
+        int[] batchSizes = [1, 5, 31, 33, 128];
+
+        for (int iteration = 0; iteration < 200; iteration++)
+        {
+            var batch = Enumerable.Range(0, batchSizes[iteration % batchSizes.Length]).Select(_ => random.Next(-1024, 2048)).ToArray();
+
+            bool add = iteration % 2 == 0;
+            int expectedCount = add ? batch.Distinct().Count() : batch.Count(expected.Remove);
+            if (add)
+                expected.UnionWith(batch);
+
+            // Act
+            long affected = add ? await cache.ListAddAsync("set", batch) : await cache.ListRemoveAsync("set", batch);
+
+            // Assert
+            Assert.Equal(expectedCount, affected);
+            Assert.Equal(expected.OrderBy(value => value), (await cache.GetListAsync<int>("set")).Value!.OrderBy(value => value));
+            Assert.Equal(fixedSizing ? 64 : 0, cache.CurrentMemorySize);
+        }
     }
 
     [Fact]
@@ -575,6 +709,27 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(1, cache.CurrentMemorySize);
         Assert.Equal(new[] { "permanent" }, (await cache.GetListAsync<string>("set")).Value);
         Assert.Null(await cache.GetExpirationAsync("set"));
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WithMixedExpirations_RecalculatesLifetimeAfterPruningAndRemoval()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(timeProvider));
+        await cache.ListAddAsync("set", new[] { "permanent" });
+        await cache.ListAddAsync("set", new[] { "first" }, TimeSpan.FromSeconds(10));
+        await cache.ListAddAsync("set", new[] { "last" }, TimeSpan.FromSeconds(20));
+
+        // Act
+        await cache.ListRemoveAsync("set", new[] { "permanent" });
+        timeProvider.Advance(TimeSpan.FromSeconds(11));
+        long removed = await cache.ListRemoveAsync("set", new[] { "first", "absent" });
+
+        // Assert
+        Assert.Equal(0, removed);
+        Assert.Equal(new[] { "last" }, (await cache.GetListAsync<string>("set")).Value);
+        Assert.Equal(TimeSpan.FromSeconds(9), await cache.GetExpirationAsync("set"));
     }
 
     [Fact]
