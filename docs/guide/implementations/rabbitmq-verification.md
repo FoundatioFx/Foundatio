@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`d786795`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/d7867954a00e27a856bcd7ef79b026bfd7800218).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`09c09dd`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/09c09dd6df466d005c537918aac293e41832286a).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
