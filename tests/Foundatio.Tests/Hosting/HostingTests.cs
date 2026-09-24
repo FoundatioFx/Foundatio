@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Foundatio.Tests.Hosting;
@@ -198,6 +199,22 @@ public class HostingTests : TestWithLoggingBase
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2));
     }
 
+    [Fact]
+    public async Task WaitForStartupAsync_UncancelledLinkedToken_DoesNotOverrideTimeout()
+    {
+        // Arrange
+        var context = new StartupActionsContext(Log.CreateLogger<StartupActionsContext>());
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromSeconds(30));
+
+        // Act
+        var result = await context.WaitForStartupAsync(cancellation.Token, TimeSpan.FromMilliseconds(50));
+
+        // Assert
+        Assert.False(cancellation.IsCancellationRequested);
+        Assert.False(result.Success);
+        Assert.Contains("Timed out", result.ErrorMessage);
+    }
 }
 
 public class TestStartupAction : IStartupAction
