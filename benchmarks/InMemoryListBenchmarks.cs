@@ -10,7 +10,7 @@ namespace Foundatio.Benchmarks;
 [MemoryDiagnoser]
 public class InMemoryListBenchmarks
 {
-    public enum SizingMode { None, Fixed, Custom }
+    public enum SizingMode { None, Fixed, Custom, Dynamic }
 
     [Params(false, true)]
     public bool CloneValues { get; set; }
@@ -18,7 +18,7 @@ public class InMemoryListBenchmarks
     [Params(10, 1000)]
     public int Count { get; set; }
 
-    [Params(SizingMode.None, SizingMode.Fixed, SizingMode.Custom)]
+    [Params(SizingMode.None, SizingMode.Fixed, SizingMode.Custom, SizingMode.Dynamic)]
     public SizingMode Sizing { get; set; }
 
     private InMemoryCacheClient _cache = null!;
@@ -37,6 +37,7 @@ public class InMemoryListBenchmarks
             {
                 SizingMode.Fixed => o.WithFixedSizing(100000000, 100),
                 SizingMode.Custom => o.MaxMemorySize(100000000).SizeCalculator(_ => 100),
+                SizingMode.Dynamic => o.WithDynamicSizing(100000000),
                 _ => o
             };
         });

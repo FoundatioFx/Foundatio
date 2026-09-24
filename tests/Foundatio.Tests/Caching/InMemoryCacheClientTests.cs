@@ -711,20 +711,22 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Null(await cache.GetExpirationAsync("set"));
     }
 
-    [Fact]
-    public async Task ListRemoveAsync_WithMixedExpirations_RecalculatesLifetimeAfterPruningAndRemoval()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1000)]
+    public async Task ListRemoveAsync_WithMixedExpirations_RecalculatesLifetimeAfterPruningAndRemoval(int expiringCount)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(timeProvider));
         await cache.ListAddAsync("set", new[] { "permanent" });
-        await cache.ListAddAsync("set", new[] { "first" }, TimeSpan.FromSeconds(10));
+        await cache.ListAddAsync("set", Enumerable.Range(0, expiringCount).Select(index => $"first-{index}"), TimeSpan.FromSeconds(10));
         await cache.ListAddAsync("set", new[] { "last" }, TimeSpan.FromSeconds(20));
 
         // Act
         await cache.ListRemoveAsync("set", new[] { "permanent" });
         timeProvider.Advance(TimeSpan.FromSeconds(11));
-        long removed = await cache.ListRemoveAsync("set", new[] { "first", "absent" });
+        long removed = await cache.ListRemoveAsync("set", new[] { "first-0", "absent" });
 
         // Assert
         Assert.Equal(0, removed);
