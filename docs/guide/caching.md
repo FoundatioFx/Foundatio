@@ -262,6 +262,20 @@ await cache.SetAsync("session", sessionData, TimeSpan.FromMinutes(30));
 var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 ```
 
+#### In-memory compatibility changes
+
+In-memory updates now publish replacement entries atomically. Maintenance and compaction remove only the entry they observed, so a concurrent refresh cannot cause them to delete its replacement. Maintenance also considers recently accessed expired entries.
+
+- `RemoveIfEqualAsync` deletes matching live entries immediately and releases tracked memory. `ListRemoveAsync` does the same when the last value is removed. These explicit deletions no longer raise `ItemExpired`; actual expiration still does. Conditional removal no longer schedules maintenance by itself.
+- `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` for expired entries, even if maintenance has not removed them yet. Other expired-value operations are tracked separately in [#571](https://github.com/FoundatioFx/Foundatio/issues/571).
+- Rejected oversized conditional replacements, numeric results, and list updates leave the previous value, expiration, and tracked size unchanged. They return `false` or zero when size-limit throwing is disabled; otherwise the configured size-limit exception propagates. Numeric replacement updates use the replacement's calculated size.
+- `Items` returns cached values instead of internal entry objects, without changing eviction order. Its type is `ICollection<KeyValuePair<string, object?>>`: the nullable annotation can introduce source warnings, but does not change the CLR member signature. Values follow `CloneValues`, so mutable values remain shared when cloning is disabled.
+- `RemoveIfEqualAsync` now completes synchronously and can throw before returning a task, including validation or value-comparison failures. Place the invocation itself inside the exception handler, not just a later `await`.
+
+List updates now copy the stored dictionary even when `CloneValues` is disabled, so allocation cost grows with list size. Batch values into a single `ListAddAsync` or `ListRemoveAsync` call when possible, and measure large, frequently updated lists before upgrading. With cloning enabled, the new path avoids repeated deep copies.
+
+These changes do not fix the separately tracked [Hybrid local-cache numeric race (#572)](https://github.com/FoundatioFx/Foundatio/issues/572).
+
 ### HybridCacheClient
 
 Combines a local in-memory cache (L1) with a distributed cache (L2) for maximum performance. This implements the industry-standard L1/L2 caching architecture, ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.

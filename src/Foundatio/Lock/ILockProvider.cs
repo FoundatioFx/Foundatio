@@ -92,9 +92,16 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier.</param>
     /// <param name="lockId">The unique identifier of the lock to renew.</param>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <remarks>
+    /// Cache-backed leases reject lost ownership. Throttling and empty locks do not renew an exclusive lease.
+    /// Other providers define their own renewal semantics.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="CacheLockProvider"/> received a duration less than 5 milliseconds.
+    /// </exception>
     /// <exception cref="LockException">
-    /// The lock expired, was released, or is now held by another owner. Stop the protected work: renewal never
-    /// recreates or takes over a lock.
+    /// A lease provider such as <see cref="CacheLockProvider"/> could not renew ownership.
+    /// Stop the protected work when renewal fails.
     /// </exception>
     Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null);
 }
@@ -108,9 +115,15 @@ public interface ILock : IAsyncDisposable
     /// Extends the lock expiration to prevent automatic release during long-running operations.
     /// </summary>
     /// <param name="timeUntilExpires">The new expiration duration from now.</param>
+    /// <remarks>
+    /// Cache-backed leases reject lost ownership. Throttling and empty locks do not renew an exclusive lease.
+    /// Other providers define their own renewal semantics.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="CacheLockProvider"/> received a duration less than 5 milliseconds.
+    /// </exception>
     /// <exception cref="LockException">
-    /// This lock expired, was released, or is now held by another owner. Stop the protected work: renewal never
-    /// recreates or takes over a lock.
+    /// The underlying lease provider could not renew ownership. Stop the protected work when renewal fails.
     /// </exception>
     Task RenewAsync(TimeSpan? timeUntilExpires = null);
 

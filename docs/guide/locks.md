@@ -250,43 +250,62 @@ if (lck is not null)
 }
 ```
 
-`RenewAsync` only extends a lock you still hold. If the lock expired, was released, or was taken by another owner, it throws `LockException` instead of recreating the lock. Treat that as lost ownership and stop the protected work, since another process may already be doing it.
+`CacheLockProvider.RenewAsync` only extends a lock you still hold. If its cache rejects renewal, including when the lock expired, was released, or was taken by another owner, it throws `LockException`. Ownership is no longer assured: stop the protected work, since another process may already be doing it. Custom cache providers must implement atomic conditional replacement and treat expired entries as missing.
+
+A supplied renewal duration must be at least 5 milliseconds; a shorter duration throws `ArgumentOutOfRangeException` without changing the cache. Omitting the duration uses 20 minutes. Renewal is a no-op for `ThrottlingLockProvider` and `EmptyLock`; these do not provide renewable exclusive leases.
 
 ::: warning Behavior change
 Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock.
 :::
 
-A lock is not a fencing token. Losing it cannot cancel work you already sent to another system, so make those operations idempotent or check ownership again before each irreversible step.
+A lock is not a fencing token. Losing it cannot cancel work you already sent to another system. Checking ownership before a write leaves a race between the check and the write; only validation enforced by the destination can fence a stale owner. Make operations idempotent where appropriate, but do not treat idempotency as exclusive ownership.
 
 ### Automatic Renewal
 
-For very long operations, set up automatic renewal:
+For very long operations, observe renewal failures and cancel cooperative work before releasing the lock:
 
 ```csharp
-await using var lck = await locker.TryAcquireAsync("my-resource");
+await using var lck = await locker.TryAcquireAsync(
+    "my-resource", timeUntilExpires: TimeSpan.FromMinutes(1));
 if (lck is null) return;
 
 using var cts = new CancellationTokenSource();
-
-// Start renewal task
-var renewTask = Task.Run(async () =>
-{
-    while (!cts.Token.IsCancellationRequested)
-    {
-        await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-        await lck.RenewAsync(TimeSpan.FromMinutes(1));
-    }
-});
+var renewTask = RenewPeriodicallyAsync();
 
 try
 {
-    await VeryLongRunningOperationAsync();
+    await VeryLongRunningOperationAsync(cts.Token);
 }
 finally
 {
-    cts.Cancel();
+    await cts.CancelAsync();
+    await renewTask;
+}
+
+async Task RenewPeriodicallyAsync()
+{
+    try
+    {
+        while (true)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
+            cts.Token.ThrowIfCancellationRequested();
+            await lck.RenewAsync(TimeSpan.FromMinutes(1));
+        }
+    }
+    catch (OperationCanceledException) when (cts.IsCancellationRequested)
+    {
+        // Normal shutdown after work completes or is cancelled.
+    }
+    catch
+    {
+        await cts.CancelAsync();
+        throw;
+    }
 }
 ```
+
+The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. Cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
 
 ## Common Patterns
 

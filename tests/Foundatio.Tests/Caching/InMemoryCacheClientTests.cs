@@ -208,6 +208,35 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.IncrementAsync_WithKey_IncrementsCorrectly();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task IncrementAsync_WithRejectedResult_PreservesEntry(bool useDouble, bool shouldThrow)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxMemorySize(1000)
+            .SizeCalculator(value => Convert.ToInt64(value)).MaxEntrySize(10)
+            .ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
+        await cache.SetAsync("key", 9L, TimeSpan.FromMinutes(1));
+
+        // Act
+        async Task<double> IncrementAsync() => useDouble
+            ? await cache.IncrementAsync("key", 2d, TimeSpan.FromMinutes(5))
+            : await cache.IncrementAsync("key", 2L, TimeSpan.FromMinutes(5));
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(IncrementAsync);
+        else
+            Assert.Equal(0, await IncrementAsync());
+
+        // Assert
+        Assert.Equal(9, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
+        Assert.Equal(9, cache.CurrentMemorySize);
+    }
+
     [Fact]
     public override Task IncrementAsync_WithScopedCache_WorksWithinScope()
     {
@@ -221,9 +250,73 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task Items_WhenRead_DoesNotChangeEvictionOrder()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.MaxItems(2).TimeProvider(timeProvider).LoggerFactory(Log));
+        await cache.SetAsync("first", "1");
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+        await cache.SetAsync("second", "2");
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        Assert.Equal(2, cache.Items.Count);
+        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
+        await cache.SetAsync("third", "3");
+
+        // Assert
+        Assert.False(await cache.ExistsAsync("first"));
+        Assert.True(await cache.ExistsAsync("second"));
+        Assert.True(await cache.ExistsAsync("third"));
+    }
+
+    [Fact]
+    public async Task Items_WithCachedValue_ReturnsValueNotInternalEntry()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        await cache.SetAsync("key", "value");
+
+        // Act
+        var item = Assert.Single(cache.Items);
+
+        // Assert
+        Assert.Equal("key", item.Key);
+        Assert.Equal("value", item.Value);
+    }
+
+    [Fact]
+    public async Task Items_WithNullValue_ReturnsCachedNull()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient();
+        await cache.SetAsync<string?>("key", null);
+
+        // Act
+        var item = Assert.Single(cache.Items);
+
+        // Assert
+        Assert.Equal("key", item.Key);
+        Assert.Null(item.Value);
+    }
+
+    [Fact]
+    public override Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
+    {
+        return base.SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum();
+    }
+
+    [Fact]
     public override Task SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly()
     {
         return base.SetIfHigherAsync_WithFloatingPointDecimals_ComparesCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
+    {
+        return base.SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease();
     }
 
     [Fact]
@@ -233,9 +326,44 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListAddAsync_WithCloneValues_StoresCopiesOfAddedValues()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { new SimpleModel { Data1 = "first" } });
+        var added = new SimpleModel { Data1 = "second" };
+
+        // Act
+        await cache.ListAddAsync("set", new[] { added });
+
+        // Assert
+        var stored = Assert.IsAssignableFrom<IDictionary<SimpleModel, DateTime?>>(GetEntry(cache, "set").StoredValue);
+        Assert.Equal(2, stored.Count);
+        Assert.DoesNotContain(stored.Keys, k => ReferenceEquals(k, added));
+    }
+
+    [Fact]
     public override Task ListAddAsync_WithConcurrentRequests_DoesNotLoseValues()
     {
         return base.ListAddAsync_WithConcurrentRequests_DoesNotLoseValues();
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithExistingList_DoesNotMutatePreviouslyReadValue()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { "a" });
+        var previouslyRead = (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value;
+
+        // Act
+        await cache.ListAddAsync("set", new[] { "b" });
+        await cache.ListRemoveAsync("set", new[] { "a" });
+
+        // Assert
+        Assert.Equal(["a"], previouslyRead!.Keys);
+        var current = await cache.GetListAsync<string>("set");
+        Assert.Equal(["b"], current.Value);
     }
 
     [Fact]
@@ -250,6 +378,37 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.ListAddAsync_WithInvalidArguments_ThrowsException();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithRejectedUpdate_PreservesEntry(bool remove, bool shouldThrow)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        bool reject = false;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxMemorySize(1000)
+            .SizeCalculator(value => reject && ((IDictionary<string, DateTime?>)value).Count == (remove ? 1 : 3) ? 20 : 10)
+            .MaxEntrySize(15).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
+        await cache.ListAddAsync("key", new[] { "a", "b" }, TimeSpan.FromMinutes(1));
+        reject = true;
+
+        // Act
+        async Task<long> UpdateAsync() => remove
+            ? await cache.ListRemoveAsync("key", new[] { "a" })
+            : await cache.ListAddAsync("key", new[] { "c" }, TimeSpan.FromMinutes(5));
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(UpdateAsync);
+        else
+            Assert.Equal(0, await UpdateAsync());
+
+        // Assert
+        Assert.Equal(new[] { "a", "b" }, (await cache.GetListAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
+        Assert.Equal(10, cache.CurrentMemorySize);
+    }
+
     [Fact]
     public override Task ListAddAsync_WithSingleString_StoresAsStringNotCharArray()
     {
@@ -260,6 +419,23 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListAddAsync_WithVariousInputs_HandlesCorrectly()
     {
         return base.ListAddAsync_WithVariousInputs_HandlesCorrectly();
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WhenLastValueRemoved_RemovesKeyAndReleasesMemory()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.ListAddAsync("set", new[] { "a" });
+        Assert.Equal(50, cache.CurrentMemorySize);
+
+        // Act
+        long removed = await cache.ListRemoveAsync("set", new[] { "a" });
+
+        // Assert
+        Assert.Equal(1, removed);
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.False(await cache.ExistsAsync("set"));
     }
 
     [Fact]
@@ -424,6 +600,76 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(pattern);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WhenEntryExpiresDuringComparison_ReturnsFalse(bool replace)
+    {
+        // Arrange
+        // A lease that expires while its value is being compared must not be renewed or released by the stale owner
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        var owner = new ComparedValue("owner", () => timeProvider.Advance(TimeSpan.FromMinutes(2)));
+        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
+
+        // Act
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
+            : await cache.RemoveIfEqualAsync("lease", owner);
+
+        // Assert
+        Assert.False(changed);
+        Assert.False(await cache.ExistsAsync("lease"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WhenOwnerChangesDuringComparison_KeepsNewOwner(bool replace)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        var newOwner = CreateEntry(new ComparedValue("new-owner"), timeProvider, TimeSpan.FromMinutes(1));
+        var owner = new ComparedValue("owner", () => Publish(cache, "lease", newOwner));
+        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
+
+        // Act
+        bool changed = replace
+            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
+            : await cache.RemoveIfEqualAsync("lease", owner);
+
+        // Assert
+        Assert.False(changed);
+        Assert.Same(newOwner, GetEntry(cache, "lease"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WithExplicitDeletion_DoesNotLeaveExpirationTombstone(bool removeList)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider));
+        if (removeList)
+            await cache.ListAddAsync("key", new[] { "value" }, TimeSpan.FromMinutes(1));
+        else
+            await cache.SetAsync("key", "value", TimeSpan.FromMinutes(1));
+
+        // Act
+        if (removeList)
+            Assert.Equal(1, await cache.ListRemoveAsync("key", new[] { "value" }));
+        else
+            Assert.True(await cache.RemoveIfEqualAsync("key", "value"));
+
+        // Assert
+        Assert.Null(cache.UpdateEntry("key", current => (current, current)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        await cache.DoMaintenanceAsync();
+        Assert.Equal(0, cache.Count);
+    }
+
     [Fact]
     public override Task RemoveIfEqualAsync_WithInvalidKey_ThrowsArgumentException()
     {
@@ -473,9 +719,44 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.SetAsync<object>("key", 1);
+        var replacement = new List<int> { 1 };
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync<object>("key", replacement, 1);
+        replacement.Add(2);
+
+        // Assert
+        Assert.True(replaced);
+        var cached = await cache.GetAsync<List<int>>("key");
+        Assert.Equal([1], cached.Value);
+    }
+
+    [Fact]
     public override Task ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.ReplaceIfEqualAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithExpiredEntry_ReturnsFalseAndDoesNotRevive()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        Publish(cache, "lease", CreateEntry("owner", timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("lease", "owner", "owner", TimeSpan.FromMinutes(10));
+
+        // Assert
+        Assert.False(replaced);
+        Assert.False(await cache.ExistsAsync("lease"));
     }
 
     [Fact]
@@ -494,6 +775,25 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace()
     {
         return base.ReplaceIfEqualAsync_WithMismatchedOldValue_ReturnsFalseAndDoesNotReplace();
+    }
+
+    [Fact]
+    public async Task ReplaceIfEqualAsync_WithMismatchedOversizedValue_ReturnsFalseWithoutThrowing()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o
+            .WithDynamicSizing(10000, Log)
+            .MaxEntrySize(50)
+            .ShouldThrowOnMaxEntrySizeExceeded()
+            .LoggerFactory(Log));
+        await cache.SetAsync("key", "small");
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("key", new string('x', 100), "other");
+
+        // Assert
+        Assert.False(replaced);
+        Assert.Equal("small", (await cache.GetAsync<string>("key")).Value);
     }
 
     [Fact]
@@ -607,12 +907,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public override Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
-    {
-        return base.SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum();
-    }
-
-    [Fact]
     public override Task SetIfHigherAsync_WithDateTime_UpdatesWhenHigher()
     {
         return base.SetIfHigherAsync_WithDateTime_UpdatesWhenHigher();
@@ -628,18 +922,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly();
-    }
-
-    [Fact]
-    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
-    {
-        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
-    }
-
-    [Fact]
-    public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
-    {
-        return base.SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease();
     }
 
     [Fact]
@@ -889,6 +1171,43 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task MemorySize_WithRemoveIfEqualOperation_FreesMemoryImmediately()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "value");
+        Assert.Equal(50, cache.CurrentMemorySize);
+
+        // Act
+        bool removed = await cache.RemoveIfEqualAsync("key", "value");
+
+        // Assert
+        Assert.True(removed);
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.False(await cache.ExistsAsync("key"));
+    }
+
+    [Fact]
+    public async Task MemorySize_WithSetExpirationOperation_PreservesValueAndMemorySize()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        await cache.SetAsync("key", "value", TimeSpan.FromMinutes(1));
+        await cache.SetAsync("persistent", "value", TimeSpan.FromMinutes(1));
+
+        // Act
+        await cache.SetExpirationAsync("key", TimeSpan.FromMinutes(5));
+        await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?> { ["persistent"] = null });
+
+        // Assert
+        Assert.Equal("value", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(5), await cache.GetExpirationAsync("key"));
+        Assert.Null(await cache.GetExpirationAsync("persistent"));
+        Assert.Equal(100, cache.CurrentMemorySize);
+    }
+
+    [Fact]
     public async Task MemorySize_WithoutMaxMemorySize_DoesNotTrack()
     {
         // Arrange
@@ -944,23 +1263,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task MemorySize_WithRemoveIfEqualOperation_FreesMemoryImmediately()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        await cache.SetAsync("key", "value");
-        Assert.Equal(50, cache.CurrentMemorySize);
-
-        // Act
-        bool removed = await cache.RemoveIfEqualAsync("key", "value");
-
-        // Assert
-        Assert.True(removed);
-        Assert.Equal(0, cache.CurrentMemorySize);
-        Assert.False(await cache.ExistsAsync("key"));
-    }
-
-    [Fact]
     public async Task MemorySize_WithRemoveOperation_FreesMemory()
     {
         // Arrange
@@ -997,26 +1299,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             // Assert
             Assert.Equal(0, cache.CurrentMemorySize);
         }
-    }
-
-    [Fact]
-    public async Task MemorySize_WithSetExpirationOperation_PreservesValueAndMemorySize()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        await cache.SetAsync("key", "value", TimeSpan.FromMinutes(1));
-        await cache.SetAsync("persistent", "value", TimeSpan.FromMinutes(1));
-
-        // Act
-        await cache.SetExpirationAsync("key", TimeSpan.FromMinutes(5));
-        await cache.SetAllExpirationAsync(new Dictionary<string, TimeSpan?> { ["persistent"] = null });
-
-        // Assert
-        Assert.Equal("value", (await cache.GetAsync<string>("key")).Value);
-        Assert.Equal(TimeSpan.FromMinutes(5), await cache.GetExpirationAsync("key"));
-        Assert.Null(await cache.GetExpirationAsync("persistent"));
-        Assert.Equal(100, cache.CurrentMemorySize);
     }
 
     [Fact]
@@ -1107,41 +1389,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task ListAddAsync_WithCloneValues_StoresCopiesOfAddedValues()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
-        await cache.ListAddAsync("set", new[] { new SimpleModel { Data1 = "first" } });
-        var added = new SimpleModel { Data1 = "second" };
-
-        // Act
-        await cache.ListAddAsync("set", new[] { added });
-
-        // Assert
-        var stored = Assert.IsAssignableFrom<IDictionary<SimpleModel, DateTime?>>(GetEntry(cache, "set").StoredValue);
-        Assert.Equal(2, stored.Count);
-        Assert.DoesNotContain(stored.Keys, k => ReferenceEquals(k, added));
-    }
-
-    [Fact]
-    public async Task ListAddAsync_WithExistingList_DoesNotMutatePreviouslyReadValue()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
-        await cache.ListAddAsync("set", new[] { "a" });
-        var previouslyRead = (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value;
-
-        // Act
-        await cache.ListAddAsync("set", new[] { "b" });
-        await cache.ListRemoveAsync("set", new[] { "a" });
-
-        // Assert
-        Assert.Equal(["a"], previouslyRead!.Keys);
-        var current = await cache.GetListAsync<string>("set");
-        Assert.Equal(["b"], current.Value);
-    }
-
-    [Fact]
     public async Task ListAddAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
@@ -1173,23 +1420,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             var sizeAfterRemove = cache.CurrentMemorySize;
             Assert.True(sizeAfterRemove < sizeAfterMoreItems, "Memory should decrease when removing list items");
         }
-    }
-
-    [Fact]
-    public async Task ListRemoveAsync_WhenLastValueRemoved_RemovesKeyAndReleasesMemory()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        await cache.ListAddAsync("set", new[] { "a" });
-        Assert.Equal(50, cache.CurrentMemorySize);
-
-        // Act
-        long removed = await cache.ListRemoveAsync("set", new[] { "a" });
-
-        // Assert
-        Assert.Equal(1, removed);
-        Assert.Equal(0, cache.CurrentMemorySize);
-        Assert.False(await cache.ExistsAsync("set"));
     }
 
     [Fact]
@@ -1345,43 +1575,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task Items_WhenRead_DoesNotChangeEvictionOrder()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.MaxItems(2).TimeProvider(timeProvider).LoggerFactory(Log));
-        await cache.SetAsync("first", "1");
-        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
-        await cache.SetAsync("second", "2");
-        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
-
-        // Act
-        Assert.Equal(2, cache.Items.Count);
-        timeProvider.Advance(TimeSpan.FromMilliseconds(100));
-        await cache.SetAsync("third", "3");
-
-        // Assert
-        Assert.False(await cache.ExistsAsync("first"));
-        Assert.True(await cache.ExistsAsync("second"));
-        Assert.True(await cache.ExistsAsync("third"));
-    }
-
-    [Fact]
-    public async Task Items_WithCachedValue_ReturnsValueNotInternalEntry()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
-        await cache.SetAsync("key", "value");
-
-        // Act
-        var item = Assert.Single(cache.Items);
-
-        // Assert
-        Assert.Equal("key", item.Key);
-        Assert.Equal("value", item.Value);
-    }
-
-    [Fact]
     public async Task SetAsync_WithNegativeSizeFromCalculator_SkipsEntry()
     {
         var cache = new InMemoryCacheClient(o => o
@@ -1511,6 +1704,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    {
+        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
+    }
+
+    [Fact]
     public async Task SetIfHigherAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
         // Arrange
@@ -1548,6 +1747,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             // Assert
             Assert.Equal(0, cache.CurrentMemorySize);
         }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SetIfHigherAsync_WithNumericConversion_TracksReplacementSize(bool lower, bool useDouble)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.MaxMemorySize(1000)
+            .SizeCalculator(value => value is string ? 100 : 8).LoggerFactory(Log));
+        await cache.SetAsync("key", "10");
+
+        // Act
+        double difference = (lower, useDouble) switch
+        {
+            (true, true) => await cache.SetIfLowerAsync("key", 5d),
+            (true, false) => await cache.SetIfLowerAsync("key", 5L),
+            (false, true) => await cache.SetIfHigherAsync("key", 15d),
+            _ => await cache.SetIfHigherAsync("key", 15L)
+        };
+
+        // Assert
+        Assert.Equal(5, difference);
+        Assert.Equal(lower ? 5 : 15, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(8, cache.CurrentMemorySize);
     }
 
     [Fact]
@@ -1624,84 +1850,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RemoveIfEqualAsync_WhenEntryExpiresDuringComparison_ReturnsFalse(bool replace)
-    {
-        // A lease that expires while its value is being compared must not be renewed or released by the stale owner
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
-        var owner = new ComparedValue("owner", () => timeProvider.Advance(TimeSpan.FromMinutes(2)));
-        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
-
-        // Act
-        bool changed = replace
-            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
-            : await cache.RemoveIfEqualAsync("lease", owner);
-
-        // Assert
-        Assert.False(changed);
-        Assert.False(await cache.ExistsAsync("lease"));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RemoveIfEqualAsync_WhenOwnerChangesDuringComparison_KeepsNewOwner(bool replace)
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
-        var newOwner = CreateEntry(new ComparedValue("new-owner"), timeProvider, TimeSpan.FromMinutes(1));
-        var owner = new ComparedValue("owner", () => Publish(cache, "lease", newOwner));
-        Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
-
-        // Act
-        bool changed = replace
-            ? await cache.ReplaceIfEqualAsync("lease", new ComparedValue("owner"), owner, TimeSpan.FromMinutes(10))
-            : await cache.RemoveIfEqualAsync("lease", owner);
-
-        // Assert
-        Assert.False(changed);
-        Assert.Same(newOwner, GetEntry(cache, "lease"));
-    }
-
-    [Fact]
-    public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
-    {
-        // Arrange
-        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
-        await cache.SetAsync<object>("key", 1);
-        var replacement = new List<int> { 1 };
-
-        // Act
-        bool replaced = await cache.ReplaceIfEqualAsync<object>("key", replacement, 1);
-        replacement.Add(2);
-
-        // Assert
-        Assert.True(replaced);
-        var cached = await cache.GetAsync<List<int>>("key");
-        Assert.Equal([1], cached.Value);
-    }
-
-    [Fact]
-    public async Task ReplaceIfEqualAsync_WithExpiredEntry_ReturnsFalseAndDoesNotRevive()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
-        Publish(cache, "lease", CreateEntry("owner", timeProvider, TimeSpan.FromMinutes(1)));
-        timeProvider.Advance(TimeSpan.FromMinutes(2));
-
-        // Act
-        bool replaced = await cache.ReplaceIfEqualAsync("lease", "owner", "owner", TimeSpan.FromMinutes(10));
-
-        // Assert
-        Assert.False(replaced);
-        Assert.False(await cache.ExistsAsync("lease"));
-    }
-
     [Fact]
     public async Task ReplaceIfEqualAsync_WithMaxMemorySize_TracksMemoryCorrectly()
     {
@@ -1746,23 +1894,29 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
-    [Fact]
-    public async Task ReplaceIfEqualAsync_WithMismatchedOversizedValue_ReturnsFalseWithoutThrowing()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReplaceIfEqualAsync_WithRejectedReplacement_PreservesEntry(bool shouldThrow)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o
-            .WithDynamicSizing(10000, Log)
-            .MaxEntrySize(50)
-            .ShouldThrowOnMaxEntrySizeExceeded()
-            .LoggerFactory(Log));
-        await cache.SetAsync("key", "small");
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxMemorySize(1000)
+            .SizeCalculator(value => ((string)value).Length).MaxEntrySize(5)
+            .ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).LoggerFactory(Log));
+        await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
 
         // Act
-        bool replaced = await cache.ReplaceIfEqualAsync("key", new string('x', 100), "other");
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(async () =>
+                await cache.ReplaceIfEqualAsync("key", "oversized", "old", TimeSpan.FromMinutes(5)));
+        else
+            Assert.False(await cache.ReplaceIfEqualAsync("key", "oversized", "old", TimeSpan.FromMinutes(5)));
 
         // Assert
-        Assert.False(replaced);
-        Assert.Equal("small", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal("old", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
+        Assert.Equal(3, cache.CurrentMemorySize);
     }
 
     [Fact]
@@ -1910,134 +2064,6 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
-    [Fact]
-    public void TryRemoveEntry_WhenObservedEntryWasReplaced_KeepsLiveEntry()
-    {
-        // Reproduces the production race deterministically: maintenance observes an expired entry, another
-        // writer replaces it, then maintenance tries to remove the entry it observed.
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        var observed = CreateEntry("expired", timeProvider, TimeSpan.FromMilliseconds(100));
-        Publish(cache, "key", observed);
-        timeProvider.Advance(TimeSpan.FromSeconds(1));
-        Assert.True(observed.IsExpired);
-        var fresh = CreateEntry("fresh", timeProvider, TimeSpan.FromMinutes(5));
-        Publish(cache, "key", fresh);
-
-        // Act
-        bool removed = cache.TryRemoveEntry("key", observed);
-
-        // Assert
-        Assert.False(removed);
-        Assert.Same(fresh, GetEntry(cache, "key"));
-        Assert.Equal(50, cache.CurrentMemorySize);
-    }
-
-    [Fact]
-    public void UpdateEntry_WhenKeyAddedDuringAdd_RetriesAgainstAddedEntry()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        var competing = CreateEntry("competing", timeProvider);
-        int attempts = 0;
-
-        // Act: another writer adds the key after this add read it as missing
-        bool added = cache.UpdateEntry("key", current =>
-        {
-            if (++attempts is 1)
-                Publish(cache, "key", competing);
-
-            return current is null ? (CreateEntry("mine", timeProvider), true) : (current, false);
-        });
-
-        // Assert
-        Assert.Equal(2, attempts);
-        Assert.False(added);
-        Assert.Same(competing, GetEntry(cache, "key"));
-        Assert.Equal(50, cache.CurrentMemorySize);
-    }
-
-    [Fact]
-    public void UpdateEntry_WhenKeyChangesDuringRemove_KeepsNewEntry()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        Publish(cache, "key", CreateEntry("expected", timeProvider));
-        var replacement = CreateEntry("replaced", timeProvider);
-        int attempts = 0;
-
-        // Act: another writer replaces the value after this conditional remove matched it
-        bool removed = cache.UpdateEntry("key", current =>
-        {
-            if (++attempts is 1)
-                Publish(cache, "key", replacement);
-
-            return current?.StoredValue is "expected" ? (null, true) : (current, false);
-        });
-
-        // Assert
-        Assert.Equal(2, attempts);
-        Assert.False(removed);
-        Assert.Same(replacement, GetEntry(cache, "key"));
-        Assert.Equal(50, cache.CurrentMemorySize);
-    }
-
-    [Fact]
-    public void UpdateEntry_WhenKeyChangesDuringUpdate_ReturnsOnlyPublishedResult()
-    {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        Publish(cache, "key", CreateEntry(1L, timeProvider));
-        int attempts = 0;
-
-        // Act: another writer changes the value after this increment read it
-        long result = cache.UpdateEntry("key", current =>
-        {
-            if (++attempts is 1)
-                Publish(cache, "key", CreateEntry(10L, timeProvider));
-
-            long newValue = (long)current!.StoredValue! + 1;
-            return (current.WithValue(newValue, null, current.Size), newValue);
-        });
-
-        // Assert
-        Assert.Equal(2, attempts);
-        Assert.Equal(11, result);
-        Assert.Equal(11L, GetEntry(cache, "key").StoredValue);
-        Assert.Equal(50, cache.CurrentMemorySize);
-    }
-
-    [Fact]
-    public void UpdateEntry_WhenKeyRemovedDuringUpdate_AddsInsteadOfUpdating()
-    {
-        // The key disappears between the read and the publish, so the retry must take the add path and report
-        // it. Reporting the discarded update's result is how AddAsync used to leave lock keys with no owner.
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
-        Publish(cache, "key", CreateEntry("old", timeProvider));
-        int attempts = 0;
-
-        // Act
-        string outcome = cache.UpdateEntry("key", current =>
-        {
-            if (++attempts is 1)
-                cache.UpdateEntry<bool>("key", _ => (null, true));
-
-            return current is null
-                ? (CreateEntry("added", timeProvider), "added")
-                : (current.WithValue("updated", null, current.Size), "updated");
-        });
-
-        // Assert
-        Assert.Equal(2, attempts);
-        Assert.Equal("added", outcome);
-        Assert.Equal("added", GetEntry(cache, "key").StoredValue);
-        Assert.Equal(50, cache.CurrentMemorySize);
-    }
-
     private static InMemoryCacheClient.CacheEntry CreateEntry(object value, TimeProvider timeProvider, TimeSpan? expiresIn = null)
     {
         DateTime? expiresAt = expiresIn.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiresIn.Value) : null;
@@ -2127,6 +2153,136 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         return base.SetExpirationAsync_OnNonExistentKey_DoesNotThrow();
     }
+    [Fact]
+    public void TryRemoveEntry_WhenObservedEntryWasReplaced_KeepsLiveEntry()
+    {
+        // Arrange
+        // Reproduces the production race deterministically: maintenance observes an expired entry, another
+        // writer replaces it, then maintenance tries to remove the entry it observed.
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        var observed = CreateEntry("expired", timeProvider, TimeSpan.FromMilliseconds(100));
+        Publish(cache, "key", observed);
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+        Assert.True(observed.IsExpired);
+        var fresh = CreateEntry("fresh", timeProvider, TimeSpan.FromMinutes(5));
+        Publish(cache, "key", fresh);
+
+        // Act
+        bool removed = cache.TryRemoveEntry("key", observed);
+
+        // Assert
+        Assert.False(removed);
+        Assert.Same(fresh, GetEntry(cache, "key"));
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+    [Fact]
+    public void UpdateEntry_WhenKeyAddedDuringAdd_RetriesAgainstAddedEntry()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        var competing = CreateEntry("competing", timeProvider);
+        int attempts = 0;
+
+        // Act: another writer adds the key after this add read it as missing
+        bool added = cache.UpdateEntry("key", current =>
+        {
+            if (++attempts is 1)
+                Publish(cache, "key", competing);
+
+            return current is null ? (CreateEntry("mine", timeProvider), true) : (current, false);
+        });
+
+        // Assert
+        Assert.Equal(2, attempts);
+        Assert.False(added);
+        Assert.Same(competing, GetEntry(cache, "key"));
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public void UpdateEntry_WhenKeyChangesDuringRemove_KeepsNewEntry()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        Publish(cache, "key", CreateEntry("expected", timeProvider));
+        var replacement = CreateEntry("replaced", timeProvider);
+        int attempts = 0;
+
+        // Act: another writer replaces the value after this conditional remove matched it
+        bool removed = cache.UpdateEntry("key", current =>
+        {
+            if (++attempts is 1)
+                Publish(cache, "key", replacement);
+
+            return current?.StoredValue is "expected" ? (null, true) : (current, false);
+        });
+
+        // Assert
+        Assert.Equal(2, attempts);
+        Assert.False(removed);
+        Assert.Same(replacement, GetEntry(cache, "key"));
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public void UpdateEntry_WhenKeyChangesDuringUpdate_ReturnsOnlyPublishedResult()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        Publish(cache, "key", CreateEntry(1L, timeProvider));
+        int attempts = 0;
+
+        // Act: another writer changes the value after this increment read it
+        long result = cache.UpdateEntry("key", current =>
+        {
+            if (++attempts is 1)
+                Publish(cache, "key", CreateEntry(10L, timeProvider));
+
+            long newValue = (long)current!.StoredValue! + 1;
+            return (current.WithValue(newValue, null, current.Size), newValue);
+        });
+
+        // Assert
+        Assert.Equal(2, attempts);
+        Assert.Equal(11, result);
+        Assert.Equal(11L, GetEntry(cache, "key").StoredValue);
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public void UpdateEntry_WhenKeyRemovedDuringUpdate_AddsInsteadOfUpdating()
+    {
+        // Arrange
+        // The key disappears between the read and the publish, so the retry must take the add path and report
+        // it. Reporting the discarded update's result is how AddAsync used to leave lock keys with no owner.
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        Publish(cache, "key", CreateEntry("old", timeProvider));
+        int attempts = 0;
+
+        // Act
+        string outcome = cache.UpdateEntry("key", current =>
+        {
+            if (++attempts is 1)
+                cache.UpdateEntry<bool>("key", _ => (null, true));
+
+            return current is null
+                ? (CreateEntry("added", timeProvider), "added")
+                : (current.WithValue("updated", null, current.Size), "updated");
+        });
+
+        // Assert
+        Assert.Equal(2, attempts);
+        Assert.Equal("added", outcome);
+        Assert.Equal("added", GetEntry(cache, "key").StoredValue);
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+
 
     private record MyData(string Name, int Value);
 }

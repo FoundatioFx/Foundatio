@@ -514,7 +514,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return (newEntry, value);
 
             if (GetNumericValue<T>(current) is { } currentValue && (higher ? currentValue < value : currentValue > value))
-                return (current.WithValue(value, expiresAt, current.Size), higher ? value - currentValue : currentValue - value);
+                return (current.WithValue(value, expiresAt, newEntry.Size), higher ? value - currentValue : currentValue - value);
 
             return (current.WithExpiration(expiresAt), T.Zero);
         });
@@ -572,10 +572,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        UpdateEntry(key, current =>
+        return UpdateEntry(key, current =>
         {
             if (current is null)
-                return (entry, true);
+                return (entry, (long)items.Count);
 
             if (CopyListValues<T>(current) is not { } dictionary)
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
@@ -586,10 +586,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 dictionary[kvp.Key] = kvp.Value;
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-            return (current.WithValue(dictionary, GetListExpiration(dictionary), size), true);
+            return size < 0
+                ? (current, 0L)
+                : (current.WithValue(dictionary, GetListExpiration(dictionary), size), (long)items.Count);
         });
-
-        return items.Count;
     }
 
     /// <summary>
@@ -655,7 +655,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return (null, removedCount);
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-            return (current.WithValue(dictionary, GetListExpiration(dictionary), size), removedCount);
+            return size < 0
+                ? (current, 0L)
+                : (current.WithValue(dictionary, GetListExpiration(dictionary), size), removedCount);
         });
 
         if (removed > 0)
@@ -835,7 +837,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             T newValue = (GetNumericValue<T>(current) ?? T.Zero) + amount;
             long size = _hasSizeCalculator ? CalculateEntrySize(newValue) : 0;
-            return (current.WithValue(newValue, expiresAt, size), newValue);
+            return size < 0 ? (current, T.Zero) : (current.WithValue(newValue, expiresAt, size), newValue);
         });
 
         await StartMaintenanceAsync().AnyContext();

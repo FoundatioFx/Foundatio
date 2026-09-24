@@ -245,16 +245,20 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
     }
 
     /// <inheritdoc />
-    /// <exception cref="LockException">The lock expired, was released, or is now held by another owner.</exception>
+    /// <exception cref="LockException">The cache rejected renewal. Ownership is no longer assured.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The supplied duration is less than 5 milliseconds.</exception>
     public async Task RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null)
     {
+        if (timeUntilExpires < CacheClientExtensions.MinimumExpiration)
+            throw new ArgumentOutOfRangeException(nameof(timeUntilExpires), timeUntilExpires, "Lock renewal duration must be at least 5 milliseconds.");
+
         if (!timeUntilExpires.HasValue)
             timeUntilExpires = TimeSpan.FromMinutes(20);
 
         _logger.LogDebug("Renewing lock {Resource} ({LockId}) for {Duration:g}", resource, lockId, timeUntilExpires);
         bool renewed = await _resiliencePolicy.ExecuteAsync(async _ => await _cacheClient.ReplaceIfEqualAsync(resource, lockId, lockId, timeUntilExpires.Value).AnyContext()).AnyContext();
         if (!renewed)
-            throw new LockException($"Unable to renew lock {resource} ({lockId}): it expired, was released, or is held by another owner.");
+            throw new LockException($"Unable to renew lock {resource} ({lockId}): the cache rejected renewal and ownership is no longer assured.");
     }
 
     private class ResetEventWithRefCount
