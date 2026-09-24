@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`09c09dd`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/09c09dd6df466d005c537918aac293e41832286a).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`856d0f4`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/856d0f47b0bb979c3abb875d9c2882c586b1a230).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -97,6 +97,7 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
 | Sample provisioning | Launch the subscriber process with an unavailable URI endpoint and a healthy replacement host. Verify quarantine setup and subscription readiness; a helper-only endpoint test is insufficient. |
+| Header culture | Convert numeric AMQP headers under a non-English culture such as `fr-FR` and assert invariant property strings; byte-array headers remain UTF-8 text. |
 | Priority on 4.2.5 | Classic cases exercise configured numeric priority; quorum cases exercise normal/high tiers without `x-max-priority`. Cover builder and direct options, omitted/zero priority, and prefetch effects. Do not assert later-broker semantics. |
 
 Handoff ambiguity is injected at the caller boundary around a real broker publication, not claimed as packet-level confirmation loss. Publisher-process termination does not establish replicated scheduling. Tests allow the real 4.2.5 dead-letter retry timer rather than changing it solely to hide a slow result.

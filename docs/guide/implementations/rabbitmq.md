@@ -7,7 +7,7 @@ title: RabbitMQ
 `RabbitMQMessageBus` implements `IMessageBus` using RabbitMQ and AMQP 0.9.1. It supports best-effort pub/sub and explicitly configured durable subscriptions; installing the provider alone does not establish reliable business processing.
 
 ::: warning Companion implementation
-This documentation branch accompanies [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). New strict-delivery options and changed exhaustion behavior described here are not claimed to be in an already released NuGet package. Coordinate documentation publication with that implementation's merge/release and verify the package version used by your application. Implementation reference: [`09c09dd`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/09c09dd6df466d005c537918aac293e41832286a). Revision-specific validation remains in the companion PRs.
+This documentation branch accompanies [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). New strict-delivery options and changed exhaustion behavior described here are not claimed to be in an already released NuGet package. Coordinate documentation publication with that implementation's merge/release and verify the package version used by your application. Implementation reference: [`856d0f4`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/856d0f47b0bb979c3abb875d9c2882c586b1a230). Revision-specific validation remains in the companion PRs.
 :::
 
 ::: warning Breaking exhaustion behavior
@@ -56,7 +56,9 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `DeliveryLimit` | `2` | Application redelivery budget after the initial attempt; `-1` is unlimited. Broker enforcement is separate. |
 | `PrefetchCount` | `0` | With both prefetch options zero, the provider sends no QoS and broker defaults can apply. |
 
-The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/09c09dd6df466d005c537918aac293e41832286a/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API.
+The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/856d0f47b0bb979c3abb875d9c2882c586b1a230/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API.
+
+`IMessage.Properties` formats received numeric AMQP headers with `CultureInfo.InvariantCulture`: a numeric value of `1.5` becomes `"1.5"` even under `fr-FR`, rather than `"1,5"`. Byte-array headers still decode as UTF-8. Use invariant culture when parsing numeric property strings.
 
 ## TLS and endpoints
 
