@@ -5,7 +5,7 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100), not a claim about every released provider version. Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Exact source revisions and executed verification remain in the companion PRs.
+This guide describes [Foundatio.RabbitMQ PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100), not a claim about every released provider version. Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Implementation reference: [`9c3b3b1`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/9c3b3b1c035880a1f0e3a12b8f316d7ef939af2e). Executed verification remains in the companion PRs.
 :::
 
 ::: warning Breaking exhaustion behavior
