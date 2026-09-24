@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`9c3b3b1`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/9c3b3b1c035880a1f0e3a12b8f316d7ef939af2e).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. It accompanies [provider PR #100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100); a documentation branch or test definition is not proof that an implementation is released. Implementation reference: [`d786795`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/d7867954a00e27a856bcd7ef79b026bfd7800218).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -50,7 +50,7 @@ The HTTP launch profile is for the local development dashboard; use the URL emit
 | `subscriber-classic` | `sample-classic-orderevent` | `sample-classic-quarantine` / `sample-classic-quarantine-queue` |
 | `subscriber-quorum` | `sample-quorum-orderevent` | `sample-quorum-quarantine` / `sample-quorum-quarantine-queue` |
 
-Both subscribers use durable, nonexclusive, non-autodelete queues, Automatic acknowledgement, strict dispatch, prefetch 10, and application delivery limit 2. The sample explicitly provisions each direct quarantine exchange/queue with routing key `quarantine`; that is sample setup, not automatic provider provisioning. Both source and quarantine queues default to a 16 MiB ready-message byte limit and reject-publish overflow. `--max-length-bytes` changes the sample cap. Quorum additionally selects at-least-once broker DLX with a finite broker delivery limit.
+Both subscribers use durable, nonexclusive, non-autodelete queues, Automatic acknowledgement, strict dispatch, prefetch 10, and application delivery limit 2. The sample explicitly provisions each direct quarantine exchange/queue with routing key `quarantine`; that is sample setup, not automatic provider provisioning. Quarantine setup uses the same `--hosts` / `RABBITMQ_HOSTS` replacement endpoints as the bus, while credentials and virtual host come from the connection URI. Both source and quarantine queues default to a 16 MiB ready-message byte limit and reject-publish overflow. `--max-length-bytes` changes the sample cap. Quorum additionally selects at-least-once broker DLX with a finite broker delivery limit.
 
 The publisher uses `--publisher-confirms --durable --require-routing`; each subscriber uses `--fail-every 5` to permanently fail every fifth order. Inspect actual consumer readiness before evaluating results: a running Aspire resource is not proof that its subscription is established. Confirm normal orders in both subscriber logs and failed orders in both quarantine queues, preserving event IDs. Classic retry remains local to its subscription; quorum retries through broker requeue. A publish confirmation cannot confirm that both logical subscriptions exist or have processed an event. Failed sample publications are logged and **not replayed**; this sample is not a durable outbox or a complete loss-reconciliation test.
 
@@ -96,6 +96,7 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Lifecycle | Channel-only closure, consumer cancellation, failed initialization, queue recreation, stale callbacks, and uncooperative-handler shutdown include actual receipt/settlement assertions. Exercise legacy subscription-removal hooks and busy transport locks; distinguish bounded disposal waits from eventual cleanup. |
 | Delayed publication | Required broker scheduling rejects memory fallback. Kill a test publisher after confirmed scheduling and before the due time; the broker must later deliver the same ID. |
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
+| Sample provisioning | Launch the subscriber process with an unavailable URI endpoint and a healthy replacement host. Verify quarantine setup and subscription readiness; a helper-only endpoint test is insufficient. |
 | Priority on 4.2.5 | Classic cases exercise configured numeric priority; quorum cases exercise normal/high tiers without `x-max-priority`. Cover builder and direct options, omitted/zero priority, and prefetch effects. Do not assert later-broker semantics. |
 
 Handoff ambiguity is injected at the caller boundary around a real broker publication, not claimed as packet-level confirmation loss. Publisher-process termination does not establish replicated scheduling. Tests allow the real 4.2.5 dead-letter retry timer rather than changing it solely to hide a slow result.
