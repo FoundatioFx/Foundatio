@@ -85,7 +85,7 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/f153dac0eecfb31c3a80602f168e47ed4bc8ed7d/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/3144246cf6e3e70cc722aaa83ec66cd802ad7a38/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
@@ -99,6 +99,8 @@ await using var messageBus = new RabbitMQMessageBus(o => o
 The callback receives the fluent options builder. The defaults are best-effort pub/sub, including broker automatic acknowledgement and ordinary publisher confirms disabled. See the [RabbitMQ provider guide](./implementations/rabbitmq.md) and [delivery-safety guide](./implementations/rabbitmq-delivery-safety.md) for durable subscription requirements, retry/terminal outcomes, and the companion implementation's opt-in contracts. Those guides identify which behavior depends on the unreleased provider PR; a documentation branch is not a package release.
 
 The candidate changes Automatic-mode exhaustion without a typed terminal destination from discard to retention, which can block progress and increase backlog. Strict dispatch is opt-in and requires Automatic acknowledgement, a nonempty typed `DeadLetterExchange`, and discard disabled. Both classic and quorum support these provider contracts; only quorum adds replication and optional at-least-once broker DLX. Plan [capacity and backpressure](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) before adoption.
+
+The candidate also rejects `UseMessagePriority()` / `MaxPriority` with quorum queues using `InvalidOperationException`, in either builder or direct-property assignment order. Bus construction catches conflicts introduced through later mutation of the `Arguments` dictionary. Remove those classic-only settings before adoption; message-level `Priority` works with either queue type.
 
 ### RedisMessageBus
 

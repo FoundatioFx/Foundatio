@@ -5,7 +5,7 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Aggregate implementation reference: [`f153dac`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/f153dac0eecfb31c3a80602f168e47ed4bc8ed7d). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
+This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Aggregate implementation reference: [`3144246`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/3144246cf6e3e70cc722aaa83ec66cd802ad7a38). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
 :::
 
 ::: warning Breaking exhaustion behavior
@@ -158,7 +158,7 @@ The provider's `UseDelayedRetries()` and `ConsumerTimeout()` options require Rab
 
 ## Compatibility and rollout
 
-Release notes must identify the breaking retention-on-exhaustion default in Automatic mode, the strict-dispatch terminal-destination requirement, subscription-local retries/stable IDs, and strict endpoint identity/port checks. Retention can intentionally pause progress pending repair and increase storage demand. `DiscardOnDeliveryLimit = true` restores explicit discard only when strict dispatch is disabled and no typed destination is configured; it is unsuitable for required work.
+Release notes must identify the breaking retention-on-exhaustion default in Automatic mode, rejection of classic-only `UseMessagePriority()` / `MaxPriority` in quorum configurations, the strict-dispatch terminal-destination requirement, subscription-local retries/stable IDs, and strict endpoint identity/port checks. Remove those priority settings from quorum configurations before adoption; the combination now throws `InvalidOperationException`. Message-level `Priority` remains supported for both queue types. Retention can intentionally pause progress pending repair and increase storage demand. `DiscardOnDeliveryLimit = true` restores explicit discard only when strict dispatch is disabled and no typed destination is configured; it is unsuitable for required work.
 
 Before adoption, inventory queue types/policies, provision terminal routes, validate certificate aliases, choose the required profile, and rehearse repair/replay with idempotent handlers. Provider tests do not make database commits and publication transactional. Application outbox/inbox/reconciliation, capacity, and deployment validation remain application responsibilities. The 4.2.5 pin is not a vulnerability or support-lifecycle sign-off.
 

@@ -7,7 +7,7 @@ title: RabbitMQ Quorum Queue Migration
 This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
 
 ::: warning Companion implementation
-The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`f153dac`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/f153dac0eecfb31c3a80602f168e47ed4bc8ed7d). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`3144246`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/3144246cf6e3e70cc722aaa83ec66cd802ad7a38). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
 :::
 
 ## Why migrate?
@@ -17,6 +17,8 @@ Quorum queues replicate state across their members and can continue operating wi
 Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native quorum delayed retries require RabbitMQ 4.3+ and are not available on the pinned baseline; see the [version feature matrix](./rabbitmq.md#broker-baseline-and-priority).
 
 ## Enabling quorum queues
+
+Remove `UseMessagePriority()` and leave `MaxPriority` unset when moving a classic configuration to quorum. The builder rejects the combination with `UseQuorumQueues()` in either order. Direct options reject it on property assignment in either order; bus construction also catches conflicts introduced by later mutation of the `Arguments` dictionary. These checks throw `InvalidOperationException` and are a breaking validation change. Keep message-level `Priority` values where needed; quorum priority support is built into the broker.
 
 ```csharp
 using Foundatio.Messaging;
@@ -93,7 +95,7 @@ A parallel environment still requires a tested transfer/cutover plan, duplicate 
 | Area | Quorum requirement or boundary |
 |---|---|
 | Durability | Durable, nonexclusive, non-autodelete topology with a stable queue name. |
-| Priority | Normal/high tiers. Do not send the classic-only `x-max-priority` argument or assume strict numeric ordering. |
+| Priority | Normal/high tiers. Remove `UseMessagePriority()` / `MaxPriority` and the classic-only `x-max-priority` argument. Message-level `Priority` remains valid; do not assume strict numeric ordering. |
 | QoS | Per-consumer prefetch; do not use channel-global QoS for quorum. Tune from workload measurements. |
 | Broker delivery limit | Can act on connection-loss redeliveries as well as processing failures. Choose its terminal policy deliberately. |
 | At-least-once broker DLX | Requires `RejectPublish` overflow, a DLX/destination, and broker prerequisites; duplicates remain possible. |
