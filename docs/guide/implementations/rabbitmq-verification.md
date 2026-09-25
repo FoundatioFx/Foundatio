@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`7d01c8b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/7d01c8beec9fc798d36fe1d03d3e78976375f34b).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`f153dac`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/f153dac0eecfb31c3a80602f168e47ed4bc8ed7d).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -76,7 +76,7 @@ Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trust
 
 See [endpoint identity and port rules](./rabbitmq.md#tls-and-endpoints) for the production contract.
 
-Resolver unit tests cover preservation of configured client-certificate settings and rejection of custom server-validation callbacks while keeping strict endpoint identity. These configuration tests do not establish a live client-certificate authentication test; the TLS brokers below verify server identity and trust.
+Resolver unit tests cover preservation of configured client-certificate settings, rejection of custom server-validation callbacks, and `ArgumentOutOfRangeException` for out-of-range factory and replacement-host ports while keeping strict endpoint identity. These configuration tests do not establish a live client-certificate authentication test; the TLS brokers below verify server identity and trust.
 
 The fixture generates two independent short-lived certificate authorities and server certificates, writing temporary certificate and broker configuration files asynchronously with startup cancellation. Only one public CA is added to the **current user's** root store and that exact certificate is removed during disposal. No system-wide trust change or `sudo` is required. Temporary server keys live in a private test directory, are mounted read-only into test containers, and are removed after the brokers stop. CA private keys are not written to disk.
 
