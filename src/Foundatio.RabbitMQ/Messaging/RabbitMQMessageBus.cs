@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.AsyncEx;
 using Foundatio.Extensions;
+using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -51,28 +52,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         _isQuorumQueue = options.Arguments is not null && options.Arguments.TryGetValue("x-queue-type", out object? queueType) && queueType is string type && String.Equals(type, "quorum", StringComparison.OrdinalIgnoreCase);
 
-        // Parse the connection string for credentials and vhost
-        bool useSsl = primaryUri.Scheme.Equals("amqps", StringComparison.OrdinalIgnoreCase);
-        int defaultPort = useSsl ? 5671 : 5672;
-
-        // Build the list of endpoints for failover support
-        // If Hosts is provided, use it as the complete host list; otherwise use the host from connection string
-        _endpoints = [];
-        var seenEndpoints = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (options.Hosts is { Count: > 0 })
-        {
-            foreach (string host in options.Hosts)
-            {
-                var endpoint = ParseHostEndpoint(host, defaultPort);
-                if (endpoint is not null && seenEndpoints.Add($"{endpoint.HostName}:{endpoint.Port}"))
-                    _endpoints.Add(endpoint);
-            }
-        }
-        else
-        {
-            _endpoints.Add(new AmqpTcpEndpoint(primaryUri.Host, primaryUri.Port > 0 ? primaryUri.Port : defaultPort));
-        }
-
         // Initialize the connection factory with credentials/vhost from connection string
         // Automatic recovery will allow the connections to be restored in case the server is
         // restarted or there has been any network failures. TopologyRecoveryEnabled is already
@@ -88,6 +67,8 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         if (options.NetworkRecoveryInterval.HasValue)
             _factory.NetworkRecoveryInterval = options.NetworkRecoveryInterval.Value;
+
+        _endpoints = RabbitMQEndpointResolver.CreateEndpoints(_factory, options.Hosts);
     }
 
     public RabbitMQMessageBus(Builder<RabbitMQMessageBusOptionsBuilder, RabbitMQMessageBusOptions> config)
@@ -924,48 +905,6 @@ public class RabbitMQMessageBus : MessageBusBase<RabbitMQMessageBusOptions>
 
         string portSuffix = uri.IsDefaultPort ? "" : $":{uri.Port}";
         return $"{uri.Scheme}://***@{uri.Host}{portSuffix}{uri.AbsolutePath}";
-    }
-
-    /// <summary>
-    /// Parses a host string in format "hostname" or "hostname:port" into an AmqpTcpEndpoint.
-    /// </summary>
-    private static AmqpTcpEndpoint? ParseHostEndpoint(string host, int defaultPort)
-    {
-        if (String.IsNullOrWhiteSpace(host))
-            return null;
-
-        string trimmed = host.Trim();
-
-        // Handle IPv6 bracket notation: [::1] or [::1]:5672
-        if (trimmed.StartsWith('['))
-        {
-            int closeBracket = trimmed.IndexOf(']');
-            if (closeBracket < 0)
-                return new AmqpTcpEndpoint(trimmed, defaultPort);
-
-            string ipv6Host = trimmed[1..closeBracket];
-            if (closeBracket + 1 < trimmed.Length && trimmed[closeBracket + 1] == ':')
-            {
-                return Int32.TryParse(trimmed[(closeBracket + 2)..], out int port)
-                    ? new AmqpTcpEndpoint(ipv6Host, port)
-                    : new AmqpTcpEndpoint(ipv6Host, defaultPort);
-            }
-
-            return new AmqpTcpEndpoint(ipv6Host, defaultPort);
-        }
-
-        int colonIndex = trimmed.LastIndexOf(':');
-        if (colonIndex < 0)
-            return new AmqpTcpEndpoint(trimmed, defaultPort);
-
-        // Multiple colons without brackets indicates an unbracketed IPv6 address — treat as bare hostname
-        if (trimmed.IndexOf(':') != colonIndex)
-            return new AmqpTcpEndpoint(trimmed, defaultPort);
-
-        string hostname = trimmed[..colonIndex];
-        return Int32.TryParse(trimmed[(colonIndex + 1)..], out int parsedPort)
-            ? new AmqpTcpEndpoint(hostname, parsedPort)
-            : new AmqpTcpEndpoint(hostname, defaultPort);
     }
 
     private void RegisterPublisherConnectionEventHandlers()
