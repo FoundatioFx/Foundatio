@@ -85,17 +85,22 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/c44286a06f9bf031abd98890892511316944ea10/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
 
-using Foundatio.RabbitMQ.Messaging;
+using Foundatio.Messaging;
 
-var messageBus = new RabbitMQMessageBus(o => {
-    o.ConnectionString = "amqp://guest:guest@localhost:5672";
-});
+await using var messageBus = new RabbitMQMessageBus(o => o
+    .ConnectionString("amqp://guest:guest@localhost:5672"));
 ```
+
+The callback receives the fluent options builder. The defaults are best-effort pub/sub, including broker automatic acknowledgement and ordinary publisher confirms disabled. See the [RabbitMQ provider guide](./implementations/rabbitmq.md) and [delivery-safety guide](./implementations/rabbitmq-delivery-safety.md) for durable subscription requirements, retry/terminal outcomes, and the companion implementation's opt-in contracts. Those guides identify which behavior depends on the unreleased provider PR; a documentation branch is not a package release.
+
+The candidate changes Automatic-mode exhaustion without a typed terminal destination from discard to retention, which can block progress and increase backlog. Strict dispatch is opt-in and requires Automatic acknowledgement, a nonempty typed `DeadLetterExchange`, and discard disabled. Both classic and quorum support these provider contracts; only quorum adds replication and optional at-least-once broker DLX. Plan [capacity and backpressure](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) before adoption.
+
+Remove `UseMessagePriority()` / `MaxPriority` when configuring quorum: builders reject the combination immediately; direct options reject it at construction with `InvalidOperationException`. Message-level `Priority` remains valid. See the provider guide for classic priority ranges and queue-type validation.
 
 ### RedisMessageBus
 
@@ -275,13 +280,13 @@ await messageBus.SubscribeAsync(async (IMessage message, CancellationToken ct) =
 
 #### Breaking change: `IMessage.Data` is now `ReadOnlyMemory<byte>`
 
-`IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. This lets memory-backed transports such as Azure Service Bus and RabbitMQ expose the payload without copying it into a new array. Since it is a struct, follow these patterns:
+`IMessage.Data` exposes the raw payload as `ReadOnlyMemory<byte>` instead of `byte[]`. The abstraction can represent a memory-backed payload without requiring a new array; ownership and copying depend on the provider implementation. Since it is a struct, follow these patterns:
 
 - Check for an empty payload with `message.Data.IsEmpty` (not `== null`)
 - Read the bytes directly via `message.Data.Span`
 - Call `message.Data.ToArray()` only when you need a `byte[]`
 
-**Buffer validity:** `Data` is only guaranteed valid for the duration of message handling. Some providers (such as RabbitMQ) expose a pooled transport buffer that is reclaimed once your handler returns, so the framework deserializes the body within the handler. If you need to retain the raw payload beyond the current handler invocation, copy it with `message.Data.ToArray()`.
+**Buffer validity:** Treat `Data` as valid only for the documented handling lifetime unless the provider explicitly promises ownership. Copy it with `message.Data.ToArray()` when retaining raw bytes beyond that lifetime. The companion RabbitMQ implementation described in the [delivery-safety guide](./implementations/rabbitmq-delivery-safety.md#dispatch-and-lifecycle) makes an owned copy so an uncooperative handler cannot outlive a reclaimed transport buffer; do not generalize that implementation choice to other providers or versions.
 
 Most code that uses `GetBody()` / `Body` is unaffected. When constructing a `Message`, you can still pass a `byte[]`; it converts implicitly to `ReadOnlyMemory<byte>`.
 
@@ -335,6 +340,8 @@ public class NotificationService
     }
 }
 ```
+
+These fragments illustrate event relationships, not a complete startup or transaction protocol. In a hosted application, await subscription setup during startup rather than leaving an unobserved task in a constructor. Committing application state and publishing an event are separate operations; required consistency may need an outbox and reconciliation.
 
 ### Cache Invalidation
 
@@ -494,13 +501,13 @@ Different providers handle delayed delivery differently:
 | **InMemoryMessageBus** | In-memory timer | None | No |
 | **AzureServiceBusMessageBus** | Native `ScheduledEnqueueTime` | Azure | Yes |
 | **KafkaMessageBus** | In-memory timer | None | No |
-| **RabbitMQMessageBus** | Plugin or fallback | Plugin: Yes, Fallback: No | Plugin: Yes, Fallback: No |
+| **RabbitMQMessageBus** | Plugin or fallback | Plugin: single-node broker storage; fallback: none | Plugin can outlive publisher process; not replicated scheduling. Fallback: no. |
 | **RedisMessageBus** | In-memory timer | None | No |
 | **SQSMessageBus** | In-memory timer | None | No |
 
 ### Native vs Fallback Implementation
 
-**Native implementations** (Azure Service Bus, RabbitMQ with plugin) persist the delayed message in the broker. The message survives application restarts and is delivered reliably.
+**Broker-side implementations** store scheduled work outside the publishing process. That does not establish a universal delivery guarantee: storage redundancy, retention, destination availability, and future routing must be verified for the chosen provider. In particular, the RabbitMQ delayed-exchange plugin keeps scheduled work on one broker node.
 
 **Fallback implementations** hold the message in memory using a timer. This has important limitations:
 
@@ -512,14 +519,14 @@ Different providers handle delayed delivery differently:
 
 ### RabbitMQ Plugin
 
-RabbitMQ requires the `rabbitmq_delayed_message_exchange` plugin for native delayed delivery:
+On the 4.2.5 baseline, Foundatio.RabbitMQ uses the `rabbitmq_delayed_message_exchange` plugin for broker-side delayed publication:
 
 ```bash
-# Enable the plugin
+# Enable the separately installed compatible plugin artifact.
 rabbitmq-plugins enable rabbitmq_delayed_message_exchange
 ```
 
-The `RabbitMQMessageBus` automatically detects if the plugin is available and uses it when present. Otherwise, it falls back to the in-memory timer.
+By default, the provider can fall back to process-memory scheduling when the topic cannot schedule. The companion implementation's `RequireBrokerDelayedDelivery` rejects that fallback before creating a timer. It requires durable publication and confirms, but does not guarantee future routing or replicated scheduled storage. `RequirePublishRouting` validates immediate routing and rejects nonzero delays. See the [versioned RabbitMQ delivery contract](./implementations/rabbitmq-delivery-safety.md#delayed-publication).
 
 ### When to Use Delayed Delivery
 
@@ -535,10 +542,7 @@ The `RabbitMQMessageBus` automatically detects if the plugin is available and us
 - Order processing
 - Any message where loss is unacceptable
 
-For guaranteed delayed delivery, use:
-- Azure Service Bus (native support)
-- RabbitMQ with the delayed message plugin
-- `IQueue<T>` with `DeliveryDelay` for work items that must be processed
+For required delayed work, select and verify a broker-backed scheduler or durable queue implementation against the required failure model. An `IQueue<T>` abstraction alone does not establish persistence, and the RabbitMQ plugin alone is not a replicated outbox. Use durable application publication/reconciliation where the chosen provider cannot cover the required boundary.
 
 ## Distributed Tracing
 
@@ -662,7 +666,7 @@ services.AddHostedService<MessageSubscriber>();
 
 ### MessageBusException
 
-All message bus implementations throw `MessageBusException` for transport-level errors. This provides a consistent exception type regardless of the underlying provider:
+`MessageBusException` represents message-bus errors. Consult the specific provider/version for exceptions that can also surface during construction, subscription setup, and broker operations:
 
 ```csharp
 try
@@ -684,38 +688,27 @@ catch (OperationCanceledException)
 
 | Scenario | Exception Type | Notes |
 |----------|---------------|-------|
-| Transport error (network, broker) | `MessageBusException` | Wraps underlying exception |
+| Transport error (network, broker) | `MessageBusException` or provider-specific exception | Verify the operation and provider contract; setup errors need not have the same wrapper as publish errors. |
 | Null message/type | `ArgumentNullException` | Thrown immediately |
 | Cancellation requested | `OperationCanceledException` | Passed through unchanged |
 | Serialization error | `MessageBusException` | Wraps serialization exception |
 
 ### Subscriber Error Handling
 
-**Important:** Subscriber errors do NOT propagate to the publisher. This behavior is consistent across ALL implementations, including `InMemoryMessageBus`. This design ensures:
-
-1. **Consistent behavior** - Code that works with `InMemoryMessageBus` in tests will behave the same with distributed buses in production
-2. **Matches distributed reality** - In distributed systems, publishers and subscribers run in separate processes; publisher cannot see subscriber errors
-3. **Predictable error handling** - Subscribers are responsible for handling their own errors
+Subscriber failure is not an acknowledgement sent back to the producer. For RabbitMQ, a broker-confirmed publication does not report the outcome of a downstream handler. Handler exceptions and acknowledgement mode determine the consumer-side retry/terminal outcome; inspect the provider-specific contract rather than assuming identical guarantees from the shared interface.
 
 ```csharp
-// Publisher - will NOT see subscriber errors
+// Publisher - a downstream handler failure is not a consumer-processing confirmation.
 await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-// Returns successfully even if a subscriber throws
 
-// Subscriber - handle your own errors
+// Subscriber - allow failures to propagate when the transport must retry.
 await messageBus.SubscribeAsync<OrderCreated>(async order =>
 {
-    try
-    {
-        await ProcessOrderAsync(order);
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Failed to process order {OrderId}", order.OrderId);
-        // Optionally publish failure event, retry, etc.
-    }
+    await ProcessOrderAsync(order);
 });
 ```
+
+Catching an error and returning successfully can cause an acknowledgement-based provider to treat the delivery as handled. Only do so when the application's selected outcome is actually complete, not merely because the error was logged.
 
 ### Provider Behavior Summary
 
@@ -724,12 +717,12 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 | **InMemoryMessageBus** | Throws `MessageBusException` | Logged, swallowed | No |
 | **AzureServiceBusMessageBus** | Throws `MessageBusException` | Logged, SDK handles | Yes (`MaxDeliveryCount`) |
 | **KafkaMessageBus** | Fire-and-forget with callback | Logged, offset not committed | Yes (redelivered) |
-| **RabbitMQMessageBus** | Throws `MessageBusException` | Logged, nack/requeue | Yes (`DeliveryLimit`) |
+| **RabbitMQMessageBus** | Broker confirmation is separate from handler completion | Depends on acknowledgement mode and the versioned retry/terminal policy | Requires Automatic acknowledgements and suitable retained topology; default FireAndForget does not provide processing-failure redelivery |
 | **RedisMessageBus** | Throws `MessageBusException` | Logged, swallowed | No (pub/sub has no ack) |
 | **SQSMessageBus** | Throws `MessageBusException` | Logged, message not deleted | Yes (redelivered) |
 
 ::: tip Logging
-All errors are logged at `Error` level. Subscriber errors are logged exactly once by the base class.
+Log levels and the number of emitted records depend on the provider and failure path. A log entry is not evidence of acknowledgement, retry completion, or durable quarantine. For RabbitMQ, combine the exposed subscription/delivery status with broker state and actual application progress.
 :::
 
 ### In Subscribers
@@ -773,21 +766,13 @@ Understanding how cancellation tokens are handled internally is important for bu
 
 ### Resource Creation Uses Disposal Token
 
-When you call `PublishAsync` or `SubscribeAsync`, the message bus may need to create infrastructure (e.g., Azure Service Bus topics, RabbitMQ exchanges, SQS topics). These setup operations use an internal disposal token — **not** the caller's cancellation token. This means:
-
-- **Topic and subscription creation only abort when the message bus is disposed**, never because a single caller cancelled their operation.
-- A cancelled publish will not leave topic infrastructure in a half-created state.
-- Multiple concurrent publishers/subscribers cannot interfere with each other's setup.
+Message-bus setup hooks use the internal disposal token so one caller's cancellation does not cancel infrastructure shared by other callers. This is not a guarantee that setup must succeed: provider setup timeouts, broker errors, and disposal can still abort it. The companion RabbitMQ provider cleans up partial initialization and rolls back the failed local registration; see its [lifecycle contract](./implementations/rabbitmq-delivery-safety.md#dispatch-and-lifecycle).
 
 ### Linked Cancellation for Publish
 
-The caller's cancellation token is combined with the disposal token into a linked token for the actual publish operation. This means:
-
-- Publish cancels when **either** the caller cancels **or** the message bus is disposed.
-- Graceful shutdown via `Dispose()` cancels all in-flight publishes promptly.
+The actual publish operation observes caller/disposal cancellation. Cancellation does not undo an already accepted broker publication, and its outcome can be ambiguous. A caller timeout is not automatically a total deadline covering shared setup, recovery, and every cleanup step.
 
 ```csharp
-// Topic creation always completes (unless disposed), even if the publish is cancelled
 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 await messageBus.PublishAsync(new OrderCreated { OrderId = 123 }, cancellationToken: cts.Token);
 ```
@@ -848,6 +833,8 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 });
 ```
 
+This check/process/record example illustrates the intent, not an atomic idempotency implementation. Concurrent attempts and a crash between the side effect and the record can repeat the effect. Required processing needs durable consumer-scoped identity and a transaction or application-specific idempotent operation that covers the protected side effect.
+
 ### 4. Use Specific Message Types
 
 ```csharp
@@ -887,7 +874,7 @@ Different message bus implementations have different size limits. Understanding 
 | InMemoryMessageBus | Limited by available memory | No practical limit |
 | AzureServiceBusMessageBus | 256 KB (Standard) / 100 MB (Premium) | Use claim check for large payloads |
 | KafkaMessageBus | 1 MB (default) | Configurable via `message.max.bytes` |
-| RabbitMQMessageBus | 128 MB (default) | Configurable, but keep small |
+| RabbitMQMessageBus | Broker/client configuration | Verify the deployed broker's `max_message_size` and client limits; do not assume a fixed provider-wide 128 MB default. |
 | RedisMessageBus | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
 | SQSMessageBus | 256 KB | Use claim check for large payloads |
 
@@ -966,12 +953,9 @@ await messageBus.PublishAsync(new ReminderNotification
 
 ### Fan-Out Pattern
 
-Publish once, process in multiple ways:
+Establish the subscriptions before publishing a message that they must receive:
 
 ```csharp
-// Single publish
-await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
-
 // Multiple subscribers handle different concerns
 await messageBus.SubscribeAsync<OrderCreated>(async order =>
 {
@@ -987,7 +971,12 @@ await messageBus.SubscribeAsync<OrderCreated>(async order =>
 {
     await _analyticsService.TrackAsync("order_created", order.OrderId);
 });
+
+// Single publish after the subscriptions are established
+await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 ```
+
+For RabbitMQ, independent durable subscription queues receive separate fanout copies; replicas consuming the same queue compete for a delivery. Multiple local handlers on one bus share that delivery's retry boundary.
 
 ## Resource Management
 
@@ -1005,10 +994,10 @@ await messageBus.SubscribeAsync<MyEvent>(async e => { /* ... */ });
 services.AddSingleton<IMessageBus, InMemoryMessageBus>();
 ```
 
-Disposal follows a **two-phase** sequence to prevent message loss in durable providers:
+Disposal provides a **two-phase** provider lifecycle; it is not by itself a no-loss guarantee:
 
-1. **Graceful drain** — In-flight handlers finish executing while subscribers and the internal cancellation token are still active. Providers that support processor-level draining (e.g., Azure Service Bus `StopProcessingAsync`) execute it here via `ShutdownAsync`.
-2. **Teardown** — The internal cancellation token is cancelled, all subscribers are cleared, and transport infrastructure (connections, channels, clients) is closed and disposed via `CleanupAsync`.
+1. **Shutdown hook** — `ShutdownAsync` runs before the base disposal token is cancelled and local subscribers are cleared. The provider may drain, cancel, or stop transport processing here. The companion RabbitMQ implementation signals handler cancellation and invalidates delivery generations; it does not promise every arbitrary handler finishes.
+2. **Teardown** — The base cancellation token is cancelled, subscribers are cleared, and `CleanupAsync` tears down the remaining provider resources.
 
 > **Note:** The base `MessageBusBase` implementation does not guarantee that all active subscriber callbacks have completed before `DisposeAsync` returns. Provider-specific draining behavior (such as Azure Service Bus `StopProcessingAsync`) is implemented in provider overrides of `ShutdownAsync`.
 
@@ -1021,19 +1010,19 @@ What happens to messages that arrive while the bus is disposing depends on the p
 | **InMemoryMessageBus** | Completed normally | Dropped (no persistence) | Lost |
 | **AzureServiceBusMessageBus** | Completed; abandoned if bus disposes mid-handler (PeekLock) | Remain in topic for other subscribers | Persisted in Azure |
 | **KafkaMessageBus** | Completed; offset not committed if bus disposes mid-handler | Remain in partition (uncommitted offset) | Persisted in Kafka |
-| **RabbitMQMessageBus** | Completed; requeued if bus disposes mid-handler | Remain in queue | Persisted in RabbitMQ |
+| **RabbitMQMessageBus** | With `AcknowledgementStrategy.Automatic`, unacknowledged work can return to a retained queue; `FireAndForget` cannot recover already auto-acked deliveries | Depends on routing, queue lifetime, and retention policy | Requires retained durable topology and suitable broker policy, not the provider defaults alone |
 | **RedisMessageBus** | Completed normally | Dropped (pub/sub has no persistence) | Lost |
 | **SQSMessageBus** | Completed; message not deleted if bus disposes mid-handler | Remain in SQS queue | Persisted in SQS |
 
 ::: tip Fire-and-Forget Providers
-`InMemoryMessageBus` and `RedisMessageBus` use fire-and-forget delivery. Messages that arrive when no subscriber is listening are permanently lost. This is by design — if you need guaranteed delivery, use a durable provider or `IQueue<T>`.
+`InMemoryMessageBus` and `RedisMessageBus` use fire-and-forget delivery. RabbitMQ also defaults to broker automatic acknowledgement. Select the actual acknowledgement, topology, and retention contract needed for required work; a provider label alone is not a guarantee.
 :::
 
 ### Writing Custom Providers
 
 If you are extending `MessageBusBase<TOptions>` with a custom provider, override the lifecycle hooks:
 
-- **`ShutdownAsync()`** — Called *before* the cancellation token is cancelled and *before* subscribers are cleared. Use this to gracefully drain your transport (e.g., stop a processor, close a consumer group). Subscribers are still active and can finish processing.
+- **`ShutdownAsync()`** — Called *before* the base cancellation token is cancelled and *before* subscribers are cleared. Implement the provider's explicit stop/drain/cancellation policy here; do not assume all implementations drain callbacks.
 - **`CleanupAsync()`** — Called *after* the cancellation token is cancelled and *after* subscribers are cleared. Use this to tear down transport infrastructure (close connections, dispose clients, await background tasks).
 
 ```csharp
@@ -1056,6 +1045,6 @@ If `ShutdownAsync` needs multiple steps, use `async`/`await` and apply `.Configu
 
 ## Next Steps
 
-- [Queues](./queues) - For guaranteed delivery with acknowledgment
+- [Queues](./queues) - Queue processing and acknowledgement contracts
 - [Caching](./caching) - Cache invalidation with messaging
 - [Jobs](./jobs) - Background processing triggered by messages

@@ -1,160 +1,120 @@
+---
+title: RabbitMQ Quorum Queue Migration
+---
+
 # Quorum Queue Migration
 
-This guide covers migrating from classic queues to [quorum queues](https://www.rabbitmq.com/docs/quorum-queues) when using `Foundatio.RabbitMQ`.
+This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
+
+::: warning Companion implementation
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`c44286a`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/c44286a06f9bf031abd98890892511316944ea10). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+:::
 
 ## Why Migrate?
 
-Quorum queues provide:
+Quorum queues replicate state across their members and can continue operating with a majority available. They do not shard one hot queue into independent partitions, remove reconnection pauses, or guarantee zero loss for arbitrary publication, acknowledgement, retention, and storage policies. Classic queues on this baseline are node-local.
 
-- **Replication** across cluster nodes via Raft consensus
-- **Automatic failover** when a node goes down (majority must survive)
-- **Poison message protection** with built-in delivery limits
-- **No data loss** during rolling upgrades (with majority available)
-- **Native delayed retries** (4.3+): Linear backoff without the delayed message exchange plugin
-
-Classic queues are single-node: if that node goes down, the queue is unavailable until it recovers.
+Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native quorum delayed retries require RabbitMQ 4.3+ and are not available on the pinned baseline; see the [version feature matrix](./rabbitmq.md#broker-baseline-and-priority).
 
 ## Enabling Quorum Queues
 
+Remove `UseMessagePriority()` and leave `MaxPriority` unset when moving to quorum. The combination throws `InvalidOperationException` immediately in either builder order, or at bus construction for direct options. This is a breaking validation change. Message-level `Priority` remains valid; quorum priorities are built into the broker.
+
 ```csharp
-var messageBus = new RabbitMQMessageBus(o => o
-    .ConnectionString("amqp://guest:guest@localhost:5672")
-    .Topic("my-events")
-    .UseQuorumQueues()       // sets x-queue-type=quorum
-    .DeliveryLimit(5));      // max redelivery attempts before dead-lettering
+using Foundatio.Messaging;
+
+await using var messageBus = new RabbitMQMessageBus(o => o
+    .ConnectionString(connectionString)
+    .Hosts("broker-a.example:5671", "broker-b.example:5671", "broker-c.example:5671")
+    .Topic("events")
+    .SubscriptionQueueName("processor-events-quorum")
+    .IsDurable(true)
+    .UseQuorumQueues()
+    .AcknowledgementStrategy(AcknowledgementStrategy.Automatic)
+    .PublisherConfirmsEnabled(true)
+    .RequirePublishRouting()
+    .RequireSuccessfulDispatch()
+    .DeadLetterExchange("events-quarantine", "processor", DeadLetterStrategy.AtLeastOnce)
+    .OverflowBehavior(QueueOverflowBehavior.RejectPublish)
+    .PrefetchCount(10));
 ```
 
-`UseQuorumQueues()` automatically:
+Here `connectionString` is an `amqps` URI with the intended credentials/vhost, and all endpoint names must match trusted certificates. Before starting, provision a durable `events-quarantine` exchange and destination bound with routing key `processor`, verify broker DLX prerequisites, and apply [bounded source/quarantine policies](./rabbitmq-delivery-safety.md#capacity-and-backpressure). Constructing this bus does not provision quarantine or impose a disk bound. Do not place comma-separated hostnames inside a single AMQP URI.
 
-- Sets `x-queue-type = "quorum"` in queue arguments
-- Disables `autoDelete` and `exclusive` (incompatible with quorum queues)
-- Uses `reject` (not republish) for messages exceeding the delivery limit
+`UseQuorumQueues()` sets `x-queue-type=quorum`, disables exclusive/auto-delete, and supplies a broker delivery-limit argument. It neither converts an existing queue nor forces `IsDurable` back to true after an explicit false. Quorum retries below the application budget use rejection/redelivery; exhaustion and broker-budget enforcement have separate terminal paths. A delivery limit by itself does not create a DLQ or ensure safe transfer.
 
 ## Migration Challenge
 
-You **cannot** change an existing classic queue to quorum in-place. RabbitMQ returns `PRECONDITION_FAILED` (406) when declaring an existing queue with a different `x-queue-type`.
+An existing queue cannot be converted to another type in place. Redeclaring incompatible properties can close the channel with `PRECONDITION_FAILED`. The exchange (`Topic`) and subscription queue (`SubscriptionQueueName`) are different identities: changing only `Topic` is not a queue rename.
+
+Do not rely on relaxed queue-type equivalence to convert storage. Even where the broker accepts a redeclaration, the existing queue stays its original type. A provider configured for quorum can then choose behavior inconsistent with an actual classic queue.
+
+The provider recognizes only explicit local `x-queue-type=quorum`; it does not discover broker/vhost defaults or existing queue types. Before queue declaration, it rejects changes to or from explicit quorum and quorum/`MaxPriority` conflicts. Configure arguments before construction; use a new bus for a planned type change.
 
 ## Migration Approaches
 
-### 1. Delete and Recreate (Simplest)
+### New subscription queue with controlled cutover
 
-Best for queues that can tolerate brief downtime and message loss.
-
-```bash
-# 1. Stop all consumers
-# 2. Drain or discard remaining messages
-rabbitmqctl delete_queue my-queue
-# 3. Redeploy with UseQuorumQueues()
-# 4. Start consumers
-```
-
-### 2. New Queue Name
-
-Best when you can coordinate a deployment that changes the queue name.
+Retain the existing exchange and explicitly give the replacement subscription a new name:
 
 ```csharp
-// Before
-o.Topic("process-events");
-
-// After - new name, quorum type
-o.Topic("process-events-v2")
+// Same exchange; a distinct logical queue for the planned migration.
+o.Topic("events")
+ .SubscriptionQueueName("processor-events-quorum")
+ .IsDurable(true)
  .UseQuorumQueues();
 ```
 
-Use the [Shovel plugin](https://www.rabbitmq.com/docs/shovel) to drain remaining messages from the old queue into the new one.
+### Maintenance-window procedure
 
-### 3. Server-Side Default Queue Type
+For a cutover without deliberate fanout overlap:
 
-Set the default queue type at the vhost level so all new queues are quorum without code changes:
+1. Inventory the source queue, consumers, bindings, effective policies, quarantine, and expected event IDs. Rehearse rollback and record the intended new queue name, membership, finite broker budget, capacity, and restricted credentials.
+2. Pause producers during an agreed maintenance window. Reconcile in-flight confirms and durable outbox entries. Stop or account for delayed/scheduled publications that may arrive after the pause; stopping producers alone does not drain the delayed plugin.
+3. Leave old consumers running until ready and unacknowledged counts are zero and expected IDs are completed or durably quarantined. Repair blocked retry/terminal routes first. If work cannot drain, use a separately tested transfer/replay plan before proceeding.
+4. Stop old consumers and verify they have gone. Provision the new quorum queue and durable quarantine with the intended policies and bindings. Change `SubscriptionQueueName` and explicit queue type together. Never redeclare the existing classic queue as quorum.
+5. Remove the old fanout binding while publication remains paused. Start new consumers, verify actual queue type/members/policies/readiness, and send identified canary events. Confirm completion, terminal routing, and capacity rejection before resuming producers.
+6. Reconcile all expected IDs and monitor ready/unacknowledged/quarantine growth after resuming. Preserve the drained old queue and cutover record until the rollback window closes; delete only after explicit operational approval.
 
-```bash
-rabbitmqctl set_policy quorum-default ".*" \
-  '{"x-queue-type": "quorum"}' \
-  --apply-to queues
-```
+Binding both queues to the same fanout exchange copies new events to both. If an overlap is intentionally chosen instead, establish consumer-scoped deduplication and side-effect ownership before both groups process traffic.
 
-::: warning
-This only affects **new** queues. Existing classic queues are unchanged.
-:::
+Existing backlog is not moved automatically when a new queue is bound. Use a separately tested transfer/replay procedure where needed, preserve identity, and account for duplicates and acknowledgements. Do not delete the old queue until expected IDs are reconciled and rollback no longer needs it.
 
-### 4. Relaxed Property Equivalence
+### Delete and recreate
 
-RabbitMQ 4.x supports suppressing type-mismatch errors during migration:
+Reserve deletion for disposable queues or an approved, fully drained cutover. Stop publication and consumers, verify ready and unacknowledged work, account for scheduled/in-flight publication, then perform the authorized replacement. A deletion command is not a loss-safe migration recipe.
 
-```ini
-# rabbitmq.conf
-quorum_queue.property_equivalence.relaxed_checks_on_redeclaration = true
-```
+### Virtual-host default queue type
 
-This allows declaring an existing classic queue with `x-queue-type=quorum` without error - but it does **not** convert the queue. It only suppresses the error to allow gradual rollout.
+The broker can configure a default type for newly declared queues. Queue type is **not** set by a normal `set_policy` rule containing `x-queue-type`, and changing a default does not convert existing queues. This provider also selects retry behavior from explicit queue arguments, so configure a matching `x-queue-type` in the application rather than assuming an omitted argument is sufficient.
 
-### 5. Blue-Green Deployment
+### Separate virtual host or blue-green deployment
 
-For zero-downtime migration of critical queues:
+A parallel environment still requires a tested transfer/cutover plan, duplicate handling, producer coordination, backlog reconciliation, and rollback. Neither replication nor Federation alone makes this a zero-downtime or exactly-once migration. Broker-version upgrades remain a separate change.
 
-1. Create a new vhost with `default_queue_type = quorum`
-2. Set up [Federation](https://www.rabbitmq.com/docs/federation) from old vhost to new
-3. Deploy consumers against the new vhost
-4. Deploy publishers against the new vhost
-5. Decommission old vhost after draining
+## Configuration differences on 4.2.5
 
-## Incompatible Features
+| Area | Quorum requirement or boundary |
+|---|---|
+| Durability | Durable, nonexclusive, non-autodelete topology with a stable queue name. |
+| Priority | Normal/high tiers. Remove `UseMessagePriority()` / `MaxPriority` and the classic-only `x-max-priority` argument. Message-level `Priority` remains valid; do not assume strict numeric ordering. |
+| QoS | Per-consumer prefetch; do not use channel-global QoS for quorum. Tune from workload measurements. |
+| Broker delivery limit | Can act on connection-loss redeliveries as well as processing failures. Choose its terminal policy deliberately. |
+| At-least-once broker DLX | Requires `RejectPublish` overflow, a DLX/destination, and broker prerequisites; duplicates remain possible. |
+| Native retry/consumer-timeout options | `UseDelayedRetries()` and `ConsumerTimeout()` require 4.3+ quorum queues and are rejected on this baseline. |
 
-These classic queue features are **not available** on quorum queues:
+Follow the [quorum budget section](./rabbitmq-delivery-safety.md#quorum-broker-and-application-budgets): prefer a finite broker budget with at-least-once DLX and reject-publish. A raw `-1` broker limit is an expert opt-out, separate from the application budget. Direct-options raw limits are preserved; the builder's `UseQuorumQueues()` writes the current `DeliveryLimit`, so apply an intentional raw override afterward. Provision and test the terminal destination before sending required events.
 
-| Feature | Alternative |
-|---------|-------------|
-| `exclusive = true` | Not supported; use unique queue names + TTL |
-| `autoDelete = true` | Not supported; use `x-expires` for idle cleanup |
-| `x-queue-mode: lazy` | Quorum queues are always lazy (memory-optimized) by default |
-| `x-max-priority` (classic) | Supported on RabbitMQ 4.3+ with 32 strict priority levels |
-| Global QoS | Use per-consumer QoS only |
+## Verification and rollback
 
-## Recommended Configuration
+Inspect actual queue types, configured/online members, leader, bindings, effective policies, and consumers using broker management tooling. Verify each intended event ID is completed, retained, or durably quarantined, and that retained work progresses after recovery. Test node loss separately from client-path loss, and confirm enough queue members remain available.
 
-```csharp
-var messageBus = new RabbitMQMessageBus(o => o
-    .ConnectionString("amqp://guest:guest@node1:5672,node2:5672,node3:5672")
-    .Topic("my-events")
-    .UseQuorumQueues()
-    .DeliveryLimit(5)
-    .PrefetchCount(20)
-    .PublisherConfirmsEnabled(true)
-    .RequestedHeartbeat(TimeSpan.FromSeconds(30))
-    .DeadLetterExchange("dlx"));
-```
+Rehearse rollback before cutover. Returning consumers to the old queue does not recover messages sent only to the replacement queue; retain a replay/transfer plan and stable IDs. Keep deletion and broker upgrades outside the provider's automatic recovery behavior.
 
-Key points:
+## References
 
-- **Multiple hosts**: Always provide all cluster nodes for failover
-- **PrefetchCount**: Use 10-50 for quorum queues (higher than classic due to Raft consensus latency)
-- **Publisher confirms**: Essential for guaranteed delivery with quorum queues
-- **Heartbeat**: Tune for your network (too low = false positives, too high = slow detection)
-- **Dead letter exchange**: Route poison messages instead of dropping them
-
-## Consumer Timeout
-
-Quorum queues on RabbitMQ 4.3+ evaluate consumer timeouts (default 30 min). If your handlers are slow, increase the timeout via broker config:
-
-```ini
-# rabbitmq.conf
-consumer_timeout = 3600000
-```
-
-## Verification
-
-After migration, verify quorum queue status:
-
-```bash
-# Check queue type and replicas
-rabbitmqctl list_queues name type members online
-
-# Verify quorum is healthy
-rabbitmqctl list_queues name type leader members
-```
-
-## Next Steps
-
-- [RabbitMQ Implementation](/guide/implementations/rabbitmq) - Full configuration reference
-- [Messaging Guide](/guide/messaging) - Pub/sub patterns and best practices
-- [RabbitMQ Quorum Queue Documentation](https://www.rabbitmq.com/docs/quorum-queues) - Official reference
+- [RabbitMQ provider and TLS configuration](./rabbitmq.md)
+- [Delivery safety](./rabbitmq-delivery-safety.md)
+- [Provider test verification](./rabbitmq-verification.md)
+- [RabbitMQ 4.2 quorum queues](https://www.rabbitmq.com/docs/4.2/quorum-queues)
+- [RabbitMQ 4.2 queue properties and defaults](https://www.rabbitmq.com/docs/4.2/queues)
