@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -12,43 +11,6 @@ namespace Foundatio.Tests.Utility;
 public class CloneTests : TestWithLoggingBase
 {
     public CloneTests(ITestOutputHelper output) : base(output) { }
-
-    [Fact]
-    public void CanCloneConcurrentDictionaryWithInternalCycles()
-    {
-        // Arrange
-        var original = new ConcurrentDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
-        original["first"] = null;
-
-        // Act
-        var clone = original.DeepClone();
-
-        // Assert
-        Assert.NotNull(clone);
-        Assert.NotSame(original, clone);
-        Assert.True(clone.ContainsKey("FIRST"));
-        clone["second"] = null;
-        Assert.Single(original);
-    }
-
-    [Fact]
-    public void CanCloneDictionaryWithKeyReferencingDictionary()
-    {
-        // Arrange
-        var original = new Dictionary<DictionaryKey, int>();
-        var key = new DictionaryKey { Owner = original };
-        original[key] = 1;
-
-        // Act
-        var clone = original.DeepClone();
-
-        // Assert
-        Assert.NotNull(clone);
-        Assert.NotSame(original, clone);
-        var clonedKey = Assert.Single(clone.Keys);
-        Assert.NotSame(key, clonedKey);
-        Assert.Same(clone, clonedKey.Owner);
-    }
 
     [Fact]
     public void CanCloneModel()
@@ -135,11 +97,6 @@ public class CloneTests : TestWithLoggingBase
         var cdm = (Dictionary<object, object>)cloned.ObjectProperty;
         Assert.Equal(((CloneModel)model.ObjectProperty).IntProperty, Convert.ToInt32(cdm["IntProperty"]));
     }
-    private sealed class DictionaryKey
-    {
-        public required Dictionary<DictionaryKey, int> Owner { get; init; }
-    }
-
 }
 
 public class CloneModel

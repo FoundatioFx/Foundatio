@@ -419,6 +419,15 @@ internal static class FastClonerGenerator
             return true;
         }
 
+        Type? payloadType = GetCollectionPayloadType(type);
+        if (payloadType is not null)
+        {
+            if (FastClonerSafeTypes.CanReturnSameObject(payloadType))
+                return false;
+            if (payloadType.IsValueType && !ValueTypeContainsReferenceFieldsCached(payloadType))
+                return false;
+        }
+
         Type[] fieldTypes = GetCycleFieldTypes(type);
         for (int i = 0; i < fieldTypes.Length; i++)
         {
