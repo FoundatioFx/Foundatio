@@ -434,6 +434,27 @@ public abstract class LockTestBase : TestWithLoggingBase
         return locker.TryUsingAsync("DoLockedWork", async () => await Task.Delay(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
     }
 
+    public virtual async Task RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock()
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+
+        // Arrange
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5)).AnyContext();
+        Assert.NotNull(lockInstance);
+        await lockInstance.ReleaseAsync().AnyContext();
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
+        Assert.Equal(0, lockInstance.RenewalCount);
+    }
+
     public virtual async Task WillThrottleCallsAsync()
     {
         Log.SetLogLevel<ScheduledTimer>(LogLevel.Information);

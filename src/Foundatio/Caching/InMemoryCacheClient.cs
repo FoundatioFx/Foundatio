@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -24,6 +26,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
+    private readonly bool _canShareListValues;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -70,6 +73,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
+        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -138,19 +142,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Updates memory size when an entry is added or updated.
-    /// Calculates the size delta based on old and new entry sizes.
-    /// </summary>
-    private void UpdateMemorySizeForEntry(long newSize, long oldSize, bool wasNewEntry)
-    {
-        if (!_shouldTrackMemory)
-            return;
-
-        long sizeDelta = wasNewEntry ? newSize : (newSize - oldSize);
-        UpdateMemorySize(sizeDelta);
-    }
-
-    /// <summary>
     /// Recalculates the current memory size by summing all non-expired cache entries.
     /// </summary>
     /// <remarks>
@@ -159,12 +150,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// The calculated total may be temporarily inaccurate if entries are added/removed during
     /// iteration, but this is acceptable for memory tracking purposes and will self-correct
     /// on subsequent operations or recalculations.
-    /// </para>
-    /// <para>
-    /// Known limitation: If an entry's value is updated during iteration (via the Value setter
-    /// which resets the estimated size), the calculation could include a mix of old and newly-calculated
-    /// sizes. This is acceptable for approximate memory tracking. To reduce this window, a snapshot
-    /// of values is taken at the start of the iteration.
     /// </para>
     /// <para>
     /// Expired entries are excluded from the calculation to ensure accurate memory reporting.
@@ -249,7 +234,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
     }
 
-    public ICollection<KeyValuePair<string, object>> Items
+    public ICollection<KeyValuePair<string, object?>> Items
     {
         get
         {
@@ -257,7 +242,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 .Where(kvp => !kvp.Value.IsExpired)
                 .OrderBy(kvp => kvp.Value.LastAccessTicks)
                 .ThenBy(kvp => kvp.Value.InstanceNumber)
-                .Select(kvp => new KeyValuePair<string, object>(kvp.Key, kvp.Value))
+                .Select(kvp => new KeyValuePair<string, object?>(kvp.Key, kvp.Value.PeekValue()))
                 .ToList();
         }
     }
@@ -267,44 +252,30 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        if (!_memory.TryRemove(key, out var entry))
-        {
-            return Task.FromResult(false);
-        }
-
-        // Key was found and removed. Update memory size.
-        UpdateMemorySize(-entry.Size);
+        var removed = UpdateEntry<CacheEntry?>(key, current => (null, current));
 
         // Return false if the entry was expired (consistent with Redis behavior)
-        return Task.FromResult(!entry.IsExpired);
+        return Task.FromResult(removed is { IsExpired: false });
     }
 
-    public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
+    public Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        bool wasExpectedValue = false;
-        bool success = _memory.TryUpdate(key, (existingKey, existingEntry) =>
+        bool success = UpdateEntry(key, current =>
         {
-            var currentValue = existingEntry.GetValue<T>();
-            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
-            {
-                _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Updating ExpiresAt to DateTime.MinValue", existingKey);
-                existingEntry.ExpiresAt = DateTime.MinValue;
-                wasExpectedValue = true;
-            }
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
 
-            return existingEntry;
+            // Check expiry after the comparison: a lease that expired while it was being compared no longer
+            // belongs to the caller. Maintenance removes the entry and raises ItemExpired.
+            return current.IsExpired ? (current, false) : (null, true);
         });
 
-        success = success && wasExpectedValue;
-
-        await StartMaintenanceAsync().AnyContext();
-
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-        return success;
+        return Task.FromResult(success);
     }
 
     public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
@@ -325,12 +296,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
 
             _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
-            if (_memory.TryRemove(key, out var removedEntry))
-            {
+            if (UpdateEntry<bool>(key, current => (null, current is not null)))
                 removed++;
-                if (removedEntry != null)
-                    UpdateMemorySize(-removedEntry.Size);
-            }
         }
 
         return Task.FromResult(removed);
@@ -369,42 +336,55 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("Removing expired key: {Key}", key);
-        if (_memory.TryRemove(key, out var removedEntry))
-        {
-            // Update memory size tracking
-            UpdateMemorySize(-removedEntry.Size);
+        if (!UpdateEntry<bool>(key, current => (null, current is not null)))
+            return 0;
 
-            OnItemExpired(key, sendNotification);
-            return 1;
-        }
-
-        return 0;
+        OnItemExpired(key, sendNotification);
+        return 1;
     }
 
     /// <summary>
-    /// Used by the maintenance task to remove expired keys.
+    /// Atomically moves the entry for <paramref name="key"/> to the state chosen by <paramref name="update"/> and
+    /// keeps the tracked memory size in step.
     /// </summary>
-    private long RemoveKeyIfExpired(string key, bool sendNotification = true)
+    /// <param name="key">The cache key.</param>
+    /// <param name="update">
+    /// Receives the current entry (<c>null</c> when the key is missing) and returns the entry the key should hold:
+    /// the same instance to leave it unchanged, a new instance to add or replace it, or <c>null</c> to remove it.
+    /// It runs again with the latest entry when another writer changes the key first, so it must not have side
+    /// effects; only the result of the attempt that was published is returned.
+    /// </param>
+    internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.IsExpired)
+        while (true)
         {
-            if (_memory.TryRemove(key, out var removedEntry))
+            _memory.TryGetValue(key, out var current);
+            var (desired, result) = update(current);
+            if (ReferenceEquals(desired, current))
+                return result;
+
+            bool published = (current, desired) switch
             {
-                if (!removedEntry.IsExpired)
-                    throw new Exception("Removed item was not expired");
+                (null, not null) => _memory.TryAdd(key, desired),
+                (not null, null) => _memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, current)),
+                _ => _memory.TryUpdate(key, desired!, current!)
+            };
 
-                // Update memory size tracking
-                UpdateMemorySize(-removedEntry.Size);
+            if (!published)
+                continue;
 
-                _logger.LogDebug("Removing expired cache entry {Key}", key);
-                OnItemExpired(key, sendNotification);
-                return 1;
-            }
+            UpdateMemorySize((desired?.Size ?? 0) - (current?.Size ?? 0));
+            return result;
         }
+    }
 
-        return 0;
+    /// <summary>
+    /// Removes the entry for <paramref name="key"/> only if it is still the exact instance that was observed,
+    /// so an entry replaced concurrently is never removed by mistake.
+    /// </summary>
+    internal bool TryRemoveEntry(string key, CacheEntry observed)
+    {
+        return UpdateEntry(key, current => ReferenceEquals(current, observed) ? (null, true) : (current, false));
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
@@ -494,256 +474,70 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return SetInternalAsync(key, entry);
     }
 
-    public async Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
+    public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
+    {
+        return SetIfAsync(key, value, expiresIn, higher: true);
+    }
+
+    public Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
+    {
+        return SetIfAsync(key, value, expiresIn, higher: true);
+    }
+
+    public Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
+    {
+        return SetIfAsync(key, value, expiresIn, higher: false);
+    }
+
+    public Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
+    {
+        return SetIfAsync(key, value, expiresIn, higher: false);
+    }
+
+    private async Task<T> SetIfAsync<T>(string key, T value, TimeSpan? expiresIn, bool higher) where T : struct, INumber<T>
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
-            return 0;
+            return T.Zero;
         }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         var newEntry = CreateEntry(value, expiresAt);
         if (newEntry is null)
-            return 0;
+            return T.Zero;
 
         Interlocked.Increment(ref _writes);
 
-        double difference = value;
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        _memory.AddOrUpdate(key, _ =>
+        T difference = UpdateEntry(key, current =>
         {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            double? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<double?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type: {Message}", ex.Message);
-            }
+            if (current is null)
+                return (newEntry, value);
 
-            if (currentValue.HasValue && currentValue.Value < value)
-            {
-                difference = value - currentValue.Value;
-                existingEntry.Value = value;
-                // Size remains unchanged for primitive numeric types (double = 8 bytes)
-            }
-            else
-            {
-                difference = 0;
-            }
+            if (GetNumericValue<T>(current) is { } currentValue && (higher ? currentValue < value : currentValue > value))
+                return (current.WithValue(value, expiresAt, newEntry.Size), higher ? value - currentValue : currentValue - value);
 
-            existingEntry.ExpiresAt = expiresAt;
-
-            newSize = existingEntry.Size;
-            return existingEntry;
+            return (current.WithExpiration(expiresAt), T.Zero);
         });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
 
         await StartMaintenanceAsync().AnyContext();
 
         return difference;
     }
 
-    public async Task<long> SetIfHigherAsync(string key, long value, TimeSpan? expiresIn = null)
+    private T? GetNumericValue<T>(CacheEntry entry) where T : struct
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
+        try
         {
-            RemoveExpiredKey(key);
-            return 0;
+            return entry.GetValue<T?>();
         }
-
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = CreateEntry(value, expiresAt);
-        if (newEntry is null)
-            return 0;
-
-        Interlocked.Increment(ref _writes);
-
-        long difference = value;
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        _memory.AddOrUpdate(key, _ =>
+        catch (Exception ex)
         {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            long? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<long?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type");
-            }
-
-            if (currentValue.HasValue && currentValue.Value < value)
-            {
-                difference = value - currentValue.Value;
-                existingEntry.Value = value;
-                // Size remains unchanged for primitive numeric types (long = 8 bytes)
-            }
-            else
-            {
-                difference = 0;
-            }
-
-            existingEntry.ExpiresAt = expiresAt;
-
-            newSize = existingEntry.Size;
-            return existingEntry;
-        });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
-        await StartMaintenanceAsync().AnyContext();
-
-        return difference;
-    }
-
-    public async Task<double> SetIfLowerAsync(string key, double value, TimeSpan? expiresIn = null)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
-        {
-            RemoveExpiredKey(key);
-            return 0;
+            _logger.LogError(ex, "Unable to read cached value as {ValueType}: {Message}", typeof(T).Name, ex.Message);
+            return null;
         }
-
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = CreateEntry(value, expiresAt);
-        if (newEntry is null)
-            return 0;
-
-        Interlocked.Increment(ref _writes);
-
-        double difference = value;
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        _memory.AddOrUpdate(key, _ =>
-        {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            double? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<double?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type");
-            }
-
-            if (currentValue.HasValue && currentValue.Value > value)
-            {
-                difference = currentValue.Value - value;
-                existingEntry.Value = value;
-                // Size remains unchanged for primitive numeric types (double = 8 bytes)
-            }
-            else
-            {
-                difference = 0;
-            }
-
-            existingEntry.ExpiresAt = expiresAt;
-
-            newSize = existingEntry.Size;
-            return existingEntry;
-        });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
-        await StartMaintenanceAsync().AnyContext();
-
-        return difference;
-    }
-
-    public async Task<long> SetIfLowerAsync(string key, long value, TimeSpan? expiresIn = null)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
-        {
-            RemoveExpiredKey(key);
-            return 0;
-        }
-
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = CreateEntry(value, expiresAt);
-        if (newEntry is null)
-            return 0;
-
-        Interlocked.Increment(ref _writes);
-
-        long difference = value;
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        _memory.AddOrUpdate(key, _ =>
-        {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            long? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<long?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type");
-            }
-
-            if (currentValue.HasValue && currentValue.Value > value)
-            {
-                difference = currentValue.Value - value;
-                existingEntry.Value = value;
-                // Size remains unchanged for primitive numeric types (long = 8 bytes)
-            }
-            else
-            {
-                difference = 0;
-            }
-
-            existingEntry.ExpiresAt = expiresAt;
-
-            newSize = existingEntry.Size;
-            return existingEntry;
-        });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
-        await StartMaintenanceAsync().AnyContext();
-
-        return difference;
     }
 
     public async Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull
@@ -760,93 +554,79 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
 
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
+        long added = values is string stringValue
+            ? ListAdd(key, new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } }, expiresAt)
+            : ListAdd(key, new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k, _ => expiresAt), expiresAt);
 
-        if (values is string stringValue)
-        {
-            var items = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
-            {
-                { stringValue, expiresAt }
-            };
-
-            var entry = CreateEntry(items, expiresAt);
-            if (entry is null)
-                return 0;
-
-            Interlocked.Increment(ref _writes);
-
-            _memory.AddOrUpdate(key, k =>
-            {
-                wasNewEntry = true;
-                newSize = entry.Size;
-                return entry;
-            }, (existingKey, existingEntry) =>
-            {
-                if (existingEntry.Value is not IDictionary<string, DateTime?> dictionary)
-                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a dictionary");
-
-                oldSize = existingEntry.Size;
-
-                ExpireListValues(dictionary, existingKey);
-
-                dictionary[stringValue] = expiresAt;
-                existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-
-                newSize = existingEntry.Size;
-                return existingEntry;
-            });
-
-            UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
+        if (added > 0)
             await StartMaintenanceAsync().AnyContext();
-            return items.Count;
-        }
-        else
+
+        return added;
+    }
+
+    private long ListAdd<T>(string key, Dictionary<T, DateTime?> items, DateTime? expiresAt) where T : notnull
+    {
+        if (items.Count is 0)
+            return 0;
+
+        var entry = CreateEntry(items, expiresAt);
+        if (entry is null)
+            return 0;
+
+        Interlocked.Increment(ref _writes);
+
+        return UpdateEntry(key, current =>
         {
-            var items = new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k, _ => expiresAt);
-            if (items.Count == 0)
-                return 0;
+            if (current is null)
+                return (_canShareListValues && items.Count > ListSnapshot<T>.BlockSize
+                    ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
+                    : entry, (long)items.Count);
 
-            var entry = CreateEntry(items, expiresAt);
-            if (entry is null)
-                return 0;
-
-            Interlocked.Increment(ref _writes);
-
-            _memory.AddOrUpdate(key, k =>
+            if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
             {
-                wasNewEntry = true;
-                newSize = entry.Size;
-                return entry;
-            }, (existingKey, existingEntry) =>
-            {
-                if (existingEntry.Value is not IDictionary<T, DateTime?> dictionary)
-                    throw new InvalidOperationException($"Unable to add value for key: {existingKey}. Cache value does not contain a set");
+                var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
+                return (current.WithValue(list, list.ExpiresAt, entry.Size), (long)items.Count);
+            }
 
-                oldSize = existingEntry.Size;
+            if (CopyListValues<T>(current) is not { } dictionary)
+                throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
-                ExpireListValues(dictionary, existingKey);
+            // Merge from the new entry's stored values, which were cloned when CloneValues is enabled
+            ExpireListValues(dictionary, key);
+            foreach (var kvp in (Dictionary<T, DateTime?>)entry.StoredValue!)
+                dictionary[kvp.Key] = kvp.Value;
 
-                foreach (var kvp in items)
-                    dictionary[kvp.Key] = kvp.Value;
+            long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
+            return size < 0
+                ? (current, 0L)
+                : (WithListValues(current, dictionary, size), (long)items.Count);
+        });
+    }
 
-                existingEntry.Value = dictionary;
-                existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
+    private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size) where T : notnull
+    {
+        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
+            ? new ListSnapshot<T>(values)
+            : dictionary;
+        return current.WithValue(value, GetListExpiration(dictionary), size);
+    }
 
-                newSize = existingEntry.Size;
-                return existingEntry;
-            });
-
-            UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
-            await StartMaintenanceAsync().AnyContext();
-            return items.Count;
-        }
+    /// <summary>
+    /// Returns a private copy of an entry's list values that can be modified and published with
+    /// <see cref="CacheEntry.WithValue"/>, or <c>null</c> if the entry does not hold a list.
+    /// </summary>
+    private static IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
+    {
+        object? value = entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
+        return value switch
+        {
+            Dictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedDictionary<T, DateTime?> dictionary => new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedList<T, DateTime?> dictionary => new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
+            ConcurrentDictionary<T, DateTime?> dictionary => new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            IDictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary),
+            _ => null
+        };
     }
 
     private int ExpireListValues<T>(IDictionary<T, DateTime?> dictionary, string existingKey)
@@ -860,6 +640,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return expiredValues;
     }
 
+    private static DateTime? GetListExpiration<T>(IDictionary<T, DateTime?> dictionary)
+    {
+        return dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
+    }
+
     public Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
@@ -867,102 +652,56 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        long removed = 0;
-        long oldSize = 0;
-        long newSize = 0;
-
         if (values is string stringValue)
+            return Task.FromResult(ListRemove(key, new HashSet<string>([stringValue])));
+
+        var items = new HashSet<T>(values.Where(v => v is not null));
+        if (items.Count is 0)
+            return Task.FromResult<long>(0);
+
+        return Task.FromResult(ListRemove(key, items));
+    }
+
+    private long ListRemove<T>(string key, HashSet<T> items) where T : notnull
+    {
+        long removed = UpdateEntry(key, current =>
         {
-            var items = new HashSet<string>([stringValue]);
-            _memory.TryUpdate(key, (existingKey, existingEntry) =>
+            if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } list)
             {
-                if (existingEntry.Value is IDictionary<string, DateTime?> { Count: > 0 } dictionary)
-                {
-                    oldSize = existingEntry.Size;
-                    int expired = ExpireListValues(dictionary, existingKey);
+                var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
+                return ReferenceEquals(list, replacement) ? (current, 0L)
+                    : (replacement.Count == 0 ? null : current.WithValue(replacement, replacement.ExpiresAt, current.Size), count);
+            }
 
-                    foreach (string value in items)
-                    {
-                        if (dictionary.Remove(value))
-                            Interlocked.Increment(ref removed);
-                    }
+            object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;
+            if (current is null || value is not IDictionary<T, DateTime?> { Count: > 0 } stored)
+                return (current, 0L);
 
-                    if (expired > 0 || removed > 0)
-                    {
-                        existingEntry.Value = dictionary;
-                        if (dictionary.Count > 0)
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        else
-                            existingEntry.ExpiresAt = DateTime.MinValue;
+            // A missing-value removal needs no private copy unless expired values also need pruning.
+            // Use the stored dictionary's comparer, which may differ from the input set's comparer.
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            if (!items.Any(stored.ContainsKey) && !stored.Any(kvp => kvp.Value < utcNow))
+                return (current, 0L);
 
-                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-                        newSize = existingEntry.Size;
-                    }
-                    else
-                    {
-                        newSize = oldSize;
-                    }
-                }
+            var dictionary = CopyListValues<T>(current)!;
+            int expired = ExpireListValues(dictionary, key);
+            long removedCount = items.Count(dictionary.Remove);
+            if (expired is 0 && removedCount is 0)
+                return (current, 0L);
 
-                if (removed > 0)
-                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
+            if (dictionary.Count is 0)
+                return (null, removedCount);
 
-                return existingEntry;
-            });
+            long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
+            return size < 0
+                ? (current, 0L)
+                : (WithListValues(current, dictionary, size), removedCount);
+        });
 
-            if (_shouldTrackMemory && oldSize != newSize)
-                UpdateMemorySize(newSize - oldSize);
+        if (removed > 0)
+            _logger.LogTrace("Removed value from set with cache key: {Key}", key);
 
-            return Task.FromResult(removed);
-        }
-        else
-        {
-            var items = new HashSet<T>(values.Where(v => v is not null));
-            if (items.Count == 0)
-                return Task.FromResult<long>(0);
-
-            _memory.TryUpdate(key, (existingKey, existingEntry) =>
-            {
-                if (existingEntry.Value is IDictionary<T, DateTime?> { Count: > 0 } dictionary)
-                {
-                    oldSize = existingEntry.Size;
-
-                    int expired = ExpireListValues(dictionary, existingKey);
-
-                    foreach (var value in items)
-                    {
-                        if (dictionary.Remove(value))
-                            Interlocked.Increment(ref removed);
-                    }
-
-                    if (expired > 0 || removed > 0)
-                    {
-                        existingEntry.Value = dictionary;
-                        if (dictionary.Count > 0)
-                            existingEntry.ExpiresAt = dictionary.Values.Contains(null) ? null : dictionary.Values.Max();
-                        else
-                            existingEntry.ExpiresAt = DateTime.MinValue;
-
-                        existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-                        newSize = existingEntry.Size;
-                    }
-                    else
-                    {
-                        newSize = oldSize;
-                    }
-                }
-
-                if (removed > 0)
-                    _logger.LogTrace("Removed value from set with cache key: {Key}", existingKey);
-
-                return existingEntry;
-            });
-
-            if (_shouldTrackMemory && oldSize != newSize)
-                UpdateMemorySize(newSize - oldSize);
-
-            return Task.FromResult(removed);
-        }
+        return removed;
     }
 
     public async Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull
@@ -971,6 +710,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
+
+        if (_memory.TryGetValue(key, out var entry) && !entry.IsExpired && entry.StoredValue is ListSnapshot<T> { Snapshot: null } list)
+        {
+            Interlocked.Increment(ref _hits);
+            entry.RecordAccess();
+            var now = _timeProvider.GetUtcNow().UtcDateTime;
+            var values = list.Read(now);
+            if (values.Length == 0)
+                return new CacheValue<ICollection<T>>([], false);
+
+            if (page.HasValue)
+                values = values.Skip((page.Value - 1) * pageSize).Take(pageSize).ToArray();
+
+            return new CacheValue<ICollection<T>>(values, true);
+        }
 
         var dictionaryCacheValue = await GetAsync<IDictionary<T, DateTime?>>(key);
         if (!dictionaryCacheValue.HasValue)
@@ -1002,56 +756,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        bool wasUpdated = true;
-        long oldSize = 0;
+        // Add-only writes may replace an expired entry, since it is logically absent
+        bool wasUpdated = UpdateEntry(key, current =>
+            !addOnly || current is null || current.IsExpired ? (entry, true) : (current, false));
 
-        if (addOnly)
-        {
-            _memory.AddOrUpdate(key, entry, (existingKey, existingEntry) =>
-            {
-                // NOTE: This update factory method will run multiple times if the key is already in the cache, especially during lock contention.
-                wasUpdated = false;
-
-                // check to see if existing entry is expired
-                if (existingEntry.IsExpired)
-                {
-                    _logger.LogTrace("Attempting to replacing expired cache key: {Key}", existingKey);
-
-                    oldSize = existingEntry.Size;
-                    wasUpdated = true;
-                    return entry;
-                }
-
-                return existingEntry;
-            });
-
-            if (wasUpdated)
-                _logger.LogTrace("Added cache key: {Key}", key);
-        }
-        else if (_shouldTrackMemory)
-        {
-            // Capture only the size, not the whole entry
-            _memory.AddOrUpdate(key, entry, (_, existingEntry) =>
-            {
-                oldSize = existingEntry.Size;
-                return entry;
-            });
+        if (wasUpdated)
             _logger.LogTrace("Set cache key: {Key}", key);
-        }
-        else
-        {
-            // Fast path: no memory tracking needed
-            _memory.AddOrUpdate(key, entry, (_, _) => entry);
-            _logger.LogTrace("Set cache key: {Key}", key);
-        }
-
-        // Update memory size tracking (size was pre-calculated and stored in entry.Size)
-        if (_shouldTrackMemory)
-        {
-            long sizeDelta = entry.Size - oldSize;
-            if (wasUpdated && sizeDelta != 0)
-                UpdateMemorySize(sizeDelta);
-        }
 
         // Check if compaction is needed AFTER memory size update
         await StartMaintenanceAsync(ShouldCompact).AnyContext();
@@ -1121,31 +831,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         Interlocked.Increment(ref _writes);
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        bool wasExpectedValue = false;
-        long oldSize = 0;
-        long newSize = 0;
-        bool success = _memory.TryUpdate(key, (_, existingEntry) =>
+
+        // Build the replacement only once the expected value matches, so a mismatch never pays for (or throws
+        // from) sizing and cloning the new value. It is built at most once, even when the update retries.
+        CacheEntry? replacement = null;
+        bool success = UpdateEntry(key, current =>
         {
-            var currentValue = existingEntry.GetValue<T>();
-            if (EqualityComparer<T>.Default.Equals(currentValue, expected))
-            {
-                oldSize = existingEntry.Size;
-                existingEntry.Value = value;
-                existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
-                wasExpectedValue = true;
-                newSize = existingEntry.Size;
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
 
-                existingEntry.ExpiresAt = expiresAt;
-            }
+            // Check expiry after the comparison: a lease that expired while it was being compared must not be
+            // revived. Maintenance removes the entry and raises ItemExpired.
+            if (current.IsExpired)
+                return (current, false);
 
-            return existingEntry;
+            replacement ??= CreateEntry(value, expiresAt);
+            return replacement is null ? (current, false) : (replacement, true);
         });
-
-        success = success && wasExpectedValue;
-
-        // Update memory size tracking if the value was replaced
-        if (_shouldTrackMemory && wasExpectedValue && oldSize != newSize)
-            UpdateMemorySize(newSize - oldSize);
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1154,117 +856,46 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return success;
     }
 
-    public async Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
+    public Task<double> IncrementAsync(string key, double amount, TimeSpan? expiresIn = null)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
-        {
-            RemoveExpiredKey(key);
-            return 0;
-        }
-
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var newEntry = CreateEntry(amount, expiresAt);
-        if (newEntry is null)
-            return 0;
-
-        Interlocked.Increment(ref _writes);
-
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        var result = _memory.AddOrUpdate(key, _ =>
-        {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            double? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<double?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type: {Message}", ex.Message);
-            }
-
-            if (currentValue.HasValue)
-                existingEntry.Value = currentValue.Value + amount;
-            else
-                existingEntry.Value = amount;
-
-            existingEntry.ExpiresAt = expiresAt;
-
-            existingEntry.Size = _hasSizeCalculator ? CalculateEntrySize(existingEntry.Value) : 0;
-            newSize = existingEntry.Size;
-            return existingEntry;
-        });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
-
-        await StartMaintenanceAsync().AnyContext();
-
-        return result.GetValue<double>();
+        return IncrementInternalAsync(key, amount, expiresIn);
     }
 
-    public async Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
+    public Task<long> IncrementAsync(string key, long amount, TimeSpan? expiresIn = null)
+    {
+        return IncrementInternalAsync(key, amount, expiresIn);
+    }
+
+    private async Task<T> IncrementInternalAsync<T>(string key, T amount, TimeSpan? expiresIn) where T : struct, INumber<T>
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (expiresIn < CacheClientExtensions.MinimumExpiration)
         {
             RemoveExpiredKey(key);
-            return 0;
+            return T.Zero;
         }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
         var newEntry = CreateEntry(amount, expiresAt);
         if (newEntry is null)
-            return 0;
+            return T.Zero;
 
         Interlocked.Increment(ref _writes);
 
-        long oldSize = 0;
-        long newSize = 0;
-        bool wasNewEntry = false;
-        var result = _memory.AddOrUpdate(key, _ =>
+        T result = UpdateEntry(key, current =>
         {
-            wasNewEntry = true;
-            newSize = newEntry.Size;
-            return newEntry;
-        }, (_, existingEntry) =>
-        {
-            oldSize = existingEntry.Size;
-            long? currentValue = null;
-            try
-            {
-                currentValue = existingEntry.GetValue<long?>();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Unable to increment value, expected integer type: {Message}", ex.Message);
-            }
+            if (current is null)
+                return (newEntry, amount);
 
-            if (currentValue.HasValue)
-                existingEntry.Value = currentValue.Value + amount;
-            else
-                existingEntry.Value = amount;
-
-            existingEntry.ExpiresAt = expiresAt;
-
-            newSize = existingEntry.Size;
-            return existingEntry;
+            T newValue = (GetNumericValue<T>(current) ?? T.Zero) + amount;
+            long size = _hasSizeCalculator ? CalculateEntrySize(newValue) : 0;
+            return size < 0 ? (current, T.Zero) : (current.WithValue(newValue, expiresAt, size), newValue);
         });
-
-        UpdateMemorySizeForEntry(newSize, oldSize, wasNewEntry);
 
         await StartMaintenanceAsync().AnyContext();
 
-        return result.GetValue<long>();
+        return result;
     }
 
     public Task<bool> ExistsAsync(string key)
@@ -1369,12 +1000,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return;
         }
 
-        if (_memory.TryGetValue(key, out var existingEntry) && existingEntry.ExpiresAt != expiresAt)
-        {
-            Interlocked.Increment(ref _writes);
-            existingEntry.ExpiresAt = expiresAt;
+        if (TrySetExpiration(key, expiresAt))
             await StartMaintenanceAsync().AnyContext();
-        }
+    }
+
+    private bool TrySetExpiration(string key, DateTime? expiresAt)
+    {
+        bool changed = UpdateEntry(key, current =>
+        {
+            var updated = current?.WithExpiration(expiresAt);
+            return (updated, !ReferenceEquals(updated, current));
+        });
+
+        if (changed)
+            Interlocked.Increment(ref _writes);
+
+        return changed;
     }
 
     public async Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations)
@@ -1391,17 +1032,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             ArgumentException.ThrowIfNullOrEmpty(kvp.Key);
 
-            if (!_memory.TryGetValue(kvp.Key, out var existingEntry))
-                continue;
-
             if (kvp.Value is null)
             {
-                if (existingEntry.ExpiresAt is null)
-                    continue;
-
-                Interlocked.Increment(ref _writes);
-                existingEntry.ExpiresAt = null;
-                updated++;
+                if (TrySetExpiration(kvp.Key, null))
+                    updated++;
             }
             else
             {
@@ -1416,10 +1050,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     {
                         RemoveExpiredKey(kvp.Key);
                     }
-                    else if (existingEntry.ExpiresAt != expiresAt)
+                    else if (TrySetExpiration(kvp.Key, expiresAt))
                     {
-                        Interlocked.Increment(ref _writes);
-                        existingEntry.ExpiresAt = expiresAt;
                         updated++;
                     }
                 }
@@ -1499,30 +1131,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 // For memory compaction, prefer size-aware eviction
                 // For item compaction, prefer traditional LRU
-                string? keyToRemove = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
+                var candidate = needsMemoryCompaction ? FindWorstSizeToUsageRatio() : FindLeastRecentlyUsed();
 
-                if (keyToRemove == null)
+                if (candidate is not { } entryToRemove)
                     break;
 
                 _logger.LogDebug("Removing cache entry {Key} due to cache exceeding limit (Items: {ItemCount}/{MaxItems}, Memory: {MemorySize:N0}/{MaxMemorySize:N0})",
-                    keyToRemove, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
+                    entryToRemove.Key, _memory.Count, _maxItems, _currentMemorySize, _maxMemorySize);
 
-                if (_memory.TryRemove(keyToRemove, out var cacheEntry))
+                if (!TryRemoveEntry(entryToRemove.Key, entryToRemove.Value))
                 {
-                    // Update memory size tracking
-                    if (cacheEntry != null)
-                        UpdateMemorySize(-cacheEntry.Size);
-
-                    if (cacheEntry is { IsExpired: true })
-                        expiredKeys.Add(keyToRemove);
-
+                    // The entry changed since it was selected; count the attempt so the loop stays bounded and pick again
                     removalCount++;
+                    continue;
                 }
-                else
-                {
-                    // Couldn't remove the item, break to prevent infinite loop
-                    break;
-                }
+
+                if (entryToRemove.Value.IsExpired)
+                    expiredKeys.Add(entryToRemove.Key);
+
+                removalCount++;
             }
 
             // Log if we hit maxRemovals but still need compaction
@@ -1541,23 +1168,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             OnItemExpired(expiredKey);
     }
 
-    private string? FindLeastRecentlyUsed()
+    private KeyValuePair<string, CacheEntry>? FindLeastRecentlyUsed()
     {
-        (string? Key, long LastAccessTicks, long InstanceNumber) oldest = (null, Int64.MaxValue, 0);
+        KeyValuePair<string, CacheEntry>? oldest = null;
 
         foreach (var kvp in _memory)
         {
-            bool isExpired = kvp.Value.IsExpired;
-            if (isExpired ||
-                kvp.Value.LastAccessTicks < oldest.LastAccessTicks ||
-                (kvp.Value.LastAccessTicks == oldest.LastAccessTicks && kvp.Value.InstanceNumber < oldest.InstanceNumber))
-                oldest = (kvp.Key, kvp.Value.LastAccessTicks, kvp.Value.InstanceNumber);
+            if (kvp.Value.IsExpired)
+                return kvp;
 
-            if (isExpired)
-                break;
+            if (oldest is not { } current ||
+                kvp.Value.LastAccessTicks < current.Value.LastAccessTicks ||
+                (kvp.Value.LastAccessTicks == current.Value.LastAccessTicks && kvp.Value.InstanceNumber < current.Value.InstanceNumber))
+                oldest = kvp;
         }
 
-        return oldest.Key;
+        return oldest;
     }
 
     /// <summary>
@@ -1593,10 +1219,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// to bound the cache size at a level where O(n) iteration remains acceptable.
     /// </para>
     /// </remarks>
-    /// <returns>The key of the entry to evict, or null if no suitable candidate found.</returns>
-    private string? FindWorstSizeToUsageRatio()
+    /// <returns>The entry to evict, or null if no suitable candidate found.</returns>
+    private KeyValuePair<string, CacheEntry>? FindWorstSizeToUsageRatio()
     {
-        string? candidateKey = null;
+        KeyValuePair<string, CacheEntry>? candidate = null;
         double worstRatio = Double.MinValue; // Start with minimum value so any score can win
         long currentTime = _timeProvider.GetUtcNow().Ticks;
 
@@ -1606,7 +1232,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             // Prioritize expired items first
             if (kvp.Value.IsExpired)
-                return kvp.Key;
+                return kvp;
 
             // Calculate a "waste score" based on size vs recent usage
             long size = kvp.Value.Size;
@@ -1627,41 +1253,30 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (wasteScore > worstRatio)
             {
                 worstRatio = wasteScore;
-                candidateKey = kvp.Key;
+                candidate = kvp;
             }
         }
 
-        _logger.LogTrace("FindWorstSizeToUsageRatio: Selected {Key} with score {Score}", candidateKey, worstRatio);
-        return candidateKey;
+        _logger.LogTrace("FindWorstSizeToUsageRatio: Selected {Key} with score {Score}", candidate?.Key, worstRatio);
+        return candidate;
     }
 
-    private async Task DoMaintenanceAsync()
+    internal async Task DoMaintenanceAsync()
     {
         _logger.LogTrace("DoMaintenance: Starting");
 
-        // NOTE: We want to ensure we are comparing DateTimes to avoid using the systems timezone for implicit conversion between DateTime and DateTimeOffset.
-        var utcNow = _timeProvider.GetUtcNow().UtcDateTime.SafeAddMilliseconds(50);
-
-        // Remove expired items and items that are infrequently accessed as they may be updated by add.
-        long lastAccessMaximumTicks = utcNow.SafeAddMilliseconds(-300).Ticks;
-
         try
         {
-            foreach (var kvp in _memory.ToArray())
+            // Sample UTC once per pass, using the same strict expiration boundary as reads.
+            // Concurrent enumeration is safe; remove only the observed entry, not a later replacement.
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            foreach (var kvp in _memory)
             {
-                bool lastAccessTimeIsInfrequent = kvp.Value.LastAccessTicks < lastAccessMaximumTicks;
-                if (!lastAccessTimeIsInfrequent)
+                if (kvp.Value.ExpiresAt is not { } expiresAt || expiresAt >= utcNow || !TryRemoveEntry(kvp.Key, kvp.Value))
                     continue;
 
-                var expiresAt = kvp.Value.ExpiresAt;
-                if (!expiresAt.HasValue)
-                    continue;
-
-                if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
-                {
-                    _logger.LogDebug("DoMaintenance: Removing expired key {Key}", kvp.Key);
-                    RemoveKeyIfExpired(kvp.Key);
-                }
+                _logger.LogDebug("DoMaintenance: Removed expired key {Key}", kvp.Key);
+                OnItemExpired(kvp.Key);
             }
         }
         catch (Exception ex)
@@ -1706,9 +1321,251 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, size);
     }
 
-    private sealed record CacheEntry
+    private interface IListSnapshot
     {
-        private object? _cacheValue;
+        object GetSnapshot();
+    }
+
+    // Updates copy one bounded block and the block directory, not the entire list. The immutable
+    // key index shares unchanged nodes. Raw dictionary reads retain their existing public shape.
+    private sealed class ListSnapshot<T> : IListSnapshot where T : notnull
+    {
+        public const int BlockSize = 32;
+        private ImmutableDictionary<T, int>? _indices;
+        private readonly Dictionary<T, DateTime?>? _initialValues;
+        private readonly Item[][] _blocks;
+        private readonly ImmutableSortedDictionary<DateTime, int> _expirations;
+        private readonly ImmutableStack<int> _freeIndices;
+        private readonly int _nextIndex;
+        private readonly int _permanentCount;
+        private Dictionary<T, DateTime?>? _snapshot;
+
+        private readonly record struct Item(T Key, DateTime? Expiration, bool Present);
+
+        public ListSnapshot(Dictionary<T, DateTime?> values)
+        {
+            _initialValues = values;
+            var expirations = ImmutableSortedDictionary.CreateBuilder<DateTime, int>();
+            _blocks = new Item[(values.Count + BlockSize - 1) / BlockSize][];
+            for (int i = 0; i < _blocks.Length; i++)
+                _blocks[i] = new Item[BlockSize];
+            foreach (var pair in values)
+            {
+                _blocks[_nextIndex / BlockSize][_nextIndex % BlockSize] = new Item(pair.Key, pair.Value, true);
+                _nextIndex++;
+                if (pair.Value is { } expiration)
+                    expirations[expiration] = expirations.GetValueOrDefault(expiration) + 1;
+                else
+                    _permanentCount++;
+            }
+            _expirations = expirations.ToImmutable();
+            _freeIndices = ImmutableStack<int>.Empty;
+        }
+
+        private ListSnapshot(ImmutableDictionary<T, int> indices, Item[][] blocks,
+            ImmutableSortedDictionary<DateTime, int> expirations, ImmutableStack<int> freeIndices, int nextIndex, int permanentCount)
+        {
+            _indices = indices;
+            _blocks = blocks;
+            _expirations = expirations;
+            _freeIndices = freeIndices;
+            _nextIndex = nextIndex;
+            _permanentCount = permanentCount;
+        }
+
+        public int Count => _indices?.Count ?? _initialValues!.Count;
+        private ImmutableDictionary<T, int> Indices
+        {
+            get
+            {
+                if (Volatile.Read(ref _indices) is { } existing)
+                    return existing;
+
+                var builder = ImmutableDictionary.CreateBuilder<T, int>(_initialValues!.Comparer);
+                int index = 0;
+                foreach (var key in _initialValues.Keys)
+                    builder.Add(key, index++);
+                var indices = builder.ToImmutable();
+                return Interlocked.CompareExchange(ref _indices, indices, null) ?? indices;
+            }
+        }
+
+        public Dictionary<T, DateTime?>? Snapshot => Volatile.Read(ref _snapshot);
+        public DateTime? ExpiresAt => _permanentCount > 0 || _expirations.IsEmpty ? null : _expirations.Last().Key;
+
+        public T[] Read(DateTime utcNow)
+        {
+            var result = new T[Count];
+            int count = 0;
+            foreach (var block in _blocks)
+                foreach (var item in block)
+                    if (item.Present && (item.Expiration is null || item.Expiration >= utcNow))
+                        result[count++] = item.Key;
+            if (count != result.Length)
+                Array.Resize(ref result, count);
+            return result;
+        }
+
+        public object GetSnapshot()
+        {
+            if (Snapshot is { } snapshot)
+                return snapshot;
+
+            if (_initialValues is not null)
+                return Interlocked.CompareExchange(ref _snapshot, _initialValues, null) ?? _initialValues;
+
+            var dictionary = CopyValues();
+            return Interlocked.CompareExchange(ref _snapshot, dictionary, null) ?? dictionary;
+        }
+
+        private Dictionary<T, DateTime?> CopyValues()
+        {
+            if (_initialValues is not null)
+                return new Dictionary<T, DateTime?>(_initialValues, _initialValues.Comparer);
+
+            var dictionary = new Dictionary<T, DateTime?>(Count, Indices.KeyComparer);
+            foreach (var block in _blocks)
+                foreach (var item in block)
+                    if (item.Present)
+                        dictionary.Add(item.Key, item.Expiration);
+            return dictionary;
+        }
+
+        public ListSnapshot<T> Update(ICollection<T> items, DateTime? expiration, DateTime utcNow, bool remove, out long removed)
+        {
+            removed = 0;
+            bool prune = !_expirations.IsEmpty && _expirations.First().Key < utcNow;
+            if (remove && !prune && !items.Any(key => _initialValues?.ContainsKey(key) ?? Indices.ContainsKey(key)))
+                return this;
+
+            // When a batch could copy every block, one dictionary copy is cheaper than
+            // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
+            if (items.Count >= Math.Max(1, Count / BlockSize))
+            {
+                var dictionary = CopyValues();
+                if (prune)
+                    foreach (var key in dictionary.Where(pair => pair.Value < utcNow).Select(pair => pair.Key).ToArray())
+                        dictionary.Remove(key);
+                if (remove)
+                    removed = items.Count(dictionary.Remove);
+                else
+                    foreach (var key in items)
+                        dictionary[key] = expiration;
+                return new ListSnapshot<T>(dictionary);
+            }
+
+            var indices = Indices.ToBuilder();
+            int capacity = Math.Max(_nextIndex, Count + (remove ? 0 : items.Count));
+            var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
+            Array.Copy(_blocks, blocks, _blocks.Length);
+            var copied = new bool[blocks.Length];
+            ImmutableSortedDictionary<DateTime, int>.Builder? expirations = null;
+            var freeIndices = _freeIndices;
+            int nextIndex = _nextIndex;
+            int permanentCount = _permanentCount;
+            bool changed = false;
+
+            if (prune)
+                foreach (var block in _blocks)
+                    foreach (var item in block)
+                        if (item.Present && item.Expiration < utcNow)
+                            Remove(item.Key);
+
+            foreach (var item in items)
+            {
+                if (remove)
+                {
+                    if (Remove(item))
+                        removed++;
+                    continue;
+                }
+
+                T key = item;
+                bool exists = indices.TryGetValue(key, out int index);
+                if (exists)
+                {
+                    var previous = blocks[index / BlockSize][index % BlockSize];
+                    if (previous.Expiration == expiration)
+                        continue;
+                    key = previous.Key;
+                    AdjustExpiration(previous.Expiration, -1);
+                }
+                else if (!freeIndices.IsEmpty)
+                {
+                    index = freeIndices.Peek();
+                    freeIndices = freeIndices.Pop();
+                }
+                else
+                    index = nextIndex++;
+
+                CopyBlock(index);
+                blocks[index / BlockSize][index % BlockSize] = new Item(key, expiration, true);
+                indices[key] = index;
+                AdjustExpiration(expiration, 1);
+            }
+
+            if (!changed)
+                return this;
+
+            int blockCount = (nextIndex + BlockSize - 1) / BlockSize;
+            if (blocks.Length != blockCount)
+                Array.Resize(ref blocks, blockCount);
+            return new ListSnapshot<T>(indices.ToImmutable(), blocks, expirations?.ToImmutable() ?? _expirations, freeIndices, nextIndex, permanentCount);
+
+            bool Remove(T key)
+            {
+                if (!indices.TryGetValue(key, out int index))
+                    return false;
+                CopyBlock(index);
+                AdjustExpiration(blocks[index / BlockSize][index % BlockSize].Expiration, -1);
+                blocks[index / BlockSize][index % BlockSize] = default;
+                indices.Remove(key);
+                freeIndices = freeIndices.Push(index);
+                return true;
+            }
+
+            void CopyBlock(int index)
+            {
+                int blockIndex = index / BlockSize;
+                if (copied[blockIndex])
+                    return;
+                blocks[blockIndex] = blockIndex < _blocks.Length ? (Item[])_blocks[blockIndex].Clone() : new Item[BlockSize];
+                copied[blockIndex] = true;
+                changed = true;
+            }
+
+            void AdjustExpiration(DateTime? value, int delta)
+            {
+                if (value is not { } time)
+                {
+                    permanentCount += delta;
+                    return;
+                }
+                expirations ??= _expirations.ToBuilder();
+                int count = expirations.GetValueOrDefault(time) + delta;
+                if (count == 0)
+                    expirations.Remove(time);
+                else
+                    expirations[time] = count;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A cache entry's value, expiration and size never change after it is published to the cache dictionary;
+    /// changes publish a copy (<see cref="WithValue"/>, <see cref="WithExpiration"/>). This lets conditional removals
+    /// compare by reference and guarantees the entry they checked is the entry they remove. Only access metadata
+    /// (<see cref="LastAccessTicks"/>) is updated in place, and it does not participate in equality.
+    /// </summary>
+    /// <remarks>
+    /// Keep this a class with reference equality. <see cref="ConcurrentDictionary{TKey,TValue}"/> compares entries with
+    /// <see cref="EqualityComparer{T}.Default"/> in its compare-and-swap operations, so making this a record or
+    /// implementing <see cref="IEquatable{T}"/> would let <see cref="UpdateEntry{TResult}"/> replace or remove an
+    /// entry it never observed.
+    /// </remarks>
+    internal sealed class CacheEntry
+    {
+        private readonly object? _cacheValue;
         private static long _instanceCount;
         private readonly bool _shouldClone;
         private readonly TimeProvider _timeProvider;
@@ -1730,16 +1587,28 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             Size = size;
         }
 
-        internal long InstanceNumber { get; private set; }
-        internal DateTime? ExpiresAt { get; set; }
+        private CacheEntry(CacheEntry source, object? cacheValue, DateTime? expiresAt, long size, long lastModifiedTicks)
+        {
+            _timeProvider = source._timeProvider;
+            _shouldClone = source._shouldClone;
+            _cacheValue = cacheValue;
+            LastAccessTicks = source.LastAccessTicks;
+            LastModifiedTicks = lastModifiedTicks;
+            ExpiresAt = expiresAt;
+            InstanceNumber = source.InstanceNumber;
+            Size = size;
+        }
+
+        internal long InstanceNumber { get; }
+        internal DateTime? ExpiresAt { get; }
         internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
         internal long LastAccessTicks { get; private set; }
-        internal long LastModifiedTicks { get; private set; }
+        internal long LastModifiedTicks { get; }
 
         /// <summary>
         /// The size of this cache entry in bytes. Set at construction time.
         /// </summary>
-        internal long Size { get; set; }
+        internal long Size { get; }
 
 #if DEBUG
         internal long UsageCount => _usageCount;
@@ -1749,19 +1618,53 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             get
             {
-                LastAccessTicks = _timeProvider.GetUtcNow().Ticks;
+                RecordAccess();
+                return PeekValue();
+            }
+        }
+
+        internal void RecordAccess()
+        {
+            LastAccessTicks = _timeProvider.GetUtcNow().Ticks;
 #if DEBUG
-                Interlocked.Increment(ref _usageCount);
+            Interlocked.Increment(ref _usageCount);
 #endif
-                return _shouldClone ? _cacheValue.DeepClone() : _cacheValue;
-            }
-            set
-            {
-                _cacheValue = _shouldClone ? value.DeepClone() : value;
-                var utcNow = _timeProvider.GetUtcNow();
-                LastAccessTicks = utcNow.Ticks;
-                LastModifiedTicks = utcNow.Ticks;
-            }
+        }
+
+        /// <summary>
+        /// Returns the value without recording an access, so diagnostic reads do not affect eviction order.
+        /// </summary>
+        internal object? PeekValue()
+        {
+            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot() : _cacheValue;
+            return _shouldClone ? value.DeepClone() : value;
+        }
+
+        /// <summary>
+        /// The stored payload without cloning. It is shared with every reader and must never be mutated.
+        /// </summary>
+        internal object? StoredValue => _cacheValue;
+
+        /// <summary>
+        /// Returns a copy of this entry with a new expiration, or this entry when the expiration is unchanged.
+        /// The value is shared, not cloned again.
+        /// </summary>
+        internal CacheEntry WithExpiration(DateTime? expiresAt)
+        {
+            if (expiresAt == ExpiresAt)
+                return this;
+
+            return new CacheEntry(this, _cacheValue, expiresAt, Size, LastModifiedTicks);
+        }
+
+        /// <summary>
+        /// Returns a copy of this entry with a new value, size and expiration, marked as modified now.
+        /// The value is stored as-is, so it must be an instance nothing else references.
+        /// </summary>
+        internal CacheEntry WithValue(object? value, DateTime? expiresAt, long size)
+        {
+            long utcNowTicks = _timeProvider.GetUtcNow().Ticks;
+            return new CacheEntry(this, value, expiresAt, size, utcNowTicks) { LastAccessTicks = utcNowTicks };
         }
 
         [return: MaybeNull]

@@ -262,6 +262,14 @@ await cache.SetAsync("session", sessionData, TimeSpan.FromMinutes(30));
 var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 ```
 
+#### In-memory update behavior
+
+Conditional writes and list updates publish replacement entries atomically. `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` treat expired entries as missing, and rejected oversized updates preserve the previous value, expiration, and tracked size. Explicit removal does not raise `ItemExpired`; expiration does.
+
+`Items` returns cached values without changing eviction order. Values follow `CloneValues`: mutable values remain shared when cloning is disabled, so callers must not mutate them concurrently with cache operations.
+
+List updates preserve previously returned snapshots. With cloning disabled and either no sizing or built-in fixed sizing, large lists created through `ListAddAsync` share unchanged storage across updates; the key index is built on the first small modification after creation or a bulk rebuild. Batch values into one call to reduce copying and retries. Custom sizing and cloning use dictionary copies instead. Accessing the raw dictionary through `GetAsync` or `Items` also requires a copy on the next list write. These copies grow with list size. With cloning enabled, existing list values are reused internally and cloned when returned to callers.
+
 ### HybridCacheClient
 
 Combines a local in-memory cache (L1) with a distributed cache (L2) for maximum performance. This implements the industry-standard L1/L2 caching architecture, ideal for read-heavy workloads where the same data is accessed frequently across multiple requests.
