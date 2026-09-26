@@ -85,7 +85,7 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/3f7ede0369c5874b7f67de5e5f69c1c7f0fef513/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/c44286a06f9bf031abd98890892511316944ea10/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
@@ -100,7 +100,7 @@ The callback receives the fluent options builder. The defaults are best-effort p
 
 The candidate changes Automatic-mode exhaustion without a typed terminal destination from discard to retention, which can block progress and increase backlog. Strict dispatch is opt-in and requires Automatic acknowledgement, a nonempty typed `DeadLetterExchange`, and discard disabled. Both classic and quorum support these provider contracts; only quorum adds replication and optional at-least-once broker DLX. Plan [capacity and backpressure](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) before adoption.
 
-The candidate also rejects `UseMessagePriority()` / `MaxPriority` with quorum queues using `InvalidOperationException`, in either builder or direct-property assignment order. Bus construction catches conflicts introduced through later mutation of the `Arguments` dictionary. Remove those classic-only settings before adoption; message-level `Priority` works with either queue type.
+Remove `UseMessagePriority()` / `MaxPriority` when configuring quorum: builders reject the combination immediately; direct options reject it at construction with `InvalidOperationException`. Message-level `Priority` remains valid. See the provider guide for classic priority ranges and queue-type validation.
 
 ### RedisMessageBus
 

@@ -4,7 +4,7 @@ title: RabbitMQ Verification
 
 # RabbitMQ 4.2.5 verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`3f7ede0`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/3f7ede0369c5874b7f67de5e5f69c1c7f0fef513).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`c44286a`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/c44286a06f9bf031abd98890892511316944ea10).
 
 All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
 
@@ -29,10 +29,10 @@ For a local individual-result report, use the built xUnit executable instead of 
 mkdir -p TestResults
 FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true \
   dotnet tests/Foundatio.RabbitMQ.Tests/bin/Release/net10.0/Foundatio.RabbitMQ.Tests.dll \
-  -failSkips -result-ctrf TestResults/rabbitmq.json
+  -result-ctrf TestResults/rabbitmq.json
 ```
 
-Native xUnit switches differ from `dotnet test`/Microsoft.Testing.Platform switches. Do not mix them. A help invocation, empty selection, failed fixture, or skipped required test is not successful behavioral verification.
+Native xUnit switches differ from `dotnet test`/Microsoft.Testing.Platform switches. Do not mix them. The 4.2.5 baseline intentionally skips five inherited strict quorum-priority cases that require 4.3+; `-failSkips` would reject those expected skips. Inspect the report for any additional skips. A help invocation, empty selection, failed fixture, or skipped required test is not successful behavioral verification.
 
 ## Run the interactive Aspire sample
 
@@ -60,7 +60,7 @@ Before a drill, record queue types, policies, counts, consumer state, and select
 
 ## Test conventions and ownership
 
-Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Preserve inherited contract names and signatures. Shared queue-type behavior must use the virtual `GetMessageBus` factory so classic, quorum, and delayed-exchange subclasses exercise their own configuration. The priority delivery case in the shared base explicitly constructs classic queues to test classic numeric ordering. Separate `RabbitMqPriorityOptionTests` cover classic configuration and rejection of quorum `MaxPriority` in both builder orders and direct options.
+Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Preserve inherited contract names and signatures. Shared queue-type behavior must use the virtual `GetMessageBus` factory so classic, quorum, and delayed-exchange subclasses exercise their own configuration. The shared priority case retains strict quorum ordering and requires RabbitMQ 4.3+; classic ordering has a separate case. `RabbitMqPriorityOptionTests` cover classic limits and rejection of quorum `MaxPriority` in builders and direct options.
 
 Focused tests use `TestWithLoggingBase`, `ITestOutputHelper`, inherited `TestCancellationToken`, and `Log` as the logger factory where needed. Use structured `_logger` templates rather than interpolated text hidden inside a generic log field. Extend an existing relevant test class before adding another one. Configuration-only guards belong in the relevant options test class, such as `RabbitMqMessageBusOptionsTests` or `RabbitMqPriorityOptionTests`, not a broker-dependent fixture.
 
@@ -101,7 +101,7 @@ Four cases test custom-port traffic over IPv4/IPv6 with URI-only and replacement
 | Prefetch/restarts | Inspect backlog while ACKs are withheld and reconcile every required ID after recovery, rather than permitting percentage loss. |
 | Sample provisioning | Launch the subscriber process with an unavailable URI endpoint and a healthy replacement host. Verify quarantine setup and subscription readiness; a helper-only endpoint test is insufficient. |
 | Header culture | Convert numeric AMQP headers under a non-English culture such as `fr-FR` and assert invariant property strings; byte-array headers remain UTF-8 text. |
-| Priority on 4.2.5 | The classic delivery case publishes low/high/medium priorities and verifies numeric order with prefetch 1. Configuration tests cover classic maximum priority, both builder and direct-property assignment orders, and constructor rejection after mutable-dictionary changes. These cases do not verify quorum ordering or 4.3+ runtime semantics. |
+| Priority | Separate classic and quorum cases verify low/high/medium ordering with prefetch 1. Strict quorum ordering requires 4.3+ and explicitly skips older or unknown versions: five inherited cases skip on the 4.2.5 baseline. Configuration tests cover builder guards, direct-option construction, dictionary mutations, classic `MaxPriority=255`, and zero rejection. A broker case checks rejection when explicit queue type changes after construction. |
 
 Handoff ambiguity is injected at the caller boundary around a real broker publication, not claimed as packet-level confirmation loss. Publisher-process termination does not establish replicated scheduling. Tests allow the real 4.2.5 dead-letter retry timer rather than changing it solely to hide a slow result.
 
@@ -115,6 +115,6 @@ For a test-only refactor, reconcile the original and resulting case inventories 
 
 Use [delivery-safety/adoption guidance](./rabbitmq-delivery-safety.md) for topology, terminal handling, and operational prerequisites. Tests execute on .NET 10/Linux in the reviewed setup; .NET 8 compilation is not its own broker-runtime matrix. Packaging/publication skipped by a PR build is not package validation. A passing test count does not prove every legacy chaos assertion or every production failure model.
 
-The documented 4.3+ quorum priorities, delayed retries, and consumer-timeout options remain separate from this 4.2.5 runtime matrix. Version guards and upstream documentation do not substitute for running against the deployed broker version.
+Run the preserved strict quorum-priority case against 4.3+ separately from the 4.2.5 baseline. Passing it does not verify native delayed retries, consumer timeouts, or other 4.3+ features. Record the broker version, tested revision, and results; version guards and upstream documentation do not substitute for runtime checks.
 
 This page describes how to verify; revision-specific results remain in the [provider review stack](./rabbitmq.md) and [issue #99](https://github.com/FoundatioFx/Foundatio.RabbitMQ/issues/99), not as permanent guarantees in the guide. Results from an earlier aggregate revision do not verify the current stack heads.

@@ -7,18 +7,18 @@ title: RabbitMQ Quorum Queue Migration
 This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
 
 ::: warning Companion implementation
-The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`3f7ede0`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/3f7ede0369c5874b7f67de5e5f69c1c7f0fef513). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`c44286a`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/c44286a06f9bf031abd98890892511316944ea10). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
 :::
 
-## Why migrate?
+## Why Migrate?
 
 Quorum queues replicate state across their members and can continue operating with a majority available. They do not shard one hot queue into independent partitions, remove reconnection pauses, or guarantee zero loss for arbitrary publication, acknowledgement, retention, and storage policies. Classic queues on this baseline are node-local.
 
 Choose quorum when replicated retention or at-least-once broker DLX is required and its operational/resource tradeoffs fit the workload. Both queue types support strict handler processing, provider-confirmed terminal handoffs, TLS, and transport recovery. Keep publisher confirms, acknowledgement mode, terminal routing, and idempotency decisions explicit. Native quorum delayed retries require RabbitMQ 4.3+ and are not available on the pinned baseline; see the [version feature matrix](./rabbitmq.md#broker-baseline-and-priority).
 
-## Enabling quorum queues
+## Enabling Quorum Queues
 
-Remove `UseMessagePriority()` and leave `MaxPriority` unset when moving a classic configuration to quorum. The builder rejects the combination with `UseQuorumQueues()` in either order. Direct options reject it on property assignment in either order; bus construction also catches conflicts introduced by later mutation of the `Arguments` dictionary. These checks throw `InvalidOperationException` and are a breaking validation change. Keep message-level `Priority` values where needed; quorum priority support is built into the broker.
+Remove `UseMessagePriority()` and leave `MaxPriority` unset when moving to quorum. The combination throws `InvalidOperationException` immediately in either builder order, or at bus construction for direct options. This is a breaking validation change. Message-level `Priority` remains valid; quorum priorities are built into the broker.
 
 ```csharp
 using Foundatio.Messaging;
@@ -43,13 +43,15 @@ Here `connectionString` is an `amqps` URI with the intended credentials/vhost, a
 
 `UseQuorumQueues()` sets `x-queue-type=quorum`, disables exclusive/auto-delete, and supplies a broker delivery-limit argument. It neither converts an existing queue nor forces `IsDurable` back to true after an explicit false. Quorum retries below the application budget use rejection/redelivery; exhaustion and broker-budget enforcement have separate terminal paths. A delivery limit by itself does not create a DLQ or ensure safe transfer.
 
-## Migration challenge
+## Migration Challenge
 
 An existing queue cannot be converted to another type in place. Redeclaring incompatible properties can close the channel with `PRECONDITION_FAILED`. The exchange (`Topic`) and subscription queue (`SubscriptionQueueName`) are different identities: changing only `Topic` is not a queue rename.
 
 Do not rely on relaxed queue-type equivalence to convert storage. Even where the broker accepts a redeclaration, the existing queue stays its original type. A provider configured for quorum can then choose behavior inconsistent with an actual classic queue.
 
-## Migration approaches
+The provider recognizes only explicit local `x-queue-type=quorum`; it does not discover broker/vhost defaults or existing queue types. Before queue declaration, it rejects changes to or from explicit quorum and quorum/`MaxPriority` conflicts. Configure arguments before construction; use a new bus for a planned type change.
+
+## Migration Approaches
 
 ### New subscription queue with controlled cutover
 
