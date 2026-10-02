@@ -913,15 +913,58 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RemoveIfEqualAsync_WhenOwnerChangesDuringComparison_KeepsNewOwner(bool replace)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    public async Task RemoveIfEqualAsync_WhenEntryExpires_ReclaimsMemoryAndNotifies(bool expiresDuringComparison, bool matches, bool recentMaintenance)
+    {
+        // Arrange
+        // Keep UTC within the initial 250ms maintenance window to exercise throttled cleanup.
+        var start = recentMaintenance
+            ? new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100)
+            : DateTimeOffset.UtcNow;
+        var timeProvider = new FakeTimeProvider(start);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        var duration = recentMaintenance ? TimeSpan.FromMilliseconds(5) : TimeSpan.FromMinutes(1);
+        var owner = new ComparedValue("owner", expiresDuringComparison ? () => timeProvider.Advance(duration.Add(TimeSpan.FromMilliseconds(1))) : null);
+        Publish(cache, "lease", CreateEntry(owner, timeProvider, duration));
+        if (!expiresDuringComparison)
+            timeProvider.Advance(duration.Add(TimeSpan.FromMilliseconds(1)));
+        Assert.Equal(50, cache.CurrentMemorySize);
+
+        // Act
+        bool removed = await cache.RemoveIfEqualAsync("lease", new ComparedValue(matches ? "owner" : "other"));
+
+        // Assert
+        Assert.False(removed);
+        Assert.Equal("lease", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        Assert.Null(cache.UpdateEntry("lease", current => (current, current)));
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RemoveIfEqualAsync_WhenOwnerChangesDuringComparison_KeepsNewOwner(bool replace, bool expiresDuringComparison)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
-        var newOwner = CreateEntry(new ComparedValue("new-owner"), timeProvider, TimeSpan.FromMinutes(1));
-        var owner = new ComparedValue("owner", () => Publish(cache, "lease", newOwner));
+        InMemoryCacheClient.CacheEntry? newOwner = null;
+        var owner = new ComparedValue("owner", () =>
+        {
+            if (expiresDuringComparison)
+                timeProvider.Advance(TimeSpan.FromMinutes(2));
+            newOwner = CreateEntry(new ComparedValue("new-owner"), timeProvider, TimeSpan.FromMinutes(1));
+            Publish(cache, "lease", newOwner);
+        });
         Publish(cache, "lease", CreateEntry(owner, timeProvider, TimeSpan.FromMinutes(1)));
 
         // Act
@@ -931,7 +974,31 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
         // Assert
         Assert.False(changed);
+        Assert.NotNull(newOwner);
         Assert.Same(newOwner, GetEntry(cache, "lease"));
+    }
+
+    [Fact]
+    public async Task RemoveIfEqualAsync_WhenValueComparisonThrows_PreservesEntryAndReturnsFaultedTask()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50));
+        var owner = new ComparedValue("owner", () => throw new InvalidOperationException("Comparison failed"));
+        var entry = CreateEntry(owner, timeProvider);
+        Publish(cache, "lease", entry);
+        Task<bool>? removal = null;
+
+        // Act
+        var synchronousError = Record.Exception(() => { removal = cache.RemoveIfEqualAsync("lease", owner); });
+
+        // Assert
+        Assert.Null(synchronousError);
+        Assert.NotNull(removal);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => removal);
+        Assert.Equal("Comparison failed", error.Message);
+        Assert.Same(entry, GetEntry(cache, "lease"));
+        Assert.Equal(50, cache.CurrentMemorySize);
     }
 
     [Theory]

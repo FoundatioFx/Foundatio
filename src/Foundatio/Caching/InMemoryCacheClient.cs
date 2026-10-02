@@ -258,24 +258,31 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return Task.FromResult(removed is { IsExpired: false });
     }
 
-    public Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
+    public async Task<bool> RemoveIfEqualAsync<T>(string key, T expected)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        bool success = UpdateEntry(key, current =>
+        var (success, expired) = UpdateEntry(key, current =>
         {
-            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
-                return (current, false);
+            if (current is null)
+                return (current, (false, false));
 
-            // Check expiry after the comparison: a lease that expired while it was being compared no longer
-            // belongs to the caller. Maintenance removes the entry and raises ItemExpired.
-            return current.IsExpired ? (current, false) : (null, true);
+            bool matches = EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected);
+            if (current.IsExpired)
+                return (null, (false, true));
+
+            return matches ? (null, (true, false)) : (current, (false, false));
         });
 
+        if (expired)
+            OnItemExpired(key);
+
+        await StartMaintenanceAsync().AnyContext();
+
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected} Success: {Success}", key, expected, success);
-        return Task.FromResult(success);
+        return success;
     }
 
     public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
@@ -1066,7 +1073,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private async Task StartMaintenanceAsync(bool compactImmediately = false)
     {
-        _logger.LogTrace("StartMaintenanceAsync called with compactImmediately={CompactImmediately}", compactImmediately);
+        if (_logger.IsEnabled(LogLevel.Trace))
+            _logger.LogTrace("StartMaintenanceAsync called with compactImmediately={CompactImmediately}", compactImmediately);
 
         if (_disposedCancellationTokenSource.IsCancellationRequested)
             return;
@@ -1775,4 +1783,3 @@ public class ItemExpiredEventArgs : EventArgs
     public required string Key { get; set; }
     public bool SendNotification { get; set; }
 }
-
