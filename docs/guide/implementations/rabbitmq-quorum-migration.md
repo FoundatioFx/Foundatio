@@ -7,7 +7,7 @@ title: RabbitMQ Quorum Queue Migration
 This guide describes an **optional queue-topology migration on RabbitMQ 4.2.5**, not a broker upgrade. The repository baseline remains 4.2.5. A working classic deployment does not need to migrate solely to adopt the provider fixes.
 
 ::: warning Companion implementation
-The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`abba355`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
+The application retry/terminal behavior referenced here accompanies [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Aggregate implementation reference: [`ed8606b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/ed8606b7182cde37b664e5fe4ab5a7e81e46be17). Check the installed provider version and [delivery-safety contract](./rabbitmq-delivery-safety.md) before adoption. A linked branch is not a released package or permission to change production topology.
 :::
 
 ## Why Migrate?
@@ -19,6 +19,8 @@ Choose quorum when replicated retention or at-least-once broker DLX is required 
 ## Enabling Quorum Queues
 
 Remove `UseMessagePriority()` and leave `MaxPriority` unset when moving to quorum. The combination throws `InvalidOperationException` immediately in either builder order, or at bus construction for direct options. This is a breaking validation change. Message-level `Priority` remains valid; quorum priorities are built into the broker.
+
+If a broker upgrade is also planned, review the [priority upgrade behavior](./rabbitmq.md#priority-behavior-across-broker-upgrades). Moving from 4.2 to 4.3 changes numeric ordering, the treatment of omitted/zero priority, and progress for lower-priority traffic. A queue-topology migration alone does not validate that upgrade.
 
 ```csharp
 using Foundatio.Messaging;

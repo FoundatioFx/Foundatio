@@ -2,11 +2,11 @@
 title: RabbitMQ Verification
 ---
 
-# RabbitMQ 4.2.5 verification
+# RabbitMQ verification
 
-This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`abba355`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4).
+This contributor guide is maintained in **FoundatioFx/Foundatio**, but the commands below run from the **Foundatio.RabbitMQ repository root**. In the [provider review stack](./rabbitmq.md), [#106](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) owns the quorum priority guard, [#104](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) owns broker/TLS infrastructure, [#105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) owns delivery/recovery behavior, and [#100](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100) adds the interactive sample and documentation. A documentation branch or test definition is not proof that an implementation is released. Aggregate implementation reference: [`ed8606b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/ed8606b7182cde37b664e5fe4ab5a7e81e46be17).
 
-All provider-managed brokers use `rabbitmq:4.2.5-management`: Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers. The plugin artifact is independently versioned `4.2.0`. No 4.3 upgrade is included.
+Compose, Aspire primary/chaos nodes, the delayed-plugin base, and both TLS brokers use `rabbitmq:4.2.5-management`. A separate owned `messaging-priority-43` broker uses `rabbitmq:4.3.6-management` for the priority upgrade scenarios. The plugin artifact remains `4.2.0`. The additional broker does not establish full-provider compatibility with 4.3.
 
 ## Run the existing Build
 
@@ -62,7 +62,7 @@ Before a drill, record queue types, policies, counts, consumer state, and select
 
 Provider contract tests inherit `RabbitMqMessageBusTestBase` / `RabbitMqMessageBusClassicTestBase`, which use Foundatio's shared `MessageBusTestBase`. Preserve inherited contract names and signatures. Shared queue-type behavior must use the virtual `GetMessageBus` factory so classic, quorum, and delayed-exchange subclasses exercise their own configuration. The shared priority case retains strict quorum ordering and requires RabbitMQ 4.3+; classic ordering has a separate case. `RabbitMqPriorityOptionTests` cover classic limits and rejection of quorum `MaxPriority` in builders and direct options.
 
-Priority tests use fluent builders and message-bus subscriptions for topology setup, then `CleanupMessageBusAsync` in `finally`. They subscribe first and hold one warmup delivery at prefetch 1 while confirmed low/high/medium messages accumulate, then release it and assert delivery order. The quorum case preserves its four assertions and uses a read-only connection to check the broker version. The classic case uses `UseMessagePriority(10)` with the default exclusive/autodelete queue settings.
+The existing ordering tests use fluent builders and message-bus subscriptions for topology setup, then `CleanupMessageBusAsync` in `finally`. They subscribe first and hold one warmup delivery at prefetch 1 while confirmed low/high/medium messages accumulate, then release it and assert delivery order. The quorum method was rewritten earlier in this stack; retaining its four assertions does not restore the original test. It uses a read-only connection to check the broker version. The classic case uses `UseMessagePriority(10)` with the default exclusive/autodelete queue settings. The separately named upgrade scenarios below do not change either method further.
 
 Focused tests use `TestWithLoggingBase`, `ITestOutputHelper`, inherited `TestCancellationToken`, and `Log` as the logger factory where needed. Use structured `_logger` templates rather than interpolated text hidden inside a generic log field. Extend an existing relevant test class before adding another one. Configuration-only guards belong in the relevant options test class, such as `RabbitMqMessageBusOptionsTests` or `RabbitMqPriorityOptionTests`, not a broker-dependent fixture.
 
@@ -72,7 +72,21 @@ One `RabbitMqTestCollection` owns `AspireFixture`. Broker-dependent classes join
 
 Infrastructure is required when `CI` or `GITHUB_ACTIONS` is `true` or `1`, or with `FOUNDATIO_RABBITMQ_REQUIRE_INFRASTRUCTURE=true`. A false local override cannot weaken CI. In an optional local run, a TLS certificate trust-store denial skips only TLS-dependent cases while the other brokers can run. Required runs still fail when TLS infrastructure is unavailable. Optional skips are not full-suite verification.
 
-Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trusted TLS brokers. Successful TLS traffic cases also check it. The untrusted TLS broker has the same exact image declaration; certificate validation is not bypassed merely to query its version. Version tags are compatibility pins, not immutable digests or security certification.
+Live version tests assert 4.2.5 for the primary, delayed, three chaos, and trusted TLS brokers. Successful TLS traffic cases also check it. The untrusted TLS broker has the same exact image declaration; certificate validation is not bypassed merely to query its version. The dedicated priority fixture pins 4.3.6 and asserts major/minor version 4.3. Version tags are compatibility pins, not immutable digests or security certification.
+
+## Priority upgrade coverage
+
+`RabbitMqPriorityBehaviorTestBase` adds nine separately named cases, using the message-bus API, fluent builders, and shared cleanup. `RabbitMqPriorityBehaviorTests` runs them on the main 4.2.5 broker. `RabbitMqPriority43BehaviorTests` runs the same nine on the dedicated 4.3.6 broker and adds its fixture-version assertion. Both join the existing shared collection and Build workflow. The main, TLS, chaos, and delayed-plugin baselines remain unchanged.
+
+| Scenario | Cases | Required assertion |
+|---|---|---|
+| Publication before subscription | Classic and quorum | A confirmed unroutable publication is absent when a later subscription receives a new message. |
+| Delivery already in flight | Classic and quorum | A later high-priority message does not preempt the held low-priority delivery. |
+| Queued priorities 5 and 10 | Classic and quorum | Classic sorts numerically; quorum uses FIFO on 3.13, a shared high group on 4.2, and strict numeric ordering on 4.3. |
+| Omitted/zero versus explicit priority 1 | Classic and quorum | Account for RabbitMQ.Client 7.2.2 omitting zero and quorum 4.3 using default priority 4. |
+| Quorum fairness | Quorum | Normal traffic arrives first on 3.13, within the high-priority backlog on 4.2, and after that backlog on 4.3. |
+
+Run these cases separately against 3.13.7 when checking that upgrade path; it is a local comparison, not another CI baseline. A finite backlog test does not prove starvation under sustained load. Record the revision and complete counts for each broker. These scenarios do not verify native delayed retries, consumer timeouts, TLS on 4.3, or full-provider compatibility with 3.13 or 4.3.
 
 ## Temporary TLS infrastructure
 
@@ -117,6 +131,6 @@ For a test-only refactor, reconcile the original and resulting case inventories 
 
 Use [delivery-safety/adoption guidance](./rabbitmq-delivery-safety.md) for topology, terminal handling, and operational prerequisites. Tests execute on .NET 10/Linux in the reviewed setup; .NET 8 compilation is not its own broker-runtime matrix. Packaging/publication skipped by a PR build is not package validation. A passing test count does not prove every legacy chaos assertion or every production failure model.
 
-Run the preserved strict quorum-priority case against 4.3+ separately from the 4.2.5 baseline. Passing it does not verify native delayed retries, consumer timeouts, or other 4.3+ features. Record the broker version, tested revision, and results; version guards and upstream documentation do not substitute for runtime checks.
+Keep the earlier rewritten strict quorum-ordering case distinct from the new priority-upgrade scenarios. For original-test reproduction, use the untouched test and runtime at the recorded baseline revision; a modified reproduction is different evidence. Record broker versions and results explicitly rather than treating skipped cases or version guards as passing runtime checks.
 
 This page describes how to verify; revision-specific results remain in the [provider review stack](./rabbitmq.md) and [issue #99](https://github.com/FoundatioFx/Foundatio.RabbitMQ/issues/99), not as permanent guarantees in the guide. Results from an earlier aggregate revision do not verify the current stack heads.

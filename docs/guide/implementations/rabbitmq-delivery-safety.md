@@ -5,7 +5,7 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The broker compatibility baseline remains **4.2.5**, with no 4.3 upgrade. Aggregate implementation reference: [`abba355`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
+This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The delivery-safety baseline remains **4.2.5**; the separate 4.3.6 priority scenarios do not verify these delivery/recovery contracts on 4.3. Aggregate implementation reference: [`ed8606b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/ed8606b7182cde37b664e5fe4ab5a7e81e46be17). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
 :::
 
 ::: warning Breaking exhaustion behavior

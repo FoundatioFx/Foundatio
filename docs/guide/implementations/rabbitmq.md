@@ -13,7 +13,7 @@ title: RabbitMQ
 | `RabbitMQMessageBus` | `IMessageBus` | Foundatio.RabbitMQ |
 
 ::: warning Companion implementation
-The provider's [#103: TLS endpoints](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/103) has merged into `main`. This documentation branch accompanies the remaining provider review stack: [#106: reject classic-only priority limits on quorum](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) → [#104: broker verification](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) → [#105: delivery and recovery](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) → [#100: sample and documentation](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). PR #106 owns the breaking quorum-priority configuration validation; PR #105 owns delivery/recovery behavior and the breaking exhaustion change. These contracts are not claimed to be in an already released NuGet package. Coordinate documentation publication with the stack's merge/release and verify the package version used by your application. Aggregate implementation reference: [`abba355`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4). Revision-specific validation remains in the companion PRs.
+The provider's [#103: TLS endpoints](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/103) has merged into `main`. This documentation branch accompanies the remaining provider review stack: [#106: reject classic-only priority limits on quorum](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/106) → [#104: broker verification](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/104) → [#105: delivery and recovery](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105) → [#100: sample and documentation](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/100). PR #106 owns the breaking quorum-priority configuration validation; PR #105 owns delivery/recovery behavior and the breaking exhaustion change. These contracts are not claimed to be in an already released NuGet package. Coordinate documentation publication with the stack's merge/release and verify the package version used by your application. Aggregate implementation reference: [`ed8606b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/ed8606b7182cde37b664e5fe4ab5a7e81e46be17). Revision-specific validation remains in the companion PRs.
 :::
 
 ::: warning Breaking changes
@@ -64,7 +64,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `DeliveryLimit` | `2` | Application redelivery budget after the initial attempt; `-1` is unlimited. Broker enforcement is separate. |
 | `PrefetchCount` | `0` | With both prefetch options zero, the provider sends no QoS and broker defaults can apply. |
 
-The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API. For custom topology and metadata code, [`Foundatio.Utility.RabbitMQConstants`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4/src/Foundatio.RabbitMQ/Utility/RabbitMQConstants.cs) exposes shared header and queue-argument wire names.
+The [delivery-safety guide](./rabbitmq-delivery-safety.md) covers the new opt-in `RequireSuccessfulDispatch`, `RequirePublishRouting`, and `RequireBrokerDelayedDelivery` contracts, default retention on exhaustion, terminal topology, and shutdown behavior. These provider processing and confirmed-handoff contracts support both classic and quorum queues. Quorum adds replication and optional at-least-once **broker** dead-lettering; migrating queue type is optional. See the [candidate options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/ed8606b7182cde37b664e5fe4ab5a7e81e46be17/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) for the complete API. For custom topology and metadata code, [`Foundatio.Utility.RabbitMQConstants`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/ed8606b7182cde37b664e5fe4ab5a7e81e46be17/src/Foundatio.RabbitMQ/Utility/RabbitMQConstants.cs) exposes shared header and queue-argument wire names.
 
 `IMessage.Properties` formats received numeric AMQP headers with `CultureInfo.InvariantCulture`: a numeric value of `1.5` becomes `"1.5"` even under `fr-FR`, rather than `"1,5"`. Byte-array headers still decode as UTF-8. Use invariant culture when parsing numeric property strings.
 
@@ -89,13 +89,13 @@ The resolver throws `ArgumentOutOfRangeException` for a parsed port outside 1–
 
 Strict identity checking and validation of previously ignored malformed ports can break an existing configuration. Correct the aliases/certificates/ports rather than disabling verification or downgrading to plaintext.
 
-For separate RabbitMQ.Client setup connections, the public [`Foundatio.Utility.RabbitMQEndpointResolver.CreateEndpoints(ConnectionFactory, IList<string>? hosts = null)`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4/src/Foundatio.RabbitMQ/Utility/RabbitMQEndpointResolver.cs) applies the same endpoint rules using the factory's URI. The subscriber sample calls this API from the compiled provider library when provisioning quarantine.
+For separate RabbitMQ.Client setup connections, the public [`Foundatio.Utility.RabbitMQEndpointResolver.CreateEndpoints(ConnectionFactory, IList<string>? hosts = null)`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/ed8606b7182cde37b664e5fe4ab5a7e81e46be17/src/Foundatio.RabbitMQ/Utility/RabbitMQEndpointResolver.cs) applies the same endpoint rules using the factory's URI. The subscriber sample calls this API from the compiled provider library when provisioning quarantine.
 
 The resolver preserves client-certificate settings already configured on `ConnectionFactory.Ssl`: `CertPath`, `CertPassphrase`, `Certs`, `CertificateSelectionCallback`, and `ClientCertificateContext`, along with protocol and revocation settings. It sets each endpoint's server name to the actual host and forces `AcceptablePolicyErrors` to `None`. A non-null `CertificateValidationCallback` is rejected with `ArgumentException`, even if that callback intends to validate strictly. These settings apply to connections you create with the supplied factory; `RabbitMQMessageBusOptions` does not expose a separate client-certificate configuration option.
 
 ## Broker baseline and priority
 
-The companion provider branch pins all repository-managed brokers to **RabbitMQ 4.2.5**: Compose, the Aspire primary/chaos brokers, the delayed-plugin image base, and both TLS test brokers. The delayed-exchange plugin artifact is independently versioned `4.2.0`. This is a compatibility baseline, not a broker security/support-lifecycle certification or a change to deployed infrastructure. No 4.3 upgrade is part of this work.
+The companion provider branch keeps Compose, the Aspire primary/chaos brokers, the delayed-plugin image base, and both TLS test brokers on **RabbitMQ 4.2.5**. A separate owned **4.3.6** broker runs priority compatibility scenarios in CI. The delayed-exchange plugin artifact remains `4.2.0`. These test pins do not change deployed infrastructure or certify a broker's security/support lifecycle.
 
 | Feature | RabbitMQ 4.2.x (tested on 4.2.5) | RabbitMQ 4.3+ |
 |---|---|---|
@@ -106,19 +106,33 @@ The companion provider branch pins all repository-managed brokers to **RabbitMQ 
 | Initial scheduling via delayed-exchange plugin | Available with a compatible plugin and topic | Plugin unavailable; this provider falls back to in-process scheduling unless required broker scheduling rejects it |
 | Single active consumer | Supported | Supported |
 
-The [RabbitMQ 4.3 release notes](https://www.rabbitmq.com/blog/2026/04/23/rabbitmq-4.3-release) describe the newer quorum capabilities. This matrix preserves the provider's version-gated support; the repository's 4.2.5 suite does not establish 4.3+ runtime verification. The `ConsumerTimeout()` row describes this provider's quorum option, not the broker's older acknowledgement-timeout mechanisms.
+The [RabbitMQ 4.3 release notes](https://www.rabbitmq.com/blog/2026/04/23/rabbitmq-4.3-release) describe the newer quorum capabilities. The 4.3.6 test coverage is limited to priority scenarios; it does not verify native delayed retries, consumer timeouts, or full-provider compatibility. The `ConsumerTimeout()` row describes this provider's quorum option, not the broker's older acknowledgement-timeout mechanisms.
 
 Classic priority ranges are unchanged: `UseMessagePriority(maxPriority)` accepts 1–32; direct `MaxPriority` accepts 1–255 and rejects zero with `ArgumentOutOfRangeException`. Higher limits cost more broker CPU and memory.
 
 Combining `UseMessagePriority()` with `UseQuorumQueues()` throws `InvalidOperationException` immediately in either builder order. Direct options allow either assignment order and reject the combination at bus construction. Quorum priorities are built in; leave `MaxPriority` unset.
 
-Prefer fluent builders for supported settings such as `UseQuorumQueues()` and `UseMessagePriority()`. Use `Arguments` for other queue settings; the [options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/abba355d26cd9c15ec6500ebb6dc5c2989f33ea4/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) includes a queue message-TTL example and links to broker documentation. Configure arguments before constructing the bus. Before queue declaration, the provider rechecks for quorum/`MaxPriority` conflicts and changes to or from explicit quorum since construction. Mutating running-bus arguments is unsupported.
+Prefer fluent builders for supported settings such as `UseQuorumQueues()` and `UseMessagePriority()`. Use `Arguments` for other queue settings; the [options reference](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/ed8606b7182cde37b664e5fe4ab5a7e81e46be17/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBusOptions.cs) includes a queue message-TTL example and links to broker documentation. Configure arguments before constructing the bus. Before queue declaration, the provider rechecks for quorum/`MaxPriority` conflicts and changes to or from explicit quorum since construction. Mutating running-bus arguments is unsupported.
 
 Quorum detection matches only the local `Arguments["x-queue-type"]` string against `"quorum"`, case-insensitively. It does not infer broker/vhost defaults, inspect existing queues, or validate other queue-type values. Explicitly configure the intended type and verify the deployed topology.
 
 Set message priority through `MessageOptions.Properties["Priority"]` for either classic or quorum queues. RabbitMQ.Client 7.2.2 omits a zero-valued priority, so the broker's omitted-priority behavior applies. Priority does not recall deliveries already sent to consumers. On 4.3, returned quorum deliveries use return order rather than their original priority; see [RabbitMQ priority semantics](https://www.rabbitmq.com/docs/priority).
 
 Prefetch limits unacknowledged deliveries, not business-handler concurrency, and does not bound `FireAndForget` consumers. Single active consumer does not eliminate redeliveries or guarantee business side-effect ordering.
+
+### Priority behavior across broker upgrades
+
+Audit publishers that mix explicit, omitted, and zero priorities before upgrading quorum queues. The same publications can arrive in a different order without application changes:
+
+| Quorum behavior | RabbitMQ 3.13.7 | RabbitMQ 4.2.5 | RabbitMQ 4.3.6 |
+|---|---|---|---|
+| Queued priorities 5 and 10 | FIFO; priority ignored | Same high group; FIFO within it | 10 before 5 |
+| Omitted/zero versus explicit 1 with RabbitMQ.Client 7.2.2 | FIFO | Same normal group; FIFO within it | Omitted/zero uses priority 4, ahead of 1 |
+| Progress for lower-priority traffic | FIFO | Normal traffic receives a share | Sustained higher-priority traffic can delay it indefinitely |
+
+RabbitMQ.Client 7.2.2 omits a zero-valued priority on the wire. On 4.3 quorum queues, both zero and omission therefore use the broker default of 4. See the [3.13 queue comparison](https://www.rabbitmq.com/docs/3.13/quorum-queues), [4.2 priority rules](https://www.rabbitmq.com/docs/4.2/priority), and [4.3 priority rules](https://www.rabbitmq.com/docs/priority).
+
+The focused scenarios also check classic numeric ordering on all three versions, that priority cannot preempt a delivery already in flight, and that confirmed publications without a bound subscription queue are not retained for a later subscriber. Establish the required queues and bindings before publishing; confirms alone do not establish routing. These priority checks do not constitute a full compatibility matrix for those broker versions. See the [verification scope](./rabbitmq-verification.md#priority-upgrade-coverage).
 
 ## Delayed message delivery
 
