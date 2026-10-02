@@ -32,9 +32,93 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync()
+    {
+        return base.AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
+    {
+        return base.AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenLockNotAvailableAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
+    {
+        return base.AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose();
+    }
+
+    [Fact]
     public override Task CanAcquireAndReleaseLockAsync()
     {
         return base.CanAcquireAndReleaseLockAsync();
+    }
+
+    [Fact]
+    public override Task CanAcquireLocksInParallel()
+    {
+        return base.CanAcquireLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleLocksInParallel()
+    {
+        return base.CanAcquireMultipleLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleResources()
+    {
+        return base.CanAcquireMultipleResources();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleScopedResources()
+    {
+        return base.CanAcquireMultipleScopedResources();
+    }
+
+    [Fact]
+    public override Task CanAcquireScopedLocksInParallel()
+    {
+        return base.CanAcquireScopedLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanReleaseLockMultipleTimes()
+    {
+        return base.CanReleaseLockMultipleTimes();
+    }
+
+    [Fact]
+    public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
+    {
+        return base.Lock_AcquiredTimeUtc_ReturnsValidTimestamp();
+    }
+
+    [Fact]
+    public override Task Lock_LockIdAndResource_ReturnCorrectValues()
+    {
+        return base.Lock_LockIdAndResource_ReturnCorrectValues();
+    }
+
+    [Fact]
+    public override Task LockOneAtATimeAsync()
+    {
+        return base.LockOneAtATimeAsync();
     }
 
     [Fact]
@@ -50,39 +134,9 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override Task LockOneAtATimeAsync()
+    public override Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
     {
-        return base.LockOneAtATimeAsync();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleResources()
-    {
-        return base.CanAcquireMultipleResources();
-    }
-
-    [Fact]
-    public override Task CanAcquireLocksInParallel()
-    {
-        return base.CanAcquireLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanAcquireScopedLocksInParallel()
-    {
-        return base.CanAcquireScopedLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleLocksInParallel()
-    {
-        return base.CanAcquireMultipleLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleScopedResources()
-    {
-        return base.CanAcquireMultipleScopedResources();
+        return base.ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId();
     }
 
     [Fact]
@@ -143,25 +197,9 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     [InlineData(-1)]
     [InlineData(0)]
     [InlineData(4)]
-    public async Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
+    public override Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
     {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var locker = new CacheLockProvider(cache, null, timeProvider, null, Log);
-        await using var stale = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
-        timeProvider.Advance(TimeSpan.FromMinutes(2));
-        await using var current = await locker.AcquireAsync("resource", TimeSpan.FromMinutes(10), cancellationToken: TestCancellationToken);
-
-        // Act
-        var error = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stale.RenewAsync(TimeSpan.FromMilliseconds(milliseconds)));
-
-        // Assert
-        Assert.Equal("timeUntilExpires", error.ParamName);
-        Assert.Equal(0, stale.RenewalCount);
-        Assert.True(await locker.IsLockedAsync("resource"));
-        await current.RenewAsync();
-        Assert.Equal(1, current.RenewalCount);
+        return base.RenewAsync_WithInvalidDuration_PreservesCurrentOwner(milliseconds);
     }
 
     [Fact]
@@ -181,6 +219,20 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         Assert.Equal(1, lease.RenewalCount);
         timeProvider.Advance(TimeSpan.FromMilliseconds(6));
         Assert.False(await locker.IsLockedAsync("resource"));
+    }
+
+    [Fact]
+    public override Task RenewAsync_WithMissingLock_ThrowsLockException()
+    {
+        return base.RenewAsync_WithMissingLock_ThrowsLockException();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(bool scoped)
+    {
+        return base.RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(scoped);
     }
 
     [Fact]
@@ -221,6 +273,12 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
+    {
+        return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
+    }
+
+    [Fact]
     public override async Task WillThrottleCallsAsync()
     {
         // Arrange
@@ -235,7 +293,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         }
 
         // Act
-        var exhausted = await locker.TryAcquireAsync("resource", cancellationToken: new CancellationToken(true));
+        await using var exhausted = await locker.TryAcquireAsync("resource", cancellationToken: new CancellationToken(true));
         timeProvider.Advance(period);
         await using var nextPeriodHit = await locker.TryAcquireAsync("resource", cancellationToken: TestContext.Current.CancellationToken);
 
@@ -243,67 +301,6 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         Assert.Null(exhausted);
         Assert.NotNull(nextPeriodHit);
     }
-
-    [Fact]
-    public override Task AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync()
-    {
-        return base.AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
-    {
-        return base.AcquireAsync_ThrowsWhenLockNotAvailableAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
-    {
-        return base.AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
-    {
-        return base.AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync();
-    }
-
-    [Fact]
-    public override Task CanReleaseLockMultipleTimes()
-    {
-        return base.CanReleaseLockMultipleTimes();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
-    {
-        return base.AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose();
-    }
-
-    [Fact]
-    public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
-    {
-        return base.Lock_AcquiredTimeUtc_ReturnsValidTimestamp();
-    }
-
-    [Fact]
-    public override Task Lock_LockIdAndResource_ReturnCorrectValues()
-    {
-        return base.Lock_LockIdAndResource_ReturnCorrectValues();
-    }
-
-    [Fact]
-    public override Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
-    {
-        return base.ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId();
-    }
-
-    [Fact]
-    public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
-    {
-        return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
-    }
-
 
     public void Dispose()
     {

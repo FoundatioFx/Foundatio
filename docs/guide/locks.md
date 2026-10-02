@@ -252,6 +252,8 @@ if (lck is not null)
 
 `CacheLockProvider.RenewAsync` only extends a lock you still hold. If its cache rejects renewal, including when the lock expired, was released, or was taken by another owner, it throws `LockException`. Ownership is no longer assured: stop the protected work, since another process may already be doing it. Custom cache providers must implement atomic conditional replacement and treat expired entries as missing.
 
+After a process pause or network outage, renewal can succeed if the lease is still live and its owner ID matches. Once it expires, the old handle cannot renew it, even if nobody else has acquired the resource. Acquire a new lock and revalidate the work before continuing; acquiring again does not restore uninterrupted ownership. This follows the [conditional renewal rule documented by Redis](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/#making-the-algorithm-more-reliable-extending-the-lock).
+
 A supplied renewal duration must be at least 5 milliseconds; a shorter duration throws `ArgumentOutOfRangeException` without changing the cache. Omitting the duration uses 20 minutes. Renewal is a no-op for `ThrottlingLockProvider` and `EmptyLock`; these do not provide renewable exclusive leases.
 
 ::: warning Behavior change
@@ -306,7 +308,9 @@ async Task RenewPeriodicallyAsync()
 }
 ```
 
-The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. Cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
+The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. An in-flight renewal has no cancellation-token parameter, so shutdown waits for that cache operation; configure provider timeouts.
+
+Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
 
 ## Common Patterns
 

@@ -336,7 +336,7 @@ public static class LockProviderExtensions
                     catch (LockException ex)
                     {
                         // An earlier lock was lost while waiting for this one, so the set can no longer be held as a whole
-                        logger.LogWarning(ex, "Lost an acquired lock while acquiring {Resource}, releasing acquired locks", resource);
+                        logger.LogWarning(ex, "Lost an acquired lock while acquiring {Resource}, releasing acquired locks: {Message}", resource, ex.Message);
                         await Task.WhenAll(acquiredLocks.Select(al => al.Lock).Append(l).Select(al => al.ReleaseAsync())).AnyContext();
                         return null;
                     }
