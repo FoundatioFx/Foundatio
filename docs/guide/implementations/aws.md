@@ -117,11 +117,9 @@ AWS SQS queue implementation for reliable work item processing.
 ```csharp
 using Foundatio.Queues;
 
-var queue = new SQSQueue<WorkItem>(o =>
-{
-    o.ConnectionString = connectionString;
-    o.Name = "work-items";
-});
+var queue = new SQSQueue<WorkItem>(o => o
+    .ConnectionString(connectionString)
+    .Name("work-items"));
 
 await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 var entry = await queue.DequeueAsync();
@@ -131,14 +129,55 @@ var entry = await queue.DequeueAsync();
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `Name` | `string` | ✅ | | Queue name |
+| `Name` | `string` | ✅ | | Queue name (a `.fifo` suffix selects a FIFO queue) |
 | `ConnectionString` | `string` | | | Connection string |
 | `Region` | `RegionEndpoint` | | | AWS region |
+| `Credentials` | `AWSCredentials` | | | AWS credentials |
+| `ServiceUrl` | `string` | | | Custom endpoint (e.g. Floci) |
 | `CanCreateQueue` | `bool` | | `true` | Auto-create queue |
-| `SupportDeadLetter` | `bool` | | `true` | Enable DLQ support |
+| `SupportDeadLetter` | `bool` | | `true` | Create and use a `-deadletter` queue |
 | `ReadQueueTimeout` | `TimeSpan` | | 20s | Long polling timeout |
+| `DequeueInterval` | `TimeSpan` | | 1s | Interval between dequeue attempts when the queue is empty |
+| `RetryDelay` | `Func<int, TimeSpan>` | | Exponential | Visibility delay before an abandoned message is retried |
+| `SqsManagedSseEnabled` | `bool` | | `false` | Enable SQS managed encryption (SSE-SQS) |
+| `KmsMasterKeyId` | `string` | | | KMS key ID for encryption (SSE-KMS) |
+| `KmsDataKeyReusePeriodSeconds` | `int` | | 300 | KMS key reuse period |
 
 For additional options, see [SQSQueueOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Queues/SQSQueueOptions.cs).
+
+### Fair Queues and Message Groups
+
+SQS [fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html) stop one noisy tenant from delaying everyone else in a shared standard queue. They are enabled by sending a `MessageGroupId` (your tenant or customer id) with each message. Foundatio exposes this as `QueueEntryOptions.GroupId`:
+
+```csharp
+// Derive the tenant from the payload once...
+var queue = new SQSQueue<ImportRequest>(o => o
+    .ConnectionString(connectionString)
+    .Name("imports")
+    .GroupId(r => r.TenantId));
+
+await queue.EnqueueAsync(importRequest);
+
+// ...or set it per call
+await queue.EnqueueAsync(importRequest, new QueueEntryOptions { GroupId = "tenant-123" });
+```
+
+Things to know:
+
+- **A standard queue is enough.** No queue setting and no consumer change are needed, and messages in the same group can still be processed in parallel. `GroupId` on a standard queue does not provide ordering.
+- **FIFO queues use the same field for ordering.** On a `.fifo` queue, messages in a group are delivered one at a time in order, and SQS requires a group id on every message.
+- **Group ids are limited to 128 characters** of alphanumerics and punctuation (no spaces).
+- **Set it on every message.** SQS treats a message without a group id as its own tenant.
+- **Consumer concurrency matters.** SQS marks a tenant as noisy when it holds more than 10% of in-flight messages (with at least 30 in flight) or more than 10% of recent processing time. `SQSQueue` receives one message per worker loop, so run enough workers or instances for the in-flight share to be meaningful.
+- **Monitor with CloudWatch.** Compare `ApproximateNumberOfMessagesVisible` with the `...InQuietGroups` metrics to confirm quiet tenants are not affected.
+
+::: warning
+Group id support for SQS requires a Foundatio.AWS version that includes it. On other queue types `GroupId` is stored as metadata only. See [Message Groups](/guide/queues#message-groups).
+:::
+
+### Dead Letter Behavior
+
+`SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and also moves a message there itself once `Retries` is exceeded. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly.
 
 ## Next Steps
 

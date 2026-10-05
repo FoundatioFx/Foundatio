@@ -111,6 +111,10 @@ await _cache.RemoveByPrefixAsync("user:");
 ```csharp
 await _queue.EnqueueAsync(new OrderWorkItem { OrderId = orderId });
 
+// Multi-tenant: tag messages with a group id (SQS fair queues / Azure Service Bus SessionId)
+await _queue.EnqueueAsync(workItem, new QueueEntryOptions { GroupId = tenantId });
+// or derive it from the payload once: new SQSQueue<T>(o => o.GroupId(x => x.TenantId))
+
 var entry = await _queue.DequeueAsync(TimeSpan.FromSeconds(5));
 if (entry is not null)
 {
@@ -312,7 +316,8 @@ public class OrderServiceTests : TestLoggerBase
 - **JobContext.RenewLockAsync**: Call in long-running jobs (both `JobBase` and `QueueJobBase`) to prevent lock expiration mid-processing.
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
-- **In-memory for tests**: All in-memory implementations are functionally equivalent to production providers. Swap via DI for fast, isolated unit tests with no external dependencies.
+- **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and Azure Service Bus (`SessionId`). Other queues store it as metadata only and log one debug message. SQS group ids are max 128 characters with no spaces. An explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver.
 
 ## NuGet Packages
 

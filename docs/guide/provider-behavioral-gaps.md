@@ -90,9 +90,33 @@ This document catalogs known behavioral differences across Foundatio provider im
 |----------|-----------|-------|
 | InMemory | ✅ | Uses provided ID as the entry ID |
 | Redis | ✅ | Uses provided ID as the entry ID |
-| Azure Service Bus | ✅ | Maps to MessageId |
+| Azure Service Bus | ✅ | Maps to MessageId (deduplicated only when `RequiresDuplicateDetection` is enabled) |
 | Azure Storage Queue | ❌ | Azure assigns its own MessageId |
-| SQS | ❌ | SQS assigns its own MessageId |
+| SQS | ⚠️ | SQS assigns its own MessageId. The value is sent as `MessageDeduplicationId`, which SQS only honors on FIFO queues |
+
+### QueueEntryOptions.GroupId
+
+| Provider | Effect on delivery | Notes |
+|----------|--------------------|-------|
+| InMemory | ❌ | Stored and returned on `entry.GroupId` only |
+| Redis | ❌ | Stored in the payload envelope and returned on `entry.GroupId` only |
+| Azure Storage Queue | ❌ | Stored in the payload envelope (default compatibility mode); not stored in legacy mode |
+| Azure Service Bus | ✅ | Sent as `SessionId` |
+| SQS standard queue | ✅ | Sent as `MessageGroupId` to enable fair queues (noisy neighbor mitigation). No ordering |
+| SQS FIFO queue | ✅ | Sent as `MessageGroupId`. Strict ordering within a group; required by SQS |
+
+Support for SQS and Azure Service Bus requires package versions that include group id support. Queues that do not use the value log a single debug message the first time a group id is enqueued. See [Message Groups](/guide/queues#message-groups).
+
+### Queue Ordering Guarantees
+
+| Provider | Ordering | Notes |
+|----------|----------|-------|
+| InMemory | ✅ | FIFO within the queue |
+| Redis | ✅ | FIFO list; retried entries are re-queued |
+| Azure Storage Queue | ⚠️ | Best effort |
+| Azure Service Bus | ⚠️ | FIFO per queue unless sessions are used; session-ordered receive is not supported by `AzureServiceBusQueue` |
+| SQS standard queue | ❌ | Best effort. `GroupId` does not change ordering |
+| SQS FIFO queue | ✅ | Strict ordering within a `GroupId` |
 
 ### Delivery Delay (DelayUntilUtc)
 
@@ -169,3 +193,5 @@ All tested providers (InMemory, Redis) exhibit fully consistent behavior. No beh
 4. **Don't rely on `GetDeadletterItemsAsync`** — only InMemory supports it. Design deadletter processing around provider-specific mechanisms instead.
 
 5. **Prefer `QueueEntryOptions.UniqueId` only with providers that support it** (InMemory, Redis, Azure Service Bus). On SQS and Azure Storage Queues, the system assigns its own IDs.
+
+6. **Treat `QueueEntryOptions.GroupId` as a hint, not a guarantee.** It only changes delivery on SQS (fair queues on standard queues, ordering on FIFO) and Azure Service Bus; everywhere else it is stored metadata.

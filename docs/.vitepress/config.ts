@@ -55,6 +55,7 @@ export default defineConfig({
           items: [
             { text: 'Configuration', link: '/guide/configuration' },
             { text: 'Dependency Injection', link: '/guide/dependency-injection' },
+            { text: 'Provider Behavioral Gaps', link: '/guide/provider-behavioral-gaps' },
             { text: 'Resilience', link: '/guide/resilience' },
             { text: 'Serialization', link: '/guide/serialization' }
           ]

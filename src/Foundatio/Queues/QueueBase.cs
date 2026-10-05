@@ -38,6 +38,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly List<IQueueBehavior<T>> _behaviors = new();
     private QueueStats? _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
+    private int _groupIdUnsupportedLogged;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
@@ -141,8 +142,25 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         LastEnqueueActivity = _timeProvider.GetUtcNow();
         options ??= new QueueEntryOptions();
 
+        string? groupId = String.IsNullOrEmpty(options.GroupId) ? _options.GroupIdResolver?.Invoke(data) : options.GroupId;
+        if (String.IsNullOrEmpty(groupId))
+            groupId = null;
+
+        // Copy Properties too: the record copy is shallow and enqueue adds entries (for example TraceState) to it.
+        if (!String.Equals(groupId, options.GroupId, StringComparison.Ordinal))
+            options = options with { GroupId = groupId, Properties = new Dictionary<string, string>(options.Properties) };
+
+        if (groupId is not null && !SupportsGroupId && Interlocked.Exchange(ref _groupIdUnsupportedLogged, 1) == 0)
+            _logger.LogDebug("Queue {QueueName} ({QueueType}) stores GroupId as metadata only; it does not affect delivery order or fairness", _options.Name, GetType().Name);
+
         return await EnqueueImplAsync(data, options).AnyContext();
     }
+
+    /// <summary>
+    /// Whether the provider uses <see cref="QueueEntryOptions.GroupId"/> to affect delivery (for example fairness or ordering).
+    /// When <c>false</c> (the default), a single debug message is logged the first time a group id is enqueued.
+    /// </summary>
+    protected virtual bool SupportsGroupId => false;
 
     protected abstract Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken)
@@ -229,7 +247,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         {
             options.CorrelationId = Activity.Current?.Id;
             if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
-                options.Properties.Add("TraceState", Activity.Current.TraceStateString);
+                options.Properties.TryAdd("TraceState", Activity.Current.TraceStateString);
         }
 
         var enqueueing = Enqueuing;

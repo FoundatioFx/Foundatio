@@ -224,6 +224,22 @@ public record QueueEntryOptions
     public TimeSpan? DeliveryDelay { get; set; }
 
     /// <summary>
+    /// A logical group or tenant key for the message (for example a customer or tenant id).
+    /// If not specified (<c>null</c> or empty), the queue's <see cref="SharedQueueOptions{T}.GroupIdResolver"/> is used when configured.
+    /// An empty value is treated the same as <c>null</c>.
+    /// </summary>
+    /// <remarks>
+    /// How the value is used depends on the provider:
+    /// <list type="bullet">
+    /// <item><description>Amazon SQS: sent as <c>MessageGroupId</c> (1-128 printable ASCII characters, no spaces). On standard queues it enables fair queues (noisy neighbor mitigation) without ordering; on FIFO queues it enforces ordering per group and is required.</description></item>
+    /// <item><description>Azure Service Bus: sent as <c>SessionId</c> (ignored by queues that do not require sessions).</description></item>
+    /// <item><description>All other queues store the value and return it on <see cref="IQueueEntry.GroupId"/> but it does not affect delivery order or fairness.</description></item>
+    /// </list>
+    /// The group id is resolved before <see cref="IQueue{T}.Enqueuing"/> handlers run, so providers can validate it up front.
+    /// </remarks>
+    public string? GroupId { get; set; }
+
+    /// <summary>
     /// Custom properties to attach to the message.
     /// </summary>
     [DisallowNull]

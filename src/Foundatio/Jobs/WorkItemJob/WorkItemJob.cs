@@ -218,6 +218,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         activity.AddTag("WorkItemType", entry.Value?.Type);
         activity.AddTag("Id", entry.Id);
         activity.AddTag("CorrelationId", entry.CorrelationId);
+        activity.AddTag("GroupId", entry.GroupId);
 
         if (entry.Properties is null || entry.Properties.Count <= 0)
             return;
