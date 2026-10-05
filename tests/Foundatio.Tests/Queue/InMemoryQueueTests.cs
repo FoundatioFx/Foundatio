@@ -301,6 +301,26 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        var options = new QueueEntryOptions { GroupId = String.Empty };
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Equal("tenant-1", entry.GroupId);
+        Assert.Equal(String.Empty, options.GroupId);
+    }
+
+    [Fact]
     public async Task EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync()
     {
         // Arrange

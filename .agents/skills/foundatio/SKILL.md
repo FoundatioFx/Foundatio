@@ -317,7 +317,7 @@ public class OrderServiceTests : TestLoggerBase
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
 - **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
-- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and Azure Service Bus (`SessionId`). Other queues store it as metadata only and log one debug message. SQS group ids are max 128 characters with no spaces. An explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and Azure Service Bus (`SessionId`). Other queues store it as metadata only and log one debug message. SQS group ids are max 128 characters with no spaces. A nonempty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver. Azure Service Bus session support is producer-only; session-enabled receiving is not implemented.
 
 ## NuGet Packages
 
