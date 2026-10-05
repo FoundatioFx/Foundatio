@@ -268,6 +268,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             if (current is null)
                 return (current, (false, false));
+            if (current.IsExpired)
+                return (null, (false, true));
 
             bool matches = EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected);
             if (current.IsExpired)
@@ -631,7 +633,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             SortedDictionary<T, DateTime?> dictionary => new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
             SortedList<T, DateTime?> dictionary => new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
             ConcurrentDictionary<T, DateTime?> dictionary => new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-            IDictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary),
+#if NET9_0_OR_GREATER
+            OrderedDictionary<T, DateTime?> dictionary => new OrderedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+#endif
+            IDictionary<T, DateTime?> dictionary => throw new NotSupportedException($"List updates cannot preserve the comparer of {dictionary.GetType().FullName}."),
             _ => null
         };
     }
@@ -844,7 +849,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         CacheEntry? replacement = null;
         bool success = UpdateEntry(key, current =>
         {
-            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+            if (current is null || current.IsExpired || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
                 return (current, false);
 
             // Check expiry after the comparison: a lease that expired while it was being compared must not be
@@ -853,7 +858,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return (current, false);
 
             replacement ??= CreateEntry(value, expiresAt);
-            return replacement is null ? (current, false) : (replacement, true);
+            return replacement is null || current.IsExpired ? (current, false) : (replacement, true);
         });
 
         await StartMaintenanceAsync().AnyContext();

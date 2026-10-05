@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -50,6 +51,38 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput()
     {
         return base.CacheOperations_WithRepeatedSetAndGet_MeasuresThroughput();
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ConditionalMutation_WithLiveIncompatibleValue_PreservesValueAndFaultsTaskAsync(bool replace, bool throwingEquality)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false));
+        var value = new ComparedValue("owner", () => throw new InvalidOperationException("Comparison failed"));
+        object stored = throwingEquality ? value : new object();
+        await cache.SetAsync("key", stored);
+        Task<bool>? result = null;
+
+        // Act
+        var synchronousError = Record.Exception(() =>
+        {
+            result = replace
+                ? cache.ReplaceIfEqualAsync("key", value, value)
+                : cache.RemoveIfEqualAsync("key", value);
+        });
+
+        // Assert
+        Assert.Null(synchronousError);
+        Assert.NotNull(result);
+        if (throwingEquality)
+            await Assert.ThrowsAsync<InvalidOperationException>(() => result);
+        else
+            await Assert.ThrowsAsync<InvalidCastException>(() => result);
+        Assert.Same(stored, (await cache.GetAsync<object>("key")).Value);
     }
 
     [Fact]
@@ -445,10 +478,12 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(false, 1)]
     [InlineData(false, 2)]
     [InlineData(false, 3)]
+    [InlineData(false, 4)]
     [InlineData(true, 0)]
     [InlineData(true, 1)]
     [InlineData(true, 2)]
     [InlineData(true, 3, Skip = "FastCloner 3.5.2 can overflow cloning ConcurrentDictionary internal cycles: https://github.com/lofcz/FastCloner/pull/58")]
+    [InlineData(true, 4)]
     public async Task ListAddAsync_WithCustomComparer_PreservesComparerAcrossUpdates(bool cloneValues, int dictionaryType)
     {
         // Arrange
@@ -458,7 +493,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             0 => new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
             1 => new SortedDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
             2 => new SortedList<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
-            _ => new ConcurrentDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
+            3 => new ConcurrentDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase),
+            _ => new OrderedDictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
         };
         values["first"] = null;
         await cache.SetAsync("set", values);
@@ -636,6 +672,38 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListAddAsync_WithVariousInputs_HandlesCorrectly()
     {
         return base.ListAddAsync_WithVariousInputs_HandlesCorrectly();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListMutation_WithUnsupportedDictionary_RejectsWithoutChangingValueAsync(bool remove)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).WithFixedSizing(10_000, 50));
+        var original = new ReadOnlyDictionary<string, DateTime?>(new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["first"] = null
+        });
+        await cache.SetAsync("set", original, TimeSpan.FromMinutes(1));
+
+        // Act
+        var error = await Record.ExceptionAsync(async () =>
+        {
+            if (remove)
+                await cache.ListRemoveAsync("set", new[] { "FIRST" });
+            else
+                await cache.ListAddAsync("set", new[] { "FIRST", "second" });
+        });
+
+        // Assert
+        Assert.IsType<NotSupportedException>(error);
+        Assert.Same(original, (await cache.GetAsync<IDictionary<string, DateTime?>>("set")).Value);
+        Assert.Single(original);
+        Assert.True(original.ContainsKey("FIRST"));
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("set"));
+        Assert.Equal(50, cache.CurrentMemorySize);
     }
 
     [Fact]
@@ -1004,6 +1072,32 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task RemoveIfEqualAsync_WithExpiredIncompatibleValue_ReturnsFalseWithoutComparisonAsync(bool throwingEquality)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        int comparisons = 0;
+        var value = new ComparedValue("owner", () =>
+        {
+            comparisons++;
+            throw new InvalidOperationException("Comparison failed");
+        });
+        Publish(cache, "key", CreateEntry(throwingEquality ? value : new object(), timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        bool changed = await cache.RemoveIfEqualAsync("key", value);
+
+        // Assert
+        Assert.False(changed);
+        Assert.Equal(0, comparisons);
+        Assert.False(await cache.ExistsAsync("key"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task RemoveIfEqualAsync_WithExplicitDeletion_DoesNotLeaveExpirationTombstone(bool removeList)
     {
         // Arrange
@@ -1076,6 +1170,29 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ReplaceIfEqualAsync_WhenEntryExpiresDuringSizing_ReturnsFalseWithoutRevivingAsync()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        int sizingCalls = 0;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).SizeCalculator(_ =>
+        {
+            sizingCalls++;
+            timeProvider.Advance(TimeSpan.FromMinutes(2));
+            return 1;
+        }));
+        Publish(cache, "lease", CreateEntry("owner", timeProvider, TimeSpan.FromMinutes(1)));
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("lease", "replacement", "owner", TimeSpan.FromMinutes(10));
+
+        // Assert
+        Assert.False(replaced);
+        Assert.Equal(1, sizingCalls);
+        Assert.False(await cache.ExistsAsync("lease"));
+    }
+
+    [Fact]
     public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
     {
         // Arrange
@@ -1114,6 +1231,32 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         Assert.False(replaced);
         Assert.False(await cache.ExistsAsync("lease"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReplaceIfEqualAsync_WithExpiredIncompatibleValue_ReturnsFalseWithoutComparisonAsync(bool throwingEquality)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        int comparisons = 0;
+        var value = new ComparedValue("owner", () =>
+        {
+            comparisons++;
+            throw new InvalidOperationException("Comparison failed");
+        });
+        Publish(cache, "key", CreateEntry(throwingEquality ? value : new object(), timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        bool changed = await cache.ReplaceIfEqualAsync("key", value, value);
+
+        // Assert
+        Assert.False(changed);
+        Assert.Equal(0, comparisons);
+        Assert.False(await cache.ExistsAsync("key"));
     }
 
     [Fact]

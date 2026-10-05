@@ -264,6 +264,8 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
 
 #### In-memory update behavior
 
+List updates preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and (on .NET 9 or later) `OrderedDictionary`. Other `IDictionary` implementations are rejected with `NotSupportedException` when an update requires copying them; the original cached value is preserved.
+
 Conditional writes and list updates publish replacement entries atomically. `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` treat expired entries as missing, and rejected oversized updates preserve the previous value, expiration, and tracked size. Explicit removal does not raise `ItemExpired`; expiration does.
 
 `Items` returns cached values without changing eviction order. Values follow `CloneValues`: mutable values remain shared when cloning is disabled, so callers must not mutate them concurrently with cache operations.
