@@ -190,10 +190,10 @@ try
 
     await DoWorkAsync();
 }
-catch (LockAcquisitionTimeoutException ex)
+catch (LockAcquisitionTimeoutException)
 {
     // Lock could not be acquired before the timeout elapsed.
-    _logger.LogWarning(ex, "Timed out waiting for lock: {Message}", ex.Message);
+    _logger.LogWarning("Timed out waiting for lock");
 }
 ```
 
@@ -250,67 +250,35 @@ if (lck is not null)
 }
 ```
 
-`CacheLockProvider.RenewAsync` only extends a lock you still hold. If its cache rejects renewal, including when the lock expired, was released, or was taken by another owner, it throws `LockException`. Ownership is no longer assured: stop the protected work, since another process may already be doing it. Custom cache providers must implement atomic conditional replacement and treat expired entries as missing.
-
-After a process pause or network outage, renewal can succeed if the lease is still live and its owner ID matches. Once it expires, the old handle cannot renew it, even if nobody else has acquired the resource. Acquire a new lock and revalidate the work before continuing; acquiring again does not restore uninterrupted ownership. This follows the [conditional renewal rule documented by Redis](https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/#making-the-algorithm-more-reliable-extending-the-lock).
-
-A supplied renewal duration must be at least 5 milliseconds; a shorter duration throws `ArgumentOutOfRangeException` without changing the cache. Omitting the duration uses 20 minutes. Renewal is a no-op for `ThrottlingLockProvider` and `EmptyLock`; these do not provide renewable exclusive leases.
-
-::: warning Behavior change
-Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock. Rejecting renewal durations below 5 milliseconds is also new; the cache already enforced this minimum, but previously could remove the key before checking ownership.
-:::
-
-A lock is not a fencing token. Losing it cannot cancel work you already sent to another system. Checking ownership before a write leaves a race between the check and the write; only validation enforced by the destination can fence a stale owner. Make operations idempotent where appropriate, but do not treat idempotency as exclusive ownership.
-
 ### Automatic Renewal
 
-For very long operations, observe renewal failures and cancel cooperative work before releasing the lock:
+For very long operations, set up automatic renewal:
 
 ```csharp
-await using var lck = await locker.TryAcquireAsync(
-    "my-resource", timeUntilExpires: TimeSpan.FromMinutes(1));
+await using var lck = await locker.TryAcquireAsync("my-resource");
 if (lck is null) return;
 
 using var cts = new CancellationTokenSource();
-var renewTask = RenewPeriodicallyAsync();
+
+// Start renewal task
+var renewTask = Task.Run(async () =>
+{
+    while (!cts.Token.IsCancellationRequested)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
+        await lck.RenewAsync(TimeSpan.FromMinutes(1));
+    }
+});
 
 try
 {
-    await VeryLongRunningOperationAsync(cts.Token);
+    await VeryLongRunningOperationAsync();
 }
 finally
 {
-    await cts.CancelAsync();
-    await renewTask;
-}
-
-async Task RenewPeriodicallyAsync()
-{
-    try
-    {
-        while (true)
-        {
-            await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-            cts.Token.ThrowIfCancellationRequested();
-            await lck.RenewAsync(TimeSpan.FromMinutes(1));
-        }
-    }
-    catch (OperationCanceledException) when (cts.IsCancellationRequested)
-    {
-        // Normal shutdown after work completes or is cancelled.
-    }
-    catch (Exception ex)
-    {
-        _logger.LogWarning(ex, "Lock renewal failed: {Message}", ex.Message);
-        await cts.CancelAsync();
-        throw;
-    }
+    cts.Cancel();
 }
 ```
-
-The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. An in-flight renewal has no cancellation-token parameter, so shutdown waits for that cache operation; configure provider timeouts.
-
-Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
 
 ## Common Patterns
 
