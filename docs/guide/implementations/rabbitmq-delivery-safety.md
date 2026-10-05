@@ -5,11 +5,13 @@ title: RabbitMQ Delivery Safety
 # Delivery safety on RabbitMQ 4.2.5
 
 ::: warning Companion implementation
-This guide describes the runtime behavior and breaking exhaustion change in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The delivery-safety baseline remains **4.2.5**; the separate 4.3.6 priority scenarios do not verify these delivery/recovery contracts on 4.3. Aggregate implementation reference: [`ed8606b`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/ed8606b7182cde37b664e5fe4ab5a7e81e46be17). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
+This guide describes the delivery/recovery behavior in [Foundatio.RabbitMQ PR #105](https://github.com/FoundatioFx/Foundatio.RabbitMQ/pull/105), part of the [provider review stack](./rabbitmq.md). Publish/adopt these contracts only with the matching implementation. The delivery-safety baseline remains **4.2.5**; the separate 4.3.6 priority scenarios do not verify these delivery/recovery contracts on 4.3. Aggregate implementation reference: [`9927bda`](https://github.com/FoundatioFx/Foundatio.RabbitMQ/tree/9927bdab012ae8af76d7e3f4ba3f95ccaaf0b0a7). Executed verification remains in the companion PRs; a linked candidate is not a released provider version.
 :::
 
-::: warning Breaking exhaustion behavior
-Automatic acknowledgement mode now retains exhausted deliveries without a typed terminal destination by default, replacing legacy discard. This can occupy prefetch slots, block processing, and grow stored backlog until repaired. Strict dispatch additionally rejects configuration without a nonempty typed `DeadLetterExchange`. Provision retention, capacity, monitoring, and repair procedures before adopting the candidate. The default `FireAndForget` mode is unchanged.
+::: info Automatic exhaustion and strict opt-in
+With `AcknowledgementStrategy.Automatic` and the default `RequireSuccessfulDispatch = false`, exhausted deliveries use broker `BasicReject(requeue: false)` for both classic and quorum queues. The broker applies its configured dead-letter arguments or policy; without a DLX, it discards the delivery and healthy traffic continues. An empty typed `DeadLetterExchange` does not establish that the broker has no DLX. Classic exhaustion previously ACKed even when a DLX was configured; rejection corrects that behavior so explicit DLX settings and broker policies are honored.
+
+`RequireSuccessfulDispatch = true` explicitly opts into confirmed, mandatory application terminal transfer and requires Automatic acknowledgements plus a nonempty typed `DeadLetterExchange`. Failed or ambiguous strict transfers retain the source and retry. Ordinary Automatic users do not need a retention migration. `FireAndForget` remains the default acknowledgement mode.
 :::
 
 ## Select the contract explicitly
@@ -21,9 +23,8 @@ The defaults remain best-effort pub/sub: `FireAndForget` acknowledgement, ordina
 | `AcknowledgementStrategy.Automatic` | Acknowledge after dispatch returns successfully, rather than automatically when the broker sends a delivery. Permissive dispatch alone does not establish that a required handler ran. |
 | `PublisherConfirmsEnabled` | Wait for broker confirmation of an ordinary publication, not confirmation of consumer processing. |
 | `RequirePublishRouting` | Enable confirms and mandatory routing for immediate publications. A zero-route return fails; this does not check every expected fanout subscription. Nonzero delays are rejected. |
-| `RequireSuccessfulDispatch` | Require matching live handlers to complete. Unexpected unmatched types and malformed/empty/null typed payloads use the terminal policy. Requires Automatic acknowledgements, a nonempty typed `DeadLetterExchange`, and `DiscardOnDeliveryLimit = false`. |
+| `RequireSuccessfulDispatch` | Require matching live handlers to complete and use confirmed application terminal transfer on exhaustion or malformed/unmatched typed delivery. Requires Automatic acknowledgements and a nonempty typed `DeadLetterExchange`. |
 | `RequireBrokerDelayedDelivery` | Reject delayed publication when broker scheduling is unavailable. Requires durable publication and confirms; never silently schedule in memory. This is not replicated scheduling or future-route verification. |
-| `DiscardOnDeliveryLimit` | Explicitly discard terminal deliveries when no typed terminal exchange is configured. Default false; incompatible with required dispatch. |
 | `ShutdownTimeout` | Bound individual shutdown/transport cleanup waits, not one combined deadline covering every lock, callback, and resource. |
 
 The three `Require...` options default to false. Do not infer required processing from the provider name or `IsDurable` alone.
@@ -34,17 +35,18 @@ The three `Require...` options default to false. Do not infer required processin
 |---|---|---|
 | Strict handler processing | Supported with the prerequisites above | Same prerequisites |
 | Retry below application budget | Confirmed, mandatory republish to the failed subscription queue | Broker rejection with requeue |
-| Provider terminal handoff | Confirmed, mandatory publish before source ACK | Same handoff contract |
-| Failed terminal destination | Retain original with unhealthy diagnostics | Same provider behavior |
+| Ordinary Automatic exhaustion | Reject without requeue; broker DLX or discard | Same broker handling |
+| Strict application terminal handoff | Confirmed, mandatory publish before source ACK | Same handoff contract |
+| Failed strict terminal destination | Retain original with unhealthy diagnostics | Same provider behavior |
 | TLS and transport recovery | Supported | Supported |
 | Queue replication | No | Yes, subject to quorum membership/availability |
 | At-least-once broker DLX | Not available | Opt-in with broker prerequisites |
 
-Provider handoffs follow application dispatch failures. Broker expiry, overflow, and delivery-limit actions can occur outside that path, even before a handler receives the message. Provider confirms do not strengthen those broker actions. See [RabbitMQ's queue-type comparison](https://www.rabbitmq.com/docs/4.2/quorum-queues).
+Ordinary broker dead-lettering is at-most-once by default. Quorum can opt into at-least-once broker DLX with its broker prerequisites. Strict application transfer is a separate republish-and-ACK operation and does not create broker `x-death` semantics. Broker expiry, overflow, and delivery-limit actions can occur before a handler receives the message; provider confirms do not strengthen those actions. See [RabbitMQ's dead-letter safety](https://www.rabbitmq.com/docs/4.2/dlx#safety) and [quorum dead-lettering](https://www.rabbitmq.com/docs/4.2/quorum-queues#dead-lettering).
 
 ## Required classic-subscription example
 
-Provision a durable source queue and a durable quarantine destination before accepting required traffic. The quarantine exchange must route `processor` to the intended durable queue. Apply bounded, non-destructive retention policies as described under [capacity and backpressure](#capacity-and-backpressure). The provider does not create the quarantine topology for you.
+This opt-in example needs a durable source queue and a durable quarantine destination before accepting required traffic. The quarantine exchange must route `processor` to the intended durable queue. Consider the deployment advice under [capacity and backpressure](#capacity-and-backpressure) when choosing retention limits. The provider does not create the quarantine topology for you.
 
 ```csharp
 using System.Collections.Generic;
@@ -90,25 +92,25 @@ Do not silently disable production policy. Queue declaration changes can require
 
 ## Capacity and backpressure
 
-Use finite per-consumer `PrefetchCount`, durable stable queue names, `IsSubscriptionQueueExclusive = false`, and `SubscriptionQueueAutoDelete = false` for retained work. Bound both source and quarantine backlogs with workload-appropriate `max-length` and/or `max-length-bytes` policies and `overflow = reject-publish`. Enable publisher confirms and handle rejection at the producer, retaining or retrying required events durably. The provider always confirms retry/terminal publications.
+These are deployment recommendations for workloads that need retention, not migration requirements for ordinary Automatic dispatch. Consider finite per-consumer `PrefetchCount`, durable stable queue names, `IsSubscriptionQueueExclusive = false`, and `SubscriptionQueueAutoDelete = false`. Bound source and quarantine backlogs with workload-appropriate `max-length` and/or `max-length-bytes` policies and `overflow = reject-publish`. Enable publisher confirms and handle rejection at the producer, retaining or retrying required events durably. The provider always confirms classic retry publications and strict application terminal transfers.
 
 Length limits count ready messages, excluding ordinary consumer-unacknowledged deliveries. They are not total disk bounds: account for payload sizes, every consumer's prefetch, storage overhead, and disk alarms. Quorum dead-letter transfers retained by the broker also consume source capacity. Inspect effective limits and monitor ready, unacknowledged, quarantine, rejection, and disk metrics. See [queue-length semantics](https://www.rabbitmq.com/docs/4.2/maxlength) and [quorum dead-letter caveats](https://www.rabbitmq.com/docs/4.2/quorum-queues#caveats).
 
-A full classic source queue can reject its own retry republish. The provider retains the original and retries the handoff, so processing may remain blocked until capacity is restored. Repair capacity or arrange controlled draining/replay; finite limits cannot promise endless progress during an outage. A full quarantine similarly blocks terminal transfer until repaired.
+A full classic source queue can reject its own retry republish. The provider retains the original and retries the handoff, so processing may remain blocked until capacity is restored. Repair capacity or arrange controlled draining/replay; finite limits cannot promise endless progress during an outage. With strict dispatch enabled, a full quarantine similarly blocks application terminal transfer until repaired.
 
 Avoid TTL and `drop-head` policies for required retention unless their loss/expiry outcome is explicitly acceptable. Classic broker TTL/overflow dead-lettering does not gain the provider's confirmed-handoff safety. Capacity planning and a durable producer retry/outbox strategy remain necessary even with quorum queues.
 
 ## Permissions for retries and quarantine
 
-In addition to the application's declaration, binding, consume, and ordinary publication permissions, classic retry needs **write permission on the default exchange**, named `amq.default` for RabbitMQ authorization. Terminal handoff needs write permission on the configured quarantine exchange for either queue type. A credential that can consume successfully may still be unable to retry or quarantine.
+In addition to the application's declaration, binding, consume, and ordinary publication permissions, classic retry needs **write permission on the default exchange**, named `amq.default` for RabbitMQ authorization. Strict application terminal handoff needs write permission on the configured quarantine exchange for either queue type. A credential that can consume successfully may still be unable to retry or quarantine.
 
 Scope permissions to the intended virtual host and named resources; do not solve failures with broad grants. Default-exchange write permission can route to other queues in that virtual host, so review that scope when choosing isolation. The broker also checks source-queue read and DLX write permissions when declaring dead-letter configuration. Test the actual restricted production role and inspect retained-delivery diagnostics after denial. See [RabbitMQ access control](https://www.rabbitmq.com/docs/4.2/access-control).
 
 ## Retry and terminal handoffs
 
-Classic retries go through the default exchange to the **actual failed subscription queue**, not back through the original fanout exchange. The logical message ID and root identity are retained and the retry count increases. Retry and terminal copies remove `CC`/`BCC` routing headers, the original publisher's `UserId`, and the initial scheduling header so they cannot redirect the handoff, require the original publishing identity, or reapply delay.
+Classic retries go through the default exchange to the **actual failed subscription queue**, not back through the original fanout exchange. The logical message ID and root identity are retained and the retry count increases. Retry and strict application terminal copies remove `CC`/`BCC` routing headers, the original publisher's `UserId`, and the initial scheduling header so they cannot redirect the handoff, require the original publishing identity, or reapply delay.
 
-Retry and terminal publications use a dedicated **confirmed, mandatory** channel even when ordinary publisher confirms are disabled. The original is acknowledged only after successful handoff. Missing exchanges, unroutable returns, negative confirmations, and ambiguous outcomes retain the original and retry the transfer with bounded backoff, without rerunning its application handler during that handoff loop.
+Classic retry and strict application terminal publications use a dedicated **confirmed, mandatory** channel even when ordinary publisher confirms are disabled. The original is acknowledged only after successful handoff. Missing exchanges, unroutable returns, negative confirmations, and ambiguous outcomes retain the original and retry the transfer with bounded backoff, without rerunning its application handler during that handoff loop. This retry safety also applies when strict dispatch is disabled; it does not change ordinary exhaustion into an application transfer.
 
 Replacement publication and original acknowledgement are not atomic. Lost confirmation or interruption after confirmation but before ACK can produce multiple copies with the same logical ID. Deduplicate by logical consumer and event ID; a global deduplication record must not suppress an independent subscription. Do not treat a non-atomic check-then-record operation as proof of idempotent business side effects.
 
@@ -116,15 +118,14 @@ Quorum retries below the application budget use broker-managed rejection/redeliv
 
 | Terminal situation | Outcome |
 |---|---|
-| Typed `DeadLetterExchange` configured | Confirmed, mandatory terminal handoff, then ACK the source. Provision the destination separately. |
-| Destination missing, unbound, or rejecting publication | Retain unacknowledged and retry with backoff. Readiness reports blocked state. Repairing the route lets that handoff resume. |
-| No typed terminal destination, discard disabled | In permissive Automatic mode, retain unacknowledged and report blockage. Repair options/topology and deliberately replace the bus or perform authorized replay. Strict dispatch rejects this configuration at construction. |
-| No destination, explicit discard enabled | Log the intentional discard and ACK. Not a required-event mode. |
-| Malformed or overflowing retry metadata | Apply terminal handling rather than resetting the retry budget. |
+| Ordinary Automatic exhaustion (`RequireSuccessfulDispatch = false`) | Reject without requeue. Broker DLX arguments or policy handle the delivery; without a DLX, the broker discards it. No provider retention is imposed. |
+| Strict dispatch with typed `DeadLetterExchange` | Confirmed, mandatory application terminal handoff, then ACK the source. Provision the destination separately. |
+| Strict destination missing, unbound, rejecting, or transfer outcome ambiguous | Retain unacknowledged and retry with backoff. Readiness reports blocked state. Repairing the route lets that handoff resume; duplicates are possible. |
+| Malformed or overflowing retry metadata | Apply the selected mode's terminal handling rather than resetting the retry budget. |
 
-Terminal copies preserve body and identity, remove expiration/scheduling delay, and add failure-type/original-routing metadata rather than exception text. Destination retention policies still apply. A raw or policy-only broker DLX does not select the client's terminal route: set typed `DeadLetterExchange` and `DeadLetterRoutingKey` for that handoff. Changing those declarations on an existing queue still requires a compatibility check.
+Strict application terminal copies preserve body and identity, remove expiration/scheduling delay, and add failure-type/original-routing metadata rather than exception text. This application republish does not record a broker `x-death` event. Destination retention policies still apply. Set typed `DeadLetterExchange` and `DeadLetterRoutingKey` for strict application handoff; raw arguments or a broker policy alone cannot select its client-side route. Ordinary Automatic exhaustion does honor broker DLX arguments and policies even when the typed option is empty. Changing queue declarations still requires a compatibility check.
 
-Constructor validation checks configuration, not destination availability. A configured but missing, unbound, or full quarantine retains the original, sets `LastDeliveryError`, and makes `IsSubscriptionReady` false while blocked. Restore the route/capacity to allow the confirmed handoff to resume; adding a typed name alone is not proof that quarantine works.
+Strict constructor validation checks configuration, not destination availability. With `RequireSuccessfulDispatch = true`, a configured but missing, unbound, or full quarantine retains the original, sets `LastDeliveryError`, and makes `IsSubscriptionReady` false while blocked. Restore the route/capacity to allow the confirmed handoff to resume; adding a typed name alone is not proof that quarantine works.
 
 ## Dispatch and lifecycle
 
@@ -158,9 +159,11 @@ The provider's `UseDelayedRetries()` and `ConsumerTimeout()` options require Rab
 
 ## Compatibility and rollout
 
-Release notes must identify the breaking retention-on-exhaustion default in Automatic mode, rejection of classic-only `UseMessagePriority()` / `MaxPriority` in quorum configurations, the strict-dispatch terminal-destination requirement, subscription-local retries/stable IDs, and strict endpoint identity/port checks. Remove those priority settings from quorum configurations before adoption; the combination now throws `InvalidOperationException`. Message-level `Priority` remains supported for both queue types. Retention can intentionally pause progress pending repair and increase storage demand. `DiscardOnDeliveryLimit = true` restores explicit discard only when strict dispatch is disabled and no typed destination is configured; it is unsuitable for required work.
+Ordinary Automatic exhaustion uses broker rejection without requeue on both queue types. The classic correction replaces an ACK that previously bypassed configured DLX handling; it honors explicit DLX settings and broker policies without requiring a retention migration. Strict application transfer remains opt-in. Failed classic retry handoffs and failed strict terminal transfers can pause progress until repaired.
 
-Before adoption, inventory queue types/policies, provision terminal routes, validate certificate aliases, choose the required profile, and rehearse repair/replay with idempotent handlers. Provider tests do not make database commits and publication transactional. Application outbox/inbox/reconciliation, capacity, and deployment validation remain application responsibilities. The 4.2.5 pin is not a vulnerability or support-lifecycle sign-off.
+Release notes must still identify rejection of classic-only `UseMessagePriority()` / `MaxPriority` in quorum configurations and strict endpoint identity/port checks. Remove those priority settings from quorum configurations before adoption; the combination now throws `InvalidOperationException`. Message-level `Priority` remains supported for both queue types. Validate certificate aliases and ports against the TLS contract.
+
+Choose broker policies and opt-in processing guarantees for the workload. If selecting strict dispatch, provision and test its terminal route and rehearse repair/replay with idempotent handlers. No queue-type conversion or broker upgrade is required by these exhaustion contracts. Provider tests do not make database commits and publication transactional; use application outbox/inbox/reconciliation and capacity monitoring where those requirements apply. The 4.2.5 pin is not a vulnerability or support-lifecycle sign-off.
 
 ## References
 

@@ -85,7 +85,7 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/ed8606b7182cde37b664e5fe4ab5a7e81e46be17/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/9927bdab012ae8af76d7e3f4ba3f95ccaaf0b0a7/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
@@ -98,7 +98,7 @@ await using var messageBus = new RabbitMQMessageBus(o => o
 
 The callback receives the fluent options builder. The defaults are best-effort pub/sub, including broker automatic acknowledgement and ordinary publisher confirms disabled. See the [RabbitMQ provider guide](./implementations/rabbitmq.md) and [delivery-safety guide](./implementations/rabbitmq-delivery-safety.md) for durable subscription requirements, retry/terminal outcomes, and the companion implementation's opt-in contracts. Those guides identify which behavior depends on the unreleased provider PR; a documentation branch is not a package release.
 
-The candidate changes Automatic-mode exhaustion without a typed terminal destination from discard to retention, which can block progress and increase backlog. Strict dispatch is opt-in and requires Automatic acknowledgement, a nonempty typed `DeadLetterExchange`, and discard disabled. Both classic and quorum support these provider contracts; only quorum adds replication and optional at-least-once broker DLX. Plan [capacity and backpressure](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) before adoption.
+Ordinary Automatic dispatch (`RequireSuccessfulDispatch = false`) rejects exhausted deliveries without requeue on both classic and quorum queues. The broker honors DLX arguments or policy, or discards without a DLX so healthy traffic continues. Classic exhaustion previously ACKed even with a configured DLX; rejection corrects that behavior. Strict dispatch explicitly opts into confirmed application terminal transfer and requires Automatic acknowledgement plus a nonempty typed `DeadLetterExchange`; failed or ambiguous transfers retain the source and retry, with duplicates possible. Broker DLX is at-most-once by default; quorum adds replication and optional at-least-once broker DLX. [Capacity and backpressure guidance](./implementations/rabbitmq-delivery-safety.md#capacity-and-backpressure) is deployment advice for retained work, not a mandatory migration.
 
 Remove `UseMessagePriority()` / `MaxPriority` when configuring quorum: builders reject the combination immediately; direct options reject it at construction with `InvalidOperationException`. Message-level `Priority` remains valid. See the provider guide for classic priority ranges and queue-type validation.
 
