@@ -85,27 +85,9 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override async Task WillThrottleCallsAsync()
+    public override Task WillThrottleCallsAsync()
     {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var period = TimeSpan.FromSeconds(2);
-        var locker = new ThrottlingLockProvider(cache, 25, period, timeProvider, null, Log);
-        for (int i = 0; i < 25; i++)
-        {
-            await using var hit = await locker.TryAcquireAsync("resource", cancellationToken: TestContext.Current.CancellationToken);
-            Assert.NotNull(hit);
-        }
-
-        // Act
-        await using var exhausted = await locker.TryAcquireAsync("resource", cancellationToken: new CancellationToken(true));
-        timeProvider.Advance(period);
-        await using var nextPeriodHit = await locker.TryAcquireAsync("resource", cancellationToken: TestContext.Current.CancellationToken);
-
-        // Assert
-        Assert.Null(exhausted);
-        Assert.NotNull(nextPeriodHit);
+        return base.WillThrottleCallsAsync();
     }
 
     [Fact]
@@ -160,6 +142,49 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     public override Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
     {
         return base.ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId();
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_WithExhaustedPeriod_WaitsForNextPeriod()
+    {
+        // Arrange
+        const int allowedLocks = 25;
+        var period = TimeSpan.FromSeconds(2);
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var locker = new ThrottlingLockProvider(cache, allowedLocks, period, timeProvider, null, Log);
+        for (int i = 0; i < allowedLocks; i++)
+        {
+            await using var hit = await locker.TryAcquireAsync("resource", cancellationToken: TestCancellationToken);
+            Assert.NotNull(hit);
+        }
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+
+        // Act
+        var waiting = locker.TryAcquireAsync("resource", cancellationToken: cancellation.Token);
+        try
+        {
+            bool waitsForQuota = !waiting.IsCompleted;
+            timeProvider.Advance(period - TimeSpan.FromMilliseconds(1));
+            bool waitsBeforeBoundary = !waiting.IsCompleted;
+            bool exhaustedBeforeBoundary = await locker.IsLockedAsync("resource");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            bool exhaustedAtBoundary = await locker.IsLockedAsync("resource");
+            // The provider wakes one millisecond after the boundary to avoid early system-timer wakeups.
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            await using var nextPeriodHit = await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            Assert.True(waitsForQuota);
+            Assert.True(waitsBeforeBoundary);
+            Assert.True(exhaustedBeforeBoundary);
+            Assert.False(exhaustedAtBoundary);
+            Assert.NotNull(nextPeriodHit);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
     }
 
     [Fact]
