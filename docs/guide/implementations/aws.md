@@ -177,7 +177,7 @@ Group id support for SQS requires a Foundatio.AWS version that includes it. Othe
 
 ### Dead Letter Behavior
 
-`SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and also moves a message there itself once `Retries` is exceeded. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly.
+`SQSQueue` creates a `<name>-deadletter` queue (`<name>-deadletter.fifo` for FIFO queues) with a native SQS redrive policy, and also moves a message there itself once `Retries` is exceeded. If `SupportDeadLetter` is `false` or no dead-letter queue can be found, the message is deleted once `Retries` is exceeded. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly.
 
 ## Next Steps
 

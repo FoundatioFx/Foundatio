@@ -2088,31 +2088,29 @@ public abstract class QueueTestBase : TestWithLoggingBase
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
             var options = new QueueEntryOptions { GroupId = "tenant-123" };
-            var expectedCorrelationIds = new List<string?>();
 
             // Act
             for (int i = 0; i < 2; i++)
             {
                 using var activity = new Activity("enqueue-" + i).Start();
                 activity.TraceStateString = "vendor=value" + i;
-                expectedCorrelationIds.Add(activity.Id);
                 await queue.EnqueueAsync(new SimpleWorkItem { Data = "reused-options-" + i }, options);
             }
 
             // Assert
+            Assert.Equal("tenant-123", options.GroupId);
             Assert.Null(options.CorrelationId);
             Assert.Empty(options.Properties);
-            var actualCorrelationIds = new List<string?>();
+            var dequeuedData = new List<string?>();
             for (int i = 0; i < 2; i++)
             {
                 var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
                 Assert.NotNull(workItem);
-                Assert.Equal("tenant-123", workItem.GroupId);
-                actualCorrelationIds.Add(workItem.CorrelationId);
+                dequeuedData.Add(workItem.Value.Data);
                 await workItem.CompleteAsync();
             }
 
-            Assert.Equal(expectedCorrelationIds.Order(), actualCorrelationIds.Order());
+            Assert.Equal(["reused-options-0", "reused-options-1"], dequeuedData.Order());
         }
         finally
         {

@@ -92,7 +92,7 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Redis | ✅ | Uses provided ID as the entry ID |
 | Azure Service Bus | ✅ | Maps to MessageId (deduplicated only when `RequiresDuplicateDetection` is enabled) |
 | Azure Storage Queue | ❌ | Azure assigns its own MessageId |
-| SQS | ⚠️ | SQS assigns its own MessageId. The value is sent as `MessageDeduplicationId`, which SQS only honors on FIFO queues |
+| SQS | ⚠️ | SQS assigns its own MessageId. On FIFO queues the value is sent as `MessageDeduplicationId`; on standard queues it is not sent |
 
 ### QueueEntryOptions.GroupId
 
