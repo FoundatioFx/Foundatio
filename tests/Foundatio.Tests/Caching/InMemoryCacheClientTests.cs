@@ -1607,6 +1607,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Fact]
     public async Task DoMaintenanceAsync_WithMaxTimeSpanExpiration_ShouldNotThrowException()
     {
+        // Arrange - use a normal current time so using TimeSpan.MaxValue for expiration does not cause overflow issues
+        var timeProvider = new FakeTimeProvider();
+        timeProvider.SetUtcNow(new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+
+        var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+            const string key = "cached-with-max-expiration";
+
+            // Act - use TimeSpan.MaxValue which should result in no expiration
+            await cache.SetAsync(key, "value", TimeSpan.MaxValue);
+
+            // Assert
+            var result = await cache.GetAsync<string>(key);
+            Assert.True(result.HasValue);
+            Assert.Equal("value", result.Value);
+
+            // Verify no expiration (TimeSpan.MaxValue means no expiration, returns null)
+            var expiration = await cache.GetExpirationAsync(key);
+            Assert.Null(expiration);
+        }
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WithMaxTimeSpanExpiration_KeepsEntryAfterTimeAdvances()
+    {
         // Arrange
         var timeProvider = new FakeTimeProvider();
         using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
@@ -1623,6 +1650,50 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal("value", result.Value);
         Assert.Null(await cache.GetExpirationAsync(key));
         Assert.DoesNotContain(Log.LogEntries, entry => entry.LogLevel is LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task DoMaintenanceAsync_WithPositiveTimezoneOffset_ShouldNotThrowOnDateTimeMinValue()
+    {
+        // This test reproduces an issue where RemoveIfEqualAsync sets ExpiresAt to DateTime.MinValue,
+        // and DoMaintenanceAsync then compares it with a DateTimeOffset. When the system's local timezone
+        // has a positive offset (like Beirut UTC+2/+3), converting DateTime.MinValue to DateTimeOffset
+        // throws ArgumentOutOfRangeException because the resulting UTC time would be before year 0001.
+        //
+        // The bug is in InMemoryCacheClient.cs when checking the expiration:
+        //   if (expiresAt < DateTime.MaxValue && expiresAt <= utcNow)
+        //
+        // When expiresAt is DateTime.MinValue (Kind=Unspecified) and utcNow is a DateTimeOffset,
+        // the implicit conversion of DateTime.MinValue to DateTimeOffset uses the system's local
+        // timezone offset. If that offset is positive, the conversion fails.
+
+        var timeProvider = new FakeTimeProvider();
+        var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(timeProvider).LoggerFactory(Log));
+        using (cache)
+        {
+            await cache.RemoveAllAsync();
+
+            // Set up a cache entry and then remove it via RemoveIfEqualAsync
+            // This sets ExpiresAt to DateTime.MinValue on the entry
+            await cache.SetAsync("test-key", "test-value", TimeSpan.FromMinutes(1));
+            await cache.RemoveIfEqualAsync("test-key", "test-value");
+
+
+            // Advance time to ensure the entry is considered "infrequently accessed"
+            // (LastAccessTicks must be < utcNow - 300ms for maintenance to process it)
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+            // Trigger another cache operation to start maintenance
+            // This causes DoMaintenanceAsync to iterate over entries including the one
+            // with ExpiresAt = DateTime.MinValue
+            await cache.SetAsync("trigger", "value");
+
+            // Wait a moment to allow maintenance to complete
+            await Task.Delay(100, TestCancellationToken);
+
+            // Check for the error log that indicates the bug
+            Assert.Null(Log.LogEntries.SingleOrDefault(l => l.LogLevel == LogLevel.Error));
+        }
     }
 
     [Fact]
