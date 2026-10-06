@@ -205,7 +205,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private void OnItemExpired(string key, bool sendNotification = true)
     {
-        if (ItemExpired is null)
+        if (!ItemExpired.HasHandlers)
             return;
 
         Task.Factory.StartNew(_ =>
@@ -360,21 +360,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
-        // Assigned on every attempt; UpdateStoredEntry returns after the attempt it published, so this reflects it
-        bool displacedExpired = false;
-        var result = UpdateStoredEntry(key, stored =>
+        while (true)
         {
-            var (desired, result) = update(stored is { IsExpired: true } ? null : stored);
+            _memory.TryGetValue(key, out var stored);
+            bool expired = stored is { IsExpired: true };
+            var (desired, result) = update(expired ? null : stored);
+            if (ReferenceEquals(desired, stored))
+                return result;
 
-            // Checked after the callback, so an entry that expired while the callback ran also counts
-            displacedExpired = stored is { IsExpired: true } && !ReferenceEquals(desired, stored);
-            return (desired, result);
-        });
+            if (!TryPublish(key, stored, desired))
+                continue;
 
-        if (displacedExpired)
-            OnItemExpired(key);
+            // An entry that expires while the callback runs (a lease expiring mid-comparison) is also reclaimed
+            if (expired || (desired is null && stored is { IsExpired: true }))
+                OnItemExpired(key);
 
-        return result;
+            return result;
+        }
     }
 
     /// <summary>
@@ -387,22 +389,28 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _memory.TryGetValue(key, out var current);
             var (desired, result) = update(current);
-            if (ReferenceEquals(desired, current))
+            if (ReferenceEquals(desired, current) || TryPublish(key, current, desired))
                 return result;
-
-            bool published = (current, desired) switch
-            {
-                (null, not null) => _memory.TryAdd(key, desired),
-                (not null, null) => _memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, current)),
-                _ => _memory.TryUpdate(key, desired!, current!)
-            };
-
-            if (!published)
-                continue;
-
-            UpdateMemorySize((desired?.Size ?? 0) - (current?.Size ?? 0));
-            return result;
         }
+    }
+
+    /// <summary>
+    /// Publishes <paramref name="desired"/> in place of <paramref name="current"/> with a compare-and-swap, adjusting
+    /// tracked memory by the size difference. Returns <c>false</c>, changing nothing, if another writer got there first.
+    /// </summary>
+    private bool TryPublish(string key, CacheEntry? current, CacheEntry? desired)
+    {
+        bool published = (current, desired) switch
+        {
+            (null, not null) => _memory.TryAdd(key, desired),
+            (not null, null) => _memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, current)),
+            _ => _memory.TryUpdate(key, desired!, current!)
+        };
+
+        if (published)
+            UpdateMemorySize((desired?.Size ?? 0) - (current?.Size ?? 0));
+
+        return published;
     }
 
     /// <summary>
