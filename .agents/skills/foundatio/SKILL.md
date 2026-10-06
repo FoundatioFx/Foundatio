@@ -137,7 +137,7 @@ await _messageBus.PublishAsync(new OrderCreated { OrderId = orderId });
 await _storage.SaveFileAsync("reports/monthly.pdf", pdfStream);
 
 using var stream = await _storage.GetFileStreamAsync("reports/monthly.pdf", StreamMode.Read);
-var exists = await _storage.ExistsAsync("reports/old-*");
+var exists = await _storage.ExistsAsync("reports/monthly.pdf");
 await _storage.DeleteFilesAsync("reports/old-*");
 ```
 
