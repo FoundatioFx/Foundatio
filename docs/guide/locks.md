@@ -312,6 +312,8 @@ The local async function starts immediately and yields at the delay; it does not
 
 Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
 
+When acquiring multiple resources, success means every requested lock was acquired. If any resource is unavailable, the provider releases the partial set and returns `null`, including when resource names share a suffix. Provider exceptions also trigger release attempts for every acquired lock before propagating the error. If cleanup fails too, the original acquisition error is preserved and the cleanup failure is logged; the affected leases may remain until expiration. While acquisition is in progress, each successful renewal resets that lock's renewal interval.
+
 ## Common Patterns
 
 ### Singleton Processing

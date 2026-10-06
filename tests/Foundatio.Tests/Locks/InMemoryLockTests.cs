@@ -6,6 +6,7 @@ using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Time.Testing;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Locks;
@@ -236,6 +237,33 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public async Task TryAcquireAsync_WithMultipleResources_AfterRenewal_WaitsUntilNextRenewalInterval()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var inner = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        var locker = new BeforeAcquireLockProvider(inner, timeProvider, resource =>
+        {
+            if (resource == "b")
+                timeProvider.Advance(TimeSpan.FromSeconds(31));
+            else if (resource == "c")
+                timeProvider.Advance(TimeSpan.FromSeconds(1));
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("lock:a"));
+        Assert.True(await inner.IsLockedAsync("a"));
+        Assert.True(await inner.IsLockedAsync("b"));
+        Assert.True(await inner.IsLockedAsync("c"));
+    }
+
+    [Fact]
     public async Task TryAcquireAsync_WithMultipleResources_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {
         // Arrange
@@ -270,6 +298,49 @@ public class InMemoryLockTests : LockTestBase, IDisposable
             if (otherOwner is not null)
                 await otherOwner.DisposeAsync();
         }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task TryAcquireAsync_WithMultipleResources_WhenProviderThrows_ReleasesAcquiredLocks(bool duringRenewal, bool releaseThrows)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var first = new Mock<ILock>();
+        var second = new Mock<ILock>();
+        first.Setup(l => l.ReleaseAsync()).Returns(() => releaseThrows
+            ? throw new CacheException("Release unavailable")
+            : Task.CompletedTask);
+        second.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var error = new CacheException("Provider unavailable");
+        first.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(error);
+        var locker = new Mock<ILockProvider>();
+        locker.As<IHaveTimeProvider>().SetupGet(p => p.TimeProvider).Returns(timeProvider);
+        locker.Setup(p => p.TryAcquireAsync("a", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(first.Object);
+        locker.Setup(p => p.TryAcquireAsync("b", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(() =>
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(31));
+            return duringRenewal ? Task.FromResult<ILock?>(second.Object) : Task.FromException<ILock?>(error);
+        });
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => locker.Object.TryAcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken));
+
+        // Assert
+        Assert.Same(error, thrown);
+        first.Verify(l => l.ReleaseAsync(), Times.Once);
+        second.Verify(l => l.ReleaseAsync(), duringRenewal ? Times.Once() : Times.Never());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    {
+        return base.TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(scoped);
     }
 
     [Fact]

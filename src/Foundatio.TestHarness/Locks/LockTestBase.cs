@@ -739,6 +739,29 @@ public abstract class LockTestBase : TestWithLoggingBase
         Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
     }
 
+    public virtual async Task TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+        if (scoped)
+            locker = new ScopedLockProvider(locker, "suffix");
+
+        string heldResource = "b" + Guid.NewGuid().ToString("N");
+        string availableResource = "a" + heldResource;
+        await using var owner = await locker.AcquireAsync(heldResource, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync([availableResource, heldResource], TimeSpan.FromMinutes(1), cancellationToken: new CancellationToken(true));
+
+        // Assert
+        Assert.Null(lockInstance);
+        Assert.False(await locker.IsLockedAsync(availableResource));
+        Assert.True(await locker.IsLockedAsync(heldResource));
+        await owner.RenewAsync();
+    }
+
     public virtual async Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
     {
         var locker = GetLockProvider();
