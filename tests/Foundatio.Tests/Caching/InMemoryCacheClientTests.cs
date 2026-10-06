@@ -2644,6 +2644,77 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         }
     }
 
+    [Theory]
+    [InlineData("Add", true)]
+    [InlineData("Increment", 10L)]
+    [InlineData("Replace", false)]
+    [InlineData("ReplaceIfEqual", false)]
+    [InlineData("Set", true)]
+    [InlineData("SetExpiration", null)]
+    [InlineData("SetIfHigher", 10L)]
+    [InlineData("SetIfLower", 10L)]
+    public async Task WriteAsync_WithExpiredUnsweptEntry_TreatsKeyAsMissing(string operation, object? expectedResult)
+    {
+        // Arrange: an expired entry that maintenance has not removed yet must behave as if the key were absent
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        Publish(cache, "key", CreateEntry(operation is "SetIfLower" ? 1L : 100L, timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        object? result = operation switch
+        {
+            "Add" => await cache.AddAsync("key", 10L),
+            "Increment" => await cache.IncrementAsync("key", 10L),
+            "Replace" => await cache.ReplaceAsync("key", 10L),
+            "ReplaceIfEqual" => await cache.ReplaceIfEqualAsync("key", 10L, 100L),
+            "Set" => await cache.SetAsync("key", 10L),
+            "SetExpiration" => await SetExpirationAsync(),
+            "SetIfHigher" => await cache.SetIfHigherAsync("key", 10L),
+            "SetIfLower" => await cache.SetIfLowerAsync("key", 10L),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+        };
+
+        // Assert
+        Assert.Equal(expectedResult, result);
+        var value = await cache.GetAsync<long>("key");
+        bool keyWritten = expectedResult is true or long;
+        Assert.Equal(keyWritten, value.HasValue);
+        if (keyWritten)
+            Assert.Equal(10L, value.Value);
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+
+        async Task<object?> SetExpirationAsync()
+        {
+            await cache.SetExpirationAsync("key", TimeSpan.FromMinutes(10));
+            return null;
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithExpiredUnsweptList_StartsNewList(bool remove)
+    {
+        // Arrange: the list's values never expire, but the key itself expired through SetExpirationAsync
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        Publish(cache, "set", CreateEntry(new Dictionary<string, DateTime?> { ["old"] = null }, timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        long changed = remove
+            ? await cache.ListRemoveAsync("set", ["old"])
+            : await cache.ListAddAsync("set", ["new"]);
+
+        // Assert
+        Assert.Equal(remove ? 0 : 1, changed);
+        var list = await cache.GetListAsync<string>("set");
+        Assert.Equal(remove ? [] : ["new"], list.Value ?? []);
+    }
+
     private static InMemoryCacheClient.CacheEntry CreateEntry(object value, TimeProvider timeProvider, TimeSpan? expiresIn = null)
     {
         DateTime? expiresAt = expiresIn.HasValue ? timeProvider.GetUtcNow().UtcDateTime.Add(expiresIn.Value) : null;
