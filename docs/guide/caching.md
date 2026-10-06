@@ -54,9 +54,11 @@ Many cache methods accept an optional `expiresIn` parameter that controls the TT
 
 ### Quick Reference
 
+The following describes key writes. Conditional operations and lists have additional rules described below.
+
 | `expiresIn` Value | Behavior |
 |-------------------|----------|
-| `null` | Entry will not expire. **Removes any existing TTL** on the key. |
+| `null` | Entry will not expire. **Removes any existing TTL** when the write is applied. |
 | Positive `TimeSpan` ≥ 5ms | Entry expires after the specified duration from now. |
 | Greater than 0 and less than 5ms | **Treated as already expired.** Key is removed, operation returns failure value. See [Minimum Expiration](#minimum-expiration) below. |
 | Zero or negative | **Treated as already expired.** Key is removed, operation returns failure value. |
@@ -64,7 +66,7 @@ Many cache methods accept an optional `expiresIn` parameter that controls the TT
 
 ### Minimum Expiration
 
-Foundatio enforces a **minimum expiration of 5 milliseconds** (`CacheClientExtensions.MinimumExpiration`) on all cache operations. Any `expiresIn` value greater than zero but less than 5ms is treated as already-expired: the key is removed and the operation returns its failure value.
+Foundatio uses a **minimum expiration of 5 milliseconds** (`CacheClientExtensions.MinimumExpiration`) for cache writes. A shorter `expiresIn` is treated as already expired: key writes remove the key and return their failure value; `ListAddAsync` removes only the supplied values and returns `0`.
 
 **Why 5ms?**
 
@@ -74,7 +76,7 @@ External cache providers—most notably Redis—represent TTLs as integers. Stac
 ERR invalid expire time in 'setex'
 ```
 
-This truncation-to-zero can happen legitimately in production when computing `expiresAtUtc - DateTime.UtcNow` on a time very close to "now"—a common race condition in high-throughput systems. The 5ms floor provides a safe margin above the 1ms truncation boundary while remaining far below any real-world cache TTL.
+This truncation-to-zero can happen legitimately in production when computing `expiresAtUtc - DateTime.UtcNow` on a time very close to "now"—a common race condition in high-throughput systems. The 5ms floor provides a margin above the 1ms truncation boundary.
 
 **Behavior summary:**
 
@@ -93,7 +95,7 @@ await cache.SetAsync("key", value, TimeSpan.FromMilliseconds(100)); // 100ms > 5
 The constant is accessible for consumers that need to validate TTLs before calling cache methods:
 
 ```csharp
-using Foundatio.Extensions;
+using Foundatio.Caching;
 
 if (myExpiration < CacheClientExtensions.MinimumExpiration)
 {
@@ -103,42 +105,38 @@ if (myExpiration < CacheClientExtensions.MinimumExpiration)
 
 ### TTL Behavior by Method
 
-Different methods handle the `expiresIn` parameter slightly differently. The table below shows exactly what happens for each method:
+The table describes expiration when the operation is applied. For example, `AddAsync` with an existing live key or `ReplaceIfEqualAsync` with a mismatched expected value leaves that entry unchanged. Expirations below 5ms follow the removal behavior in the fourth column.
 
-| Method | `null` expiresIn | Positive expiresIn | Zero/Negative | Return on Failure |
-|--------|------------------|-------------------|---------------|-------------------|
+| Method | `null` expiresIn | Positive expiresIn ≥ 5ms | Below 5ms | Return on Failure |
+|--------|------------------|-------------------------|-----------|-------------------|
 | `SetAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `AddAsync` | No TTL | Sets TTL | Removes key | `false` |
-| `SetAllAsync` | No TTL (removes existing) | Sets TTL | Removes all keys | `0` |
+| `SetAllAsync` | No TTL (removes existing) | Sets TTL | Removes all supplied keys | `0` |
 | `ReplaceAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `ReplaceIfEqualAsync` | No TTL (removes existing) | Sets TTL | Removes key | `false` |
 | `IncrementAsync` | No TTL (removes existing) | Sets/updates TTL | Removes key | `0` |
 | `SetIfHigherAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
 | `SetIfLowerAsync` | No TTL (removes existing)* | Sets TTL* | Removes key | `0` |
-| `ListAddAsync` | No TTL | Sets TTL | Removes key | `0` |
+| `ListAddAsync` | Supplied values do not expire | Sets per-value TTL | Removes supplied values | `0` |
 
-\* **Conditional operations**: `SetIfHigherAsync` and `SetIfLowerAsync` only update TTL when the condition is met. If the value is not higher/lower, the entire operation is a no-op (including expiration).
+\* **In-memory numeric conditions**: `InMemoryCacheClient` applies the requested expiration even when `SetIfHigherAsync` or `SetIfLowerAsync` leaves the numeric value unchanged. A return value of `0` does not imply that the TTL was preserved. Passing `null` clears the TTL. Updates rejected by size validation leave the existing entry unchanged. See [Conditional Expiration Behavior](#conditional-expiration-behavior) for an example.
 
 ::: tip ListRemoveAsync
-`ListRemoveAsync` does not accept an `expiresIn` parameter. It simply removes values from the list without modifying the key's expiration.
+`ListRemoveAsync` does not accept an `expiresIn` parameter. In-memory list removal recomputes the key's expiration from the remaining values: any non-expiring value keeps the key non-expiring; otherwise the latest remaining expiration is used. Removing the last value removes the key.
 :::
 
 ::: info Integer vs Floating-Point Increments
-`IncrementAsync` supports both integer (`long`) and floating-point (`double`) amounts. Both overloads work correctly with expiration:
+`IncrementAsync` supports both integer (`long`) and floating-point (`double`) amounts. Use the same numeric type consistently for a counter, especially when fractional values are possible:
 
 ```csharp
 // Integer increments
-await cache.IncrementAsync("counter", 1L, TimeSpan.FromHours(1));    // long overload
+await cache.IncrementAsync("counter", 1L, TimeSpan.FromHours(1));
 await cache.IncrementAsync("counter", 5L, TimeSpan.FromHours(1));
 
-// Floating-point increments
-await cache.IncrementAsync("score", 1.5, TimeSpan.FromHours(1));     // double overload
-await cache.IncrementAsync("score", 2.25, TimeSpan.FromHours(1));    // Total: 3.75
-
-// Mixed increments work correctly
-await cache.IncrementAsync("mixed", 1, TimeSpan.FromHours(1));       // 1
-await cache.IncrementAsync("mixed", 1.5, TimeSpan.FromHours(1));     // 2.5
-await cache.IncrementAsync("mixed", 2, TimeSpan.FromHours(1));       // 4.5
+// Floating-point increments, including whole-number amounts
+await cache.IncrementAsync("score", 1d, TimeSpan.FromHours(1));
+await cache.IncrementAsync("score", 1.5d, TimeSpan.FromHours(1));
+await cache.IncrementAsync("score", 2d, TimeSpan.FromHours(1)); // Total: 4.5
 ```
 
 For Redis implementations, integer amounts (including `2.0` where the fractional part is zero) use the more efficient `INCRBY` command, while fractional amounts use `INCRBYFLOAT`.
@@ -149,7 +147,7 @@ For Redis implementations, integer amounts (including `2.0` where the fractional
 ```csharp
 // Basic Set Operations
 
-// No expiration - item lives until explicitly removed
+// No expiration - item lives until explicitly removed or evicted
 await cache.SetAsync("permanent-key", value);           // null is default
 await cache.SetAsync("also-permanent", value, null);    // explicit null
 
@@ -259,20 +257,22 @@ var result = await cache.GetAsync<string>("key");
 await cache.SetAsync("session", sessionData, TimeSpan.FromMinutes(30));
 
 // With item limits (LRU eviction)
-var limitedCache = new InMemoryCacheClient(o => o.MaxItems = 1000);
+var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 ```
 
 #### In-memory update behavior
 
-List updates preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and (on .NET 9 or later) `OrderedDictionary`. Other `IDictionary` implementations are rejected with `NotSupportedException` when an update requires copying them; the original cached value is preserved.
+Conditional writes and list updates publish replacement entries atomically. `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` for an expired entry rather than allowing a stale owner to remove or renew it. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size.
 
-Conditional writes and list updates publish replacement entries atomically. `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` treat expired entries as missing, and rejected oversized updates preserve the previous value, expiration, and tracked size. Explicit removal does not raise `ItemExpired`; expiration does.
+`RemoveIfEqualAsync` also cleans up an expired entry and raises `ItemExpired`, without removing a concurrent replacement. Successful removal of a live matching value, or removal of the last list value, frees tracked memory immediately and does not raise an expiration event.
 
-`Items` returns cached values without changing eviction order. Values follow `CloneValues`: mutable values remain shared when cloning is disabled, so callers must not mutate them concurrently with cache operations.
+List updates preserve the collection structure of previously returned snapshots. They preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and, on .NET 9 or later, `OrderedDictionary`. Other `IDictionary` implementations throw `NotSupportedException` when an update requires copying them; the original entry remains unchanged.
 
-`RemoveIfEqualAsync` returns false for an expired entry while reclaiming its memory and raising the normal `ItemExpired` notification. It compares entry identities when removing, so it cannot remove a concurrent replacement. Removing a live matching value remains an explicit deletion and does not raise that event.
+`Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.
 
-List updates preserve previously returned snapshots. With cloning disabled and either no sizing or built-in fixed sizing, large lists created through `ListAddAsync` share unchanged storage across updates; the key index is built on the first small modification after creation or a bulk rebuild. Batch values into one call to reduce copying and retries. Custom sizing and cloning use dictionary copies instead. Accessing the raw dictionary through `GetAsync` or `Items` also requires a copy on the next list write. These copies grow with list size. With cloning enabled, existing list values are reused internally and cloned when returned to callers.
+::: tip Large list updates
+Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+:::
 
 ### HybridCacheClient
 
@@ -427,15 +427,10 @@ public class MyService(IMemoryCacheClient localCache) { }
 
 ### Serialization and Cloning Overhead
 
-Every cache operation has performance overhead from serialization, deserialization, and optional value cloning:
+Distributed caches serialize values for storage and deserialize them on reads. `InMemoryCacheClient` stores objects directly and optionally deep-clones mutable payloads; it does not use a JSON round trip for cloning.
 
-**Distributed Cache (Redis, Azure, etc.):**
-- **Write**: Serialize object to bytes for storage
-- **Read**: Deserialize bytes back to object
-
-**In-Memory Cache:**
-- **With `CloneValues = true`** (default: `false`): Serialize and deserialize on every get/set to create independent copies
-- **With `CloneValues = false`**: Direct reference storage (no overhead, but risk of mutation)
+- **With `CloneValues = true`**: mutable payloads are copied when stored and returned, adding allocation and copying costs.
+- **With `CloneValues = false`** (the default): payloads can be shared by reference. This avoids cloning costs, but callers must manage mutation safely.
 
 ### Value Cloning {#clonevalues}
 
@@ -445,17 +440,17 @@ The `CloneValues` option controls whether cached values are cloned on read and w
 
 #### The Problem: Reference Sharing
 
-Without cloning, the cache stores direct references to objects. If code mutates a cached object, **all future reads see the mutated value**:
+Without cloning, the cache stores direct references to objects. Mutating a shared object changes the value seen by subsequent reads until the entry is replaced or removed:
 
 ```csharp
 var cache = new InMemoryCacheClient(); // CloneValues = false (default)
 
-var user = new User { Name = "Alice", Balance = 100.0 };
+var user = new User { Name = "Alice", Balance = 100.0m };
 await cache.SetAsync("user:1", user);
 
 // Get from cache and accidentally mutate
 var cached = (await cache.GetAsync<User>("user:1")).Value;
-cached.Balance = 0.0;  // ⚠️ Mutates the cached object!
+cached.Balance = 0.0m;  // ⚠️ Mutates the cached object!
 
 // Later reads return the MUTATED value
 var again = (await cache.GetAsync<User>("user:1")).Value;
@@ -470,14 +465,14 @@ This is especially dangerous when:
 #### The Solution: Enable Cloning
 
 ```csharp
-var cache = new InMemoryCacheClient(o => o.CloneValues = true);
+var cache = new InMemoryCacheClient(o => o.CloneValues(true));
 
-var user = new User { Name = "Alice", Balance = 100.0 };
+var user = new User { Name = "Alice", Balance = 100.0m };
 await cache.SetAsync("user:1", user);
 
 // Mutations are isolated to this copy
 var cached = (await cache.GetAsync<User>("user:1")).Value;
-cached.Balance = 0.0;  // Only affects this instance
+cached.Balance = 0.0m;  // Only affects this instance
 
 // Fresh reads get original value
 var fresh = (await cache.GetAsync<User>("user:1")).Value;
@@ -486,20 +481,17 @@ Console.WriteLine(fresh.Balance); // 100.0 ✓
 
 **How it works:**
 
-When `CloneValues = true`, each `GetAsync` and `SetAsync` serializes and deserializes the value using the configured serializer (default: JSON). This creates independent copies that are isolated from mutation.
+`InMemoryCacheClient` uses deep cloning for payloads that require it. `SetAsync` stores a copy and `GetAsync` returns a copy; `Items` also honors this setting. Changing the configured JSON serializer does not change this cloning mechanism. Primitive values and strings do not require a deep copy.
 
 #### Performance Trade-offs
 
 | Operation | `CloneValues = false` | `CloneValues = true` |
 |-----------|----------------------|---------------------|
-| `SetAsync` | Store reference (zero overhead) | Serialize → Deserialize (overhead) |
-| `GetAsync` | Return reference (zero overhead) | Serialize → Deserialize (overhead) |
-| Memory | Single instance | Multiple copies |
+| `SetAsync` | Store the payload without cloning | Deep-copy mutable payloads before storage |
+| `GetAsync` | Return the stored payload without cloning | Deep-copy mutable payloads before returning them |
+| Payload memory | May share one instance | Additional copies for stored and returned values |
 
-**Benchmark example (10,000 operations):**
-- Simple objects (< 1KB): ~2-5ms overhead per 10k ops
-- Complex objects (> 10KB): ~50-100ms overhead per 10k ops
-- Primitive types: Negligible difference
+Cloning cost depends on the payload's object graph, collection sizes, and access pattern. Measure representative workloads instead of assuming a fixed per-operation overhead. List updates may also copy collection storage independently of payload cloning.
 
 #### When to Enable Cloning
 
@@ -511,48 +503,46 @@ When `CloneValues = true`, each `GetAsync` and `SetAsync` serializes and deseria
 - Debugging unexplained cache corruption
 
 ❌ **Keep `CloneValues = false` when:**
-- Caching immutable types (strings, primitives, records with `init`-only properties)
-- You have strict control over mutation (internal APIs, single code path)
+- Caching strings, primitives, or object graphs that are genuinely immutable
+- You have strict control over mutation and synchronization
 - Performance is critical and you can guarantee immutability
-- Using frozen/immutable collections (`ImmutableArray`, `FrozenDictionary`)
+- Using immutable collections whose contained values are also immutable
+
+An `init`-only property or a record does not make referenced lists or other mutable objects immutable. Likewise, an immutable collection does not make its elements immutable.
 
 #### Best Practices
 
-**Pattern 1: Use immutable types (no cloning needed):**
+**Pattern 1: Use immutable values (no cloning needed):**
 
 ```csharp
 var cache = new InMemoryCacheClient(); // CloneValues = false
+await cache.SetAsync("user:1", new UserDto(1, "Alice", 100.0m));
 
-// C# records are immutable by default
+// This record contains only immutable values.
 public record UserDto(int Id, string Name, decimal Balance);
-
-await cache.SetAsync("user:1", new UserDto(1, "Alice", 100.0));
-// Safe: Cannot mutate records
 ```
 
 **Pattern 2: Clone when mutability is unavoidable:**
 
 ```csharp
-var cache = new InMemoryCacheClient(o => o.CloneValues = true);
+var cache = new InMemoryCacheClient(o => o.CloneValues(true));
+await cache.SetAsync("user:1", userEntity);
+// Mutations to userEntity or a returned copy do not change the stored copy.
 
-// Mutable class
 public class UserEntity
 {
     public int Id { get; set; }
-    public string Name { get; set; }
+    public string Name { get; set; } = String.Empty;
     public decimal Balance { get; set; }
 }
-
-await cache.SetAsync("user:1", userEntity);
-// Safe: Mutations are isolated
 ```
 
 **Pattern 3: Mix both strategies:**
 
 ```csharp
 // Separate caches for different needs
-var immutableCache = new InMemoryCacheClient(o => o.CloneValues = false);
-var mutableCache = new InMemoryCacheClient(o => o.CloneValues = true);
+var immutableCache = new InMemoryCacheClient(o => o.CloneValues(false));
+var mutableCache = new InMemoryCacheClient(o => o.CloneValues(true));
 
 // Immutable config
 await immutableCache.SetAsync("config:theme", "dark");
@@ -618,7 +608,7 @@ public class ProductService
             return cached.Value;
 
         // Only one caller regenerates; others wait for the lock then re-check cache.
-        await using var lck = await _locker.AcquireAsync(
+        await using var lck = await _locker.TryAcquireAsync(
             $"cache-load:{cacheKey}",
             timeUntilExpires: TimeSpan.FromSeconds(30),
             cancellationToken: ct);
@@ -690,31 +680,32 @@ double diff = await cache.SetIfHigherAsync("max-users", 100); // Returns 100
 // Value is higher - returns the delta
 diff = await cache.SetIfHigherAsync("max-users", 150); // Returns 50 (150 - 100)
 
-// Value is NOT higher - returns 0 (no change)
+// Value is NOT higher - returns 0 (numeric value is unchanged)
 diff = await cache.SetIfHigherAsync("max-users", 120); // Returns 0
 
-// To get the actual current value after the operation:
-var currentMax = (await cache.GetAsync<double>("max-users")).Value; // 150
+// Read the current value separately; another writer may have changed it in the meantime.
+var currentMax = (await cache.GetAsync<double>("max-users")).Value;
 ```
 
-::: warning Conditional Expiration Behavior
-`SetIfHigherAsync` and `SetIfLowerAsync` only update the expiration **when the condition is met**. If the value is not higher/lower, the operation is a complete no-op—including the expiration.
+#### Conditional Expiration Behavior
+
+For `InMemoryCacheClient`, `SetIfHigherAsync` and `SetIfLowerAsync` apply `expiresIn` even when the numeric condition is not met. This differs from a rejected `ReplaceIfEqualAsync`, which leaves the entry unchanged. Do not infer expiration behavior solely from a numeric return value of `0`.
 
 ```csharp
-// Set with 1-hour TTL
-await cache.SetIfHigherAsync("max-users", 100, TimeSpan.FromHours(1));
+using var cache = new InMemoryCacheClient();
 
-// Try to set lower value with 2-hour TTL
-await cache.SetIfHigherAsync("max-users", 50, TimeSpan.FromHours(2));
-// TTL is STILL 1 hour! The condition failed, so nothing changed.
+// Set with a 1-hour TTL
+await cache.SetIfHigherAsync("max-users", 100L, TimeSpan.FromHours(1));
 
-// Set higher value with 2-hour TTL
-await cache.SetIfHigherAsync("max-users", 200, TimeSpan.FromHours(2));
-// TTL is now 2 hours (condition was met)
+// Numeric value stays 100, but the TTL is reset to 2 hours.
+long difference = await cache.SetIfHigherAsync("max-users", 50L, TimeSpan.FromHours(2));
+// difference == 0
+
+// Numeric value still stays 100; passing null removes the TTL.
+await cache.SetIfHigherAsync("max-users", 50L, null);
 ```
 
-This is intentional—the semantic is "set IF higher/lower", so a failed condition means the entire operation is skipped.
-:::
+An in-memory update rejected by size validation does not apply its new expiration. Check the behavior of the cache provider you use rather than assuming every provider treats an unmet numeric condition identically.
 
 ### List Operations
 
@@ -722,18 +713,12 @@ Foundatio lists support **per-value expiration**, where each item in the list ca
 
 #### Why Per-Value Expiration?
 
-Per-value expiration prevents unbounded list growth. Consider tracking recently deleted items:
+A sliding TTL for the whole list can retain old values indefinitely when new values are continually added. Per-value expiration lets old values expire without extending their lifetime every time another value is added:
 
 ```csharp
-// Without per-value expiration (sliding expiration problem):
-// Adding ANY item resets the entire list's TTL, causing indefinite growth
+// Each supplied value expires after 7 days.
 await cache.ListAddAsync("deleted-items", [itemId], TimeSpan.FromDays(7));
-// After months: list has 100,000+ items because TTL keeps resetting!
-
-// With per-value expiration (Foundatio's approach):
-// Each item expires independently after 7 days
-await cache.ListAddAsync("deleted-items", [itemId], TimeSpan.FromDays(7));
-// List stays bounded - old items expire even as new ones are added
+// Adding a different item later does not refresh itemId's expiration.
 ```
 
 **Real-world use cases:**
@@ -753,10 +738,10 @@ await cache.ListAddAsync("user:123:recent-searches", new[] { "query2" }, TimeSpa
 // Items expire independently - query1 expires 1 hour after it was added,
 // query2 expires 1 hour after IT was added (not when query1 was added)
 
-// Get paginated list (expired items are automatically filtered)
+// Get the first page (pages are one-based; expired items are filtered).
 var searches = await cache.GetListAsync<string>(
     "user:123:recent-searches",
-    page: 0,
+    page: 1,
     pageSize: 10
 );
 
@@ -768,9 +753,11 @@ await cache.ListRemoveAsync("user:123:recent-searches", new[] { "query1" });
 
 | `expiresIn` Value | Behavior |
 |-------------------|----------|
-| `null` | Values will not expire. Key expiration is set to max of all item expirations. |
-| Positive `TimeSpan` | Each value expires independently after this duration. |
-| Zero or negative | The specified values are removed from the list (if present), returns 0. |
+| `null` | Supplied values do not expire. In memory, any non-expiring value keeps the key non-expiring. |
+| Positive `TimeSpan` ≥ 5ms | Each supplied value expires independently after this duration. |
+| Below 5ms, including zero or negative | The supplied values are removed from the list if present; `ListAddAsync` returns `0`. |
+
+In-memory list updates recompute the key's expiration from the remaining values. If every remaining value expires, the key uses the latest expiration. An empty list is removed. Removing values does not refresh the expiration of values left in the list.
 
 ### Bulk Operations
 
@@ -803,7 +790,7 @@ services.AddSingleton<ICacheClient, InMemoryCacheClient>();
 
 // With options
 services.AddSingleton<ICacheClient>(sp =>
-    new InMemoryCacheClient(o => o.MaxItems = 1000));
+    new InMemoryCacheClient(o => o.MaxItems(1000)));
 
 // Redis (production)
 services.AddSingleton<ICacheClient>(sp =>
@@ -829,9 +816,9 @@ Use different caches for different purposes:
 
 ```csharp
 services.AddKeyedSingleton<ICacheClient>("session",
-    new InMemoryCacheClient(o => o.MaxItems = 10000));
+    new InMemoryCacheClient(o => o.MaxItems(10000)));
 services.AddKeyedSingleton<ICacheClient>("geo",
-    new InMemoryCacheClient(o => o.MaxItems = 250));
+    new InMemoryCacheClient(o => o.MaxItems(250)));
 ```
 
 ## Best Practices
