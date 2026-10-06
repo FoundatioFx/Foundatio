@@ -1979,6 +1979,39 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
+    public virtual async Task EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+            queue.Enqueuing.AddHandler((_, args) =>
+            {
+                args.Options.GroupId = String.Empty;
+                return Task.CompletedTask;
+            });
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "cleared-group-id" }, new QueueEntryOptions { GroupId = "tenant-123" });
+
+            // Assert
+            var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(workItem);
+            Assert.Equal("cleared-group-id", workItem.Value.Data);
+            Assert.Null(workItem.GroupId);
+            await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
     public virtual async Task EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync()
     {
         // Arrange
@@ -2018,17 +2051,68 @@ public abstract class QueueTestBase : TestWithLoggingBase
         {
             await queue.DeleteQueueAsync();
             await AssertEmptyQueueAsync(queue);
+            string? enqueuedGroupId = null;
+            queue.Enqueued.AddHandler((_, args) =>
+            {
+                enqueuedGroupId = args.Entry.GroupId;
+                return Task.CompletedTask;
+            });
 
             // Act
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "group-id-test" },
                 new QueueEntryOptions { GroupId = "tenant-123" });
 
             // Assert
+            Assert.Equal("tenant-123", enqueuedGroupId);
             var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
             Assert.NotNull(workItem);
             Assert.Equal("group-id-test", workItem.Value.Data);
             Assert.Equal("tenant-123", workItem.GroupId);
             await workItem.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    public virtual async Task EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+            var options = new QueueEntryOptions { GroupId = "tenant-123" };
+            var expectedCorrelationIds = new List<string?>();
+
+            // Act
+            for (int i = 0; i < 2; i++)
+            {
+                using var activity = new Activity("enqueue-" + i).Start();
+                activity.TraceStateString = "vendor=value" + i;
+                expectedCorrelationIds.Add(activity.Id);
+                await queue.EnqueueAsync(new SimpleWorkItem { Data = "reused-options-" + i }, options);
+            }
+
+            // Assert
+            Assert.Null(options.CorrelationId);
+            Assert.Empty(options.Properties);
+            var actualCorrelationIds = new List<string?>();
+            for (int i = 0; i < 2; i++)
+            {
+                var workItem = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+                Assert.NotNull(workItem);
+                Assert.Equal("tenant-123", workItem.GroupId);
+                actualCorrelationIds.Add(workItem.CorrelationId);
+                await workItem.CompleteAsync();
+            }
+
+            Assert.Equal(expectedCorrelationIds.Order(), actualCorrelationIds.Order());
         }
         finally
         {

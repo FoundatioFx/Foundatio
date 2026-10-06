@@ -394,6 +394,8 @@ await queue.EnqueueAsync(new WorkItem { Id = 1 }, new QueueEntryOptions
 });
 ```
 
+`EnqueueAsync` never modifies the options you pass in. Each call works on a copy, so one options instance can safely be reused across enqueues. The queue fills in that copy before `Enqueuing` handlers run: the resolved `GroupId`, plus `CorrelationId` and `TraceState` from `Activity.Current` when you don't set them. Handler changes apply only to that message.
+
 ## Message Groups
 
 `QueueEntryOptions.GroupId` tags a message with a logical group, typically a tenant or customer id. Dequeued entries expose it as `IQueueEntry.GroupId`.
@@ -407,7 +409,7 @@ var queue = new InMemoryQueue<ImportRequest>(o => o.GroupId(r => r.TenantId));
 await queue.EnqueueAsync(importRequest); // GroupId = importRequest.TenantId
 ```
 
-A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. An empty value is stored as `null`, so a null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The same applies if an `Enqueuing` handler sets it to an empty string. The caller's `QueueEntryOptions` instance is not modified by the resolver.
+A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. An empty value is stored as `null`, so a null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The same applies if an `Enqueuing` handler sets it to an empty string.
 
 The group id is a hint. The message is delivered correctly whether or not the provider uses it, and what the provider does with it differs:
 

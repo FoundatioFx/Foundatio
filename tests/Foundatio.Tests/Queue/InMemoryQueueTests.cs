@@ -275,25 +275,9 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
-    public async Task EnqueueAsync_WhenEnqueuingHandlerSetsEmptyGroupId_EnqueuesWithoutGroupAsync()
+    public override Task EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync()
     {
-        // Arrange
-        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
-            .MetricsPollingInterval(TimeSpan.Zero)
-            .LoggerFactory(Log));
-        queue.Enqueuing.AddHandler((_, args) =>
-        {
-            args.Options.GroupId = String.Empty;
-            return Task.CompletedTask;
-        });
-
-        // Act
-        await queue.EnqueueAsync(new SimpleWorkItem { Data = "handler" }, new QueueEntryOptions { GroupId = "tenant-1" });
-
-        // Assert
-        var entry = await queue.DequeueAsync(TimeSpan.Zero);
-        Assert.NotNull(entry);
-        Assert.Null(entry.GroupId);
+        return base.EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync();
     }
 
     [Theory]
@@ -314,6 +298,32 @@ public class InMemoryQueueTests : QueueTestBase
         var entry = await queue.DequeueAsync(TimeSpan.Zero);
         Assert.NotNull(entry);
         Assert.Null(entry.GroupId);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        using var activity = new Activity("enqueue-test").Start();
+        activity.TraceStateString = "vendor=value";
+        string? handlerCorrelationId = null;
+        string? handlerTraceState = null;
+        queue.Enqueuing.AddHandler((_, args) =>
+        {
+            handlerCorrelationId = args.Options.CorrelationId;
+            handlerTraceState = args.Options.Properties.TryGetValue("TraceState", out string? traceState) ? traceState : null;
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "activity" });
+
+        // Assert
+        Assert.Equal(activity.Id, handlerCorrelationId);
+        Assert.Equal("vendor=value", handlerTraceState);
     }
 
     [Fact]
@@ -472,6 +482,12 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Equal("tenant-1", first.GroupId);
         Assert.Equal("tenant-2", second.GroupId);
         Assert.Equal("vendor=value", second.Properties["TraceState"]);
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync();
     }
 
     [Fact]

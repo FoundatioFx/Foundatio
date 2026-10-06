@@ -140,21 +140,43 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();
-        options ??= new QueueEntryOptions();
-
-        if (options.GroupId is null && _options.GroupIdResolver?.Invoke(data) is { Length: > 0 } resolvedGroupId)
-        {
-            // Copy Properties too: the record copy is shallow and enqueue adds entries (for example TraceState) to it.
-            var properties = options.Properties is Dictionary<string, string> dictionary
-                ? new Dictionary<string, string>(dictionary, dictionary.Comparer)
-                : new Dictionary<string, string>(options.Properties);
-            options = options with { GroupId = resolvedGroupId, Properties = properties };
-        }
+        options = CreateEnqueueOptions(data, options);
 
         if (options.GroupId is not null && !SupportsGroupId && Interlocked.Exchange(ref _groupIdUnsupportedLogged, 1) == 0)
             _logger.LogDebug("Queue {QueueName} ({QueueType}) does not use GroupId for delivery order or fairness", _options.Name, GetType().Name);
 
         return await EnqueueImplAsync(data, options).AnyContext();
+    }
+
+    /// <summary>
+    /// Copies the caller's options so enqueue never mutates them: correlation and trace metadata and
+    /// <see cref="Enqueuing"/> handler changes apply to this message only, and a reused options instance stays reusable.
+    /// The group id resolver and <see cref="Activity"/> defaults are applied here, before <see cref="EnqueueImplAsync"/>,
+    /// so providers can validate the final values before <see cref="Enqueuing"/> handlers run.
+    /// </summary>
+    private QueueEntryOptions CreateEnqueueOptions(T data, QueueEntryOptions? options)
+    {
+        options = options is null
+            ? new QueueEntryOptions()
+            : options with { Properties = CopyProperties(options.Properties) };
+
+        options.GroupId ??= _options.GroupIdResolver?.Invoke(data);
+
+        if (String.IsNullOrEmpty(options.CorrelationId))
+        {
+            options.CorrelationId = Activity.Current?.Id;
+            if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
+                options.Properties.TryAdd("TraceState", Activity.Current.TraceStateString);
+        }
+
+        return options;
+    }
+
+    private static Dictionary<string, string> CopyProperties(IDictionary<string, string> properties)
+    {
+        return properties is Dictionary<string, string> dictionary
+            ? new Dictionary<string, string>(dictionary, dictionary.Comparer)
+            : new Dictionary<string, string>(properties);
     }
 
     /// <summary>
@@ -245,13 +267,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueEntryOptions options)
     {
-        if (String.IsNullOrEmpty(options.CorrelationId))
-        {
-            options.CorrelationId = Activity.Current?.Id;
-            if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
-                options.Properties.TryAdd("TraceState", Activity.Current.TraceStateString);
-        }
-
         var enqueueing = Enqueuing;
         if (enqueueing is null)
             return false;
