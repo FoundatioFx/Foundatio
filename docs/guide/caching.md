@@ -42,9 +42,9 @@ public interface ICacheClient : IDisposable
     Task SetAllExpirationAsync(IDictionary<string, TimeSpan?> expirations);
 
     // List operations
-    Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null);
-    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values);
-    Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100);
+    Task<long> ListAddAsync<T>(string key, IEnumerable<T> values, TimeSpan? expiresIn = null) where T : notnull;
+    Task<long> ListRemoveAsync<T>(string key, IEnumerable<T> values) where T : notnull;
+    Task<CacheValue<ICollection<T>>> GetListAsync<T>(string key, int? page = null, int pageSize = 100) where T : notnull;
 }
 ```
 
@@ -227,7 +227,7 @@ On Azure Managed Redis (and many Redis deployments), the default eviction policy
 **Recommendations:**
 
 - Always set appropriate TTLs for cache entries when possible
-- Use `TimeSpan.MaxValue` only when you explicitly need permanent storage
+- Use `TimeSpan.MaxValue` only when you explicitly need non-expiring cache entries; it does not make cached data durable
 - Monitor your Redis memory usage and eviction metrics
 
 **Further Reading:**
@@ -346,7 +346,7 @@ using Foundatio.Redis.Cache;
 using StackExchange.Redis;
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
-var cache = new RedisCacheClient(o => o.ConnectionMultiplexer = redis);
+var cache = new RedisCacheClient(o => o.ConnectionMultiplexer(redis));
 
 await cache.SetAsync("user:123", user, TimeSpan.FromHours(1));
 ```
@@ -616,7 +616,7 @@ public class ProductService
         if (lck is null)
             return null; // Could not acquire -- caller decides how to handle
 
-        // Double-check: another caller may have populated cache while we waited.
+        // Double-check: another caller may have populated the cache while we waited.
         cached = await _cache.GetAsync<Product>(cacheKey);
         if (cached.HasValue)
             return cached.Value;
@@ -711,6 +711,8 @@ An in-memory update rejected by size validation does not apply its new expiratio
 
 Foundatio lists support **per-value expiration**, where each item in the list can have its own independent TTL. This is different from standard cache keys where expiration applies to the entire key.
 
+List values are unique according to the list's comparer. Adding an existing value updates that value's expiration rather than creating a duplicate. Do not use separately paged reads as a consistent snapshot while other callers are updating the list.
+
 #### Why Per-Value Expiration?
 
 A sliding TTL for the whole list can retain old values indefinitely when new values are continually added. Per-value expiration lets old values expire without extending their lifetime every time another value is added:
@@ -794,7 +796,7 @@ services.AddSingleton<ICacheClient>(sp =>
 
 // Redis (production)
 services.AddSingleton<ICacheClient>(sp =>
-    new RedisCacheClient(o => o.ConnectionMultiplexer = redis));
+    new RedisCacheClient(o => o.ConnectionMultiplexer(redis)));
 ```
 
 ### Hybrid with DI
@@ -804,7 +806,7 @@ services.AddSingleton<ICacheClient>(sp =>
 {
     var redis = sp.GetRequiredService<IConnectionMultiplexer>();
     return new HybridCacheClient(
-        new RedisCacheClient(o => o.ConnectionMultiplexer = redis),
+        new RedisCacheClient(o => o.ConnectionMultiplexer(redis)),
         sp.GetRequiredService<IMessageBus>()
     );
 });
@@ -820,6 +822,42 @@ services.AddKeyedSingleton<ICacheClient>("session",
 services.AddKeyedSingleton<ICacheClient>("geo",
     new InMemoryCacheClient(o => o.MaxItems(250)));
 ```
+
+## Testing Expiration
+
+Use `FakeTimeProvider` from the `Microsoft.Extensions.TimeProvider.Testing` package instead of sleeping or creating a custom clock. Inject the same provider into the cache and any collaborating lock provider or service that depends on time.
+
+```csharp
+using System;
+using System.Threading.Tasks;
+using Foundatio.Caching;
+using Microsoft.Extensions.Time.Testing;
+using Xunit;
+
+public class CacheExpirationTests
+{
+    [Fact]
+    public async Task GetAsync_AfterExpiration_ReturnsNoValue()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider));
+        await cache.SetAsync("key", "value", TimeSpan.FromMinutes(5));
+        Assert.True((await cache.GetAsync<string>("key")).HasValue);
+        timeProvider.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromMilliseconds(1));
+
+        // Act
+        var result = await cache.GetAsync<string>("key");
+
+        // Assert
+        Assert.False(result.HasValue);
+    }
+}
+```
+
+Advancing fake time drives timers registered with that provider, but does not wait for unrelated background work. Await the operation being tested, or await an `ItemExpired` notification when testing expiration events. A real-time `WaitAsync` timeout can bound that wait to prevent a hung test; it should not be used to simulate expiration.
+
+Keep provider integration tests alongside in-memory tests. A shared interface does not guarantee identical serialization, expiration, or concurrency behavior in every implementation. See Microsoft's [FakeTimeProvider testing guidance](https://learn.microsoft.com/en-us/dotnet/core/extensions/timeprovider-testing).
 
 ## Best Practices
 
