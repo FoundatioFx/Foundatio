@@ -2031,14 +2031,14 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             // Act - Add more items to the same list
             await cache.ListAddAsync("mylist", ["item4", "item5"]);
 
-            // Assert - Memory should increase when adding more list items
+            // Assert - Memory should increase when adding more items
             var sizeAfterMoreItems = cache.CurrentMemorySize;
             Assert.True(sizeAfterMoreItems > sizeAfterAdd, "Memory should increase when adding more list items");
 
             // Act - Remove items from the list
             await cache.ListRemoveAsync("mylist", ["item1", "item2"]);
 
-            // Assert - Memory should decrease when removing list items
+            // Assert - Memory should decrease when removing items
             var sizeAfterRemove = cache.CurrentMemorySize;
             Assert.True(sizeAfterRemove < sizeAfterMoreItems, "Memory should decrease when removing list items");
         }
@@ -2208,7 +2208,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         {
             // Entry should be skipped due to negative size
             var result = await cache.SetAsync("key", "value");
-            Assert.False(result, "SetAsync should return false when size is skipped due to negative size");
+            Assert.False(result, "SetAsync should return false when entry is skipped due to negative size");
 
             // Verify entry was not cached
             var cached = await cache.GetAsync<string>("key");
@@ -2638,7 +2638,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
             // Assert
             Assert.True(result);
-            var cached = await cache.GetAsync<string>("key");
+            var cached = await cache.GetAsync<string>("small");
             Assert.True(cached.HasValue);
             Assert.Equal(smallString, cached.Value);
         }
