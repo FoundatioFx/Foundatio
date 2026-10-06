@@ -1908,10 +1908,20 @@ public abstract class QueueTestBase : TestWithLoggingBase
         }
     }
 
-    public virtual async Task AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync()
+    public virtual Task AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync()
+    {
+        return AssertAbandonPreservesGroupIdAsync(TimeSpan.Zero);
+    }
+
+    public virtual Task AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync()
+    {
+        return AssertAbandonPreservesGroupIdAsync(TimeSpan.FromSeconds(1));
+    }
+
+    private async Task AssertAbandonPreservesGroupIdAsync(TimeSpan retryDelay)
     {
         // Arrange
-        using var queue = GetQueue(retryDelay: TimeSpan.Zero);
+        using var queue = GetQueue(retryDelay: retryDelay);
         if (queue is null)
             return;
 

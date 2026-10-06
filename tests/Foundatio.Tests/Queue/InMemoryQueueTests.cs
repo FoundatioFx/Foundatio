@@ -261,6 +261,11 @@ public class InMemoryQueueTests : QueueTestBase
     {
         return base.AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync();
     }
+    [Fact]
+    public override Task AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync();
+    }
 
     [Fact]
     public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
