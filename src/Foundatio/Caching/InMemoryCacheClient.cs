@@ -252,7 +252,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("RemoveAsync: Removing key: {Key}", key);
-        var removed = UpdateEntry<CacheEntry?>(key, current => (null, current));
+        var removed = UpdateStoredEntry<CacheEntry?>(key, current => (null, current));
 
         // Return false if the entry was expired (consistent with Redis behavior)
         return Task.FromResult(removed is { IsExpired: false });
@@ -264,22 +264,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        var (success, expired) = UpdateEntry(key, current =>
+        bool success = UpdateEntry(key, current =>
         {
-            if (current is null)
-                return (current, (false, false));
-            if (current.IsExpired)
-                return (null, (false, true));
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return (current, false);
 
-            bool matches = EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected);
-            if (current.IsExpired)
-                return (null, (false, true));
-
-            return matches ? (null, (true, false)) : (current, (false, false));
+            // A lease that expired while it was being compared no longer belongs to the caller: reclaim it
+            // (UpdateEntry raises ItemExpired) but don't report a release
+            return (null, !current.IsExpired);
         });
-
-        if (expired)
-            OnItemExpired(key);
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -305,7 +298,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             ArgumentException.ThrowIfNullOrEmpty(key, nameof(keys));
 
             _logger.LogTrace("RemoveAllAsync: Removing key: {Key}", key);
-            if (UpdateEntry<bool>(key, current => (null, current is not null)))
+            if (UpdateStoredEntry<bool>(key, current => (null, current is not null)))
                 removed++;
         }
 
@@ -345,7 +338,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         _logger.LogTrace("Removing expired key: {Key}", key);
-        if (!UpdateEntry<bool>(key, current => (null, current is not null)))
+        if (!UpdateStoredEntry<bool>(key, current => (null, current is not null)))
             return 0;
 
         OnItemExpired(key, sendNotification);
@@ -354,16 +347,41 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     /// <summary>
     /// Atomically moves the entry for <paramref name="key"/> to the state chosen by <paramref name="update"/> and
-    /// keeps the tracked memory size in step.
+    /// keeps the tracked memory size in step. An expired entry is treated as missing, the same as a read: the
+    /// callback receives <c>null</c>, and when the expired entry is replaced or removed, <see cref="ItemExpired"/>
+    /// is raised for it.
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="update">
-    /// Receives the current entry (<c>null</c> when the key is missing) and returns the entry the key should hold:
-    /// the same instance to leave it unchanged, a new instance to add or replace it, or <c>null</c> to remove it.
-    /// It runs again with the latest entry when another writer changes the key first, so it must not have side
-    /// effects; only the result of the attempt that was published is returned.
+    /// Receives the current live entry (<c>null</c> when the key is missing or expired) and returns the entry the
+    /// key should hold: the same instance to leave it unchanged, a new instance to add or replace it, or
+    /// <c>null</c> to remove it. It runs again with the latest entry when another writer changes the key first,
+    /// so it must not have side effects; only the result of the attempt that was published is returned.
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
+    {
+        // Assigned on every attempt; UpdateStoredEntry returns after the attempt it published, so this reflects it
+        bool displacedExpired = false;
+        var result = UpdateStoredEntry(key, stored =>
+        {
+            var (desired, result) = update(stored is { IsExpired: true } ? null : stored);
+
+            // Checked after the callback, so an entry that expired while the callback ran also counts
+            displacedExpired = stored is { IsExpired: true } && !ReferenceEquals(desired, stored);
+            return (desired, result);
+        });
+
+        if (displacedExpired)
+            OnItemExpired(key);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Like <see cref="UpdateEntry{TResult}"/>, but the callback sees the stored entry even when it has expired.
+    /// Only maintenance, compaction and explicit removal need this view.
+    /// </summary>
+    private TResult UpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
         while (true)
         {
@@ -393,7 +411,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     internal bool TryRemoveEntry(string key, CacheEntry observed)
     {
-        return UpdateEntry(key, current => ReferenceEquals(current, observed) ? (null, true) : (current, false));
+        return UpdateStoredEntry(key, current => ReferenceEquals(current, observed) ? (null, true) : (current, false));
     }
 
     public Task<CacheValue<T>> GetAsync<T>(string key)
@@ -443,23 +461,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public Task<bool> AddAsync<T>(string key, T value, TimeSpan? expiresIn = null)
     {
-        ArgumentException.ThrowIfNullOrEmpty(key);
-
-        if (expiresIn < CacheClientExtensions.MinimumExpiration)
-        {
-            RemoveExpiredKey(key);
-            return Task.FromResult(false);
-        }
-
-        DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-        var entry = CreateEntry(value, expiresAt);
-        if (entry is null)
-            return Task.FromResult(false); // Entry exceeds limits
-
-        return SetInternalAsync(key, entry, addOnly: true);
+        return WriteAsync(key, value, expiresIn, WriteMode.Add);
     }
 
     public Task<bool> SetAsync<T>(string key, T value, TimeSpan? expiresIn = null)
+    {
+        return WriteAsync(key, value, expiresIn, WriteMode.Set);
+    }
+
+    private Task<bool> WriteAsync<T>(string key, T value, TimeSpan? expiresIn, WriteMode mode)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -470,17 +480,21 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         DateTime? expiresAt = expiresIn.HasValue ? _timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value) : null;
-
-        // Fast path: when no size calculator, create entry directly (matches main branch behavior)
-        if (!_hasSizeCalculator)
-            return SetInternalAsync(key, new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, 0));
-
-        // Slow path: calculate size and check limits
         var entry = CreateEntry(value, expiresAt);
         if (entry is null)
             return Task.FromResult(false); // Entry exceeds limits
 
-        return SetInternalAsync(key, entry);
+        return SetInternalAsync(key, entry, mode);
+    }
+
+    private enum WriteMode
+    {
+        /// <summary>Always write the value.</summary>
+        Set,
+        /// <summary>Write only when the key is missing or expired.</summary>
+        Add,
+        /// <summary>Write only when the key holds a live value.</summary>
+        Replace
     }
 
     public Task<double> SetIfHigherAsync(string key, double value, TimeSpan? expiresIn = null)
@@ -756,7 +770,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return new CacheValue<ICollection<T>>(pagedItems, true);
     }
 
-    private async Task<bool> SetInternalAsync(string key, CacheEntry entry, bool addOnly = false)
+    private async Task<bool> SetInternalAsync(string key, CacheEntry entry, WriteMode mode)
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
@@ -768,9 +782,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         Interlocked.Increment(ref _writes);
 
-        // Add-only writes may replace an expired entry, since it is logically absent
-        bool wasUpdated = UpdateEntry(key, current =>
-            !addOnly || current is null || current.IsExpired ? (entry, true) : (current, false));
+        bool wasUpdated = UpdateEntry(key, current => mode switch
+        {
+            WriteMode.Add when current is not null => (current, false),
+            WriteMode.Replace when current is null => (current, false),
+            _ => (entry, true)
+        });
 
         if (wasUpdated)
             _logger.LogTrace("Set cache key: {Key}", key);
@@ -822,10 +839,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         ArgumentException.ThrowIfNullOrEmpty(key);
 
+        // Skip sizing and cloning the value when there is nothing to replace; the write itself rechecks atomically
         if (!_memory.ContainsKey(key))
             return Task.FromResult(false);
 
-        return SetAsync(key, value, expiresIn);
+        return WriteAsync(key, value, expiresIn, WriteMode.Replace);
     }
 
     public async Task<bool> ReplaceIfEqualAsync<T>(string key, T value, T expected, TimeSpan? expiresIn = null)
@@ -849,16 +867,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         CacheEntry? replacement = null;
         bool success = UpdateEntry(key, current =>
         {
-            if (current is null || current.IsExpired || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
-                return (current, false);
-
-            // Check expiry after the comparison: a lease that expired while it was being compared must not be
-            // revived. Maintenance removes the entry and raises ItemExpired.
-            if (current.IsExpired)
+            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
                 return (current, false);
 
             replacement ??= CreateEntry(value, expiresAt);
-            return replacement is null || current.IsExpired ? (current, false) : (replacement, true);
+            if (replacement is null)
+                return (current, false);
+
+            // A lease that expired while it was being compared or sized must not be revived: reclaim it instead
+            // (UpdateEntry raises ItemExpired)
+            return current.IsExpired ? (null, false) : (replacement, true);
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -1133,7 +1151,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (maxRemovals > absoluteMaxRemovals)
                 maxRemovals = absoluteMaxRemovals;
 
-            while (ShouldCompact && removalCount < maxRemovals)
+            int conflicts = 0;
+            while (ShouldCompact && removalCount < maxRemovals && conflicts < maxRemovals)
             {
                 // Check if we still need compaction
                 bool needsItemCompaction = _maxItems.HasValue && _memory.Count > _maxItems;
@@ -1154,8 +1173,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
                 if (!TryRemoveEntry(entryToRemove.Key, entryToRemove.Value))
                 {
-                    // The entry changed since it was selected; count the attempt so the loop stays bounded and pick again
-                    removalCount++;
+                    // The entry changed since it was selected. Losing that race frees nothing, so it must not use up
+                    // the removal budget; conflicts have their own cap so a pass under heavy contention still ends.
+                    conflicts++;
                     continue;
                 }
 

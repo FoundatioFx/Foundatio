@@ -262,9 +262,11 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 
 #### In-memory update behavior
 
-Conditional writes and list updates publish replacement entries atomically. `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` for an expired entry rather than allowing a stale owner to remove or renew it. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size.
+Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size.
 
-`RemoveIfEqualAsync` also cleans up an expired entry and raises `ItemExpired`, without removing a concurrent replacement. Successful removal of a live matching value, or removal of the last list value, frees tracked memory immediately and does not raise an expiration event.
+Every write treats an expired entry as missing, even before background maintenance removes it, matching Redis: `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync` and `ListAddAsync` start fresh, `ReplaceAsync`, `SetExpirationAsync` and `ListRemoveAsync` find nothing to change, and `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` rather than letting a stale owner remove or renew it. A write that finds an expired entry reclaims it and raises `ItemExpired` once, without touching a concurrent replacement.
+
+Successful removal of a live matching value, or removal of the last list value, frees tracked memory immediately and does not raise an expiration event.
 
 List updates preserve the collection structure of previously returned snapshots. They preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and, on .NET 9 or later, `OrderedDictionary`. Other `IDictionary` implementations throw `NotSupportedException` when an update requires copying them; the original entry remains unchanged.
 

@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+<Project Sdk="Aspire.AppHost.Sdk/13.5.4">
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
@@ -10,7 +10,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Aspire.Hosting.Redis" Version="13.5.3" />
+        <PackageReference Include="Aspire.Hosting.Redis" Version="13.5.4" />
     </ItemGroup>
 
     <ItemGroup>

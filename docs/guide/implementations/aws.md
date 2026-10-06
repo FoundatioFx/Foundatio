@@ -40,7 +40,7 @@ await storage.SaveFileAsync("documents/report.pdf", pdfStream);
 | `Region` | `RegionEndpoint` | ✅ | AWS region |
 | `ConnectionString` | `string` | | Parses all settings |
 | `Credentials` | `AWSCredentials` | | AWS credentials |
-| `ServiceUrl` | `string` | | Custom endpoint (LocalStack) |
+| `ServiceUrl` | `string` | | Custom endpoint (e.g. Floci) |
 
 For additional options, see [S3FileStorageOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Storage/S3FileStorageOptions.cs).
 
@@ -75,7 +75,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `ConnectionString` | `string` | | | Connection string |
 | `Credentials` | `AWSCredentials` | | | AWS credentials |
 | `Region` | `RegionEndpoint` | | | AWS region |
-| `ServiceUrl` | `string` | | | Custom endpoint (LocalStack) |
+| `ServiceUrl` | `string` | | | Custom endpoint (e.g. Floci) |
 | `CanCreateTopic` | `bool` | | `true` | Auto-create SNS topic if missing |
 | `SubscriptionQueueName` | `string` | | Random | SQS queue name (use for durable subscriptions) |
 | `SubscriptionQueueAutoDelete` | `bool` | | `true` | Auto-delete queue on dispose (set `false` for durable) |

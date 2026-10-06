@@ -38,10 +38,11 @@ public class HostedJobService : IHostedService, IJobStatus, IDisposable
             var startupContext = _serviceProvider.GetService<StartupActionsContext>();
             if (startupContext != null)
             {
-                var result = await startupContext.WaitForStartupAsync(stoppingToken).AnyContext();
+                var result = await startupContext.WaitForStartupAsync(stoppingToken, _jobOptions.StartupActionsTimeout).AnyContext();
                 if (!result.Success)
                 {
-                    _logger.LogError("Unable to start {JobName} job due to startup actions failure", _jobOptions.Name);
+                    _logger.LogError("Unable to start {JobName} job due to startup actions failure: {ErrorMessage}. The job will not start or retry.",
+                        _jobOptions.Name, result.ErrorMessage ?? "Unknown startup actions error");
                     return;
                 }
             }

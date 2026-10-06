@@ -77,4 +77,14 @@ public class HostedJobOptionsBuilder
         Target.WaitForStartupActions = value;
         return this;
     }
+
+    /// <summary>
+    /// Sets the startup actions wait timeout. Null uses the five-minute default;
+    /// nonpositive durations time out immediately. Does not enable startup waiting.
+    /// </summary>
+    public HostedJobOptionsBuilder StartupActionsTimeout(TimeSpan? value)
+    {
+        Target.StartupActionsTimeout = value;
+        return this;
+    }
 }
