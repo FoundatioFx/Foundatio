@@ -172,7 +172,7 @@ Things to know:
 - **Monitor with CloudWatch.** Compare `ApproximateNumberOfMessagesVisible` with the `...InQuietGroups` metrics to confirm quiet tenants are not affected.
 
 ::: warning
-Group id support for SQS requires a Foundatio.AWS version that includes it. On other queue types `GroupId` is stored as metadata only. See [Message Groups](/guide/queues#message-groups).
+Group id support for SQS requires a Foundatio.AWS version that includes it. Other queue types do not use `GroupId` for delivery. See [Message Groups](/guide/queues#message-groups).
 :::
 
 ### Dead Letter Behavior

@@ -111,7 +111,7 @@ await _cache.RemoveByPrefixAsync("user:");
 ```csharp
 await _queue.EnqueueAsync(new OrderWorkItem { OrderId = orderId });
 
-// Multi-tenant: tag messages with a group id (SQS fair queues / Azure Service Bus SessionId)
+// Multi-tenant: tag messages with a group id (SQS fair queues / FIFO ordering)
 await _queue.EnqueueAsync(workItem, new QueueEntryOptions { GroupId = tenantId });
 // or derive it from the payload once: new SQSQueue<T>(o => o.GroupId(x => x.TenantId))
 
@@ -317,7 +317,7 @@ public class OrderServiceTests : TestLoggerBase
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
 - **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
-- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and Azure Service Bus (`SessionId`). Other queues store it as metadata only and log one debug message. SQS group ids are max 128 characters with no spaces. A nonempty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver. Azure Service Bus session support is producer-only; session-enabled receiving is not implemented.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues). Azure Service Bus sends it as `SessionId`, but receiving from session-enabled queues is not implemented, so it has no delivery effect there yet. The other built-in queues store it as metadata and log one debug message. SQS group ids are max 128 characters with no spaces. Empty values are stored as `null`. A non-empty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver.
 
 ## NuGet Packages
 

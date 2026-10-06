@@ -407,7 +407,7 @@ var queue = new InMemoryQueue<ImportRequest>(o => o.GroupId(r => r.TenantId));
 await queue.EnqueueAsync(importRequest); // GroupId = importRequest.TenantId
 ```
 
-A nonempty explicit `QueueEntryOptions.GroupId` wins over the resolver. A null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The caller's `QueueEntryOptions` instance is not modified by the resolver.
+A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. An empty value is stored as `null`, so a null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The same applies if an `Enqueuing` handler sets it to an empty string. The caller's `QueueEntryOptions` instance is not modified by the resolver.
 
 The group id is a hint. The message is delivered correctly whether or not the provider uses it, and what the provider does with it differs:
 
@@ -415,12 +415,12 @@ The group id is a hint. The message is delivered correctly whether or not the pr
 |----------|---------------------|
 | SQS standard queue | Sent as `MessageGroupId`. Enables [SQS fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html): a noisy tenant's messages are deprioritized so other tenants keep low latency. No ordering is implied. |
 | SQS FIFO queue (`.fifo`) | Sent as `MessageGroupId`. Messages in the same group are delivered one at a time, in order. Required by SQS. |
-| Azure Service Bus | Sent as `SessionId`. Sending to session-enabled queues is supported; receiving from them requires a session receiver, which this provider does not implement. |
+| Azure Service Bus | Sent as `SessionId` and returned on `entry.GroupId`. Service Bus ignores it unless the queue requires sessions, and `AzureServiceBusQueue` cannot yet receive from session-enabled queues, so it does not affect delivery on queues this provider consumes. |
 | InMemory, Redis, Azure Storage | Stored with the message and returned on `entry.GroupId`. It does not affect delivery order or fairness. |
 | Azure Storage (legacy compatibility mode) | Not stored, like `CorrelationId` and `Properties`. |
 
 ::: warning
-`GroupId` only changes delivery behavior on SQS and Azure Service Bus (in package versions that include group id support). On every other queue it is metadata only. Queues that do not use it log a single debug message the first time a group id is enqueued, so switching providers never fails or floods your logs.
+`GroupId` only changes delivery behavior on SQS (in package versions that include group id support). The built-in in-memory, Redis, Azure Storage and Azure Service Bus queues store it and return it on `entry.GroupId`; custom or older providers may ignore it. Queues that do not use it for delivery log a single debug message the first time a group id is enqueued, so switching providers never fails or floods your logs.
 :::
 
 See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps) for the full comparison and [AWS](/guide/implementations/aws) for SQS fair queue guidance.

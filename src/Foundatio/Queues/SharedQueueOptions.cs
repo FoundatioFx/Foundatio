@@ -124,7 +124,7 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
 
     /// <summary>
     /// Derives the group or tenant key from the message payload when the caller does not specify
-    /// <see cref="QueueEntryOptions.GroupId"/>. An explicit per-call value always wins.
+    /// <see cref="QueueEntryOptions.GroupId"/>. A non-empty per-call value always wins.
     /// </summary>
     public TBuilder GroupId(Func<T, string?> resolver)
     {

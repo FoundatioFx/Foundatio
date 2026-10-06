@@ -101,11 +101,11 @@ This document catalogs known behavioral differences across Foundatio provider im
 | InMemory | ❌ | Stored and returned on `entry.GroupId` only |
 | Redis | ❌ | Stored in the payload envelope and returned on `entry.GroupId` only |
 | Azure Storage Queue | ❌ | Stored in the payload envelope (default compatibility mode); not stored in legacy mode |
-| Azure Service Bus | ✅ | Sent as `SessionId` |
+| Azure Service Bus | ❌ | Sent as `SessionId` and returned on `entry.GroupId`. Service Bus ignores it unless the queue requires sessions, and receiving from session-enabled queues is not supported yet |
 | SQS standard queue | ✅ | Sent as `MessageGroupId` to enable fair queues (noisy neighbor mitigation). No ordering |
 | SQS FIFO queue | ✅ | Sent as `MessageGroupId`. Strict ordering within a group; required by SQS |
 
-Support for SQS and Azure Service Bus requires package versions that include group id support. Queues that do not use the value log a single debug message the first time a group id is enqueued. See [Message Groups](/guide/queues#message-groups).
+Support for SQS requires a package version that includes group id support. Queues that do not use the value for delivery log a single debug message the first time a group id is enqueued. Custom or older providers may not store it at all. See [Message Groups](/guide/queues#message-groups).
 
 ### Queue Ordering Guarantees
 
@@ -194,4 +194,4 @@ All tested providers (InMemory, Redis) exhibit fully consistent behavior. No beh
 
 5. **Prefer `QueueEntryOptions.UniqueId` only with providers that support it** (InMemory, Redis, Azure Service Bus). On SQS and Azure Storage Queues, the system assigns its own IDs.
 
-6. **Treat `QueueEntryOptions.GroupId` as a hint, not a guarantee.** It only changes delivery on SQS (fair queues on standard queues, ordering on FIFO) and Azure Service Bus; everywhere else it is stored metadata.
+6. **Treat `QueueEntryOptions.GroupId` as a hint, not a guarantee.** It only changes delivery on SQS (fair queues on standard queues, ordering on FIFO); the other built-in queues store it as metadata.

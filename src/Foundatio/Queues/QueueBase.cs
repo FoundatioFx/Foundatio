@@ -142,16 +142,17 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         LastEnqueueActivity = _timeProvider.GetUtcNow();
         options ??= new QueueEntryOptions();
 
-        string? groupId = String.IsNullOrEmpty(options.GroupId) ? _options.GroupIdResolver?.Invoke(data) : options.GroupId;
-        if (String.IsNullOrEmpty(groupId))
-            groupId = null;
+        if (options.GroupId is null && _options.GroupIdResolver?.Invoke(data) is { Length: > 0 } resolvedGroupId)
+        {
+            // Copy Properties too: the record copy is shallow and enqueue adds entries (for example TraceState) to it.
+            var properties = options.Properties is Dictionary<string, string> dictionary
+                ? new Dictionary<string, string>(dictionary, dictionary.Comparer)
+                : new Dictionary<string, string>(options.Properties);
+            options = options with { GroupId = resolvedGroupId, Properties = properties };
+        }
 
-        // Copy Properties too: the record copy is shallow and enqueue adds entries (for example TraceState) to it.
-        if (!String.Equals(groupId, options.GroupId, StringComparison.Ordinal))
-            options = options with { GroupId = groupId, Properties = new Dictionary<string, string>(options.Properties) };
-
-        if (groupId is not null && !SupportsGroupId && Interlocked.Exchange(ref _groupIdUnsupportedLogged, 1) == 0)
-            _logger.LogDebug("Queue {QueueName} ({QueueType}) stores GroupId as metadata only; it does not affect delivery order or fairness", _options.Name, GetType().Name);
+        if (options.GroupId is not null && !SupportsGroupId && Interlocked.Exchange(ref _groupIdUnsupportedLogged, 1) == 0)
+            _logger.LogDebug("Queue {QueueName} ({QueueType}) does not use GroupId for delivery order or fairness", _options.Name, GetType().Name);
 
         return await EnqueueImplAsync(data, options).AnyContext();
     }
@@ -159,6 +160,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     /// <summary>
     /// Whether the provider uses <see cref="QueueEntryOptions.GroupId"/> to affect delivery (for example fairness or ordering).
     /// When <c>false</c> (the default), a single debug message is logged the first time a group id is enqueued.
+    /// Providers that return <c>false</c> may still store the value and return it on <see cref="IQueueEntry.GroupId"/>.
     /// </summary>
     protected virtual bool SupportsGroupId => false;
 

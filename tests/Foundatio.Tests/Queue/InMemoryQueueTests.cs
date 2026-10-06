@@ -274,6 +274,28 @@ public class InMemoryQueueTests : QueueTestBase
         return base.Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException();
     }
 
+    [Fact]
+    public async Task EnqueueAsync_WhenEnqueuingHandlerSetsEmptyGroupId_EnqueuesWithoutGroupAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        queue.Enqueuing.AddHandler((_, args) =>
+        {
+            args.Options.GroupId = String.Empty;
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "handler" }, new QueueEntryOptions { GroupId = "tenant-1" });
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Null(entry.GroupId);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -317,7 +339,7 @@ public class InMemoryQueueTests : QueueTestBase
         var entry = await queue.DequeueAsync(TimeSpan.Zero);
         Assert.NotNull(entry);
         Assert.Equal("tenant-1", entry.GroupId);
-        Assert.Equal(String.Empty, options.GroupId);
+        Assert.Null(options.GroupId);
     }
 
     [Fact]
@@ -358,7 +380,7 @@ public class InMemoryQueueTests : QueueTestBase
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "x" }, new QueueEntryOptions { GroupId = "tenant-1" });
 
         // Assert
-        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Debug && e.Message.Contains("stores GroupId as metadata only"));
+        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Debug && e.Message.Contains("does not use GroupId for delivery order or fairness"));
     }
 
     [Fact]
@@ -380,6 +402,32 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Null(options.GroupId);
         Assert.Null(options.CorrelationId);
         Assert.Empty(options.Properties);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupIdResolver_PreservesPropertiesComparerAsync()
+    {
+        // Arrange
+        QueueEntryOptions? handlerOptions = null;
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        queue.Enqueuing.AddHandler((_, args) =>
+        {
+            handlerOptions = args.Options;
+            return Task.CompletedTask;
+        });
+        var options = new QueueEntryOptions { Properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Key"] = "value" } };
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+
+        // Assert
+        Assert.NotNull(handlerOptions);
+        Assert.NotSame(options, handlerOptions);
+        Assert.Equal("tenant-1", handlerOptions.GroupId);
+        Assert.True(handlerOptions.Properties.ContainsKey("KEY"));
     }
 
     [Fact]
