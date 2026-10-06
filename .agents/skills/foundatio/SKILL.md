@@ -261,6 +261,8 @@ Use `Foundatio.Xunit.v3` for test logging and DI integration. Two base classes:
 - **`TestWithLoggingBase`** -- lightweight, no DI container. `_logger` (`ILogger`) for logging; `Log` (`ILoggerFactory`) for passing to Foundatio services.
 - **`TestLoggerBase`** -- full DI via `TestLoggerFixture`. Override `ConfigureServices` to register services. `Log` (`ILogger`) for logging; `TestLogger` (`ILoggerFactory`) for passing to Foundatio services.
 
+Use `Microsoft.Extensions.Time.Testing.FakeTimeProvider` for expiration and timer tests. Inject the same instance into collaborating caches and lock providers, and advance it explicitly. A real-time timeout may bound an awaited completion, but should not simulate cache expiration. Keep shared test-harness coverage when adding provider-specific fake-time tests. Test observable behavior rather than the number of clock reads.
+
 ```csharp
 using Foundatio.Caching;
 using Foundatio.Xunit;
@@ -302,7 +304,7 @@ public class OrderServiceTests : TestLoggerBase
 
 - **Lock returns null**: `TryAcquireAsync` returns `null` when the lock cannot be acquired -- always guard with `is not null` before doing work. `AcquireAsync` throws `LockAcquisitionTimeoutException` instead of returning null.
 - **Dispose streams and locks**: `ILock` is `IAsyncDisposable` -- use `await using`. Streams from `GetFileStreamAsync` are `IDisposable` -- use `using var`.
-- **Cache TTL floor**: Expiration values below 5ms are treated as already-expired and the key is silently removed. If you compute TTL dynamically (e.g., `expiresAt - now`), guard against near-zero values.
+- **Cache TTL floor**: Expiration values below 5ms are treated as already expired. Key writes remove the key; `ListAddAsync` removes only the supplied values. Guard dynamically computed TTLs against near-zero values.
 - **Cache `GetAsync` returns `CacheValue<T>`**: Check `result.HasValue` before accessing `result.Value`. A missing key returns `HasValue = false`, not an exception.
 - **Cache stampede (thundering herd)**: The cache-aside pattern (`Get` -> miss -> load -> `Set`) is vulnerable to stampedes when a popular key expires and many callers regenerate simultaneously. Use `CacheLockProvider` to serialize regeneration: acquire a lock keyed on the cache key, double-check the cache after acquiring, and only then call the backing store. See the [Cache Stampede Protection](https://foundatio.readthedocs.io/guide/caching.html#cache-stampede-protection) docs for the full pattern.
 - **Queue auto-complete**: `QueueJobBase<T>` auto-completes entries based on `JobResult` by default. Set `AutoComplete = false` only when you need manual `CompleteAsync()`/`AbandonAsync()` control. Manual `DequeueAsync` does NOT auto-complete.
@@ -311,11 +313,12 @@ public class OrderServiceTests : TestLoggerBase
 - **JobWithLockBase vs manual locking**: Use `JobWithLockBase` when the entire run must be single-instance (leader election). Use manual `ILockProvider.AcquireAsync` inside `JobBase` for finer-grained locking within a job.
 - **JobContext.RenewLockAsync**: Call in long-running jobs (both `JobBase` and `QueueJobBase`) to prevent lock expiration mid-processing.
 - **Cache-backed renewal failure means ownership is unconfirmed**: `CacheLockProvider.RenewAsync` throws `LockException` when conditional renewal fails. After a pause, only a live lease with the same owner can renew; an expired handle requires a new acquisition and revalidation of the work. Stop cooperative work and observe background renewal failures; `WorkItemJob` progress renewal only logs them. Durations below 5ms throw before mutation. Throttling and empty locks have no-op renewal. Ownership checks are not destination-enforced fencing. Multi-resource acquisition is all-or-nothing even for suffix-overlapping names; successful renewals reset their per-lock interval. Provider failures trigger partial-set cleanup while preserving the original error.
-- **In-memory conditional updates**: Expired conditional replace/remove operations return false. Conditional removal reclaims expired entries and raises `ItemExpired`; live conditional removal and empty-list removal free memory immediately without that event. Rejected sized updates preserve the old entry. `Items` exposes values, honoring `CloneValues`, without affecting LRU. Default and built-in fixed-size large-list writes share unchanged storage; batch updates. Custom sizing, cloning, or raw dictionary access uses full dictionary copies. No-op removals avoid copying.
-- **In-memory list comparers**: List updates copy Dictionary, SortedDictionary, SortedList, ConcurrentDictionary, and OrderedDictionary (NET9+) with their comparer. Unsupported IDictionary types throw NotSupportedException instead of silently changing equality; the original entry remains unchanged.
+- **In-memory conditional updates**: Expired `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return false. Conditional removal cleans up the observed expired entry and raises `ItemExpired`; successful live conditional removal and empty-list removal free memory without that event. Size-rejected updates preserve value, TTL, and tracked size.
+- **In-memory numeric TTLs**: `SetIfHigherAsync` and `SetIfLowerAsync` apply the requested expiration even when the numeric value is unchanged. A zero return value does not mean the TTL was preserved; `null` clears it. Size-rejected updates remain unchanged.
+- **In-memory lists and cloning**: List writes preserve supported dictionary types and comparers; copying an unsupported `IDictionary` throws `NotSupportedException` without changing the entry. Batch large updates because cloning, custom sizing, and raw dictionary access can require whole-list copies. `Items` honors `CloneValues` without affecting LRU. Collection snapshots do not isolate shared mutable elements when cloning is disabled. See the [caching guide](https://foundatio.readthedocs.io/guide/caching.html#in-memory-update-behavior) for details.
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
-- **In-memory for tests**: All in-memory implementations are functionally equivalent to production providers. Swap via DI for fast, isolated unit tests with no external dependencies.
+- **In-memory for tests**: Use in-memory implementations for fast, isolated tests, but retain provider integration coverage for serialization, expiration, and concurrency behavior. A common interface does not guarantee identical backend semantics.
 
 ## NuGet Packages
 
@@ -328,7 +331,7 @@ public class OrderServiceTests : TestLoggerBase
 
 ### Serializers
 
-`ITextSerializer` extends `ISerializer` for human-readable formats (JSON). `ISerializer` covers binary formats. Default is `SystemTextJsonSerializer` (included in core).
+`ITextSerializer` extends `ISerializer` for human-readable formats (JSON). `ISerializer` covers binary and text serialization. Default is `SystemTextJsonSerializer` (included in core).
 
 | Package | Provides |
 | ------- | -------- |
