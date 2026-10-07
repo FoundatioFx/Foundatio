@@ -23,7 +23,7 @@ public class InMemoryCacheClientCompactionTests : TestWithLoggingBase
         const int entryCount = 1101;
         const int maximumRemovalsPerPass = 1000;
         const long entrySize = 50;
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o =>
         {
             o.TimeProvider(timeProvider).LoggerFactory(Log);
@@ -60,7 +60,7 @@ public class InMemoryCacheClientCompactionTests : TestWithLoggingBase
         // 10 removals it needs instead of stopping after 20 attempts.
         const int maxItems = 100;
         const int replacementsDuringSelection = 15;
-        var timeProvider = new FakeTimeProvider();
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxItems(maxItems).LoggerFactory(Log));
         int replacements = 0;
         var oldestClock = new ReadHookTimeProvider(timeProvider);
