@@ -360,6 +360,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
+        // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
+        // the store, which lets in-flight updates finish on the next attempt.
         while (true)
         {
             _memory.TryGetValue(key, out var stored);
