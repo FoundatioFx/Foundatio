@@ -101,7 +101,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithFixedSizing(long maxMemorySize, long averageEntrySize)
     {
         Target.MaxMemorySize = maxMemorySize;
-        Target.SizeCalculator = _ => averageEntrySize;
+        Target.SizeCalculator = new FixedSizeCalculator(averageEntrySize).Calculate;
         return this;
     }
 
@@ -170,5 +170,10 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     {
         Target.ShouldThrowOnSerializationError = shouldThrow;
         return this;
+    }
+
+    internal sealed class FixedSizeCalculator(long size)
+    {
+        public long Calculate(object value) => size;
     }
 }
