@@ -583,6 +583,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task UpdateEntry_WithSerializeAfterConflict_RetriesUnderConflictLock()
+    {
+        // Arrange
+        // Runs on every target framework, so both System.Threading.Lock (net9+) and Monitor (net8) are exercised
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+        var heldDuringAttempt = new List<bool>();
+        int attempt = 0;
+
+        // Act
+        long result = cache.UpdateEntry(key: "set", current =>
+        {
+            heldDuringAttempt.Add(cache.IsConflictLockHeld("set"));
+            if (attempt++ == 0)
+                Publish(cache, "set", CreateEntry("concurrent", timeProvider));
+            return (CreateEntry("mine", timeProvider), 1L);
+        }, serializeAfterConflict: true);
+
+        // Assert
+        Assert.Equal(1, result);
+        Assert.Equal([false, true], heldDuringAttempt);
+        Assert.False(cache.IsConflictLockHeld("set"));
+        Assert.Equal("mine", (await cache.GetAsync<string>("set")).Value);
+    }
+
+    [Fact]
     public override Task ListAddAsync_WithConcurrentRequests_DoesNotLoseValues()
     {
         return base.ListAddAsync_WithConcurrentRequests_DoesNotLoseValues();

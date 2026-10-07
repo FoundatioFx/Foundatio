@@ -395,7 +395,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         if (serializeAfterConflict)
         {
-            lock (_conflictLocks[key.GetHashCode() & (ConflictLockCount - 1)])
+            lock (GetConflictLock(key))
             {
                 while (!TryUpdateStoredEntry(key, update, out result)) { }
                 return result;
@@ -412,6 +412,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         (var desired, result) = update(current);
         return ReferenceEquals(desired, current) || TryPublish(key, current, desired);
     }
+
+#if NET9_0_OR_GREATER
+    private System.Threading.Lock GetConflictLock(string key) => _conflictLocks[key.GetHashCode() & (ConflictLockCount - 1)];
+
+    internal bool IsConflictLockHeld(string key) => GetConflictLock(key).IsHeldByCurrentThread;
+#else
+    private object GetConflictLock(string key) => _conflictLocks[key.GetHashCode() & (ConflictLockCount - 1)];
+
+    internal bool IsConflictLockHeld(string key) => Monitor.IsEntered(GetConflictLock(key));
+#endif
 
     private static T[] CreateConflictLocks<T>() where T : new()
     {
