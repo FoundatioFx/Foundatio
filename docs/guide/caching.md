@@ -273,7 +273,9 @@ List updates preserve the collection structure of previously returned snapshots.
 `Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.
 
 ::: tip Large list updates
-Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Lists over 32 items are stored as immutable snapshots, so a small change copies only the parts it touches, with or without a size calculator. Cloning and raw dictionary access (`GetAsync<IDictionary<T, DateTime?>>`) can still require copies proportional to the list size. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+
+A custom `SizeCalculator` receives list values as a read-only `IDictionary<T, DateTime?>` (item to expiration), not a concrete `Dictionary<T, DateTime?>`. Check for the interface, not the concrete type, and don't modify it.
 :::
 
 ### HybridCacheClient

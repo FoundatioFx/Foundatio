@@ -645,7 +645,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         // Arrange
         using var cache = new InMemoryCacheClient(o => o.WithFixedSizing(1000, 1)
-            .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count).MaxEntrySize(64));
+            .SizeCalculator(value => ((IDictionary<int, DateTime?>)value).Count).MaxEntrySize(64));
         await cache.ListAddAsync("set", Enumerable.Range(0, 64));
 
         // Act
@@ -784,6 +784,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException()
     {
         return base.ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException();
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCustomSizeCalculator_ReceivesReadOnlyDictionaryOfCurrentItems()
+    {
+        // Arrange
+        var seen = new List<(int Count, bool IsReadOnly, bool HasNewItem, bool HasRemovedItem)>();
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxMemorySize(100_000_000).SizeCalculator(value =>
+        {
+            if (value is IDictionary<int, DateTime?> list)
+                seen.Add((list.Count, list.IsReadOnly, list.ContainsKey(-1), list.ContainsKey(0)));
+            return 100;
+        }));
+        await cache.ListAddAsync("list", Enumerable.Range(0, 1000));
+        seen.Clear();
+
+        // Act
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [0]);
+
+        // Assert
+        Assert.Equal([(1001, true, true, true), (1000, true, true, false)], seen);
+        var list = await cache.GetListAsync<int>("list");
+        Assert.Equal(1000, list.Value!.Count);
+        var dictionary = await cache.GetAsync<IDictionary<int, DateTime?>>("list");
+        Assert.IsType<Dictionary<int, DateTime?>>(dictionary.Value);
+        Assert.Equal(1000, dictionary.Value!.Count);
     }
 
     [Fact]

@@ -72,7 +72,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
+        _canShareListValues = !_shouldClone;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -601,24 +601,33 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (items.Count is 0)
             return 0;
 
-        var entry = CreateEntry(items, expiresAt);
-        if (entry is null)
-            return 0;
-
         Interlocked.Increment(ref _writes);
 
+        // Sized and cloned only when a path needs the new items on their own, then reused across retries
+        CacheEntry? entry = null;
+        bool entryCreated = false;
         return UpdateEntry(key, current =>
         {
+            if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
+            {
+                var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
+                long listSize = CalculateListSize(list);
+                return listSize < 0 ? (current, 0L) : (current.WithValue(list, list.ExpiresAt, listSize), (long)items.Count);
+            }
+
+            if (!entryCreated)
+            {
+                entry = CreateEntry(items, expiresAt);
+                entryCreated = true;
+            }
+
+            if (entry is null)
+                return (current, 0L); // Entry exceeds limits
+
             if (current is null)
                 return (_canShareListValues && items.Count > ListSnapshot<T>.BlockSize
                     ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
                     : entry, (long)items.Count);
-
-            if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
-            {
-                var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                return (current.WithValue(list, list.ExpiresAt, entry.Size), (long)items.Count);
-            }
 
             if (CopyListValues<T>(current) is not { } dictionary)
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
@@ -633,6 +642,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), (long)items.Count);
         });
+    }
+
+    /// <summary>
+    /// Sizes a shared list through a read-only view, so the calculator sees every item without the list being copied.
+    /// </summary>
+    private long CalculateListSize<T>(ListSnapshot<T> list) where T : notnull
+    {
+        return _hasSizeCalculator ? CalculateEntrySize(list.AsReadOnlyDictionary()) : 0;
     }
 
     private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size) where T : notnull
@@ -704,8 +721,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } list)
             {
                 var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
-                return ReferenceEquals(list, replacement) ? (current, 0L)
-                    : (replacement.Count == 0 ? null : current.WithValue(replacement, replacement.ExpiresAt, current.Size), count);
+                if (ReferenceEquals(list, replacement))
+                    return (current, 0L);
+                if (replacement.Count == 0)
+                    return (null, count);
+
+                long listSize = CalculateListSize(replacement);
+                return listSize < 0 ? (current, 0L) : (current.WithValue(replacement, replacement.ExpiresAt, listSize), count);
             }
 
             object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;

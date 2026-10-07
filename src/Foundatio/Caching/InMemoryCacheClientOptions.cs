@@ -35,6 +35,9 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// <item>Negative return values will cause the entry to be skipped (not cached) with a warning logged</item>
     /// <item>Should be thread-safe as it may be called concurrently</item>
     /// <item>Should handle null values gracefully (typically return 8 bytes for a null reference)</item>
+    /// <item>List values (from <c>ListAddAsync</c>) are passed as a read-only <see cref="System.Collections.Generic.IDictionary{TKey,TValue}"/>
+    /// of item to expiration, not a concrete <see cref="System.Collections.Generic.Dictionary{TKey,TValue}"/>, so the list is not copied on each write.
+    /// Check for the interface, and do not modify it</item>
     /// </list>
     /// </para>
     /// </remarks>
@@ -101,7 +104,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     public InMemoryCacheClientOptionsBuilder WithFixedSizing(long maxMemorySize, long averageEntrySize)
     {
         Target.MaxMemorySize = maxMemorySize;
-        Target.SizeCalculator = new FixedSizeCalculator(averageEntrySize).Calculate;
+        Target.SizeCalculator = _ => averageEntrySize;
         return this;
     }
 
@@ -170,10 +173,5 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     {
         Target.ShouldThrowOnSerializationError = shouldThrow;
         return this;
-    }
-
-    internal sealed class FixedSizeCalculator(long size)
-    {
-        public long Calculate(object value) => size;
     }
 }
