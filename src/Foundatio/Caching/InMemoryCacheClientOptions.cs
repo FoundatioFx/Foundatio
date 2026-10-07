@@ -35,6 +35,7 @@ public class InMemoryCacheClientOptions : SharedOptions
     /// <item>Negative return values will cause the entry to be skipped (not cached) with a warning logged</item>
     /// <item>Should be thread-safe as it may be called concurrently</item>
     /// <item>Should handle null values gracefully (typically return 8 bytes for a null reference)</item>
+    /// <item>Must not call back into the cache: it can run while a lock that serializes contended writes is held</item>
     /// </list>
     /// </para>
     /// </remarks>

@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,7 +26,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
-    private readonly bool _canShareListValues;
+    private readonly bool _sizesListsInPlace;
+    // A power of two, so a key's stripe is a mask of its hash
+    private const int ConflictLockCount = 64;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock[] _conflictLocks = CreateConflictLocks<System.Threading.Lock>();
+#else
+    private readonly object[] _conflictLocks = CreateConflictLocks<object>();
+#endif
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -76,7 +83,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
+        // Only the built-in calculators are known to accept a list's read-only view; custom ones get a Dictionary
+        _sizesListsInPlace = _sizeCalculator?.Target is Utility.SizeCalculator or InMemoryCacheClientOptionsBuilder.FixedSizeCalculator;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -351,7 +359,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <c>null</c> to remove it. It runs again with the latest entry when another writer changes the key first,
     /// so it must not have side effects; only the result of the attempt that was published is returned.
     /// </param>
-    internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
+    /// <param name="serializeAfterConflict">
+    /// After a lost compare-and-swap, take a lock striped by key for the remaining attempts, so writers whose callback
+    /// is expensive (copying a large list) queue instead of each redoing that work. Publishing still uses
+    /// compare-and-swap, so writers that don't take the lock stay correct. The callback, including any custom size
+    /// calculator it invokes, then runs under the lock and must not call back into this cache: waiting on another
+    /// key's stripe could deadlock.
+    /// </param>
+    internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update, bool serializeAfterConflict = false)
     {
         bool reclaimedExpired = false;
         var result = UpdateStoredEntry(key, stored =>
@@ -359,7 +374,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             // Checked once per attempt, so the decision and the event always agree
             reclaimedExpired = stored is { IsExpired: true };
             return update(reclaimedExpired ? null : stored);
-        });
+        }, serializeAfterConflict);
 
         if (reclaimedExpired)
             OnItemExpired(key);
@@ -371,17 +386,50 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// Like <see cref="UpdateEntry{TResult}"/>, but the callback sees the stored entry even when it has expired, and
     /// no event is raised. Only maintenance, compaction and explicit removal need this view.
     /// </summary>
-    private TResult UpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
+    private TResult UpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update, bool serializeAfterConflict = false)
     {
         // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
         // the store, which lets in-flight updates finish on the next attempt.
-        while (true)
+        if (TryUpdateStoredEntry(key, update, out var result))
+            return result;
+
+        if (serializeAfterConflict)
         {
-            _memory.TryGetValue(key, out var current);
-            var (desired, result) = update(current);
-            if (ReferenceEquals(desired, current) || TryPublish(key, current, desired))
+            lock (GetConflictLock(key))
+            {
+                while (!TryUpdateStoredEntry(key, update, out result)) { }
                 return result;
+            }
         }
+
+        while (!TryUpdateStoredEntry(key, update, out result)) { }
+        return result;
+    }
+
+    private bool TryUpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update, out TResult result)
+    {
+        _memory.TryGetValue(key, out var current);
+        (var desired, result) = update(current);
+        return ReferenceEquals(desired, current) || TryPublish(key, current, desired);
+    }
+
+#if NET9_0_OR_GREATER
+    private System.Threading.Lock GetConflictLock(string key) => _conflictLocks[key.GetHashCode() & (ConflictLockCount - 1)];
+
+    internal bool IsConflictLockHeld(string key) => GetConflictLock(key).IsHeldByCurrentThread;
+#else
+    private object GetConflictLock(string key) => _conflictLocks[key.GetHashCode() & (ConflictLockCount - 1)];
+
+    internal bool IsConflictLockHeld(string key) => Monitor.IsEntered(GetConflictLock(key));
+#endif
+
+    private static T[] CreateConflictLocks<T>() where T : new()
+    {
+        var locks = new T[ConflictLockCount];
+        for (int i = 0; i < locks.Length; i++)
+            locks[i] = new T();
+
+        return locks;
     }
 
     /// <summary>
@@ -619,24 +667,37 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (items.Count is 0)
             return 0;
 
-        var entry = CreateEntry(items, expiresAt);
-        if (entry is null)
-            return 0;
-
         Interlocked.Increment(ref _writes);
 
+        // Sized and cloned only when a path needs the new items on their own, then reused across retries
+        CacheEntry? entry = null;
+        bool entryCreated = false;
         return UpdateEntry(key, current =>
         {
-            if (current is null)
-                return (_canShareListValues && items.Count > ListSnapshot<T>.BlockSize
-                    ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
-                    : entry, (long)items.Count);
-
-            if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
+            if (current?.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } stored)
             {
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                return (current.WithValue(list, list.ExpiresAt, entry.Size), (long)items.Count);
+                if (ReferenceEquals(list, stored))
+                    return (current, (long)items.Count);
+
+                long listSize = CalculateListSize(list);
+                return listSize < 0 ? (current, 0L) : (current.WithValue(list, list.ExpiresAtUtc, listSize), (long)items.Count);
             }
+
+            if (!entryCreated)
+            {
+                // Items that can be shared need no clone: the dictionary is private to this call
+                entry = CreateEntry(items, expiresAt, cloneValue: !CanShareListValues<T>());
+                entryCreated = true;
+            }
+
+            if (entry is null)
+                return (current, 0L); // Entry exceeds limits
+
+            if (current is null)
+                return (CanShareListValues<T>() && items.Count > ListSnapshot<T>.BlockSize
+                    ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
+                    : entry, (long)items.Count);
 
             if (CopyListValues<T>(current) is not { } dictionary)
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
@@ -650,12 +711,36 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return size < 0
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), (long)items.Count);
-        });
+        }, serializeAfterConflict: true);
+    }
+
+    /// <summary>
+    /// Whether list writes can keep an immutable <see cref="ListSnapshot{T}"/> instead of copying the whole list.
+    /// With cloning on, only items that never need cloning (strings and value types without references) can be shared:
+    /// raw dictionary reads still clone the materialized dictionary, and items can't be changed through it.
+    /// </summary>
+    private bool CanShareListValues<T>() where T : notnull => !_shouldClone || !ListItemCloning<T>.Required;
+
+    private static class ListItemCloning<T>
+    {
+        public static readonly bool Required = typeof(T) != typeof(string) && RuntimeHelpers.IsReferenceOrContainsReferences<T>();
+    }
+
+    /// <summary>
+    /// Sizes a shared list. The built-in calculators read it through a read-only view, so it isn't copied; a custom
+    /// calculator gets its own <see cref="Dictionary{TKey,TValue}"/>, as it always has, since it may cast to it.
+    /// </summary>
+    private long CalculateListSize<T>(ListSnapshot<T> list) where T : notnull
+    {
+        if (!_hasSizeCalculator)
+            return 0;
+
+        return CalculateEntrySize(_sizesListsInPlace ? list.AsReadOnlyDictionary() : list.ToDictionary());
     }
 
     private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size) where T : notnull
     {
-        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
+        object value = CanShareListValues<T>() && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
             ? new ListSnapshot<T>(values)
             : dictionary;
         return current.WithValue(value, GetListExpiration(dictionary), size);
@@ -719,11 +804,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     {
         long removed = UpdateEntry(key, current =>
         {
-            if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } list)
+            if (current?.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } list)
             {
                 var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
-                return ReferenceEquals(list, replacement) ? (current, 0L)
-                    : (replacement.Count == 0 ? null : current.WithValue(replacement, replacement.ExpiresAt, current.Size), count);
+                if (ReferenceEquals(list, replacement))
+                    return (current, 0L);
+                if (replacement.Count == 0)
+                    return (null, count);
+
+                long listSize = CalculateListSize(replacement);
+                return listSize < 0 ? (current, 0L) : (current.WithValue(replacement, replacement.ExpiresAtUtc, listSize), count);
             }
 
             object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;
@@ -749,7 +839,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return size < 0
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), removedCount);
-        });
+        }, serializeAfterConflict: true);
 
         if (removed > 0)
             _logger.LogTrace("Removed value from set with cache key: {Key}", key);
@@ -764,7 +854,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (page is < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page cannot be less than 1");
 
-        if (_memory.TryGetValue(key, out var entry) && !entry.IsExpired && entry.StoredValue is ListSnapshot<T> { Snapshot: null } list)
+        if (_memory.TryGetValue(key, out var entry) && !entry.IsExpired && entry.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } list)
         {
             Interlocked.Increment(ref _hits);
             entry.RecordAccess();
@@ -1367,244 +1457,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <summary>
     /// Creates a CacheEntry with pre-calculated size. Returns null if the entry should be skipped (exceeds size limits).
     /// </summary>
-    private CacheEntry? CreateEntry<T>(T value, DateTime? expiresAt)
+    private CacheEntry? CreateEntry<T>(T value, DateTime? expiresAt, bool cloneValue = true)
     {
         long size = _hasSizeCalculator ? CalculateEntrySize(value) : 0;
         if (size < 0)
             return null;
 
-        return new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, size);
+        return new CacheEntry(value, expiresAt, _timeProvider, _shouldClone, size, cloneValue);
     }
 
-    private interface IListSnapshot
-    {
-        object GetSnapshot();
-    }
-
-    // Updates copy one bounded block and the block directory, not the entire list. The immutable
-    // key index shares unchanged nodes. Raw dictionary reads retain their existing public shape.
-    private sealed class ListSnapshot<T> : IListSnapshot where T : notnull
-    {
-        public const int BlockSize = 32;
-        private ImmutableDictionary<T, int>? _indices;
-        private readonly Dictionary<T, DateTime?>? _initialValues;
-        private readonly Item[][] _blocks;
-        private readonly ImmutableSortedDictionary<DateTime, int> _expirations;
-        private readonly ImmutableStack<int> _freeIndices;
-        private readonly int _nextIndex;
-        private readonly int _permanentCount;
-        private Dictionary<T, DateTime?>? _snapshot;
-
-        private readonly record struct Item(T Key, DateTime? Expiration, bool Present);
-
-        public ListSnapshot(Dictionary<T, DateTime?> values)
-        {
-            _initialValues = values;
-            var expirations = ImmutableSortedDictionary.CreateBuilder<DateTime, int>();
-            _blocks = new Item[(values.Count + BlockSize - 1) / BlockSize][];
-            for (int i = 0; i < _blocks.Length; i++)
-                _blocks[i] = new Item[BlockSize];
-            foreach (var pair in values)
-            {
-                _blocks[_nextIndex / BlockSize][_nextIndex % BlockSize] = new Item(pair.Key, pair.Value, true);
-                _nextIndex++;
-                if (pair.Value is { } expiration)
-                    expirations[expiration] = expirations.GetValueOrDefault(expiration) + 1;
-                else
-                    _permanentCount++;
-            }
-            _expirations = expirations.ToImmutable();
-            _freeIndices = ImmutableStack<int>.Empty;
-        }
-
-        private ListSnapshot(ImmutableDictionary<T, int> indices, Item[][] blocks,
-            ImmutableSortedDictionary<DateTime, int> expirations, ImmutableStack<int> freeIndices, int nextIndex, int permanentCount)
-        {
-            _indices = indices;
-            _blocks = blocks;
-            _expirations = expirations;
-            _freeIndices = freeIndices;
-            _nextIndex = nextIndex;
-            _permanentCount = permanentCount;
-        }
-
-        public int Count => _indices?.Count ?? _initialValues!.Count;
-        private ImmutableDictionary<T, int> Indices
-        {
-            get
-            {
-                if (Volatile.Read(ref _indices) is { } existing)
-                    return existing;
-
-                var builder = ImmutableDictionary.CreateBuilder<T, int>(_initialValues!.Comparer);
-                int index = 0;
-                foreach (var key in _initialValues.Keys)
-                    builder.Add(key, index++);
-                var indices = builder.ToImmutable();
-                return Interlocked.CompareExchange(ref _indices, indices, null) ?? indices;
-            }
-        }
-
-        public Dictionary<T, DateTime?>? Snapshot => Volatile.Read(ref _snapshot);
-        public DateTime? ExpiresAt => _permanentCount > 0 || _expirations.IsEmpty ? null : _expirations.Last().Key;
-
-        public T[] Read(DateTime utcNow)
-        {
-            var result = new T[Count];
-            int count = 0;
-            foreach (var block in _blocks)
-                foreach (var item in block)
-                    if (item.Present && (item.Expiration is null || item.Expiration >= utcNow))
-                        result[count++] = item.Key;
-            if (count != result.Length)
-                Array.Resize(ref result, count);
-            return result;
-        }
-
-        public object GetSnapshot()
-        {
-            if (Snapshot is { } snapshot)
-                return snapshot;
-
-            if (_initialValues is not null)
-                return Interlocked.CompareExchange(ref _snapshot, _initialValues, null) ?? _initialValues;
-
-            var dictionary = CopyValues();
-            return Interlocked.CompareExchange(ref _snapshot, dictionary, null) ?? dictionary;
-        }
-
-        private Dictionary<T, DateTime?> CopyValues()
-        {
-            if (_initialValues is not null)
-                return new Dictionary<T, DateTime?>(_initialValues, _initialValues.Comparer);
-
-            var dictionary = new Dictionary<T, DateTime?>(Count, Indices.KeyComparer);
-            foreach (var block in _blocks)
-                foreach (var item in block)
-                    if (item.Present)
-                        dictionary.Add(item.Key, item.Expiration);
-            return dictionary;
-        }
-
-        public ListSnapshot<T> Update(ICollection<T> items, DateTime? expiration, DateTime utcNow, bool remove, out long removed)
-        {
-            removed = 0;
-            bool prune = !_expirations.IsEmpty && _expirations.First().Key < utcNow;
-            if (remove && !prune && !items.Any(key => _initialValues?.ContainsKey(key) ?? Indices.ContainsKey(key)))
-                return this;
-
-            // When a batch could copy every block, one dictionary copy is cheaper than
-            // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
-            if (items.Count >= Math.Max(1, Count / BlockSize))
-            {
-                var dictionary = CopyValues();
-                if (prune)
-                    foreach (var key in dictionary.Where(pair => pair.Value < utcNow).Select(pair => pair.Key).ToArray())
-                        dictionary.Remove(key);
-                if (remove)
-                    removed = items.Count(dictionary.Remove);
-                else
-                    foreach (var key in items)
-                        dictionary[key] = expiration;
-                return new ListSnapshot<T>(dictionary);
-            }
-
-            var indices = Indices.ToBuilder();
-            int capacity = Math.Max(_nextIndex, Count + (remove ? 0 : items.Count));
-            var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
-            Array.Copy(_blocks, blocks, _blocks.Length);
-            var copied = new bool[blocks.Length];
-            ImmutableSortedDictionary<DateTime, int>.Builder? expirations = null;
-            var freeIndices = _freeIndices;
-            int nextIndex = _nextIndex;
-            int permanentCount = _permanentCount;
-            bool changed = false;
-
-            if (prune)
-                foreach (var block in _blocks)
-                    foreach (var item in block)
-                        if (item.Present && item.Expiration < utcNow)
-                            Remove(item.Key);
-
-            foreach (var item in items)
-            {
-                if (remove)
-                {
-                    if (Remove(item))
-                        removed++;
-                    continue;
-                }
-
-                T key = item;
-                bool exists = indices.TryGetValue(key, out int index);
-                if (exists)
-                {
-                    var previous = blocks[index / BlockSize][index % BlockSize];
-                    if (previous.Expiration == expiration)
-                        continue;
-                    key = previous.Key;
-                    AdjustExpiration(previous.Expiration, -1);
-                }
-                else if (!freeIndices.IsEmpty)
-                {
-                    index = freeIndices.Peek();
-                    freeIndices = freeIndices.Pop();
-                }
-                else
-                    index = nextIndex++;
-
-                CopyBlock(index);
-                blocks[index / BlockSize][index % BlockSize] = new Item(key, expiration, true);
-                indices[key] = index;
-                AdjustExpiration(expiration, 1);
-            }
-
-            if (!changed)
-                return this;
-
-            int blockCount = (nextIndex + BlockSize - 1) / BlockSize;
-            if (blocks.Length != blockCount)
-                Array.Resize(ref blocks, blockCount);
-            return new ListSnapshot<T>(indices.ToImmutable(), blocks, expirations?.ToImmutable() ?? _expirations, freeIndices, nextIndex, permanentCount);
-
-            bool Remove(T key)
-            {
-                if (!indices.TryGetValue(key, out int index))
-                    return false;
-                CopyBlock(index);
-                AdjustExpiration(blocks[index / BlockSize][index % BlockSize].Expiration, -1);
-                blocks[index / BlockSize][index % BlockSize] = default;
-                indices.Remove(key);
-                freeIndices = freeIndices.Push(index);
-                return true;
-            }
-
-            void CopyBlock(int index)
-            {
-                int blockIndex = index / BlockSize;
-                if (copied[blockIndex])
-                    return;
-                blocks[blockIndex] = blockIndex < _blocks.Length ? (Item[])_blocks[blockIndex].Clone() : new Item[BlockSize];
-                copied[blockIndex] = true;
-                changed = true;
-            }
-
-            void AdjustExpiration(DateTime? value, int delta)
-            {
-                if (value is not { } time)
-                {
-                    permanentCount += delta;
-                    return;
-                }
-                expirations ??= _expirations.ToBuilder();
-                int count = expirations.GetValueOrDefault(time) + delta;
-                if (count == 0)
-                    expirations.Remove(time);
-                else
-                    expirations[time] = count;
-            }
-        }
-    }
 
     /// <summary>
     /// A cache entry's value, expiration and size never change after it is published to the cache dictionary;
@@ -1629,11 +1490,13 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private long _usageCount;
 #endif
 
-        public CacheEntry(object? value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true, long size = 0)
+        // cloneValue: false stores a value nothing else references and whose contents never need cloning as-is;
+        // reads still clone when shouldClone applies
+        public CacheEntry(object? value, DateTime? expiresAt, TimeProvider timeProvider, bool shouldClone = true, long size = 0, bool cloneValue = true)
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
-            _cacheValue = _shouldClone ? value.DeepClone() : value;
+            _cacheValue = _shouldClone && cloneValue ? value.DeepClone() : value;
             var utcNow = _timeProvider.GetUtcNow();
             LastAccessTicks = utcNow.Ticks;
             LastModifiedTicks = utcNow.Ticks;
