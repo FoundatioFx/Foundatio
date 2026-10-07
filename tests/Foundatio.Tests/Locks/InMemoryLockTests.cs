@@ -150,6 +150,7 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         // Arrange
         const int allowedLocks = 25;
         var period = TimeSpan.FromSeconds(2);
+        // A fixed start aligned to the throttling period, so the boundary below is deterministic
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
         var locker = new ThrottlingLockProvider(cache, allowedLocks, period, timeProvider, null, Log);
