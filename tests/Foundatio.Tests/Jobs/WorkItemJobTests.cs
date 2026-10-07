@@ -7,7 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
+using Foundatio.Caching;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
@@ -333,6 +335,120 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(0, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
+    }
+
+    [Theory]
+    [InlineData(LostLeaseResponse.Throw)]
+    [InlineData(LostLeaseResponse.ReturnEarly)]
+    [InlineData(LostLeaseResponse.SwallowCancellation)]
+    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsLost_CancelsHandlerAndAbandonsEntry(LostLeaseResponse response)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        var handler = new LockedWorkItemHandler(locker, Log, response: response) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+
+        // Act
+        var result = await job.RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.True(handler.ObservedCancellation);
+        Assert.False(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Abandoned);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsHeld_DoesNotCancelHandler()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        var handler = new LockedWorkItemHandler(locker, Log, loseLock: false) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+
+        // Act
+        var result = await job.RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.False(handler.ObservedCancellation);
+        Assert.True(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Completed);
+    }
+}
+
+public enum LostLeaseResponse
+{
+    Throw,
+    ReturnEarly,
+    SwallowCancellation
+}
+
+public class LockedWorkItemHandler : WorkItemHandlerBase
+{
+    private readonly ILockProvider _locker;
+    private readonly bool _loseLock;
+    private readonly LostLeaseResponse _response;
+
+    public LockedWorkItemHandler(ILockProvider locker, ILoggerFactory loggerFactory, bool loseLock = true, LostLeaseResponse response = LostLeaseResponse.Throw) : base(loggerFactory)
+    {
+        _locker = locker;
+        _loseLock = loseLock;
+        _response = response;
+    }
+
+    public bool ObservedCancellation { get; private set; }
+    public bool CompletedWork { get; private set; }
+
+    public override Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
+    {
+        return _locker.TryAcquireAsync("work-item", TimeSpan.FromMinutes(1), cancellationToken: cancellationToken);
+    }
+
+    public override async Task HandleItemAsync(WorkItemContext context)
+    {
+        Assert.NotNull(context.WorkItemLock);
+        if (_loseLock)
+            await _locker.ReleaseAsync(context.WorkItemLock.Resource);
+
+        await context.ReportProgressAsync(50);
+        ObservedCancellation = context.CancellationToken.IsCancellationRequested;
+        switch (_response)
+        {
+            case LostLeaseResponse.ReturnEarly when ObservedCancellation:
+                return;
+            case LostLeaseResponse.SwallowCancellation:
+                try
+                {
+                    context.CancellationToken.ThrowIfCancellationRequested();
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                break;
+            default:
+                context.CancellationToken.ThrowIfCancellationRequested();
+                break;
+        }
+
+        CompletedWork = true;
     }
 }
 

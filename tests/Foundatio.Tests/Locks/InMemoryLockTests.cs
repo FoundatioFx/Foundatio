@@ -33,93 +33,9 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override Task AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync()
-    {
-        return base.AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
-    {
-        return base.AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
-    {
-        return base.AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
-    {
-        return base.AcquireAsync_ThrowsWhenLockNotAvailableAsync();
-    }
-
-    [Fact]
-    public override Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
-    {
-        return base.AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose();
-    }
-
-    [Fact]
     public override Task CanAcquireAndReleaseLockAsync()
     {
         return base.CanAcquireAndReleaseLockAsync();
-    }
-
-    [Fact]
-    public override Task CanAcquireLocksInParallel()
-    {
-        return base.CanAcquireLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleLocksInParallel()
-    {
-        return base.CanAcquireMultipleLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleResources()
-    {
-        return base.CanAcquireMultipleResources();
-    }
-
-    [Fact]
-    public override Task CanAcquireMultipleScopedResources()
-    {
-        return base.CanAcquireMultipleScopedResources();
-    }
-
-    [Fact]
-    public override Task CanAcquireScopedLocksInParallel()
-    {
-        return base.CanAcquireScopedLocksInParallel();
-    }
-
-    [Fact]
-    public override Task CanReleaseLockMultipleTimes()
-    {
-        return base.CanReleaseLockMultipleTimes();
-    }
-
-    [Fact]
-    public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
-    {
-        return base.Lock_AcquiredTimeUtc_ReturnsValidTimestamp();
-    }
-
-    [Fact]
-    public override Task Lock_LockIdAndResource_ReturnCorrectValues()
-    {
-        return base.Lock_LockIdAndResource_ReturnCorrectValues();
-    }
-
-    [Fact]
-    public override Task LockOneAtATimeAsync()
-    {
-        return base.LockOneAtATimeAsync();
     }
 
     [Fact]
@@ -135,9 +51,148 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
+    public override Task LockOneAtATimeAsync()
+    {
+        return base.LockOneAtATimeAsync();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleResources()
+    {
+        return base.CanAcquireMultipleResources();
+    }
+
+    [Fact]
+    public override Task CanAcquireLocksInParallel()
+    {
+        return base.CanAcquireLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireScopedLocksInParallel()
+    {
+        return base.CanAcquireScopedLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleLocksInParallel()
+    {
+        return base.CanAcquireMultipleLocksInParallel();
+    }
+
+    [Fact]
+    public override Task CanAcquireMultipleScopedResources()
+    {
+        return base.CanAcquireMultipleScopedResources();
+    }
+
+    [Fact]
+    public override Task WillThrottleCallsAsync()
+    {
+        return base.WillThrottleCallsAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync()
+    {
+        return base.AcquireAsync_AfterPeriodExhausted_RecoversWithinNextPeriodAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_ThrowsWhenLockNotAvailableAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenLockNotAvailableAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync()
+    {
+        return base.AcquireAsync_ThrowsWhenCancellationTokenCancelledAsync();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync()
+    {
+        return base.AcquireAsync_MultiResource_ThrowsWhenAnyLockUnavailableAsync();
+    }
+
+    [Fact]
+    public override Task CanReleaseLockMultipleTimes()
+    {
+        return base.CanReleaseLockMultipleTimes();
+    }
+
+    [Fact]
+    public override Task AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose()
+    {
+        return base.AcquireAsync_WithReleaseOnDisposeFalse_DoesNotReleaseOnDispose();
+    }
+
+    [Fact]
+    public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
+    {
+        return base.Lock_AcquiredTimeUtc_ReturnsValidTimestamp();
+    }
+
+    [Fact]
+    public override Task Lock_LockIdAndResource_ReturnCorrectValues()
+    {
+        return base.Lock_LockIdAndResource_ReturnCorrectValues();
+    }
+
+    [Fact]
     public override Task ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId()
     {
         return base.ReleaseAsync_WithForceRelease_ReleasesLockWithoutLockId();
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_WithExhaustedPeriod_WaitsForNextPeriod()
+    {
+        // Arrange
+        const int allowedLocks = 25;
+        var period = TimeSpan.FromSeconds(2);
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var locker = new ThrottlingLockProvider(cache, allowedLocks, period, timeProvider, null, Log);
+        for (int i = 0; i < allowedLocks; i++)
+        {
+            await using var hit = await locker.TryAcquireAsync("resource", cancellationToken: TestCancellationToken);
+            Assert.NotNull(hit);
+        }
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+
+        // Act
+        var waiting = locker.TryAcquireAsync("resource", cancellationToken: cancellation.Token);
+        try
+        {
+            bool waitsForQuota = !waiting.IsCompleted;
+            timeProvider.Advance(period - TimeSpan.FromMilliseconds(1));
+            bool waitsBeforeBoundary = !waiting.IsCompleted;
+            bool exhaustedBeforeBoundary = await locker.IsLockedAsync("resource");
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            bool exhaustedAtBoundary = await locker.IsLockedAsync("resource");
+            // The provider wakes one millisecond after the boundary to avoid early system-timer wakeups.
+            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
+            await using var nextPeriodHit = await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            Assert.True(waitsForQuota);
+            Assert.True(waitsBeforeBoundary);
+            Assert.True(exhaustedBeforeBoundary);
+            Assert.False(exhaustedAtBoundary);
+            Assert.NotNull(nextPeriodHit);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+        }
+    }
+
+    [Fact]
+    public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
+    {
+        return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
     }
 
     [Fact]
@@ -228,55 +283,41 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.RenewAsync_WithMissingLock_ThrowsLockException();
     }
 
+    [Fact]
+    public async Task RenewAsync_WithMultipleResources_WhenFirstLockThrowsSynchronously_AttemptsEveryRenewal()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var error = new CacheException("Provider unavailable");
+        var first = new Mock<ILock>();
+        first.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Throws(error);
+        var second = new Mock<ILock>();
+        second.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", first.Object), ("b", second.Object));
+        await using var lockInstance = await locker.Object.TryAcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        Assert.NotNull(lockInstance);
+
+        // Act
+        var thrown = await Assert.ThrowsAsync<CacheException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.Same(error, thrown);
+        Assert.Equal(0, lockInstance.RenewalCount);
+        second.Verify(l => l.RenewAsync(It.IsAny<TimeSpan?>()), Times.Once);
+    }
+
+    [Fact]
+    public override Task RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
+    {
+        return base.RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public override Task RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(bool scoped)
     {
         return base.RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(scoped);
-    }
-
-    [Fact]
-    public async Task TryAcquireAsync_WithExhaustedPeriod_WaitsForNextPeriod()
-    {
-        // Arrange
-        const int allowedLocks = 25;
-        var period = TimeSpan.FromSeconds(2);
-        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
-        var locker = new ThrottlingLockProvider(cache, allowedLocks, period, timeProvider, null, Log);
-        for (int i = 0; i < allowedLocks; i++)
-        {
-            await using var hit = await locker.TryAcquireAsync("resource", cancellationToken: TestCancellationToken);
-            Assert.NotNull(hit);
-        }
-        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
-
-        // Act
-        var waiting = locker.TryAcquireAsync("resource", cancellationToken: cancellation.Token);
-        try
-        {
-            bool waitsForQuota = !waiting.IsCompleted;
-            timeProvider.Advance(period - TimeSpan.FromMilliseconds(1));
-            bool waitsBeforeBoundary = !waiting.IsCompleted;
-            bool exhaustedBeforeBoundary = await locker.IsLockedAsync("resource");
-            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
-            bool exhaustedAtBoundary = await locker.IsLockedAsync("resource");
-            // The provider wakes one millisecond after the boundary to avoid early system-timer wakeups.
-            timeProvider.Advance(TimeSpan.FromMilliseconds(1));
-            await using var nextPeriodHit = await waiting.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
-
-            // Assert
-            Assert.True(waitsForQuota);
-            Assert.True(waitsBeforeBoundary);
-            Assert.True(exhaustedBeforeBoundary);
-            Assert.False(exhaustedAtBoundary);
-            Assert.NotNull(nextPeriodHit);
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-        }
     }
 
     [Fact]
@@ -387,21 +428,70 @@ public class InMemoryLockTests : LockTestBase, IDisposable
     }
 
     [Fact]
-    public override Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
+    public async Task TryAcquireAsync_WithMultipleResources_WhenRenewalLosesLockAndProviderThrows_ReturnsNullAndReleasesAcquiredLocks()
     {
-        return base.TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock();
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var providerError = new CacheException("Provider unavailable");
+        var lost = new Mock<ILock>();
+        lost.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(new LockException("Lock lost"));
+        lost.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var failing = new Mock<ILock>();
+        failing.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(providerError);
+        failing.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var last = new Mock<ILock>();
+        last.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", lost.Object), ("b", failing.Object), ("c", last.Object));
+        locker.Setup(p => p.TryAcquireAsync("c", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(() =>
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(31));
+            return Task.FromResult<ILock?>(last.Object);
+        });
+
+        // Act
+        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.Null(lockInstance);
+        lost.Verify(l => l.ReleaseAsync(), Times.Once);
+        failing.Verify(l => l.ReleaseAsync(), Times.Once);
+        last.Verify(l => l.ReleaseAsync(), Times.Once);
     }
 
     [Fact]
-    public override Task WillThrottleCallsAsync()
+    public async Task TryAcquireAsync_WithMultipleResources_WhenUnavailableAndReleaseThrows_ReturnsNullAndAttemptsEveryRelease()
     {
-        return base.WillThrottleCallsAsync();
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var first = new Mock<ILock>();
+        first.Setup(l => l.ReleaseAsync()).Throws(new CacheException("Release unavailable"));
+        var second = new Mock<ILock>();
+        second.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", first.Object), ("b", second.Object), ("c", null));
+
+        // Act
+        var lockInstance = await locker.Object.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Assert
+        Assert.Null(lockInstance);
+        first.Verify(l => l.ReleaseAsync(), Times.Once);
+        second.Verify(l => l.ReleaseAsync(), Times.Once);
     }
 
     public void Dispose()
     {
         _cache.Dispose();
         _messageBus.Dispose();
+    }
+
+    private static Mock<ILockProvider> CreateMockLockProvider(TimeProvider timeProvider, params (string Resource, ILock? Lock)[] locks)
+    {
+        var locker = new Mock<ILockProvider>();
+        locker.As<IHaveTimeProvider>().SetupGet(p => p.TimeProvider).Returns(timeProvider);
+        foreach (var (resource, lockInstance) in locks)
+            locker.Setup(p => p.TryAcquireAsync(resource, It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(lockInstance);
+
+        return locker;
     }
 
     private sealed class BeforeAcquireLockProvider(ILockProvider inner, TimeProvider timeProvider, Func<string, Task> beforeAcquire) : ILockProvider, IHaveTimeProvider

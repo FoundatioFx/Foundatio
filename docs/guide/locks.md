@@ -256,8 +256,12 @@ After a process pause or network outage, renewal can succeed if the lease is sti
 
 A supplied renewal duration must be at least 5 milliseconds; a shorter duration throws `ArgumentOutOfRangeException` without changing the cache. Omitting the duration uses 20 minutes. Renewal is a no-op for `ThrottlingLockProvider` and `EmptyLock`; these do not provide renewable exclusive leases.
 
-::: warning Behavior change
-Earlier versions of `CacheLockProvider.RenewAsync` returned successfully even when renewal failed, and could revive an expired lock. Rejecting renewal durations below 5 milliseconds is also new; the cache already enforced this minimum, but previously could remove the key before checking ownership.
+::: danger Breaking changes
+- `CacheLockProvider.RenewAsync` throws `LockException` when renewal fails. Earlier versions returned successfully, and could revive an expired lock. Renewal called from an `async void` method or timer callback that doesn't catch it will crash the process; observe renewal in an awaited task as shown below.
+- `RenewAsync` throws `ArgumentOutOfRangeException` for durations under 5 milliseconds. The cache already enforced this minimum, but `RenewAsync(TimeSpan.Zero)` used to delete the lock before ownership was checked; it now throws and leaves the lock unchanged. A multi-resource acquisition with `timeUntilExpires` under 5 milliseconds can throw the same exception when it renews earlier locks.
+- Multi-resource `AcquireAsync` throws `LockAcquisitionTimeoutException` when an earlier lease is lost while waiting for the remaining resources; `TryAcquireAsync` returns `null`.
+- `ScopedLockProvider.RenewAsync` must be passed the held lock's `ILock.Resource`, which includes the scope, and `ILock.LockId`. Renewing with the unscoped resource name used to succeed silently without renewing anything; it now throws `LockException`.
+- `WorkItemContext.CancellationToken` is a token linked to the job's token, cancelled also when `AutoRenewLockOnProgress` detects a lost work item lock. Compare it by cancellation state, not by identity with the job token.
 :::
 
 A lock is not a fencing token. Losing it cannot cancel work you already sent to another system. Checking ownership before a write leaves a race between the check and the write; only validation enforced by the destination can fence a stale owner. Make operations idempotent where appropriate, but do not treat idempotency as exclusive ownership.
@@ -291,7 +295,6 @@ async Task RenewPeriodicallyAsync()
         while (true)
         {
             await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-            cts.Token.ThrowIfCancellationRequested();
             await lck.RenewAsync(TimeSpan.FromMinutes(1));
         }
     }
@@ -310,9 +313,13 @@ async Task RenewPeriodicallyAsync()
 
 The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. An in-flight renewal has no cancellation-token parameter, so shutdown waits for that cache operation; configure provider timeouts.
 
-Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
+Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system.
 
-When acquiring multiple resources, success means every requested lock was acquired. If any resource is unavailable, the provider releases the partial set and returns `null`, including when resource names share a suffix. Provider exceptions also trigger release attempts for every acquired lock before propagating the error. If cleanup fails too, the original acquisition error is preserved and the cleanup failure is logged; the affected leases may remain until expiration. While acquisition is in progress, each successful renewal resets that lock's renewal interval.
+`WorkItemJob` applies this pattern when a handler sets `AutoRenewLockOnProgress`. Each `ReportProgressAsync` call renews the queue entry and the work item lock. Renewal errors are logged and progress reporting continues. If the work item lock is lost (`LockException`), `WorkItemContext.CancellationToken` is cancelled, and the job abandons the queue entry for retry instead of completing it, whether the handler throws, returns early, or swallows the cancellation. A handler that ignores the token keeps running unprotected until it returns. A failed queue entry renewal is only logged: queues don't report a definite loss, and while the work item lock is held a redelivered entry can't be processed concurrently.
+
+When acquiring multiple resources, success means every requested lock was acquired. If any resource is unavailable, the provider releases the partial set and returns `null`, including when resource names share a suffix. While acquisition is in progress, earlier locks are renewed once their renewal interval elapses. A lost lease (`LockException`) makes acquisition return `null`, and it takes precedence over a provider error when both occur, because the loss is definite; the provider error is logged. Otherwise a provider error is propagated. Either way, release is attempted for every acquired lock. Cleanup failures are logged rather than thrown, so callers still receive `null` or the original error; any lease that could not be released remains until it expires.
+
+Renewing a multi-resource lock renews every member, even if one fails. If a member's lease was lost, `RenewAsync` throws `LockException`, even when another member also hit a provider error (that error is logged). `RenewalCount` increases only when every member renews.
 
 ## Common Patterns
 

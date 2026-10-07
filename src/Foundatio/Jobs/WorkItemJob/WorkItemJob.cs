@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
@@ -126,22 +127,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
+        using var workItemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
         {
             if (handler.AutoRenewLockOnProgress)
-            {
-                try
-                {
-                    await Task.WhenAll(
-                        queueEntry.RenewLockAsync(),
-                        lockValue.RenewAsync()
-                    ).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
-                }
-            }
+                await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, workItemCancellation).AnyContext();
 
             await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
             handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
@@ -150,8 +140,20 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback);
+            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, workItemCancellation.Token, progressCallback);
             await handler.HandleItemAsync(workItemContext).AnyContext();
+
+            // A handler that stops cooperatively after a lost lease (returning early or swallowing the cancellation)
+            // hasn't finished the work, and another worker may now own it: never acknowledge it
+            if (workItemCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                    await queueEntry.AbandonAsync().AnyContext();
+
+                var lostResult = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Lost work item lease in handler {workItemDataType.Name}");
+                activity?.SetErrorStatus(message: lostResult.Message);
+                return lostResult;
+            }
 
             if (!workItemContext.Result.IsSuccess)
             {
@@ -192,6 +194,52 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             await lockValue.ReleaseAsync().AnyContext();
         }
+    }
+
+    /// <summary>
+    /// Renews the queue entry and work item locks. Renewal errors are logged so progress reporting continues,
+    /// but a lost work item lock cancels <see cref="WorkItemContext.CancellationToken"/> because another
+    /// process may now own the work, and the job then abandons the entry instead of completing it.
+    /// </summary>
+    /// <remarks>
+    /// A failed queue entry renewal doesn't cancel the work item: queues report only provider errors, not a definite
+    /// loss, and while the work item lock is held a redelivered entry can't be processed concurrently because its
+    /// worker fails to acquire the same lock and abandons it.
+    /// </remarks>
+    private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, CancellationTokenSource workItemCancellation)
+    {
+        var queueEntryRenewal = RenewQueueEntryLockAsync();
+        var workItemLockRenewal = RenewWorkItemLockAsync();
+
+        try
+        {
+            await Task.WhenAll(queueEntryRenewal, workItemLockRenewal).AnyContext();
+        }
+        catch (Exception ex) when (workItemLockRenewal.Exception?.InnerException is not LockException)
+        {
+            handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
+        }
+        catch
+        {
+            if (queueEntryRenewal.Exception?.InnerException is { } queueError)
+                handler.Log.LogError(queueError, "Error renewing queue entry lock: {Message}", queueError.Message);
+        }
+
+        if (workItemLockRenewal.Exception?.InnerException is not LockException)
+            return;
+
+        handler.Log.LogWarning("Lost work item lock {Resource} for queue entry {Id}, cancelling work item", workItemLock.Resource, queueEntry.Id);
+        try
+        {
+            await workItemCancellation.CancelAsync().AnyContext();
+        }
+        catch (ObjectDisposedException)
+        {
+            // A progress report that wasn't awaited can finish after the work item; nothing is left to cancel
+        }
+
+        async Task RenewQueueEntryLockAsync() => await queueEntry.RenewLockAsync().AnyContext();
+        async Task RenewWorkItemLockAsync() => await workItemLock.RenewAsync().AnyContext();
     }
 
     protected virtual Activity? StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)
