@@ -1,7 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Linq;
+using System.Numerics;
 using System.Threading;
 
 namespace Foundatio.Caching;
@@ -11,81 +14,84 @@ internal interface IListSnapshot
     object GetSnapshot();
 }
 
-// Updates copy one bounded block and the block directory, not the entire list. The immutable
-// key index shares unchanged nodes. Raw dictionary reads retain their existing public shape.
+/// <summary>
+/// An immutable list value: each update returns a new snapshot and never changes this one, so readers and
+/// compare-and-swap writers can share it without locks.
+/// </summary>
+/// <remarks>
+/// A snapshot starts out backed by a plain dictionary, which makes bulk writes a single dictionary copy. The first
+/// small update builds an indexed layout: items in fixed-size blocks that keep insertion order and their own
+/// expiration bounds, plus a key index split into small hash partitions. Small updates then copy only the blocks and
+/// partitions they touch.
+/// </remarks>
 internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
 {
     public const int BlockSize = 32;
-    private ImmutableDictionary<T, int>? _indices;
-    private readonly Dictionary<T, DateTime?>? _initialValues;
-    private readonly Item[][] _blocks;
-    private readonly ImmutableSortedDictionary<DateTime, int> _expirations;
-    private readonly ImmutableStack<int> _freeIndices;
-    private readonly int _nextIndex;
-    private readonly int _permanentCount;
-    private Dictionary<T, DateTime?>? _snapshot;
+    private const int PartitionSize = 32;
+    private const long Permanent = long.MaxValue;
 
-    private readonly record struct Item(T Key, DateTime? Expiration, bool Present);
+    private readonly Dictionary<T, DateTime?>? _values;
+    private readonly IEqualityComparer<T> _comparer;
+    private readonly int _permanentCount;
+    private readonly long _minExpirationTicks;
+    private readonly long _maxExpirationTicks;
+    private Layout? _layout;
+    private Dictionary<T, DateTime?>? _snapshot;
 
     public ListSnapshot(Dictionary<T, DateTime?> values)
     {
-        _initialValues = values;
-        var expirations = ImmutableSortedDictionary.CreateBuilder<DateTime, int>();
-        _blocks = new Item[(values.Count + BlockSize - 1) / BlockSize][];
-        for (int i = 0; i < _blocks.Length; i++)
-            _blocks[i] = new Item[BlockSize];
-        foreach (var pair in values)
-        {
-            _blocks[_nextIndex / BlockSize][_nextIndex % BlockSize] = new Item(pair.Key, pair.Value, true);
-            _nextIndex++;
-            if (pair.Value is { } expiration)
-                expirations[expiration] = expirations.GetValueOrDefault(expiration) + 1;
-            else
-                _permanentCount++;
-        }
-        _expirations = expirations.ToImmutable();
-        _freeIndices = ImmutableStack<int>.Empty;
+        _values = values;
+        _comparer = values.Comparer;
+        Count = values.Count;
+        _minExpirationTicks = long.MaxValue;
+        foreach (var expiration in values.Values)
+            Track(ToTicks(expiration), ref _permanentCount, ref _minExpirationTicks, ref _maxExpirationTicks);
     }
 
-    private ListSnapshot(ImmutableDictionary<T, int> indices, Item[][] blocks,
-        ImmutableSortedDictionary<DateTime, int> expirations, ImmutableStack<int> freeIndices, int nextIndex, int permanentCount)
+    private ListSnapshot(Layout layout, IEqualityComparer<T> comparer, int count)
     {
-        _indices = indices;
-        _blocks = blocks;
-        _expirations = expirations;
-        _freeIndices = freeIndices;
-        _nextIndex = nextIndex;
-        _permanentCount = permanentCount;
-    }
-
-    public int Count => _indices?.Count ?? _initialValues!.Count;
-    private ImmutableDictionary<T, int> Indices
-    {
-        get
+        _layout = layout;
+        _comparer = comparer;
+        Count = count;
+        _minExpirationTicks = long.MaxValue;
+        foreach (var block in layout.Blocks)
         {
-            if (Volatile.Read(ref _indices) is { } existing)
-                return existing;
-
-            var builder = ImmutableDictionary.CreateBuilder<T, int>(_initialValues!.Comparer);
-            int index = 0;
-            foreach (var key in _initialValues.Keys)
-                builder.Add(key, index++);
-            var indices = builder.ToImmutable();
-            return Interlocked.CompareExchange(ref _indices, indices, null) ?? indices;
+            _permanentCount += block.PermanentCount;
+            _minExpirationTicks = Math.Min(_minExpirationTicks, block.MinExpirationTicks);
+            _maxExpirationTicks = Math.Max(_maxExpirationTicks, block.MaxExpirationTicks);
         }
     }
 
+    public int Count { get; }
+
+    /// <summary>The materialized dictionary, once a raw read has requested it; afterwards it is the source of truth.</summary>
     public Dictionary<T, DateTime?>? Snapshot => Volatile.Read(ref _snapshot);
-    public DateTime? ExpiresAt => _permanentCount > 0 || _expirations.IsEmpty ? null : _expirations.Last().Key;
+
+    /// <summary>The latest item expiration, or <c>null</c> when any item is permanent or the list is empty.</summary>
+    public DateTime? ExpiresAt => _permanentCount > 0 || Count == 0 ? null : FromTicks(_maxExpirationTicks);
+
+    /// <summary>A read-only dictionary over the current items, without copying them.</summary>
+    public IDictionary<T, DateTime?> AsReadOnlyDictionary() => new ReadOnlyView(this);
 
     public T[] Read(DateTime utcNow)
     {
         var result = new T[Count];
         int count = 0;
-        foreach (var block in _blocks)
-            foreach (var item in block)
-                if (item.Present && (item.Expiration is null || item.Expiration >= utcNow))
-                    result[count++] = item.Key;
+        long nowTicks = utcNow.Ticks;
+        if (Volatile.Read(ref _layout) is null && _values is not null)
+        {
+            foreach (var pair in _values)
+                if (pair.Value is null || pair.Value.Value.Ticks >= nowTicks)
+                    result[count++] = pair.Key;
+        }
+        else
+        {
+            foreach (var block in GetLayout().Blocks)
+                foreach (var item in block.Items)
+                    if (item.Present && item.ExpirationTicks >= nowTicks)
+                        result[count++] = item.Key;
+        }
+
         if (count != result.Length)
             Array.Resize(ref result, count);
         return result;
@@ -96,40 +102,25 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
         if (Snapshot is { } snapshot)
             return snapshot;
 
-        if (_initialValues is not null)
-            return Interlocked.CompareExchange(ref _snapshot, _initialValues, null) ?? _initialValues;
-
-        var dictionary = CopyValues();
+        var dictionary = _values ?? CopyValues();
         return Interlocked.CompareExchange(ref _snapshot, dictionary, null) ?? dictionary;
-    }
-
-    private Dictionary<T, DateTime?> CopyValues()
-    {
-        if (_initialValues is not null)
-            return new Dictionary<T, DateTime?>(_initialValues, _initialValues.Comparer);
-
-        var dictionary = new Dictionary<T, DateTime?>(Count, Indices.KeyComparer);
-        foreach (var block in _blocks)
-            foreach (var item in block)
-                if (item.Present)
-                    dictionary.Add(item.Key, item.Expiration);
-        return dictionary;
     }
 
     public ListSnapshot<T> Update(ICollection<T> items, DateTime? expiration, DateTime utcNow, bool remove, out long removed)
     {
         removed = 0;
-        bool prune = !_expirations.IsEmpty && _expirations.First().Key < utcNow;
-        if (remove && !prune && !items.Any(key => _initialValues?.ContainsKey(key) ?? Indices.ContainsKey(key)))
+        long nowTicks = utcNow.Ticks;
+        bool prune = _minExpirationTicks < nowTicks;
+        if (remove && !prune && !items.Any(ContainsKey))
             return this;
 
-        // When a batch could copy every block, one dictionary copy is cheaper than
-        // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
+        // When a batch could touch every block, one dictionary copy is cheaper than updating blocks and partitions,
+        // and it avoids indexing short-lived bulk lists.
         if (items.Count >= Math.Max(1, Count / BlockSize))
         {
             var dictionary = CopyValues();
             if (prune)
-                foreach (var key in dictionary.Where(pair => pair.Value < utcNow).Select(pair => pair.Key).ToArray())
+                foreach (var key in dictionary.Where(pair => pair.Value?.Ticks < nowTicks).Select(pair => pair.Key).ToArray())
                     dictionary.Remove(key);
             if (remove)
                 removed = items.Count(dictionary.Remove);
@@ -139,99 +130,351 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
             return new ListSnapshot<T>(dictionary);
         }
 
-        var indices = Indices.ToBuilder();
-        int capacity = Math.Max(_nextIndex, Count + (remove ? 0 : items.Count));
-        var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
-        Array.Copy(_blocks, blocks, _blocks.Length);
-        var copied = new bool[blocks.Length];
-        ImmutableSortedDictionary<DateTime, int>.Builder? expirations = null;
-        var freeIndices = _freeIndices;
-        int nextIndex = _nextIndex;
-        int permanentCount = _permanentCount;
-        bool changed = false;
-
+        var update = new LayoutUpdate(GetLayout(), _comparer, Count);
         if (prune)
-            foreach (var block in _blocks)
-                foreach (var item in block)
-                    if (item.Present && item.Expiration < utcNow)
-                        Remove(item.Key);
+            update.RemoveExpired(nowTicks);
 
+        long ticks = ToTicks(expiration);
         foreach (var item in items)
         {
             if (remove)
             {
-                if (Remove(item))
+                if (update.Remove(item))
                     removed++;
-                continue;
-            }
-
-            T key = item;
-            bool exists = indices.TryGetValue(key, out int index);
-            if (exists)
-            {
-                var previous = blocks[index / BlockSize][index % BlockSize];
-                if (previous.Expiration == expiration)
-                    continue;
-                key = previous.Key;
-                AdjustExpiration(previous.Expiration, -1);
-            }
-            else if (!freeIndices.IsEmpty)
-            {
-                index = freeIndices.Peek();
-                freeIndices = freeIndices.Pop();
             }
             else
-                index = nextIndex++;
-
-            CopyBlock(index);
-            blocks[index / BlockSize][index % BlockSize] = new Item(key, expiration, true);
-            indices[key] = index;
-            AdjustExpiration(expiration, 1);
+            {
+                update.Set(item, ticks);
+            }
         }
 
-        if (!changed)
-            return this;
+        return update.Changed ? new ListSnapshot<T>(update.Build(), _comparer, update.Count) : this;
+    }
 
-        int blockCount = (nextIndex + BlockSize - 1) / BlockSize;
-        if (blocks.Length != blockCount)
-            Array.Resize(ref blocks, blockCount);
-        return new ListSnapshot<T>(indices.ToImmutable(), blocks, expirations?.ToImmutable() ?? _expirations, freeIndices, nextIndex, permanentCount);
+    private bool ContainsKey(T key) => TryGetExpiration(key, out _);
 
-        bool Remove(T key)
+    private bool TryGetExpiration(T key, out DateTime? expiration)
+    {
+        if (Volatile.Read(ref _layout) is null && _values is not null)
+            return _values.TryGetValue(key, out expiration);
+
+        var layout = GetLayout();
+        if (layout.Partitions[layout.PartitionOf(key, _comparer)].TryGetValue(key, out int index))
         {
-            if (!indices.TryGetValue(key, out int index))
-                return false;
-            CopyBlock(index);
-            AdjustExpiration(blocks[index / BlockSize][index % BlockSize].Expiration, -1);
-            blocks[index / BlockSize][index % BlockSize] = default;
-            indices.Remove(key);
-            freeIndices = freeIndices.Push(index);
+            expiration = FromTicks(layout.Blocks[index / BlockSize].Items[index % BlockSize].ExpirationTicks);
             return true;
         }
 
-        void CopyBlock(int index)
+        expiration = null;
+        return false;
+    }
+
+    private IEnumerable<KeyValuePair<T, DateTime?>> EnumeratePairs()
+    {
+        if (Volatile.Read(ref _layout) is null && _values is not null)
         {
-            int blockIndex = index / BlockSize;
-            if (copied[blockIndex])
-                return;
-            blocks[blockIndex] = blockIndex < _blocks.Length ? (Item[])_blocks[blockIndex].Clone() : new Item[BlockSize];
-            copied[blockIndex] = true;
-            changed = true;
+            foreach (var pair in _values)
+                yield return pair;
+            yield break;
         }
 
-        void AdjustExpiration(DateTime? value, int delta)
+        foreach (var block in GetLayout().Blocks)
+            foreach (var item in block.Items)
+                if (item.Present)
+                    yield return new KeyValuePair<T, DateTime?>(item.Key, FromTicks(item.ExpirationTicks));
+    }
+
+    private Dictionary<T, DateTime?> CopyValues()
+    {
+        if (_values is not null)
+            return new Dictionary<T, DateTime?>(_values, _comparer);
+
+        var dictionary = new Dictionary<T, DateTime?>(Count, _comparer);
+        foreach (var pair in EnumeratePairs())
+            dictionary.Add(pair.Key, pair.Value);
+        return dictionary;
+    }
+
+    private Layout GetLayout()
+    {
+        if (Volatile.Read(ref _layout) is { } existing)
+            return existing;
+
+        var layout = Layout.Create(_values!, _comparer);
+        return Interlocked.CompareExchange(ref _layout, layout, null) ?? layout;
+    }
+
+    private static long ToTicks(DateTime? expiration) => expiration?.Ticks ?? Permanent;
+
+    private static DateTime? FromTicks(long ticks) => ticks == Permanent ? null : new DateTime(ticks, DateTimeKind.Utc);
+
+    private static void Track(long ticks, ref int permanentCount, ref long minTicks, ref long maxTicks)
+    {
+        if (ticks == Permanent)
         {
-            if (value is not { } time)
+            permanentCount++;
+            return;
+        }
+
+        minTicks = Math.Min(minTicks, ticks);
+        maxTicks = Math.Max(maxTicks, ticks);
+    }
+
+    // ExpirationTicks is Permanent for an item with no expiration; Present is false for a free slot
+    private readonly record struct Item(T Key, long ExpirationTicks, bool Present = true);
+
+    private sealed class Block
+    {
+        public Block(Item[] items)
+        {
+            Items = items;
+            MinExpirationTicks = long.MaxValue;
+            foreach (var item in items)
+                if (item.Present)
+                    Track(item.ExpirationTicks, ref PermanentCount, ref MinExpirationTicks, ref MaxExpirationTicks);
+        }
+
+        public readonly Item[] Items;
+        public readonly int PermanentCount;
+        public readonly long MinExpirationTicks;
+        public readonly long MaxExpirationTicks;
+    }
+
+    private sealed class Layout(Block[] blocks, Dictionary<T, int>[] partitions, ImmutableStack<int> freeSlots, int nextSlot)
+    {
+        public Block[] Blocks { get; } = blocks;
+        public Dictionary<T, int>[] Partitions { get; } = partitions;
+        public ImmutableStack<int> FreeSlots { get; } = freeSlots;
+        public int NextSlot { get; } = nextSlot;
+
+        public static Layout Create(Dictionary<T, DateTime?> values, IEqualityComparer<T> comparer)
+        {
+            var blocks = new Block[(values.Count + BlockSize - 1) / BlockSize];
+            var items = new Item[BlockSize];
+            int slot = 0;
+            foreach (var pair in values)
             {
-                permanentCount += delta;
+                items[slot % BlockSize] = new Item(pair.Key, ToTicks(pair.Value));
+                if (++slot % BlockSize == 0 || slot == values.Count)
+                {
+                    blocks[(slot - 1) / BlockSize] = new Block(items);
+                    items = new Item[BlockSize];
+                }
+            }
+
+            return new Layout(blocks, BuildPartitions(blocks, values.Count, comparer), ImmutableStack<int>.Empty, values.Count);
+        }
+
+        public int PartitionOf(T key, IEqualityComparer<T> comparer) => PartitionOf(key, comparer, Partitions.Length);
+
+        public static Dictionary<T, int>[] BuildPartitions(Block[] blocks, int count, IEqualityComparer<T> comparer)
+        {
+            int partitionCount = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(1, count / PartitionSize));
+            var partitions = new Dictionary<T, int>[partitionCount];
+            for (int i = 0; i < partitions.Length; i++)
+                partitions[i] = new Dictionary<T, int>(PartitionSize + PartitionSize / 2, comparer);
+
+            for (int blockIndex = 0; blockIndex < blocks.Length; blockIndex++)
+            {
+                var blockItems = blocks[blockIndex].Items;
+                for (int i = 0; i < blockItems.Length; i++)
+                    if (blockItems[i].Present)
+                        partitions[PartitionOf(blockItems[i].Key, comparer, partitionCount)].Add(blockItems[i].Key, blockIndex * BlockSize + i);
+            }
+
+            return partitions;
+        }
+
+        private static int PartitionOf(T key, IEqualityComparer<T> comparer, int partitionCount)
+        {
+            if (partitionCount == 1)
+                return 0;
+
+            // Fibonacci hashing spreads keys whose hash codes share low bits (sequential or aligned values)
+            uint hash = (uint)comparer.GetHashCode(key) * 0x9E3779B9u;
+            return (int)(hash >> (32 - BitOperations.Log2((uint)partitionCount)));
+        }
+    }
+
+    /// <summary>
+    /// Applies changes to a copy of a layout, copying each block and partition the first time it is touched.
+    /// </summary>
+    private sealed class LayoutUpdate
+    {
+        private readonly Layout _source;
+        private readonly IEqualityComparer<T> _comparer;
+        private Block[] _blocks;
+        private Item[]?[] _copiedBlocks;
+        private readonly Dictionary<T, int>[] _partitions;
+        private readonly bool[] _copiedPartitions;
+        private ImmutableStack<int> _freeSlots;
+        private int _nextSlot;
+
+        public LayoutUpdate(Layout source, IEqualityComparer<T> comparer, int count)
+        {
+            _source = source;
+            _comparer = comparer;
+            _blocks = source.Blocks;
+            _copiedBlocks = new Item[]?[source.Blocks.Length];
+            _partitions = (Dictionary<T, int>[])source.Partitions.Clone();
+            _copiedPartitions = new bool[_partitions.Length];
+            _freeSlots = source.FreeSlots;
+            _nextSlot = source.NextSlot;
+            Count = count;
+        }
+
+        public int Count { get; private set; }
+        public bool Changed { get; private set; }
+
+        public void RemoveExpired(long nowTicks)
+        {
+            for (int blockIndex = 0; blockIndex < _source.Blocks.Length; blockIndex++)
+            {
+                var block = _source.Blocks[blockIndex];
+                if (block.MinExpirationTicks >= nowTicks)
+                    continue;
+
+                for (int i = 0; i < block.Items.Length; i++)
+                {
+                    long ticks = block.Items[i].ExpirationTicks;
+                    if (block.Items[i].Present && ticks < nowTicks)
+                        Remove(block.Items[i].Key);
+                }
+            }
+        }
+
+        public bool Remove(T key)
+        {
+            var partition = _partitions[_source.PartitionOf(key, _comparer)];
+            if (!partition.TryGetValue(key, out int slot))
+                return false;
+
+            WritablePartition(key).Remove(key);
+            WritableBlock(slot)[slot % BlockSize] = default;
+            _freeSlots = _freeSlots.Push(slot);
+            Count--;
+            return true;
+        }
+
+        public void Set(T key, long expirationTicks)
+        {
+            if (_partitions[_source.PartitionOf(key, _comparer)].TryGetValue(key, out int slot))
+            {
+                ref readonly var existing = ref ReadSlot(slot);
+                if (existing.ExpirationTicks == expirationTicks)
+                    return;
+
+                WritableBlock(slot)[slot % BlockSize] = new Item(existing.Key, expirationTicks);
                 return;
             }
-            expirations ??= _expirations.ToBuilder();
-            int count = expirations.GetValueOrDefault(time) + delta;
-            if (count == 0)
-                expirations.Remove(time);
+
+            if (!_freeSlots.IsEmpty)
+                _freeSlots = _freeSlots.Pop(out slot);
             else
-                expirations[time] = count;
+                slot = _nextSlot++;
+
+            WritableBlock(slot)[slot % BlockSize] = new Item(key, expirationTicks);
+            WritablePartition(key).Add(key, slot);
+            Count++;
         }
+
+        public Layout Build()
+        {
+            for (int i = 0; i < _blocks.Length; i++)
+                if (_copiedBlocks[i] is { } items)
+                    _blocks[i] = new Block(items);
+
+            // Keep partitions small as the list grows, so a change copies a bounded amount of index
+            var partitions = Count > _partitions.Length * PartitionSize * 2
+                ? Layout.BuildPartitions(_blocks, Count, _comparer)
+                : _partitions;
+            return new Layout(_blocks, partitions, _freeSlots, _nextSlot);
+        }
+
+        private ref readonly Item ReadSlot(int slot)
+        {
+            int blockIndex = slot / BlockSize;
+            return ref (_copiedBlocks[blockIndex] ?? _blocks[blockIndex].Items)[slot % BlockSize];
+        }
+
+        private Item[] WritableBlock(int slot)
+        {
+            int blockIndex = slot / BlockSize;
+            if (blockIndex >= _blocks.Length)
+            {
+                // Slots are handed out in order, so a new slot needs at most one more block
+                Array.Resize(ref _blocks, blockIndex + 1);
+                Array.Resize(ref _copiedBlocks, blockIndex + 1);
+            }
+
+            if (_copiedBlocks[blockIndex] is { } copied)
+                return copied;
+
+            if (ReferenceEquals(_blocks, _source.Blocks))
+                _blocks = (Block[])_source.Blocks.Clone();
+
+            Changed = true;
+            var items = _blocks[blockIndex] is { } block ? (Item[])block.Items.Clone() : new Item[BlockSize];
+            _copiedBlocks[blockIndex] = items;
+            return items;
+        }
+
+        private Dictionary<T, int> WritablePartition(T key)
+        {
+            int index = _source.PartitionOf(key, _comparer);
+            if (!_copiedPartitions[index])
+            {
+                _partitions[index] = new Dictionary<T, int>(_partitions[index], _comparer);
+                _copiedPartitions[index] = true;
+            }
+
+            return _partitions[index];
+        }
+    }
+
+    /// <summary>A read-only <see cref="IDictionary{TKey,TValue}"/> over a snapshot, used to size lists without copying them.</summary>
+    private sealed class ReadOnlyView(ListSnapshot<T> snapshot) : IDictionary<T, DateTime?>, IReadOnlyDictionary<T, DateTime?>, ICollection
+    {
+        public int Count => snapshot.Count;
+        public bool IsReadOnly => true;
+        bool ICollection.IsSynchronized => false;
+        object ICollection.SyncRoot => snapshot;
+
+        public DateTime? this[T key]
+        {
+            get => snapshot.TryGetExpiration(key, out var expiration) ? expiration : throw new KeyNotFoundException($"The key '{key}' was not found in the list.");
+            set => throw ReadOnly();
+        }
+
+        public ICollection<T> Keys => new ReadOnlyCollection<T>(snapshot.EnumeratePairs().Select(pair => pair.Key).ToArray());
+        public ICollection<DateTime?> Values => new ReadOnlyCollection<DateTime?>(snapshot.EnumeratePairs().Select(pair => pair.Value).ToArray());
+        IEnumerable<T> IReadOnlyDictionary<T, DateTime?>.Keys => Keys;
+        IEnumerable<DateTime?> IReadOnlyDictionary<T, DateTime?>.Values => Values;
+
+        public bool ContainsKey(T key) => snapshot.ContainsKey(key);
+        public bool TryGetValue(T key, out DateTime? value) => snapshot.TryGetExpiration(key, out value);
+        public bool Contains(KeyValuePair<T, DateTime?> item) => snapshot.TryGetExpiration(item.Key, out var value) && value == item.Value;
+        public IEnumerator<KeyValuePair<T, DateTime?>> GetEnumerator() => snapshot.EnumeratePairs().GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public void CopyTo(KeyValuePair<T, DateTime?>[] array, int arrayIndex)
+        {
+            foreach (var pair in snapshot.EnumeratePairs())
+                array[arrayIndex++] = pair;
+        }
+
+        void ICollection.CopyTo(Array array, int index)
+        {
+            foreach (var pair in snapshot.EnumeratePairs())
+                array.SetValue(pair, index++);
+        }
+
+        public void Add(T key, DateTime? value) => throw ReadOnly();
+        public void Add(KeyValuePair<T, DateTime?> item) => throw ReadOnly();
+        public bool Remove(T key) => throw ReadOnly();
+        public bool Remove(KeyValuePair<T, DateTime?> item) => throw ReadOnly();
+        public void Clear() => throw ReadOnly();
+
+        private static NotSupportedException ReadOnly() => new("Cached list values are read-only.");
     }
 }
