@@ -31,6 +31,7 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     private const long Permanent = long.MaxValue;
 
     private readonly Dictionary<T, DateTime?>? _values;
+    private readonly bool _indexOnNextChange;
     private readonly IEqualityComparer<T> _comparer;
     private readonly int _permanentCount;
     private readonly long _minExpirationTicks;
@@ -38,9 +39,15 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     private Layout? _layout;
     private Dictionary<T, DateTime?>? _snapshot;
 
-    public ListSnapshot(Dictionary<T, DateTime?> values)
+    /// <param name="values">The items, owned by the snapshot from now on.</param>
+    /// <param name="indexOnNextChange">
+    /// <c>true</c> when this dictionary came from a small change, so the list is being modified incrementally and the
+    /// next small change should build the index; a list written once (or only in bulk) never pays for indexing.
+    /// </param>
+    public ListSnapshot(Dictionary<T, DateTime?> values, bool indexOnNextChange = false)
     {
         _values = values;
+        _indexOnNextChange = indexOnNextChange;
         _comparer = values.Comparer;
         Count = values.Count;
         _minExpirationTicks = long.MaxValue;
@@ -63,6 +70,9 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     }
 
     public int Count { get; }
+
+    /// <summary>Whether small updates use the block and partition index rather than copying the dictionary.</summary>
+    public bool IsIndexed => Volatile.Read(ref _layout) is not null;
 
     /// <summary>The materialized dictionary, once a raw read has requested it; afterwards it is the source of truth.</summary>
     public Dictionary<T, DateTime?>? Snapshot => Volatile.Read(ref _snapshot);
@@ -115,8 +125,10 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
             return this;
 
         // When a batch could touch every block, one dictionary copy is cheaper than updating blocks and partitions,
-        // and it avoids indexing short-lived bulk lists.
-        if (items.Count >= Math.Max(1, Count / BlockSize))
+        // and it avoids indexing short-lived bulk lists. The first small change to an unindexed list also copies,
+        // since a copy (~3 us at 1,000 items) is far cheaper than building the index for a list that may not change again.
+        bool batch = items.Count >= Math.Max(1, Count / BlockSize);
+        if (batch || (Volatile.Read(ref _layout) is null && _values is not null && !_indexOnNextChange))
         {
             var dictionary = CopyValues();
             if (prune)
@@ -127,7 +139,7 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
             else
                 foreach (var key in items)
                     dictionary[key] = expiration;
-            return new ListSnapshot<T>(dictionary);
+            return new ListSnapshot<T>(dictionary, indexOnNextChange: !batch);
         }
 
         var update = new LayoutUpdate(GetLayout(), _comparer, Count);

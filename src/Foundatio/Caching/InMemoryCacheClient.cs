@@ -25,7 +25,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
-    private readonly bool _canShareListValues;
+    private const int ConflictLockCount = 64;
+    private object[]? _conflictLocks;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -72,7 +73,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        _canShareListValues = !_shouldClone;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -357,27 +357,63 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <c>null</c> to remove it. It runs again with the latest entry when another writer changes the key first,
     /// so it must not have side effects; only the result of the attempt that was published is returned.
     /// </param>
-    internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
+    /// <param name="serializeAfterConflict">
+    /// After a lost compare-and-swap, take a lock striped by key for the remaining attempts, so writers whose callback
+    /// is expensive (copying a large list) queue instead of each redoing that work. Publishing still uses
+    /// compare-and-swap, so writers that don't take the lock stay correct.
+    /// </param>
+    internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update, bool serializeAfterConflict = false)
     {
-        // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
-        // the store, which lets in-flight updates finish on the next attempt.
-        while (true)
+        object? stripe = null;
+        bool locked = false;
+        try
         {
-            _memory.TryGetValue(key, out var stored);
-            bool expired = stored is { IsExpired: true };
-            var (desired, result) = update(expired ? null : stored);
-            if (ReferenceEquals(desired, stored))
+            // Retries only when another writer changed the key first, so some writer always makes progress; Dispose
+            // clears the store, which lets in-flight updates finish on the next attempt.
+            while (true)
+            {
+                _memory.TryGetValue(key, out var stored);
+                bool expired = stored is { IsExpired: true };
+                var (desired, result) = update(expired ? null : stored);
+                if (ReferenceEquals(desired, stored))
+                    return result;
+
+                if (!TryPublish(key, stored, desired))
+                {
+                    if (serializeAfterConflict && !locked)
+                    {
+                        stripe = GetConflictLock(key);
+                        Monitor.Enter(stripe, ref locked);
+                    }
+
+                    continue;
+                }
+
+                // An entry that expires while the callback runs (a lease expiring mid-comparison) is also reclaimed
+                if (expired || (desired is null && stored is { IsExpired: true }))
+                    OnItemExpired(key);
+
                 return result;
-
-            if (!TryPublish(key, stored, desired))
-                continue;
-
-            // An entry that expires while the callback runs (a lease expiring mid-comparison) is also reclaimed
-            if (expired || (desired is null && stored is { IsExpired: true }))
-                OnItemExpired(key);
-
-            return result;
+            }
         }
+        finally
+        {
+            if (locked)
+                Monitor.Exit(stripe!);
+        }
+    }
+
+    private object GetConflictLock(string key)
+    {
+        var locks = LazyInitializer.EnsureInitialized(ref _conflictLocks, static () =>
+        {
+            var created = new object[ConflictLockCount];
+            for (int i = 0; i < created.Length; i++)
+                created[i] = new object();
+            return created;
+        });
+
+        return locks[(int)((uint)key.GetHashCode() % ConflictLockCount)];
     }
 
     /// <summary>
@@ -625,7 +661,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return (current, 0L); // Entry exceeds limits
 
             if (current is null)
-                return (_canShareListValues && items.Count > ListSnapshot<T>.BlockSize
+                return (CanShareListValues<T>() && items.Count > ListSnapshot<T>.BlockSize
                     ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
                     : entry, (long)items.Count);
 
@@ -641,7 +677,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return size < 0
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), (long)items.Count);
-        });
+        }, serializeAfterConflict: true);
+    }
+
+    /// <summary>
+    /// Whether list writes can keep an immutable <see cref="ListSnapshot{T}"/> instead of copying the whole list.
+    /// With cloning on, only items that never need cloning (numbers, strings, other value types) can be shared:
+    /// raw dictionary reads still clone the materialized dictionary, and items can't be changed through it.
+    /// </summary>
+    private bool CanShareListValues<T>() where T : notnull => !_shouldClone || !ListItemCloning<T>.Required;
+
+    private static class ListItemCloning<T>
+    {
+        public static readonly bool Required = TypeRequiresCloning(typeof(T));
     }
 
     /// <summary>
@@ -654,7 +702,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size) where T : notnull
     {
-        object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
+        object value = CanShareListValues<T>() && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
             ? new ListSnapshot<T>(values)
             : dictionary;
         return current.WithValue(value, GetListExpiration(dictionary), size);
@@ -753,7 +801,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return size < 0
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), removedCount);
-        });
+        }, serializeAfterConflict: true);
 
         if (removed > 0)
             _logger.LogTrace("Removed value from set with cache key: {Key}", key);

@@ -30,6 +30,11 @@ public class InMemoryListSnapshotTests
         Assert.Equal(remove ? 1 : 0, removed);
         Assert.Equal(expected.Count, updated.Count);
         Assert.Equal(expected.Order(), updated.Read(Now).Order());
+        Assert.False(updated.IsIndexed);
+
+        var second = updated.Update([-2], null, Now, remove: false, out _);
+        Assert.True(second.IsIndexed);
+        Assert.Equal(expected.Append(-2).Order(), second.Read(Now).Order());
     }
 
     [Fact]
@@ -81,7 +86,7 @@ public class InMemoryListSnapshotTests
         var values = CreateValues(1000, i => i < 100 ? Now.AddMinutes(-1) : null);
         var snapshot = new ListSnapshot<int>(values);
         if (indexed)
-            snapshot = snapshot.Update([5000], null, Now.AddMinutes(-2), remove: false, out _);
+            snapshot = Indexed(snapshot, Now.AddMinutes(-2));
 
         // Act
         var updated = snapshot.Update([-1], null, Now, remove: false, out _);
@@ -107,7 +112,7 @@ public class InMemoryListSnapshotTests
         {
             var source = new ListSnapshot<int>(values);
             if (indexed)
-                source = source.Update([5000], null, Now.AddMinutes(-2), remove: false, out _);
+                source = Indexed(source, Now.AddMinutes(-2));
             var before = source.Read(Now.AddMinutes(-2)).Order().ToArray();
             var expiresBefore = source.ExpiresAt;
 
@@ -175,7 +180,7 @@ public class InMemoryListSnapshotTests
     {
         // Arrange
         var values = CreateValues(100, i => i == 7 ? Now.AddMinutes(5) : null);
-        var snapshot = new ListSnapshot<int>(values).Update([500], null, Now, remove: false, out _);
+        var snapshot = Indexed(new ListSnapshot<int>(values), Now);
 
         // Act
         var view = snapshot.AsReadOnlyDictionary();
@@ -184,19 +189,27 @@ public class InMemoryListSnapshotTests
         Assert.Equal(101, view.Count);
         Assert.Equal(101, ((ICollection)view).Count);
         Assert.True(view.IsReadOnly);
-        Assert.True(view.ContainsKey(500));
+        Assert.True(view.ContainsKey(5000));
         Assert.True(view.TryGetValue(7, out var expiration));
         Assert.Equal(Now.AddMinutes(5), expiration);
         Assert.Null(view[0]);
         Assert.False(view.TryGetValue(-1, out _));
         Assert.Throws<KeyNotFoundException>(() => view[-1]);
-        Assert.Equal(Enumerable.Range(0, 100).Append(500).Order(), view.Keys.Order());
+        Assert.Equal(Enumerable.Range(0, 100).Append(5000).Order(), view.Keys.Order());
         Assert.Equal(101, view.Values.Count);
         Assert.Contains(new KeyValuePair<int, DateTime?>(7, Now.AddMinutes(5)), view);
         Assert.Throws<NotSupportedException>(() => view.Add(-1, null));
         Assert.Throws<NotSupportedException>(() => view.Remove(0));
         Assert.Throws<NotSupportedException>(() => view[0] = Now);
         Assert.Throws<NotSupportedException>(view.Clear);
+    }
+
+    /// <summary>Adds item 5000 and makes the next small change build the index, the way repeated small writes do.</summary>
+    private static ListSnapshot<int> Indexed(ListSnapshot<int> snapshot, DateTime utcNow)
+    {
+        var indexed = snapshot.Update([5000], null, utcNow, remove: false, out _).Update([5000], null, utcNow, remove: false, out _);
+        Assert.True(indexed.IsIndexed);
+        return indexed;
     }
 
     private static Dictionary<int, DateTime?> CreateValues(int count, Func<int, DateTime?>? expiration = null)

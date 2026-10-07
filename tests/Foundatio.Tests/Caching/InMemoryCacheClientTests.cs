@@ -497,6 +497,40 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.DoesNotContain(stored.Keys, k => ReferenceEquals(k, added));
     }
 
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndImmutableItems_SharesSnapshotAndIsolatesReads()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+
+        // Act
+        await cache.ListAddAsync("set", [-1]);
+        var read = await cache.GetAsync<IDictionary<int, DateTime?>>("set");
+        read.Value!.Clear();
+        await cache.ListRemoveAsync("set", [0]);
+
+        // Assert
+        Assert.Equal(Enumerable.Range(1, 99).Append(-1).Order(), (await cache.GetListAsync<int>("set")).Value!.Order());
+        var reread = await cache.GetAsync<IDictionary<int, DateTime?>>("set");
+        Assert.Equal(100, reread.Value!.Count);
+        Assert.NotSame(read.Value, reread.Value);
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndImmutableItems_UsesSharedSnapshot()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+
+        // Act
+        await cache.ListAddAsync("set", [-1]);
+
+        // Assert
+        Assert.IsType<ListSnapshot<int>>(GetEntry(cache, "set").StoredValue);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
