@@ -313,70 +313,84 @@ public static class LockProviderExtensions
         logger.LogTrace("Acquiring {LockCount} locks {Resource} RenewTime={RenewTime:g}", resourceList.Length, resourceList, renewTime);
         var sw = Stopwatch.StartNew();
 
+        var timeProvider = provider.GetTimeProvider();
         var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewed)>(resourceList.Length);
         bool acquiredAll = false;
-        Exception? acquisitionError = null;
         try
         {
             foreach (string resource in resourceList)
             {
                 var l = await provider.TryAcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
                 if (l is null)
+                {
+                    logger.LogTrace("Unable to acquire lock {Resource}, releasing {LockCount} acquired locks", resource, acquiredLocks.Count);
                     return null;
+                }
 
-                acquiredLocks.Add((l, provider.GetTimeProvider().GetUtcNow()));
+                acquiredLocks.Add((l, timeProvider.GetUtcNow()));
 
                 // Renew earlier locks while waiting for the remaining resources.
-                if (acquiredLocks.Count > 1 && renewTime > TimeSpan.Zero)
-                {
-                    var utcNow = provider.GetTimeProvider().GetUtcNow();
-                    var renewBefore = utcNow.Subtract(renewTime);
-                    var locksToRenew = Enumerable.Range(0, acquiredLocks.Count - 1).Where(index => acquiredLocks[index].LastRenewed < renewBefore).ToArray();
-                    if (locksToRenew.Length > 0)
-                    {
-                        try
-                        {
-                            await Task.WhenAll(locksToRenew.Select(async index => await acquiredLocks[index].Lock.RenewAsync(timeUntilExpires).AnyContext())).AnyContext();
-                        }
-                        catch (LockException ex)
-                        {
-                            logger.LogWarning(ex, "Lost an acquired lock while acquiring {Resource}, releasing acquired locks: {Message}", resource, ex.Message);
-                            return null;
-                        }
-
-                        foreach (int index in locksToRenew)
-                            acquiredLocks[index] = (acquiredLocks[index].Lock, utcNow);
-
-                        logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(index => acquiredLocks[index].Lock.Resource), renewTime);
-                    }
-                }
+                if (acquiredLocks.Count > 1 && renewTime > TimeSpan.Zero && !await TryRenewEarlierLocksAsync(acquiredLocks, timeUntilExpires, renewTime, timeProvider, logger).AnyContext())
+                    return null;
             }
 
             sw.Stop();
             var locks = acquiredLocks.Select(l => l.Lock).ToArray();
-            var result = new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), provider.GetTimeProvider().GetUtcNow().UtcDateTime, sw.Elapsed, logger);
+            var result = new DisposableLockCollection(locks, String.Join("+", locks.Select(l => l.LockId)), timeProvider.GetUtcNow().UtcDateTime, sw.Elapsed, logger);
             logger.LogTrace("Acquired {LockCount} locks {Resource} after {Duration:g}", locks.Length, locks.Select(l => l.Resource), sw.Elapsed);
             acquiredAll = true;
             return result;
         }
-        catch (Exception ex)
-        {
-            acquisitionError = ex;
-            throw;
-        }
         finally
         {
-            if (!acquiredAll)
-            {
-                try
-                {
-                    await Task.WhenAll(acquiredLocks.Select(async acquired => await acquired.Lock.ReleaseAsync().AnyContext())).AnyContext();
-                }
-                catch (Exception ex) when (acquisitionError is not null)
-                {
-                    logger.LogError(ex, "Unable to release partially acquired locks after acquisition failed: {Message}", ex.Message);
-                }
-            }
+            if (!acquiredAll && acquiredLocks.Count > 0)
+                await ReleasePartialLocksAsync(acquiredLocks.Select(l => l.Lock).ToArray(), logger).AnyContext();
+        }
+    }
+
+    /// <summary>
+    /// Renews every lock except the most recently acquired one whose renewal interval has elapsed.
+    /// Returns <c>false</c> when a lease was lost; provider errors propagate.
+    /// </summary>
+    private static async Task<bool> TryRenewEarlierLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewed)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
+    {
+        var utcNow = timeProvider.GetUtcNow();
+        var renewBefore = utcNow.Subtract(renewTime);
+        int[] locksToRenew = Enumerable.Range(0, acquiredLocks.Count - 1).Where(index => acquiredLocks[index].LastRenewed < renewBefore).ToArray();
+        if (locksToRenew.Length is 0)
+            return true;
+
+        try
+        {
+            await LockSetOperations.RenewAllAsync(locksToRenew.Select(index => acquiredLocks[index].Lock), timeUntilExpires).AnyContext();
+        }
+        catch (LockException ex)
+        {
+            logger.LogWarning(ex, "Lost an acquired lock while acquiring {Resource}, releasing acquired locks: {Message}", acquiredLocks[^1].Lock.Resource, ex.Message);
+            return false;
+        }
+
+        foreach (int index in locksToRenew)
+            acquiredLocks[index] = (acquiredLocks[index].Lock, utcNow);
+
+        logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(index => acquiredLocks[index].Lock.Resource), renewTime);
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to release every partially acquired lock. Failures are logged rather than thrown so that callers receive
+    /// <c>null</c> or the original acquisition error; leases that could not be released remain held until they expire.
+    /// </summary>
+    private static async Task ReleasePartialLocksAsync(ILock[] locks, ILogger logger)
+    {
+        try
+        {
+            await LockSetOperations.ReleaseAllAsync(locks).AnyContext();
+            logger.LogTrace("Released {LockCount} partially acquired locks {Resource}", locks.Length, locks.Select(l => l.Resource));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unable to release {LockCount} partially acquired locks {Resource}; unreleased locks remain held until they expire: {Message}", locks.Length, locks.Select(l => l.Resource), ex.Message);
         }
     }
 

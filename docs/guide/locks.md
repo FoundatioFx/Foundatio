@@ -291,7 +291,6 @@ async Task RenewPeriodicallyAsync()
         while (true)
         {
             await Task.Delay(TimeSpan.FromSeconds(30), cts.Token);
-            cts.Token.ThrowIfCancellationRequested();
             await lck.RenewAsync(TimeSpan.FromMinutes(1));
         }
     }
@@ -310,9 +309,13 @@ async Task RenewPeriodicallyAsync()
 
 The local async function starts immediately and yields at the delay; it does not need `Task.Run`. The work must honor the cancellation token. The `finally` block observes renewal failure and waits for renewal to stop before `await using` releases the lock. An in-flight renewal has no cancellation-token parameter, so shutdown waits for that cache operation; configure provider timeouts.
 
-Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system. `WorkItemJob`'s progress-triggered renewal currently logs renewal failures and continues; it does not implement this cancellation pattern.
+Choose an interval shorter than the lease duration, leaving time for cache latency and retries. A pause can still let the lease expire before renewal detects the loss, and cancellation cannot revoke an operation already dispatched to another system.
 
-When acquiring multiple resources, success means every requested lock was acquired. If any resource is unavailable, the provider releases the partial set and returns `null`, including when resource names share a suffix. Provider exceptions also trigger release attempts for every acquired lock before propagating the error. If cleanup fails too, the original acquisition error is preserved and the cleanup failure is logged; the affected leases may remain until expiration. While acquisition is in progress, each successful renewal resets that lock's renewal interval.
+`WorkItemJob` applies this pattern when a handler sets `AutoRenewLockOnProgress`. Each `ReportProgressAsync` call renews the queue entry and the work item lock. Renewal errors are logged and progress reporting continues. If the work item lock is lost (`LockException`), `WorkItemContext.CancellationToken` is cancelled. A handler that honors the token stops, and its queue entry is abandoned and retried. A handler that ignores the token keeps running unprotected.
+
+When acquiring multiple resources, success means every requested lock was acquired. If any resource is unavailable, the provider releases the partial set and returns `null`, including when resource names share a suffix. While acquisition is in progress, earlier locks are renewed once their renewal interval elapses. A lost lease (`LockException`) makes acquisition return `null`. A provider error is propagated, and it takes precedence over `LockException` when both occur. Either way, release is attempted for every acquired lock. Cleanup failures are logged rather than thrown, so callers still receive `null` or the original error; any lease that could not be released remains until it expires.
+
+Renewing a multi-resource lock renews every member, even if one fails. If a member's lease was lost, `RenewAsync` throws `LockException`. If a provider error also occurs, the provider error is thrown instead. `RenewalCount` increases only when every member renews.
 
 ## Common Patterns
 
