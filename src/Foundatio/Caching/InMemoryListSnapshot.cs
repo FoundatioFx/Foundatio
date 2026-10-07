@@ -94,8 +94,10 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
             return new Dictionary<T, DateTime?>(values, _comparer);
 
         var dictionary = new Dictionary<T, DateTime?>(Count, _comparer);
-        foreach (var pair in EnumeratePairs())
-            dictionary.Add(pair.Key, pair.Value);
+        foreach (var block in _layout!.Blocks)
+            foreach (var item in block.Items)
+                if (item.Present)
+                    dictionary.Add(item.Key, FromUtcTicks(item.ExpiresAtUtcTicks));
         return dictionary;
     }
 
