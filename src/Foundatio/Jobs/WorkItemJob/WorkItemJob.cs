@@ -128,10 +128,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
 
         using var workItemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var leaseLoss = new WorkItemLeaseLoss(workItemCancellation);
         var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
         {
             if (handler.AutoRenewLockOnProgress)
-                await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, workItemCancellation).AnyContext();
+                await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, leaseLoss).AnyContext();
 
             await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
             handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
@@ -144,8 +145,9 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             await handler.HandleItemAsync(workItemContext).AnyContext();
 
             // A handler that stops cooperatively after a lost lease (returning early or swallowing the cancellation)
-            // hasn't finished the work, and another worker may now own it: never acknowledge it
-            if (workItemCancellation.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            // hasn't finished the work, and another worker may now own it: never acknowledge it, even if the job
+            // was also cancelled meanwhile
+            if (leaseLoss.IsLost)
             {
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                     await queueEntry.AbandonAsync().AnyContext();
@@ -206,7 +208,7 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
     /// loss, and while the work item lock is held a redelivered entry can't be processed concurrently because its
     /// worker fails to acquire the same lock and abandons it.
     /// </remarks>
-    private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, CancellationTokenSource workItemCancellation)
+    private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, WorkItemLeaseLoss leaseLoss)
     {
         var queueEntryRenewal = RenewQueueEntryLockAsync();
         var workItemLockRenewal = RenewWorkItemLockAsync();
@@ -229,17 +231,34 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return;
 
         handler.Log.LogWarning("Lost work item lock {Resource} for queue entry {Id}, cancelling work item", workItemLock.Resource, queueEntry.Id);
-        try
-        {
-            await workItemCancellation.CancelAsync().AnyContext();
-        }
-        catch (ObjectDisposedException)
-        {
-            // A progress report that wasn't awaited can finish after the work item; nothing is left to cancel
-        }
+        await leaseLoss.SignalAsync().AnyContext();
 
         async Task RenewQueueEntryLockAsync() => await queueEntry.RenewLockAsync().AnyContext();
         async Task RenewWorkItemLockAsync() => await workItemLock.RenewAsync().AnyContext();
+    }
+
+    /// <summary>
+    /// Records that the work item lease was lost and cancels the work item. The flag, not the token, decides whether
+    /// the entry may be completed, because the job's own token can be cancelled at any time afterward.
+    /// </summary>
+    private sealed class WorkItemLeaseLoss(CancellationTokenSource workItemCancellation)
+    {
+        private volatile bool _isLost;
+
+        public bool IsLost => _isLost;
+
+        public async Task SignalAsync()
+        {
+            _isLost = true;
+            try
+            {
+                await workItemCancellation.CancelAsync().AnyContext();
+            }
+            catch (ObjectDisposedException)
+            {
+                // A progress report that wasn't awaited can finish after the work item; nothing is left to cancel
+            }
+        }
     }
 
     protected virtual Activity? StartProcessWorkItemActivity(IQueueEntry<WorkItemData> entry, Type workItemDataType)

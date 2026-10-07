@@ -390,6 +390,33 @@ public class WorkItemJobTests : TestWithLoggingBase
         var stats = await queue.GetQueueStatsAsync();
         Assert.Equal(1, stats.Completed);
     }
+
+    [Fact]
+    public async Task ProcessAsync_WhenJobIsCancelledAfterWorkItemLockIsLost_AbandonsEntry()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var handler = new LockedWorkItemHandler(locker, Log, response: LostLeaseResponse.ReturnEarly, cancelAfterLoss: jobCancellation) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+
+        // Act
+        var result = await job.RunAsync(jobCancellation.Token);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.True(handler.ObservedCancellation);
+        Assert.False(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Abandoned);
+    }
 }
 
 public enum LostLeaseResponse
@@ -404,12 +431,14 @@ public class LockedWorkItemHandler : WorkItemHandlerBase
     private readonly ILockProvider _locker;
     private readonly bool _loseLock;
     private readonly LostLeaseResponse _response;
+    private readonly CancellationTokenSource? _cancelAfterLoss;
 
-    public LockedWorkItemHandler(ILockProvider locker, ILoggerFactory loggerFactory, bool loseLock = true, LostLeaseResponse response = LostLeaseResponse.Throw) : base(loggerFactory)
+    public LockedWorkItemHandler(ILockProvider locker, ILoggerFactory loggerFactory, bool loseLock = true, LostLeaseResponse response = LostLeaseResponse.Throw, CancellationTokenSource? cancelAfterLoss = null) : base(loggerFactory)
     {
         _locker = locker;
         _loseLock = loseLock;
         _response = response;
+        _cancelAfterLoss = cancelAfterLoss;
     }
 
     public bool ObservedCancellation { get; private set; }
@@ -428,6 +457,9 @@ public class LockedWorkItemHandler : WorkItemHandlerBase
 
         await context.ReportProgressAsync(50);
         ObservedCancellation = context.CancellationToken.IsCancellationRequested;
+        if (_cancelAfterLoss is not null)
+            await _cancelAfterLoss.CancelAsync();
+
         switch (_response)
         {
             case LostLeaseResponse.ReturnEarly when ObservedCancellation:
