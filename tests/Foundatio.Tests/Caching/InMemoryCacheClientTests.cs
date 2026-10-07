@@ -1015,6 +1015,25 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(pattern);
     }
 
+    [Fact]
+    public async Task RecalculateMemorySize_WithExpiredStoredEntry_KeepsSizeUntilRemoved()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).WithFixedSizing(10_000, 50).LoggerFactory(Log));
+        Publish(cache, "live", CreateEntry("live", timeProvider));
+        Publish(cache, "expired", CreateEntry("expired", timeProvider, TimeSpan.FromMinutes(1)));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        long recounted = cache.RecalculateMemorySize();
+        await cache.RemoveAsync("expired");
+
+        // Assert
+        Assert.Equal(100, recounted);
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

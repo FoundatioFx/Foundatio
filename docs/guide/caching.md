@@ -268,6 +268,15 @@ Every write treats an expired entry as missing, even before background maintenan
 
 Successful removal of a live matching value, or removal of the last list value, frees tracked memory immediately and does not raise an expiration event.
 
+::: info Behavior changes from earlier versions
+- `RemoveIfEqualAsync` removes a matching live value immediately and no longer raises `ItemExpired` for it. Earlier versions marked the entry expired and let maintenance remove it, which raised the event.
+- `ListAddAsync` returns `0` and leaves the list unchanged when the merged list fails size validation.
+- `Items` returns the cached values rather than the internal entry objects.
+- `IncrementAsync` recalculates the entry's tracked size after each increment.
+- `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
+- `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
+:::
+
 List updates preserve the collection structure of previously returned snapshots. They preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and, on .NET 9 or later, `OrderedDictionary`. Other `IDictionary` implementations throw `NotSupportedException` when an update requires copying them; the original entry remains unchanged.
 
 `Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.

@@ -41,6 +41,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly ILoggerFactory _loggerFactory;
     private readonly AsyncLock _lock = new();
     private readonly CancellationTokenSource _disposedCancellationTokenSource = new();
+    // Cached so maintenance racing Dispose never reads Token from a disposed source
+    private readonly CancellationToken _disposedCancellationToken;
     private bool _isDisposed;
 
     public InMemoryCacheClient() : this(o => o)
@@ -49,6 +51,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
     public InMemoryCacheClient(InMemoryCacheClientOptions? options = null)
     {
+        _disposedCancellationToken = _disposedCancellationTokenSource.Token;
         if (options is null)
             options = new InMemoryCacheClientOptions();
         _shouldClone = options.CloneValues;
@@ -152,10 +155,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// on subsequent operations or recalculations.
     /// </para>
     /// <para>
-    /// Expired entries are excluded from the calculation to ensure accurate memory reporting.
+    /// Expired entries that are still stored are counted, because removing them later subtracts their size again.
     /// </para>
     /// </remarks>
-    private long RecalculateMemorySize()
+    internal long RecalculateMemorySize()
     {
         if (!_shouldTrackMemory)
             return 0;
@@ -164,11 +167,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var entries = _memory.Values.ToArray();
         long totalSize = 0;
         foreach (var entry in entries)
-        {
-            // Skip expired entries to ensure accurate memory reporting
-            if (!entry.IsExpired)
-                totalSize += entry.Size;
-        }
+            totalSize += entry.Size;
 
         Interlocked.Exchange(ref _currentMemorySize, totalSize);
         return totalSize;
@@ -264,15 +263,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _logger.LogTrace("RemoveIfEqualAsync Key: {Key} Expected: {Expected}", key, expected);
 
-        bool success = UpdateEntry(key, current =>
-        {
-            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
-                return (current, false);
-
-            // A lease that expired while it was being compared no longer belongs to the caller: reclaim it
-            // (UpdateEntry raises ItemExpired) but don't report a release
-            return (null, !current.IsExpired);
-        });
+        bool success = UpdateLease<bool>(key, current => EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected)
+            ? (null, true)
+            : null, missResult: false);
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -360,33 +353,28 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
-        // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
-        // the store, which lets in-flight updates finish on the next attempt.
-        while (true)
+        bool reclaimedExpired = false;
+        var result = UpdateStoredEntry(key, stored =>
         {
-            _memory.TryGetValue(key, out var stored);
-            bool expired = stored is { IsExpired: true };
-            var (desired, result) = update(expired ? null : stored);
-            if (ReferenceEquals(desired, stored))
-                return result;
+            // Checked once per attempt, so the decision and the event always agree
+            reclaimedExpired = stored is { IsExpired: true };
+            return update(reclaimedExpired ? null : stored);
+        });
 
-            if (!TryPublish(key, stored, desired))
-                continue;
+        if (reclaimedExpired)
+            OnItemExpired(key);
 
-            // An entry that expires while the callback runs (a lease expiring mid-comparison) is also reclaimed
-            if (expired || (desired is null && stored is { IsExpired: true }))
-                OnItemExpired(key);
-
-            return result;
-        }
+        return result;
     }
 
     /// <summary>
-    /// Like <see cref="UpdateEntry{TResult}"/>, but the callback sees the stored entry even when it has expired.
-    /// Only maintenance, compaction and explicit removal need this view.
+    /// Like <see cref="UpdateEntry{TResult}"/>, but the callback sees the stored entry even when it has expired, and
+    /// no event is raised. Only maintenance, compaction and explicit removal need this view.
     /// </summary>
     private TResult UpdateStoredEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
     {
+        // Retries only when another writer changed the key first, so some writer always makes progress; Dispose clears
+        // the store, which lets in-flight updates finish on the next attempt.
         while (true)
         {
             _memory.TryGetValue(key, out var current);
@@ -394,6 +382,35 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (ReferenceEquals(desired, current) || TryPublish(key, current, desired))
                 return result;
         }
+    }
+
+    /// <summary>
+    /// Reclaims a lease whose entry expired while the caller was comparing it, raising <see cref="ItemExpired"/>
+    /// only when the reclaiming attempt is the one that was published.
+    /// </summary>
+    private TResult UpdateLease<TResult>(string key, Func<CacheEntry, (CacheEntry? Entry, TResult Result)?> update, TResult missResult)
+    {
+        bool reclaimed = false;
+        var result = UpdateEntry(key, current =>
+        {
+            reclaimed = false;
+            if (current is null || update(current) is not { } decision)
+                return (current, missResult);
+
+            // A lease that expired while it was being compared no longer belongs to the caller: reclaim it
+            if (current.IsExpired)
+            {
+                reclaimed = true;
+                return (null, missResult);
+            }
+
+            return decision;
+        });
+
+        if (reclaimed)
+            OnItemExpired(key);
+
+        return result;
     }
 
     /// <summary>
@@ -751,8 +768,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             Interlocked.Increment(ref _hits);
             entry.RecordAccess();
-            var now = _timeProvider.GetUtcNow().UtcDateTime;
-            var values = list.Read(now);
+            var values = list.Read(_timeProvider.GetUtcNow().UtcDateTime);
             if (values.Length == 0)
                 return new CacheValue<ICollection<T>>([], false);
 
@@ -875,19 +891,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         // Build the replacement only once the expected value matches, so a mismatch never pays for (or throws
         // from) sizing and cloning the new value. It is built at most once, even when the update retries.
         CacheEntry? replacement = null;
-        bool success = UpdateEntry(key, current =>
+        bool success = UpdateLease<bool>(key, current =>
         {
-            if (current is null || !EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
-                return (current, false);
+            if (!EqualityComparer<T>.Default.Equals(current.GetValue<T>(), expected))
+                return null;
 
+            // A lease that expires while it is being sized is reclaimed too, so it is never revived
             replacement ??= CreateEntry(value, expiresAt);
-            if (replacement is null)
-                return (current, false);
-
-            // A lease that expired while it was being compared or sized must not be revived: reclaim it instead
-            // (UpdateEntry raises ItemExpired)
-            return current.IsExpired ? (null, false) : (replacement, true);
-        });
+            return replacement is null ? null : (replacement, true);
+        }, missResult: false);
 
         await StartMaintenanceAsync().AnyContext();
 
@@ -1119,7 +1131,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (TimeSpan.FromMilliseconds(250) < utcNow - _lastMaintenance)
         {
             _lastMaintenance = utcNow;
-            _ = Task.Run(DoMaintenanceAsync, _disposedCancellationTokenSource.Token);
+            _ = Task.Run(DoMaintenanceAsync, _disposedCancellationToken);
         }
     }
 
@@ -1136,7 +1148,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _logger.LogTrace("CompactAsync: Compacting cache");
 
         var expiredKeys = new List<string>();
-        using (await _lock.LockAsync(_disposedCancellationTokenSource.Token).AnyContext())
+        using (await _lock.LockAsync(_disposedCancellationToken).AnyContext())
         {
             int removalCount = 0;
 
