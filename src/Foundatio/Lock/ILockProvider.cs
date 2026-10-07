@@ -314,7 +314,7 @@ public static class LockProviderExtensions
         var sw = Stopwatch.StartNew();
 
         var timeProvider = provider.GetTimeProvider();
-        var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewed)>(resourceList.Length);
+        var acquiredLocks = new List<(ILock Lock, DateTimeOffset LastRenewedUtc)>(resourceList.Length);
         bool acquiredAll = false;
         try
         {
@@ -352,11 +352,11 @@ public static class LockProviderExtensions
     /// Renews every lock except the most recently acquired one whose renewal interval has elapsed.
     /// Returns <c>false</c> when a lease was lost; provider errors propagate.
     /// </summary>
-    private static async Task<bool> TryRenewEarlierLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewed)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
+    private static async Task<bool> TryRenewEarlierLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewedUtc)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
     {
         var utcNow = timeProvider.GetUtcNow();
         var renewBeforeUtc = utcNow.Subtract(renewTime);
-        int[] locksToRenew = Enumerable.Range(0, acquiredLocks.Count - 1).Where(index => acquiredLocks[index].LastRenewed < renewBeforeUtc).ToArray();
+        int[] locksToRenew = Enumerable.Range(0, acquiredLocks.Count - 1).Where(index => acquiredLocks[index].LastRenewedUtc < renewBeforeUtc).ToArray();
         if (locksToRenew.Length is 0)
             return true;
 
