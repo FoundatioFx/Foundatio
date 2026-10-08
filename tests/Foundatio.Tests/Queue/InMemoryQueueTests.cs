@@ -162,6 +162,24 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task StartWorkingAsync_WhenDequeueThrows_KeepsWorkingAsync()
+    {
+        return base.StartWorkingAsync_WhenDequeueThrows_KeepsWorkingAsync();
+    }
+
+    [Fact]
+    public override Task StartWorkingAsync_WhenAbandonThrows_KeepsWorkingAsync()
+    {
+        return base.StartWorkingAsync_WhenAbandonThrows_KeepsWorkingAsync();
+    }
+
+    [Fact]
+    public override Task StartWorkingAsync_WhenCancelled_StopsWithoutWorkerErrorsAsync()
+    {
+        return base.StartWorkingAsync_WhenCancelled_StopsWithoutWorkerErrorsAsync();
+    }
+
+    [Fact]
     public override Task WorkItemsWillTimeoutAsync()
     {
         return base.WorkItemsWillTimeoutAsync();

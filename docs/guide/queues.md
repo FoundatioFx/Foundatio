@@ -376,6 +376,19 @@ await queue.StartWorkingAsync(
 );
 ```
 
+#### Worker Error Handling
+
+Workers started with `StartWorkingAsync` keep running through transient failures. Every built-in provider uses the same loop:
+
+| Failure | What the worker does | Counted in `QueueStats.Errors` |
+|---------|---------------------|--------------------------------|
+| Dequeue throws (network, provider outage, throwing `Dequeued` handler) | Logs the error and waits before the next dequeue: about 1s, doubling up to 30s, with jitter. The delay resets after a dequeue that doesn't throw. | Yes |
+| Your handler throws | Logs the error and abandons the entry (unless your handler already completed or abandoned it) so it is retried or dead-lettered. | Yes |
+| Abandon or auto-complete throws | Retries through the queue's resilience policy, then logs and keeps working. The entry becomes available again when its lock expires. | Auto-complete only |
+| The worker's cancellation token is cancelled, or the queue is disposed | Stops. A handler that throws `OperationCanceledException` because of that cancellation isn't counted, and its entry is abandoned. | No |
+
+Because entries can be redelivered after a failed complete or abandon, handlers should be idempotent.
+
 ## Queue Entry Options
 
 Configure enqueue behavior:
@@ -883,6 +896,7 @@ If you are writing a custom `IQueue<T>` implementation by extending `QueueBase<T
 - **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.).
 - **`DequeueImplAsync`** receives a linked token (caller + disposal). Respect it for the wait/poll operation.
 - **`EnqueueImplAsync`** does not receive a cancellation token — keep enqueue fast and non-blocking.
+- **`StartWorkingImpl`** should call `StartWorker(handler, autoComplete, cancellationToken)` so the worker handles errors the same way as every built-in provider (see [Worker Error Handling](#worker-error-handling)). Report `WorkerErrorCount` as `QueueStats.Errors` and call `ResetWorkerErrorCount()` when stats are reset.
 
 ## Best Practices
 
