@@ -206,6 +206,9 @@ internal sealed class MessageClientCore : IAsyncDisposable
         if (ensureDestination is not null)
             await ensureDestination(destination, cancellationToken).AnyContext();
 
+        if (CapabilitiesFor(destination).MaxMessageBytes is { } maximum && transportMessage.Body.Length > maximum)
+            throw _exceptionFactory($"Message of {transportMessage.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maximum} bytes for destination \"{destination}\".", null);
+
         if (await TryScheduleAsync(kind, destination, [transportMessage], sendOptions, cancellationToken).AnyContext())
             return messageId;
 
@@ -256,6 +259,15 @@ internal sealed class MessageClientCore : IAsyncDisposable
                     await ensureDestination(group.Key, cancellationToken).AnyContext();
 
                 var transportMessages = group.Value.Select(item => item.Message).ToArray();
+                if (CapabilitiesFor(group.Key).MaxMessageBytes is { } maximum)
+                {
+                    foreach (var message in transportMessages)
+                    {
+                        if (message.Body.Length > maximum)
+                            throw _exceptionFactory($"Message of {message.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maximum} bytes for destination \"{group.Key}\".", null);
+                    }
+                }
+
                 if (!await TryScheduleAsync(kind, group.Key, transportMessages, sendOptions, cancellationToken).AnyContext())
                     await SendChunkedAsync(group.Key, transportMessages, sendOptions, cancellationToken).AnyContext();
 
@@ -1010,9 +1022,6 @@ internal sealed class MessageClientCore : IAsyncDisposable
 
     private async Task SendOneAsync(DestinationAddress destination, TransportMessage message, TransportSendOptions options, CancellationToken cancellationToken)
     {
-        if (CapabilitiesFor(destination).MaxMessageBytes is { } maximum && message.Body.Length > maximum)
-            throw _exceptionFactory($"Message of {message.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maximum} bytes for destination \"{destination}\".", null);
-
         bool attempted = false;
         IReadOnlyList<SendItemResult>? reported = null;
         try
@@ -1048,17 +1057,6 @@ internal sealed class MessageClientCore : IAsyncDisposable
     private async Task<IReadOnlyList<SendItemResult>> SendChunkedAsync(DestinationAddress destination, IReadOnlyList<TransportMessage> messages, TransportSendOptions options, CancellationToken cancellationToken)
     {
         var capabilities = CapabilitiesFor(destination);
-
-        // Enforce a transport-declared maximum message size up front with a clear error, rather than letting an opaque
-        // broker rejection surface mid-send (the limit is advertised, so honor it).
-        if (capabilities.MaxMessageBytes is { } maxBytes)
-        {
-            foreach (var message in messages)
-            {
-                if (message.Body.Length > maxBytes)
-                    throw _exceptionFactory($"Message of {message.Body.Length} bytes exceeds transport \"{_transport.GetType().Name}\" maximum of {maxBytes} bytes for destination \"{destination}\".", null);
-            }
-        }
 
         int limit = capabilities.MaxBatchSize is > 0 ? capabilities.MaxBatchSize.Value : Math.Max(1, messages.Count);
         var items = new List<SendItemResult>(messages.Count);

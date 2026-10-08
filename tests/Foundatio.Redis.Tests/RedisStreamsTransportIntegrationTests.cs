@@ -26,6 +26,48 @@ public class RedisStreamsTransportIntegrationTests
 
     private static string NewPrefix() => $"fnd-it:{Guid.NewGuid():N}:";
 
+    [Theory]
+    [InlineData("{invalid")]
+    [InlineData("{\"bad\":null}")]
+    [InlineData("{\"\":\"value\"}")]
+    public async Task ReceiveAsync_MalformedHeaders_PreservesHealthyBatchAndQuarantinesPoison(string rawHeaders)
+    {
+        // Arrange
+        var connection = RedisTestConnection.Multiplexer;
+        Assert.SkipWhen(connection is null, "FOUNDATIO_REDIS_CONNECTION_STRING not set.");
+        var token = TestContext.Current.CancellationToken;
+        string prefix = NewPrefix();
+        await using var transport = CreateTransport(connection, prefix);
+        var source = DestinationAddress.ForQueue("malformed");
+        await transport.EnsureAsync([new() { Address = source }], token);
+        var db = connection.GetDatabase();
+        string stream = prefix + "q:" + Convert.ToHexString(System.Text.Encoding.UTF8.GetBytes(source.Name));
+        var poisonId = await db.StreamAddAsync(stream, [new("id", "poison"), new("h", rawHeaders), new("b", "raw poison")]);
+        (await transport.SendAsync(source, [new() { MessageId = "healthy", Body = "{}"u8.ToArray() }], new(), token)).EnsureAccepted(1);
+
+        // Act
+        var entries = await transport.ReceiveAsync(source, new() { MaxMessages = 2 }, token);
+
+        // Assert
+        Assert.Equal(2, entries.Count);
+        Assert.NotNull(entries[0].EnvelopeError);
+        Assert.Equal(poisonId.ToString(), entries[0].Id);
+        Assert.Equal("raw poison", System.Text.Encoding.UTF8.GetString(entries[0].Body.Span));
+        Assert.Equal(rawHeaders, entries[0].Headers["transport.raw.headers"]);
+        Assert.NotNull(entries[0].Receipt.TransportState);
+        Assert.Null(entries[1].EnvelopeError);
+        Assert.Equal("healthy", entries[1].ApplicationMessageId);
+        await transport.AbandonAsync(entries[0], token);
+        await transport.CompleteAsync(entries[1], token);
+        await using var bus = new MessageBus(transport, new MessageBusOptions { OwnsTransport = false });
+        await Assert.ThrowsAsync<MessageBusException>(() => bus.ReceiveAsync<PoisonItem>(new() { Destination = source.Name }, token));
+        var dead = Assert.Single(await transport.PeekDeadLetteredAsync(source, cancellationToken: token));
+        Assert.Equal("invalid-envelope", dead.Headers[KnownHeaders.DeadLetterReason]);
+        Assert.Equal(rawHeaders, dead.Headers["transport.raw.headers"]);
+        Assert.Equal("raw poison", System.Text.Encoding.UTF8.GetString(dead.Body.Span));
+        Assert.Equal(0, (await transport.GetStatsAsync(source, token)).Working);
+    }
+
     [Fact]
     public async Task MessagingScheduling_DifferentTransportPrefixes_IsolatesDispatchesAsync()
     {

@@ -15,6 +15,42 @@ namespace Foundatio.Aws.Tests;
 
 public class AwsEnvelopeTests
 {
+    [Theory]
+    [InlineData("text/plain; charset=iso-8859-1", "68E96C6C6F")]
+    [InlineData("text/plain; charset=utf-16", "68006900")]
+    [InlineData("text/plain", "0001")]
+    [InlineData("text/plain", "EFBFBE")]
+    [InlineData("text/plain", "EFBFBF")]
+    public async Task SendAndReceiveAsync_TextBytesRequiringEncoding_PreservesOriginalPayload(string contentType, string hex)
+    {
+        // Arrange
+        var token = TestContext.Current.CancellationToken;
+        byte[] body = Convert.FromHexString(hex);
+        SendMessageBatchRequestEntry? sent = null;
+        var sqs = new Mock<IAmazonSQS>();
+        sqs.Setup(s => s.GetQueueUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new GetQueueUrlResponse { QueueUrl = "http://test/queue" });
+        sqs.Setup(s => s.SendMessageBatchAsync(It.IsAny<SendMessageBatchRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SendMessageBatchRequest request, CancellationToken _) =>
+            {
+                sent = Assert.Single(request.Entries);
+                return new SendMessageBatchResponse { Successful = [new() { Id = sent.Id, MessageId = "broker-id" }] };
+            });
+        sqs.Setup(s => s.ReceiveMessageAsync(It.IsAny<ReceiveMessageRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => new ReceiveMessageResponse { Messages = [new() { MessageId = "broker-id", ReceiptHandle = "receipt", Body = sent!.MessageBody, MessageAttributes = sent.MessageAttributes }] });
+        await using var transport = new AwsMessageTransport(new(), sqs.Object, Mock.Of<IAmazonSimpleNotificationService>());
+        var source = DestinationAddress.ForQueue("test");
+
+        // Act
+        (await transport.SendAsync(source, [new() { Body = body, ContentType = contentType }], new(), token)).EnsureAccepted(1);
+        var received = Assert.Single(await transport.ReceiveAsync(source, new(), token));
+
+        // Assert
+        Assert.Equal(Convert.ToBase64String(body), sent!.MessageBody);
+        Assert.Null(received.EnvelopeError);
+        Assert.Equal(body, received.Body.ToArray());
+        Assert.Equal(contentType, received.ContentType);
+    }
+
     [Fact]
     public async Task ReceiveAsync_SystemAttributes_RequestsDeliveryCountAndEnqueueTime()
     {

@@ -14,7 +14,7 @@ public sealed class MessageAdministration(IMessageTransport transport, TimeProvi
 {
     private readonly ILogger _logger = logger ?? NullLogger.Instance;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
-    private static DestinationAddress DeadLetters(DestinationAddress source) => DestinationAddress.ForQueue(source.Name + ".deadletter");
+    private static DestinationAddress DeadLetters(DestinationAddress source) => DestinationAddress.ForQueue(source.Key + ".deadletter");
 
     public async Task<MessageDestinationStats> GetStatsAsync(DestinationAddress source, CancellationToken cancellationToken = default)
     {

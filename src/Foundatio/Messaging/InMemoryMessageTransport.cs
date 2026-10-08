@@ -210,7 +210,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
 
         Interlocked.Increment(ref state.Abandoned);
         var redelivered = inFlight.Message with { DeliveryCount = entry.DeliveryCount + 1 };
-        ScheduleRedelivery(receipt.Destination, redelivered, redeliveryDelay);
+        ScheduleRedelivery(state, redelivered, redeliveryDelay);
 
         return Task.CompletedTask;
     }
@@ -486,7 +486,7 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
     // Make an abandoned message invisible for the redelivery delay, then re-enqueue it. Re-enqueueing releases the
     // destination's availability semaphore, so a consumer blocked in a long receive wait wakes immediately when the
     // message becomes due. The one-shot timer is tracked so it can be disposed if the transport is torn down first.
-    private void ScheduleRedelivery(string destination, StoredMessage message, TimeSpan delay)
+    private void ScheduleRedelivery(DestinationState destination, StoredMessage message, TimeSpan delay)
     {
         ITimer? timer = null;
         timer = _timeProvider.CreateTimer(timerState =>
@@ -499,13 +499,13 @@ public sealed partial class InMemoryMessageTransport : IMessageTransport, ISuppo
 
             try
             {
-                EnqueueStoredMessage(destination, message);
+                destination.Enqueue(message);
             }
             catch (ObjectDisposedException) { }
             catch (InvalidOperationException) { } // destination was deleted / completed between scheduling and firing
         }, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
 
-        _redeliveryTimers[timer] = destination;
+        _redeliveryTimers[timer] = destination.Key;
         timer.Change(delay, Timeout.InfiniteTimeSpan);
 
         // A redelivery scheduled right as the transport disposes could otherwise leak its timer; clean up the race.

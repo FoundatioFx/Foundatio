@@ -17,6 +17,35 @@ public class InMemoryMessageTransportTests : MessageTransportConformanceTests
         return new InMemoryMessageTransport();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AbandonAsync_DestinationDeletedDuringDelay_DiscardsOldDelivery(bool recreate)
+    {
+        // Arrange
+        var time = new FakeTimeProvider();
+        await using var transport = new InMemoryMessageTransport(time);
+        var queue = DestinationAddress.ForQueue("deleted-redelivery");
+        await transport.SendAsync(queue, [new TransportMessage { MessageId = "old", Body = new byte[] { 1 } }], new(), TestCancellationToken);
+        var entry = Assert.Single(await transport.ReceiveAsync(queue, new(), TestCancellationToken));
+        await transport.AbandonAsync(entry, TimeSpan.FromMinutes(1), TestCancellationToken);
+
+        // Act
+        await transport.DeleteAsync(queue, TestCancellationToken);
+        if (recreate)
+            await transport.SendAsync(queue, [new TransportMessage { MessageId = "new", Body = new byte[] { 2 } }], new(), TestCancellationToken);
+        time.Advance(TimeSpan.FromMinutes(2));
+
+        // Assert
+        Assert.Equal(recreate, await transport.ExistsAsync(queue, TestCancellationToken));
+        if (recreate)
+        {
+            var received = Assert.Single(await transport.ReceiveAsync(queue, new() { MaxMessages = 10 }, TestCancellationToken));
+            Assert.Equal("new", received.ApplicationMessageId);
+            await transport.CompleteAsync(received, TestCancellationToken);
+        }
+    }
+
     [Fact]
     public async Task CompletedDeliveries_KeepVisibilityTimerResourcesBounded()
     {

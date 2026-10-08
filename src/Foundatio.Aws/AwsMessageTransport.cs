@@ -577,14 +577,26 @@ public sealed partial class AwsMessageTransport : IMessageTransport, ISupportsPu
             ?? throw new ReceiptExpiredException("The transport entry does not carry an SQS receipt handle.");
     }
 
-    // A text body (e.g. JSON, the default) is stored as-is so it is human-readable in the console and avoids base64
-    // overhead; anything else is base64-encoded so arbitrary bytes round-trip through SQS/SNS string bodies. The chosen
-    // encoding is recorded in a native attribute for the receive side.
+    private static readonly UTF8Encoding _strictUtf8 = new(false, true);
+
+    // Direct text must round-trip as UTF8 and contain only SQS-supported characters; other payloads use base64.
     private static (string Body, string Encoding) EncodeBody(TransportMessage message)
     {
-        return IsTextContent(message.ContentType)
-            ? (Encoding.UTF8.GetString(message.Body.Span), "text")
-            : (Convert.ToBase64String(message.Body.Span), "base64");
+        if (IsTextContent(message.ContentType))
+        {
+            try
+            {
+                string body = _strictUtf8.GetString(message.Body.Span);
+                foreach (char character in body)
+                {
+                    if ((character < ' ' && character is not ('\t' or '\n' or '\r')) || character is '\uFFFE' or '\uFFFF')
+                        return (Convert.ToBase64String(message.Body.Span), "base64");
+                }
+                return (body, "text");
+            }
+            catch (DecoderFallbackException) { }
+        }
+        return (Convert.ToBase64String(message.Body.Span), "base64");
     }
 
     private static ReadOnlyMemory<byte> DecodeBody(string body, string? encoding)

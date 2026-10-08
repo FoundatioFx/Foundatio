@@ -23,10 +23,10 @@ public sealed partial class AwsMessageTransport
         ArgumentOutOfRangeException.ThrowIfGreaterThan(options.MessageRetention, TimeSpan.FromDays(14));
         // A fresh identity avoids queue-deleted-recently failures and prevents two processes adopting one receipt namespace.
         var source = DestinationAddress.ForSubscription(options.Topic, $"node-{options.NodeId}-{Guid.NewGuid():N}");
-        await EnsureSubscriptionAsync(source, cancellationToken).ConfigureAwait(false);
-        string url = await ResolveQueueUrlAsync(source, cancellationToken).ConfigureAwait(false);
         try
         {
+            await EnsureSubscriptionAsync(source, cancellationToken).ConfigureAwait(false);
+            string url = await ResolveQueueUrlAsync(source, cancellationToken).ConfigureAwait(false);
             await _sqs.Value.SetQueueAttributesAsync(new SetQueueAttributesRequest
             {
                 QueueUrl = url,
@@ -42,7 +42,12 @@ public sealed partial class AwsMessageTransport
         catch
         {
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            try { await DeleteAsync(source, cleanup.Token).ConfigureAwait(false); } catch { }
+            try { await DeleteAsync(source, cleanup.Token).ConfigureAwait(false); }
+            catch
+            {
+                using var queueCleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                try { await DeleteAsync(DestinationAddress.ForQueue(source.Key), queueCleanup.Token).ConfigureAwait(false); } catch { }
+            }
             throw;
         }
     }

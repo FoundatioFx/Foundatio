@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using StackExchange.Redis;
@@ -425,7 +426,18 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
 
     private TransportEntry ToEntry(DestinationAddress destination, ResolvedSource? resolved, StreamEntry entry, int deliveries, string token)
     {
-        var headers = MessageHeaders.DeserializeFromJson(GetField(entry, "h"));
+        string? rawHeaders = GetField(entry, "h");
+        MessageHeaders headers;
+        Exception? envelopeError = null;
+        try
+        {
+            headers = MessageHeaders.DeserializeFromJson(rawHeaders);
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
+        {
+            envelopeError = ex;
+            headers = MessageHeaders.Create(new Dictionary<string, string> { ["transport.raw.headers"] = rawHeaders ?? "" });
+        }
         Receipt receipt = resolved is null
             ? default
             : new Receipt { TransportState = new StreamReceipt(resolved.StreamKey.ToString(), resolved.Group, entry.Id.ToString(), token) };
@@ -438,6 +450,7 @@ public sealed partial class RedisStreamsMessageTransport : IMessageTransport, IS
             Destination = destination,
             Body = GetBody(entry),
             Headers = headers,
+            EnvelopeError = envelopeError,
             DeliveryCount = deliveries,
             EnqueuedUtc = ParseStreamIdTime(entry.Id),
             Receipt = receipt
