@@ -204,7 +204,8 @@ public abstract class LockTestBase : TestWithLoggingBase
             return;
 
         var resources = new List<string> { "test1", "test2", "test3", "test4", "test5" };
-        await using var testLock = await locker.TryAcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        // Long enough that the RenewAsync below can't race the lease expiring, which now throws
+        await using var testLock = await locker.TryAcquireAsync(resources, timeUntilExpires: TimeSpan.FromSeconds(5));
         if (testLock is not null)
             _logger.LogInformation("Acquired lock attempt #1");
         else
@@ -243,7 +244,8 @@ public abstract class LockTestBase : TestWithLoggingBase
         locker = new ScopedLockProvider(locker, "myscope");
 
         var resources = new List<string> { "test1", "test2", "test3", "test4", "test5" };
-        await using var testLock = await locker.TryAcquireAsync(resources, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        // Long enough that the RenewAsync below can't race the lease expiring, which now throws
+        await using var testLock = await locker.TryAcquireAsync(resources, timeUntilExpires: TimeSpan.FromSeconds(5));
         if (testLock is not null)
             _logger.LogInformation("Acquired lock attempt #1");
         else
@@ -432,6 +434,118 @@ public abstract class LockTestBase : TestWithLoggingBase
     private static Task<bool> DoLockedWorkAsync(ILockProvider locker)
     {
         return locker.TryUsingAsync("DoLockedWork", async () => await Task.Delay(500), TimeSpan.FromMinutes(1), TimeSpan.Zero);
+    }
+
+    public virtual async Task RenewAsync_AfterRelease_ThrowsLockExceptionAndDoesNotRecreateLock()
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        await using var lockInstance = await locker.TryAcquireAsync(lockName, timeUntilExpires: TimeSpan.FromSeconds(5));
+        Assert.NotNull(lockInstance);
+        await lockInstance.ReleaseAsync();
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.False(await locker.IsLockedAsync(lockName));
+        Assert.Equal(0, lockInstance.RenewalCount);
+    }
+
+    public virtual async Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        await using var stale = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        await stale.ReleaseAsync();
+        await using var current = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        var error = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => stale.RenewAsync(TimeSpan.FromMilliseconds(milliseconds)));
+
+        // Assert
+        Assert.Equal("timeUntilExpires", error.ParamName);
+        Assert.Equal(0, stale.RenewalCount);
+        Assert.True(await locker.IsLockedAsync(lockName));
+        await current.RenewAsync();
+        Assert.Equal(1, current.RenewalCount);
+    }
+
+    public virtual async Task RenewAsync_WithMissingLock_ThrowsLockException()
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        string lockId = Guid.NewGuid().ToString("N");
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => locker.RenewAsync(lockName, lockId));
+
+        // Assert
+        Assert.False(await locker.IsLockedAsync(lockName));
+    }
+
+    public virtual async Task RenewAsync_WithMultipleResources_WhenOneLockReplaced_ThrowsLockExceptionAndPreservesCurrentOwner()
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string prefix = Guid.NewGuid().ToString("N")[..10];
+        string replacedResource = prefix + "-a";
+        string retainedResource = prefix + "-b";
+        await using var lockInstance = await locker.AcquireAsync([replacedResource, retainedResource], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        await locker.ReleaseAsync(replacedResource);
+        await using var currentOwner = await locker.AcquireAsync(replacedResource, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => lockInstance.RenewAsync());
+
+        // Assert
+        Assert.Equal(0, lockInstance.RenewalCount);
+        Assert.True(await locker.IsLockedAsync(replacedResource));
+        Assert.True(await locker.IsLockedAsync(retainedResource));
+        await currentOwner.RenewAsync();
+        Assert.Equal(1, currentOwner.RenewalCount);
+    }
+
+    public virtual async Task RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(bool scoped)
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+        if (scoped)
+            locker = new ScopedLockProvider(locker, "renewal");
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        await using var stale = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        await locker.ReleaseAsync(stale.Resource);
+        await using var current = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await Assert.ThrowsAsync<LockException>(() => stale.RenewAsync());
+
+        // Assert
+        Assert.NotEqual(stale.LockId, current.LockId);
+        Assert.Equal(0, stale.RenewalCount);
+        Assert.True(await locker.IsLockedAsync(lockName));
+        await stale.ReleaseAsync();
+        await current.RenewAsync();
+        Assert.True(await locker.IsLockedAsync(lockName));
+        Assert.Equal(1, current.RenewalCount);
     }
 
     public virtual async Task WillThrottleCallsAsync()
@@ -650,6 +764,29 @@ public abstract class LockTestBase : TestWithLoggingBase
 
         // Assert
         Assert.False(await locker.IsLockedAsync(lockName).AnyContext());
+    }
+
+    public virtual async Task TryAcquireAsync_WithMultipleResources_WhenResourceNamesShareSuffix_ReleasesAcquiredLocksAndReturnsNull(bool scoped)
+    {
+        // Arrange
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+        if (scoped)
+            locker = new ScopedLockProvider(locker, "suffix");
+
+        string heldResource = "b" + Guid.NewGuid().ToString("N");
+        string availableResource = "a" + heldResource;
+        await using var owner = await locker.AcquireAsync(heldResource, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync([availableResource, heldResource], TimeSpan.FromMinutes(1), cancellationToken: new CancellationToken(true));
+
+        // Assert
+        Assert.Null(lockInstance);
+        Assert.False(await locker.IsLockedAsync(availableResource));
+        Assert.True(await locker.IsLockedAsync(heldResource));
+        await owner.RenewAsync();
     }
 
     public virtual async Task TryUsingAsync_WithSuccessfulAction_ExecutesAndReleasesLock()
