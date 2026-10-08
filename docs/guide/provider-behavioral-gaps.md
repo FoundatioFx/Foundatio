@@ -128,6 +128,18 @@ Support for SQS requires a package version that includes group id support. Queue
 | Azure Service Bus | ✅ | Second | `ScheduledEnqueueTimeUtc` |
 | SQS | ✅ | Second (0-900s max) | `DelaySeconds` parameter |
 
+### Retry Delay on Abandon
+
+| Provider | Mechanism | Delivery | Notes |
+|----------|-----------|----------|-------|
+| InMemory | Re-added after a timer | At-least-once | Pending retries are lost if the process exits |
+| Redis | Wait list | At-least-once | Moved back by queue maintenance |
+| Azure Storage Queue | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
+| Azure Service Bus | Scheduled copy of the message | At-least-once | The retry is sent before the original is completed, so a failed send can't lose the message; if the complete then fails, the original is redelivered too and the handler may see the message twice. The copy keeps `MessageId`, `CorrelationId`, `SessionId` (`GroupId`) and application properties |
+| SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
+
+Handlers should be idempotent with every provider; see [message loss and duplicates](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-message-loss-and-duplicates) for the Service Bus guidance.
+
 ---
 
 ## IMessageBus
