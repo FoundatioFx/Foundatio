@@ -348,6 +348,77 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         Assert.True(await inner.IsLockedAsync("c"));
     }
 
+    [Theory]
+    [InlineData(59, false)]
+    [InlineData(60, false)]
+    [InlineData(61, true)]
+    public async Task TryAcquireAsync_AfterSlowRenewal_ReturnsOnlyUnexpiredLeases(int renewalSeconds, bool acquiredByAnotherOwner)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var inner = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        var renewalStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = new Mock<ILock>();
+        ILock? firstLease = null;
+        first.SetupGet(l => l.Resource).Returns("a");
+        first.Setup(l => l.ReleaseAsync()).Returns(() => firstLease!.ReleaseAsync());
+        first.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Returns(async (TimeSpan? extension) =>
+        {
+            await firstLease!.RenewAsync(extension);
+            renewalStarted.SetResult();
+            await finishRenewal.Task;
+        });
+        var locker = CreateMockLockProvider(timeProvider);
+        locker.Setup(p => p.TryAcquireAsync("a", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(async () =>
+        {
+            firstLease = await inner.TryAcquireAsync("a", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+            return first.Object;
+        });
+        locker.Setup(p => p.TryAcquireAsync("b", It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).Returns(async () =>
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(31));
+            return await inner.TryAcquireAsync("b", TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        });
+
+        // Act
+        var acquisition = locker.Object.TryAcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        try
+        {
+            await renewalStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+            timeProvider.Advance(TimeSpan.FromSeconds(renewalSeconds));
+            await using var newOwner = acquiredByAnotherOwner
+                ? await inner.AcquireAsync("b", TimeSpan.FromMinutes(10), cancellationToken: TestCancellationToken)
+                : null;
+            finishRenewal.SetResult();
+            await using var lockInstance = await acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            if (renewalSeconds < 60)
+            {
+                Assert.NotNull(lockInstance);
+                Assert.True(await inner.IsLockedAsync("a"));
+                Assert.True(await inner.IsLockedAsync("b"));
+                first.Verify(l => l.ReleaseAsync(), Times.Never);
+            }
+            else
+            {
+                Assert.Null(lockInstance);
+                Assert.False(await inner.IsLockedAsync("a"));
+                Assert.Equal(acquiredByAnotherOwner, await inner.IsLockedAsync("b"));
+                first.Verify(l => l.ReleaseAsync(), Times.Once);
+            }
+            if (newOwner is not null)
+                await newOwner.RenewAsync();
+        }
+        finally
+        {
+            finishRenewal.TrySetResult();
+            await using var remaining = await acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+    }
+
     [Fact]
     public async Task TryAcquireAsync_WithMultipleResources_WhenEarlierLockLost_ReleasesAcquiredLocksAndReturnsNull()
     {

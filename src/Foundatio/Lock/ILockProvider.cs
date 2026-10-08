@@ -349,8 +349,8 @@ public static class LockProviderExtensions
     }
 
     /// <summary>
-    /// Renews every lock except the most recently acquired one whose renewal interval has elapsed.
-    /// Returns <c>false</c> when a lease was lost; provider errors propagate.
+    /// Renews earlier locks whose renewal interval has elapsed and checks every acquired lease after awaiting renewal.
+    /// Returns <c>false</c> when a lease was lost or its conservative lifetime elapsed; provider errors propagate.
     /// </summary>
     private static async Task<bool> TryRenewEarlierLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewedUtc)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
     {
@@ -372,6 +372,15 @@ public static class LockProviderExtensions
 
         foreach (int index in locksToRenew)
             acquiredLocks[index] = (acquiredLocks[index].Lock, utcNow);
+
+        var checkedAtUtc = timeProvider.GetUtcNow();
+        // With no explicit duration, use the same conservative one-minute lifetime as the renewal schedule.
+        var leaseDuration = timeUntilExpires.GetValueOrDefault(TimeSpan.FromMinutes(1));
+        if (acquiredLocks.Any(l => checkedAtUtc - l.LastRenewedUtc >= leaseDuration))
+        {
+            logger.LogWarning("An acquired lease may have expired while renewing locks for {Resource}, releasing acquired locks", acquiredLocks[^1].Lock.Resource);
+            return false;
+        }
 
         logger.LogTrace("Renewed {LockCount} locks {Resource} RenewTime={RenewTime:g}", locksToRenew.Length, locksToRenew.Select(index => acquiredLocks[index].Lock.Resource), renewTime);
         return true;
