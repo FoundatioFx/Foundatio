@@ -70,6 +70,9 @@ export default defineConfig({
             { text: 'Kafka', link: '/guide/implementations/kafka' },
             { text: 'Minio', link: '/guide/implementations/minio' },
             { text: 'RabbitMQ', link: '/guide/implementations/rabbitmq' },
+            { text: 'RabbitMQ Delivery Safety', link: '/guide/implementations/rabbitmq-delivery-safety' },
+            { text: 'RabbitMQ Verification', link: '/guide/implementations/rabbitmq-verification' },
+            { text: 'RabbitMQ Quorum Migration', link: '/guide/implementations/rabbitmq-quorum-migration' },
             { text: 'Redis', link: '/guide/implementations/redis' },
             { text: 'SshNet', link: '/guide/implementations/sshnet' }
           ]
