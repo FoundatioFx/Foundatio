@@ -85,7 +85,7 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/9927bdab012ae8af76d7e3f4ba3f95ccaaf0b0a7/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/9e20a4c6c115e75837cd028dd4dbc626635d39e6/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ
