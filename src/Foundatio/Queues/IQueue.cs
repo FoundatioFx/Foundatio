@@ -242,6 +242,12 @@ public record QueueEntryOptions
     /// <summary>
     /// Custom properties to attach to the message.
     /// </summary>
+    /// <remarks>
+    /// Copied for each enqueue. Comparers are preserved for <see cref="Dictionary{TKey,TValue}"/>,
+    /// <see cref="SortedDictionary{TKey,TValue}"/>, <see cref="SortedList{TKey,TValue}"/> and
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>.
+    /// Other implementations are copied into a dictionary using the default string comparer.
+    /// </remarks>
     [DisallowNull]
     public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -419,8 +420,16 @@ public class InMemoryQueueTests : QueueTestBase
         Assert.Empty(options.Properties);
     }
 
-    [Fact]
-    public async Task EnqueueAsync_WithGroupIdResolver_PreservesPropertiesComparerAsync()
+    [Theory]
+    [InlineData("Dictionary", true)]
+    [InlineData("Dictionary", false)]
+    [InlineData("SortedDictionary", true)]
+    [InlineData("SortedDictionary", false)]
+    [InlineData("SortedList", true)]
+    [InlineData("SortedList", false)]
+    [InlineData("ConcurrentDictionary", true)]
+    [InlineData("ConcurrentDictionary", false)]
+    public async Task EnqueueAsync_WithGroupIdResolver_PreservesPropertiesComparerAsync(string dictionaryType, bool ignoreCase)
     {
         // Arrange
         QueueEntryOptions? handlerOptions = null;
@@ -431,9 +440,21 @@ public class InMemoryQueueTests : QueueTestBase
         queue.Enqueuing.AddHandler((_, args) =>
         {
             handlerOptions = args.Options;
+            Assert.Equal("value", args.Options.Properties[ignoreCase ? "KEY" : "Key"]);
+            args.Options.Properties["Handler"] = "handler-only";
             return Task.CompletedTask;
         });
-        var options = new QueueEntryOptions { Properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Key"] = "value" } };
+        var comparer = ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        IDictionary<string, string> properties = dictionaryType switch
+        {
+            "Dictionary" => new Dictionary<string, string>(comparer),
+            "SortedDictionary" => new SortedDictionary<string, string>(comparer),
+            "SortedList" => new SortedList<string, string>(comparer),
+            "ConcurrentDictionary" => new ConcurrentDictionary<string, string>(comparer),
+            _ => throw new ArgumentException("Unknown dictionary type", nameof(dictionaryType))
+        };
+        properties["Key"] = "value";
+        var options = new QueueEntryOptions { Properties = properties };
 
         // Act
         await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
@@ -441,8 +462,12 @@ public class InMemoryQueueTests : QueueTestBase
         // Assert
         Assert.NotNull(handlerOptions);
         Assert.NotSame(options, handlerOptions);
+        Assert.NotSame(options.Properties, handlerOptions.Properties);
         Assert.Equal("tenant-1", handlerOptions.GroupId);
-        Assert.True(handlerOptions.Properties.ContainsKey("KEY"));
+        Assert.Equal(ignoreCase, handlerOptions.Properties.ContainsKey("KEY"));
+        Assert.Equal("handler-only", handlerOptions.Properties["Handler"]);
+        Assert.Single(options.Properties);
+        Assert.Equal("value", options.Properties["Key"]);
     }
 
     [Fact]
