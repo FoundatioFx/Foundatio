@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -429,6 +430,10 @@ public class InMemoryQueueTests : QueueTestBase
     [InlineData("SortedList", false)]
     [InlineData("ConcurrentDictionary", true)]
     [InlineData("ConcurrentDictionary", false)]
+    [InlineData("ImmutableDictionary", true)]
+    [InlineData("ImmutableDictionary", false)]
+    [InlineData("ImmutableSortedDictionary", true)]
+    [InlineData("ImmutableSortedDictionary", false)]
     public async Task EnqueueAsync_WithGroupIdResolver_PreservesPropertiesComparerAsync(string dictionaryType, bool ignoreCase)
     {
         // Arrange
@@ -447,13 +452,14 @@ public class InMemoryQueueTests : QueueTestBase
         var comparer = ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         IDictionary<string, string> properties = dictionaryType switch
         {
-            "Dictionary" => new Dictionary<string, string>(comparer),
-            "SortedDictionary" => new SortedDictionary<string, string>(comparer),
-            "SortedList" => new SortedList<string, string>(comparer),
-            "ConcurrentDictionary" => new ConcurrentDictionary<string, string>(comparer),
+            "Dictionary" => new Dictionary<string, string>(comparer) { ["Key"] = "value" },
+            "SortedDictionary" => new SortedDictionary<string, string>(comparer) { ["Key"] = "value" },
+            "SortedList" => new SortedList<string, string>(comparer) { ["Key"] = "value" },
+            "ConcurrentDictionary" => new ConcurrentDictionary<string, string>(comparer) { ["Key"] = "value" },
+            "ImmutableDictionary" => ImmutableDictionary.Create<string, string>(comparer).Add("Key", "value"),
+            "ImmutableSortedDictionary" => ImmutableSortedDictionary.Create<string, string>(comparer).Add("Key", "value"),
             _ => throw new ArgumentException("Unknown dictionary type", nameof(dictionaryType))
         };
-        properties["Key"] = "value";
         var options = new QueueEntryOptions { Properties = properties };
 
         // Act

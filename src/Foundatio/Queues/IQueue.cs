@@ -243,9 +243,11 @@ public record QueueEntryOptions
     /// Custom properties to attach to the message.
     /// </summary>
     /// <remarks>
-    /// Copied for each enqueue. Comparers are preserved for <see cref="Dictionary{TKey,TValue}"/>,
-    /// <see cref="SortedDictionary{TKey,TValue}"/>, <see cref="SortedList{TKey,TValue}"/> and
-    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>.
+    /// Copied for each enqueue. Key comparers are preserved for <see cref="Dictionary{TKey,TValue}"/>,
+    /// <see cref="SortedDictionary{TKey,TValue}"/>, <see cref="SortedList{TKey,TValue}"/>,
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>,
+    /// <see cref="System.Collections.Immutable.ImmutableDictionary{TKey,TValue}"/> and
+    /// <see cref="System.Collections.Immutable.ImmutableSortedDictionary{TKey,TValue}"/>.
     /// Other implementations are copied into a dictionary using the default string comparer.
     /// </remarks>
     [DisallowNull]
