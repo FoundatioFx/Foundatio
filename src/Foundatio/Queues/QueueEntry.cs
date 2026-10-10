@@ -24,6 +24,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 
     public string Id { get; }
     public string? CorrelationId { get; }
+    public string? GroupId { get; init; }
     public IDictionary<string, string> Properties { get; } = new Dictionary<string, string>();
     public bool IsCompleted { get; private set; }
     public bool IsAbandoned { get; private set; }
@@ -72,7 +73,7 @@ public class QueueEntry<T> : IQueueEntry<T>, IQueueEntryMetadata, IAsyncDisposab
 
     internal QueueEntry<T> CreateRetryEntry()
     {
-        var entry = new QueueEntry<T>(Id, CorrelationId, _original, _queue, EnqueuedTimeUtc, Attempts);
+        var entry = new QueueEntry<T>(Id, CorrelationId, _original, _queue, EnqueuedTimeUtc, Attempts) { GroupId = GroupId };
         foreach (var kvp in Properties)
             entry.Properties[kvp.Key] = kvp.Value;
 

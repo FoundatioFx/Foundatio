@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
@@ -38,6 +39,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private readonly List<IQueueBehavior<T>> _behaviors = new();
     private QueueStats? _queueStats;
     private DateTimeOffset _nextQueueStatsUpdate = DateTimeOffset.MinValue;
+    private int _groupIdUnsupportedLogged;
 
     protected QueueBase(TOptions options) : base(options?.TimeProvider, options?.LoggerFactory)
     {
@@ -139,10 +141,58 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
 
         LastEnqueueActivity = _timeProvider.GetUtcNow();
-        options ??= new QueueEntryOptions();
+        options = CreateEnqueueOptions(data, options);
+
+        if (options.GroupId is not null && !SupportsGroupId && Interlocked.Exchange(ref _groupIdUnsupportedLogged, 1) == 0)
+            _logger.LogDebug("Queue {QueueName} ({QueueType}) does not use GroupId for delivery order or fairness", _options.Name, GetType().Name);
 
         return await EnqueueImplAsync(data, options).AnyContext();
     }
+
+    /// <summary>
+    /// Copies the caller's options so enqueue never mutates them: correlation and trace metadata and
+    /// <see cref="Enqueuing"/> handler changes apply to this message only, and a reused options instance stays reusable.
+    /// The group id resolver and <see cref="Activity"/> defaults are applied here, before <see cref="EnqueueImplAsync"/>,
+    /// so providers can validate the final values before <see cref="Enqueuing"/> handlers run.
+    /// </summary>
+    private QueueEntryOptions CreateEnqueueOptions(T data, QueueEntryOptions? options)
+    {
+        options = options is null
+            ? new QueueEntryOptions()
+            : options with { Properties = CopyProperties(options.Properties) };
+
+        options.GroupId ??= _options.GroupIdResolver?.Invoke(data);
+
+        if (String.IsNullOrEmpty(options.CorrelationId))
+        {
+            options.CorrelationId = Activity.Current?.Id;
+            if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
+                options.Properties.TryAdd("TraceState", Activity.Current.TraceStateString);
+        }
+
+        return options;
+    }
+
+    private static IDictionary<string, string> CopyProperties(IDictionary<string, string> properties)
+    {
+        return properties switch
+        {
+            Dictionary<string, string> dictionary => new Dictionary<string, string>(dictionary, dictionary.Comparer),
+            SortedDictionary<string, string> dictionary => new SortedDictionary<string, string>(dictionary, dictionary.Comparer),
+            SortedList<string, string> dictionary => new SortedList<string, string>(dictionary, dictionary.Comparer),
+            ConcurrentDictionary<string, string> dictionary => new ConcurrentDictionary<string, string>(dictionary, dictionary.Comparer),
+            ImmutableDictionary<string, string> dictionary => new Dictionary<string, string>(dictionary, dictionary.KeyComparer),
+            ImmutableSortedDictionary<string, string> dictionary => new SortedDictionary<string, string>(dictionary, dictionary.KeyComparer),
+            _ => new Dictionary<string, string>(properties)
+        };
+    }
+
+    /// <summary>
+    /// Whether the provider uses <see cref="QueueEntryOptions.GroupId"/> to affect delivery (for example fairness or ordering).
+    /// When <c>false</c> (the default), a single debug message is logged the first time a group id is enqueued.
+    /// Providers that return <c>false</c> may still store the value and return it on <see cref="IQueueEntry.GroupId"/>.
+    /// </summary>
+    protected virtual bool SupportsGroupId => false;
 
     protected abstract Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken);
     public async Task<IQueueEntry<T>?> DequeueAsync(CancellationToken cancellationToken)
@@ -225,13 +275,6 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     protected virtual async Task<bool> OnEnqueuingAsync(T data, QueueEntryOptions options)
     {
-        if (String.IsNullOrEmpty(options.CorrelationId))
-        {
-            options.CorrelationId = Activity.Current?.Id;
-            if (!String.IsNullOrEmpty(Activity.Current?.TraceStateString))
-                options.Properties.Add("TraceState", Activity.Current.TraceStateString);
-        }
-
         var enqueueing = Enqueuing;
         if (enqueueing is null)
             return false;

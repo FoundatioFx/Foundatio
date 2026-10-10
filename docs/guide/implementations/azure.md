@@ -92,7 +92,7 @@ await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
 | `ConnectionString` | `string` | ✅ | Service Bus connection string |
-| `RequiresSession` | `bool?` | | Enable sessions for ordered processing |
+| `RequiresSession` | `bool?` | | Create the queue with sessions enabled. `AzureServiceBusQueue` sends `SessionId` but does not yet receive from session-enabled queues, so dequeue is not supported when this is `true` |
 | `RequiresDuplicateDetection` | `bool?` | | Enable duplicate detection |
 | `EnableDeadLetteringOnMessageExpiration` | `bool?` | | DLQ on expiration |
 

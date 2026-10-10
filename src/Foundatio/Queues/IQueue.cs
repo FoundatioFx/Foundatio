@@ -224,8 +224,32 @@ public record QueueEntryOptions
     public TimeSpan? DeliveryDelay { get; set; }
 
     /// <summary>
+    /// A logical group or tenant key for the message (for example a customer or tenant id).
+    /// If not specified, the queue's <see cref="SharedQueueOptions{T}.GroupIdResolver"/> is used when configured.
+    /// An empty value is stored as <c>null</c>.
+    /// </summary>
+    /// <remarks>
+    /// How the value is used depends on the provider:
+    /// <list type="bullet">
+    /// <item><description>Amazon SQS: sent as <c>MessageGroupId</c> (1-128 printable ASCII characters, no spaces). On standard queues it enables fair queues (noisy neighbor mitigation) without ordering; on FIFO queues it enforces ordering per group and is required.</description></item>
+    /// <item><description>Azure Service Bus: sent as <c>SessionId</c> (ignored by queues that do not require sessions).</description></item>
+    /// <item><description>The in-memory, Redis and Azure Storage queues store the value and return it on <see cref="IQueueEntry.GroupId"/>, but it does not affect delivery order or fairness. Other providers may ignore it.</description></item>
+    /// </list>
+    /// The group id is resolved before <see cref="IQueue{T}.Enqueuing"/> handlers run, so providers can validate it up front.
+    /// </remarks>
+    public string? GroupId { get => field; set => field = String.IsNullOrEmpty(value) ? null : value; }
+
+    /// <summary>
     /// Custom properties to attach to the message.
     /// </summary>
+    /// <remarks>
+    /// Copied for each enqueue. Key comparers are preserved for <see cref="Dictionary{TKey,TValue}"/>,
+    /// <see cref="SortedDictionary{TKey,TValue}"/>, <see cref="SortedList{TKey,TValue}"/>,
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>,
+    /// <see cref="System.Collections.Immutable.ImmutableDictionary{TKey,TValue}"/> and
+    /// <see cref="System.Collections.Immutable.ImmutableSortedDictionary{TKey,TValue}"/>.
+    /// Other implementations are copied into a dictionary using the default string comparer.
+    /// </remarks>
     [DisallowNull]
     public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
 }

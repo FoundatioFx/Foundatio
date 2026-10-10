@@ -21,6 +21,12 @@ public interface IQueueEntry
     string? CorrelationId { get; }
 
     /// <summary>
+    /// Gets the group or tenant key the entry was enqueued with, if any.
+    /// See <see cref="QueueEntryOptions.GroupId"/> for how providers use it.
+    /// </summary>
+    string? GroupId => null;
+
+    /// <summary>
     /// Gets custom properties attached to this entry.
     /// </summary>
     IDictionary<string, string> Properties { get; }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -257,6 +259,17 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync();
+    }
+    [Fact]
+    public override Task AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync();
+    }
+
+    [Fact]
     public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
     {
         return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
@@ -266,6 +279,251 @@ public class InMemoryQueueTests : QueueTestBase
     public override Task Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException()
     {
         return base.Dispose_WithMaintenanceRunning_DoesNotThrowObjectDisposedException();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task EnqueueAsync_WhenResolverReturnsNullOrEmpty_EnqueuesWithoutGroupAsync(string? resolvedGroupId)
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(_ => resolvedGroupId)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "no-group" });
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Null(entry.GroupId);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        using var activity = new Activity("enqueue-test").Start();
+        activity.TraceStateString = "vendor=value";
+        string? handlerCorrelationId = null;
+        string? handlerTraceState = null;
+        queue.Enqueuing.AddHandler((_, args) =>
+        {
+            handlerCorrelationId = args.Options.CorrelationId;
+            handlerTraceState = args.Options.Properties.TryGetValue("TraceState", out string? traceState) ? traceState : null;
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "activity" });
+
+        // Assert
+        Assert.Equal(activity.Id, handlerCorrelationId);
+        Assert.Equal("vendor=value", handlerTraceState);
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        var options = new QueueEntryOptions { GroupId = String.Empty };
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Equal("tenant-1", entry.GroupId);
+        Assert.Null(options.GroupId);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, new QueueEntryOptions { GroupId = "explicit" });
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Equal("explicit", entry.GroupId);
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync()
+    {
+        return base.EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupIdOnUnsupportedQueue_LogsDebugOnceAsync()
+    {
+        // Arrange
+        Log.SetLogLevel<InMemoryQueue<SimpleWorkItem>>(LogLevel.Debug);
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+
+        // Act
+        for (int i = 0; i < 3; i++)
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "x" }, new QueueEntryOptions { GroupId = "tenant-1" });
+
+        // Assert
+        Assert.Single(Log.LogEntries, e => e.LogLevel == LogLevel.Debug && e.Message.Contains("does not use GroupId for delivery order or fairness"));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        using var activity = new Activity("enqueue-test").Start();
+        activity.TraceStateString = "vendor=value";
+        var options = new QueueEntryOptions();
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+
+        // Assert
+        Assert.Null(options.GroupId);
+        Assert.Null(options.CorrelationId);
+        Assert.Empty(options.Properties);
+    }
+
+    [Theory]
+    [InlineData("Dictionary", true)]
+    [InlineData("Dictionary", false)]
+    [InlineData("SortedDictionary", true)]
+    [InlineData("SortedDictionary", false)]
+    [InlineData("SortedList", true)]
+    [InlineData("SortedList", false)]
+    [InlineData("ConcurrentDictionary", true)]
+    [InlineData("ConcurrentDictionary", false)]
+    [InlineData("ImmutableDictionary", true)]
+    [InlineData("ImmutableDictionary", false)]
+    [InlineData("ImmutableSortedDictionary", true)]
+    [InlineData("ImmutableSortedDictionary", false)]
+    public async Task EnqueueAsync_WithGroupIdResolver_PreservesPropertiesComparerAsync(string dictionaryType, bool ignoreCase)
+    {
+        // Arrange
+        QueueEntryOptions? handlerOptions = null;
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        queue.Enqueuing.AddHandler((_, args) =>
+        {
+            handlerOptions = args.Options;
+            Assert.Equal("value", args.Options.Properties[ignoreCase ? "KEY" : "Key"]);
+            args.Options.Properties["Handler"] = "handler-only";
+            return Task.CompletedTask;
+        });
+        var comparer = ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        IDictionary<string, string> properties = dictionaryType switch
+        {
+            "Dictionary" => new Dictionary<string, string>(comparer) { ["Key"] = "value" },
+            "SortedDictionary" => new SortedDictionary<string, string>(comparer) { ["Key"] = "value" },
+            "SortedList" => new SortedList<string, string>(comparer) { ["Key"] = "value" },
+            "ConcurrentDictionary" => new ConcurrentDictionary<string, string>(comparer) { ["Key"] = "value" },
+            "ImmutableDictionary" => ImmutableDictionary.Create<string, string>(comparer).Add("Key", "value"),
+            "ImmutableSortedDictionary" => ImmutableSortedDictionary.Create<string, string>(comparer).Add("Key", "value"),
+            _ => throw new ArgumentException("Unknown dictionary type", nameof(dictionaryType))
+        };
+        var options = new QueueEntryOptions { Properties = properties };
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+
+        // Assert
+        Assert.NotNull(handlerOptions);
+        Assert.NotSame(options, handlerOptions);
+        Assert.NotSame(options.Properties, handlerOptions.Properties);
+        Assert.Equal("tenant-1", handlerOptions.GroupId);
+        Assert.Equal(ignoreCase, handlerOptions.Properties.ContainsKey("KEY"));
+        Assert.Equal("handler-only", handlerOptions.Properties["Handler"]);
+        Assert.Single(options.Properties);
+        Assert.Equal("value", options.Properties["Key"]);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupIdResolver_UsesPayloadValueAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" });
+
+        // Assert
+        var entry = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(entry);
+        Assert.Equal("tenant-1", entry.GroupId);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithReusedOptionsAndGroupIdResolver_EnqueuesEachMessageAsync()
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<SimpleWorkItem>(o => o
+            .GroupId(w => w.Data)
+            .MetricsPollingInterval(TimeSpan.Zero)
+            .LoggerFactory(Log));
+        using var activity = new Activity("enqueue-test").Start();
+        activity.TraceStateString = "vendor=value";
+        var options = new QueueEntryOptions();
+
+        // Act
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-1" }, options);
+        await queue.EnqueueAsync(new SimpleWorkItem { Data = "tenant-2" }, options);
+
+        // Assert
+        var first = await queue.DequeueAsync(TimeSpan.Zero);
+        var second = await queue.DequeueAsync(TimeSpan.Zero);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal("tenant-1", first.GroupId);
+        Assert.Equal("tenant-2", second.GroupId);
+        Assert.Equal("vendor=value", second.Properties["TraceState"]);
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync();
     }
 
     [Fact]

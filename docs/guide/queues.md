@@ -124,12 +124,11 @@ Queue using AWS SQS (separate package):
 ```csharp
 // dotnet add package Foundatio.AWS
 
-using Foundatio.AWS.Queues;
+using Foundatio.Queues;
 
-var queue = new SQSQueue<WorkItem>(o => {
-    o.Region = RegionEndpoint.USEast1;
-    o.QueueName = "work-items";
-});
+var queue = new SQSQueue<WorkItem>(o => o
+    .ConnectionString("...")
+    .Name("work-items"));
 ```
 
 ## Queue Entry Lifecycle
@@ -384,15 +383,49 @@ Configure enqueue behavior:
 ```csharp
 await queue.EnqueueAsync(new WorkItem { Id = 1 }, new QueueEntryOptions
 {
-    UniqueId = "unique-id",           // Dedupe by ID
+    UniqueId = "unique-id",           // Entry ID / dedupe key (provider dependent, see provider gaps)
     CorrelationId = "request-123",    // For tracing
-    DeliveryDelay = TimeSpan.FromMinutes(5),  // Delayed delivery
+    GroupId = "tenant-123",           // Group / tenant key (see Message Groups below)
+    DeliveryDelay = TimeSpan.FromMinutes(5),  // Delayed delivery (SQS: max 15 minutes)
     Properties = new Dictionary<string, string>
     {
-        ["priority"] = "high"
+        ["priority"] = "high"         // Custom metadata, returned on entry.Properties
     }
 });
 ```
+
+`EnqueueAsync` never modifies the options you pass in. Each call works on a copy, so one options instance can safely be reused across enqueues. The queue fills in that copy before `Enqueuing` handlers run: the resolved `GroupId`, plus `CorrelationId` and `TraceState` from `Activity.Current` when you don't set them. Handler changes apply only to that message.
+
+## Message Groups
+
+`QueueEntryOptions.GroupId` tags a message with a logical group, typically a tenant or customer id. Dequeued entries expose it as `IQueueEntry.GroupId`.
+
+```csharp
+// Per call
+await queue.EnqueueAsync(importRequest, new QueueEntryOptions { GroupId = importRequest.TenantId });
+
+// Or derive it from the payload once, so call sites stay unchanged
+var queue = new InMemoryQueue<ImportRequest>(o => o.GroupId(r => r.TenantId));
+await queue.EnqueueAsync(importRequest); // GroupId = importRequest.TenantId
+```
+
+A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. An empty value is stored as `null`, so a null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The same applies if an `Enqueuing` handler sets it to an empty string.
+
+The group id is a hint. The message is delivered correctly whether or not the provider uses it, and what the provider does with it differs:
+
+| Provider | What `GroupId` does |
+|----------|---------------------|
+| SQS standard queue | Sent as `MessageGroupId`. Enables [SQS fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html): a noisy tenant's messages are deprioritized so other tenants keep low latency. No ordering is implied. |
+| SQS FIFO queue (`.fifo`) | Sent as `MessageGroupId`. Messages in the same group are delivered one at a time, in order. Required by SQS. |
+| Azure Service Bus | Sent as `SessionId` and returned on `entry.GroupId`. Service Bus ignores it unless the queue requires sessions, and `AzureServiceBusQueue` cannot yet receive from session-enabled queues, so it does not affect delivery on queues this provider consumes. |
+| InMemory, Redis, Azure Storage | Stored with the message and returned on `entry.GroupId`. It does not affect delivery order or fairness. |
+| Azure Storage (legacy compatibility mode) | Not stored, like `CorrelationId` and `Properties`. |
+
+::: warning
+`GroupId` only changes delivery behavior on SQS (in package versions that include group id support). The built-in in-memory, Redis, Azure Storage and Azure Service Bus queues store it and return it on `entry.GroupId`; custom or older providers may ignore it. Queues that do not use it for delivery log a single debug message the first time a group id is enqueued, so switching providers never fails or floods your logs.
+:::
+
+See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps) for the full comparison and [AWS](/guide/implementations/aws) for SQS fair queue guidance.
 
 ## Queue Events
 
@@ -700,7 +733,7 @@ For example, with defaults:
 | RedisQueue | Built-in with configurable backoff | Redis-backed dead letter queue |
 | AzureServiceBusQueue | Native Service Bus retries | Native DLQ with message metadata |
 | AzureStorageQueue | Built-in retries | Poison message queue |
-| SQSQueue | Native SQS retries | Native DLQ (requires configuration) |
+| SQSQueue | Native SQS redrive policy plus Foundatio client-side retries | Separate `-deadletter` queue created by Foundatio (native redrive policy) |
 
 ## Message Size Limits
 
@@ -712,7 +745,7 @@ Different queue providers have different message size limits. Understanding thes
 | RedisQueue | 512 MB (Redis limit) | Recommended: < 1 MB for performance |
 | AzureServiceBusQueue | 256 KB (Standard) / 100 MB (Premium) | Use claim check pattern for large payloads |
 | AzureStorageQueue | 64 KB | Base64 encoded, effective ~48 KB |
-| SQSQueue | 256 KB | Use S3 for larger messages |
+| SQSQueue | 1 MiB (1,048,576 bytes) | Use S3 for larger messages |
 
 ### Best Practice: Keep Messages Small
 
@@ -942,6 +975,10 @@ await queue.EnqueueAsync(reminder, new QueueEntryOptions
     DeliveryDelay = TimeSpan.FromHours(24)
 });
 ```
+
+::: warning
+Native delivery delay limits vary by provider. SQS caps a per-message delay at 15 minutes (900 seconds) and `RedisQueue` does not support `DeliveryDelay`. See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps#delivery-delay-delayuntilutc) before relying on long delays.
+:::
 
 ## Queue Name vs Queue ID
 

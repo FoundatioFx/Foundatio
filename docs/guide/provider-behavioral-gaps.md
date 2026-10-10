@@ -90,9 +90,33 @@ This document catalogs known behavioral differences across Foundatio provider im
 |----------|-----------|-------|
 | InMemory | ✅ | Uses provided ID as the entry ID |
 | Redis | ✅ | Uses provided ID as the entry ID |
-| Azure Service Bus | ✅ | Maps to MessageId |
+| Azure Service Bus | ✅ | Maps to MessageId (deduplicated only when `RequiresDuplicateDetection` is enabled) |
 | Azure Storage Queue | ❌ | Azure assigns its own MessageId |
-| SQS | ❌ | SQS assigns its own MessageId |
+| SQS | ⚠️ | SQS assigns its own MessageId. On FIFO queues the value is sent as `MessageDeduplicationId`; on standard queues it is not sent |
+
+### QueueEntryOptions.GroupId
+
+| Provider | Effect on delivery | Notes |
+|----------|--------------------|-------|
+| InMemory | ❌ | Stored and returned on `entry.GroupId` only |
+| Redis | ❌ | Stored in the payload envelope and returned on `entry.GroupId` only |
+| Azure Storage Queue | ❌ | Stored in the payload envelope (default compatibility mode); not stored in legacy mode |
+| Azure Service Bus | ❌ | Sent as `SessionId` and returned on `entry.GroupId`. Service Bus ignores it unless the queue requires sessions, and receiving from session-enabled queues is not supported yet |
+| SQS standard queue | ✅ | Sent as `MessageGroupId` to enable fair queues (noisy neighbor mitigation). No ordering |
+| SQS FIFO queue | ✅ | Sent as `MessageGroupId`. Strict ordering within a group; required by SQS |
+
+Support for SQS requires a package version that includes group id support. Queues that do not use the value for delivery log a single debug message the first time a group id is enqueued. Custom or older providers may not store it at all. See [Message Groups](/guide/queues#message-groups).
+
+### Queue Ordering Guarantees
+
+| Provider | Ordering | Notes |
+|----------|----------|-------|
+| InMemory | ✅ | FIFO within the queue |
+| Redis | ✅ | FIFO list; retried entries are re-queued |
+| Azure Storage Queue | ⚠️ | Best effort |
+| Azure Service Bus | ⚠️ | FIFO per queue unless sessions are used; session-ordered receive is not supported by `AzureServiceBusQueue` |
+| SQS standard queue | ❌ | Best effort. `GroupId` does not change ordering |
+| SQS FIFO queue | ✅ | Strict ordering within a `GroupId` |
 
 ### Delivery Delay (DelayUntilUtc)
 
@@ -103,6 +127,20 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Azure Storage Queue | ✅ | Second | `VisibilityTimeout` parameter |
 | Azure Service Bus | ✅ | Second | `ScheduledEnqueueTimeUtc` |
 | SQS | ✅ | Second (0-900s max) | `DelaySeconds` parameter |
+
+### Retry Delay on Abandon
+
+| Provider | Mechanism | Delivery | Notes |
+|----------|-----------|----------|-------|
+| InMemory | Re-added after a timer | At-least-once | Pending retries are lost if the process exits |
+| Redis | Wait list | At-least-once | Moved back by queue maintenance |
+| Azure Storage Queue | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
+| Azure Service Bus | Scheduled copy of the message | At-least-once when duplicate detection is disabled | The retry is sent before the original is completed, so a failed send leaves the original unsettled; if completion then fails, the original can be redelivered alongside the retry. The copy keeps `MessageId`, `CorrelationId`, `SessionId` (`GroupId`) and application properties |
+| SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
+
+Handlers should be idempotent with every provider; see [message loss and duplicates](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-message-loss-and-duplicates) for the Service Bus guidance.
+
+Service Bus delayed retries reuse the original `MessageId`. On a queue with [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection) enabled, a scheduled retry sent within the duplicate history window is acknowledged but discarded. The original is then completed, so no retry remains. Sending before completion does not prevent this existing limitation; use immediate abandon (`RetryDelay` returning `TimeSpan.Zero`) when duplicate detection is required.
 
 ---
 
@@ -169,3 +207,5 @@ All tested providers (InMemory, Redis) exhibit fully consistent behavior. No beh
 4. **Don't rely on `GetDeadletterItemsAsync`** — only InMemory supports it. Design deadletter processing around provider-specific mechanisms instead.
 
 5. **Prefer `QueueEntryOptions.UniqueId` only with providers that support it** (InMemory, Redis, Azure Service Bus). On SQS and Azure Storage Queues, the system assigns its own IDs.
+
+6. **Treat `QueueEntryOptions.GroupId` as a hint, not a guarantee.** It only changes delivery on SQS (fair queues on standard queues, ordering on FIFO); the other built-in queues store it as metadata.

@@ -111,6 +111,10 @@ await _cache.RemoveByPrefixAsync("user:");
 ```csharp
 await _queue.EnqueueAsync(new OrderWorkItem { OrderId = orderId });
 
+// Multi-tenant: tag messages with a group id (SQS fair queues / FIFO ordering)
+await _queue.EnqueueAsync(workItem, new QueueEntryOptions { GroupId = tenantId });
+// or derive it from the payload once: new SQSQueue<T>(o => o.GroupId(x => x.TenantId))
+
 var entry = await _queue.DequeueAsync(TimeSpan.FromSeconds(5));
 if (entry is not null)
 {
@@ -312,7 +316,9 @@ public class OrderServiceTests : TestLoggerBase
 - **JobContext.RenewLockAsync**: Call in long-running jobs (both `JobBase` and `QueueJobBase`) to prevent lock expiration mid-processing.
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
-- **In-memory for tests**: All in-memory implementations are functionally equivalent to production providers. Swap via DI for fast, isolated unit tests with no external dependencies.
+- **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues). Azure Service Bus sends it as `SessionId`, but receiving from session-enabled queues is not implemented, so it has no delivery effect there yet. The other built-in queues store it as metadata and log one debug message. SQS group ids are max 128 characters with no spaces. Empty values are stored as `null`. A non-empty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver.
+- **`EnqueueAsync` copies `QueueEntryOptions`**: The caller's instance is never modified and can be reused. `Enqueuing` handlers get the per-message copy, with the resolved `GroupId` and the `Activity.Current` `CorrelationId`/`TraceState` already filled in. `Properties` copies preserve key comparers for `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, `ImmutableDictionary` and `ImmutableSortedDictionary`; other implementations use the default string comparer.
 
 ## NuGet Packages
 
