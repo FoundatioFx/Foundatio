@@ -277,6 +277,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
 - List size limits (`MaxEntrySize`, a negative `SizeCalculator` result) apply to the whole resulting list on every `ListAddAsync` and `ListRemoveAsync`, so a removal that leaves the list over the limit is rejected and returns `0`.
 - A rejected `ListAddAsync` on an expired key still reclaims the expired entry and raises `ItemExpired`, and every `ListAddAsync` call counts as a write in `Writes`, including rejected ones.
+- Adding items reapplies the resulting list expiration, even when every supplied item is already present with the same TTL. This can replace a key expiration previously set with `SetExpirationAsync`.
 - List item expirations read back with `DateTimeKind.Utc`, whatever kind was passed in.
 :::
 

@@ -153,7 +153,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Recalculates the current memory size by summing all non-expired cache entries.
+    /// Recalculates the current memory size by summing all stored cache entries.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -678,7 +678,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
                 if (ReferenceEquals(list, stored))
-                    return (current, (long)items.Count);
+                    return (current.WithExpiration(list.ExpiresAtUtc), (long)items.Count);
 
                 long listSize = CalculateListSize(list);
                 return listSize < 0 ? (current, 0L) : (current.WithValue(list, list.ExpiresAtUtc, listSize), (long)items.Count);

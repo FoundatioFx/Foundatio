@@ -810,6 +810,34 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.ListAddAsync_WithSingleString_StoresAsStringNotCharArray();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithUnchangedIndexedList_RestoresItemExpiration(bool cloneValues, bool permanent)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(timeProvider).LoggerFactory(Log));
+        TimeSpan? expiresIn = permanent ? null : TimeSpan.FromMinutes(10);
+        await cache.ListAddAsync("list", Enumerable.Range(0, 100), expiresIn);
+        await cache.ListAddAsync("list", new[] { 100 }, expiresIn);
+        await cache.ListAddAsync("list", new[] { 101 }, expiresIn);
+        await cache.SetExpirationAsync("list", TimeSpan.FromMinutes(1));
+
+        // Act
+        long added = await cache.ListAddAsync("list", new[] { 101 }, expiresIn);
+
+        // Assert
+        Assert.Equal(1, added);
+        Assert.Equal(expiresIn, await cache.GetExpirationAsync("list"));
+        timeProvider.Advance(TimeSpan.FromMinutes(2));
+        var values = await cache.GetListAsync<int>("list");
+        Assert.True(values.HasValue);
+        Assert.Equal(Enumerable.Range(0, 102), values.Value.Order());
+    }
+
     [Fact]
     public override Task ListAddAsync_WithVariousInputs_HandlesCorrectly()
     {
