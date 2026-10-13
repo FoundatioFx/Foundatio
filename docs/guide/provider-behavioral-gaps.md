@@ -114,7 +114,7 @@ Support for SQS requires a package version that includes group id support. Queue
 | InMemory | ✅ | FIFO within the queue |
 | Redis | ✅ | FIFO list; retried entries are re-queued |
 | Azure Storage Queue | ⚠️ | Best effort |
-| Azure Service Bus | ⚠️ | FIFO per queue unless sessions are used; session-ordered receive is not supported by `AzureServiceBusQueue` |
+| Azure Service Bus | ⚠️ | Best effort, no ordering guarantee. Messages are usually received in enqueue order, but concurrent workers, abandons and delayed retries can reorder processing. Guaranteed ordering requires [sessions](https://learn.microsoft.com/azure/service-bus-messaging/message-sessions#sequencing-vs-sessions), which `AzureServiceBusQueue` cannot receive from yet |
 | SQS standard queue | ❌ | Best effort. `GroupId` does not change ordering |
 | SQS FIFO queue | ✅ | Strict ordering within a `GroupId` |
 
