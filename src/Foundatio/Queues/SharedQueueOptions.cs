@@ -29,7 +29,8 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
 
     /// <summary>
     /// Derives the group or tenant key (see <see cref="QueueEntryOptions.GroupId"/>) from the message payload
-    /// when the caller does not specify one. Return <c>null</c> to enqueue without a group (an empty string is treated the same).
+    /// when the caller does not specify one. Return <c>null</c> to enqueue without a group.
+    /// Exceptions thrown by the resolver propagate to the caller of <see cref="IQueue{T}.EnqueueAsync"/> and nothing is enqueued.
     /// </summary>
     public Func<T, string?>? GroupIdResolver { get; set; }
 }

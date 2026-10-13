@@ -165,7 +165,7 @@ await queue.EnqueueAsync(importRequest, new QueueEntryOptions { GroupId = "tenan
 Things to know:
 
 - **A standard queue is enough.** No queue setting and no consumer change are needed, and messages in the same group can still be processed in parallel. `GroupId` on a standard queue does not provide ordering.
-- **FIFO queues use the same field for ordering.** On a `.fifo` queue, messages in a group are delivered one at a time in order, and SQS requires a group id on every message. FIFO queues reject a per-message `DeliveryDelay`.
+- **FIFO queues use the same field for ordering.** On a `.fifo` queue, messages in a group are delivered one at a time in order, and SQS requires a group id on every message. FIFO queues reject a positive per-message `DeliveryDelay`, and an abandoned message with a `RetryDelay` holds back the rest of its group until it is retried.
 - **Group ids are limited to 128 characters** of alphanumerics and punctuation (no spaces).
 - **Set it on every message.** SQS treats a message without a group id as its own tenant.
 - **Consumer concurrency matters.** SQS marks a tenant as noisy when it holds more than 10% of in-flight messages (with at least 30 in flight) or more than 10% of recent processing time. `SQSQueue` receives one message per worker loop, so run enough workers or instances for the in-flight share to be meaningful.

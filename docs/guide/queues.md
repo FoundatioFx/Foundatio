@@ -409,7 +409,7 @@ var queue = new InMemoryQueue<ImportRequest>(o => o.GroupId(r => r.TenantId));
 await queue.EnqueueAsync(importRequest); // GroupId = importRequest.TenantId
 ```
 
-A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. Return `null` from the resolver to enqueue without a group (an empty string is treated the same); an empty explicit value invokes the resolver.
+A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. Return `null` from the resolver to enqueue without a group; an empty explicit value invokes the resolver.
 
 The group id is a hint. The message is delivered correctly whether or not the provider uses it, and what the provider does with it differs:
 
@@ -977,7 +977,7 @@ await queue.EnqueueAsync(reminder, new QueueEntryOptions
 ```
 
 ::: warning
-Native delivery delay limits vary by provider. SQS clamps a per-message delay to 15 minutes (900 seconds) and rejects it on FIFO queues, and `RedisQueue` does not support `DeliveryDelay`. See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps#delivery-delay-delayuntilutc) before relying on long delays.
+Native delivery delay limits vary by provider. SQS clamps a per-message delay to 15 minutes (900 seconds) and rejects a positive delay on FIFO queues, and `RedisQueue` does not support `DeliveryDelay`. See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps#delivery-delay-delayuntilutc) before relying on long delays.
 :::
 
 ## Queue Name vs Queue ID

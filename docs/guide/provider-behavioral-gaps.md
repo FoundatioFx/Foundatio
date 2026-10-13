@@ -126,7 +126,7 @@ Queues that do not use the value for delivery log a single debug message the fir
 | Redis | ❌ | — | Not supported |
 | Azure Storage Queue | ✅ | Second | `VisibilityTimeout` parameter |
 | Azure Service Bus | ✅ | Second | `ScheduledEnqueueTimeUtc` |
-| SQS | ⚠️ | Second | `DelaySeconds`; clamped to 900s. Not supported on FIFO queues |
+| SQS | ⚠️ | Second | `DelaySeconds`, clamped to 900s. FIFO queues reject a positive delay |
 
 ### Retry Delay on Abandon
 
@@ -136,7 +136,7 @@ Queues that do not use the value for delivery log a single debug message the fir
 | Redis | Wait list | At-least-once | Moved back by queue maintenance |
 | Azure Storage Queue | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
 | Azure Service Bus | Scheduled copy of the message | At-least-once when duplicate detection is disabled | Sent before the original is completed, so the original can be redelivered alongside the retry if completion fails. The copy keeps `MessageId`, `CorrelationId`, `SessionId` (`GroupId`) and properties, and joins the back of its session |
-| SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
+| SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged. On FIFO queues, later messages in the group wait for the retry |
 
 Handlers should be idempotent with every provider; see [message loss and duplicates](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-message-loss-and-duplicates) for the Service Bus guidance.
 

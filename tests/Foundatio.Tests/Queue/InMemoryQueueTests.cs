@@ -352,6 +352,29 @@ public class InMemoryQueueTests : QueueTestBase
     }
 
     [Fact]
+    public async Task EnqueueAsync_WhenResolverThrows_ThrowsAndDoesNotEnqueueAsync()
+    {
+        // Arrange
+        using var queue = GetQueue(groupIdResolver: _ => throw new InvalidOperationException("resolver failed"));
+        bool enqueuingCalled = false;
+        queue.Enqueuing.AddHandler((_, _) =>
+        {
+            enqueuingCalled = true;
+            return Task.CompletedTask;
+        });
+
+        // Act
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => queue.EnqueueAsync(new SimpleWorkItem { Data = "x" }));
+
+        // Assert
+        Assert.Equal("resolver failed", exception.Message);
+        Assert.False(enqueuingCalled);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Enqueued);
+        Assert.Equal(0, stats.Queued);
+    }
+
+    [Fact]
     public override Task EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync()
     {
         return base.EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync();
