@@ -386,7 +386,7 @@ await queue.EnqueueAsync(new WorkItem { Id = 1 }, new QueueEntryOptions
     UniqueId = "unique-id",           // Entry ID / dedupe key (provider dependent, see provider gaps)
     CorrelationId = "request-123",    // For tracing
     GroupId = "tenant-123",           // Group / tenant key (see Message Groups below)
-    DeliveryDelay = TimeSpan.FromMinutes(5),  // Delayed delivery (SQS: max 15 minutes)
+    DeliveryDelay = TimeSpan.FromMinutes(5),  // Delayed delivery (SQS: clamped to 15 minutes)
     Properties = new Dictionary<string, string>
     {
         ["priority"] = "high"         // Custom metadata, returned on entry.Properties
@@ -394,7 +394,7 @@ await queue.EnqueueAsync(new WorkItem { Id = 1 }, new QueueEntryOptions
 });
 ```
 
-`EnqueueAsync` never modifies the options you pass in. Each call works on a copy, so one options instance can safely be reused across enqueues. The queue fills in that copy before `Enqueuing` handlers run: the resolved `GroupId`, plus `CorrelationId` and `TraceState` from `Activity.Current` when you don't set them. Handler changes apply only to that message.
+`EnqueueAsync` never modifies the options you pass in, so one instance can be reused. `Enqueuing` handlers get a per-message copy with the resolved `GroupId`, and `CorrelationId` and `TraceState` from `Activity.Current` when you don't set them.
 
 ## Message Groups
 
@@ -409,7 +409,7 @@ var queue = new InMemoryQueue<ImportRequest>(o => o.GroupId(r => r.TenantId));
 await queue.EnqueueAsync(importRequest); // GroupId = importRequest.TenantId
 ```
 
-A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. An empty value is stored as `null`, so a null or empty explicit value invokes the resolver, and a resolver that returns null or empty enqueues without a group. The same applies if an `Enqueuing` handler sets it to an empty string.
+A non-empty explicit `QueueEntryOptions.GroupId` wins over the resolver. Return `null` from the resolver to enqueue without a group (an empty string is treated the same); an empty explicit value invokes the resolver.
 
 The group id is a hint. The message is delivered correctly whether or not the provider uses it, and what the provider does with it differs:
 
@@ -417,12 +417,12 @@ The group id is a hint. The message is delivered correctly whether or not the pr
 |----------|---------------------|
 | SQS standard queue | Sent as `MessageGroupId`. Enables [SQS fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html): a noisy tenant's messages are deprioritized so other tenants keep low latency. No ordering is implied. |
 | SQS FIFO queue (`.fifo`) | Sent as `MessageGroupId`. Messages in the same group are delivered one at a time, in order. Required by SQS. |
-| Azure Service Bus | Sent as `SessionId` and returned on `entry.GroupId`. Service Bus ignores it unless the queue requires sessions, and `AzureServiceBusQueue` cannot yet receive from session-enabled queues, so it does not affect delivery on queues this provider consumes. |
+| Azure Service Bus | Sent as `SessionId`. On session-enabled queues (`RequiresSession`), messages are ordered per group, one at a time per group, and a group id is required. Other queues ignore it. |
 | InMemory, Redis, Azure Storage | Stored with the message and returned on `entry.GroupId`. It does not affect delivery order or fairness. |
 | Azure Storage (legacy compatibility mode) | Not stored, like `CorrelationId` and `Properties`. |
 
 ::: warning
-`GroupId` only changes delivery behavior on SQS (in package versions that include group id support). The built-in in-memory, Redis, Azure Storage and Azure Service Bus queues store it and return it on `entry.GroupId`; custom or older providers may ignore it. Queues that do not use it for delivery log a single debug message the first time a group id is enqueued, so switching providers never fails or floods your logs.
+`GroupId` only changes delivery on SQS and session-enabled Service Bus queues. Other queues store it (custom providers may ignore it) and log a single debug message the first time a group id is enqueued.
 :::
 
 See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps) for the full comparison and [AWS](/guide/implementations/aws) for SQS fair queue guidance.
@@ -977,7 +977,7 @@ await queue.EnqueueAsync(reminder, new QueueEntryOptions
 ```
 
 ::: warning
-Native delivery delay limits vary by provider. SQS caps a per-message delay at 15 minutes (900 seconds) and `RedisQueue` does not support `DeliveryDelay`. See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps#delivery-delay-delayuntilutc) before relying on long delays.
+Native delivery delay limits vary by provider. SQS clamps a per-message delay to 15 minutes (900 seconds) and rejects it on FIFO queues, and `RedisQueue` does not support `DeliveryDelay`. See [Provider Behavioral Gaps](/guide/provider-behavioral-gaps#delivery-delay-delayuntilutc) before relying on long delays.
 :::
 
 ## Queue Name vs Queue ID

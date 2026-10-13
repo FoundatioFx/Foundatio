@@ -232,7 +232,7 @@ public record QueueEntryOptions
     /// How the value is used depends on the provider:
     /// <list type="bullet">
     /// <item><description>Amazon SQS: sent as <c>MessageGroupId</c> (1-128 printable ASCII characters, no spaces). On standard queues it enables fair queues (noisy neighbor mitigation) without ordering; on FIFO queues it enforces ordering per group and is required.</description></item>
-    /// <item><description>Azure Service Bus: sent as <c>SessionId</c> (ignored by queues that do not require sessions).</description></item>
+    /// <item><description>Azure Service Bus: sent as <c>SessionId</c>. On session-enabled queues, messages are ordered per group and processed one at a time per group, and a group id is required; other queues ignore it.</description></item>
     /// <item><description>The in-memory, Redis and Azure Storage queues store the value and return it on <see cref="IQueueEntry.GroupId"/>, but it does not affect delivery order or fairness. Other providers may ignore it.</description></item>
     /// </list>
     /// The group id is resolved before <see cref="IQueue{T}.Enqueuing"/> handlers run, so providers can validate it up front.
@@ -243,12 +243,7 @@ public record QueueEntryOptions
     /// Custom properties to attach to the message.
     /// </summary>
     /// <remarks>
-    /// Copied for each enqueue. Key comparers are preserved for <see cref="Dictionary{TKey,TValue}"/>,
-    /// <see cref="SortedDictionary{TKey,TValue}"/>, <see cref="SortedList{TKey,TValue}"/>,
-    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}"/>,
-    /// <see cref="System.Collections.Immutable.ImmutableDictionary{TKey,TValue}"/> and
-    /// <see cref="System.Collections.Immutable.ImmutableSortedDictionary{TKey,TValue}"/>.
-    /// Other implementations are copied into a dictionary using the default string comparer.
+    /// Copied for each enqueue; a <see cref="Dictionary{TKey,TValue}"/> key comparer is preserved.
     /// </remarks>
     [DisallowNull]
     public IDictionary<string, string> Properties { get => field; set => field = value ?? new Dictionary<string, string>(); } = new Dictionary<string, string>();
