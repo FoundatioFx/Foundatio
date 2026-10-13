@@ -84,7 +84,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
         // Only the built-in calculators are known to accept a list's read-only view; custom ones get a Dictionary
-        _sizesListsInPlace = _sizeCalculator?.Target is Utility.SizeCalculator or InMemoryCacheClientOptionsBuilder.FixedSizeCalculator;
+        _sizesListsInPlace = _sizeCalculator?.Target switch
+        {
+            Utility.SizeCalculator calculator => _sizeCalculator == calculator.CalculateSize,
+            InMemoryCacheClientOptionsBuilder.FixedSizeCalculator calculator => _sizeCalculator == calculator.Calculate,
+            _ => false
+        };
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
