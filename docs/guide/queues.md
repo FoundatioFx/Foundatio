@@ -417,7 +417,7 @@ The group id is a hint. The message is delivered correctly whether or not the pr
 |----------|---------------------|
 | SQS standard queue | Sent as `MessageGroupId`. Enables [SQS fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html): a noisy tenant's messages are deprioritized so other tenants keep low latency. No ordering is implied. |
 | SQS FIFO queue (`.fifo`) | Sent as `MessageGroupId`. Messages in the same group are delivered one at a time, in order. Required by SQS. |
-| Azure Service Bus | Sent as `SessionId`. On session-enabled queues (`RequiresSession`), messages are ordered per group, one at a time per group, and a group id is required. Other queues ignore it. |
+| Azure Service Bus | Sent as `SessionId`. On session-enabled queues (`RequiresSession`), messages are ordered per group, one at a time per group, and a group id (at most 128 characters) is required; `RetryDelay` is not applied so an abandoned message is retried before later messages in its group. Other queues ignore it. |
 | InMemory, Redis, Azure Storage | Stored with the message and returned on `entry.GroupId`. It does not affect delivery order or fairness. |
 | Azure Storage (legacy compatibility mode) | Not stored, like `CorrelationId` and `Properties`. |
 
@@ -731,7 +731,7 @@ For example, with defaults:
 |----------|-----------------|---------------------|
 | InMemoryQueue | Built-in with configurable backoff | In-memory dead letter queue |
 | RedisQueue | Built-in with configurable backoff | Redis-backed dead letter queue |
-| AzureServiceBusQueue | Native Service Bus retries | Native DLQ with message metadata |
+| AzureServiceBusQueue | Scheduled retry copy, or immediate abandon on session or duplicate-detection queues | Native DLQ with message metadata |
 | AzureStorageQueue | Built-in retries | Poison message queue |
 | SQSQueue | Native SQS redrive policy plus Foundatio client-side retries | Separate `-deadletter` queue created by Foundatio (native redrive policy) |
 

@@ -110,7 +110,7 @@ Queues that do not use the value for delivery log a single debug message the fir
 | InMemory | ✅ | FIFO within the queue |
 | Redis | ✅ | FIFO list; retried entries are re-queued |
 | Azure Storage Queue | ⚠️ | Best effort |
-| Azure Service Bus | ⚠️ | Best effort; concurrent workers and retries can reorder processing. On session-enabled queues, ordered per `GroupId`, except delayed retries, which rejoin the back of the group |
+| Azure Service Bus | ⚠️ | Best effort; concurrent workers and retries can reorder processing. On session-enabled queues, ordered per `GroupId`; an abandoned message is retried before later messages in its group |
 | SQS standard queue | ❌ | Best effort. `GroupId` does not change ordering |
 | SQS FIFO queue | ✅ | Strict ordering within a `GroupId` |
 
@@ -131,12 +131,12 @@ Queues that do not use the value for delivery log a single debug message the fir
 | InMemory | Re-added after a timer | At-least-once | Pending retries are lost if the process exits |
 | Redis | Wait list | At-least-once | Moved back by queue maintenance |
 | Azure Storage Queue | Visibility timeout on the same message | At-least-once | Message ID is unchanged |
-| Azure Service Bus | Scheduled copy of the message | At-least-once when duplicate detection is disabled | Sent before the original is completed, so the original can be redelivered alongside the retry if completion fails. The copy keeps `MessageId`, `CorrelationId`, `SessionId` (`GroupId`) and properties, and joins the back of its session |
+| Azure Service Bus | Scheduled copy of the message; immediate abandon on session-enabled queues or when duplicate detection is enabled | At-least-once | The copy is sent before the original is completed, so the original can be redelivered alongside the retry if completion fails. It keeps `MessageId`, `CorrelationId`, `Subject`, `ContentType` and properties. Session-enabled queues ignore `RetryDelay` so the retry stays at the head of its group |
 | SQS | Visibility timeout on the same message | At-least-once | Message ID is unchanged. On FIFO queues, later messages in the group wait for the retry |
 
 Handlers should be idempotent with every provider; see [message loss and duplicates](https://learn.microsoft.com/azure/service-bus-messaging/service-bus-message-loss-and-duplicates) for the Service Bus guidance.
 
-Service Bus delayed retries reuse the original `MessageId`. On a queue with [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection) enabled, a scheduled retry sent within the duplicate history window is acknowledged but discarded. The original is then completed, so no retry remains. Sending before completion does not prevent this existing limitation; use immediate abandon (`RetryDelay` returning `TimeSpan.Zero`) when duplicate detection is required.
+Service Bus delayed retries reuse the original `MessageId`, so on a queue with [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection) enabled (`RequiresDuplicateDetection`) the copy would be discarded as a duplicate. The queue therefore abandons immediately instead and does not apply `RetryDelay` when duplicate detection is enabled.
 
 ---
 
