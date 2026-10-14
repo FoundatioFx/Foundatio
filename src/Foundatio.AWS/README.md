@@ -66,7 +66,6 @@ The examples above point at [Floci](https://github.com/floci-io/floci), a free l
 | [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
 | [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
 | [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) | | | ✅ | | |
-| [Minio](https://github.com/FoundatioFx/Foundatio.Minio) | | | | ✅ | |
 | [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) | | | | ✅ | |
 | [SFTP](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) | | | | ✅ | |
 
