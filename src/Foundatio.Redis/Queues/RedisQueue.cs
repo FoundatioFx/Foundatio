@@ -218,6 +218,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         {
             Properties = options.Properties,
             CorrelationId = options.CorrelationId,
+            GroupId = options.GroupId,
             Value = data
         };
         bool success = await _resiliencePolicy.ExecuteAsync(async _ => await _cache.AddAsync(GetPayloadKey(id), envelope, _payloadTimeToLive)).AnyContext();
@@ -240,7 +241,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         }
 
         Interlocked.Increment(ref _enqueuedCount);
-        var entry = new QueueEntry<T>(id, options.CorrelationId, data, this, now, 0);
+        var entry = new QueueEntry<T>(id, options.CorrelationId, data, this, now, 0) { GroupId = options.GroupId };
         await OnEnqueuedAsync(entry).AnyContext();
 
         _logger.LogTrace("Enqueue done");
@@ -406,7 +407,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
         var attemptsValue = _resiliencePolicy.ExecuteAsync(async _ => await _cache.GetAsync(GetAttemptsKey(workId), 0)).AsTask();
         await Task.WhenAll(enqueuedTimeTicks, attemptsValue).AnyContext();
 
-        var queueEntry = new QueueEntry<T>(workId, payload.Value.CorrelationId, payload.Value.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1);
+        var queueEntry = new QueueEntry<T>(workId, payload.Value.CorrelationId, payload.Value.Value, this, new DateTime(enqueuedTimeTicks.Result, DateTimeKind.Utc), attemptsValue.Result + 1) { GroupId = payload.Value.GroupId };
 
         if (payload.Value.Properties != null)
         {
@@ -894,6 +895,7 @@ public class RedisQueue<T> : QueueBase<T, RedisQueueOptions<T>> where T : class
 public record RedisPayloadEnvelope<T>
 {
     public string? CorrelationId { get; init; }
+    public string? GroupId { get; init; }
     public IDictionary<string, string>? Properties { get; init; }
     public required T Value { get; init; }
 }

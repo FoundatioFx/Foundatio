@@ -30,25 +30,31 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     {
     }
 
-    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
+    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null, Func<SimpleWorkItem, string?>? groupIdResolver = null)
     {
         var muxer = SharedConnection.GetMuxer(Log);
         if (muxer is null)
             return null;
 
-        var queue = new RedisQueue<SimpleWorkItem>(o => o
-            .ConnectionMultiplexer(muxer)
-            .Retries(retries)
-            .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
-            .RetryMultipliers(retryMultipliers ?? [1, 3, 5, 10])
-            .DeadLetterMaxItems(deadLetterMaxItems)
-            .TimeProvider(timeProvider ?? TimeProvider.System)
-            .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
-            .MetricsPollingInterval(TimeSpan.Zero)
-            .RunMaintenanceTasks(runQueueMaintenance)
-            .Serializer(serializer)
-            .LoggerFactory(Log)
-        );
+        var queue = new RedisQueue<SimpleWorkItem>(o =>
+        {
+            o.ConnectionMultiplexer(muxer)
+                .Retries(retries)
+                .RetryDelay(retryDelay.GetValueOrDefault(TimeSpan.FromMinutes(1)))
+                .RetryMultipliers(retryMultipliers ?? [1, 3, 5, 10])
+                .DeadLetterMaxItems(deadLetterMaxItems)
+                .TimeProvider(timeProvider ?? TimeProvider.System)
+                .WorkItemTimeout(workItemTimeout.GetValueOrDefault(TimeSpan.FromMinutes(5)))
+                .MetricsPollingInterval(TimeSpan.Zero)
+                .RunMaintenanceTasks(runQueueMaintenance)
+                .Serializer(serializer)
+                .LoggerFactory(Log);
+
+            if (groupIdResolver is not null)
+                o.GroupId(groupIdResolver);
+
+            return o;
+        });
 
         _logger.LogDebug("Queue Id: {QueueId}", queue.QueueId);
         return queue;
@@ -121,6 +127,18 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync();
+    }
+
+    [Fact(Skip = "Redis requeues delayed retries in the minute-interval maintenance task")]
+    public override Task AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync();
+    }
+
+    [Fact]
     public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
     {
         return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
@@ -163,9 +181,81 @@ public class RedisQueueTests : QueueTestBase, IAsyncLifetime
     }
 
     [Fact]
+    public override Task EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync()
+    {
+        return base.EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync();
+    }
+
+    [Fact]
     public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WhenResolverReturnsEmpty_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenResolverReturnsEmpty_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WhenResolverReturnsNull_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenResolverReturnsNull_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync()
+    {
+        return base.EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync()
+    {
+        return base.EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync()
+    {
+        return base.EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupIdResolver_UsesPayloadValueAsync()
+    {
+        return base.EnqueueAsync_WithGroupIdResolver_UsesPayloadValueAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptionsAndGroupIdResolver_EnqueuesEachMessageAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptionsAndGroupIdResolver_EnqueuesEachMessageAsync();
     }
 
     [Fact]
