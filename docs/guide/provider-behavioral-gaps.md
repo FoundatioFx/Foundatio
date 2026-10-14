@@ -4,13 +4,13 @@ This document catalogs known behavioral differences across Foundatio provider im
 
 ## Summary
 
-| Interface | InMemory | Redis | Azure | AWS | RabbitMQ | Kafka | Minio | Aliyun | SshNet |
-|-----------|----------|-------|-------|-----|----------|-------|-------|--------|--------|
-| `IFileStorage` | Full | Full | Full | Partial | — | — | Partial | Full | Full |
-| `IQueue<T>` | Full | Partial | Partial | Partial | — | — | — | — | — |
-| `IMessageBus` | Full | Full | Full | Partial | Full | Full | — | — | — |
-| `ICacheClient` | Full | Full | — | — | — | — | — | — | — |
-| `ILockProvider` | Full | Full | — | — | — | — | — | — | — |
+| Interface | InMemory | Redis | Azure | AWS | RabbitMQ | Kafka | Aliyun | SshNet |
+|-----------|----------|-------|-------|-----|----------|-------|--------|--------|
+| `IFileStorage` | Full | Full | Full | Partial | — | — | Full | Full |
+| `IQueue<T>` | Full | Partial | Partial | Partial | — | — | — | — |
+| `IMessageBus` | Full | Full | Full | Partial | Full | Full | — | — |
+| `ICacheClient` | Full | Full | — | — | — | — | — | — |
+| `ILockProvider` | Full | Full | — | — | — | — | — | — |
 
 **Legend:** Full = all interface behaviors work as documented. Partial = some operations diverge (see below). — = not implemented by this provider.
 
@@ -26,11 +26,10 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Redis | Returns `false` | ✅ Expected |
 | Azure Blob | Returns `false` | ✅ Expected |
 | S3 | Returns `true` | ⚠️ S3 DELETE is idempotent by design |
-| Minio | Returns `true` | ⚠️ S3-compatible behavior |
 | Aliyun | Returns `false` | ✅ Expected |
 | SshNet | Returns `false` | ✅ Expected |
 
-**Impact:** Code that uses the return value to determine whether a file existed before deletion will get incorrect results on S3/Minio.
+**Impact:** Code that uses the return value to determine whether a file existed before deletion will get incorrect results on S3.
 
 ### CopyFileAsync / RenameFileAsync with Non-Existent Source
 
@@ -40,7 +39,6 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Redis | Returns `false` | ✅ Expected |
 | Azure Blob | Returns `false` | ✅ Expected |
 | S3 | Throws `AmazonS3Exception` | ⚠️ Exception instead of `false` |
-| Minio | Returns `false` | ✅ Expected |
 | Aliyun | Returns `false` | ✅ Expected |
 | SshNet | Returns `false` | ✅ Expected |
 
@@ -54,7 +52,6 @@ This document catalogs known behavioral differences across Foundatio provider im
 | Redis | Returns `null` | ✅ Expected |
 | Azure Blob | Returns `null` | ✅ Expected |
 | S3 | Throws `AmazonS3Exception` | ⚠️ Exception instead of `null` |
-| Minio | Returns `null` | ✅ Expected |
 | Aliyun | Returns `null` | ✅ Expected |
 | SshNet | Returns `null` | ✅ Expected |
 
@@ -68,7 +65,6 @@ This document catalogs known behavioral differences across Foundatio provider im
 | SshNet | ✅ | Full support |
 | Redis | ❌ | Not supported |
 | S3 | ❌ | Not supported |
-| Minio | ❌ | Not supported |
 
 ---
 

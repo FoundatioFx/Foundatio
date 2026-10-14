@@ -1,6 +1,6 @@
 ---
 name: cross-repo-validation
-description: Validate a Foundatio core change across the provider repos (Redis, AWS, Azure Storage, Azure Service Bus, RabbitMQ, Kafka, Minio, Aliyun, SshNet). Use when changing core abstractions, QueueBase/CacheClient/MessageBus behavior, Foundatio.TestHarness base classes, or shared docs, or when the user asks to build, test, push or update PRs across repos.
+description: Validate a Foundatio core change across the provider repos (Redis, AWS, Azure Storage, Azure Service Bus, RabbitMQ, Kafka, Aliyun, SshNet). Use when changing core abstractions, QueueBase/CacheClient/MessageBus behavior, Foundatio.TestHarness base classes, or shared docs, or when the user asks to build, test, push or update PRs across repos.
 ---
 
 # Cross-repo validation

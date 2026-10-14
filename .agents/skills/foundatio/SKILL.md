@@ -30,7 +30,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `ICacheClient` | Key-value caching with TTL | `InMemoryCacheClient` | Redis, Hybrid |
 | `IQueue<T>` | FIFO message queuing | `InMemoryQueue<T>` | Redis, SQS, Azure |
 | `IMessageBus` | Pub/sub messaging | `InMemoryMessageBus` | Redis, Kafka, RabbitMQ, Azure |
-| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob, Minio |
+| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `IJob` | Background job processing | N/A | Hosted services |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
@@ -349,7 +349,6 @@ public class OrderServiceTests : TestLoggerBase
 | `Foundatio.AWS` | SQS queues, SQS messaging, S3 storage |
 | `Foundatio.Kafka` | Kafka messaging |
 | `Foundatio.RabbitMQ` | RabbitMQ messaging |
-| `Foundatio.Minio` | MinIO S3-compatible storage |
 | `Foundatio.Aliyun` | Aliyun OSS storage |
 | `Foundatio.Storage.SshNet` | SFTP storage |
 

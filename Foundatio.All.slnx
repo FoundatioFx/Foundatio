@@ -35,7 +35,6 @@
     <Project Path="../Foundatio.AzureServiceBus/tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj" />
     <Project Path="../Foundatio.AzureStorage/tests/Foundatio.AzureStorage.Tests/Foundatio.AzureStorage.Tests.csproj" />
     <Project Path="../Foundatio.Kafka/tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
-    <Project Path="../Foundatio.Minio/tests/Foundatio.Minio.Tests/Foundatio.Minio.Tests.csproj" />
     <Project Path="../Foundatio.Parsers/tests/Foundatio.Parsers.ElasticQueries.Tests/Foundatio.Parsers.ElasticQueries.Tests.csproj" />
     <Project Path="../Foundatio.Parsers/tests/Foundatio.Parsers.LuceneQueries.Tests/Foundatio.Parsers.LuceneQueries.Tests.csproj" />
     <Project Path="../Foundatio.Parsers/tests/Foundatio.Parsers.SqlQueries.Tests/Foundatio.Parsers.SqlQueries.Tests.csproj" />
@@ -55,7 +54,6 @@
   <Project Path="../Foundatio.AzureServiceBus/src/Foundatio.AzureServiceBus/Foundatio.AzureServiceBus.csproj" />
   <Project Path="../Foundatio.AzureStorage/src/Foundatio.AzureStorage/Foundatio.AzureStorage.csproj" />
   <Project Path="../Foundatio.Kafka/src/Foundatio.Kafka/Foundatio.Kafka.csproj" />
-  <Project Path="../Foundatio.Minio/src/Foundatio.Minio/Foundatio.Minio.csproj" />
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.ElasticQueries/Foundatio.Parsers.ElasticQueries.csproj" />
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.LuceneQueries/Foundatio.Parsers.LuceneQueries.csproj" />
   <Project Path="../Foundatio.Parsers/src/Foundatio.Parsers.SqlQueries/Foundatio.Parsers.SqlQueries.csproj" />
