@@ -10,12 +10,13 @@ public enum AzureStorageQueueCompatibilityMode
 {
     /// <summary>
     /// Default mode: Uses message envelope for full metadata support.
-    /// Supports CorrelationId and Properties. New installations should use this mode.
+    /// Supports GroupId, CorrelationId and Properties. New installations should use this mode.
     /// </summary>
     Default = 0,
 
     /// <summary>
     /// Legacy mode: Raw message body with Base64 encoding for v11 SDK compatibility.
+    /// GroupId, CorrelationId and Properties are not persisted or included in the Enqueued entry.
     /// Use this for backward compatibility with existing queues that have messages
     /// written with the v11 Microsoft.Azure.Storage.Queue SDK.
     /// </summary>
@@ -41,7 +42,7 @@ public class AzureStorageQueueOptions<T> : SharedQueueOptions<T> where T : class
 
     /// <summary>
     /// Controls message format compatibility.
-    /// Default mode uses an envelope wrapper that supports CorrelationId and Properties.
+    /// Default mode uses an envelope wrapper that supports GroupId, CorrelationId and Properties.
     /// Legacy mode is provided for backward compatibility with existing queues that have messages
     /// written with the v11 Microsoft.Azure.Storage.Queue SDK (uses Base64 encoding and raw payload).
     ///
