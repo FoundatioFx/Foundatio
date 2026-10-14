@@ -103,7 +103,9 @@ public class AzureServiceBusQueueOptions<T> : SharedQueueOptions<T> where T : cl
     public string? UserMetadata { get; set; }
 
     /// <summary>
-    /// The function to calculate retry delay based on the attempt number.
+    /// The function to calculate retry delay based on the attempt number. A delayed retry is sent as a scheduled copy of the
+    /// message. It is not applied on session-enabled queues, where the copy would be processed after later messages in its
+    /// group, or on queues with duplicate detection, where the copy would be discarded; those queues retry immediately.
     /// </summary>
     public Func<int, TimeSpan> RetryDelay { get; set; } = attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt)) + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 100));
 }

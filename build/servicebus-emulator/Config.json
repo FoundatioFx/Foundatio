@@ -12,6 +12,16 @@
               "DefaultMessageTimeToLive": "PT1H",
               "DeadLetteringOnMessageExpiration": true
             }
+          },
+          {
+            "Name": "foundatio-test-queue-sessions",
+            "Properties": {
+              "LockDuration": "PT1M",
+              "MaxDeliveryCount": 5,
+              "DefaultMessageTimeToLive": "PT1H",
+              "DeadLetteringOnMessageExpiration": true,
+              "RequiresSession": true
+            }
           }
         ],
         "Topics": [

@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Foundatio.AzureServiceBus.Queues;
 using Foundatio.Queues;
 using Foundatio.Serializer;
 using Foundatio.Tests.Queue;
@@ -40,7 +41,7 @@ public class AzureServiceBusQueueTests : QueueTestBase
             _assertStats = false;
     }
 
-    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null)
+    protected override IQueue<SimpleWorkItem>? GetQueue(int retries = 1, TimeSpan? workItemTimeout = null, TimeSpan? retryDelay = null, int[]? retryMultipliers = null, int deadLetterMaxItems = 100, bool runQueueMaintenance = true, TimeProvider? timeProvider = null, ISerializer? serializer = null, Func<SimpleWorkItem, string?>? groupIdResolver = null)
     {
         string? connectionString = Configuration.GetConnectionString("AzureServiceBusConnectionString");
         if (String.IsNullOrEmpty(connectionString))
@@ -61,6 +62,9 @@ public class AzureServiceBusQueueTests : QueueTestBase
 
             if (retryDelay.HasValue)
                 o.RetryDelay(_ => retryDelay.Value);
+
+            if (groupIdResolver is not null)
+                o.GroupId(groupIdResolver);
 
             if (!_isEmulator)
             {
@@ -243,6 +247,18 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupId_PreservesGroupIdOnRetryAsync();
+    }
+
+    [Fact]
+    public override Task AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync()
+    {
+        return base.AbandonAsync_WithGroupIdAndRetryDelay_PreservesGroupIdOnRetryAsync();
+    }
+
+    [Fact]
     public override Task DequeueAsync_WithDispose_AutoAbandonsEntryAsync()
     {
         return base.DequeueAsync_WithDispose_AutoAbandonsEntryAsync();
@@ -319,9 +335,168 @@ public class AzureServiceBusQueueTests : QueueTestBase
     }
 
     [Fact]
+    public override Task EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenEnqueuingHandlerClearsGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WithEmptyGroupId_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupId_DoesNotClaimGroupedDeliveryAsync()
+    {
+        // Arrange: the queue is not session-enabled and cannot receive from sessions, so GroupId cannot affect delivery
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "no-grouped-delivery" }, new QueueEntryOptions { GroupId = "tenant-123" });
+
+            // Assert
+            Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Debug && e.Message.Contains("delivery order or fairness"));
+            var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            Assert.NotNull(entry);
+            await entry.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync()
+    {
+        return base.EnqueueAsync_WithGroupId_RoundTripsGroupIdAsync();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithGroupId_SendsGroupIdAsSessionIdAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "session-id-test" }, new QueueEntryOptions { GroupId = "tenant-123" });
+
+            // Assert
+            var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            var serviceBusEntry = Assert.IsType<AzureServiceBusQueueEntry<SimpleWorkItem>>(entry);
+            Assert.Equal("tenant-123", serviceBusEntry.UnderlyingMessage.SessionId);
+            Assert.Equal("tenant-123", serviceBusEntry.GroupId);
+            await serviceBusEntry.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    [Fact]
     public override Task EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync()
     {
         return base.EnqueueAsync_WithSerializationError_ThrowsAndLeavesQueueEmptyAsync();
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithSessionIdAndGroupId_UsesSessionIdAsync()
+    {
+        // Arrange
+        using var queue = GetQueue();
+        if (queue is null)
+            return;
+
+        try
+        {
+            await queue.DeleteQueueAsync();
+            await AssertEmptyQueueAsync(queue);
+
+            // Act
+            await queue.EnqueueAsync(new SimpleWorkItem { Data = "session-id-test" },
+                new AzureServiceBusQueueEntryOptions { GroupId = "tenant-123", SessionId = "session-456" });
+
+            // Assert
+            var entry = await queue.DequeueAsync(TimeSpan.FromSeconds(5));
+            var serviceBusEntry = Assert.IsType<AzureServiceBusQueueEntry<SimpleWorkItem>>(entry);
+            Assert.Equal("session-456", serviceBusEntry.UnderlyingMessage.SessionId);
+            Assert.Equal("session-456", serviceBusEntry.GroupId);
+            await serviceBusEntry.CompleteAsync();
+        }
+        finally
+        {
+            await CleanupQueueAsync(queue);
+        }
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptions_DoesNotChangeCallerOptionsAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WhenResolverReturnsEmpty_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenResolverReturnsEmpty_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WhenResolverReturnsNull_EnqueuesWithoutGroupAsync()
+    {
+        return base.EnqueueAsync_WhenResolverReturnsNull_EnqueuesWithoutGroupAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync()
+    {
+        return base.EnqueueAsync_WithActivity_AppliesCorrelationBeforeEnqueuingHandlersAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync()
+    {
+        return base.EnqueueAsync_WithEmptyGroupIdAndResolver_UsesPayloadValueAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync()
+    {
+        return base.EnqueueAsync_WithExplicitGroupId_OverridesResolverAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync()
+    {
+        return base.EnqueueAsync_WithGroupIdResolver_DoesNotChangeCallerOptionsAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithGroupIdResolver_UsesPayloadValueAsync()
+    {
+        return base.EnqueueAsync_WithGroupIdResolver_UsesPayloadValueAsync();
+    }
+
+    [Fact]
+    public override Task EnqueueAsync_WithReusedOptionsAndGroupIdResolver_EnqueuesEachMessageAsync()
+    {
+        return base.EnqueueAsync_WithReusedOptionsAndGroupIdResolver_EnqueuesEachMessageAsync();
     }
 
     [Fact]
