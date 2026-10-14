@@ -155,7 +155,10 @@ public class AzureServiceBusMessageBusOptions : SharedMessageBusOptions
     public string? SubscriptionUserMetadata { get; set; }
 
     /// <summary>
-    /// The receive mode for the subscription processor.
+    /// The receive mode for the subscription processor. With <see cref="ServiceBusReceiveMode.PeekLock"/>, a message whose
+    /// subscriber throws is abandoned, redelivered, and dead-lettered after the subscription's maximum delivery count; with
+    /// <see cref="ServiceBusReceiveMode.ReceiveAndDelete"/> the message is already deleted when it is received, so a subscriber
+    /// failure is logged and the message is not retried.
     /// </summary>
     public ServiceBusReceiveMode SubscriptionReceiveMode { get; set; } = ServiceBusReceiveMode.ReceiveAndDelete;
 

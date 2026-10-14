@@ -148,6 +148,8 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
                 message.Properties[property.Key] = value;
         }
 
+        // In PeekLock mode a failure is not caught: the SDK abandons the message so it is redelivered, then dead-lettered
+        // after MaxDeliveryCount, and ProcessErrorAsync logs the exception.
         try
         {
             await SendMessageToSubscribersAsync(message).AnyContext();
@@ -158,15 +160,14 @@ public class AzureServiceBusMessageBus : MessageBusBase<AzureServiceBusMessageBu
             // The message will be abandoned and redelivered after lock expiry.
             throw;
         }
-        catch (MessageBusException)
+        catch (MessageBusException) when (_options.SubscriptionReceiveMode is not ServiceBusReceiveMode.PeekLock)
         {
-            // SendMessageToSubscribersAsync already logged the error
-            // Azure Service Bus SDK will handle retry/dead-letter based on MaxDeliveryCount
+            // SendMessageToSubscribersAsync already logged the error.
+            // The message was deleted when it was received, so there is nothing to abandon.
         }
-        catch (Exception ex)
+        catch (Exception ex) when (_options.SubscriptionReceiveMode is not ServiceBusReceiveMode.PeekLock)
         {
-            // Catch any other unexpected exceptions for defensive purposes
-            // Azure Service Bus SDK will handle retry/dead-letter based on MaxDeliveryCount
+            // The message was deleted when it was received, so there is nothing to abandon.
             _logger.LogError(ex, "OnMessageAsync({MessageId}) Error in subscriber: {Message}", brokeredMessage.MessageId, ex.Message);
         }
     }

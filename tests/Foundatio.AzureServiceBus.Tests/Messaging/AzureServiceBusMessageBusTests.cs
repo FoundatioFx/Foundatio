@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
+using Azure.Messaging.ServiceBus;
 using Foundatio.Messaging;
 using Foundatio.Tests.Messaging;
 using Foundatio.Tests.Utility;
@@ -222,6 +224,48 @@ public class AzureServiceBusMessageBusTests : MessageBusTestBase
     public override Task CanHandlePoisonedMessageAsync()
     {
         return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithPeekLockAndSubscriberFailure_RedeliversMessageAsync()
+    {
+        // Arrange
+        using var messageBus = GetMessageBus(o =>
+        {
+            ((AzureServiceBusMessageBusOptions)o).SubscriptionReceiveMode = ServiceBusReceiveMode.PeekLock;
+            return o;
+        });
+        if (messageBus is null)
+            return;
+
+        string data = Guid.NewGuid().ToString("N");
+        int deliveries = 0;
+        var redelivered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
+        {
+            await messageBus.SubscribeAsync<SimpleMessageA>(msg =>
+            {
+                if (msg.Data != data)
+                    return;
+
+                if (Interlocked.Increment(ref deliveries) is 1)
+                    throw new InvalidOperationException("Simulated subscriber failure");
+
+                redelivered.TrySetResult(true);
+            }, TestCancellationToken);
+
+            // Act
+            await messageBus.PublishAsync(new SimpleMessageA { Data = data }, cancellationToken: TestCancellationToken);
+
+            // Assert
+            Assert.True(await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestCancellationToken));
+            Assert.Equal(2, Volatile.Read(ref deliveries));
+        }
+        finally
+        {
+            await CleanupMessageBusAsync(messageBus);
+        }
     }
 
     [Fact]
