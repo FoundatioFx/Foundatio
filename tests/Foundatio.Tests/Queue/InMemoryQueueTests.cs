@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -383,7 +385,13 @@ public class InMemoryQueueTests : QueueTestBase
     [Theory]
     [InlineData("Dictionary", true)]
     [InlineData("Dictionary", false)]
+    [InlineData("ConcurrentDictionary", true)]
+    [InlineData("ImmutableDictionary", true)]
     [InlineData("ImmutableDictionary", false)]
+    [InlineData("SortedDictionary", true)]
+    [InlineData("SortedList", true)]
+    [InlineData("ImmutableSortedDictionary", true)]
+    [InlineData("ReadOnlyDictionary", false)]
     public async Task EnqueueAsync_WithProperties_CopiesPropertiesForEnqueuingHandlersAsync(string dictionaryType, bool ignoreCase)
     {
         // Arrange
@@ -400,7 +408,12 @@ public class InMemoryQueueTests : QueueTestBase
         IDictionary<string, string> properties = dictionaryType switch
         {
             "Dictionary" => new Dictionary<string, string>(comparer) { ["Key"] = "value" },
+            "ConcurrentDictionary" => new ConcurrentDictionary<string, string>(comparer) { ["Key"] = "value" },
             "ImmutableDictionary" => ImmutableDictionary.Create<string, string>(comparer).Add("Key", "value"),
+            "SortedDictionary" => new SortedDictionary<string, string>(comparer) { ["Key"] = "value" },
+            "SortedList" => new SortedList<string, string>(comparer) { ["Key"] = "value" },
+            "ImmutableSortedDictionary" => ImmutableSortedDictionary.Create<string, string>(comparer).Add("Key", "value"),
+            "ReadOnlyDictionary" => new ReadOnlyDictionary<string, string>(new Dictionary<string, string> { ["Key"] = "value" }),
             _ => throw new ArgumentException("Unknown dictionary type", nameof(dictionaryType))
         };
         var options = new QueueEntryOptions { Properties = properties };

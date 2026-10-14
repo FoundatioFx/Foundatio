@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
@@ -174,9 +175,21 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     private static IDictionary<string, string> CopyProperties(IDictionary<string, string> properties)
     {
-        return properties is Dictionary<string, string> dictionary
-            ? new Dictionary<string, string>(dictionary, dictionary.Comparer)
-            : new Dictionary<string, string>(properties);
+        return new Dictionary<string, string>(properties, GetKeyComparer(properties));
+    }
+
+    private static IEqualityComparer<string>? GetKeyComparer(IDictionary<string, string> properties)
+    {
+        return properties switch
+        {
+            Dictionary<string, string> dictionary => dictionary.Comparer,
+            ConcurrentDictionary<string, string> dictionary => dictionary.Comparer,
+            ImmutableDictionary<string, string> dictionary => dictionary.KeyComparer,
+            SortedDictionary<string, string> dictionary => dictionary.Comparer as IEqualityComparer<string>,
+            SortedList<string, string> dictionary => dictionary.Comparer as IEqualityComparer<string>,
+            ImmutableSortedDictionary<string, string> dictionary => dictionary.KeyComparer as IEqualityComparer<string>,
+            _ => null
+        };
     }
 
     /// <summary>
