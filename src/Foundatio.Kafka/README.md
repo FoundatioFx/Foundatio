@@ -52,7 +52,6 @@ await messageBus.PublishAsync(new MyMessage { Data = "Hello" });
 | [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
 | [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
 | [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) | | | ✅ | | |
-| [Minio](https://github.com/FoundatioFx/Foundatio.Minio) | | | | ✅ | |
 | [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) | | | | ✅ | |
 | [SFTP](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) | | | | ✅ | |
 
