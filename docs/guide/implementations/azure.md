@@ -92,7 +92,7 @@ await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
 | `ConnectionString` | `string` | ✅ | Service Bus connection string |
-| `RequiresSession` | `bool?` | | Enable sessions for ordered processing |
+| `RequiresSession` | `bool?` | | Create the queue with sessions enabled. Each message then needs a `GroupId` (sent as `SessionId`), and messages are processed one at a time, in order, per group |
 | `RequiresDuplicateDetection` | `bool?` | | Enable duplicate detection |
 | `EnableDeadLetteringOnMessageExpiration` | `bool?` | | DLQ on expiration |
 
