@@ -42,6 +42,17 @@ public class InMemoryCacheClientOptions : SharedOptions
     public Func<object, long>? SizeCalculator { get; set; }
 
     /// <summary>
+    /// Whether the custom size calculator accepts read-only collection implementations as well as concrete collections.
+    /// Defaults to false, preserving the concrete dictionary passed when sizing lists.
+    /// </summary>
+    /// <remarks>
+    /// Enable this to avoid copying immutable lists for sizing. The calculator must use collection interfaces,
+    /// must not mutate values, and must support both ordinary dictionaries and read-only dictionary views.
+    /// This does not change values returned by cache reads or remove the cost of enumerating a collection.
+    /// </remarks>
+    public bool SizeCalculatorSupportsReadOnlyCollections { get; set; }
+
+    /// <summary>
     /// The maximum size in bytes for individual cache entries. Entries larger than this will be skipped (not cached) and a warning will be logged.
     /// If null, no entry size limit is enforced. Must be less than or equal to <see cref="MaxMemorySize"/> when both are set.
     /// </summary>
@@ -73,7 +84,7 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     }
 
     /// <summary>
-    /// Sets the maximum memory size in bytes. Use this with <see cref="SizeCalculator"/> for custom size calculation.
+    /// Sets the maximum memory size in bytes. Use this with <see cref="SizeCalculator(Func{object, long})"/> for custom size calculation.
     /// For most scenarios, prefer <see cref="WithDynamicSizing(long, ILoggerFactory)"/> or <see cref="WithFixedSizing"/> which set both the limit and calculator.
     /// </summary>
     /// <param name="maxMemorySize">The maximum memory size in bytes that the cache can consume.</param>
@@ -90,7 +101,18 @@ public class InMemoryCacheClientOptionsBuilder : SharedOptionsBuilder<InMemoryCa
     /// <param name="sizeCalculator">Function that returns the size of an entry in bytes.</param>
     public InMemoryCacheClientOptionsBuilder SizeCalculator(Func<object, long> sizeCalculator)
     {
+        return SizeCalculator(sizeCalculator, supportsReadOnlyCollections: false);
+    }
+
+    /// <summary>
+    /// Sets a custom size calculator, optionally allowing read-only collection views to avoid copying lists for sizing.
+    /// </summary>
+    /// <param name="sizeCalculator">Function that returns the size of an entry in bytes.</param>
+    /// <param name="supportsReadOnlyCollections">Whether the calculator accepts both ordinary collections and read-only views through collection interfaces.</param>
+    public InMemoryCacheClientOptionsBuilder SizeCalculator(Func<object, long> sizeCalculator, bool supportsReadOnlyCollections)
+    {
         Target.SizeCalculator = sizeCalculator;
+        Target.SizeCalculatorSupportsReadOnlyCollections = supportsReadOnlyCollections;
         return this;
     }
 

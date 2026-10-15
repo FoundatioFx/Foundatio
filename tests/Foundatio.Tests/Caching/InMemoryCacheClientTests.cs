@@ -749,6 +749,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         if (multicast)
             calculateSize += new InMemoryCacheClientOptionsBuilder().WithFixedSizing(100_000_000, 100).Build().SizeCalculator;
         using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxMemorySize(100_000_000)
+            .SizeCalculator(_ => 100, supportsReadOnlyCollections: true)
             .SizeCalculator(calculateSize).LoggerFactory(Log));
         await cache.ListAddAsync("list", Enumerable.Range(0, 1000));
         seen.Clear();
@@ -853,6 +854,71 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(0, added);
         Assert.Equal(64, cache.CurrentMemorySize);
         Assert.Equal(Enumerable.Range(0, 64), (await cache.GetListAsync<int>("set")).Value);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithReadOnlySizeCalculator_PreservesRejectedSnapshot(bool remove, bool shouldThrow)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        IDictionary<int, DateTime?>? observed = null;
+        bool reject = false;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).MaxMemorySize(1000).MaxEntrySize(200)
+            .ShouldThrowOnMaxEntrySizeExceeded(shouldThrow).SizeCalculator(value =>
+            {
+                observed = (IDictionary<int, DateTime?>)value;
+                return reject ? 201 : observed.Count;
+            }, supportsReadOnlyCollections: true));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 128), TimeSpan.FromMinutes(1));
+        await cache.ListAddAsync("set", [-1], TimeSpan.FromMinutes(1));
+        var previous = observed!;
+        reject = true;
+
+        // Act
+        async Task<long> UpdateAsync() => remove
+            ? await cache.ListRemoveAsync("set", [-1])
+            : await cache.ListAddAsync("set", [-2], TimeSpan.FromMinutes(5));
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(UpdateAsync);
+        else
+            Assert.Equal(0, await UpdateAsync());
+
+        // Assert
+        Assert.True(previous.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => previous.Clear());
+        Assert.Equal(129, previous.Count);
+        Assert.False(previous.ContainsKey(-2));
+        Assert.Equal(remove ? 128 : 130, observed!.Count);
+        Assert.Equal(129, (await cache.GetListAsync<int>("set")).Value!.Count);
+        Assert.Equal(129, cache.CurrentMemorySize);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("set"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithReadOnlySizeCalculator_UsesIncrementalWriteAllocations(bool cloneValues)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).MaxMemorySize(1_000_000)
+            .SizeCalculator(value => ((IDictionary<int, DateTime?>)value).Count, supportsReadOnlyCollections: true));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 10_000));
+        await cache.ListAddAsync("set", [-1]);
+        await cache.ListAddAsync("set", [-2]);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+
+        // Act
+        await cache.ListAddAsync("set", [-3]);
+        await cache.ListRemoveAsync("set", [-3]);
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Assert
+        Assert.True(allocated < 100_000, $"A small update allocated {allocated} bytes; it must not copy the entire list for sizing.");
+        Assert.Equal(10_002, cache.CurrentMemorySize);
     }
 
     [Theory]
