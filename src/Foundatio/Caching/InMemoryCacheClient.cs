@@ -83,8 +83,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        // Only the built-in calculators are known to accept a list's read-only view; custom ones get a Dictionary
-        _sizesListsInPlace = _sizeCalculator?.Target is Utility.SizeCalculator or InMemoryCacheClientOptionsBuilder.FixedSizeCalculator;
+        _sizesListsInPlace = options.SizeCalculatorSupportsReadOnlyCollections || (_sizeCalculator?.Target switch
+        {
+            Utility.SizeCalculator calculator => _sizeCalculator == calculator.CalculateSize,
+            InMemoryCacheClientOptionsBuilder.FixedSizeCalculator calculator => _sizeCalculator == calculator.Calculate,
+            _ => false
+        });
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -153,7 +157,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Recalculates the current memory size by summing all non-expired cache entries.
+    /// Recalculates the current memory size by summing all stored cache entries.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -678,7 +682,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             {
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
                 if (ReferenceEquals(list, stored))
-                    return (current, (long)items.Count);
+                    return (current.WithExpiration(list.ExpiresAtUtc), (long)items.Count);
 
                 long listSize = CalculateListSize(list);
                 return listSize < 0 ? (current, 0L) : (current.WithValue(list, list.ExpiresAtUtc, listSize), (long)items.Count);
@@ -727,8 +731,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Sizes a shared list. The built-in calculators read it through a read-only view, so it isn't copied; a custom
-    /// calculator gets its own <see cref="Dictionary{TKey,TValue}"/>, as it always has, since it may cast to it.
+    /// Sizes a shared list without copying when the calculator supports read-only collections. Other calculators
+    /// keep receiving a <see cref="Dictionary{TKey,TValue}"/>, since they may cast to it.
     /// </summary>
     private long CalculateListSize<T>(ListSnapshot<T> list) where T : notnull
     {
@@ -891,14 +895,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (entry.IsExpired)
-        {
-            RemoveExpiredKey(key);
             return false;
-        }
 
         Interlocked.Increment(ref _writes);
 
-        bool wasUpdated = UpdateEntry(key, current => mode switch
+        bool wasUpdated = UpdateEntry(key, current => entry.IsExpired ? (current, false) : mode switch
         {
             WriteMode.Add when current is not null => (current, false),
             WriteMode.Replace when current is null => (current, false),
@@ -1554,7 +1555,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         /// </summary>
         internal object? PeekValue()
         {
-            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot() : _cacheValue;
+            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot(shared: !_shouldClone) : _cacheValue;
             return _shouldClone ? value.DeepClone() : value;
         }
 
@@ -1621,52 +1622,39 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (value is null)
             return 0;
 
+        long size;
         try
         {
-            long size = _sizeCalculator!(value);
-
-            // Validate the size returned by the calculator
-            if (size < 0)
-            {
-                _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
-                    "Custom SizeCalculator functions must return non-negative values.",
-                    size, value?.GetType().Name ?? "null");
-                return -1;
-            }
-
-            // Check if entry exceeds maximum size
-            if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
-            {
-                if (_shouldThrowOnMaxEntrySizeExceeded)
-                {
-                    throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-                }
-
-                _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                    size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-
-                return -1;
-            }
-
-            return size;
+            size = _sizeCalculator!(value);
         }
         catch (MaxEntrySizeExceededCacheException)
         {
-            throw; // Re-throw MaxEntrySizeExceededCacheException from size check
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation",
-                value?.GetType().Name ?? "null");
-
-            // Fallback to simple estimation
-            return value switch
-            {
-                null => 8,
-                string stringValue => 24 + ((long)stringValue.Length * 2),
-                _ => 64 // Default object overhead
-            };
+            _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation", value.GetType().Name);
+            size = value is string stringValue ? 24 + ((long)stringValue.Length * 2) : 64;
         }
+
+        if (size < 0)
+        {
+            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
+                "Custom SizeCalculator functions must return non-negative values.", size, value.GetType().Name);
+            return -1;
+        }
+
+        if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
+        {
+            if (_shouldThrowOnMaxEntrySizeExceeded)
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value.GetType().Name);
+
+            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+                size, _maxEntrySize.Value, value.GetType().Name);
+            return -1;
+        }
+
+        return size;
     }
 
     private static bool TypeRequiresCloning(Type? t)
