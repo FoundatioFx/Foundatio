@@ -895,14 +895,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (entry.IsExpired)
-        {
-            RemoveExpiredKey(key);
             return false;
-        }
 
         Interlocked.Increment(ref _writes);
 
-        bool wasUpdated = UpdateEntry(key, current => mode switch
+        bool wasUpdated = UpdateEntry(key, current => entry.IsExpired ? (current, false) : mode switch
         {
             WriteMode.Add when current is not null => (current, false),
             WriteMode.Replace when current is null => (current, false),

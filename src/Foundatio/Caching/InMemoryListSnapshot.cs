@@ -154,7 +154,9 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
         // and it avoids indexing short-lived bulk lists. The first small change to an unindexed list also copies,
         // since a copy (~3 us at 1,000 items) is far cheaper than building the index for a list that may not change again.
         bool batch = items.Count >= Math.Max(1, Count / BlockSize);
-        if (batch || (!IsIndexed && !_fromIncrementalChange))
+        // Rebuild after substantial shrinkage so small writes don't keep copying peak-sized storage.
+        bool compact = Volatile.Read(ref _layout) is { } layout && Count < layout.NextSlot / 4;
+        if (batch || compact || (!IsIndexed && !_fromIncrementalChange))
         {
             var dictionary = ToDictionary();
             if (prune)
@@ -473,8 +475,8 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
 
         public ICollection<T> Keys => new ReadOnlyCollection<T>(snapshot.EnumeratePairs().Select(pair => pair.Key).ToArray());
         public ICollection<DateTime?> Values => new ReadOnlyCollection<DateTime?>(snapshot.EnumeratePairs().Select(pair => pair.Value).ToArray());
-        IEnumerable<T> IReadOnlyDictionary<T, DateTime?>.Keys => Keys;
-        IEnumerable<DateTime?> IReadOnlyDictionary<T, DateTime?>.Values => Values;
+        IEnumerable<T> IReadOnlyDictionary<T, DateTime?>.Keys => snapshot.EnumeratePairs().Select(pair => pair.Key);
+        IEnumerable<DateTime?> IReadOnlyDictionary<T, DateTime?>.Values => snapshot.EnumeratePairs().Select(pair => pair.Value);
 
         public bool ContainsKey(T key) => snapshot.ContainsKey(key);
         public bool TryGetValue(T key, out DateTime? value) => snapshot.TryGetExpiresAtUtc(key, out value);
