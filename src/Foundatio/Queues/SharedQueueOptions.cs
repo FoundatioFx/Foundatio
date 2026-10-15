@@ -26,6 +26,13 @@ public class SharedQueueOptions<T> : SharedOptions where T : class
     /// If metrics that require polling are enabled. These metrics are more expensive to calculate and should be disabled if you are not using them. Defaults to true.
     /// </summary>
     public bool MetricsPollingEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Derives the group or tenant key (see <see cref="QueueEntryOptions.GroupId"/>) from the message payload
+    /// when the caller does not specify one. Return <c>null</c> to enqueue without a group.
+    /// Exceptions thrown by the resolver propagate to the caller of <see cref="IQueue{T}.EnqueueAsync"/> and nothing is enqueued.
+    /// </summary>
+    public Func<T, string?>? GroupIdResolver { get; set; }
 }
 
 public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBuilder<TOptions, TBuilder>
@@ -113,6 +120,18 @@ public class SharedQueueOptionsBuilder<T, TOptions, TBuilder> : SharedOptionsBui
     public TBuilder DisableMetricsPolling()
     {
         Target.MetricsPollingEnabled = false;
+        return (TBuilder)this;
+    }
+
+    /// <summary>
+    /// Derives the group or tenant key from the message payload when the caller does not specify
+    /// <see cref="QueueEntryOptions.GroupId"/>. A non-empty per-call value always wins.
+    /// </summary>
+    public TBuilder GroupId(Func<T, string?> resolver)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+
+        Target.GroupIdResolver = resolver;
         return (TBuilder)this;
     }
 }

@@ -34,7 +34,7 @@ features:
     details: Long-running process management with queue processor jobs and work item handlers.
   - icon: 📁
     title: File Storage
-    details: Abstracted file storage with InMemory, Folder, Azure Blob, S3, Redis, Minio, and more.
+    details: Abstracted file storage with InMemory, Folder, Azure Blob, S3, Redis, and more.
   - icon: 🛡️
     title: Resilience
     details: Retry policies, circuit breakers, timeouts, and exponential backoff for robust applications.
@@ -168,7 +168,6 @@ When building several large cloud applications we found a lack of great solution
 | [Azure Storage](./guide/implementations/azure) | | ✅ | | | ✅ |
 | [In-Memory](./guide/implementations/in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Kafka](./guide/implementations/kafka) | | | ✅ | | |
-| [Minio](./guide/implementations/minio) | | | | | ✅ |
 | [RabbitMQ](./guide/implementations/rabbitmq) | | | ✅ | | |
 | [Redis](./guide/implementations/redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [SshNet](./guide/implementations/sshnet) | | | | | ✅ |
