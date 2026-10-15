@@ -175,7 +175,6 @@ All provider repositories follow the same pattern for options classes with conne
 | RabbitMQ | `ConnectionString = null!` |
 | AWS | Queue entry `Data = null!` |
 | Aliyun | `ConnectionString = null!` |
-| Minio | `Endpoint = null!`, `AccessKey = null!`, `SecretKey = null!` |
 | SSH.NET | `ConnectionString = null!` |
 | Kafka | Options properties |
 
