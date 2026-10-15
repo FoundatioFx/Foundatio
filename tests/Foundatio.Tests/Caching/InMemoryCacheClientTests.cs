@@ -182,6 +182,58 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task GetAsync_WithClonedList_CopiesMutableComparer()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true));
+        var values = new Dictionary<int, DateTime?>(new CountingComparer());
+        foreach (int value in Enumerable.Range(0, 100))
+            values.Add(value, null);
+        await cache.SetAsync("set", values);
+        await cache.ListAddAsync("set", [-1]);
+
+        // Act
+        var first = (await cache.GetAsync<Dictionary<int, DateTime?>>("set")).Value!;
+        var second = (await cache.GetAsync<Dictionary<int, DateTime?>>("set")).Value!;
+        var firstComparer = Assert.IsType<CountingComparer>(first.Comparer);
+        var secondComparer = Assert.IsType<CountingComparer>(second.Comparer);
+        int calls = secondComparer.Calls;
+        first.ContainsKey(0);
+
+        // Assert
+        Assert.NotSame(firstComparer, secondComparer);
+        Assert.Equal(calls, secondComparer.Calls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_WithClonedList_PreservesIncrementalWriteAllocations(bool diagnosticRead)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 10_000));
+        await cache.ListAddAsync("set", [-1]);
+        await cache.ListAddAsync("set", [-2]);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        await cache.ListAddAsync("set", [-3]);
+        long baseline = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Act
+        var copy = diagnosticRead
+            ? (IDictionary<int, DateTime?>)cache.Items.Single().Value!
+            : (await cache.GetAsync<IDictionary<int, DateTime?>>("set")).Value!;
+        copy.Clear();
+        before = GC.GetAllocatedBytesForCurrentThread();
+        await cache.ListAddAsync("set", [-4]);
+        long afterRead = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Assert
+        Assert.Equal(10_004, (await cache.GetListAsync<int>("set")).Value!.Count);
+        Assert.True(afterRead < baseline * 2, $"Write allocation grew from {baseline} to {afterRead} bytes after a cloned read.");
+    }
+
+    [Fact]
     public override Task GetAsync_WithComplexObject_PreservesPropertiesAndReturnsNewInstance()
     {
         return base.GetAsync_WithComplexObject_PreservesPropertiesAndReturnsNewInstance();
@@ -2805,6 +2857,30 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(3, cache.CurrentMemorySize);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SetAsync_WithOversizedCalculatorFallback_PreservesEntry(bool shouldThrow)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxMemorySize(1000)
+            .SizeCalculator(value => (string)value! == "old" ? 3 : throw new InvalidOperationException("Sizing failed"))
+            .MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow));
+        await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
+
+        // Act
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync("key", "replacement", TimeSpan.FromMinutes(5)));
+        else
+            Assert.False(await cache.SetAsync("key", "replacement", TimeSpan.FromMinutes(5)));
+
+        // Assert
+        Assert.Equal("old", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
+        Assert.Equal(3, cache.CurrentMemorySize);
+    }
+
     [Fact]
     public async Task SetAsync_WithOversizedEntry_LogsWarningAndReturnsFalse()
     {
@@ -3221,6 +3297,19 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal("added", outcome);
         Assert.Equal("added", GetEntry(cache, "key").StoredValue);
         Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+    private sealed class CountingComparer : IEqualityComparer<int>
+    {
+        public int Calls { get; private set; }
+
+        public bool Equals(int x, int y)
+        {
+            Calls++;
+            return x == y;
+        }
+
+        public int GetHashCode(int value) => value;
     }
 
     private sealed class DictionarySizeCalculator(ILoggerFactory loggerFactory) : SizeCalculator(loggerFactory)

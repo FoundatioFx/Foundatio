@@ -1559,7 +1559,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         /// </summary>
         internal object? PeekValue()
         {
-            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot() : _cacheValue;
+            object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot(shared: !_shouldClone) : _cacheValue;
             return _shouldClone ? value.DeepClone() : value;
         }
 
@@ -1626,52 +1626,39 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (value is null)
             return 0;
 
+        long size;
         try
         {
-            long size = _sizeCalculator!(value);
-
-            // Validate the size returned by the calculator
-            if (size < 0)
-            {
-                _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
-                    "Custom SizeCalculator functions must return non-negative values.",
-                    size, value?.GetType().Name ?? "null");
-                return -1;
-            }
-
-            // Check if entry exceeds maximum size
-            if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
-            {
-                if (_shouldThrowOnMaxEntrySizeExceeded)
-                {
-                    throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-                }
-
-                _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                    size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-
-                return -1;
-            }
-
-            return size;
+            size = _sizeCalculator!(value);
         }
         catch (MaxEntrySizeExceededCacheException)
         {
-            throw; // Re-throw MaxEntrySizeExceededCacheException from size check
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation",
-                value?.GetType().Name ?? "null");
-
-            // Fallback to simple estimation
-            return value switch
-            {
-                null => 8,
-                string stringValue => 24 + ((long)stringValue.Length * 2),
-                _ => 64 // Default object overhead
-            };
+            _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation", value.GetType().Name);
+            size = value is string stringValue ? 24 + ((long)stringValue.Length * 2) : 64;
         }
+
+        if (size < 0)
+        {
+            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
+                "Custom SizeCalculator functions must return non-negative values.", size, value.GetType().Name);
+            return -1;
+        }
+
+        if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
+        {
+            if (_shouldThrowOnMaxEntrySizeExceeded)
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value.GetType().Name);
+
+            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+                size, _maxEntrySize.Value, value.GetType().Name);
+            return -1;
+        }
+
+        return size;
     }
 
     private static bool TypeRequiresCloning(Type? t)
