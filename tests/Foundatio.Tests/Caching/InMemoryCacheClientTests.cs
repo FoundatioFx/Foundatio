@@ -609,12 +609,22 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ListAddAsync_WithConcurrentLargeListUpdates_PreservesUnrelatedValues(bool cloneValues)
+    [InlineData(false, null)]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, null)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListAddAsync_WithConcurrentLargeListUpdates_PreservesUnrelatedValues(bool cloneValues, bool? supportsReadOnlyCollections)
     {
         // Arrange
-        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.LoggerFactory(Log).CloneValues(cloneValues);
+            return supportsReadOnlyCollections.HasValue
+                ? o.MaxMemorySize(1_000_000).SizeCalculator(value => ((IDictionary<int, DateTime?>)value).Count, supportsReadOnlyCollections.Value)
+                : o;
+        });
         var original = Enumerable.Range(0, 1000).ToArray();
         await cache.ListAddAsync("set", original);
 
@@ -633,6 +643,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         var remaining = (await cache.GetListAsync<int>("set")).Value!;
         Assert.Equal(original, remaining.OrderBy(value => value));
+        if (supportsReadOnlyCollections.HasValue)
+            Assert.Equal(original.Length, cache.CurrentMemorySize);
     }
 
     [Fact]
