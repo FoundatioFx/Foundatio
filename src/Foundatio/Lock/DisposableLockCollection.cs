@@ -42,10 +42,10 @@ internal class DisposableLockCollection : ILock
     {
         _logger.LogTrace("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
 
-        await Task.WhenAll(_locks.Select(l => l.RenewAsync(lockExtension))).AnyContext();
+        await LockSetOperations.RenewAllAsync(_locks, lockExtension, _logger).AnyContext();
         _renewalCount++;
 
-        _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogDebug("Renewed {LockCount} locks {Resource}", _locks.Count, Resource);
     }
 
     public async Task ReleaseAsync()
@@ -63,7 +63,7 @@ internal class DisposableLockCollection : ILock
 
             _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
 
-            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
+            await LockSetOperations.ReleaseAllAsync(_locks, _logger).AnyContext();
         }
     }
 
@@ -73,7 +73,7 @@ internal class DisposableLockCollection : ILock
 
         try
         {
-            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
+            await LockSetOperations.ReleaseAllAsync(_locks, _logger).AnyContext();
         }
         catch (Exception ex)
         {
