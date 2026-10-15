@@ -30,7 +30,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `ICacheClient` | Key-value caching with TTL | `InMemoryCacheClient` | Redis, Hybrid |
 | `IQueue<T>` | FIFO message queuing | `InMemoryQueue<T>` | Redis, SQS, Azure |
 | `IMessageBus` | Pub/sub messaging | `InMemoryMessageBus` | Redis, Kafka, RabbitMQ, Azure |
-| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob, Minio |
+| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `IJob` | Background job processing | N/A | Hosted services |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
@@ -110,6 +110,10 @@ await _cache.RemoveByPrefixAsync("user:");
 
 ```csharp
 await _queue.EnqueueAsync(new OrderWorkItem { OrderId = orderId });
+
+// Multi-tenant: tag messages with a group id (SQS fair queues / FIFO ordering)
+await _queue.EnqueueAsync(workItem, new QueueEntryOptions { GroupId = tenantId });
+// or derive it from the payload once: new SQSQueue<T>(o => o.GroupId(x => x.TenantId))
 
 var entry = await _queue.DequeueAsync(TimeSpan.FromSeconds(5));
 if (entry is not null)
@@ -318,7 +322,9 @@ public class OrderServiceTests : TestLoggerBase
 - **In-memory lists and cloning**: List writes preserve supported dictionary types and comparers; copying an unsupported `IDictionary` throws `NotSupportedException` without changing the entry. Batch large updates because cloning, custom sizing, and raw dictionary access can require whole-list copies. `Items` honors `CloneValues` without affecting LRU. Cloned dictionary reads preserve incremental list writes; uncloned dictionary reads expose a shared copy and require subsequent writers to copy it. Collection snapshots do not isolate shared mutable elements when cloning is disabled. See the [caching guide](https://foundatio.readthedocs.io/guide/caching.html#in-memory-update-behavior) for details. Adding existing list items still reapplies their resulting expiration, even when the list contents are unchanged.
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
-- **In-memory for tests**: Use in-memory implementations for fast, isolated tests, but retain provider integration coverage for serialization, expiration, and concurrency behavior. A common interface does not guarantee identical backend semantics.
+- **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and session-enabled Azure Service Bus queues (ordered per group, one message at a time per group; `RetryDelay` is not applied, so an abandoned message retries ahead of the rest of its group; a group id of at most 128 characters is required). The other built-in queues store it as metadata and log one debug message. SQS group ids are max 128 characters with no spaces. Empty values are stored as `null`. A non-empty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver. Resolvers should return `null` for no group.
+- **`EnqueueAsync` copies `QueueEntryOptions`**: The caller's instance is never modified and can be reused. `Enqueuing` handlers get the per-message copy, with the resolved `GroupId` and the `Activity.Current` `CorrelationId`/`TraceState` already filled in. `Properties` is copied into a writable `Dictionary` per enqueue, keeping the key comparer of built-in dictionary types (`Dictionary`, `ConcurrentDictionary`, sorted and immutable dictionaries); other implementations use the default comparer.
 
 ## NuGet Packages
 
@@ -349,7 +355,6 @@ public class OrderServiceTests : TestLoggerBase
 | `Foundatio.AWS` | SQS queues, SQS messaging, S3 storage |
 | `Foundatio.Kafka` | Kafka messaging |
 | `Foundatio.RabbitMQ` | RabbitMQ messaging |
-| `Foundatio.Minio` | MinIO S3-compatible storage |
 | `Foundatio.Aliyun` | Aliyun OSS storage |
 | `Foundatio.Storage.SshNet` | SFTP storage |
 

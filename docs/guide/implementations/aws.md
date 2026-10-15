@@ -117,11 +117,9 @@ AWS SQS queue implementation for reliable work item processing.
 ```csharp
 using Foundatio.Queues;
 
-var queue = new SQSQueue<WorkItem>(o =>
-{
-    o.ConnectionString = connectionString;
-    o.Name = "work-items";
-});
+var queue = new SQSQueue<WorkItem>(o => o
+    .ConnectionString(connectionString)
+    .Name("work-items"));
 
 await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 var entry = await queue.DequeueAsync();
@@ -131,14 +129,54 @@ var entry = await queue.DequeueAsync();
 
 | Option | Type | Required | Default | Description |
 |--------|------|----------|---------|-------------|
-| `Name` | `string` | ✅ | | Queue name |
+| `Name` | `string` | ✅ | | Queue name (a `.fifo` suffix selects a FIFO queue) |
 | `ConnectionString` | `string` | | | Connection string |
 | `Region` | `RegionEndpoint` | | | AWS region |
+| `Credentials` | `AWSCredentials` | | | AWS credentials |
+| `ServiceUrl` | `string` | | | Custom endpoint (e.g. Floci) |
 | `CanCreateQueue` | `bool` | | `true` | Auto-create queue |
-| `SupportDeadLetter` | `bool` | | `true` | Enable DLQ support |
+| `SupportDeadLetter` | `bool` | | `true` | Create and use a `-deadletter` queue |
 | `ReadQueueTimeout` | `TimeSpan` | | 20s | Long polling timeout |
+| `DequeueInterval` | `TimeSpan` | | 1s | Interval between dequeue attempts when the queue is empty |
+| `RetryDelay` | `Func<int, TimeSpan>` | | Exponential | Visibility delay before an abandoned message is retried |
+| `SqsManagedSseEnabled` | `bool` | | `false` | Enable SQS managed encryption (SSE-SQS) |
+| `KmsMasterKeyId` | `string` | | | KMS key ID for encryption (SSE-KMS) |
+| `KmsDataKeyReusePeriodSeconds` | `int` | | | KMS data key reuse period, in seconds |
 
 For additional options, see [SQSQueueOptions source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Queues/SQSQueueOptions.cs).
+
+### Fair Queues and Message Groups
+
+SQS [fair queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fair-queues.html) stop one noisy tenant from delaying everyone else in a shared standard queue. They are enabled by sending a `MessageGroupId` (your tenant or customer id) with each message. Foundatio exposes this as `QueueEntryOptions.GroupId`:
+
+```csharp
+// Derive the tenant from the payload once...
+var queue = new SQSQueue<ImportRequest>(o => o
+    .ConnectionString(connectionString)
+    .Name("imports")
+    .GroupId(r => r.TenantId));
+
+await queue.EnqueueAsync(importRequest);
+
+// ...or set it per call
+await queue.EnqueueAsync(importRequest, new QueueEntryOptions { GroupId = "tenant-123" });
+```
+
+Things to know:
+
+- **A standard queue is enough.** No queue setting and no consumer change are needed, and messages in the same group can still be processed in parallel. `GroupId` on a standard queue does not provide ordering.
+- **FIFO queues use the same field for ordering.** On a `.fifo` queue, messages in a group are delivered one at a time in order, and SQS requires a group id on every message. FIFO queues reject a positive per-message `DeliveryDelay`, and an abandoned message with a `RetryDelay` holds back the rest of its group until it is retried.
+- **Group ids are limited to 128 characters** of alphanumerics and punctuation (no spaces).
+- **FIFO deduplication follows the queue.** A `UniqueId` is sent as `MessageDeduplicationId`. Without one, SQS derives the id from the body when the queue has `ContentBasedDeduplication` enabled; otherwise a random id is generated. The setting is read once per queue, on the first send without a `UniqueId`, and is not polled. If it is turned off later, the send is retried once with a generated id. If it is turned on later, generated ids keep being sent, which is valid but bypasses content-based deduplication until the queue is reopened.
+- **Set it on every message.** SQS treats a message without a group id as its own tenant.
+- **Consumer concurrency matters.** SQS marks a tenant as noisy when it holds more than 10% of in-flight messages (with at least 30 in flight) or more than 10% of recent processing time. `SQSQueue` receives one message per worker loop, so run enough workers or instances for the in-flight share to be meaningful.
+- **Monitor with CloudWatch.** Compare `ApproximateNumberOfMessagesVisible` with the `...InQuietGroups` metrics to confirm quiet tenants are not affected.
+
+### Dead Letter Behavior
+
+`SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and moves a message there itself once `Retries` is exceeded. FIFO queues use `<name>-deadletter.fifo`, because AWS requires the dead-letter queue of a FIFO queue to be a FIFO queue ([CreateQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_CreateQueue.html)). Without a dead-letter queue, the message is deleted once `Retries` is exceeded. If the dead-letter queue can't be resolved, the error is logged and the message stays on the source queue to be retried. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly. The dead-letter queue uses the same encryption settings as the source queue, and its name must fit the 80-character SQS limit, so a source queue name can be at most 69 characters (including `.fifo`). Moving a message is at-least-once: the copy is sent before the original is deleted, so a failed delete can leave the message in both queues. `RetryDelay` is applied as the visibility timeout and capped at the SQS maximum of 12 hours.
+
+Deleting a queue takes up to 60 seconds in SQS, and a send during that window can succeed and then be lost with the queue ([DeleteQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteQueue.html)). Stop producers and workers before `DeleteQueueAsync` and wait at least 60 seconds before reusing the name. After a `QueueDoesNotExistException`, the cached queue url is cleared so the next call recreates the queue.
 
 ## Next Steps
 
