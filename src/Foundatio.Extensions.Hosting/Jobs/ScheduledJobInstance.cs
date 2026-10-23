@@ -47,7 +47,8 @@ internal class ScheduledJobInstance
 
         _jobOptions.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ScheduledJobOptions.CronSchedule))
+            if (args.PropertyName == nameof(ScheduledJobOptions.CronSchedule) ||
+                args.PropertyName == nameof(ScheduledJobOptions.CronFormat))
             {
                 UpdateCronExpression();
 
@@ -79,7 +80,7 @@ internal class ScheduledJobInstance
 
         try
         {
-            _cronExpression = CronExpression.Parse(_jobOptions.CronSchedule);
+            _cronExpression = CronExpression.Parse(_jobOptions.CronSchedule, _jobOptions.CronFormat);
         }
         catch (Exception)
         {
