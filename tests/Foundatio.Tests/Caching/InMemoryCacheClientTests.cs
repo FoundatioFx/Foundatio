@@ -497,6 +497,64 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.DoesNotContain(stored.Keys, k => ReferenceEquals(k, added));
     }
 
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndImmutableItems_SharesSnapshotAndIsolatesReads()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+
+        // Act
+        await cache.ListAddAsync("set", [-1]);
+        var read = await cache.GetAsync<IDictionary<int, DateTime?>>("set");
+        read.Value!.Clear();
+        await cache.ListRemoveAsync("set", [0]);
+
+        // Assert
+        Assert.Equal(Enumerable.Range(1, 99).Append(-1).Order(), (await cache.GetListAsync<int>("set")).Value!.Order());
+        var reread = await cache.GetAsync<IDictionary<int, DateTime?>>("set");
+        Assert.Equal(100, reread.Value!.Count);
+        Assert.NotSame(read.Value, reread.Value);
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndImmutableItems_UsesSharedSnapshot()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+
+        // Act
+        await cache.ListAddAsync("set", [-1]);
+
+        // Assert
+        Assert.IsType<ListSnapshot<int>>(GetEntry(cache, "set").StoredValue);
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCloneValuesAndStructHoldingReference_DoesNotShareItems()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var items = Enumerable.Range(0, 100).Select(i => new ReferenceHoldingItem(i, [i])).ToArray();
+        await cache.ListAddAsync("set", items);
+
+        // Act
+        await cache.ListAddAsync("set", [new ReferenceHoldingItem(-1, [-1])]);
+        items[0].Values.Add(42);
+
+        // Assert
+        Assert.IsNotType<ListSnapshot<ReferenceHoldingItem>>(GetEntry(cache, "set").StoredValue);
+        var stored = (await cache.GetListAsync<ReferenceHoldingItem>("set")).Value!;
+        Assert.DoesNotContain(stored, item => ReferenceEquals(item.Values, items[0].Values));
+    }
+
+    private readonly record struct ReferenceHoldingItem(int Id, List<int> Values)
+    {
+        public bool Equals(ReferenceHoldingItem other) => Id == other.Id;
+        public override int GetHashCode() => Id;
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -522,6 +580,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         var remaining = (await cache.GetListAsync<int>("set")).Value!;
         Assert.Equal(original, remaining.OrderBy(value => value));
+    }
+
+    [Fact]
+    public async Task UpdateEntry_WithSerializeAfterConflict_RetriesUnderConflictLock()
+    {
+        // Arrange
+        // Runs on every target framework, so both System.Threading.Lock (net9+) and Monitor (net8) are exercised
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).CloneValues(false).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 100));
+        var heldDuringAttempt = new List<bool>();
+        int attempt = 0;
+
+        // Act
+        long result = cache.UpdateEntry(key: "set", current =>
+        {
+            heldDuringAttempt.Add(cache.IsConflictLockHeld("set"));
+            if (attempt++ == 0)
+                Publish(cache, "set", CreateEntry("concurrent", timeProvider));
+            return (CreateEntry("mine", timeProvider), 1L);
+        }, serializeAfterConflict: true);
+
+        // Assert
+        Assert.Equal(1, result);
+        Assert.Equal([false, true], heldDuringAttempt);
+        Assert.False(cache.IsConflictLockHeld("set"));
+        Assert.Equal("mine", (await cache.GetAsync<string>("set")).Value);
     }
 
     [Fact]
@@ -784,6 +869,33 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException()
     {
         return base.ListRemoveAsync_WithInvalidInputs_ThrowsAppropriateException();
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithCustomSizeCalculator_ReceivesDictionaryOfCurrentItems()
+    {
+        // Arrange
+        var seen = new List<(int Count, bool IsDictionary, bool HasNewItem, bool HasRemovedItem)>();
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxMemorySize(100_000_000).SizeCalculator(value =>
+        {
+            if (value is IDictionary<int, DateTime?> list)
+                seen.Add((list.Count, list is Dictionary<int, DateTime?>, list.ContainsKey(-1), list.ContainsKey(0)));
+            return 100;
+        }).LoggerFactory(Log));
+        await cache.ListAddAsync("list", Enumerable.Range(0, 1000));
+        seen.Clear();
+
+        // Act
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [0]);
+
+        // Assert
+        Assert.Equal([(1001, true, true, true), (1000, true, true, false)], seen);
+        var list = await cache.GetListAsync<int>("list");
+        Assert.Equal(1000, list.Value!.Count);
+        var dictionary = await cache.GetAsync<IDictionary<int, DateTime?>>("list");
+        Assert.IsType<Dictionary<int, DateTime?>>(dictionary.Value);
+        Assert.Equal(1000, dictionary.Value!.Count);
     }
 
     [Fact]

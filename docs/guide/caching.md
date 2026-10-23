@@ -275,6 +275,9 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
 - `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
+- List size limits (`MaxEntrySize`, a negative `SizeCalculator` result) apply to the whole resulting list on every `ListAddAsync` and `ListRemoveAsync`, so a removal that leaves the list over the limit is rejected and returns `0`.
+- A rejected `ListAddAsync` on an expired key still reclaims the expired entry and raises `ItemExpired`, and every `ListAddAsync` call counts as a write in `Writes`, including rejected ones.
+- List item expirations read back with `DateTimeKind.Utc`, whatever kind was passed in.
 :::
 
 List updates preserve the collection structure of previously returned snapshots. They preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and, on .NET 9 or later, `OrderedDictionary`. Other `IDictionary` implementations throw `NotSupportedException` when an update requires copying them; the original entry remains unchanged.
@@ -282,7 +285,7 @@ List updates preserve the collection structure of previously returned snapshots.
 `Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.
 
 ::: tip Large list updates
-Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Lists over 32 items are stored as immutable snapshots, so a small change copies only the parts it touches, including with `WithDynamicSizing` or `WithFixedSizing`. A custom `SizeCalculator` still receives a `Dictionary<T, DateTime?>` copy of the whole list on each write. With `CloneValues` on, snapshots apply to lists of strings and of value types without reference fields; other lists are copied on each write. Raw dictionary access (`GetAsync<IDictionary<T, DateTime?>>`) materializes a copy the first time it's read. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
 :::
 
 ### HybridCacheClient
