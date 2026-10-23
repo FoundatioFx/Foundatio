@@ -1,6 +1,7 @@
-﻿using System;
+﻿﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Cronos;
 using Foundatio.Jobs;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
@@ -29,6 +30,12 @@ public class ScheduledJobOptionsBuilder
     public ScheduledJobOptionsBuilder CronSchedule(string value)
     {
         Target.CronSchedule = value;
+        return this;
+    }
+
+    public ScheduledJobOptionsBuilder CronFormat(CronFormat value)
+    {
+        Target.CronFormat = value;
         return this;
     }
 

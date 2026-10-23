@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using Foundatio.Extensions.Hosting.Cronos;
 using Foundatio.Jobs;
 
 namespace Foundatio.Extensions.Hosting.Jobs;
@@ -13,6 +14,7 @@ public class ScheduledJobOptions : INotifyPropertyChanged
     private bool _waitForStartupActions;
     private string? _cronSchedule;
     private TimeZoneInfo? _cronTimeZone;
+    private CronFormat _cronFormat = CronFormat.Standard;
     private bool _isDistributed;
     private bool _isEnabled = true;
 
@@ -50,6 +52,13 @@ public class ScheduledJobOptions : INotifyPropertyChanged
     {
         get => _cronTimeZone;
         set => SetField(ref _cronTimeZone, value);
+    }
+
+    /// <summary>cron 表达式格式：Standard（5 段）或 IncludeSeconds（6 段，秒级）。默认 Standard。</summary>
+    public CronFormat CronFormat
+    {
+        get => _cronFormat;
+        set => SetField(ref _cronFormat, value);
     }
 
     public bool IsDistributed
