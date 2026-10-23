@@ -1063,6 +1063,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(true, true, false)]
     [InlineData(false, false, true)]
     [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
     public async Task RemoveIfEqualAsync_WhenEntryExpires_ReclaimsMemoryAndNotifies(bool expiresDuringComparison, bool matches, bool recentMaintenance)
     {
         // Arrange
