@@ -11,6 +11,7 @@
 
     <ItemGroup>
         <PackageReference Include="Aspire.Hosting.Redis" Version="13.6.1" />
+        <PackageReference Include="MessagePack" Version="2.5.303" />
     </ItemGroup>
 
     <ItemGroup>
