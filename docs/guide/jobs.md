@@ -446,6 +446,8 @@ public record DeleteEntityWorkItem
 | `ReportProgressAsync(progress, message)` | Publishes `WorkItemStatus` updates via `IMessageBus`. With `AutoRenewLockOnProgress`, it also renews the queue entry and work item lock |
 | `RenewLockAsync()` | Extends the work item lock lease. Throws `LockException` if a cache-backed lock was lost; stop the work |
 
+With `AutoRenewLockOnProgress`, a lost work item lock cancels the context token without waiting for queue renewal to finish. Queue renewal errors are logged and do not themselves cancel the handler. The default `WorkItemHandlerBase` uses `EmptyLock`; preventing concurrent redelivery requires overriding `GetWorkItemLockAsync` with an exclusive lock shared by all processors of that work item. Progress reporting still awaits both renewals, so configure provider timeouts.
+
 ### WorkItemHandlers
 
 `WorkItemHandlers` is a registry mapping work item data types to their handlers. You can register handlers in several ways:
