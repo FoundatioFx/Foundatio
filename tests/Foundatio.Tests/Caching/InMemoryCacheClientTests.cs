@@ -3191,6 +3191,39 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData("Add")]
+    [InlineData("Replace")]
+    [InlineData("Set")]
+    public async Task WriteAsync_WithExpirationDuringSizing_ReclaimsExpiredEntry(string operation)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).MaxMemorySize(1000).SizeCalculator(_ =>
+        {
+            clock.Advance(TimeSpan.FromSeconds(1));
+            return 50;
+        }));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        Publish(cache, "key", CreateEntry("expired-owner", clock, TimeSpan.FromMinutes(1)));
+        clock.Advance(TimeSpan.FromMinutes(2));
+
+        // Act
+        bool result = operation switch
+        {
+            "Add" => await cache.AddAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10)),
+            "Replace" => await cache.ReplaceAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10)),
+            _ => await cache.SetAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10))
+        };
+
+        // Assert
+        Assert.False(result);
+        Assert.Equal(0, cache.CurrentMemorySize);
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        Assert.False((await cache.GetAsync<string>("key")).HasValue);
+    }
+
+    [Theory]
     [InlineData("Add", true)]
     [InlineData("Increment", 10L)]
     [InlineData("Replace", false)]

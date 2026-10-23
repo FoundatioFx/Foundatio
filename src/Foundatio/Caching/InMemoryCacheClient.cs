@@ -895,7 +895,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (entry.IsExpired)
-            return false;
+            return UpdateEntry(key, current => (current, false));
 
         Interlocked.Increment(ref _writes);
 

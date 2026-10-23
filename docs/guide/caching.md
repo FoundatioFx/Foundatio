@@ -273,7 +273,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `ListAddAsync` returns `0` and leaves the list unchanged when the merged list fails size validation.
 - `Items` returns the cached values rather than the internal entry objects.
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
-- If an accepted TTL elapses while `AddAsync`, `SetAsync`, or `ReplaceAsync` prepares its value (for example, during sizing or cloning), the write returns `false` without deleting an existing live entry. This differs from explicitly supplying a TTL below 5ms, which still requests removal.
+- If an accepted TTL elapses while `AddAsync`, `SetAsync`, or `ReplaceAsync` prepares its value (for example, during sizing or cloning), the write returns `false` without deleting an existing live entry. An expired stored entry is still reclaimed and raises `ItemExpired`. This differs from explicitly supplying a TTL below 5ms, which still requests removal.
 - If a custom `SizeCalculator` throws, the fallback estimate is also checked against `MaxEntrySize`. An oversized fallback now rejects the write (or throws `MaxEntrySizeExceededCacheException` when configured), preserving the previous entry. Earlier versions bypassed this limit on the fallback path.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
 - `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
