@@ -129,25 +129,6 @@ var storage = new RedisFileStorage(o => {
 });
 ```
 
-### MinioFileStorage
-
-Minio object storage (separate package):
-
-[View source](https://github.com/FoundatioFx/Foundatio.Minio/blob/main/src/Foundatio.Minio/Storage/MinioFileStorage.cs)
-
-```csharp
-// dotnet add package Foundatio.Minio
-
-using Foundatio.Minio.Storage;
-
-var storage = new MinioFileStorage(o => {
-    o.Endpoint = "localhost:9000";
-    o.AccessKey = "minioadmin";
-    o.SecretKey = "minioadmin";
-    o.Bucket = "files";
-});
-```
-
 ### SshNetFileStorage
 
 SFTP-backed storage (separate package):
@@ -550,7 +531,6 @@ await stream.CopyToAsync(destination);
 | Development/Testing | InMemoryFileStorage |
 | Local persistence | FolderFileStorage |
 | Cloud applications | AzureFileStorage, S3FileStorage |
-| Multi-cloud | MinioFileStorage |
 | Legacy systems | SshNetFileStorage |
 
 ## FileSpec Properties

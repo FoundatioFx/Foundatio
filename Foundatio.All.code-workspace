@@ -28,9 +28,6 @@
 			"path": "../Foundatio.Aliyun"
 		},
 		{
-			"path": "../Foundatio.Minio"
-		},
-		{
 			"path": "../Foundatio.Storage.SshNet"
 		},
 		{

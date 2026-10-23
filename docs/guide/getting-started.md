@@ -34,9 +34,6 @@ dotnet add package Foundatio.Kafka
 # Aliyun OSS (Storage)
 dotnet add package Foundatio.Aliyun
 
-# MinIO (S3-compatible Storage)
-dotnet add package Foundatio.Minio
-
 # SSH/SFTP (Storage)
 dotnet add package Foundatio.Storage.SshNet
 ```

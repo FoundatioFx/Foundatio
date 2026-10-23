@@ -87,7 +87,7 @@ var storage = new InMemoryFileStorage();
 Compare to other approaches:
 - **Direct Redis**: Requires running Redis server
 - **Direct Azure**: Requires Azure subscription or emulator
-- **Direct AWS**: Requires AWS account or LocalStack
+- **Direct AWS**: Requires AWS account or an emulator such as [Floci](https://github.com/floci-io/floci)
 
 ### 📊 Comparison with Alternatives
 

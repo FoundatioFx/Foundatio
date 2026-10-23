@@ -55,6 +55,7 @@ export default defineConfig({
           items: [
             { text: 'Configuration', link: '/guide/configuration' },
             { text: 'Dependency Injection', link: '/guide/dependency-injection' },
+            { text: 'Provider Behavioral Gaps', link: '/guide/provider-behavioral-gaps' },
             { text: 'Resilience', link: '/guide/resilience' },
             { text: 'Serialization', link: '/guide/serialization' }
           ]
@@ -68,7 +69,6 @@ export default defineConfig({
             { text: 'Hybrid Cache', link: '/guide/implementations/hybrid-cache' },
             { text: 'In-Memory', link: '/guide/implementations/in-memory' },
             { text: 'Kafka', link: '/guide/implementations/kafka' },
-            { text: 'Minio', link: '/guide/implementations/minio' },
             { text: 'RabbitMQ', link: '/guide/implementations/rabbitmq' },
             { text: 'RabbitMQ Delivery Safety', link: '/guide/implementations/rabbitmq-delivery-safety' },
             { text: 'RabbitMQ Verification', link: '/guide/implementations/rabbitmq-verification' },
