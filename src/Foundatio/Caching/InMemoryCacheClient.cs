@@ -446,8 +446,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         var result = UpdateEntry(key, current =>
         {
             reclaimed = false;
-            if (current is null || update(current) is not { } decision)
+            if (current is null)
                 return (current, missResult);
+
+            var decision = update(current);
 
             // A lease that expired while it was being compared no longer belongs to the caller: reclaim it
             if (current.IsExpired)
@@ -456,7 +458,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return (null, missResult);
             }
 
-            return decision;
+            return decision ?? (current, missResult);
         });
 
         if (reclaimed)
