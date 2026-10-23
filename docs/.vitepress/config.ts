@@ -69,7 +69,6 @@ export default defineConfig({
             { text: 'Hybrid Cache', link: '/guide/implementations/hybrid-cache' },
             { text: 'In-Memory', link: '/guide/implementations/in-memory' },
             { text: 'Kafka', link: '/guide/implementations/kafka' },
-            { text: 'Minio', link: '/guide/implementations/minio' },
             { text: 'RabbitMQ', link: '/guide/implementations/rabbitmq' },
             { text: 'Redis', link: '/guide/implementations/redis' },
             { text: 'SshNet', link: '/guide/implementations/sshnet' }

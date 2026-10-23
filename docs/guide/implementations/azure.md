@@ -92,7 +92,7 @@ await queue.EnqueueAsync(new WorkItem { Data = "Hello" });
 | Option | Type | Required | Description |
 |--------|------|----------|-------------|
 | `ConnectionString` | `string` | ✅ | Service Bus connection string |
-| `RequiresSession` | `bool?` | | Create the queue with sessions enabled. `AzureServiceBusQueue` sends `SessionId` but does not yet receive from session-enabled queues, so dequeue is not supported when this is `true` |
+| `RequiresSession` | `bool?` | | Create the queue with sessions enabled. Each message then needs a `GroupId` (sent as `SessionId`), and messages are processed one at a time, in order, per group. `RetryDelay` is not applied, so an abandoned message is retried immediately ahead of later messages in its group |
 | `RequiresDuplicateDetection` | `bool?` | | Enable duplicate detection |
 | `EnableDeadLetteringOnMessageExpiration` | `bool?` | | DLQ on expiration |
 

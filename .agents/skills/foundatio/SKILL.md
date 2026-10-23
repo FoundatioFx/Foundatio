@@ -30,7 +30,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `ICacheClient` | Key-value caching with TTL | `InMemoryCacheClient` | Redis, Hybrid |
 | `IQueue<T>` | FIFO message queuing | `InMemoryQueue<T>` | Redis, SQS, Azure |
 | `IMessageBus` | Pub/sub messaging | `InMemoryMessageBus` | Redis, Kafka, RabbitMQ, Azure |
-| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob, Minio |
+| `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `IJob` | Background job processing | N/A | Hosted services |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
@@ -317,8 +317,9 @@ public class OrderServiceTests : TestLoggerBase
 - **Register as singletons**: All infrastructure services (`ICacheClient`, `IMessageBus`, `IQueue<T>`, `IFileStorage`, `ILockProvider`) maintain internal state and connections -- always register as singletons.
 - **CacheLockProvider + IMessageBus**: `IMessageBus` is optional but recommended. Without it, lock release falls back to polling. With it, locks are released instantly via pub/sub notification.
 - **In-memory for tests**: In-memory implementations follow the same interfaces as production providers, but some behaviors differ (delivery delay limits, ordering, deduplication, group ids). Swap via DI for fast, isolated unit tests, and check [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps) before relying on provider-specific behavior.
-- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues). Azure Service Bus sends it as `SessionId`, but receiving from session-enabled queues is not implemented, so it has no delivery effect there yet. The other built-in queues store it as metadata and log one debug message. SQS group ids are max 128 characters with no spaces. Empty values are stored as `null`. A non-empty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver.
-- **`EnqueueAsync` copies `QueueEntryOptions`**: The caller's instance is never modified and can be reused. `Enqueuing` handlers get the per-message copy, with the resolved `GroupId` and the `Activity.Current` `CorrelationId`/`TraceState` already filled in. `Properties` copies preserve comparers for `Dictionary`, `SortedDictionary`, `SortedList` and `ConcurrentDictionary`; other implementations use the default string comparer.
+- **Queue `GroupId` is a hint**: It only changes delivery on SQS (fair queues on standard queues, strict ordering on `.fifo` queues) and session-enabled Azure Service Bus queues (ordered per group, one message at a time per group; `RetryDelay` is not applied, so an abandoned message retries ahead of the rest of its group; a group id of at most 128 characters is required). The other built-in queues store it as metadata and log one debug message. SQS group ids are max 128 characters with no spaces. Empty values are stored as `null`. A non-empty explicit `QueueEntryOptions.GroupId` overrides the queue's `GroupId(...)` resolver; null or empty invokes the resolver. Resolvers should return `null` for no group.
+- **`EnqueueAsync` copies `QueueEntryOptions`**: The caller's instance is never modified and can be reused. `Enqueuing` handlers get the per-message copy, with the resolved `GroupId` and the `Activity.Current` `CorrelationId`/`TraceState` already filled in. `Properties` is copied into a writable `Dictionary` per enqueue, keeping the key comparer of built-in dictionary types (`Dictionary`, `ConcurrentDictionary`, sorted and immutable dictionaries); other implementations use the default comparer.
+- **Service Bus retry delay**: Session-enabled queues and queues with duplicate detection currently abandon immediately, ignoring `RetryDelay`. The non-session duplicate-detection fix is pending [provider #106](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/pull/106); require a provider version containing it before relying on delayed retries with a new broker `MessageId` and stable `entry.Id`. See [provider behavioral gaps](https://foundatio.dev/guide/provider-behavioral-gaps#retry-delay-on-abandon).
 
 ## NuGet Packages
 
@@ -349,7 +350,6 @@ public class OrderServiceTests : TestLoggerBase
 | `Foundatio.AWS` | SQS queues, SQS messaging, S3 storage |
 | `Foundatio.Kafka` | Kafka messaging |
 | `Foundatio.RabbitMQ` | RabbitMQ messaging |
-| `Foundatio.Minio` | MinIO S3-compatible storage |
 | `Foundatio.Aliyun` | Aliyun OSS storage |
 | `Foundatio.Storage.SshNet` | SFTP storage |
 
