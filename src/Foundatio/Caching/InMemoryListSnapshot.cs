@@ -11,7 +11,7 @@ namespace Foundatio.Caching;
 
 internal interface IListSnapshot
 {
-    object GetSnapshot();
+    object GetSnapshot(bool shared = true);
 }
 
 /// <summary>
@@ -39,6 +39,7 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     private readonly long _maxExpiresAtUtcTicks;
     private Layout? _layout;
     private Dictionary<T, DateTime?>? _snapshot;
+    private bool _snapshotExposed;
 
     /// <param name="values">The items, owned by the snapshot from now on.</param>
     /// <param name="fromIncrementalChange">
@@ -76,10 +77,10 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     public bool IsIndexed => Volatile.Read(ref _layout) is not null;
 
     /// <summary>
-    /// <c>false</c> once a raw read has materialized a dictionary: that dictionary may be changed by its reader when
+    /// <c>false</c> once an uncloned raw read has exposed a dictionary: that dictionary may be changed by its reader when
     /// cloning is off, so from then on it, not this snapshot, holds the list, and writers copy it instead.
     /// </summary>
-    public bool IsSourceOfTruth => Volatile.Read(ref _snapshot) is null;
+    public bool IsSourceOfTruth => !Volatile.Read(ref _snapshotExposed);
 
     /// <summary>The latest item expiration, or <c>null</c> when any item is permanent or the list is empty.</summary>
     public DateTime? ExpiresAtUtc => _permanentCount > 0 || Count == 0 ? null : FromUtcTicks(_maxExpiresAtUtcTicks);
@@ -126,10 +127,14 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
     }
 
     /// <summary>
-    /// The dictionary handed to raw reads: a copy made once, so a reader changing it can't corrupt this snapshot.
+    /// The dictionary used for raw reads, materialized once. Only reads that expose it without cloning change the
+    /// source of truth; cloned reads cannot mutate it and leave incremental writes enabled.
     /// </summary>
-    public object GetSnapshot()
+    public object GetSnapshot(bool shared = true)
     {
+        if (shared)
+            Volatile.Write(ref _snapshotExposed, true);
+
         if (Volatile.Read(ref _snapshot) is { } snapshot)
             return snapshot;
 
@@ -149,7 +154,9 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
         // and it avoids indexing short-lived bulk lists. The first small change to an unindexed list also copies,
         // since a copy (~3 us at 1,000 items) is far cheaper than building the index for a list that may not change again.
         bool batch = items.Count >= Math.Max(1, Count / BlockSize);
-        if (batch || (!IsIndexed && !_fromIncrementalChange))
+        // Rebuild after substantial shrinkage so small writes don't keep copying peak-sized storage.
+        bool compact = Volatile.Read(ref _layout) is { } layout && Count < layout.NextSlot / 4;
+        if (batch || compact || (!IsIndexed && !_fromIncrementalChange))
         {
             var dictionary = ToDictionary();
             if (prune)
@@ -468,8 +475,8 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
 
         public ICollection<T> Keys => new ReadOnlyCollection<T>(snapshot.EnumeratePairs().Select(pair => pair.Key).ToArray());
         public ICollection<DateTime?> Values => new ReadOnlyCollection<DateTime?>(snapshot.EnumeratePairs().Select(pair => pair.Value).ToArray());
-        IEnumerable<T> IReadOnlyDictionary<T, DateTime?>.Keys => Keys;
-        IEnumerable<DateTime?> IReadOnlyDictionary<T, DateTime?>.Values => Values;
+        IEnumerable<T> IReadOnlyDictionary<T, DateTime?>.Keys => snapshot.EnumeratePairs().Select(pair => pair.Key);
+        IEnumerable<DateTime?> IReadOnlyDictionary<T, DateTime?>.Values => snapshot.EnumeratePairs().Select(pair => pair.Value);
 
         public bool ContainsKey(T key) => snapshot.ContainsKey(key);
         public bool TryGetValue(T key, out DateTime? value) => snapshot.TryGetExpiresAtUtc(key, out value);
