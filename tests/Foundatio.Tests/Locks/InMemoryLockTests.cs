@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -321,31 +322,38 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         return base.RenewAsync_WithReplacedOwner_ThrowsLockExceptionAndPreservesCurrentOwner(scoped);
     }
 
-    [Fact]
-    public async Task TryAcquireAsync_WithMultipleResources_AfterRenewal_WaitsUntilNextRenewalInterval()
+    [Theory]
+    [InlineData(1, 59)]
+    [InlineData(1, 61)]
+    [InlineData(2, 59)]
+    [InlineData(2, 61)]
+    public async Task TryAcquireAsync_AfterSlowAcquisition_DoesNotReturnExpiredLease(int resourceCount, int acquisitionSeconds)
     {
         // Arrange
         var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider));
         var inner = new CacheLockProvider(cache, null, timeProvider, null, Log);
-        var locker = new BeforeAcquireLockProvider(inner, timeProvider, resource =>
-        {
-            if (resource == "b")
-                timeProvider.Advance(TimeSpan.FromSeconds(31));
-            else if (resource == "c")
-                timeProvider.Advance(TimeSpan.FromSeconds(1));
-            return Task.CompletedTask;
-        });
+        var locker = CreateMockLockProvider(timeProvider);
+        var resources = Enumerable.Range(0, resourceCount).Select(i => i.ToString()).ToArray();
+        locker.Setup(p => p.TryAcquireAsync(It.IsAny<string>(), It.IsAny<TimeSpan?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Returns(async (string resource, TimeSpan? duration, bool release, CancellationToken token) =>
+            {
+                var result = await inner.TryAcquireAsync(resource, duration, release, token);
+                if (resource == resources[^1])
+                    timeProvider.Advance(TimeSpan.FromSeconds(acquisitionSeconds));
+                return result;
+            });
 
         // Act
-        await using var lockInstance = await locker.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+        await using var acquired = await locker.Object.TryAcquireAsync(resources, TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
 
         // Assert
-        Assert.NotNull(lockInstance);
-        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("lock:a"));
-        Assert.True(await inner.IsLockedAsync("a"));
-        Assert.True(await inner.IsLockedAsync("b"));
-        Assert.True(await inner.IsLockedAsync("c"));
+        if (acquisitionSeconds < 60)
+            Assert.NotNull(acquired);
+        else
+            Assert.Null(acquired);
+        foreach (string resource in resources)
+            Assert.Equal(acquisitionSeconds < 60, await inner.IsLockedAsync(resource));
     }
 
     [Theory]
@@ -417,6 +425,33 @@ public class InMemoryLockTests : LockTestBase, IDisposable
             finishRenewal.TrySetResult();
             await using var remaining = await acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
         }
+    }
+
+    [Fact]
+    public async Task TryAcquireAsync_WithMultipleResources_AfterRenewal_WaitsUntilNextRenewalInterval()
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log));
+        var inner = new CacheLockProvider(cache, null, timeProvider, null, Log);
+        var locker = new BeforeAcquireLockProvider(inner, timeProvider, resource =>
+        {
+            if (resource == "b")
+                timeProvider.Advance(TimeSpan.FromSeconds(31));
+            else if (resource == "c")
+                timeProvider.Advance(TimeSpan.FromSeconds(1));
+            return Task.CompletedTask;
+        });
+
+        // Act
+        await using var lockInstance = await locker.TryAcquireAsync(["a", "b", "c"], TimeSpan.FromMinutes(1), cancellationToken: TestContext.Current.CancellationToken);
+
+        // Assert
+        Assert.NotNull(lockInstance);
+        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("lock:a"));
+        Assert.True(await inner.IsLockedAsync("a"));
+        Assert.True(await inner.IsLockedAsync("b"));
+        Assert.True(await inner.IsLockedAsync("c"));
     }
 
     [Fact]
