@@ -991,7 +991,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             // A lease that expires while it is being sized is reclaimed too, so it is never revived
             replacement ??= CreateEntry(value, expiresAt);
-            return replacement is null ? null : (replacement, true);
+            return replacement is null || replacement.IsExpired ? null : (replacement, true);
         }, missResult: false);
 
         await StartMaintenanceAsync().AnyContext();
