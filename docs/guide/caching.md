@@ -274,6 +274,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `Items` returns the cached values rather than the internal entry objects.
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
+- `ReplaceIfEqualAsync` returns `false` if the replacement expires during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size.
 - `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
 :::
 
