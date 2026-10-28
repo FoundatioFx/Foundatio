@@ -1382,6 +1382,45 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.False(await cache.ExistsAsync("lease"));
     }
 
+    [Theory]
+    [InlineData("comparison")]
+    [InlineData("sizing")]
+    [InlineData("retry")]
+    public async Task ReplaceIfEqualAsync_WhenReplacementExpiresBeforePublication_PreservesLiveEntry(string expirationStage)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        int sizingCalls = 0;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).LoggerFactory(Log).CloneValues(false)
+            .MaxMemorySize(10_000).SizeCalculator(_ =>
+            {
+                sizingCalls++;
+                if (expirationStage == "sizing")
+                    timeProvider.Advance(TimeSpan.FromMinutes(2));
+                return 100;
+            }));
+        var expected = new ComparedValue("owner");
+        var original = CreateEntry(new ComparedValue("owner", () =>
+        {
+            if (expirationStage == "comparison")
+                timeProvider.Advance(TimeSpan.FromMinutes(2));
+            else if (expirationStage == "retry")
+                Publish(cache, "lease", CreateEntry(new ComparedValue("owner", () => timeProvider.Advance(TimeSpan.FromMinutes(2))),
+                    timeProvider, TimeSpan.FromMinutes(10)));
+        }), timeProvider, TimeSpan.FromMinutes(10));
+        Publish(cache, "lease", original);
+
+        // Act
+        bool replaced = await cache.ReplaceIfEqualAsync("lease", new ComparedValue("replacement"), expected, TimeSpan.FromMinutes(1));
+
+        // Assert
+        Assert.False(replaced);
+        Assert.Equal(1, sizingCalls);
+        Assert.Equal("owner", (await cache.GetAsync<ComparedValue>("lease")).Value.Id);
+        Assert.Equal(TimeSpan.FromMinutes(8), await cache.GetExpirationAsync("lease"));
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
     [Fact]
     public async Task ReplaceIfEqualAsync_WithCloneValues_IsolatesReplacementFromCaller()
     {
