@@ -682,6 +682,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             if (current?.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } stored)
             {
+                if (_hasSizeCalculator && !_sizesListsInPlace)
+                {
+                    var values = stored.CopyAndUpdate(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
+                    if (values is null)
+                        return (current.WithExpiration(stored.ExpiresAtUtc), (long)items.Count);
+
+                    long replacementSize = CalculateEntrySize(values);
+                    return replacementSize < 0 ? (current, 0L) : (WithListValues(current, values, replacementSize), (long)items.Count);
+                }
+
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
                 if (ReferenceEquals(list, stored))
                     return (current.WithExpiration(list.ExpiresAtUtc), (long)items.Count);
@@ -733,23 +743,25 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Sizes a shared list without copying when the calculator supports read-only collections. Other calculators
-    /// keep receiving a <see cref="Dictionary{TKey,TValue}"/>, since they may cast to it.
+    /// Sizes a shared list without copying. Calculators requiring a concrete dictionary use CopyAndUpdate instead.
     /// </summary>
     private long CalculateListSize<T>(ListSnapshot<T> list) where T : notnull
     {
         if (!_hasSizeCalculator)
             return 0;
 
-        return CalculateEntrySize(_sizesListsInPlace ? list.AsReadOnlyDictionary() : list.ToDictionary());
+        return CalculateEntrySize(list.AsReadOnlyDictionary());
     }
 
     private CacheEntry WithListValues<T>(CacheEntry current, IDictionary<T, DateTime?> dictionary, long size) where T : notnull
     {
-        object value = CanShareListValues<T>() && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
-            ? new ListSnapshot<T>(values)
-            : dictionary;
-        return current.WithValue(value, GetListExpiration(dictionary), size);
+        if (CanShareListValues<T>() && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize)
+        {
+            var list = new ListSnapshot<T>(values);
+            return current.WithValue(list, list.ExpiresAtUtc, size);
+        }
+
+        return current.WithValue(dictionary, GetListExpiration(dictionary), size);
     }
 
     /// <summary>
@@ -812,6 +824,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             if (current?.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } list)
             {
+                if (_hasSizeCalculator && !_sizesListsInPlace)
+                {
+                    var values = list.CopyAndUpdate(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long copiedRemovedCount);
+                    if (values is null)
+                        return (current, 0L);
+                    if (values.Count == 0)
+                        return (null, copiedRemovedCount);
+
+                    long replacementSize = CalculateEntrySize(values);
+                    return replacementSize < 0 ? (current, 0L) : (WithListValues(current, values, replacementSize), copiedRemovedCount);
+                }
+
                 var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
                 if (ReferenceEquals(list, replacement))
                     return (current, 0L);
