@@ -3,7 +3,8 @@ name: foundatio
 description: >
   Use when working with Foundatio infrastructure abstractions for .NET -- caching,
   queuing, messaging, file storage, distributed locking, or background jobs. Apply
-  when using ICacheClient, IQueue, IMessageBus, IFileStorage, ILockProvider, IJob,
+  when using ICacheClient, IQueue, IMessageBus, IMessageClient, IMessageHandler, IJobClient,
+  IJob, IMessageTransport, IJobStore, IFileStorage, ILockProvider,
   or resilience patterns like retry and circuit breakers. Covers in-memory and
   production implementations (Redis, Azure, AWS, Kafka, RabbitMQ). Use context7
   MCP to fetch current API docs and examples.
@@ -32,7 +33,9 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `IMessageBus` | Pub/sub messaging | `InMemoryMessageBus` | Redis, Kafka, RabbitMQ, Azure |
 | `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
-| `IJob` | Background job processing | N/A | Hosted services |
+| `IMessageClient` | Send commands / publish events to `IMessageHandler<T>` | `UseInMemory()` (`InMemoryMessageTransport`) | Provider `IMessageTransport`s |
+| `IJobClient` | Durable jobs (`IJob<TArgs>`, `IJob`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
+| `IJob` | Background job processing | N/A | Hosted services, or durable via `AddFoundatioJobs` |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
 | `IResiliencePolicy` | Retry, circuit breaker, timeout | `ResiliencePolicyBuilder` | N/A |
 
@@ -258,6 +261,33 @@ builder.Services.AddCronJob<CleanupJob>("0 */6 * * *");
 builder.Services.AddDistributedCronJob<CleanupJob>("0 */6 * * *");
 ```
 
+## Messages and Durable Jobs (new in v14, alongside IQueue/IMessageBus)
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseInMemory()                          // provider: m.UseRedis(...) etc.
+    .AddConsumer<SendReceiptHandler>()      // commands: SendAsync -> exactly one consumer
+    .AddSubscriber<OrderPlacedHandler>()    // events: PublishAsync -> one copy per service
+    .AddSubscriber<CacheBuster>(new SubscriptionOptions { Scope = SubscriptionScope.Instance }));
+
+public class SendReceiptHandler(IEmail email) : IMessageHandler<SendReceipt>
+{
+    public Task HandleAsync(SendReceipt m, IMessageContext context, CancellationToken ct) => email.SendAsync(m, ct);
+}
+
+builder.Services.AddFoundatioJobs(j => j
+    .UseInMemory()
+    .AddJob<GenerateReportJob>()            // IJob<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
+    .AddCronJob<CleanupJob>("0 3 * * *"));  // existing IJob/JobBase classes work; one run per occurrence cluster-wide
+```
+
+- Registered handlers/jobs start with the host; `AddFoundatio*` calls accumulate. No handlers registered = send/enqueue only.
+- Throw to retry (`RetryPolicy`, default 5 attempts, 1s/4s/16s/64s), then dead-letter (messages) or `Failed` (jobs). `context.DeadLetter(reason)` / `context.Retry(delay)` decide without throwing; `RetryPolicy.Default.DoNotRetry<T>()` fails fast.
+- At-least-once: handlers and jobs must be idempotent. Give contracts stable names: `[Message("orders.placed")]`, `[Job(Name = "reports.generate")]` (defaults are full type names).
+- Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.
+- `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
+- Writing a provider: implement `IMessageTransport`/`IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (one override each).
+
 ## Testing
 
 Use `Foundatio.Xunit.v3` for test logging and DI integration. Two base classes:
@@ -356,7 +386,7 @@ public class OrderServiceTests : TestLoggerBase
 
 | Package | Provides |
 | ------- | -------- |
-| `Foundatio.TestHarness` | Shared test base classes for validating custom implementations |
+| `Foundatio.TestHarness` | Shared test base classes for validating custom implementations, including `MessageTransportTestsBase` and `JobStoreTestsBase` conformance suites |
 | `Foundatio.Xunit` | xUnit v2 test logging, retry attributes |
 | `Foundatio.Xunit.v3` | xUnit v3 test logging, retry attributes |
 | `Foundatio.DataProtection` | ASP.NET Core Data Protection key storage via `IFileStorage` |

@@ -25,6 +25,8 @@ Pluggable foundation blocks for building loosely coupled distributed apps.
 | [**Locks**](https://foundatio.dev/guide/locks) | Distributed locking and throttling |
 | [**Messaging**](https://foundatio.dev/guide/messaging) | Pub/sub with Redis, RabbitMQ, Kafka, Azure Service Bus |
 | [**Jobs**](https://foundatio.dev/guide/jobs) | Background job processing with queue integration |
+| [**Messages & Events**](https://foundatio.dev/guide/messages) | Send commands and publish events to DI handlers, with retries and dead letters |
+| [**Durable Jobs**](https://foundatio.dev/guide/durable-jobs) | Tracked background jobs with arguments, progress, cancellation and CRON |
 | [**File Storage**](https://foundatio.dev/guide/storage) | Unified file API for disk, S3, Azure Blob, and more |
 | [**Resilience**](https://foundatio.dev/guide/resilience) | Retry policies, circuit breakers, and timeouts |
 
