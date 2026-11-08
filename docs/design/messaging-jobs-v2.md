@@ -46,7 +46,7 @@ How brokers map:
 
 A Kafka transport would set `LeaseExpiration = false`, commit the lowest contiguous completed offset, and republish on abandon. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (29 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
+Proof: `MessageTransportTestsBase` (30 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
 
 ### Redis proof
 
@@ -72,6 +72,33 @@ The implementer's friction notes were folded back into the contract:
 - `JobQuery.Validate` is public.
 - The CRON overlap check is one read instead of a query.
 - New conformance tests cover stale receipts, delivery count after a receiver is disposed, longest-due across names, renew-after-expiry and deleting a running job.
+
+### AWS proof
+
+An SQS/SNS transport was written in Foundatio.AWS (branch `feature/messaging-transport-v2`), about 1,400 lines, also without changing core:
+
+- **Mapping:**
+  - queues → SQS queues;
+  - topics → SNS topics with raw delivery into one SQS queue per durable subscription;
+  - instance subscriptions → per-receiver queues, heartbeat-tagged, deleted on dispose and swept when stale;
+  - dead letters → a per-source queue with 14-day retention, copy then delete so the reason is kept.
+- **Leases:** visibility timeout; stale receipts map to `MessageLeaseLostException`.
+- **Envelope:** headers, id and group travel in one message attribute (SQS and SNS allow 10). Text bodies are sent as-is and binary or empty bodies as base64; foreign bodies are read as-is.
+- **Names:** sanitized and hashed when changed, so distinct names never collide. Queue policies are merged, not overwritten.
+- **Delays:** `MaxDelay` is 15 minutes; delayed publishes are emulated in the receiver because SNS cannot delay.
+- **Not declared:** FIFO (`OrderedGroups`, `Deduplication`).
+- **Results:** the conformance suite passes on the Floci emulator. The existing SQSQueue and S3 suites still pass.
+
+### SPI refinements suggested by the provider work
+
+Applied: name validation in the SPI types; the thread-safety, clock, dispose, dead-letter and `DeliveryCount` notes; `GroupKey` round-trip and delayed-publish tests; one-second quiet-period windows in the suite.
+
+Open, each small:
+- **Separate delay limits.** `MaxDelay` covers sends (SQS 15 min), publishes (SNS 0) and abandons (SQS 12 h). Splitting it into send, publish and abandon limits would let core emulate delayed publishes instead of each transport.
+- **Size checks.** `MaxMessageSize` cannot express encoding overhead (base64 on SQS). Let transports validate the encoded size and throw, keeping the core check as a fast path.
+- **FIFO batches.** SQS FIFO returns several in-order messages of one group in a batch. Core would then process a group's messages sequentially within a batch, rather than the suite requiring one at a time.
+- **Maintenance hook.** A periodic call for transports to sweep abandoned instance subscriptions, so cleanup does not depend on a surviving instance.
+- **Source deletion** and **cross-process worker wake-up** (see below).
 
 ## Messaging semantics
 
@@ -134,7 +161,7 @@ Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k
 
 - Health check integration (processor and worker status) in Foundatio.Extensions.Hosting.
 - Dead-letter inspection and replay helpers. Dead letters are an ordinary receivable source, so this needs no SPI change.
-- Providers beyond Redis (SQS/SNS with FIFO groups, Service Bus with sessions, RabbitMQ, Kafka pub/sub), plus conformance runs against real brokers in CI.
+- FIFO for SQS, and providers beyond Redis and SQS/SNS (Service Bus with sessions, RabbitMQ, Kafka pub/sub), plus conformance runs against real brokers in CI. The AWS transport has only run against an emulator.
 - An optional way to delete a source. A durable subscription left by a removed service keeps receiving copies, and test runs leave keys in shared brokers.
 - Waking idle workers in other processes when a job is enqueued. Today it is local wake-up plus a 1s poll. Redis stream trimming policy for unread durable subscriptions.
 - Mediator mapping onto `AddConsumer`/`AddSubscriber` and `IJobClient`.

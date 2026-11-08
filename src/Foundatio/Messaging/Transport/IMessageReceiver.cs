@@ -24,8 +24,9 @@ public interface IMessageReceiver : IAsyncDisposable
     Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes the message permanently. Settling a delivery that has since been delivered to another receiver
-    /// should throw <see cref="MessageLeaseLostException"/>, and must not affect the newer delivery.
+    /// Removes the message permanently. Settling a delivery that has since been delivered to another receiver should
+    /// throw <see cref="MessageLeaseLostException"/> and leave the newer delivery alone, where the broker can tell
+    /// (some, such as SQS, may accept a stale receipt).
     /// </summary>
     Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default);
 
@@ -38,7 +39,8 @@ public interface IMessageReceiver : IAsyncDisposable
     /// <summary>
     /// Moves the message to the dead-letter queue of this receiver's source, preserving its id, body and headers and
     /// adding a <see cref="KnownHeaders.DeadLetterReason"/> header. The message must then be receivable from
-    /// <see cref="MessageSource.DeadLetter(MessageSource)"/>. Never called for instance subscriptions.
+    /// <see cref="MessageSource.DeadLetter(MessageSource)"/>. Never called for instance subscriptions. When the broker
+    /// cannot move a message atomically, copy then remove; a duplicate dead letter is acceptable, a lost one is not.
     /// </summary>
     Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default);
 

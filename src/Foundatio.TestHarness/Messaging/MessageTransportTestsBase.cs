@@ -56,10 +56,11 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await using var receiver = await CreateReceiverAsync(source);
         var headers = new Dictionary<string, string> { ["message-type"] = "conformance.test", ["unicode"] = "héllo wörld ✓", ["empty"] = "" };
 
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("payload", "id-1", headers)], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("payload", "id-1", headers) with { GroupKey = "group-1" }], TestCancellationToken);
 
         var message = await ReceiveOneAsync(receiver);
         Assert.Equal("id-1", message.MessageId);
+        Assert.Equal("group-1", message.GroupKey);
         Assert.Equal("payload", Encoding.UTF8.GetString(message.Body.Span));
         Assert.Equal(1, message.DeliveryCount);
         foreach (var (key, value) in headers)
@@ -266,6 +267,22 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         var message = await ReceiveOneAsync(receiver, ShortDelay + DeliveryTimeout);
         Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"Delivered after {stopwatch.Elapsed}, expected at least {ShortDelay}.");
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task DeliverAt_DelaysPublishedMessages()
+    {
+        Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
+        string topic = NewName("publish-delay");
+        await using var receiver = await CreateReceiverAsync(MessageSource.Subscription(topic, "delayed"));
+        var stopwatch = Stopwatch.StartNew();
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("later event") with { DeliverAt = DateTimeOffset.UtcNow.Add(ShortDelay) }], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver, ShortDelay + DeliveryTimeout);
+        Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"Delivered after {stopwatch.Elapsed}, expected at least {ShortDelay}.");
+        Assert.Equal(1, message.DeliveryCount);
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
@@ -635,7 +652,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         while (DateTime.UtcNow < deadline)
         {
             var remaining = deadline - DateTime.UtcNow;
-            var messages = await receiver.ReceiveAsync(10, remaining < TimeSpan.FromMilliseconds(250) ? remaining : TimeSpan.FromMilliseconds(250), TestCancellationToken);
+            var messages = await receiver.ReceiveAsync(10, remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), TestCancellationToken);
             Assert.True(messages.Count == 0, $"Unexpectedly received message {messages.FirstOrDefault()?.MessageId} from {receiver.Source}.");
         }
     }

@@ -6,9 +6,11 @@ namespace Foundatio.Messaging.Transport;
 public sealed record TransportCapabilities
 {
     /// <summary>
-    /// The longest native delay for <see cref="OutgoingMessage.DeliverAt"/> and <see cref="IMessageReceiver.AbandonAsync"/>.
-    /// <c>null</c> means unlimited and <see cref="TimeSpan.Zero"/> means delayed delivery is not supported. Longer
-    /// delays are emulated by re-sending the message when it arrives early.
+    /// The longest delay for <see cref="OutgoingMessage.DeliverAt"/> (to queues and topics) and for
+    /// <see cref="IMessageReceiver.AbandonAsync"/>. <c>null</c> means unlimited and <see cref="TimeSpan.Zero"/> means
+    /// delayed delivery is not supported. Longer queue sends are emulated by re-sending the message when it arrives
+    /// early; longer publishes are rejected. A broker that can only delay some of these (SNS cannot delay publishes)
+    /// must emulate the rest, for example by hiding an early delivery until it is due.
     /// </summary>
     public TimeSpan? MaxDelay { get; init; }
 
@@ -18,7 +20,10 @@ public sealed record TransportCapabilities
     /// <summary>The most messages returned by one <see cref="IMessageReceiver.ReceiveAsync"/> call.</summary>
     public int MaxReceiveBatchSize { get; init; } = 100;
 
-    /// <summary>The largest body plus headers in bytes, or <c>null</c> when there is no practical limit.</summary>
+    /// <summary>
+    /// The largest body plus headers in bytes, or <c>null</c> when there is no practical limit. Foundatio checks an
+    /// approximation before sending; transports may still reject a message that encodes larger.
+    /// </summary>
     public long? MaxMessageSize { get; init; }
 
     /// <summary>The longest lease the broker allows, or <c>null</c> when unlimited.</summary>

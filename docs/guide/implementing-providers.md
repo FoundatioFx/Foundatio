@@ -34,7 +34,7 @@ What you must provide:
 | Instance subscription | A copy for each open receiver; removed when the receiver is disposed or its process dies. |
 | Dead-letter queue | `DeadLetterAsync` moves a message (id, body, headers kept, plus a reason header) to a queue receivable as `MessageSource.DeadLetter(source)`. |
 | Leases | A received message is invisible for `LeaseDuration`; unsettled messages are delivered again with a higher `DeliveryCount`. |
-| Bytes and headers | Delivered unchanged. Names only contain letters, digits, `.`, `_` and `-`; shorten or hash them if your broker needs to. |
+| Bytes and headers | Body, headers and `GroupKey` delivered unchanged. Names only contain letters, digits, `.`, `_` and `-`; shorten or hash them if your broker needs to, deterministically, from the source's own fields (not `ToString()`). |
 
 All members may be called concurrently: settlement and renewal run while `ReceiveAsync` is waiting. Disposing the transport closes its receivers. An instance subscription left behind by a crashed process is your responsibility to remove; a heartbeat key with an expiry, swept on publish, works well. Settling a delivery that has since gone to another receiver should throw `MessageLeaseLostException` and must not affect the newer delivery.
 
