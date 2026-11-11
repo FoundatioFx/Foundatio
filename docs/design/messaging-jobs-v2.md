@@ -47,7 +47,7 @@ How brokers map:
 
 A Kafka transport would set `LeaseExpiration = false`, commit the lowest contiguous completed offset, and republish on abandon. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (40 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
+Proof: `MessageTransportTestsBase` (42 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
 
 ### Redis proof
 
@@ -100,6 +100,8 @@ Applied in the second round:
 - **FIFO batches.** A receive may return several in-order messages of one group. Core handles each group's messages in sequence and abandons the rest of the group if one is retried, so order survives retries. The suite checks that later messages are held while earlier ones are unsettled, and that an abandoned message comes back first.
 - **One subscription as a destination.** `MessageDestination.Subscription(topic, name)`, used by dead-letter replay so a subscription's failures are not re-published to every subscriber.
 - **Deletion.** `IMessageTransport.DeleteAsync(source)` for removed services' subscriptions, dead-letter purges and test cleanup.
+
+From the Redis update, which also added ordered groups to Redis: the message id, group key and deduplication id count toward `MaxMessageSize` (`MessageSize.Of`) and are capped at 128 characters; group order is send order, delayed messages included; dead-letter sources are not ordered, so peeking shows a whole group; deduplication state may outlive a delete.
 
 Not added: a maintenance hook. A transport already runs a timer for instance-subscription heartbeats, and sweeping stale ones from that timer (or on publish) needs no extra contract.
 

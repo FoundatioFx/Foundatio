@@ -95,7 +95,7 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 {
     Delay = TimeSpan.FromMinutes(10),   // or DeliverAt
     TimeToLive = TimeSpan.FromHours(1), // discard if not handled by then
-    GroupKey = "customer-42",           // ordered delivery where the transport supports it
+    GroupKey = "customer-42",           // ordered delivery where the transport supports it (ids and keys: up to 128 characters)
     DeduplicationId = "receipt-1",      // dropped if seen recently, where supported
     CorrelationId = "order-1",          // defaults to the message or job being handled
 });

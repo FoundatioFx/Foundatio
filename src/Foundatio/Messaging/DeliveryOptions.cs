@@ -6,7 +6,7 @@ namespace Foundatio.Messaging;
 /// <summary>Options shared by <see cref="SendOptions"/> and <see cref="PublishOptions"/>.</summary>
 public abstract record DeliveryOptions
 {
-    /// <summary>The message id. Generated when omitted. Not allowed for batches.</summary>
+    /// <summary>The message id, up to 128 characters. Generated when omitted. Not allowed for batches.</summary>
     public string? MessageId { get; init; }
 
     /// <summary>Defaults to the correlation id of the message being handled, if any.</summary>
@@ -22,12 +22,16 @@ public abstract record DeliveryOptions
     public TimeSpan? TimeToLive { get; init; }
 
     /// <summary>
-    /// Related messages, such as all events for one order or tenant. Transports that support it deliver messages
-    /// with the same key in order, one at a time (SQS FIFO message groups, Service Bus sessions, Kafka partition keys).
+    /// Related messages, such as all events for one order or tenant (up to 128 characters). Transports that support it
+    /// deliver messages with the same key in order, one at a time (SQS FIFO message groups, Service Bus sessions,
+    /// Kafka partition keys).
     /// </summary>
     public string? GroupKey { get; init; }
 
-    /// <summary>Transports that support it drop later messages with the same id within their deduplication window.</summary>
+    /// <summary>
+    /// Up to 128 characters. Transports that support it drop later messages with the same id within their
+    /// deduplication window.
+    /// </summary>
     public string? DeduplicationId { get; init; }
 
     /// <summary>Application headers delivered with the message.</summary>

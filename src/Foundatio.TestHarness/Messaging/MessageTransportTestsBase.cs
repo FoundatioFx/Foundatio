@@ -512,7 +512,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         Assert.SkipUnless(Transport.Capabilities.MaxMessageSize is not null, "The transport does not declare a message size limit.");
         var headers = new Dictionary<string, string> { [KnownHeaders.MessageType] = "conformance.size", [KnownHeaders.CorrelationId] = "size-test" };
-        var body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - HeaderBytes(headers))];
+        var body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - MessageSize.Of("at-limit", ReadOnlySpan<byte>.Empty, headers))];
         Random.Shared.NextBytes(body);
         var source = MessageSource.Queue(NewName("size"));
         await using var receiver = await CreateReceiverAsync(source);
@@ -641,6 +641,51 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
 
         Assert.Equal(["a-0", "a-1", "a-2"], order);
+    }
+
+    [Fact]
+    public async Task OrderedGroups_ADelayedMessageHoldsBackItsGroup()
+    {
+        Assert.SkipUnless(Transport.Capabilities.OrderedGroups, "The transport does not order groups.");
+        Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
+        var source = MessageSource.Queue(NewName("group-delay"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var stopwatch = Stopwatch.StartNew();
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("first", "a-0") with { GroupKey = "a", DeliverAt = DateTimeOffset.UtcNow.Add(ShortDelay) },
+            Message("second", "a-1") with { GroupKey = "a" }
+        ], TestCancellationToken);
+
+        var order = new List<string>();
+        var deadline = DateTime.UtcNow + ShortDelay + DeliveryTimeout;
+        while (order.Count < 2 && DateTime.UtcNow < deadline)
+        {
+            foreach (var message in await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(1), TestCancellationToken))
+            {
+                order.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        Assert.Equal(["a-0", "a-1"], order);
+        Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"The group was released after {stopwatch.Elapsed}, before its delayed first message was due.");
+    }
+
+    [Fact]
+    public async Task DeadLetters_OfOneGroup_CanAllBeReceivedAtOnce()
+    {
+        var source = MessageSource.Queue(NewName("group-dlq"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 3).Select(i => Message($"a{i}", $"a-{i}") with { GroupKey = "a" }).ToList(), TestCancellationToken);
+        for (int i = 0; i < 3; i++)
+            await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "conformance", TestCancellationToken);
+
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var messages = await ReceiveAsync(deadLetters, 3);
+
+        Assert.Equal(["a-0", "a-1", "a-2"], messages.Select(m => m.MessageId).Order());
+        Assert.All(messages, m => Assert.Equal("a", m.GroupKey));
     }
 
     [Fact]
@@ -881,8 +926,6 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             await Task.Delay(50, TestCancellationToken);
         }
     }
-
-    private static long HeaderBytes(IReadOnlyDictionary<string, string> headers) => headers.Sum(h => Encoding.UTF8.GetByteCount(h.Key) + Encoding.UTF8.GetByteCount(h.Value));
 
     public sealed record ConformanceMessage(int Value);
 }

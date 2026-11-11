@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
@@ -66,6 +65,10 @@ internal sealed class MessageClient : IMessageClient
         if (isBatch && (options?.MessageId is not null || options?.DeduplicationId is not null))
             throw new ArgumentException("MessageId and DeduplicationId identify a single message and cannot be used for a batch.", nameof(options));
 
+        ValidateIdLength(options?.MessageId, nameof(DeliveryOptions.MessageId));
+        ValidateIdLength(options?.GroupKey, nameof(DeliveryOptions.GroupKey));
+        ValidateIdLength(options?.DeduplicationId, nameof(DeliveryOptions.DeduplicationId));
+
         var capabilities = _runtime.Transport.Capabilities;
         var now = _runtime.TimeProvider.GetUtcNow();
         var deliverAt = options?.DeliverAt ?? (options?.Delay is { } delay ? now.Add(delay) : null);
@@ -125,16 +128,17 @@ internal sealed class MessageClient : IMessageClient
                     headers[KnownHeaders.TraceState] = traceState;
 
                 byte[] body = _runtime.Serializer.SerializeToBytes<object>(message);
+                string messageId = options?.MessageId ?? Guid.NewGuid().ToString("N");
                 if (capabilities.MaxMessageSize is { } maxSize)
                 {
-                    long size = body.Length + headers.Sum(h => Encoding.UTF8.GetByteCount(h.Key) + Encoding.UTF8.GetByteCount(h.Value));
+                    long size = MessageSize.Of(messageId, body, headers, options?.GroupKey, options?.DeduplicationId);
                     if (size > maxSize)
-                        throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with headers, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
+                        throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with its headers and ids, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
                 }
 
                 outgoing.Add(new OutgoingMessage
                 {
-                    MessageId = options?.MessageId ?? Guid.NewGuid().ToString("N"),
+                    MessageId = messageId,
                     Body = body,
                     Headers = headers,
                     DeliverAt = nativeDeliverAt,
@@ -149,5 +153,11 @@ internal sealed class MessageClient : IMessageClient
 
             MessagingInstruments.Sent.Add(outgoing.Count, new KeyValuePair<string, object?>("messaging.destination", destination.ToString()));
         }
+    }
+
+    private static void ValidateIdLength(string? value, string name)
+    {
+        if (value is not null && (value.Length == 0 || value.Length > OutgoingMessage.MaxIdLength))
+            throw new ArgumentException($"{name} must be 1 to {OutgoingMessage.MaxIdLength} characters.", name);
     }
 }

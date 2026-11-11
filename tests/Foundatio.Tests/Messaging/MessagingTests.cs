@@ -323,6 +323,18 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SendOptions_WithIdsLongerThanTheLimit_AreRejected()
+    {
+        await using var host = await StartAsync(_ => { });
+        string tooLong = new('k', OutgoingMessage.MaxIdLength + 1);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.SendAsync(new PlaceOrder(1), new SendOptions { GroupKey = tooLong }, TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.SendAsync(new PlaceOrder(1), new SendOptions { DeduplicationId = tooLong }, TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Client.PublishAsync(new OrderShipped(1), new PublishOptions { MessageId = tooLong }, TestCancellationToken));
+        await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { GroupKey = new string('k', OutgoingMessage.MaxIdLength) }, TestCancellationToken);
+    }
+
+    [Fact]
     public async Task PublishDelays_UseTheTransportsPublishLimit()
     {
         var unlimitedPublishes = new LimitedTransport(_transport, _transport.Capabilities with { MaxDelay = TimeSpan.FromMilliseconds(200), MaxPublishDelay = null });

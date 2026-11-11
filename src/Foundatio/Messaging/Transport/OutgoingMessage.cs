@@ -6,6 +6,12 @@ namespace Foundatio.Messaging.Transport;
 /// <summary>A message handed to <see cref="IMessageTransport.SendAsync"/>.</summary>
 public sealed record OutgoingMessage
 {
+    /// <summary>
+    /// The longest <see cref="MessageId"/>, <see cref="GroupKey"/> or <see cref="DeduplicationId"/> Foundatio sends,
+    /// so transports can map them to broker limits (SQS FIFO allows 128 characters).
+    /// </summary>
+    public const int MaxIdLength = 128;
+
     public required string MessageId { get; init; }
     public required ReadOnlyMemory<byte> Body { get; init; }
 

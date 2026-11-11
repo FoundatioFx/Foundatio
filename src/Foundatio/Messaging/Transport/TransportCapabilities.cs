@@ -62,8 +62,9 @@ public sealed record TransportCapabilities
     public int MaxReceiveBatchSize { get; init; } = 100;
 
     /// <summary>
-    /// The largest message the transport accepts, measured as body bytes plus the UTF-8 bytes of every header name
-    /// and value, or <c>null</c> when there is no practical limit. Declare it after the transport's own encoding
+    /// The largest message the transport accepts, measured as body bytes plus the UTF-8 bytes of every header name and
+    /// value, the message id, the group key and the deduplication id (see <see cref="MessageSize"/>), or <c>null</c>
+    /// when there is no practical limit. Declare it after the transport's own encoding
     /// overhead: any message within the limit must be accepted, including binary bodies, and a larger one must be
     /// rejected with <see cref="MessageTooLargeException"/>.
     /// </summary>
@@ -79,10 +80,13 @@ public sealed record TransportCapabilities
     public bool LeaseExpiration { get; init; } = true;
 
     /// <summary>
-    /// True when messages with the same <see cref="OutgoingMessage.GroupKey"/> are delivered in order and no message
-    /// of a group is delivered while an earlier one of that group is unsettled. A single receive may return several
-    /// messages of one group, in order; Foundatio then handles them one after another, and if one is not completed
-    /// or dead-lettered, it abandons the rest of that group's messages in the batch so they are delivered again in order.
+    /// True when messages with the same <see cref="OutgoingMessage.GroupKey"/> are delivered in send order and no
+    /// message of a group is delivered while an earlier one of that group is unsettled. Send order includes delayed
+    /// messages: a delayed message holds back its group's later messages until it has been delivered and settled.
+    /// A single receive may return several messages of one group, in order; Foundatio then handles them one after
+    /// another, and if one is not completed or dead-lettered, it abandons the rest of that group's messages in the
+    /// batch so they are delivered again in order. Dead-letter sources are not ordered: every dead letter of a group
+    /// can be received at once.
     /// </summary>
     public bool OrderedGroups { get; init; }
 

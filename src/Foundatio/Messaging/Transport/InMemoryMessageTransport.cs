@@ -366,14 +366,16 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                     }
 
                     // A group's messages are handed out in order: later ones wait while an earlier one is leased or not yet due.
+                    // Dead letters are not ordered, so all of a group's dead letters can be inspected at once.
                     string? group = entry.Message.GroupKey;
-                    if (group is not null && blockedGroups.Contains(group))
+                    string? orderedGroup = IsDeadLetter ? null : group;
+                    if (orderedGroup is not null && blockedGroups.Contains(orderedGroup))
                         continue;
 
                     if (!available || result.Count >= maxMessages)
                     {
-                        if (group is not null)
-                            blockedGroups.Add(group);
+                        if (orderedGroup is not null)
+                            blockedGroups.Add(orderedGroup);
 
                         continue;
                     }

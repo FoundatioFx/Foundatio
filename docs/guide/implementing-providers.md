@@ -35,10 +35,10 @@ What you must provide:
 | One subscription | `MessageDestination.Subscription(topic, name)` delivers to that subscription only (used to replay its dead letters). Like a queue, it must not lose messages sent before a receiver exists. |
 | Instance subscription | A copy for each open receiver; removed when the receiver is disposed or its process dies. |
 | Dead-letter queue | `DeadLetterAsync` moves a message (id, body, headers kept, plus a reason header) to a queue receivable as `MessageSource.DeadLetter(source)`. |
-| Deletion | `DeleteAsync` removes a queue or durable subscription with its messages and dead letters, or only the dead letters of a `DeadLetter` source. It succeeds when nothing exists and throws `ArgumentException` for instance subscriptions. |
+| Deletion | `DeleteAsync` removes a queue or durable subscription with its messages and dead letters, or only the dead letters of a `DeadLetter` source. It succeeds when nothing exists and throws `ArgumentException` for instance subscriptions. Deduplication state may outlive it. |
 | Leases | A received message is invisible for `LeaseDuration`; unsettled messages are delivered again with a higher `DeliveryCount`. |
 | Bytes and headers | Body, headers and `GroupKey` delivered unchanged. Names only contain letters, digits, `.`, `_` and `-`; shorten or hash them if your broker needs to, deterministically, from the source's own fields (not `ToString()`). |
-| Size | Accept any message within `MaxMessageSize` (body plus UTF-8 header bytes), binary bodies included, and throw `MessageTooLargeException` above it. Declare the limit after your own encoding overhead. |
+| Size | Accept any message within `MaxMessageSize`, measured by `MessageSize.Of` (body, headers, message id, group key and deduplication id), binary bodies included, and throw `MessageTooLargeException` above it. Declare the limit after your own encoding overhead. Ids and keys are at most `OutgoingMessage.MaxIdLength` (128) characters. |
 
 All members may be called concurrently: settlement and renewal run while `ReceiveAsync` is waiting. Disposing the transport closes its receivers. An instance subscription left behind by a crashed process is your responsibility to remove; a heartbeat with an expiry, swept from the same timer that sends your heartbeats (or on publish), works well. Settling a delivery that has since gone to another receiver should throw `MessageLeaseLostException` and must not affect the newer delivery.
 
@@ -47,7 +47,7 @@ Declare honestly what your broker does natively in `TransportCapabilities`:
 - **Delays:** `MaxDelay` for sends, `MaxPublishDelay` for publishes and `MaxRetryDelay` for `AbandonAsync` (each: `null` unlimited, a limit, or `TimeSpan.Zero` for none; the last two default to `MaxDelay`). Foundatio emulates longer send delays, holds retries in-process when there is no retry delay, and rejects publishes beyond `MaxPublishDelay`. SQS, for example, declares 15 minutes for sends and 12 hours for retries, and an unlimited publish delay because the transport hides early SNS deliveries until they are due.
 - **Limits:** batch sizes, `MaxMessageSize`, `MaxLeaseDuration`.
 - **`LeaseExpiration`:** false for connection-held deliveries such as RabbitMQ, or offsets such as Kafka.
-- **`OrderedGroups`:** `GroupKey` maps to SQS message groups, Service Bus sessions or Kafka partition keys. Never hand out a message of a group while an earlier one is unsettled. One receive may return several in-order messages of a group; Foundatio handles them in sequence and abandons the rest if one is retried.
+- **`OrderedGroups`:** `GroupKey` maps to SQS message groups, Service Bus sessions or Kafka partition keys. Deliver in send order, where a delayed message holds back its group's later ones. Never hand out a message of a group while an earlier one is unsettled. One receive may return several in-order messages of a group; Foundatio handles them in sequence and abandons the rest if one is retried. Dead-letter sources are not ordered.
 - **`Deduplication`:** drop a repeated `DeduplicationId` within your window.
 
 The suite skips tests for capabilities you don't declare.
@@ -63,7 +63,7 @@ public class MyTransportTests(ITestOutputHelper output) : MessageTransportTestsB
 }
 ```
 
-That is the whole test class. The suite (Foundatio.TestHarness, 40 tests) covers round-trips, leases, renewal, abandon and delays, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering and deduplication, plus end-to-end tests through the real client, handlers and dead-letter replay. Tests use unique names, so they can run in parallel against a shared broker. Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers.
+That is the whole test class. The suite (Foundatio.TestHarness, 42 tests) covers round-trips, leases, renewal, abandon and delays, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering and deduplication, plus end-to-end tests through the real client, handlers and dead-letter replay. Tests use unique names, so they can run in parallel against a shared broker. Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers.
 
 ## Job store
 
