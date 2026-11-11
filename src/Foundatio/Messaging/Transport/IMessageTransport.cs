@@ -43,7 +43,8 @@ public interface IMessageTransport : IAsyncDisposable
     /// Deletes a queue or durable subscription with its pending messages and dead letters, or, for a
     /// <see cref="MessageSourceKind.DeadLetter"/> source, only the dead letters. Succeeds when the source does not
     /// exist. Close its receivers first. Receiving from the source again creates it anew; a deleted subscription
-    /// does not get copies of messages published before then. Deduplication state may outlive the delete.
+    /// does not get copies of messages published before then. Deduplication state may outlive the delete, and a
+    /// receiver still open on the source, in any process, may keep delivering its older messages.
     /// </summary>
     /// <exception cref="ArgumentException">The source is an instance subscription; dispose its receiver instead.</exception>
     Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default);

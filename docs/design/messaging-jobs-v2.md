@@ -103,6 +103,8 @@ Applied in the second round:
 
 From the Redis update, which also added ordered groups to Redis: the message id, group key and deduplication id count toward `MaxMessageSize` (`MessageSize.Of`) and are capped at 128 characters; group order is send order, delayed messages included; dead-letter sources are not ordered, so peeking shows a whole group; deduplication state may outlive a delete.
 
+From the SQS update, which added FIFO mode: transports may shorten abandon delays to what the broker still allows for a delivery, and receivers left open across a delete may still see older messages (both documented). Still open: counting a fixed per-header overhead in `MessageSize.Of` so header framing is provable, and a separate size limit for publishes (SQS accepts 1 MiB, SNS 256 KiB).
+
 Not added: a maintenance hook. A transport already runs a timer for instance-subscription heartbeats, and sweeping stale ones from that timer (or on publish) needs no extra contract.
 
 ## Messaging semantics

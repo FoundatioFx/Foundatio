@@ -33,6 +33,8 @@ public interface IMessageReceiver : IAsyncDisposable
     /// <summary>
     /// Releases the message so it is delivered again after <paramref name="delay"/> with an incremented
     /// <see cref="IncomingMessage.DeliveryCount"/>. Foundatio never passes a delay above <see cref="TransportCapabilities.MaxRetryDelay"/>.
+    /// A transport may shorten the delay to what the broker still allows for this delivery (SQS caps visibility at
+    /// 12 hours from the receive, including time spent renewing).
     /// </summary>
     Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default);
 
