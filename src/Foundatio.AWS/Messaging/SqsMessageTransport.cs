@@ -291,6 +291,7 @@ public sealed class SqsMessageTransport : IMessageTransport
         MaxDelay = fifo ? MaxEmulatedDelay : MaxNativeDelay,
         MaxPublishDelay = MaxEmulatedDelay,
         MaxRetryDelay = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
+        MinRetryDelay = TimeSpan.FromSeconds(1), // visibility timeouts are whole seconds
         MaxSendBatchSize = MaxBatchSize,
         MaxReceiveBatchSize = MaxBatchSize,
         MaxMessageSize = SqsMessageTransportCodec.MaxMessageSize,
