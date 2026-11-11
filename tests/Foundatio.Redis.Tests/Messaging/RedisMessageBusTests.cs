@@ -1,0 +1,319 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.AsyncEx;
+using Foundatio.Caching;
+using Foundatio.Messaging;
+using Foundatio.Queues;
+using Foundatio.Redis.Tests.Extensions;
+using Foundatio.Tests.Extensions;
+using Foundatio.Tests.Messaging;
+using Foundatio.Tests.Queue;
+using Microsoft.Extensions.Logging;
+using Xunit;
+
+namespace Foundatio.Redis.Tests.Messaging;
+
+public class RedisMessageBusTests : MessageBusTestBase, IAsyncLifetime
+{
+    private readonly string _topic = $"test-messages-{Guid.NewGuid().ToString("N")[..10]}";
+
+    public RedisMessageBusTests(ITestOutputHelper output) : base(output)
+    {
+    }
+
+    protected override IMessageBus? GetMessageBus(Func<SharedMessageBusOptions, SharedMessageBusOptions>? config = null)
+    {
+        var muxer = SharedConnection.GetMuxer(Log);
+        if (muxer is null)
+            return null;
+
+        return new RedisMessageBus(o =>
+        {
+            o.Subscriber(muxer.GetSubscriber());
+            o.Topic(_topic);
+            o.LoggerFactory(Log);
+            if (config != null)
+                config(o.Target);
+
+            return o;
+        });
+    }
+
+    [Fact]
+    public override Task CanUseMessageOptionsAsync()
+    {
+        return base.CanUseMessageOptionsAsync();
+    }
+
+    [Fact]
+    public override Task CanSendMessageAsync()
+    {
+        return base.CanSendMessageAsync();
+    }
+
+    [Fact]
+    public override Task CanHandleNullMessageAsync()
+    {
+        return base.CanHandleNullMessageAsync();
+    }
+
+    [Fact]
+    public override Task CanSendDerivedMessageAsync()
+    {
+        return base.CanSendDerivedMessageAsync();
+    }
+
+    [Fact]
+    public override Task CanSendMappedMessageAsync()
+    {
+        return base.CanSendMappedMessageAsync();
+    }
+
+    [Fact]
+    public override Task CanSendDelayedMessageAsync()
+    {
+        return base.CanSendDelayedMessageAsync();
+    }
+
+    [Fact]
+    public override Task CanSubscribeConcurrentlyAsync()
+    {
+        return base.CanSubscribeConcurrentlyAsync();
+    }
+
+    [Fact]
+    public override Task CanReceiveMessagesConcurrentlyAsync()
+    {
+        return base.CanReceiveMessagesConcurrentlyAsync();
+    }
+
+    [Fact]
+    public override Task CanSendMessageToMultipleSubscribersAsync()
+    {
+        return base.CanSendMessageToMultipleSubscribersAsync();
+    }
+
+    [Fact]
+    public override Task CanTolerateSubscriberFailureAsync()
+    {
+        return base.CanTolerateSubscriberFailureAsync();
+    }
+
+    [Fact]
+    public override Task WillOnlyReceiveSubscribedMessageTypeAsync()
+    {
+        return base.WillOnlyReceiveSubscribedMessageTypeAsync();
+    }
+
+    [Fact]
+    public override Task WillReceiveDerivedMessageTypesAsync()
+    {
+        return base.WillReceiveDerivedMessageTypesAsync();
+    }
+
+    [Fact]
+    public override Task CanSubscribeToAllMessageTypesAsync()
+    {
+        return base.CanSubscribeToAllMessageTypesAsync();
+    }
+
+    [Fact]
+    public override Task CanSubscribeToRawMessagesAsync()
+    {
+        return base.CanSubscribeToRawMessagesAsync();
+    }
+
+    [Fact]
+    public override Task CanCancelSubscriptionAsync()
+    {
+        return base.CanCancelSubscriptionAsync();
+    }
+
+    [Fact]
+    public override Task WontKeepMessagesWithNoSubscribersAsync()
+    {
+        return base.WontKeepMessagesWithNoSubscribersAsync();
+    }
+
+    [Fact]
+    public override Task CanReceiveFromMultipleSubscribersAsync()
+    {
+        return base.CanReceiveFromMultipleSubscribersAsync();
+    }
+
+    [Fact]
+    public override Task CanDisposeWithNoSubscribersOrPublishersAsync()
+    {
+        return base.CanDisposeWithNoSubscribersOrPublishersAsync();
+    }
+
+    [Fact]
+    public override Task CanHandlePoisonedMessageAsync()
+    {
+        return base.CanHandlePoisonedMessageAsync();
+    }
+
+    [Fact]
+    public override Task DisposeAsync_CalledMultipleTimes_IsIdempotentAsync()
+    {
+        return base.DisposeAsync_CalledMultipleTimes_IsIdempotentAsync();
+    }
+
+    [Fact]
+    public override Task DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync()
+    {
+        return base.DisposeAsync_WhilePublishing_CompletesWithoutDeadlockAsync();
+    }
+
+    [Fact]
+    public override Task DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync()
+    {
+        return base.DisposeAsync_WithNoSubscribersOrPublishers_CompletesWithoutExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        return base.PublishAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.PublishAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDeliveryDelayExtension_DelaysDeliveryAsync()
+    {
+        return base.PublishAsync_WithDeliveryDelayExtension_DelaysDeliveryAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync()
+    {
+        return base.PublishAsync_WithDelayedMessageAndDisposeBeforeDelivery_DiscardsMessageAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync()
+    {
+        return base.PublishAsync_WithSerializationFailure_ThrowsSerializerExceptionAsync();
+    }
+
+    [Fact]
+    public override Task PublishAsync_WithUniqueId_PropagatesUniqueIdToSubscriberAsync()
+    {
+        return base.PublishAsync_WithUniqueId_PropagatesUniqueIdToSubscriberAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync()
+    {
+        return base.SubscribeAsync_AfterDispose_ThrowsMessageBusExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync()
+    {
+        return base.SubscribeAsync_CancelledToken_DoesNotTearDownInfrastructureAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync()
+    {
+        return base.SubscribeAsync_WithCancellation_ThrowsOperationCanceledExceptionAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_ToRawIMessage_CanAccessAllPropertiesAsync()
+    {
+        return base.SubscribeAsync_ToRawIMessage_CanAccessAllPropertiesAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync()
+    {
+        return base.SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync()
+    {
+        return base.SubscribeAsync_WithDeserializationFailure_SkipsMessageAsync();
+    }
+
+    [Fact]
+    public override Task SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync()
+    {
+        return base.SubscribeAsync_WithValidThenPoisonedMessage_DeliversOnlyValidMessageAsync();
+    }
+
+    [Fact]
+    public async Task CanDisposeCacheAndQueueAndReceiveSubscribedMessages()
+    {
+        var muxer = SharedConnection.GetMuxer(Log);
+        if (muxer is null)
+            return;
+
+        var messageBus1 = new RedisMessageBus(new RedisMessageBusOptions { Subscriber = muxer.GetSubscriber(), Topic = _topic, LoggerFactory = Log });
+
+        var cache = new RedisCacheClient(new RedisCacheClientOptions { ConnectionMultiplexer = muxer });
+        Assert.NotNull(cache);
+
+        var queue = new RedisQueue<SimpleWorkItem>(new RedisQueueOptions<SimpleWorkItem>
+        {
+            ConnectionMultiplexer = muxer,
+            LoggerFactory = Log
+        });
+        Assert.NotNull(queue);
+
+        using (messageBus1)
+        {
+            using (cache)
+            {
+                using (queue)
+                {
+                    await cache.SetAsync("test", "test", TimeSpan.FromSeconds(10));
+                    await queue.DequeueAsync(new CancellationToken(true));
+
+                    var countdown = new AsyncCountdownEvent(2);
+                    await messageBus1.SubscribeAsync<SimpleMessageA>(msg =>
+                    {
+                        Assert.Equal("Hello", msg.Data);
+                        countdown.Signal();
+                    }, TestCancellationToken);
+
+                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+                    await Assert.ThrowsAsync<TimeoutException>(async () => await countdown.WaitAsync(TimeSpan.FromSeconds(2)));
+                    Assert.Equal(1, countdown.CurrentCount);
+
+                    cache.Dispose();
+                    queue.Dispose();
+
+                    await messageBus1.PublishAsync(new SimpleMessageA { Data = "Hello" }, cancellationToken: TestCancellationToken);
+                    await countdown.WaitAsync(TimeSpan.FromSeconds(2));
+                    Assert.Equal(0, countdown.CurrentCount);
+                }
+            }
+        }
+    }
+
+    public override async ValueTask InitializeAsync()
+    {
+        await base.InitializeAsync();
+        _logger.LogDebug("Initializing");
+        var muxer = SharedConnection.GetMuxer(Log);
+        if (muxer is null)
+            return;
+
+        await muxer.FlushAllAsync();
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        _logger.LogDebug("Disposing");
+    }
+}

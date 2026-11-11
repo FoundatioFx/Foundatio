@@ -1,0 +1,680 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using Confluent.Kafka;
+using Confluent.Kafka.Admin;
+using Foundatio.AsyncEx;
+using Foundatio.Extensions;
+using Microsoft.Extensions.Logging;
+
+namespace Foundatio.Messaging;
+
+public interface IKafkaMessageBus : IMessageBus
+{
+    Task DeleteTopicAsync(CancellationToken cancellationToken = default);
+}
+
+public class KafkaMessageBus : MessageBusBase<KafkaMessageBusOptions>, IKafkaMessageBus
+{
+    private Task? _listeningTask;
+    private readonly AdminClientConfig _adminClientConfig;
+    private readonly ConsumerConfig _consumerConfig;
+    private readonly IProducer<string, byte[]> _producer;
+    private readonly AsyncLock _lock = new();
+    private readonly AsyncManualResetEvent _consumerReady = new();
+    private volatile bool _topicCreated;
+
+    public KafkaMessageBus(KafkaMessageBusOptions options) : base(options)
+    {
+        _adminClientConfig = CreateAdminConfig();
+        _consumerConfig = CreateConsumerConfig();
+        var producerConfig = CreateProducerConfig();
+        _producer = new ProducerBuilder<string, byte[]>(producerConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
+    }
+
+    public KafkaMessageBus(Builder<KafkaMessageBusOptionsBuilder, KafkaMessageBusOptions> config)
+        : this(config(new KafkaMessageBusOptionsBuilder()).Build())
+    {
+    }
+
+    protected override async Task PublishImplAsync(string messageType, object message, MessageOptions options, CancellationToken cancellationToken)
+    {
+        _logger.LogTrace("PublishImplAsync([{MessageType}])", messageType);
+
+        if (options.DeliveryDelay.HasValue && options.DeliveryDelay.Value > TimeSpan.Zero)
+        {
+            var mappedType = GetMappedMessageType(messageType);
+            if (mappedType is null)
+                throw new MessageBusException($"Unable to resolve CLR type for delayed message: {messageType}");
+
+            _logger.LogTrace("Schedule delayed message: {MessageType} ({Delay}ms)", messageType, options.DeliveryDelay.Value.TotalMilliseconds);
+            SendDelayedMessage(mappedType, message, options);
+            return;
+        }
+
+        var headers = new Headers {
+            new Header(KafkaHeaders.MessageType, Encoding.UTF8.GetBytes(messageType)),
+            new Header(KafkaHeaders.ContentType, Encoding.UTF8.GetBytes(_options.ContentType))
+        };
+
+        if (options.CorrelationId is not null)
+            headers.Add(new Header(KafkaHeaders.CorrelationId, Encoding.UTF8.GetBytes(options.CorrelationId)));
+
+        if (options.UniqueId is not null)
+            headers.Add(new Header(KafkaHeaders.UniqueId, Encoding.UTF8.GetBytes(options.UniqueId)));
+
+        foreach (var property in options.Properties)
+            headers.Add(new Header(property.Key, Encoding.UTF8.GetBytes(property.Value)));
+
+        var publishMessage = new Message<string, byte[]>
+        {
+            Key = _options.PublishKey!, // Kafka keys can be null (round-robin partitioning); library lacks NRT annotations
+            Value = SerializeMessageBody(messageType, message),
+            Headers = headers
+        };
+
+        // ProduceAsync throws ProduceException on hard failures (broker errors, serialization, etc.).
+        // On success it returns a DeliveryResult whose Status indicates persistence level:
+        //   Persisted        – broker acknowledged per the Acks setting
+        //   PossiblyPersisted – uncertain (e.g. Acks=0 or leader changed mid-write)
+        //   NotPersisted     – message was rejected by the broker
+        var deliveryResult = await _producer.ProduceAsync(_options.Topic, publishMessage, cancellationToken).AnyContext();
+        if (deliveryResult.Status == PersistenceStatus.NotPersisted)
+            throw new MessageBusException($"Message was not persisted to {deliveryResult.TopicPartitionOffset}");
+
+        _logger.LogTrace("Published message to: {TopicPartitionOffset} (Status={Status})", deliveryResult.TopicPartitionOffset, deliveryResult.Status);
+    }
+
+    private async Task OnMessageAsync(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult)
+    {
+        // No subscribers registered — skip processing but do NOT commit the offset.
+        // Kafka retains uncommitted messages so they are redelivered once a subscriber
+        // reconnects, which is the expected persistence-guarantee behavior.
+        if (_subscribers.IsEmpty)
+            return;
+
+        using var _ = _logger.BeginScope(s => s
+            .Property("TopicPartitionOffset", consumeResult.TopicPartitionOffset)
+            .Property("GroupId", _consumerConfig.GroupId));
+
+        _logger.LogTrace("OnMessage(TopicPartitionOffset={TopicPartitionOffset} GroupId={GroupId})", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId);
+
+        bool shouldAcknowledge = true;
+        try
+        {
+            string? messageType = _options.ResolveMessageType?.Invoke(consumeResult);
+            if (String.IsNullOrEmpty(messageType))
+            {
+                var messageTypeHeader = consumeResult.Message.Headers.FirstOrDefault(x => String.Equals(x.Key, KafkaHeaders.MessageType));
+                if (messageTypeHeader is not null)
+                    messageType = Encoding.UTF8.GetString(messageTypeHeader.GetValueBytes());
+            }
+
+            if (String.IsNullOrEmpty(messageType))
+            {
+                _logger.LogWarning("Unable to resolve message type for message at {TopicPartitionOffset}, skipping", consumeResult.TopicPartitionOffset);
+                return;
+            }
+
+            var message = ConvertToMessage(messageType, consumeResult.Message);
+            await SendMessageToSubscribersAsync(message).AnyContext();
+        }
+        catch (OperationCanceledException) when (IsDisposed)
+        {
+            // Bus is disposing — skip offset commit so the message is redelivered to other consumers
+            shouldAcknowledge = false;
+        }
+        catch (MessageBusException)
+        {
+            // Subscriber handler failures are application-level errors. The base class
+            // already logged the error. We still commit the offset below to prevent
+            // infinite redelivery loops.
+        }
+        catch (Exception ex)
+        {
+            // Deserialization or message type resolution failed. Log and commit the offset
+            // below to avoid a poison-pill message blocking the consumer indefinitely.
+            _logger.LogError(ex, "Error processing message at {TopicPartitionOffset} GroupId={GroupId}, skipping: {Message}", consumeResult.TopicPartitionOffset, _consumerConfig.GroupId, ex.Message);
+        }
+        finally
+        {
+            // Commit the offset unless the bus is disposing, in which case we skip so
+            // the message is redelivered to other consumers in the group.
+            if (shouldAcknowledge && !IsDisposed)
+                AcknowledgeMessage(consumer, consumeResult);
+        }
+    }
+
+    private void AcknowledgeMessage(IConsumer<string, byte[]> consumer, ConsumeResult<string, byte[]> consumeResult)
+    {
+        if (!_consumerConfig.EnableAutoCommit.GetValueOrDefault(true))
+        {
+            _logger.LogTrace("Manual Commit: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
+            try
+            {
+                consumer.Commit(consumeResult);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error committing message {TopicPartitionOffset}: {Message}",
+                    consumeResult.TopicPartitionOffset, ex.Message);
+            }
+        }
+
+        if (!_consumerConfig.EnableAutoOffsetStore.GetValueOrDefault(true))
+        {
+            _logger.LogTrace("Manual Store Offset: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
+            try
+            {
+                consumer.StoreOffset(consumeResult);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error storing message offset {TopicPartitionOffset}: {Message}",
+                    consumeResult.TopicPartitionOffset, ex.Message);
+            }
+        }
+    }
+
+    protected override async Task EnsureTopicSubscriptionAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogTrace("EnsureTopicSubscriptionAsync Topic={Topic}", _options.Topic);
+
+        await EnsureTopicCreatedAsync().AnyContext();
+        EnsureListening();
+        // Base class passes DisposedCancellationToken (not caller's token) per SubscribeAsync design
+        await _consumerReady.WaitAsync(cancellationToken).AnyContext();
+    }
+
+    protected virtual IMessage ConvertToMessage(string messageType, Message<string, byte[]> message)
+    {
+        var result = new Message(message.Value, DeserializeMessageBody)
+        {
+            Type = messageType,
+            ClrType = GetMappedMessageType(messageType)
+        };
+
+        foreach (var header in message.Headers)
+        {
+            switch (header.Key)
+            {
+                case KafkaHeaders.MessageType:
+                case KafkaHeaders.ContentType:
+                    break;
+                case KafkaHeaders.CorrelationId:
+                    result.CorrelationId = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+                case KafkaHeaders.UniqueId:
+                    result.UniqueId = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+                default:
+                    result.Properties[header.Key] = Encoding.UTF8.GetString(header.GetValueBytes());
+                    break;
+            }
+        }
+
+        return result;
+    }
+
+    private void EnsureListening()
+    {
+        if (DisposedCancellationToken.IsCancellationRequested)
+            return;
+
+        using (_lock.Lock())
+        {
+            if (_listeningTask is { IsCompleted: false })
+            {
+                _logger.LogTrace("Already Listening: {Topic}", _options.Topic);
+                return;
+            }
+
+            _logger.LogTrace("Start Listening: {Topic}", _options.Topic);
+
+            _listeningTask = Task.Run(async () =>
+            {
+                while (!DisposedCancellationToken.IsCancellationRequested)
+                {
+                    using var consumer = new ConsumerBuilder<string, byte[]>(_consumerConfig)
+                        .SetLogHandler(LogHandler)
+                        .SetStatisticsHandler(LogStatisticsHandler)
+                        .SetErrorHandler(LogErrorHandler)
+                        .SetPartitionsAssignedHandler(LogPartitionAssignmentHandler)
+                        .SetPartitionsLostHandler(LogPartitionsLostHandler)
+                        .SetPartitionsRevokedHandler(LogPartitionsRevokedHandler)
+                        .SetOffsetsCommittedHandler(LogOffsetsCommittedHandler)
+                        .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+                        .Build();
+
+                    try
+                    {
+                        consumer.Subscribe(_options.Topic);
+                        _logger.LogTrace("Consumer {ConsumerName} subscribed to {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+
+                        while (!DisposedCancellationToken.IsCancellationRequested)
+                        {
+                            var consumeResult = consumer.Consume(DisposedCancellationToken);
+                            if (consumeResult.IsPartitionEOF)
+                            {
+                                _logger.LogTrace("Reached end of partition: {TopicPartitionOffset}", consumeResult.TopicPartitionOffset);
+                                continue;
+                            }
+
+                            await OnMessageAsync(consumer, consumeResult).AnyContext();
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Don't log operation cancelled exceptions
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        if (DisposedCancellationToken.IsCancellationRequested)
+                        {
+                            _logger.LogTrace(ex, "Error consuming {Topic} GroupId={GroupId} during shutdown: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
+                            break;
+                        }
+
+                        _logger.LogError(ex, "Error consuming {Topic} GroupId={GroupId}: {Message}. Retrying in 1s...", _options.Topic, _consumerConfig.GroupId, ex.Message);
+
+                        try
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(1), _timeProvider, DisposedCancellationToken).AnyContext();
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            consumer.Unsubscribe();
+                            consumer.Close();
+
+                            _logger.LogTrace("Consumer {ConsumerName} unsubscribed from {Topic} GroupId={GroupId}", consumer.Name, _options.Topic, _consumerConfig.GroupId);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogTrace(ex, "Error cleaning up consumer for {Topic} GroupId={GroupId}: {Message}", _options.Topic, _consumerConfig.GroupId, ex.Message);
+                        }
+                    }
+                }
+            }, DisposedCancellationToken);
+        }
+    }
+
+    protected override async Task CleanupAsync()
+    {
+        if (_listeningTask is not null)
+        {
+            try
+            {
+                await _listeningTask.WaitAsync(TimeSpan.FromSeconds(15)).AnyContext();
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogTrace(ex, "Listening task cancelled during cleanup");
+            }
+            catch (TimeoutException)
+            {
+                _logger.LogWarning("Listening task did not complete within timeout during dispose");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error waiting for listening task to complete during cleanup");
+            }
+        }
+
+        int? queueSize = _producer?.Flush(TimeSpan.FromSeconds(15));
+        if (queueSize > 0)
+            _logger.LogTrace("Flushed producer {queueSize}", queueSize);
+
+        _producer?.Dispose();
+    }
+
+    private async Task EnsureTopicCreatedAsync()
+    {
+        if (_topicCreated || !_consumerConfig.AllowAutoCreateTopics.GetValueOrDefault())
+            return;
+
+        using var topicLock = await _lock.LockAsync(DisposedCancellationToken).AnyContext();
+        if (_topicCreated)
+            return;
+
+        using var adminClient = new AdminClientBuilder(_adminClientConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
+
+        try
+        {
+            var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
+            bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.Topic);
+            if (!isTopicExist)
+            {
+                if (_options.AllowAutoCreateTopics.GetValueOrDefault())
+                {
+                    var topicSpecification = new TopicSpecification
+                    {
+                        Name = _options.Topic,
+                        Configs = _options.TopicConfigs,
+                        ReplicasAssignments = _options.TopicReplicasAssignments
+                    };
+
+                    if (_options.TopicNumberOfPartitions.HasValue)
+                        topicSpecification.NumPartitions = _options.TopicNumberOfPartitions.Value;
+                    if (_options.TopicReplicationFactor.HasValue)
+                        topicSpecification.ReplicationFactor = _options.TopicReplicationFactor.Value;
+
+                    await adminClient.CreateTopicsAsync(new[] { topicSpecification }).AnyContext();
+                    _topicCreated = true;
+
+                    _logger.LogTrace("Created topic {Topic}", _options.Topic);
+                }
+                else
+                {
+                    throw new CreateTopicsException([
+                        new()
+                        {
+                            Error = new Error(ErrorCode.TopicException, "Topic doesn't exist"),
+                            Topic = _options.Topic
+                        }
+                    ]);
+                }
+            }
+        }
+        catch (CreateTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicAlreadyExists)
+        {
+            _topicCreated = true;
+            _logger.LogDebug(ex, "Topic {Topic} already exists", _options.Topic);
+        }
+        catch (CreateTopicsException ex)
+        {
+            _logger.LogError(ex, "Error creating topic {Topic}: {Reason}", _options.Topic, ex.Results[0].Error.Reason);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating topic {Topic}: {Reason}", _options.Topic, ex.Message);
+            throw;
+        }
+    }
+
+    async Task IKafkaMessageBus.DeleteTopicAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(IsDisposed, this);
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, DisposedCancellationToken);
+        using var topicLock = await _lock.LockAsync(linkedCts.Token).AnyContext();
+        using var adminClient = new AdminClientBuilder(_adminClientConfig)
+            .SetLogHandler(LogHandler)
+            .SetStatisticsHandler(LogStatisticsHandler)
+            .SetErrorHandler(LogErrorHandler)
+            .SetOAuthBearerTokenRefreshHandler(LogOAuthBearerTokenRefreshHandler)
+            .Build();
+
+        try
+        {
+            var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(2));
+            bool isTopicExist = metadata.Topics.Any(t => t.Topic == _options.Topic);
+            if (isTopicExist)
+            {
+                await adminClient.DeleteTopicsAsync(new[] { _options.Topic });
+                _logger.LogTrace("Deleted topic {Topic}", _options.Topic);
+            }
+
+            _topicCreated = false;
+        }
+        catch (DeleteTopicsException ex) when (ex.Results[0].Error.Code is ErrorCode.TopicDeletionDisabled)
+        {
+            _logger.LogDebug(ex, "Topic {Topic} deletion disabled", _options.Topic);
+        }
+        catch (DeleteTopicsException ex)
+        {
+            _logger.LogError(ex, "Error deleting topic {Topic}: {Reason}", _options.Topic, ex.Results[0].Error.Reason);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting topic {Topic}: {Reason}", _options.Topic, ex.Message);
+            throw;
+        }
+    }
+
+    private void LogHandler(IClient client, LogMessage message)
+    {
+        _logger.LogTrace("[{LogLevel}] Client log: {Message}", message.Level, message.Message);
+    }
+
+    private void LogStatisticsHandler(IClient client, string statistics)
+    {
+        _logger.LogTrace("Client Statistics: {Statistics}", statistics);
+    }
+
+    private void LogPartitionAssignmentHandler(IConsumer<string, byte[]> consumer, List<TopicPartition> list)
+    {
+        _logger.LogTrace("Consumer partitions assigned: {@Partitions}", list);
+        _consumerReady.Set();
+    }
+
+    private void LogPartitionsLostHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list)
+    {
+        _logger.LogTrace("Consumer partitions list: {@Partitions}", list);
+    }
+
+    private void LogPartitionsRevokedHandler(IConsumer<string, byte[]> consumer, List<TopicPartitionOffset> list)
+    {
+        _logger.LogTrace("Consumer partitions revoked: {@Partitions}", list);
+        _consumerReady.Reset();
+    }
+
+    private void LogOffsetsCommittedHandler(IConsumer<string, byte[]> consumer, CommittedOffsets offsets)
+    {
+        _logger.LogTrace("Consumer Committed Offsets: {@Offsets}", offsets.Offsets);
+    }
+
+    private void LogOAuthBearerTokenRefreshHandler(IClient client, string token)
+    {
+        _logger.LogTrace("Client OAuth Bearer Token refresh requested");
+    }
+
+    private void LogErrorHandler(IClient client, Error error)
+    {
+        _logger.LogTrace("Client Error: [{ErrorCode}] {Message}", error.Code, error.Reason);
+    }
+
+    private ClientConfig CreateClientConfig()
+    {
+        var clientConfig = new ClientConfig();
+        if (_options.Acks.HasValue) clientConfig.Acks = _options.Acks;
+        if (_options.ApiVersionFallbackMs.HasValue) clientConfig.ApiVersionFallbackMs = _options.ApiVersionFallbackMs;
+        if (_options.ApiVersionRequest.HasValue) clientConfig.ApiVersionRequest = _options.ApiVersionRequest;
+        if (_options.ApiVersionRequestTimeoutMs.HasValue) clientConfig.ApiVersionRequestTimeoutMs = _options.ApiVersionRequestTimeoutMs;
+        if (!String.IsNullOrEmpty(_options.BootstrapServers)) clientConfig.BootstrapServers = _options.BootstrapServers;
+        if (_options.BrokerAddressFamily.HasValue) clientConfig.BrokerAddressFamily = _options.BrokerAddressFamily;
+        if (_options.BrokerAddressTtl.HasValue) clientConfig.BrokerAddressTtl = _options.BrokerAddressTtl;
+        if (!String.IsNullOrEmpty(_options.BrokerVersionFallback)) clientConfig.BrokerVersionFallback = _options.BrokerVersionFallback;
+        if (_options.ClientDnsLookup.HasValue) clientConfig.ClientDnsLookup = _options.ClientDnsLookup;
+        if (!String.IsNullOrEmpty(_options.ClientId)) clientConfig.ClientId = _options.ClientId;
+        if (!String.IsNullOrEmpty(_options.ClientRack)) clientConfig.ClientRack = _options.ClientRack;
+        if (_options.ConnectionsMaxIdleMs.HasValue) clientConfig.ConnectionsMaxIdleMs = _options.ConnectionsMaxIdleMs;
+        if (!String.IsNullOrEmpty(_options.Debug)) clientConfig.Debug = _options.Debug;
+        if (_options.EnableMetricsPush.HasValue) clientConfig.EnableMetricsPush = _options.EnableMetricsPush;
+        if (_options.EnableRandomSeed.HasValue) clientConfig.EnableRandomSeed = _options.EnableRandomSeed;
+        if (_options.EnableSaslOauthbearerUnsecureJwt.HasValue) clientConfig.EnableSaslOauthbearerUnsecureJwt = _options.EnableSaslOauthbearerUnsecureJwt;
+        if (_options.EnableSslCertificateVerification.HasValue) clientConfig.EnableSslCertificateVerification = _options.EnableSslCertificateVerification;
+        if (!String.IsNullOrEmpty(_options.HttpsCaLocation)) clientConfig.HttpsCaLocation = _options.HttpsCaLocation;
+        if (!String.IsNullOrEmpty(_options.HttpsCaPem)) clientConfig.HttpsCaPem = _options.HttpsCaPem;
+        if (_options.InternalTerminationSignal.HasValue) clientConfig.InternalTerminationSignal = _options.InternalTerminationSignal;
+        if (_options.LogConnectionClose.HasValue) clientConfig.LogConnectionClose = _options.LogConnectionClose;
+        if (_options.LogQueue.HasValue) clientConfig.LogQueue = _options.LogQueue;
+        if (_options.LogThreadName.HasValue) clientConfig.LogThreadName = _options.LogThreadName;
+        if (_options.MaxInFlight.HasValue) clientConfig.MaxInFlight = _options.MaxInFlight;
+        if (_options.MessageCopyMaxBytes.HasValue) clientConfig.MessageCopyMaxBytes = _options.MessageCopyMaxBytes;
+        if (_options.MessageMaxBytes.HasValue) clientConfig.MessageMaxBytes = _options.MessageMaxBytes;
+        if (_options.MetadataMaxAgeMs.HasValue) clientConfig.MetadataMaxAgeMs = _options.MetadataMaxAgeMs;
+        if (_options.MetadataRecoveryRebootstrapTriggerMs.HasValue) clientConfig.MetadataRecoveryRebootstrapTriggerMs = _options.MetadataRecoveryRebootstrapTriggerMs;
+        if (_options.MetadataRecoveryStrategy.HasValue) clientConfig.MetadataRecoveryStrategy = _options.MetadataRecoveryStrategy;
+        if (!String.IsNullOrEmpty(_options.PluginLibraryPaths)) clientConfig.PluginLibraryPaths = _options.PluginLibraryPaths;
+        if (_options.ReceiveMessageMaxBytes.HasValue) clientConfig.ReceiveMessageMaxBytes = _options.ReceiveMessageMaxBytes;
+        if (_options.ReconnectBackoffMaxMs.HasValue) clientConfig.ReconnectBackoffMaxMs = _options.ReconnectBackoffMaxMs;
+        if (_options.ReconnectBackoffMs.HasValue) clientConfig.ReconnectBackoffMs = _options.ReconnectBackoffMs;
+        if (_options.RetryBackoffMaxMs.HasValue) clientConfig.RetryBackoffMaxMs = _options.RetryBackoffMaxMs;
+        if (!String.IsNullOrEmpty(_options.SaslKerberosKeytab)) clientConfig.SaslKerberosKeytab = _options.SaslKerberosKeytab;
+        if (!String.IsNullOrEmpty(_options.SaslKerberosKinitCmd)) clientConfig.SaslKerberosKinitCmd = _options.SaslKerberosKinitCmd;
+        if (_options.SaslKerberosMinTimeBeforeRelogin.HasValue) clientConfig.SaslKerberosMinTimeBeforeRelogin = _options.SaslKerberosMinTimeBeforeRelogin;
+        if (!String.IsNullOrEmpty(_options.SaslKerberosPrincipal)) clientConfig.SaslKerberosPrincipal = _options.SaslKerberosPrincipal;
+        if (!String.IsNullOrEmpty(_options.SaslKerberosServiceName)) clientConfig.SaslKerberosServiceName = _options.SaslKerberosServiceName;
+        if (_options.SaslMechanism.HasValue) clientConfig.SaslMechanism = _options.SaslMechanism;
+        if (_options.SaslOauthbearerAssertionAlgorithm.HasValue) clientConfig.SaslOauthbearerAssertionAlgorithm = _options.SaslOauthbearerAssertionAlgorithm;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionClaimAud)) clientConfig.SaslOauthbearerAssertionClaimAud = _options.SaslOauthbearerAssertionClaimAud;
+        if (_options.SaslOauthbearerAssertionClaimExpSeconds.HasValue) clientConfig.SaslOauthbearerAssertionClaimExpSeconds = _options.SaslOauthbearerAssertionClaimExpSeconds;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionClaimIss)) clientConfig.SaslOauthbearerAssertionClaimIss = _options.SaslOauthbearerAssertionClaimIss;
+        if (_options.SaslOauthbearerAssertionClaimJtiInclude.HasValue) clientConfig.SaslOauthbearerAssertionClaimJtiInclude = _options.SaslOauthbearerAssertionClaimJtiInclude;
+        if (_options.SaslOauthbearerAssertionClaimNbfSeconds.HasValue) clientConfig.SaslOauthbearerAssertionClaimNbfSeconds = _options.SaslOauthbearerAssertionClaimNbfSeconds;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionClaimSub)) clientConfig.SaslOauthbearerAssertionClaimSub = _options.SaslOauthbearerAssertionClaimSub;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionFile)) clientConfig.SaslOauthbearerAssertionFile = _options.SaslOauthbearerAssertionFile;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionJwtTemplateFile)) clientConfig.SaslOauthbearerAssertionJwtTemplateFile = _options.SaslOauthbearerAssertionJwtTemplateFile;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionPrivateKeyFile)) clientConfig.SaslOauthbearerAssertionPrivateKeyFile = _options.SaslOauthbearerAssertionPrivateKeyFile;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionPrivateKeyPassphrase)) clientConfig.SaslOauthbearerAssertionPrivateKeyPassphrase = _options.SaslOauthbearerAssertionPrivateKeyPassphrase;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerAssertionPrivateKeyPem)) clientConfig.SaslOauthbearerAssertionPrivateKeyPem = _options.SaslOauthbearerAssertionPrivateKeyPem;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerClientId)) clientConfig.SaslOauthbearerClientId = _options.SaslOauthbearerClientId;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerClientSecret)) clientConfig.SaslOauthbearerClientSecret = _options.SaslOauthbearerClientSecret;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerConfig)) clientConfig.SaslOauthbearerConfig = _options.SaslOauthbearerConfig;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerExtensions)) clientConfig.SaslOauthbearerExtensions = _options.SaslOauthbearerExtensions;
+        if (_options.SaslOauthbearerGrantType.HasValue) clientConfig.SaslOauthbearerGrantType = _options.SaslOauthbearerGrantType;
+        if (_options.SaslOauthbearerMetadataAuthenticationType.HasValue) clientConfig.SaslOauthbearerMetadataAuthenticationType = _options.SaslOauthbearerMetadataAuthenticationType;
+        if (_options.SaslOauthbearerMethod.HasValue) clientConfig.SaslOauthbearerMethod = _options.SaslOauthbearerMethod;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerScope)) clientConfig.SaslOauthbearerScope = _options.SaslOauthbearerScope;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerSubClaimName)) clientConfig.SaslOauthbearerSubClaimName = _options.SaslOauthbearerSubClaimName;
+        if (!String.IsNullOrEmpty(_options.SaslOauthbearerTokenEndpointUrl)) clientConfig.SaslOauthbearerTokenEndpointUrl = _options.SaslOauthbearerTokenEndpointUrl;
+        if (!String.IsNullOrEmpty(_options.SaslPassword)) clientConfig.SaslPassword = _options.SaslPassword;
+        if (!String.IsNullOrEmpty(_options.SaslUsername)) clientConfig.SaslUsername = _options.SaslUsername;
+        if (_options.SecurityProtocol.HasValue) clientConfig.SecurityProtocol = _options.SecurityProtocol;
+        if (_options.SocketConnectionSetupTimeoutMs.HasValue) clientConfig.SocketConnectionSetupTimeoutMs = _options.SocketConnectionSetupTimeoutMs;
+        if (_options.SocketKeepaliveEnable.HasValue) clientConfig.SocketKeepaliveEnable = _options.SocketKeepaliveEnable;
+        if (_options.SocketMaxFails.HasValue) clientConfig.SocketMaxFails = _options.SocketMaxFails;
+        if (_options.SocketNagleDisable.HasValue) clientConfig.SocketNagleDisable = _options.SocketNagleDisable;
+        if (_options.SocketReceiveBufferBytes.HasValue) clientConfig.SocketReceiveBufferBytes = _options.SocketReceiveBufferBytes;
+        if (_options.SocketSendBufferBytes.HasValue) clientConfig.SocketSendBufferBytes = _options.SocketSendBufferBytes;
+        if (_options.SocketTimeoutMs.HasValue) clientConfig.SocketTimeoutMs = _options.SocketTimeoutMs;
+        if (!String.IsNullOrEmpty(_options.SslCaCertificateStores)) clientConfig.SslCaCertificateStores = _options.SslCaCertificateStores;
+        if (!String.IsNullOrEmpty(_options.SslCaLocation)) clientConfig.SslCaLocation = _options.SslCaLocation;
+        if (!String.IsNullOrEmpty(_options.SslCaPem)) clientConfig.SslCaPem = _options.SslCaPem;
+        if (!String.IsNullOrEmpty(_options.SslCertificateLocation)) clientConfig.SslCertificateLocation = _options.SslCertificateLocation;
+        if (!String.IsNullOrEmpty(_options.SslCertificatePem)) clientConfig.SslCertificatePem = _options.SslCertificatePem;
+        if (!String.IsNullOrEmpty(_options.SslCipherSuites)) clientConfig.SslCipherSuites = _options.SslCipherSuites;
+        if (!String.IsNullOrEmpty(_options.SslCrlLocation)) clientConfig.SslCrlLocation = _options.SslCrlLocation;
+        if (!String.IsNullOrEmpty(_options.SslCurvesList)) clientConfig.SslCurvesList = _options.SslCurvesList;
+        if (_options.SslEndpointIdentificationAlgorithm.HasValue) clientConfig.SslEndpointIdentificationAlgorithm = _options.SslEndpointIdentificationAlgorithm;
+        if (!String.IsNullOrEmpty(_options.SslEngineId)) clientConfig.SslEngineId = _options.SslEngineId;
+        if (!String.IsNullOrEmpty(_options.SslEngineLocation)) clientConfig.SslEngineLocation = _options.SslEngineLocation;
+        if (!String.IsNullOrEmpty(_options.SslKeyLocation)) clientConfig.SslKeyLocation = _options.SslKeyLocation;
+        if (!String.IsNullOrEmpty(_options.SslKeyPassword)) clientConfig.SslKeyPassword = _options.SslKeyPassword;
+        if (!String.IsNullOrEmpty(_options.SslKeyPem)) clientConfig.SslKeyPem = _options.SslKeyPem;
+        if (!String.IsNullOrEmpty(_options.SslKeystoreLocation)) clientConfig.SslKeystoreLocation = _options.SslKeystoreLocation;
+        if (!String.IsNullOrEmpty(_options.SslKeystorePassword)) clientConfig.SslKeystorePassword = _options.SslKeystorePassword;
+        if (!String.IsNullOrEmpty(_options.SslProviders)) clientConfig.SslProviders = _options.SslProviders;
+        if (!String.IsNullOrEmpty(_options.SslSigalgsList)) clientConfig.SslSigalgsList = _options.SslSigalgsList;
+        if (_options.StatisticsIntervalMs.HasValue) clientConfig.StatisticsIntervalMs = _options.StatisticsIntervalMs;
+        if (!String.IsNullOrEmpty(_options.TopicBlacklist)) clientConfig.TopicBlacklist = _options.TopicBlacklist;
+        if (_options.TopicMetadataPropagationMaxMs.HasValue) clientConfig.TopicMetadataPropagationMaxMs = _options.TopicMetadataPropagationMaxMs;
+        if (_options.TopicMetadataRefreshFastIntervalMs.HasValue) clientConfig.TopicMetadataRefreshFastIntervalMs = _options.TopicMetadataRefreshFastIntervalMs;
+        if (_options.TopicMetadataRefreshIntervalMs.HasValue) clientConfig.TopicMetadataRefreshIntervalMs = _options.TopicMetadataRefreshIntervalMs;
+        if (_options.TopicMetadataRefreshSparse.HasValue) clientConfig.TopicMetadataRefreshSparse = _options.TopicMetadataRefreshSparse;
+
+        return clientConfig;
+    }
+
+    private AdminClientConfig CreateAdminConfig()
+    {
+        var clientConfig = CreateClientConfig();
+        return new AdminClientConfig(clientConfig);
+    }
+
+    private ProducerConfig CreateProducerConfig()
+    {
+        var clientConfig = CreateClientConfig();
+        var producerConfig = new ProducerConfig(clientConfig);
+        if (_options.BatchNumMessages.HasValue) producerConfig.BatchNumMessages = _options.BatchNumMessages;
+        if (_options.BatchSize.HasValue) producerConfig.BatchSize = _options.BatchSize;
+        if (_options.CompressionLevel.HasValue) producerConfig.CompressionLevel = _options.CompressionLevel;
+        if (_options.CompressionType.HasValue) producerConfig.CompressionType = _options.CompressionType;
+        if (!String.IsNullOrEmpty(_options.DeliveryReportFields)) producerConfig.DeliveryReportFields = _options.DeliveryReportFields;
+        if (_options.EnableBackgroundPoll.HasValue) producerConfig.EnableBackgroundPoll = _options.EnableBackgroundPoll;
+        if (_options.EnableDeliveryReports.HasValue) producerConfig.EnableDeliveryReports = _options.EnableDeliveryReports;
+        if (_options.EnableGaplessGuarantee.HasValue) producerConfig.EnableGaplessGuarantee = _options.EnableGaplessGuarantee;
+        if (_options.EnableIdempotence.HasValue) producerConfig.EnableIdempotence = _options.EnableIdempotence;
+        if (_options.LingerMs.HasValue) producerConfig.LingerMs = _options.LingerMs;
+        if (_options.MessageSendMaxRetries.HasValue) producerConfig.MessageSendMaxRetries = _options.MessageSendMaxRetries;
+        if (_options.MessageTimeoutMs.HasValue) producerConfig.MessageTimeoutMs = _options.MessageTimeoutMs;
+        if (_options.Partitioner.HasValue) producerConfig.Partitioner = _options.Partitioner;
+        if (_options.QueueBufferingBackpressureThreshold.HasValue) producerConfig.QueueBufferingBackpressureThreshold = _options.QueueBufferingBackpressureThreshold;
+        if (_options.QueueBufferingMaxKbytes.HasValue) producerConfig.QueueBufferingMaxKbytes = _options.QueueBufferingMaxKbytes;
+        if (_options.QueueBufferingMaxMessages.HasValue) producerConfig.QueueBufferingMaxMessages = _options.QueueBufferingMaxMessages;
+        if (_options.RequestTimeoutMs.HasValue) producerConfig.RequestTimeoutMs = _options.RequestTimeoutMs;
+        if (_options.RetryBackoffMs.HasValue) producerConfig.RetryBackoffMs = _options.RetryBackoffMs;
+        if (_options.StickyPartitioningLingerMs.HasValue) producerConfig.StickyPartitioningLingerMs = _options.StickyPartitioningLingerMs;
+        if (!String.IsNullOrEmpty(_options.TransactionalId)) producerConfig.TransactionalId = _options.TransactionalId;
+        if (_options.TransactionTimeoutMs.HasValue) producerConfig.TransactionTimeoutMs = _options.TransactionTimeoutMs;
+
+        return producerConfig;
+    }
+
+    private ConsumerConfig CreateConsumerConfig()
+    {
+        var clientConfig = CreateClientConfig();
+        var consumerConfig = new ConsumerConfig(clientConfig);
+        if (_options.AllowAutoCreateTopics.HasValue) consumerConfig.AllowAutoCreateTopics = _options.AllowAutoCreateTopics;
+        if (_options.AutoCommitIntervalMs.HasValue) consumerConfig.AutoCommitIntervalMs = _options.AutoCommitIntervalMs;
+        if (_options.AutoOffsetReset.HasValue) consumerConfig.AutoOffsetReset = _options.AutoOffsetReset;
+        if (_options.CheckCrcs.HasValue) consumerConfig.CheckCrcs = _options.CheckCrcs;
+        if (!String.IsNullOrEmpty(_options.ConsumeResultFields)) consumerConfig.ConsumeResultFields = _options.ConsumeResultFields;
+        if (_options.CoordinatorQueryIntervalMs.HasValue) consumerConfig.CoordinatorQueryIntervalMs = _options.CoordinatorQueryIntervalMs;
+        if (_options.EnableAutoCommit.HasValue) consumerConfig.EnableAutoCommit = _options.EnableAutoCommit;
+        if (_options.EnableAutoOffsetStore.HasValue) consumerConfig.EnableAutoOffsetStore = _options.EnableAutoOffsetStore;
+        if (_options.EnablePartitionEof.HasValue) consumerConfig.EnablePartitionEof = _options.EnablePartitionEof;
+        if (_options.FetchErrorBackoffMs.HasValue) consumerConfig.FetchErrorBackoffMs = _options.FetchErrorBackoffMs;
+        if (_options.FetchMaxBytes.HasValue) consumerConfig.FetchMaxBytes = _options.FetchMaxBytes;
+        if (_options.FetchMinBytes.HasValue) consumerConfig.FetchMinBytes = _options.FetchMinBytes;
+        if (_options.FetchQueueBackoffMs.HasValue) consumerConfig.FetchQueueBackoffMs = _options.FetchQueueBackoffMs;
+        if (_options.FetchWaitMaxMs.HasValue) consumerConfig.FetchWaitMaxMs = _options.FetchWaitMaxMs;
+        if (!String.IsNullOrEmpty(_options.GroupId)) consumerConfig.GroupId = _options.GroupId;
+        if (!String.IsNullOrEmpty(_options.GroupInstanceId)) consumerConfig.GroupInstanceId = _options.GroupInstanceId;
+        if (_options.GroupProtocol.HasValue) consumerConfig.GroupProtocol = _options.GroupProtocol;
+        if (!String.IsNullOrEmpty(_options.GroupProtocolType)) consumerConfig.GroupProtocolType = _options.GroupProtocolType;
+        if (!String.IsNullOrEmpty(_options.GroupRemoteAssignor)) consumerConfig.GroupRemoteAssignor = _options.GroupRemoteAssignor;
+        if (_options.HeartbeatIntervalMs.HasValue) consumerConfig.HeartbeatIntervalMs = _options.HeartbeatIntervalMs;
+        if (_options.IsolationLevel.HasValue) consumerConfig.IsolationLevel = _options.IsolationLevel;
+        if (_options.MaxPartitionFetchBytes.HasValue) consumerConfig.MaxPartitionFetchBytes = _options.MaxPartitionFetchBytes;
+        if (_options.MaxPollIntervalMs.HasValue) consumerConfig.MaxPollIntervalMs = _options.MaxPollIntervalMs;
+        if (_options.PartitionAssignmentStrategy.HasValue) consumerConfig.PartitionAssignmentStrategy = _options.PartitionAssignmentStrategy;
+        if (_options.QueuedMaxMessagesKbytes.HasValue) consumerConfig.QueuedMaxMessagesKbytes = _options.QueuedMaxMessagesKbytes;
+        if (_options.QueuedMinMessages.HasValue) consumerConfig.QueuedMinMessages = _options.QueuedMinMessages;
+        if (_options.SessionTimeoutMs.HasValue) consumerConfig.SessionTimeoutMs = _options.SessionTimeoutMs;
+
+        return consumerConfig;
+    }
+
+    public static class KafkaHeaders
+    {
+        public const string MessageType = "MessageType";
+        public const string ContentType = "ContentType";
+        public const string CorrelationId = "CorrelationId";
+        public const string UniqueId = "UniqueId";
+    }
+}

@@ -7,9 +7,6 @@
 			"path": "../Foundatio.Repositories"
 		},
 		{
-			"path": "../Foundatio.Redis"
-		},
-		{
 			"path": "../Foundatio.RabbitMQ"
 		},
 		{
@@ -22,16 +19,10 @@
 			"path": "../Foundatio.AzureServiceBus"
 		},
 		{
-			"path": "../Foundatio.AWS"
-		},
-		{
 			"path": "../Foundatio.Aliyun"
 		},
 		{
 			"path": "../Foundatio.Storage.SshNet"
-		},
-		{
-			"path": "../Foundatio.Kafka"
 		},
 		{
 			"path": "../Foundatio.Mediator"

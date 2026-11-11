@@ -1,0 +1,380 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Extensions;
+using Foundatio.Resilience;
+using Foundatio.Serializer;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using StackExchange.Redis;
+
+namespace Foundatio.Storage;
+
+public class RedisFileStorage : IFileStorage
+{
+    private readonly RedisFileStorageOptions _options;
+    private readonly IConnectionMultiplexer _connectionMultiplexer;
+    private readonly ISerializer _serializer;
+    private readonly IResiliencePolicy _resiliencePolicy;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+    private readonly string _fileSpecContainer;
+
+    public RedisFileStorage(RedisFileStorageOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.ConnectionMultiplexer);
+
+        _options = options;
+        _connectionMultiplexer = options.ConnectionMultiplexer;
+        _serializer = options.Serializer ?? DefaultSerializer.Instance;
+        _timeProvider = options.TimeProvider ?? TimeProvider.System;
+        _logger = options.LoggerFactory?.CreateLogger(GetType()) ?? NullLogger.Instance;
+
+        _resiliencePolicy = options.ResiliencePolicyProvider.GetPolicy<RedisFileStorage, IFileStorage>(_logger, options.TimeProvider);
+
+        _connectionMultiplexer.ConnectionRestored += ConnectionMultiplexerOnConnectionRestored;
+        _fileSpecContainer = $"{options.ContainerName}-filespecs";
+    }
+
+    public RedisFileStorage(Builder<RedisFileStorageOptionsBuilder, RedisFileStorageOptions> config)
+        : this(config(new RedisFileStorageOptionsBuilder()).Build())
+    {
+    }
+
+    ISerializer IHaveSerializer.Serializer => _serializer;
+    public IDatabase Database => _connectionMultiplexer.GetDatabase();
+
+    // NOTE: Implement IAsyncDisposable when Foundatio's IFileStorage interface adds support for it.
+    // IConnectionMultiplexer supports IAsyncDisposable since SE.Redis 2.6.66.
+    public void Dispose()
+    {
+        _connectionMultiplexer.ConnectionRestored -= ConnectionMultiplexerOnConnectionRestored;
+    }
+
+    public async Task<Stream?> GetFileStreamAsync(string path, StreamMode streamMode, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+
+        if (streamMode is StreamMode.Write)
+            throw new NotSupportedException($"Stream mode {streamMode} is not supported.");
+
+        return await GetFileContentStreamAsync(NormalizePath(path), _options.ReadMode, cancellationToken).AnyContext();
+    }
+
+    private async Task<MemoryStream?> GetFileContentStreamAsync(string normalizedPath, CommandFlags flags, CancellationToken cancellationToken = default)
+    {
+        _logger.LogTrace("Getting file stream for {Path}", normalizedPath);
+
+        var fileContent = await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashGetAsync(_options.ContainerName, normalizedPath, flags), cancellationToken).AnyContext();
+        if (fileContent.IsNull)
+        {
+            _logger.LogError("Unable to get file stream for {Path}: File Not Found", normalizedPath);
+            return null;
+        }
+
+        return new MemoryStream((byte[])fileContent!);
+    }
+
+    public async Task<FileSpec?> GetFileInfoAsync(string path)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+
+        string normalizedPath = NormalizePath(path);
+        _logger.LogTrace("Getting file info for {Path}", normalizedPath);
+
+        var fileSpec = await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashGetAsync(_fileSpecContainer, normalizedPath, _options.ReadMode)).AnyContext();
+        if (!fileSpec.HasValue)
+        {
+            _logger.LogError("Unable to get file info for {Path}: File Not Found", normalizedPath);
+            return null;
+        }
+
+        return _serializer.Deserialize<FileSpec>((byte[])fileSpec!);
+    }
+
+    public async Task<bool> ExistsAsync(string path)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+
+        string normalizedPath = NormalizePath(path);
+        _logger.LogTrace("Checking if {Path} exists", normalizedPath);
+
+        return await _resiliencePolicy.ExecuteAsync(async _ => await Database.HashExistsAsync(_fileSpecContainer, normalizedPath, _options.ReadMode)).AnyContext();
+    }
+
+    public async Task<bool> SaveFileAsync(string path, Stream stream, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+        if (stream == null)
+            throw new ArgumentNullException(nameof(stream));
+
+        string normalizedPath = NormalizePath(path);
+        _logger.LogTrace("Saving {Path}", normalizedPath);
+
+        try
+        {
+            var database = Database;
+
+            using var memory = new MemoryStream();
+            await stream.CopyToAsync(memory, 0x14000, cancellationToken).AnyContext();
+            var saveFileTask = database.HashSetAsync(_options.ContainerName, normalizedPath, memory.ToArray());
+            long fileSize = memory.Length;
+            memory.Seek(0, SeekOrigin.Begin);
+            memory.SetLength(0);
+
+            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            _serializer.Serialize(new FileSpec
+            {
+                Path = normalizedPath,
+                Created = utcNow,
+                Modified = utcNow,
+                Size = fileSize
+            }, memory);
+
+            var saveSpecTask = database.HashSetAsync(_fileSpecContainer, normalizedPath, memory.ToArray());
+            await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(saveFileTask, saveSpecTask), cancellationToken).AnyContext();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error saving {Path}: {Message}", normalizedPath, ex.Message);
+            return false;
+        }
+    }
+
+    public async Task<bool> RenameFileAsync(string path, string newPath, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+        if (String.IsNullOrEmpty(newPath))
+            throw new ArgumentNullException(nameof(newPath));
+
+        string normalizedPath = NormalizePath(path);
+        string normalizedNewPath = NormalizePath(newPath);
+        _logger.LogInformation("Renaming {Path} to {NewPath}", normalizedPath, normalizedNewPath);
+
+        try
+        {
+            // Always read from master: this is a read-then-delete flow; a stale replica read could cause data loss.
+            using var stream = await GetFileContentStreamAsync(normalizedPath, CommandFlags.None, cancellationToken).AnyContext();
+            if (stream is null)
+            {
+                _logger.LogError("Unable to rename {Path}: File Not Found", normalizedPath);
+                return false;
+            }
+
+            return await DeleteFileAsync(normalizedPath, cancellationToken).AnyContext() &&
+                   await SaveFileAsync(normalizedNewPath, stream, cancellationToken).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error renaming {Path} to {NewPath}: {Message}", normalizedPath, newPath, ex.Message);
+            return false;
+        }
+    }
+
+    public async Task<bool> CopyFileAsync(string path, string targetPath, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+        if (String.IsNullOrEmpty(targetPath))
+            throw new ArgumentNullException(nameof(targetPath));
+
+        string normalizedPath = NormalizePath(path);
+        string normalizedTargetPath = NormalizePath(targetPath);
+        _logger.LogInformation("Copying {Path} to {TargetPath}", normalizedPath, normalizedTargetPath);
+
+        try
+        {
+            // Always read from master: this is a read-before-write flow; a stale replica read would copy empty/stale data.
+            using var stream = await GetFileContentStreamAsync(normalizedPath, CommandFlags.None, cancellationToken).AnyContext();
+            if (stream is null)
+            {
+                _logger.LogError("Unable to copy {Path}: File Not Found", normalizedPath);
+                return false;
+            }
+
+            return await SaveFileAsync(normalizedTargetPath, stream, cancellationToken).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error copying {Path} to {TargetPath}: {Message}", normalizedPath, normalizedTargetPath, ex.Message);
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteFileAsync(string path, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrEmpty(path))
+            throw new ArgumentNullException(nameof(path));
+
+        string normalizedPath = NormalizePath(path);
+        _logger.LogTrace("Deleting {Path}", normalizedPath);
+
+        var database = Database;
+        var deleteSpecTask = database.HashDeleteAsync(_fileSpecContainer, normalizedPath);
+        var deleteFileTask = database.HashDeleteAsync(_options.ContainerName, normalizedPath);
+        await _resiliencePolicy.ExecuteAsync(async _ => await Task.WhenAll(deleteSpecTask, deleteFileTask), cancellationToken).AnyContext();
+        return true;
+    }
+
+    public async Task<int> DeleteFilesAsync(string? searchPattern = null, CancellationToken cancellationToken = default)
+    {
+        var files = await GetFileListAsync(searchPattern, cancellationToken: cancellationToken).AnyContext();
+        if (files is { Count: 0 })
+            return 0;
+
+        var fields = files.Select(f => (RedisValue)f.Path).ToArray();
+        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", fields.Length, searchPattern);
+
+        var database = Database;
+        long deleted = 0;
+        await _resiliencePolicy.ExecuteAsync(async _ =>
+        {
+            var deleteContentTask = database.HashDeleteAsync(_options.ContainerName, fields);
+            var deleteSpecTask = database.HashDeleteAsync(_fileSpecContainer, fields);
+            await Task.WhenAll(deleteContentTask, deleteSpecTask).AnyContext();
+            deleted = deleteContentTask.Result;
+        }, cancellationToken).AnyContext();
+
+        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", deleted, searchPattern);
+
+        return (int)deleted;
+    }
+
+    private Task<List<FileSpec>> GetFileListAsync(string? searchPattern = null, int? limit = null, int? skip = null, CancellationToken cancellationToken = default)
+    {
+        if (limit is <= 0)
+            return Task.FromResult(new List<FileSpec>());
+
+        if (searchPattern is not null)
+            searchPattern = NormalizePath(searchPattern);
+        string? prefix = searchPattern;
+        Regex? patternRegex = null;
+        int wildcardPos = searchPattern?.IndexOf('*') ?? -1;
+        if (searchPattern != null && wildcardPos >= 0)
+        {
+            patternRegex = new Regex($"^{Regex.Escape(searchPattern).Replace("\\*", ".*?")}$");
+            int slashPos = searchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? searchPattern.Substring(0, slashPos) : String.Empty;
+        }
+
+        prefix ??= String.Empty;
+        int pageSize = limit ?? Int32.MaxValue;
+
+        _logger.LogTrace(
+            s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
+            "Getting file list matching {Prefix} and {Pattern}...", prefix, patternRegex
+        );
+
+        return Task.FromResult(Database.HashScan(_fileSpecContainer, $"{prefix}*", flags: _options.ReadMode)
+            .Where(entry => entry.Value.HasValue)
+            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value!))
+            .Where(fileSpec => fileSpec is not null && (patternRegex is null || patternRegex.IsMatch(fileSpec.Path)))
+            .Cast<FileSpec>()
+            .Take(pageSize)
+            .ToList()
+        );
+    }
+
+    public async Task<PagedFileListResult> GetPagedFileListAsync(int pageSize = 100, string? searchPattern = null, CancellationToken cancellationToken = default)
+    {
+        if (pageSize <= 0)
+            return PagedFileListResult.Empty;
+
+        var criteria = GetRequestCriteria(searchPattern);
+        var result = new PagedFileListResult(r => Task.FromResult(GetFiles(criteria, 1, pageSize)));
+        await result.NextPageAsync().AnyContext();
+        return result;
+    }
+
+    private NextPageResult GetFiles(SearchCriteria criteria, int page, int pageSize)
+    {
+        int pagingLimit = pageSize;
+        int skip = (page - 1) * pagingLimit;
+        if (pagingLimit < Int32.MaxValue)
+            pagingLimit++;
+
+        _logger.LogTrace(
+            s => s.Property("Limit", pagingLimit).Property("Skip", skip),
+            "Getting files matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern
+        );
+
+        var list = Database.HashScan(_fileSpecContainer, $"{criteria.Prefix}*", flags: _options.ReadMode)
+            .Where(entry => entry.Value.HasValue)
+            .Select(entry => _serializer.Deserialize<FileSpec>((byte[])entry.Value!))
+            .Where(fileSpec => fileSpec is not null && (criteria.Pattern is null || criteria.Pattern.IsMatch(fileSpec.Path)))
+            .Cast<FileSpec>()
+            .Skip(skip)
+            .Take(pagingLimit)
+            .ToList();
+
+        bool hasMore = false;
+        if (list.Count == pagingLimit)
+        {
+            hasMore = true;
+            list.RemoveAt(pagingLimit - 1);
+        }
+
+        return new NextPageResult
+        {
+            Success = true,
+            HasMore = hasMore,
+            Files = list,
+            NextPageFunc = hasMore ? _ => Task.FromResult(GetFiles(criteria, page + 1, pageSize)) : null
+        };
+    }
+
+    private string NormalizePath(string path)
+    {
+        return path.Replace('\\', '/');
+    }
+
+    private record SearchCriteria
+    {
+        public required string Prefix { get; init; }
+        public Regex? Pattern { get; init; }
+    }
+
+    private SearchCriteria GetRequestCriteria(string? searchPattern)
+    {
+        if (String.IsNullOrEmpty(searchPattern))
+            return new SearchCriteria { Prefix = String.Empty };
+
+        string normalizedSearchPattern = NormalizePath(searchPattern);
+
+        int wildcardPos = normalizedSearchPattern.IndexOf('*');
+        bool hasWildcard = wildcardPos >= 0;
+
+        string prefix = normalizedSearchPattern;
+        Regex? patternRegex = null;
+
+        if (hasWildcard)
+        {
+            patternRegex = new Regex($"^{Regex.Escape(normalizedSearchPattern).Replace("\\*", ".*?")}$");
+            int slashPos = normalizedSearchPattern.LastIndexOf('/');
+            prefix = slashPos >= 0 ? normalizedSearchPattern.Substring(0, slashPos) : String.Empty;
+        }
+
+        return new SearchCriteria
+        {
+            Prefix = prefix,
+            Pattern = patternRegex
+        };
+    }
+
+    private void ConnectionMultiplexerOnConnectionRestored(object? sender, ConnectionFailedEventArgs connectionFailedEventArgs)
+    {
+        _logger.LogInformation("Redis connection restored");
+    }
+}

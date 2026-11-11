@@ -69,7 +69,7 @@ var messageBus = new AzureServiceBusMessageBus(o => {
 
 Messaging using Apache Kafka (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Kafka/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.Kafka
@@ -101,7 +101,7 @@ var messageBus = new RabbitMQMessageBus(o => {
 
 Distributed messaging using Redis pub/sub (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Messaging/RedisMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.Redis
@@ -117,7 +117,7 @@ var messageBus = new RedisMessageBus(o => o.Subscriber = redis.GetSubscriber());
 
 Messaging using AWS SNS/SQS (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/master/src/Foundatio.AWS/Messaging/SQSMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Messaging/SQSMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.AWS

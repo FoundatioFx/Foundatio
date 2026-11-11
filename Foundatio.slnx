@@ -2,13 +2,18 @@
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
+    <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
+    <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
     <Project Path="samples/Foundatio.QuickstartSample/Foundatio.QuickstartSample.csproj" />
+    <Project Path="samples/Foundatio.SampleJob/Foundatio.SampleJob.csproj" />
+    <Project Path="samples/Foundatio.SampleJobClient/Foundatio.SampleJobClient.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
     <File Path=".github/workflows/build-workflow.yml" />
     <File Path=".github/workflows/build.yml" />
     <File Path="build/common.props" />
+    <File Path="docker-compose.yml" />
     <File Path="NuGet.config" />
     <File Path="README.md" />
     <File Path="src/Directory.Build.props" />
@@ -16,15 +21,22 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
+    <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
+    <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
+    <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">
     <Project Path="benchmarks/Foundatio.Benchmarks.csproj" />
+    <Project Path="benchmarks/Foundatio.Redis.Benchmarks/Foundatio.Redis.Benchmarks.csproj" />
   </Folder>
+  <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />
   <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
+  <Project Path="src/Foundatio.Kafka/Foundatio.Kafka.csproj" />
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
+  <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit.v3/Foundatio.Xunit.v3.csproj" />
   <Project Path="src/Foundatio.Xunit/Foundatio.Xunit.csproj" />
