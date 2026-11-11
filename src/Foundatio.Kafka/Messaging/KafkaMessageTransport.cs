@@ -73,6 +73,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             MaxDelay = maxDelay,
             MaxPublishDelay = maxDelay,
             MaxRetryDelay = maxDelay,
+            MinRetryDelay = options.DelayedDelivery ? KafkaDelayTiers.Smallest : TimeSpan.Zero,
             MaxSendBatchSize = 1000,
             MaxReceiveBatchSize = 100,
             MaxMessageSize = options.MaxMessageBytes - KafkaMessageTransportCodec.EncodingReserve,
@@ -92,7 +93,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// <inheritdoc />
     /// <remarks>
     /// Send, publish and retry delays are unlimited when <see cref="KafkaMessageTransportOptions.DelayedDelivery"/>
-    /// is on, and unsupported when it is off. Leases never expire. Groups are ordered: a group maps to one partition,
+    /// is on, and unsupported when it is off. Retries shorter than the shortest delay tier (one second) are held by
+    /// Foundatio in-process. Leases never expire; renewing reports a delivery whose partition was revoked. Groups are ordered: a group maps to one partition,
     /// a receive returns a group's messages in order, and none is handed out while an earlier one is unsettled.
     /// There is no deduplication.
     /// </remarks>

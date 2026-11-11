@@ -695,7 +695,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1, this);
         if (_failure is { } failure)
-            throw new MessageBusException($"The Kafka receiver for {Source} stopped: {failure.Message}", failure);
+            throw new MessageReceiverFaultedException($"The Kafka receiver for {Source} stopped: {failure.Message}", failure);
     }
 
     private void Signal()
