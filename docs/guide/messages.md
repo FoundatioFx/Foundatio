@@ -73,6 +73,21 @@ m.AddConsumer<ImportHandler>(new HandlerOptions
 
 Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
 
+## Dead letters
+
+Every queue and durable subscription has a dead-letter queue. Inspect and replay it with `IMessageAdmin`, on any transport:
+
+```csharp
+var source = MessageSource.Subscription("orders.order-placed", "billing");   // or MessageSource.Queue("orders.send-receipt")
+
+IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);   // Reason, MessageType, Message (deserialized), Headers
+int replayed = await admin.ReplayDeadLettersAsync(source);   // back to that queue or subscription only
+await admin.PurgeDeadLettersAsync(source);
+await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retired-service"));   // stop collecting copies for a removed service
+```
+
+Replayed messages keep their id, body and headers and are handled as new deliveries; the dead-letter reason, delay and expiry are dropped.
+
 ## Options when sending
 
 ```csharp
@@ -86,7 +101,9 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 });
 ```
 
-Delays longer than the transport supports natively (for example 15 minutes on SQS) are handled automatically for sends. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
+Delays longer than the transport supports natively (for example 15 minutes on SQS) are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
+
+With `GroupKey` on a transport that orders groups, messages of one group are handled one at a time, in order. When one is retried, the group's later messages wait for it, and each of them counts that as a delivery attempt.
 
 ## Message names and routing
 

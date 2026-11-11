@@ -10,7 +10,7 @@ namespace Foundatio.Messaging.Transport;
 
 /// <summary>
 /// A process-local transport for development and tests. It supports every capability: unlimited delays, ordered
-/// groups and deduplication. Share one instance between hosts to simulate several services.
+/// groups, deduplication and any message size. Share one instance between hosts to simulate several services.
 /// </summary>
 public sealed class InMemoryMessageTransport : IMessageTransport
 {
@@ -56,6 +56,15 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 continue;
             }
 
+            if (destination.Kind == MessageDestinationKind.Subscription)
+            {
+                var source = MessageSource.Subscription(destination.Name, destination.SubscriptionName!);
+                var subscription = GetOrAddSource(source);
+                _topics.GetOrAdd(source.Topic!, _ => new()).TryAdd(subscription.Key, subscription);
+                subscription.Add(message, now, NextSequence());
+                continue;
+            }
+
             if (!_topics.TryGetValue(destination.Name, out var subscriptions))
                 continue;
 
@@ -87,6 +96,24 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         }
 
         return Task.FromResult<IMessageReceiver>(new Receiver(this, source, state, options));
+    }
+
+    public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ThrowIfDisposed();
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            throw new ArgumentException("Instance subscriptions are removed by disposing their receiver.", nameof(source));
+
+        _sources.TryRemove(source.ToString(), out _);
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            return Task.CompletedTask;
+
+        _sources.TryRemove(MessageSource.DeadLetter(source).ToString(), out _);
+        if (source.Kind == MessageSourceKind.Subscription && _topics.TryGetValue(source.Topic!, out var subscriptions))
+            subscriptions.TryRemove(source.ToString(), out _);
+
+        return Task.CompletedTask;
     }
 
     /// <summary>Waits until no queue or subscription holds a pending or in-flight message. Dead letters are ignored.</summary>
@@ -338,12 +365,18 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                             nextChange = changesAt;
                     }
 
+                    // A group's messages are handed out in order: later ones wait while an earlier one is leased or not yet due.
                     string? group = entry.Message.GroupKey;
-                    if (group is not null && !blockedGroups.Add(group))
+                    if (group is not null && blockedGroups.Contains(group))
                         continue;
 
                     if (!available || result.Count >= maxMessages)
+                    {
+                        if (group is not null)
+                            blockedGroups.Add(group);
+
                         continue;
+                    }
 
                     entry.DeliveryCount++;
                     entry.Receipt = Guid.NewGuid();

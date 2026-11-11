@@ -25,12 +25,26 @@ public interface IMessageTransport : IAsyncDisposable
     TransportCapabilities Capabilities { get; }
 
     /// <summary>
-    /// Sends messages to a queue, or publishes them to a topic. Sending to a queue must not lose messages because
-    /// the queue does not exist yet; publishing to a topic with no subscriptions may discard them.
+    /// Sends messages to a queue, publishes them to a topic, or sends them to one durable subscription of a topic.
+    /// Sending to a queue or subscription must not lose messages because it does not exist yet; publishing to a
+    /// topic with no subscriptions may discard them. A message sent to a subscription reaches only that
+    /// subscription, not the topic's others.
     /// </summary>
-    /// <remarks>Throw if any message could not be sent. Messages before the failure may already have been sent.</remarks>
+    /// <remarks>
+    /// Throw if any message could not be sent; messages before the failure may already have been sent. Throw
+    /// <see cref="MessageTooLargeException"/> for a message over <see cref="TransportCapabilities.MaxMessageSize"/>.
+    /// </remarks>
     Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default);
 
     /// <summary>Opens a receiver for a queue, subscription or dead-letter queue, creating the source if needed.</summary>
     Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a queue or durable subscription with its pending messages and dead letters, or, for a
+    /// <see cref="MessageSourceKind.DeadLetter"/> source, only the dead letters. Succeeds when the source does not
+    /// exist. Close its receivers first. Receiving from the source again creates it anew; a deleted subscription
+    /// does not get copies of messages published before then.
+    /// </summary>
+    /// <exception cref="ArgumentException">The source is an instance subscription; dispose its receiver instead.</exception>
+    Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default);
 }

@@ -40,6 +40,8 @@ app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
 
 The worker and scheduler start with the host in any process that registers jobs. A process that only enqueues just needs `UseInMemory()` (or a provider) and the argument records.
 
+A job with arguments is named after its arguments record, which is why `[Job(Name = ...)]` goes on `GenerateReport` rather than on the job class; putting it on the job class is rejected at startup.
+
 ## Running a job
 
 - **Return** to succeed. **Throw** to fail; the job is retried by its `RetryPolicy` (5 attempts with backoff by default).

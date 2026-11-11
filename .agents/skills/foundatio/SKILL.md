@@ -286,7 +286,9 @@ builder.Services.AddFoundatioJobs(j => j
 - At-least-once: handlers and jobs must be idempotent. Give contracts stable names: `[Message("orders.placed")]`, `[Job(Name = "reports.generate")]` (defaults are full type names).
 - Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.
 - `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
-- Writing a provider: implement `IMessageTransport`/`IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (one override each).
+- Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
+- Gotchas: `[Job(Name)]` for `IJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
+- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MaxMessageSize` after encoding overhead), and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (one override each).
 
 ## Testing
 

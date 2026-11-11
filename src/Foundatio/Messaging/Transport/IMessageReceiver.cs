@@ -32,7 +32,7 @@ public interface IMessageReceiver : IAsyncDisposable
 
     /// <summary>
     /// Releases the message so it is delivered again after <paramref name="delay"/> with an incremented
-    /// <see cref="IncomingMessage.DeliveryCount"/>. Foundatio never passes a delay above <see cref="TransportCapabilities.MaxDelay"/>.
+    /// <see cref="IncomingMessage.DeliveryCount"/>. Foundatio never passes a delay above <see cref="TransportCapabilities.MaxRetryDelay"/>.
     /// </summary>
     Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default);
 

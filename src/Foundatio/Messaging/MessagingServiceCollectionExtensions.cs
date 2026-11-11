@@ -36,6 +36,7 @@ public static class MessagingServiceCollectionExtensions
             services.AddSingleton(registrations);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton<IMessageClient>(sp => new MessageClient(sp.GetRequiredService<MessagingRuntime>()));
+            services.TryAddSingleton<IMessageAdmin>(sp => new MessageAdmin(sp.GetRequiredService<MessagingRuntime>()));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MessagingHostedService>());
         }
 

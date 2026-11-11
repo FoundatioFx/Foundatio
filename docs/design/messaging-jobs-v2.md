@@ -16,7 +16,7 @@ Decisions: side-by-side with the legacy APIs for v14 (delete them in v15); store
   Foundatio core     routing · serialization · retries · dead letters · concurrency · leases
                      delays · shutdown drain · tracing · metrics · CRON · startup gate
   ───────────────────────────────────────────────────────────────────────────────────────
-  Provider SPI       IMessageTransport + IMessageReceiver (7 members)    IJobStore (10 members)
+  Provider SPI       IMessageTransport + IMessageReceiver (8 methods)    IJobStore (10 members)
 ```
 
 Messaging and jobs are independent: neither depends on the other's contracts. They interact only through ambient correlation (a job enqueued from a handler inherits the message's correlation id, and vice versa).
@@ -26,12 +26,13 @@ Messaging and jobs are independent: neither depends on the other's contracts. Th
 | Member | Purpose |
 |---|---|
 | `Capabilities` | What the broker does natively. Core adapts. |
-| `SendAsync(destination, messages)` | To a queue, or to a topic's subscriptions. Batch-first. |
+| `SendAsync(destination, messages)` | To a queue, to a topic's subscriptions, or to one durable subscription. Batch-first. |
 | `CreateReceiverAsync(source, options)` | Queue, durable subscription, instance subscription, or a dead-letter queue. |
+| `DeleteAsync(source)` | Remove a queue or subscription (with its dead letters), or only a source's dead letters. |
 | `ReceiveAsync(max, maxWait)` | Leased deliveries. |
 | `CompleteAsync` / `AbandonAsync(delay)` / `DeadLetterAsync(reason)` / `RenewAsync` | Settlement. |
 
-Everything else is core: there are no optional capability interfaces to discover, no push/pull split, no provisioning API, no stats API and no outcome model in the SPI. `TransportCapabilities` (max delay, batch/message/lease limits, lease expiration, ordered groups, deduplication) is data, not interfaces, and the conformance suite reads it to decide which tests apply.
+Everything else is core: there are no optional capability interfaces to discover, no push/pull split, no provisioning API, no stats API and no outcome model in the SPI. `TransportCapabilities` (send, publish and retry delay limits, batch/message/lease limits, lease expiration, ordered groups, deduplication) is data, not interfaces, and the conformance suite reads it to decide which tests apply.
 
 How brokers map:
 
@@ -46,7 +47,7 @@ How brokers map:
 
 A Kafka transport would set `LeaseExpiration = false`, commit the lowest contiguous completed offset, and republish on abandon. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (30 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
+Proof: `MessageTransportTestsBase` (40 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
 
 ### Redis proof
 
@@ -91,14 +92,16 @@ An SQS/SNS transport was written in Foundatio.AWS (branch `feature/messaging-tra
 
 ### SPI refinements suggested by the provider work
 
-Applied: name validation in the SPI types; the thread-safety, clock, dispose, dead-letter and `DeliveryCount` notes; `GroupKey` round-trip and delayed-publish tests; one-second quiet-period windows in the suite.
+Applied in the first round: name validation in the SPI types; the thread-safety, clock, dispose, dead-letter and `DeliveryCount` notes; `GroupKey` round-trip and delayed-publish tests; one-second quiet-period windows in the suite.
 
-Open, each small:
-- **Separate delay limits.** `MaxDelay` covers sends (SQS 15 min), publishes (SNS 0) and abandons (SQS 12 h). Splitting it into send, publish and abandon limits would let core emulate delayed publishes instead of each transport.
-- **Size checks.** `MaxMessageSize` cannot express encoding overhead (base64 on SQS). Let transports validate the encoded size and throw, keeping the core check as a fast path.
-- **FIFO batches.** SQS FIFO returns several in-order messages of one group in a batch. Core would then process a group's messages sequentially within a batch, rather than the suite requiring one at a time.
-- **Maintenance hook.** A periodic call for transports to sweep abandoned instance subscriptions, so cleanup does not depend on a surviving instance.
-- **Source deletion** and **cross-process worker wake-up** (see below).
+Applied in the second round:
+- **Separate delay limits.** `MaxDelay` (sends), `MaxPublishDelay` and `MaxRetryDelay`, the last two defaulting to `MaxDelay`. SQS can now declare 15 minutes, unlimited (emulated) and 12 hours instead of one compromise value.
+- **Size.** `MaxMessageSize` counts body plus UTF-8 header bytes, must hold after the transport's own encoding (binary bodies included), and transports throw `MessageTooLargeException` above it. The suite sends a message exactly at the limit.
+- **FIFO batches.** A receive may return several in-order messages of one group. Core handles each group's messages in sequence and abandons the rest of the group if one is retried, so order survives retries. The suite checks that later messages are held while earlier ones are unsettled, and that an abandoned message comes back first.
+- **One subscription as a destination.** `MessageDestination.Subscription(topic, name)`, used by dead-letter replay so a subscription's failures are not re-published to every subscriber.
+- **Deletion.** `IMessageTransport.DeleteAsync(source)` for removed services' subscriptions, dead-letter purges and test cleanup.
+
+Not added: a maintenance hook. A transport already runs a timer for instance-subscription heartbeats, and sweeping stale ones from that timer (or on publish) needs no extra contract.
 
 ## Messaging semantics
 
@@ -160,10 +163,8 @@ Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k
 ## Not done yet
 
 - Health check integration (processor and worker status) in Foundatio.Extensions.Hosting.
-- Dead-letter inspection and replay helpers. Dead letters are an ordinary receivable source, so this needs no SPI change.
 - FIFO for SQS, and providers beyond Redis and SQS/SNS (Service Bus with sessions, RabbitMQ, Kafka pub/sub), plus conformance runs against real brokers in CI. The AWS transport has only run against an emulator.
-- An optional way to delete a source. A durable subscription left by a removed service keeps receiving copies, and test runs leave keys in shared brokers.
 - Waking idle workers in other processes when a job is enqueued. Today it is local wake-up plus a 1s poll. Redis stream trimming policy for unread durable subscriptions.
 - Mediator mapping onto `AddConsumer`/`AddSubscriber` and `IJobClient`.
-- Per-group serialization in core for transports without `OrderedGroups`.
+- Ordering for transports without `OrderedGroups` is not emulated in core: it would only hold within one process, which is worse than an honest "unordered".
 - Marking legacy types `[Obsolete]` once providers ship transports.

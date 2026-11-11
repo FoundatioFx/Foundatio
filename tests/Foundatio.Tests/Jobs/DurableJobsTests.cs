@@ -285,6 +285,8 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("* * * * *", new TickJob(_probe))));
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob<TickJob>("* * * * *").AddCronJob<TickJob>("0 * * * *")));
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<ResizeImageJob>().AddJob<OtherResizeImageJob>()));
+        var ignoredName = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<NamedArgumentsJob>()));
+        Assert.Contains("Put the attribute on Slow", ignoredName.Message);
 
         var noStore = Assert.Throws<InvalidOperationException>(() => services.BuildServiceProvider().GetRequiredService<IJobClient>());
         Assert.Contains("UseInMemory()", noStore.Message);
@@ -458,6 +460,12 @@ public class DurableJobsTests : TestWithLoggingBase
             probe.Started.TrySetResult();
             await Task.Delay(Timeout.Infinite, cancellationToken);
         }
+    }
+
+    [Job(Name = "ignored")]
+    public sealed class NamedArgumentsJob : IJob<Slow>
+    {
+        public Task RunAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     public sealed class SlowJob(JobProbe probe) : IJob<Slow>

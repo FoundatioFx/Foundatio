@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
@@ -72,14 +73,21 @@ internal sealed class MessageClient : IMessageClient
             deliverAt = null;
 
         DateTimeOffset? nativeDeliverAt = deliverAt;
-        if (deliverAt is { } requested && capabilities.MaxDelay is { } maxDelay && requested - now > maxDelay)
+        var maxDelay = kind == MessageDestinationKind.Topic ? capabilities.MaxPublishDelay : capabilities.MaxDelay;
+        if (deliverAt is { } requested && maxDelay is { } limit && requested - now > limit)
         {
-            if (maxDelay == TimeSpan.Zero)
-                throw new MessageBusException("This transport does not support delayed delivery.");
             if (kind == MessageDestinationKind.Topic)
-                throw new MessageBusException($"This transport supports publish delays up to {maxDelay}. Send a command instead, or schedule a job.");
+            {
+                throw new MessageBusException(limit == TimeSpan.Zero
+                    ? "This transport does not support delayed publishes. Send a command instead, or schedule a job."
+                    : $"This transport supports publish delays up to {limit}. Send a command instead, or schedule a job.");
+            }
 
-            nativeDeliverAt = now.Add(maxDelay);
+            if (limit == TimeSpan.Zero)
+                throw new MessageBusException("This transport does not support delayed delivery.");
+
+            // Longer delays hop: the message is delivered at the limit and re-sent until it is due.
+            nativeDeliverAt = now.Add(limit);
         }
 
         string? correlationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId;
@@ -117,8 +125,12 @@ internal sealed class MessageClient : IMessageClient
                     headers[KnownHeaders.TraceState] = traceState;
 
                 byte[] body = _runtime.Serializer.SerializeToBytes<object>(message);
-                if (capabilities.MaxMessageSize is { } maxSize && body.Length + headers.Sum(h => h.Key.Length + h.Value.Length) > maxSize)
-                    throw new MessageBusException($"Message {route.Name} is {body.Length} bytes, which exceeds the transport limit of {maxSize} bytes.");
+                if (capabilities.MaxMessageSize is { } maxSize)
+                {
+                    long size = body.Length + headers.Sum(h => Encoding.UTF8.GetByteCount(h.Key) + Encoding.UTF8.GetByteCount(h.Value));
+                    if (size > maxSize)
+                        throw new MessageTooLargeException($"Message {route.Name} is {size} bytes with headers, which exceeds the transport limit of {maxSize} bytes.") { Size = size, Limit = maxSize };
+                }
 
                 outgoing.Add(new OutgoingMessage
                 {

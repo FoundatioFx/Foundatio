@@ -236,7 +236,7 @@ public class MessagingTests : TestWithLoggingBase
     [Fact]
     public async Task DelaysBeyondTheTransportLimit_AreEmulatedForSends_AndRejectedForPublishes()
     {
-        var limited = new LimitedDelayTransport(_transport, TimeSpan.FromMilliseconds(500));
+        var limited = new LimitedTransport(_transport, _transport.Capabilities with { MaxDelay = TimeSpan.FromMilliseconds(500) });
         var handledAfter = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
         var stopwatch = Stopwatch.StartNew();
         await using var host = await MessagingTestHost.StartAsync(limited, Log, "tests", m => m
@@ -315,10 +315,116 @@ public class MessagingTests : TestWithLoggingBase
     [Fact]
     public async Task MessagesOverTheTransportSizeLimit_AreRejectedBeforeSending()
     {
-        var limited = new LimitedDelayTransport(_transport, null, maxMessageSize: 100);
+        var limited = new LimitedTransport(_transport, _transport.Capabilities with { MaxMessageSize = 100 });
         await using var host = await MessagingTestHost.StartAsync(limited, Log, "tests", _ => { });
 
-        await Assert.ThrowsAsync<MessageBusException>(() => host.Client.SendAsync(new Note(new string('x', 200)), cancellationToken: TestCancellationToken));
+        var ex = await Assert.ThrowsAsync<MessageTooLargeException>(() => host.Client.SendAsync(new Note(new string('x', 200)), cancellationToken: TestCancellationToken));
+        Assert.Equal(100, ex.Limit);
+    }
+
+    [Fact]
+    public async Task PublishDelays_UseTheTransportsPublishLimit()
+    {
+        var unlimitedPublishes = new LimitedTransport(_transport, _transport.Capabilities with { MaxDelay = TimeSpan.FromMilliseconds(200), MaxPublishDelay = null });
+        var handledAfter = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var stopwatch = Stopwatch.StartNew();
+        await using (var host = await MessagingTestHost.StartAsync(unlimitedPublishes, Log, "tests", m => m
+            .AddSubscriber<OrderShipped>((_, _, _) => { handledAfter.TrySetResult(stopwatch.Elapsed); return Task.CompletedTask; })))
+        {
+            await host.Client.PublishAsync(new OrderShipped(1), new PublishOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+            Assert.InRange(await handledAfter.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken), TimeSpan.FromSeconds(0.9), TimeSpan.FromSeconds(5));
+        }
+
+        var noPublishDelays = new LimitedTransport(_transport, _transport.Capabilities with { MaxPublishDelay = TimeSpan.Zero });
+        await using var other = await MessagingTestHost.StartAsync(noPublishDelays, Log, "tests", _ => { });
+        var rejected = await Assert.ThrowsAsync<MessageBusException>(() => other.Client.PublishAsync(new OrderShipped(2), new PublishOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken));
+        Assert.Contains("does not support delayed publishes", rejected.Message);
+        await other.Client.SendAsync(new PlaceOrder(2), new SendOptions { Delay = TimeSpan.FromSeconds(1) }, TestCancellationToken);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(200)]
+    public async Task RetryDelays_RespectTheTransportsRetryLimit(int maxRetryDelayMs)
+    {
+        var limited = new LimitedTransport(_transport, _transport.Capabilities with { MaxRetryDelay = TimeSpan.FromMilliseconds(maxRetryDelayMs) });
+        var attempts = new ConcurrentQueue<TimeSpan>();
+        var stopwatch = Stopwatch.StartNew();
+        var retryDelay = maxRetryDelayMs == 0 ? TimeSpan.FromMilliseconds(400) : TimeSpan.FromSeconds(30);
+        await using var host = await MessagingTestHost.StartAsync(limited, Log, "tests", m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            attempts.Enqueue(stopwatch.Elapsed);
+            if (context.Attempt == 1)
+                context.Retry(retryDelay);
+
+            return Task.CompletedTask;
+        }));
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => attempts.Count == 2);
+
+        var gap = attempts.Last() - attempts.First();
+        if (maxRetryDelayMs == 0)
+            Assert.True(gap >= TimeSpan.FromMilliseconds(350), $"Without retry delays the backoff is held in-process; retried after {gap}.");
+        else
+            Assert.InRange(gap, TimeSpan.FromMilliseconds(150), TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OrderedGroups_AreHandledInOrder_AndLaterMessagesWaitForARetry()
+    {
+        var calls = new ConcurrentQueue<(int Value, int Attempt)>();
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((message, context, _) =>
+        {
+            calls.Enqueue((message.OrderId, context.Attempt));
+            if (message.OrderId == 3 && context.Attempt == 1)
+                throw new InvalidOperationException("transient");
+
+            return Task.CompletedTask;
+        }, new HandlerOptions { MaxConcurrency = 8, RetryPolicy = new RetryPolicy { Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(100)) } }));
+
+        await host.Client.SendBatchAsync(Enumerable.Range(1, 5).Select(i => new PlaceOrder(i)), new SendOptions { GroupKey = "customer-1" }, TestCancellationToken);
+
+        await WaitForAsync(() => calls.Count == 6);
+        Assert.Equal([1, 2, 3, 3, 4, 5], calls.Select(c => c.Value));
+        Assert.Equal(2, calls.Where(c => c.Value == 3).Last().Attempt);
+    }
+
+    [Fact]
+    public async Task Admin_PeeksReplaysPurgesAndDeletesDeadLetters()
+    {
+        int calls = 0;
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((message, _, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            if (message.OrderId < 10)
+                throw new InvalidOperationException($"order {message.OrderId} is invalid");
+
+            return Task.CompletedTask;
+        }, new HandlerOptions { RetryPolicy = RetryPolicy.None }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+
+        await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { CorrelationId = "c-1" }, TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(2), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 2);
+
+        var peeked = await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken);
+        Assert.Equal(2, peeked.Count);
+        var first = Assert.Single(peeked, d => d.CorrelationId == "c-1");
+        Assert.Equal(new PlaceOrder(1), first.Message);
+        Assert.Contains("order 1 is invalid", first.Reason);
+        Assert.Equal(QueueName<PlaceOrder>(), first.MessageType);
+        Assert.Equal(2, (await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken)).Count);
+
+        Assert.Equal(1, await admin.ReplayDeadLettersAsync(source, max: 1, cancellationToken: TestCancellationToken));
+        await WaitForAsync(() => calls == 3 && _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 2);
+
+        await admin.PurgeDeadLettersAsync(source, TestCancellationToken);
+        Assert.Empty(await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken));
+
+        await admin.DeleteAsync(MessageSource.Subscription("unused.topic", "removed-service"), TestCancellationToken);
+        await Assert.ThrowsAsync<ArgumentException>(() => admin.PeekDeadLettersAsync(MessageSource.InstanceSubscription("unused.topic"), cancellationToken: TestCancellationToken));
     }
 
     public override async ValueTask DisposeAsync()
@@ -402,14 +508,15 @@ public class MessagingTests : TestWithLoggingBase
         }
     }
 
-    /// <summary>Wraps a transport and advertises a smaller delay or size limit, to exercise Foundatio's emulation.</summary>
-    private sealed class LimitedDelayTransport(IMessageTransport inner, TimeSpan? maxDelay, long? maxMessageSize = null) : IMessageTransport
+    /// <summary>Wraps a transport and advertises smaller limits, to exercise Foundatio's emulation.</summary>
+    private sealed class LimitedTransport(IMessageTransport inner, TransportCapabilities capabilities) : IMessageTransport
     {
-        public TransportCapabilities Capabilities { get; } = inner.Capabilities with { MaxDelay = maxDelay, MaxMessageSize = maxMessageSize };
+        public TransportCapabilities Capabilities { get; } = capabilities;
 
         public Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
         {
-            if (maxDelay is { } max && messages.Any(m => m.DeliverAt > DateTimeOffset.UtcNow.Add(max).AddMilliseconds(100)))
+            var limit = destination.Kind == MessageDestinationKind.Topic ? Capabilities.MaxPublishDelay : Capabilities.MaxDelay;
+            if (limit is { } max && messages.Any(m => m.DeliverAt > DateTimeOffset.UtcNow.Add(max).AddMilliseconds(100)))
                 throw new InvalidOperationException("Delay exceeds the advertised maximum.");
 
             return inner.SendAsync(destination, messages, cancellationToken);
@@ -417,6 +524,8 @@ public class MessagingTests : TestWithLoggingBase
 
         public Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
             => inner.CreateReceiverAsync(source, options, cancellationToken);
+
+        public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.DeleteAsync(source, cancellationToken);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

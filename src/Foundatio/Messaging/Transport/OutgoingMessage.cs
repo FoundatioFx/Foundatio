@@ -13,7 +13,8 @@ public sealed record OutgoingMessage
     public IReadOnlyDictionary<string, string> Headers { get; init; } = EmptyHeaders.Instance;
 
     /// <summary>
-    /// Do not deliver before this time. Never further away than <see cref="TransportCapabilities.MaxDelay"/>. It comes
+    /// Do not deliver before this time. Never further away than <see cref="TransportCapabilities.MaxDelay"/> (or
+    /// <see cref="TransportCapabilities.MaxPublishDelay"/> for a topic). It comes
     /// from the sender's clock; transports may convert it to a delay relative to their own clock when sending.
     /// </summary>
     public DateTimeOffset? DeliverAt { get; init; }

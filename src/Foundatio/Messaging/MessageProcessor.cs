@@ -152,30 +152,79 @@ internal sealed class MessageProcessor : IAsyncDisposable
             if (messages.Count < slots)
                 _slots.Release(slots - messages.Count);
 
-            foreach (var message in messages)
+            foreach (var sequence in SplitIntoSequences(messages))
             {
-                Interlocked.Increment(ref _inFlight);
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await ProcessAsync(receiver, message).AnyContext();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Unexpected error processing message {MessageId} from {Source}", message.MessageId, Source);
-                    }
-                    finally
-                    {
-                        Interlocked.Decrement(ref _inFlight);
-                        _slots.Release();
-                    }
-                }, CancellationToken.None);
+                Interlocked.Add(ref _inFlight, sequence.Count);
+                _ = Task.Run(() => ProcessSequenceAsync(receiver, sequence), CancellationToken.None);
             }
         }
     }
 
-    private async Task ProcessAsync(IMessageReceiver receiver, IncomingMessage message)
+    /// <summary>
+    /// Splits a batch into sequences handled one message after another. Without ordered groups every message is its
+    /// own sequence; with them, messages of the same group stay together in the order they were received.
+    /// </summary>
+    private List<List<IncomingMessage>> SplitIntoSequences(IReadOnlyList<IncomingMessage> messages)
+    {
+        var sequences = new List<List<IncomingMessage>>(messages.Count);
+        Dictionary<string, List<IncomingMessage>>? groups = null;
+        bool ordered = _runtime.Transport.Capabilities.OrderedGroups;
+
+        foreach (var message in messages)
+        {
+            if (!ordered || message.GroupKey is not { } group)
+            {
+                sequences.Add([message]);
+                continue;
+            }
+
+            groups ??= new Dictionary<string, List<IncomingMessage>>(StringComparer.Ordinal);
+            if (groups.TryGetValue(group, out var sequence))
+            {
+                sequence.Add(message);
+                continue;
+            }
+
+            sequence = [message];
+            groups[group] = sequence;
+            sequences.Add(sequence);
+        }
+
+        return sequences;
+    }
+
+    private async Task ProcessSequenceAsync(IMessageReceiver receiver, List<IncomingMessage> sequence)
+    {
+        bool release = false;
+        foreach (var message in sequence)
+        {
+            try
+            {
+                // A later message of a group must not overtake an earlier one that will be delivered again.
+                if (release || _abortHandlers.IsCancellationRequested)
+                {
+                    await SettleAsync(ct => receiver.AbandonAsync(message, TimeSpan.Zero, ct), message, "abandon").AnyContext();
+                    release = true;
+                    continue;
+                }
+
+                release = !await ProcessAsync(receiver, message).AnyContext() && sequence.Count > 1;
+            }
+            catch (Exception ex)
+            {
+                release = true;
+                _logger.LogError(ex, "Unexpected error processing message {MessageId} from {Source}", message.MessageId, Source);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
+                _slots.Release();
+            }
+        }
+    }
+
+    /// <summary>Handles and settles one message. Returns true when it left the source (completed or dead-lettered).</summary>
+    private async Task<bool> ProcessAsync(IMessageReceiver receiver, IncomingMessage message)
     {
         var headers = message.Headers;
         string messageType = headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
@@ -186,21 +235,18 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogInformation("Discarding expired message {MessageId} from {Source}", message.MessageId, Source);
             MessagingInstruments.Discarded.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
-            await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
-            return;
+            return await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
         }
 
         if (TryGetTime(headers, KnownHeaders.DeliverAt) is { } deliverAt && deliverAt > now.Add(EarlyDeliveryTolerance) && Source.Kind == MessageSourceKind.Queue)
         {
-            await RescheduleAsync(receiver, message, deliverAt).AnyContext();
-            return;
+            return await RescheduleAsync(receiver, message, deliverAt).AnyContext();
         }
 
         var handlers = FindHandlers(messageType, out var clrType);
         if (handlers.Count == 0)
         {
-            await HandleUnmatchedAsync(receiver, message, messageType).AnyContext();
-            return;
+            return await HandleUnmatchedAsync(receiver, message, messageType).AnyContext();
         }
 
         object payload;
@@ -211,8 +257,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Could not deserialize message {MessageId} as {MessageType}", message.MessageId, messageType);
-            await DeadLetterOrDropAsync(receiver, message, $"Deserialization failed: {ex.Message}").AnyContext();
-            return;
+            return await DeadLetterOrDropAsync(receiver, message, $"Deserialization failed: {ex.Message}").AnyContext();
         }
 
         var context = new MessageContext
@@ -262,6 +307,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
         MessagingInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
         if (error is not null && outcome != "cancelled")
             activity?.SetErrorStatus(error);
+
+        return outcome is "success" or "dead-lettered";
     }
 
     private async Task<string> SettleAfterHandlingAsync(IMessageReceiver receiver, IncomingMessage message, MessageContext context, RetryPolicy policy, Exception? error, LeaseRenewal lease)
@@ -279,16 +326,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
 
         if (error is null && context.DeadLetterReason is { } reason)
-        {
-            await DeadLetterOrDropAsync(receiver, message, reason).AnyContext();
-            return "dead-lettered";
-        }
+            return await DeadLetterOrDropAsync(receiver, message, reason).AnyContext() ? "dead-lettered" : "settle-failed";
 
         if (error is null && !context.RetryRequested)
-        {
-            await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
-            return "success";
-        }
+            return await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext() ? "success" : "settle-failed";
 
         if (policy.CanRetry(error, context.Attempt))
         {
@@ -301,13 +342,12 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         string description = error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}";
         _logger.LogError(error, "Message {MessageId} failed after {Attempt} attempts: {Reason}", message.MessageId, context.Attempt, description);
-        await DeadLetterOrDropAsync(receiver, message, description).AnyContext();
-        return "dead-lettered";
+        return await DeadLetterOrDropAsync(receiver, message, description).AnyContext() ? "dead-lettered" : "settle-failed";
     }
 
     private async Task RetryAsync(IMessageReceiver receiver, IncomingMessage message, TimeSpan delay)
     {
-        var maxDelay = _runtime.Transport.Capabilities.MaxDelay;
+        var maxDelay = _runtime.Transport.Capabilities.MaxRetryDelay;
         if (maxDelay == TimeSpan.Zero && delay > TimeSpan.Zero)
         {
             // No native delay: hold the lease (still renewed) for the backoff, then release immediately.
@@ -329,7 +369,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         await SettleAsync(ct => receiver.AbandonAsync(message, delay, ct), message, "abandon").AnyContext();
     }
 
-    private async Task RescheduleAsync(IMessageReceiver receiver, IncomingMessage message, DateTimeOffset deliverAt)
+    private async Task<bool> RescheduleAsync(IMessageReceiver receiver, IncomingMessage message, DateTimeOffset deliverAt)
     {
         var now = _runtime.TimeProvider.GetUtcNow();
         var maxDelay = _runtime.Transport.Capabilities.MaxDelay;
@@ -350,14 +390,18 @@ internal sealed class MessageProcessor : IAsyncDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Could not reschedule early message {MessageId}; it will be delivered again", message.MessageId);
-            await SettleAsync(ct => receiver.AbandonAsync(message, maxDelay ?? TimeSpan.FromSeconds(30), ct), message, "abandon").AnyContext();
-            return;
+            var retryIn = TimeSpan.FromSeconds(30);
+            if (_runtime.Transport.Capabilities.MaxRetryDelay is { } maxRetry && retryIn > maxRetry)
+                retryIn = maxRetry;
+
+            await SettleAsync(ct => receiver.AbandonAsync(message, retryIn, ct), message, "abandon").AnyContext();
+            return false;
         }
 
-        await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
+        return await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
     }
 
-    private async Task HandleUnmatchedAsync(IMessageReceiver receiver, IncomingMessage message, string messageType)
+    private async Task<bool> HandleUnmatchedAsync(IMessageReceiver receiver, IncomingMessage message, string messageType)
     {
         MessagingInstruments.Unmatched.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
 
@@ -365,8 +409,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         if (Source.Kind is MessageSourceKind.Subscription or MessageSourceKind.InstanceSubscription)
         {
             _logger.LogDebug("Skipping message {MessageId} of type {MessageType}: no handler on {Source}", message.MessageId, messageType, Source);
-            await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
-            return;
+            return await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
         }
 
         // A queue is owned by its consumer, so an unknown type usually means a deployment is still rolling out.
@@ -376,14 +419,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogWarning("No handler for message type {MessageType} on {Source}; retrying (attempt {Attempt} of {MaxAttempts})", messageType, Source, attempt, policy.MaxAttempts);
             await RetryAsync(receiver, message, policy.GetDelay(attempt)).AnyContext();
-            return;
+            return false;
         }
 
         _logger.LogError("No handler for message type {MessageType} on {Source}; dead-lettering message {MessageId}", messageType, Source, message.MessageId);
-        await DeadLetterOrDropAsync(receiver, message, $"No handler for message type \"{messageType}\"").AnyContext();
+        return await DeadLetterOrDropAsync(receiver, message, $"No handler for message type \"{messageType}\"").AnyContext();
     }
 
-    private Task DeadLetterOrDropAsync(IMessageReceiver receiver, IncomingMessage message, string reason)
+    private Task<bool> DeadLetterOrDropAsync(IMessageReceiver receiver, IncomingMessage message, string reason)
     {
         MessagingInstruments.DeadLettered.Add(1, new KeyValuePair<string, object?>("messaging.message.type", message.Headers.GetValueOrDefault(KnownHeaders.MessageType)));
 
@@ -404,12 +447,14 @@ internal sealed class MessageProcessor : IAsyncDisposable
         return _handlersByType.GetOrAdd(type, t => _handlers.Where(h => h.MessageType.IsAssignableFrom(t)).ToList());
     }
 
-    private async Task SettleAsync(Func<CancellationToken, Task> settle, IncomingMessage message, string operation)
+    /// <summary>Settles a message on a token that is never the handler's. Returns false when settlement failed.</summary>
+    private async Task<bool> SettleAsync(Func<CancellationToken, Task> settle, IncomingMessage message, string operation)
     {
         using var timeout = new CancellationTokenSource(SettleTimeout);
         try
         {
             await settle(timeout.Token).AnyContext();
+            return true;
         }
         catch (MessageLeaseLostException)
         {
@@ -419,6 +464,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogError(ex, "Could not {Operation} message {MessageId}; it will be delivered again when its lease expires", operation, message.MessageId);
         }
+
+        return false;
     }
 
     private async Task<bool> WaitForInFlightAsync(TimeSpan timeout, CancellationToken cancellationToken)
