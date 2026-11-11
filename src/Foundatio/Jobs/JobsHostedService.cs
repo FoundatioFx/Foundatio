@@ -41,9 +41,14 @@ internal sealed class JobsHostedService : IHostedService
             try
             {
                 if (await _startupGate.WaitAsync(_stopping.Token).AnyContext())
+                {
                     Start();
+                }
                 else
+                {
+                    _runtime.HostState = ProcessingState.Faulted;
                     _runtime.LoggerFactory.CreateLogger<JobsHostedService>().LogCritical("Startup failed; jobs will not run");
+                }
             }
             catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
             {
@@ -57,6 +62,8 @@ internal sealed class JobsHostedService : IHostedService
     {
         _stopping.Cancel();
         await _gatedStart.AnyContext();
+        if (_runtime.HostState != ProcessingState.Faulted)
+            _runtime.HostState = ProcessingState.Stopped;
 
         if (_scheduler is not null)
             await _scheduler.StopAsync().AnyContext();
@@ -67,15 +74,18 @@ internal sealed class JobsHostedService : IHostedService
 
     private void Start()
     {
+        _runtime.HostState = ProcessingState.Running;
         if (_runtime.Jobs.Count > 0)
         {
             _worker = new JobWorker(_runtime);
+            _runtime.Worker = _worker;
             _worker.Start();
         }
 
-        if (_runtime.Registrations.Schedules.Count > 0)
+        if (_runtime.Registrations.Schedules.Count > 0 && _runtime.RunSchedules)
         {
             _scheduler = new JobScheduler(_runtime, _client);
+            _runtime.Scheduler = _scheduler;
             _scheduler.Start();
         }
     }

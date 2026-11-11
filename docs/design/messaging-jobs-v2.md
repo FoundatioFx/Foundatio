@@ -125,6 +125,11 @@ Open, each small:
 - **Store time** is used for leases, availability and retention.
 - **Startup gate**: workers, schedulers and message handlers wait for Foundatio.Extensions.Hosting startup actions, and do not start if they fail.
 
+## Testing and health
+
+- **Whole-app tests**: `services.AddFoundatioTestHarness()` swaps in the in-memory transport and job store and records through internal observers in the client, the processor and the worker, so outcomes are what core decided (completed, retried, dead-lettered, skipped), not transport calls. Waits are signalled by recordings rather than polled by tests. CRON fires only through `TriggerCronJobAsync`, because the misfire catch-up would otherwise run schedules at startup depending on the time of day.
+- **Health**: each processor, the worker and the scheduler keep their state, when the current run of errors began and the last error. `MessagingStatus` and `JobsStatus` expose it, and Foundatio.Extensions.Hosting turns it into health checks: retried errors are Degraded; a stopped loop, failed startup, or errors lasting past `unhealthyAfter` (5 minutes) are Unhealthy.
+
 ## Compatibility
 
 - No existing public type changed. `IQueue<T>`, `IMessageBus`, `JobBase`, `JobRunner` and hosted jobs are untouched, so v13 providers keep loading.
@@ -147,19 +152,18 @@ Open, each small:
 | Delayed sends lost without the worker | No dispatcher; delays are native or emulated (tested) |
 | Unrelated events on a shared topic retried 50 times | Skipped (tested) |
 | Polymorphic publish never arrives | Routed by runtime type (tested) |
-| One receive error marks the app unhealthy | Receive errors back off and retry inside the processor (no health check yet) |
+| One receive error marks the app unhealthy | Receive and claim errors back off inside the processor and report Degraded; Unhealthy only when a loop stops or errors outlast a threshold (tested) |
 | Cancel racing success records Cancelled; shutdown during settle records Interrupted; completion needs an unexpired lease; shutdown uses an attempt | Result authoritative; release refunds the attempt; token-only fencing (all tested) |
 | One bad schedule stops all CRON; 1-minute catch-up; editing a schedule crashes startup | Per-schedule isolation; configurable misfire threshold (1h default); schedules are code (tested) |
 | 7-day idempotency reservation for every job caps throughput | Only caller-supplied ids are deduplicated |
 | Jobs start before startup actions | `IStartupGate` (tested) |
 | Handlers registered after `AddFoundatioWorker` never run | Roles resolved at host start; registrations accumulate (tested) |
-| Hand-written 13-member fake to unit test a handler | `TestMessageContext`, `TestJobContext` |
+| Hand-written 13-member fake to unit test a handler | `TestMessageContext`, `TestJobContext`; `AddFoundatioTestHarness()` for whole-app tests |
 
 Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k, Transport SPI and in-memory 0.7k, Jobs 1.8k), plus 1.1k lines of conformance suites. PR #533's core Messaging and Jobs folders alone add about 8.2k lines.
 
 ## Not done yet
 
-- Health check integration (processor and worker status) in Foundatio.Extensions.Hosting.
 - Dead-letter inspection and replay helpers. Dead letters are an ordinary receivable source, so this needs no SPI change.
 - FIFO for SQS, and providers beyond Redis and SQS/SNS (Service Bus with sessions, RabbitMQ, Kafka pub/sub), plus conformance runs against real brokers in CI. The AWS transport has only run against an emulator.
 - An optional way to delete a source. A durable subscription left by a removed service keeps receiving copies, and test runs leave keys in shared brokers.

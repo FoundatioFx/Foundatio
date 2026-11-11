@@ -136,6 +136,12 @@ internal sealed class MessageClient : IMessageClient
                 await _runtime.Transport.SendAsync(destination, outgoing.GetRange(i, Math.Min(batchSize, outgoing.Count - i)), cancellationToken).AnyContext();
 
             MessagingInstruments.Sent.Add(outgoing.Count, new KeyValuePair<string, object?>("messaging.destination", destination.ToString()));
+            if (_runtime.Observer is { } observer)
+            {
+                int index = 0;
+                foreach (var message in group)
+                    observer.OnSent(destination, message, outgoing[index++]);
+            }
         }
     }
 }

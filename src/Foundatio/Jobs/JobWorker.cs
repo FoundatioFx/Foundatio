@@ -34,16 +34,30 @@ internal sealed class JobWorker
         _runtime = runtime;
         _logger = runtime.LoggerFactory.CreateLogger<JobWorker>();
         _slots = new SemaphoreSlim(runtime.Options.MaxConcurrency, runtime.Options.MaxConcurrency);
+        Status = new ProcessingStatusTracker(runtime.TimeProvider);
+    }
+
+    /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
+    public ProcessingStatusTracker Status { get; }
+
+    public int Running => Volatile.Read(ref _running);
+
+    public ProcessingStatus GetStatus()
+    {
+        var running = _runtime.Jobs.Keys.ToDictionary(name => name, name => _runningByName.GetValueOrDefault(name), StringComparer.Ordinal);
+        return Status.GetStatus("worker", running.Values.Sum(), running);
     }
 
     public void Start()
     {
         _logger.LogInformation("Job worker {WorkerId} running {Jobs} (concurrency {MaxConcurrency})", _runtime.WorkerId, String.Join(", ", _runtime.Jobs.Keys), _runtime.Options.MaxConcurrency);
-        _loop = Task.Run(ClaimLoopAsync, CancellationToken.None);
+        Status.MarkRunning();
+        _loop = Task.Run(RunClaimLoopAsync, CancellationToken.None);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        Status.MarkStopped();
         _stopClaiming.Cancel();
         await _loop.AnyContext();
 
@@ -52,6 +66,19 @@ internal sealed class JobWorker
             _logger.LogWarning("Cancelling {Count} running jobs at shutdown; they will run again without using an attempt", Volatile.Read(ref _running));
             _abortJobs.Cancel();
             await WaitForRunningAsync(AbortGracePeriod, CancellationToken.None).AnyContext();
+        }
+    }
+
+    private async Task RunClaimLoopAsync()
+    {
+        try
+        {
+            await ClaimLoopAsync().AnyContext();
+        }
+        catch (Exception ex)
+        {
+            Status.MarkFaulted(ex);
+            _logger.LogCritical(ex, "Job worker {WorkerId} stopped claiming jobs after an unexpected error", _runtime.WorkerId);
         }
     }
 
@@ -82,6 +109,8 @@ internal sealed class JobWorker
             {
                 if (names.Count > 0)
                     job = await _runtime.Store.ClaimAsync(new JobClaimRequest { Names = names, WorkerId = _runtime.WorkerId, LeaseDuration = _runtime.Options.LeaseDuration }, token).AnyContext();
+
+                Status.RecordSuccess();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -90,6 +119,7 @@ internal sealed class JobWorker
             }
             catch (Exception ex)
             {
+                Status.RecordFailure(ex);
                 _logger.LogError(ex, "Error claiming jobs");
                 idle = _runtime.Options.PollInterval;
             }
@@ -260,6 +290,8 @@ internal sealed class JobWorker
             {
                 if (!await _runtime.Store.CompleteAsync(job.Id, job.ClaimToken!, completion, CancellationToken.None).AnyContext())
                     _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
+                else
+                    _runtime.Observer?.OnCompleted(job, completion);
 
                 return;
             }

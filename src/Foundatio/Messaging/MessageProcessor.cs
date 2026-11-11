@@ -48,9 +48,17 @@ internal sealed class MessageProcessor : IAsyncDisposable
         var lease = handlers.Max(h => h.Options.LeaseDuration ?? TimeSpan.FromMinutes(1));
         _leaseDuration = capabilities.MaxLeaseDuration is { } maxLease && lease > maxLease ? maxLease : lease;
         _slots = new SemaphoreSlim(_maxConcurrency, _maxConcurrency);
+        Status = new ProcessingStatusTracker(runtime.TimeProvider);
     }
 
     public MessageSource Source { get; }
+
+    /// <summary>Read by health checks. Receive errors are recorded here; they never stop the processor.</summary>
+    public ProcessingStatusTracker Status { get; }
+
+    public int InFlight => Volatile.Read(ref _inFlight);
+
+    public ProcessingStatus GetStatus() => Status.GetStatus(Source.ToString(), InFlight);
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
@@ -70,7 +78,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         _logger.LogInformation("Receiving {Source} with {Handlers} (concurrency {MaxConcurrency})",
             Source, String.Join(", ", _handlers.Select(h => h.HandlerName).Distinct()), _maxConcurrency);
-        _receiveLoop = Task.Run(ReceiveLoopAsync, CancellationToken.None);
+        Status.MarkRunning();
+        _receiveLoop = Task.Run(RunReceiveLoopAsync, CancellationToken.None);
     }
 
     /// <summary>
@@ -82,6 +91,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         if (Interlocked.Exchange(ref _stopped, 1) == 1)
             return;
 
+        Status.MarkStopped();
         _stopReceiving.Cancel();
         await _receiveLoop.AnyContext();
 
@@ -106,6 +116,19 @@ internal sealed class MessageProcessor : IAsyncDisposable
     }
 
     public ValueTask DisposeAsync() => new(StopAsync(TimeSpan.Zero));
+
+    private async Task RunReceiveLoopAsync()
+    {
+        try
+        {
+            await ReceiveLoopAsync().AnyContext();
+        }
+        catch (Exception ex)
+        {
+            Status.MarkFaulted(ex);
+            _logger.LogCritical(ex, "Stopped receiving from {Source} after an unexpected error", Source);
+        }
+    }
 
     private async Task ReceiveLoopAsync()
     {
@@ -134,6 +157,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             {
                 messages = await receiver.ReceiveAsync(slots, ReceiveWait, token).AnyContext();
                 backoff = TimeSpan.Zero;
+                Status.RecordSuccess();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -143,6 +167,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             catch (Exception ex)
             {
                 _slots.Release(slots);
+                Status.RecordFailure(ex);
                 backoff = backoff == TimeSpan.Zero ? TimeSpan.FromSeconds(1) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxReceiveBackoff.Ticks));
                 _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
                 await _runtime.TimeProvider.SafeDelay(backoff, token).AnyContext();
@@ -187,6 +212,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             _logger.LogInformation("Discarding expired message {MessageId} from {Source}", message.MessageId, Source);
             MessagingInstruments.Discarded.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
             await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
+            _runtime.Observer?.OnHandled(Source, message, null, "expired", null, null);
             return;
         }
 
@@ -212,6 +238,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogError(ex, "Could not deserialize message {MessageId} as {MessageType}", message.MessageId, messageType);
             await DeadLetterOrDropAsync(receiver, message, $"Deserialization failed: {ex.Message}").AnyContext();
+            _runtime.Observer?.OnHandled(Source, message, null, "dead-lettered", $"Deserialization failed: {ex.Message}", ex);
             return;
         }
 
@@ -256,6 +283,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         string outcome = await SettleAfterHandlingAsync(receiver, message, context, policy, error, lease).AnyContext();
         await lease.StopAsync().AnyContext();
+        _runtime.Observer?.OnHandled(Source, message, payload, outcome, context.DeadLetterReason, error);
 
         var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", Source.Kind.ToString() }, { "outcome", outcome } };
         MessagingInstruments.Handled.Add(1, tags);
@@ -366,6 +394,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogDebug("Skipping message {MessageId} of type {MessageType}: no handler on {Source}", message.MessageId, messageType, Source);
             await SettleAsync(ct => receiver.CompleteAsync(message, ct), message, "complete").AnyContext();
+            _runtime.Observer?.OnHandled(Source, message, null, "skipped", null, null);
             return;
         }
 
@@ -376,11 +405,13 @@ internal sealed class MessageProcessor : IAsyncDisposable
         {
             _logger.LogWarning("No handler for message type {MessageType} on {Source}; retrying (attempt {Attempt} of {MaxAttempts})", messageType, Source, attempt, policy.MaxAttempts);
             await RetryAsync(receiver, message, policy.GetDelay(attempt)).AnyContext();
+            _runtime.Observer?.OnHandled(Source, message, null, "retry", $"No handler for message type \"{messageType}\"", null);
             return;
         }
 
         _logger.LogError("No handler for message type {MessageType} on {Source}; dead-lettering message {MessageId}", messageType, Source, message.MessageId);
         await DeadLetterOrDropAsync(receiver, message, $"No handler for message type \"{messageType}\"").AnyContext();
+        _runtime.Observer?.OnHandled(Source, message, null, "dead-lettered", $"No handler for message type \"{messageType}\"", null);
     }
 
     private Task DeadLetterOrDropAsync(IMessageReceiver receiver, IncomingMessage message, string reason)

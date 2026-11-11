@@ -16,6 +16,7 @@ internal sealed class MessagingRuntime
 {
     private readonly List<MessageProcessor> _processors = [];
     private readonly ILogger _logger;
+    private volatile ProcessingState _hostState;
 
     public MessagingRuntime(IMessageTransport transport, MessagingOptions options, MessageTypeRegistry types, ISerializer serializer,
         IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider, string serviceName)
@@ -39,6 +40,22 @@ internal sealed class MessagingRuntime
     public ILoggerFactory LoggerFactory { get; }
     public TimeProvider TimeProvider { get; }
     public string ServiceName { get; }
+
+    /// <summary>Notified of sends and settled deliveries; set by the test harness.</summary>
+    public IMessagingObserver? Observer { get; init; }
+
+    /// <summary>Whether the hosted service is waiting for the startup gate, has started the processors, or has stopped.</summary>
+    public ProcessingState HostState
+    {
+        get => _hostState;
+        set => _hostState = value;
+    }
+
+    public MessageProcessor[] GetProcessors()
+    {
+        lock (_processors)
+            return _processors.ToArray();
+    }
 
     public MessageSource GetSource(MessageHandlerRegistration registration)
     {
@@ -64,6 +81,7 @@ internal sealed class MessagingRuntime
         }
         catch (Exception ex) when (retryInBackground && !cancellationToken.IsCancellationRequested)
         {
+            processor.Status.RecordFailure(ex);
             _logger.LogError(ex, "Could not start receiving from {Source}; retrying in the background", source);
             _ = Task.Run(() => RetryStartAsync(processor), CancellationToken.None);
         }
@@ -117,6 +135,7 @@ internal sealed class MessagingRuntime
             }
             catch (Exception ex)
             {
+                processor.Status.RecordFailure(ex);
                 delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, TimeSpan.FromMinutes(1).Ticks));
                 _logger.LogError(ex, "Could not start receiving from {Source}; retrying in {Delay}", processor.Source, delay);
             }

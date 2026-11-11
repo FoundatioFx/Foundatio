@@ -36,6 +36,7 @@ public static class MessagingServiceCollectionExtensions
             services.AddSingleton(registrations);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton<IMessageClient>(sp => new MessageClient(sp.GetRequiredService<MessagingRuntime>()));
+            services.TryAddSingleton(sp => new MessagingStatus(sp.GetRequiredService<MessagingRuntime>(), registrations));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, MessagingHostedService>());
         }
 
@@ -70,6 +71,9 @@ public static class MessagingServiceCollectionExtensions
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
             services.GetService<TimeProvider>() ?? TimeProvider.System,
-            serviceName);
+            serviceName)
+        {
+            Observer = services.GetService<IMessagingObserver>()
+        };
     }
 }

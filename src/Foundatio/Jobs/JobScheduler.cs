@@ -34,16 +34,24 @@ internal sealed class JobScheduler
         _logger = runtime.LoggerFactory.CreateLogger<JobScheduler>();
         _payloads = runtime.Registrations.Schedules.Values.ToDictionary(s => s.Name,
             s => s.Arguments is null ? ReadOnlyMemory<byte>.Empty : (ReadOnlyMemory<byte>)runtime.Serializer.SerializeToBytes<object>(s.Arguments), StringComparer.Ordinal);
+        Status = new ProcessingStatusTracker(runtime.TimeProvider);
     }
+
+    /// <summary>Read by health checks. A pass with any failing schedule is recorded as a failure.</summary>
+    public ProcessingStatusTracker Status { get; }
+
+    public ProcessingStatus GetStatus() => Status.GetStatus("scheduler");
 
     public void Start()
     {
         _logger.LogInformation("Scheduling {Schedules}", String.Join(", ", _runtime.Registrations.Schedules.Values.Select(s => $"{s.Name} ({s.Expression})")));
+        Status.MarkRunning();
         _loop = Task.Run(RunAsync, CancellationToken.None);
     }
 
     public async Task StopAsync()
     {
+        Status.MarkStopped();
         _stop.Cancel();
         await _loop.AnyContext();
     }
@@ -52,6 +60,7 @@ internal sealed class JobScheduler
     internal async Task<DateTimeOffset> RunDueAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         var nextWake = now.Add(MaxSleep);
+        bool failed = false;
         foreach (var schedule in _runtime.Registrations.Schedules.Values)
         {
             try
@@ -66,9 +75,14 @@ internal sealed class JobScheduler
             }
             catch (Exception ex)
             {
+                failed = true;
+                Status.RecordFailure(ex, $"Schedule {schedule.Name}");
                 _logger.LogError(ex, "Error scheduling {Schedule}; other schedules are unaffected", schedule.Name);
             }
         }
+
+        if (!failed)
+            Status.RecordSuccess();
 
         return nextWake;
     }
@@ -91,6 +105,7 @@ internal sealed class JobScheduler
             }
             catch (Exception ex)
             {
+                Status.RecordFailure(ex);
                 _logger.LogError(ex, "Error in the job scheduler");
                 await _runtime.TimeProvider.SafeDelay(TimeSpan.FromSeconds(5), token).AnyContext();
             }

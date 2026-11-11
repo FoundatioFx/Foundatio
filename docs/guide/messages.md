@@ -99,7 +99,9 @@ A message's name identifies it on the wire. By default it is the type's full nam
 
 A subscriber ignores types on its topic that it has no handler for. A handler for a base type receives mapped derived types.
 
-## Testing handlers
+## Testing
+
+Unit test a handler with `TestMessageContext`:
 
 ```csharp
 var context = new TestMessageContext();
@@ -107,7 +109,38 @@ await new SendReceiptHandler(fakeEmail).HandleAsync(new SendReceipt(1, "a@b.com"
 Assert.Null(context.DeadLetterReason);
 ```
 
-For integration tests, use `UseInMemory()`; `InMemoryMessageTransport.WaitUntilIdleAsync()` waits until every message has been handled.
+To test your real registrations end to end, add `AddFoundatioTestHarness()` (namespace `Foundatio.Testing`) after them. It swaps your transport and job store for in-memory ones and records what happens, so a test acts, waits for the outcome and asserts, with no sleeps:
+
+```csharp
+var builder = Host.CreateApplicationBuilder();
+builder.Services.AddOrdersApp();               // your AddFoundatioMessaging and AddFoundatioJobs calls
+builder.Services.AddFoundatioTestHarness();    // last, so it replaces the transport and store
+using var host = builder.Build();
+await host.StartAsync();
+var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+var messages = host.Services.GetRequiredService<IMessageClient>();
+
+await messages.PublishAsync(new OrderPlaced(1, "a@b.com"));
+await harness.WaitForIdleAsync();
+
+Assert.Equal(1, Assert.Single(harness.Sent<SendReceipt>()).OrderId);
+Assert.All(harness.HandledMessages, m => Assert.Equal(MessageOutcome.Completed, m.Outcome));
+
+await messages.SendAsync(new SendReceipt(2, "bounce@b.com"));
+var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<SendReceipt>());
+Assert.Equal(3, deadLetter.Attempt);
+```
+
+- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`) and the error. `Sent<T>()` and `Published<T>()` return the messages themselves.
+- `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. On timeout (30 seconds by default) the exception says what happened instead.
+- `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
+- Waits use real time, and retries wait for their policy's delay, so give tests a short one: `m.Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) })`.
+
+Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
+
+## Health checks
+
+With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors that are being retried report Degraded; only a processor that stopped, or one that has failed for 5 minutes, reports Unhealthy. See [health checks](./durable-jobs#health-checks).
 
 ## Existing code using `IMessageBus`
 
