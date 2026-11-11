@@ -42,10 +42,10 @@ How brokers map:
 | SQS / SNS | queue | SNS topic → SQS queue | per-instance queue, tagged and swept | 15 min (longer sends emulated) | FIFO message groups |
 | Service Bus | queue | topic subscription | AutoDeleteOnIdle subscription | scheduled messages | sessions |
 | RabbitMQ | quorum queue | exchange → queue per subscription | exclusive auto-delete queue | delayed exchange, or none | — |
-| Kafka | topic + consumer group, completion-tracked offsets | topic + group per subscription | group per instance, from latest | none (core holds retries in-process) | partition key |
+| Kafka | topic + consumer group, completion-tracked offsets | group per subscription, plus its own retry topic | every partition read from the end, no group | delay-tier topics and a forwarder | partition key |
 | Storage Queues | queue | not supported | not supported | 7 days | — |
 
-A Kafka transport would set `LeaseExpiration = false`, commit the lowest contiguous completed offset, and republish on abandon. Brokers with push client libraries buffer into a bounded channel inside the receiver.
+The Kafka transport sets `LeaseExpiration = false`, commits the lowest unfinished offset per partition, and copies abandoned messages to the source's own topic. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
 Proof: `MessageTransportTestsBase` (42 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
 
@@ -90,6 +90,20 @@ An SQS/SNS transport was written in Foundatio.AWS (branch `feature/messaging-tra
 - **Not declared:** FIFO (`OrderedGroups`, `Deduplication`).
 - **Results:** the conformance suite passes on the Floci emulator. The existing SQSQueue and S3 suites still pass.
 
+### Kafka proof
+
+A Kafka transport was written in Foundatio.Kafka (branch `feature/messaging-transport-v2`), about 2,200 lines, with queues and pub/sub through the same contract:
+
+- **Mapping:**
+  - queues → a topic read by one consumer group from the earliest offset;
+  - durable subscriptions → a consumer group per subscription on the topic, plus the subscription's own topic for retries and sends to that subscription;
+  - instance subscriptions → every partition read directly from the end, with no consumer group, so a crash leaves nothing to sweep;
+  - dead letters → a topic per source.
+- **Settlement:** offsets are committed up to the lowest unfinished message per partition, so handling is concurrent. Abandoned messages without a group key are copied with an incremented delivery count; messages with one are released in place to keep group order.
+- **Delays:** unlimited, through shared delay-tier topics (1s to 6h) and a forwarder in every process with a receiver, so core never holds Kafka retries in-process.
+- **Declared:** ordered groups (partition key, and no message of a group handed out while an earlier one is unsettled). Not declared: lease expiration, deduplication.
+- **Results:** the conformance suite passes on the classic and KIP-848 consumer group protocols.
+
 ### SPI refinements suggested by the provider work
 
 Applied in the first round: name validation in the SPI types; the thread-safety, clock, dispose, dead-letter and `DeliveryCount` notes; `GroupKey` round-trip and delayed-publish tests; one-second quiet-period windows in the suite.
@@ -104,6 +118,8 @@ Applied in the second round:
 From the Redis update, which also added ordered groups to Redis: the message id, group key and deduplication id count toward `MaxMessageSize` (`MessageSize.Of`) and are capped at 128 characters; group order is send order, delayed messages included; dead-letter sources are not ordered, so peeking shows a whole group; deduplication state may outlive a delete.
 
 From the SQS update, which added FIFO mode: transports may shorten abandon delays to what the broker still allows for a delivery, and receivers left open across a delete may still see older messages (both documented). Still open: counting a fixed per-header overhead in `MessageSize.Of` so header framing is provable, and a separate size limit for publishes (SQS accepts 1 MiB, SNS 256 KiB).
+
+From the Kafka transport, as wording only: `CreateReceiverAsync` returns once the receiver can deliver (Kafka waits for its group join, or a first receive such as a dead-letter peek finds nothing); a new subscription gets messages published after it is created; a settle that throws must leave the message to be delivered again, also without lease expiration; `DeliveryCount` may restart after a crash on offset-based brokers, because Confluent.Kafka does not expose commit metadata. Still open: core skips `RenewAsync` when leases don't expire, so a handler whose partition moved keeps running until its settle fails; a `MinDelay` capability so core holds sub-second retries in-process; and a way for a receiver to report a fatal fault so core recreates it.
 
 Not added: a maintenance hook. A transport already runs a timer for instance-subscription heartbeats, and sweeping stale ones from that timer (or on publish) needs no extra contract.
 
@@ -171,7 +187,7 @@ Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k
 
 ## Not done yet
 
-- FIFO for SQS, and providers beyond Redis and SQS/SNS (Service Bus with sessions, RabbitMQ, Kafka pub/sub), plus conformance runs against real brokers in CI. The AWS transport has only run against an emulator.
+- Providers beyond Redis, SQS/SNS and Kafka (Service Bus with sessions, RabbitMQ), plus conformance runs against real brokers in CI. The AWS transport has only run against an emulator.
 - Waking idle workers in other processes when a job is enqueued. Today it is local wake-up plus a 1s poll. Redis stream trimming policy for unread durable subscriptions.
 - Mediator mapping onto `AddConsumer`/`AddSubscriber` and `IJobClient`.
 - Ordering for transports without `OrderedGroups` is not emulated in core: it would only hold within one process, which is worse than an honest "unordered".
