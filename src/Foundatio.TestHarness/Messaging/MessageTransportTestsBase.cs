@@ -186,6 +186,21 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Renew_OfAHeldDelivery_SucceedsRepeatedly()
+    {
+        var source = MessageSource.Queue(NewName("renew-held"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("held")], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver);
+        for (int i = 0; i < 3; i++)
+            await receiver.RenewAsync(message, TestCancellationToken);
+
+        await receiver.CompleteAsync(message, TestCancellationToken);
+        await AssertNothingReceivedAsync(receiver, ShortDelay);
+    }
+
+    [Fact]
     public async Task DisposingAReceiver_ReleasesItsUnsettledMessages()
     {
         var source = MessageSource.Queue(NewName("dispose"));

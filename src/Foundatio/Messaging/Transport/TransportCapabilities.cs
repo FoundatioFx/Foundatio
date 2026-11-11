@@ -55,6 +55,14 @@ public sealed record TransportCapabilities
         }
     }
 
+    /// <summary>
+    /// The shortest delay <see cref="IMessageReceiver.AbandonAsync"/> honours accurately, for brokers whose delays are
+    /// coarse (SQS visibility timeouts are whole seconds). Foundatio holds shorter retry delays in-process, keeping the
+    /// delivery leased, and then abandons it without a delay. A crash during the hold delivers the message again
+    /// sooner; it is never lost. Defaults to <see cref="TimeSpan.Zero"/>.
+    /// </summary>
+    public TimeSpan MinRetryDelay { get; init; }
+
     /// <summary>The most messages accepted by one <see cref="IMessageTransport.SendAsync"/> call.</summary>
     public int MaxSendBatchSize { get; init; } = 100;
 
@@ -75,7 +83,9 @@ public sealed record TransportCapabilities
 
     /// <summary>
     /// True when an unsettled message is delivered again after its lease expires. False for brokers that hold a
-    /// delivery until the connection closes (RabbitMQ) or that track progress by offset (Kafka).
+    /// delivery until the connection closes (RabbitMQ) or that track progress by offset (Kafka). Foundatio still calls
+    /// <see cref="IMessageReceiver.RenewAsync"/> while handling, so such a transport can report a delivery that has
+    /// moved to another consumer.
     /// </summary>
     public bool LeaseExpiration { get; init; } = true;
 

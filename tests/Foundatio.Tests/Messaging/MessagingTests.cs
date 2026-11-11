@@ -383,6 +383,68 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task RetryDelays_ShorterThanTheTransportsMinimum_AreHeldInProcess()
+    {
+        var coarse = new LimitedTransport(_transport, _transport.Capabilities with { MinRetryDelay = TimeSpan.FromSeconds(1) });
+        var attempts = new ConcurrentQueue<TimeSpan>();
+        var stopwatch = Stopwatch.StartNew();
+        await using var host = await MessagingTestHost.StartAsync(coarse, Log, "tests", m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            attempts.Enqueue(stopwatch.Elapsed);
+            if (context.Attempt == 1)
+                context.Retry(TimeSpan.FromMilliseconds(300));
+            else if (context.Attempt == 2)
+                context.Retry(TimeSpan.FromSeconds(1));
+
+            return Task.CompletedTask;
+        }));
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => attempts.Count == 3);
+
+        var times = attempts.ToArray();
+        Assert.True(times[1] - times[0] >= TimeSpan.FromMilliseconds(250), $"The short retry was held for its backoff; retried after {times[1] - times[0]}.");
+        Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(1)], coarse.AbandonDelays.ToArray());
+    }
+
+    [Fact]
+    public async Task LostDelivery_OnATransportWithoutLeaseExpiration_CancelsTheHandlerAndSkipsSettlement()
+    {
+        var offsets = new LimitedTransport(_transport, _transport.Capabilities with { LeaseExpiration = false });
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool revoked = false;
+        offsets.OnRenew = _ =>
+        {
+            if (Volatile.Read(ref revoked))
+                throw new MessageLeaseLostException("The partition was revoked");
+        };
+
+        await using var host = await MessagingTestHost.StartAsync(offsets, Log, "tests", m => m.AddConsumer<PlaceOrder>(async (_, _, ct) =>
+        {
+            started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
+        }, new HandlerOptions { LeaseDuration = TimeSpan.FromMinutes(5) }));
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        Volatile.Write(ref revoked, true);
+
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        await Task.Delay(100, TestCancellationToken);
+        Assert.Empty(offsets.AbandonDelays);
+        Assert.Equal(1, _transport.GetMessageCount(MessageSource.Queue(QueueName<PlaceOrder>())));
+    }
+
+    [Fact]
     public async Task OrderedGroups_AreHandledInOrder_AndLaterMessagesWaitForARetry()
     {
         var calls = new ConcurrentQueue<(int Value, int Attempt)>();
@@ -534,11 +596,43 @@ public class MessagingTests : TestWithLoggingBase
             return inner.SendAsync(destination, messages, cancellationToken);
         }
 
-        public Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
-            => inner.CreateReceiverAsync(source, options, cancellationToken);
+        /// <summary>The delay of every <see cref="IMessageReceiver.AbandonAsync"/> call.</summary>
+        public ConcurrentQueue<TimeSpan> AbandonDelays { get; } = new();
+
+        /// <summary>Runs on every <see cref="IMessageReceiver.RenewAsync"/> call, before the inner receiver renews.</summary>
+        public Action<IncomingMessage>? OnRenew { get; set; }
+
+        public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
+            => new Receiver(this, await inner.CreateReceiverAsync(source, options, cancellationToken));
 
         public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.DeleteAsync(source, cancellationToken);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private sealed class Receiver(LimitedTransport transport, IMessageReceiver inner) : IMessageReceiver
+        {
+            public MessageSource Source => inner.Source;
+
+            public Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
+                => inner.ReceiveAsync(maxMessages, maxWait, cancellationToken);
+
+            public Task CompleteAsync(IncomingMessage message, CancellationToken cancellationToken = default) => inner.CompleteAsync(message, cancellationToken);
+
+            public Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
+            {
+                transport.AbandonDelays.Enqueue(delay);
+                return inner.AbandonAsync(message, delay, cancellationToken);
+            }
+
+            public Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default) => inner.DeadLetterAsync(message, reason, cancellationToken);
+
+            public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
+            {
+                transport.OnRenew?.Invoke(message);
+                return inner.RenewAsync(message, cancellationToken);
+            }
+
+            public ValueTask DisposeAsync() => inner.DisposeAsync();
+        }
     }
 }

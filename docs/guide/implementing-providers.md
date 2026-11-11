@@ -44,13 +44,15 @@ All members may be called concurrently: settlement and renewal run while `Receiv
 
 Declare honestly what your broker does natively in `TransportCapabilities`:
 
-- **Delays:** `MaxDelay` for sends, `MaxPublishDelay` for publishes and `MaxRetryDelay` for `AbandonAsync` (each: `null` unlimited, a limit, or `TimeSpan.Zero` for none; the last two default to `MaxDelay`). Foundatio emulates longer send delays, holds retries in-process when there is no retry delay, and rejects publishes beyond `MaxPublishDelay`. SQS, for example, declares 15 minutes for sends and 12 hours for retries, and an unlimited publish delay because the transport hides early SNS deliveries until they are due.
+- **Delays:** `MaxDelay` for sends, `MaxPublishDelay` for publishes and `MaxRetryDelay` for `AbandonAsync` (each: `null` unlimited, a limit, or `TimeSpan.Zero` for none; the last two default to `MaxDelay`). Foundatio emulates longer send delays, holds retries in-process when there is no retry delay or the delay is under `MinRetryDelay` (for coarse delays: SQS visibility timeouts are whole seconds), and rejects publishes beyond `MaxPublishDelay`. A held retry stays leased on the broker, so a crash only delivers it again sooner. SQS, for example, declares 15 minutes for sends and 12 hours for retries, and an unlimited publish delay because the transport hides early SNS deliveries until they are due.
 - **Limits:** batch sizes, `MaxMessageSize`, `MaxLeaseDuration`.
-- **`LeaseExpiration`:** false for connection-held deliveries such as RabbitMQ, or offsets such as Kafka.
+- **`LeaseExpiration`:** false for connection-held deliveries such as RabbitMQ, or offsets such as Kafka. Foundatio still calls `RenewAsync` about once a second while handling; throw `MessageLeaseLostException` once a delivery has gone to another consumer (a revoked partition) and the handler is cancelled.
 - **`OrderedGroups`:** `GroupKey` maps to SQS message groups, Service Bus sessions or Kafka partition keys. Deliver in send order, where a delayed message holds back its group's later ones. Never hand out a message of a group while an earlier one is unsettled. One receive may return several in-order messages of a group; Foundatio handles them in sequence and abandons the rest if one is retried. Dead-letter sources are not ordered.
 - **`Deduplication`:** drop a repeated `DeduplicationId` within your window.
 
 The suite skips tests for capabilities you don't declare.
+
+When a receiver can never deliver again (a fatal client error), throw `MessageReceiverFaultedException` from `ReceiveAsync`: Foundatio lets in-flight messages finish, disposes the receiver and opens a new one. Other receive errors are retried with backoff, and after five in a row the receiver is replaced too.
 
 Push-based client libraries (RabbitMQ consumers, the Service Bus processor) can buffer deliveries in a bounded channel inside the receiver and return them from `ReceiveAsync`. Derive from `IncomingMessage` to carry your receipt (delivery tag, receipt handle, stream id).
 
@@ -63,7 +65,7 @@ public class MyTransportTests(ITestOutputHelper output) : MessageTransportTestsB
 }
 ```
 
-That is the whole test class. The suite (Foundatio.TestHarness, 42 tests) covers round-trips, leases, renewal, abandon and delays, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering and deduplication, plus end-to-end tests through the real client, handlers and dead-letter replay. Tests use unique names, so they can run in parallel against a shared broker. Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers.
+That is the whole test class. The suite (Foundatio.TestHarness, 43 tests) covers round-trips, leases, renewal, abandon and delays, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering and deduplication, plus end-to-end tests through the real client, handlers and dead-letter replay. Tests use unique names, so they can run in parallel against a shared broker. Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers.
 
 ## Job store
 

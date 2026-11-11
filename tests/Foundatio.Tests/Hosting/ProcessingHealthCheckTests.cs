@@ -131,6 +131,35 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddFoundatioMessaging_WhenTheReceiverFaults_ReplacesItAndRecovers()
+    {
+        _transport.FaultReceive = true;
+        await StartAsync(messaging: m => m.AddConsumer<Ping>(Handle));
+        _gate.Open(true);
+        var faulted = await WaitForAsync(Messaging, e => e.Status == HealthStatus.Degraded);
+
+        _transport.FaultReceive = false;
+        await WaitForAsync(Messaging, e => e.Status == HealthStatus.Healthy, advanceTime: true);
+
+        Assert.Contains("MessageReceiverFaultedException: The consumer hit a fatal error", faulted.Description);
+        Assert.Equal(2, _transport.ReceiversCreated);
+    }
+
+    [Fact]
+    public async Task AddFoundatioMessaging_WhenReceivingKeepsFailing_ReplacesTheReceiverAfterFiveFailures()
+    {
+        _transport.FailReceive = true;
+        await StartAsync(messaging: m => m.AddConsumer<Ping>(Handle));
+        _gate.Open(true);
+        await WaitForAsync(Messaging, e => e.Status == HealthStatus.Degraded);
+        Assert.Equal(1, _transport.ReceiversCreated);
+
+        var entry = await WaitForAsync(Messaging, _ => _transport.ReceiversCreated == 2, advanceTime: true);
+
+        Assert.Equal(HealthStatus.Degraded, entry.Status);
+    }
+
+    [Fact]
     public async Task AddFoundatioMessaging_WhenAProcessorStopsUnexpectedly_ReportsUnhealthy()
     {
         _transport.ReturnNull = true;

@@ -157,7 +157,7 @@ Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
 
 ## Health checks
 
-With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors that are being retried report Degraded; only a processor that stopped, or one that has failed for 5 minutes, reports Unhealthy. See [health checks](./durable-jobs#health-checks).
+With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors that are being retried report Degraded; only a processor that stopped, or one that has failed for 5 minutes, reports Unhealthy. A receiver that fails five times in a row, or that its transport reports dead, is replaced after its in-flight messages finish. See [health checks](./durable-jobs#health-checks).
 
 ## Existing code using `IMessageBus`
 

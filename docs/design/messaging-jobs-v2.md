@@ -47,7 +47,7 @@ How brokers map:
 
 The Kafka transport sets `LeaseExpiration = false`, commits the lowest unfinished offset per partition, and copies abandoned messages to the source's own topic. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (42 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
+Proof: `MessageTransportTestsBase` (43 tests) plus `JobStoreTestsBase` (20 tests). A provider test class is one override.
 
 ### Redis proof
 
@@ -119,7 +119,7 @@ From the Redis update, which also added ordered groups to Redis: the message id,
 
 From the SQS update, which added FIFO mode: transports may shorten abandon delays to what the broker still allows for a delivery, and receivers left open across a delete may still see older messages (both documented). Still open: counting a fixed per-header overhead in `MessageSize.Of` so header framing is provable, and a separate size limit for publishes (SQS accepts 1 MiB, SNS 256 KiB).
 
-From the Kafka transport, as wording only: `CreateReceiverAsync` returns once the receiver can deliver (Kafka waits for its group join, or a first receive such as a dead-letter peek finds nothing); a new subscription gets messages published after it is created; a settle that throws must leave the message to be delivered again, also without lease expiration; `DeliveryCount` may restart after a crash on offset-based brokers, because Confluent.Kafka does not expose commit metadata. Still open: core skips `RenewAsync` when leases don't expire, so a handler whose partition moved keeps running until its settle fails; a `MinDelay` capability so core holds sub-second retries in-process; and a way for a receiver to report a fatal fault so core recreates it.
+From the Kafka transport, as wording only: `CreateReceiverAsync` returns once the receiver can deliver (Kafka waits for its group join, or a first receive such as a dead-letter peek finds nothing); a new subscription gets messages published after it is created; a settle that throws must leave the message to be delivered again, also without lease expiration; `DeliveryCount` may restart after a crash on offset-based brokers, because Confluent.Kafka does not expose commit metadata. Then, also from Kafka: core calls `RenewAsync` about once a second on transports without lease expiration, so a handler whose partition moved is cancelled instead of finishing twice; `MinRetryDelay` lets a transport with coarse delays (Kafka's 1-second tier, SQS's whole-second visibility timeouts) have core hold shorter retries in-process, which stays durable because the delivery is still leased; and `MessageReceiverFaultedException` (or five receive failures in a row) makes core drain, dispose and replace a receiver.
 
 Not added: a maintenance hook. A transport already runs a timer for instance-subscription heartbeats, and sweeping stale ones from that timer (or on publish) needs no extra contract.
 
@@ -130,8 +130,8 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 - **Names** come from `[Message("...")]`, `MapMessage<T>()`, or the full type name; they are validated to `[A-Za-z0-9._-]`, and collisions throw. Only registered types are deserialized.
 - **Routing uses the runtime type**, so `PublishAsync<Base>(derived)` reaches derived subscribers; base-type handlers receive mapped derived types on a shared topic.
 - **Unknown types**: skipped on a subscription (topics carry many types); retried then dead-lettered on a queue (usually a rolling deploy).
-- **Delays**: native up to `MaxDelay`; longer sends hop (re-sent when they arrive early); longer publishes throw rather than duplicate; no native delay → retries are held in-process.
-- **Leases** renew at half the lease while handling; a lost lease cancels the handler and skips settlement.
+- **Delays**: native up to `MaxDelay`; longer sends hop (re-sent when they arrive early); longer publishes throw rather than duplicate; no native retry delay, or one under `MinRetryDelay` → retries are held in-process, still leased.
+- **Leases** renew at half the lease while handling (about once a second, as an ownership check, without lease expiration); a lost lease cancels the handler and skips settlement. A receiver that faults, or fails five receives in a row, is drained and replaced.
 - **Shutdown** stops receiving, drains for `ShutdownTimeout` (25s), then cancels and releases what remains. Settlement never uses a cancelled token.
 - **Hosting**: registering handlers is enough. Every `AddFoundatioMessaging` call accumulates; roles are decided when the host starts, not when a method is called.
 - **Tracing and metrics**: producer/consumer activities linked by `traceparent`; counters for sent, handled (by outcome), dead-lettered, unmatched, discarded; handling duration.

@@ -23,6 +23,10 @@ public interface IMessageReceiver : IAsyncDisposable
     /// Returns up to <paramref name="maxMessages"/> messages, waiting at most <paramref name="maxWait"/> for the first
     /// one. Returns an empty list when nothing arrives in time.
     /// </summary>
+    /// <remarks>
+    /// Throw <see cref="MessageReceiverFaultedException"/> when this receiver can never deliver again, so Foundatio
+    /// replaces it; other exceptions are retried with backoff, and after five in a row Foundatio replaces it too.
+    /// </remarks>
     Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -50,7 +54,10 @@ public interface IMessageReceiver : IAsyncDisposable
 
     /// <summary>
     /// Extends the lease by <see cref="ReceiverOptions.LeaseDuration"/> from now. Throw <see cref="MessageLeaseLostException"/>
-    /// when the lease is known to be lost. May be a no-op when <see cref="TransportCapabilities.LeaseExpiration"/> is false.
+    /// when the lease is known to be lost; Foundatio then cancels the handler and does not settle the message. Without
+    /// <see cref="TransportCapabilities.LeaseExpiration"/>, Foundatio calls it about once a second while handling: do
+    /// nothing, or throw <see cref="MessageLeaseLostException"/> once the delivery has gone to another consumer (for
+    /// example after a Kafka partition was revoked), so the handler stops instead of doing the work twice.
     /// </summary>
     Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default);
 }

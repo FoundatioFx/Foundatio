@@ -21,6 +21,8 @@ internal sealed class MessageProcessor : IAsyncDisposable
     private static readonly TimeSpan AbortGracePeriod = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan MaxReceiveBackoff = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan EarlyDeliveryTolerance = TimeSpan.FromMilliseconds(50);
+    private static readonly TimeSpan OwnershipCheckInterval = TimeSpan.FromSeconds(1);
+    private const int ReplaceReceiverAfterFailures = 5;
 
     private readonly MessagingRuntime _runtime;
     private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
@@ -62,11 +64,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var receiver = await _runtime.Transport.CreateReceiverAsync(Source, new ReceiverOptions
-        {
-            LeaseDuration = _leaseDuration,
-            PrefetchCount = _maxConcurrency
-        }, cancellationToken).AnyContext();
+        var receiver = await CreateReceiverAsync(cancellationToken).AnyContext();
 
         if (Volatile.Read(ref _stopped) == 1)
         {
@@ -117,6 +115,15 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
     public ValueTask DisposeAsync() => new(StopAsync(TimeSpan.Zero));
 
+    private Task<IMessageReceiver> CreateReceiverAsync(CancellationToken cancellationToken)
+    {
+        return _runtime.Transport.CreateReceiverAsync(Source, new ReceiverOptions
+        {
+            LeaseDuration = _leaseDuration,
+            PrefetchCount = _maxConcurrency
+        }, cancellationToken);
+    }
+
     private async Task RunReceiveLoopAsync()
     {
         try
@@ -135,6 +142,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         var receiver = _receiver!;
         int maxBatch = Math.Max(1, _runtime.Transport.Capabilities.MaxReceiveBatchSize);
         var backoff = TimeSpan.Zero;
+        int failures = 0;
         var token = _stopReceiving.Token;
 
         while (!token.IsCancellationRequested)
@@ -157,6 +165,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
             {
                 messages = await receiver.ReceiveAsync(slots, ReceiveWait, token).AnyContext();
                 backoff = TimeSpan.Zero;
+                failures = 0;
                 Status.RecordSuccess();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -168,9 +177,23 @@ internal sealed class MessageProcessor : IAsyncDisposable
             {
                 _slots.Release(slots);
                 Status.RecordFailure(ex);
-                backoff = backoff == TimeSpan.Zero ? TimeSpan.FromSeconds(1) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxReceiveBackoff.Ticks));
-                _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
+                backoff = NextBackoff(backoff);
+                bool replace = ex is MessageReceiverFaultedException || ++failures >= ReplaceReceiverAfterFailures;
+                if (replace)
+                    _logger.LogError(ex, "Receiver for {Source} failed; replacing it in {Backoff}", Source, backoff);
+                else
+                    _logger.LogError(ex, "Error receiving from {Source}; retrying in {Backoff}", Source, backoff);
+
                 await _runtime.TimeProvider.SafeDelay(backoff, token).AnyContext();
+                if (replace)
+                {
+                    if (await ReplaceReceiverAsync(receiver, backoff, token).AnyContext() is not { } replacement)
+                        break;
+
+                    receiver = replacement;
+                    failures = 0;
+                }
+
                 continue;
             }
 
@@ -184,6 +207,54 @@ internal sealed class MessageProcessor : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Lets the failed receiver's in-flight messages finish (up to the shutdown timeout), disposes it and opens a new
+    /// one, retrying with backoff. Returns null when the processor is stopping; <see cref="StopAsync"/> then closes
+    /// whatever receiver is left.
+    /// </summary>
+    private async Task<IMessageReceiver?> ReplaceReceiverAsync(IMessageReceiver failed, TimeSpan backoff, CancellationToken token)
+    {
+        if (!await WaitForInFlightAsync(_runtime.Options.ShutdownTimeout, token).AnyContext() && token.IsCancellationRequested)
+            return null;
+
+        try
+        {
+            await failed.DisposeAsync().AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error closing the failed receiver for {Source}", Source);
+        }
+
+        _receiver = null;
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                var receiver = await CreateReceiverAsync(token).AnyContext();
+                _receiver = receiver;
+                _logger.LogInformation("Replaced the receiver for {Source}", Source);
+                return receiver;
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Status.RecordFailure(ex);
+                backoff = NextBackoff(backoff);
+                _logger.LogError(ex, "Could not open a new receiver for {Source}; retrying in {Backoff}", Source, backoff);
+                await _runtime.TimeProvider.SafeDelay(backoff, token).AnyContext();
+            }
+        }
+
+        return null;
+    }
+
+    private static TimeSpan NextBackoff(TimeSpan backoff)
+        => backoff == TimeSpan.Zero ? TimeSpan.FromSeconds(1) : TimeSpan.FromTicks(Math.Min(backoff.Ticks * 2, MaxReceiveBackoff.Ticks));
 
     /// <summary>
     /// Splits a batch into sequences handled one message after another. Without ordered groups every message is its
@@ -378,10 +449,11 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
     private async Task RetryAsync(IMessageReceiver receiver, IncomingMessage message, TimeSpan delay)
     {
-        var maxDelay = _runtime.Transport.Capabilities.MaxRetryDelay;
-        if (maxDelay == TimeSpan.Zero && delay > TimeSpan.Zero)
+        var capabilities = _runtime.Transport.Capabilities;
+        var maxDelay = capabilities.MaxRetryDelay;
+        if (delay > TimeSpan.Zero && (maxDelay == TimeSpan.Zero || delay < capabilities.MinRetryDelay))
         {
-            // No native delay: hold the lease (still renewed) for the backoff, then release immediately.
+            // The broker can't delay this retry (accurately): hold the lease, still renewed, for the backoff, then release at once.
             try
             {
                 await _runtime.TimeProvider.SafeDelay(delay, _abortHandlers.Token).AnyContext();
@@ -546,10 +618,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
 
         public LeaseRenewal(MessageProcessor processor, IMessageReceiver receiver, IncomingMessage message, CancellationTokenSource handlerCancellation)
         {
-            if (!processor._runtime.Transport.Capabilities.LeaseExpiration)
-                return;
-
+            // Without lease expiration, renewing only asks whether the delivery is still ours (a revoked Kafka partition), so ask often.
             var interval = TimeSpan.FromTicks(processor._leaseDuration.Ticks / 2);
+            if (!processor._runtime.Transport.Capabilities.LeaseExpiration && interval > OwnershipCheckInterval)
+                interval = OwnershipCheckInterval;
             _task = Task.Run(async () =>
             {
                 while (!_stop.IsCancellationRequested)
