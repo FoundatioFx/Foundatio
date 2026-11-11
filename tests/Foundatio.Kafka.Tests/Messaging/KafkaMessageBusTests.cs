@@ -277,7 +277,7 @@ public class KafkaMessageBusTests : KafkaMessageBusTestBase
     {
         // Arrange
         using var messageBus = new KafkaMessageBus(o => o
-            .BootstrapServers("127.0.0.1:9092")
+            .BootstrapServers(KafkaTestConnection.BootstrapServers)
             .Topic(Topic)
             .TopicReplicationFactor(1)
             .TopicNumberOfPartitions(1)

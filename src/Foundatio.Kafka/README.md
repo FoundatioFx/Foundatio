@@ -41,6 +41,33 @@ IMessageBus messageBus = new KafkaMessageBus(o => o
 await messageBus.PublishAsync(new MyMessage { Data = "Hello" });
 ```
 
+### Message transport (preview)
+
+`KafkaMessageTransport` plugs Kafka into Foundatio's newer messaging (`IMessageClient`, `AddConsumer`, `AddSubscriber`) and supports queues (competing consumers), topics with durable and per-instance subscriptions, dead letters, delays and ordered groups.
+
+```csharp
+services.AddFoundatioMessaging(m => m
+    .UseTransport(new KafkaMessageTransport(new KafkaMessageTransportOptions
+    {
+        BootstrapServers = "localhost:9092",
+        Partitions = 6,
+        ReplicationFactor = 3
+    })));
+```
+
+How it maps to Kafka:
+
+- **Queue**: a topic read by one consumer group. **Topic**: a Kafka topic with one consumer group per durable subscription; a new subscription starts at the end of the topic. **Instance subscription**: reads every partition directly from the end, without a consumer group, so a stopped process leaves nothing behind.
+- **Settlement**: offsets are committed up to the lowest unfinished message of each partition, so messages are handled concurrently. Leases never expire; unsettled messages are delivered again when the receiver closes or a rebalance moves their partition (`RebalanceGracePeriod` lets in-flight messages finish first).
+- **Retries and releases**: messages without a group key are copied, with an incremented delivery count, to a topic only their source reads (the queue itself, or the subscription's own `<prefix>.subscription.<topic>.<name>.<hash>` topic, which also receives `MessageDestination.Subscription` sends such as dead-letter replays). Messages with a group key are retried in place so their group stays in order.
+- **Dead letters**: `<prefix>.deadletter.queue.<name>` and `<prefix>.deadletter.subscription.…`, receivable as `MessageSource.DeadLetter(source)`.
+- **Delays**: shared `<prefix>.delay.<tier>` topics (1s to 6h, `LogAppendTime`) and a forwarder that runs in every process with a receiver. Delays under a second are rounded up to about a second. A delayed message with a group key goes straight to its group's partition and the receiver holds it, and the group's later messages, in memory until it is due; this keeps the group in send order, but the partition's committed offset cannot pass it meanwhile.
+- **Groups**: the group key is the Kafka record key (murmur2, like the Java client). A receive returns a group's messages in order, and none while an earlier one of that group is unsettled.
+- **Deletion**: `DeleteAsync` deletes the source's consumer group, its own topics and its dead-letter topic (never the shared topic of a subscription), and fails while a receiver is still open on it.
+- Topics are created with the admin client (`CreateTopics = false` if they are provisioned for you). Names never contain `_`, which Kafka treats as equal to `.`; names with `_` or several parts get a short hash.
+
+Limits: delivery counts restart at 1 when a process crashes (Kafka cannot store them with the offset through Confluent.Kafka), so a message that crashes the process is retried until it is skipped by hand; partitions added to a topic are not picked up by running instance subscriptions; there is no deduplication; and a durable subscription whose committed offsets the broker expired (`offsets.retention.minutes`, 7 days by default) starts again at the end of the topic.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
