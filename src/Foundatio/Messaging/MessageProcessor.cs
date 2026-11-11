@@ -498,7 +498,7 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Could not {Operation} message {MessageId}; it will be delivered again when its lease expires", operation, message.MessageId);
+            _logger.LogError(ex, "Could not {Operation} message {MessageId}; the transport will deliver it again", operation, message.MessageId);
         }
 
         return false;

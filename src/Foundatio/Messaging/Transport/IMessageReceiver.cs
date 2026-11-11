@@ -12,6 +12,8 @@ namespace Foundatio.Messaging.Transport;
 /// Disposing a receiver for an <see cref="MessageSourceKind.InstanceSubscription"/> removes that subscription; one
 /// left behind by a crashed process must be removed by the transport (for example with a heartbeat and expiry).
 /// Settlement and <see cref="RenewAsync"/> are called concurrently with <see cref="ReceiveAsync"/> and with each other.
+/// A settlement call that throws must leave the message to be delivered again: after its lease expires, or, without
+/// <see cref="TransportCapabilities.LeaseExpiration"/>, at the latest when the receiver is disposed.
 /// </remarks>
 public interface IMessageReceiver : IAsyncDisposable
 {

@@ -31,7 +31,7 @@ What you must provide:
 | Concept | Requirement |
 |---|---|
 | Queue | Competing receivers; sending before any receiver exists must not lose messages. |
-| Topic + durable subscription | Each named subscription gets a copy and keeps it while no receiver is open. |
+| Topic + durable subscription | Each named subscription gets a copy and keeps it while no receiver is open. A new subscription starts with messages published after it is created. |
 | One subscription | `MessageDestination.Subscription(topic, name)` delivers to that subscription only (used to replay its dead letters). Like a queue, it must not lose messages sent before a receiver exists. |
 | Instance subscription | A copy for each open receiver; removed when the receiver is disposed or its process dies. |
 | Dead-letter queue | `DeadLetterAsync` moves a message (id, body, headers kept, plus a reason header) to a queue receivable as `MessageSource.DeadLetter(source)`. |
@@ -40,7 +40,7 @@ What you must provide:
 | Bytes and headers | Body, headers and `GroupKey` delivered unchanged. Names only contain letters, digits, `.`, `_` and `-`; shorten or hash them if your broker needs to, deterministically, from the source's own fields (not `ToString()`). |
 | Size | Accept any message within `MaxMessageSize`, measured by `MessageSize.Of` (body, headers, message id, group key and deduplication id), binary bodies included, and throw `MessageTooLargeException` above it. Declare the limit after your own encoding overhead. Ids and keys are at most `OutgoingMessage.MaxIdLength` (128) characters. |
 
-All members may be called concurrently: settlement and renewal run while `ReceiveAsync` is waiting. Disposing the transport closes its receivers. An instance subscription left behind by a crashed process is your responsibility to remove; a heartbeat with an expiry, swept from the same timer that sends your heartbeats (or on publish), works well. Settling a delivery that has since gone to another receiver should throw `MessageLeaseLostException` and must not affect the newer delivery.
+All members may be called concurrently: settlement and renewal run while `ReceiveAsync` is waiting. Disposing the transport closes its receivers. An instance subscription left behind by a crashed process is your responsibility to remove; a heartbeat with an expiry, swept from the same timer that sends your heartbeats (or on publish), works well. Settling a delivery that has since gone to another receiver should throw `MessageLeaseLostException` and must not affect the newer delivery. A settlement call that fails must leave the message to be delivered again (after its lease, or when the receiver closes if leases don't expire). `CreateReceiverAsync` returns once the receiver can deliver: wait for the broker's assignment, such as a Kafka consumer group join, so the first receive sees messages already waiting.
 
 Declare honestly what your broker does natively in `TransportCapabilities`:
 

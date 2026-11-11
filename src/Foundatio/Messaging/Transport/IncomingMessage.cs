@@ -15,7 +15,8 @@ public class IncomingMessage
 
     /// <summary>
     /// How many times this message has been delivered, starting at 1. Foundatio uses it as the attempt number, so
-    /// deliveries released by a disposed receiver may count, as they do on brokers that count every receive.
+    /// deliveries released by a disposed receiver may count, as they do on brokers that count every receive. Brokers
+    /// that track progress by offset (Kafka) may restart the count after a crash.
     /// </summary>
     public int DeliveryCount { get; init; } = 1;
 

@@ -59,7 +59,7 @@ internal sealed class MessageAdmin : IMessageAdmin
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Could not release dead letter {MessageId} after peeking; it is released when its lease expires", message.MessageId);
+                    _logger.LogDebug(ex, "Could not release dead letter {MessageId} after peeking; the transport will release it", message.MessageId);
                 }
             }
         }

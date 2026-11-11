@@ -36,7 +36,12 @@ public interface IMessageTransport : IAsyncDisposable
     /// </remarks>
     Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default);
 
-    /// <summary>Opens a receiver for a queue, subscription or dead-letter queue, creating the source if needed.</summary>
+    /// <summary>
+    /// Opens a receiver for a queue, subscription or dead-letter queue, creating the source if needed. Return once the
+    /// receiver can deliver: its first <see cref="IMessageReceiver.ReceiveAsync"/> must return messages already in
+    /// the source, so wait for the broker to assign it (for example a consumer group join) before returning. A new
+    /// subscription gets copies of messages published after it is created, not earlier ones.
+    /// </summary>
     Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default);
 
     /// <summary>
