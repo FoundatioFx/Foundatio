@@ -8,10 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Foundatio.Xunit.v3" Version="13.0.5" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Redis\Foundatio.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.Xunit.v3\Foundatio.Xunit.v3.csproj" />
   </ItemGroup>
 </Project>

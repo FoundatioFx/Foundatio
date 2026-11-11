@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Foundatio.Kafka\Foundatio.Kafka.csproj" />
+    <ProjectReference Include="..\..\src\Foundatio.TestHarness\Foundatio.TestHarness.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\..\docker-compose.yml">
