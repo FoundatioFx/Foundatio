@@ -6,51 +6,91 @@ using System.Text.Json.Nodes;
 
 namespace Foundatio.Messaging.Transport;
 
-/// <summary>Adds a statement allowing an SNS topic to send to a queue, keeping every other statement in the policy.</summary>
+/// <summary>
+/// Adds or removes the statement allowing an SNS topic to send to a queue, keeping every other statement in the policy.
+/// </summary>
 internal static class SqsMessageTransportPolicy
 {
     /// <summary>Returns the policy to set, or <c>null</c> when the existing policy already allows the topic.</summary>
     public static string? Merge(string? existingPolicy, string queueArn, string topicArn)
     {
         var statement = CreateStatement(queueArn, topicArn);
-        string sid = statement["Sid"]!.GetValue<string>();
+        var (policy, statements) = Parse(existingPolicy, queueArn, topicArn) ?? (new JsonObject { ["Version"] = "2012-10-17" }, new JsonArray());
+        policy["Statement"] = statements;
 
-        JsonObject? policy = null;
-        if (!String.IsNullOrWhiteSpace(existingPolicy))
+        int index = IndexOf(statements, statement["Sid"]!.GetValue<string>());
+        if (index < 0)
         {
-            try
-            {
-                policy = JsonNode.Parse(existingPolicy) as JsonObject;
-            }
-            catch (JsonException)
-            {
-                throw new MessageBusException($"The policy of queue {queueArn} is not valid JSON, so the transport cannot allow topic {topicArn} to send to it.");
-            }
+            statements.Add(statement);
+            return policy.ToJsonString();
         }
 
-        policy ??= new JsonObject { ["Version"] = "2012-10-17" };
+        if (JsonNode.DeepEquals(statements[index], statement))
+            return null;
+
+        statements[index] = statement;
+        return policy.ToJsonString();
+    }
+
+    /// <summary>
+    /// Returns the policy to set without the topic's statement (an empty string when nothing else is left, which removes
+    /// the policy), or <c>null</c> when the policy does not allow the topic.
+    /// </summary>
+    public static string? Remove(string? existingPolicy, string queueArn, string topicArn)
+    {
+        if (Parse(existingPolicy, queueArn, topicArn) is not { } parsed)
+            return null;
+
+        var (policy, statements) = parsed;
+        int index = IndexOf(statements, CreateStatement(queueArn, topicArn)["Sid"]!.GetValue<string>());
+        if (index < 0)
+            return null;
+
+        statements.RemoveAt(index);
+        if (statements.Count == 0)
+            return String.Empty;
+
+        policy["Statement"] = statements;
+        return policy.ToJsonString();
+    }
+
+    private static (JsonObject Policy, JsonArray Statements)? Parse(string? existingPolicy, string queueArn, string topicArn)
+    {
+        if (String.IsNullOrWhiteSpace(existingPolicy))
+            return null;
+
+        JsonObject? policy;
+        try
+        {
+            policy = JsonNode.Parse(existingPolicy) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            policy = null;
+        }
+
+        if (policy is null)
+            throw new MessageBusException($"The policy of queue {queueArn} is not a JSON object, so the transport cannot change whether topic {topicArn} may send to it.");
+
         var statements = policy["Statement"] switch
         {
             JsonArray array => array,
             JsonObject single => new JsonArray(single.DeepClone()),
             _ => new JsonArray()
         };
-        policy["Statement"] = statements;
 
+        return (policy, statements);
+    }
+
+    private static int IndexOf(JsonArray statements, string sid)
+    {
         for (int i = 0; i < statements.Count; i++)
         {
-            if (statements[i] is not JsonObject existing || existing["Sid"]?.GetValueKind() != JsonValueKind.String || existing["Sid"]!.GetValue<string>() != sid)
-                continue;
-
-            if (JsonNode.DeepEquals(existing, statement))
-                return null;
-
-            statements[i] = statement;
-            return policy.ToJsonString();
+            if (statements[i] is JsonObject existing && existing["Sid"]?.GetValueKind() == JsonValueKind.String && existing["Sid"]!.GetValue<string>() == sid)
+                return i;
         }
 
-        statements.Add(statement);
-        return policy.ToJsonString();
+        return -1;
     }
 
     private static JsonObject CreateStatement(string queueArn, string topicArn) => new()

@@ -24,34 +24,51 @@ namespace Foundatio.Messaging.Transport;
 /// A message transport on Amazon SQS and SNS. A queue is an SQS queue; a topic is an SNS topic; a durable subscription
 /// is an SQS queue subscribed to the topic with raw message delivery; an instance subscription is a per-receiver SQS
 /// queue that is unsubscribed and deleted when the receiver is disposed, or by a later receiver once its heartbeat
-/// tag goes stale. Every source has its own dead-letter queue with 14-day retention. Leases are visibility timeouts.
-/// Queues, topics, subscriptions and queue policies are created on first use.
+/// tag goes stale. Every source has its own dead-letter queue. Queues the transport creates keep messages for 14 days.
+/// Leases are visibility timeouts. Queues, topics, subscriptions and queue policies are created on first use. With
+/// <see cref="SqsMessageTransportOptions.Fifo"/>, all of them are FIFO and group keys are ordered.
 /// </summary>
 /// <remarks>
-/// SNS cannot delay a publish, so a topic message with <see cref="OutgoingMessage.DeliverAt"/> is published at once and
-/// each subscription's receiver hides it until that time.
+/// <para>
+/// SNS cannot delay a publish and FIFO queues cannot delay a single message, so such a message carries its delivery
+/// time and is hidden with a visibility timeout when it is first received, again every 12 hours, until it is due.
+/// Hidden messages count toward SQS's limit of in-flight messages per queue, so prefer delayed sends (or jobs) for
+/// long or high-volume delays on standard queues.
+/// </para>
+/// <para>
+/// Deleting a source keeps its queue, because SQS does not let a deleted queue's name be reused for 60 seconds and
+/// purges are asynchronous. The subscription is removed from its topic, the visible messages are deleted, and the
+/// queue is tagged with the queue's own time of the deletion so receivers discard messages that were in flight or
+/// delayed and become visible later.
+/// </para>
 /// </remarks>
 public sealed class SqsMessageTransport : IMessageTransport
 {
     internal const int MaxBatchSize = 10;
+    internal const int MaxVisibilityTimeoutSeconds = 12 * 60 * 60;
     internal const string HeartbeatTag = "foundatio-heartbeat";
     internal const string TopicTag = "foundatio-topic";
+    internal const string PurgedBeforeTag = "foundatio-purged-before";
+    internal const string SentTimestampAttribute = "SentTimestamp";
     private const int MaxBatchPayloadSize = 256 * 1024;
     private const int MaxSendAttempts = 3;
-    private const int MaxDeadLetterReasonLength = 1024;
     private const int MaxInstanceChecksPerSweep = 20;
     private const int MaxSubscriptionPagesPerSweep = 10;
+    private const int MaxSubscriptionPagesPerDelete = 100;
     private const int SweepIntervalInTimeouts = 6;
+    private const int PurgeVisibilityTimeoutSeconds = 60;
+    private static readonly TimeSpan MaxNativeDelay = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan MessageRetention = TimeSpan.FromDays(14);
+    private static readonly TimeSpan PurgeMarkerTimeout = TimeSpan.FromSeconds(20);
 
-    private static readonly Dictionary<string, string> DeadLetterQueueAttributes = new()
-    {
-        [QueueAttributeName.MessageRetentionPeriod] = ((int)TimeSpan.FromDays(14).TotalSeconds).ToString(CultureInfo.InvariantCulture)
-    };
+    /// <summary>Hidden messages are kept until due, but a day short of the retention period, so they can still be retried.</summary>
+    private static readonly TimeSpan MaxEmulatedDelay = MessageRetention - TimeSpan.FromDays(1);
 
     private readonly bool _ownsClients;
+    private readonly SqsMessageTransportNames _names;
+    private readonly Dictionary<string, string> _queueAttributes;
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _queueUrls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _topicArns = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Lazy<Task<string>>> _subscriptions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _lastSweeps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<SqsMessageReceiver, byte> _receivers = new();
     private int _disposed;
@@ -79,23 +96,28 @@ public sealed class SqsMessageTransport : IMessageTransport
         Sqs = sqs;
         Sns = sns;
         _ownsClients = ownsClients;
+        _names = new SqsMessageTransportNames(Options.NamePrefix, Options.Fifo);
+        _queueAttributes = new Dictionary<string, string>
+        {
+            [QueueAttributeName.MessageRetentionPeriod] = ((int)MessageRetention.TotalSeconds).ToString(CultureInfo.InvariantCulture)
+        };
+        if (Options.Fifo)
+            _queueAttributes[QueueAttributeName.FifoQueue] = "true";
+
         TimeProvider = Options.TimeProvider ?? TimeProvider.System;
         Logger = (Options.LoggerFactory ?? NullLoggerFactory.Instance).CreateLogger<SqsMessageTransport>();
+        Capabilities = CreateCapabilities(Options.Fifo);
     }
 
-    public TransportCapabilities Capabilities { get; } = new()
-    {
-        MaxDelay = TimeSpan.FromMinutes(15),
-        MaxSendBatchSize = MaxBatchSize,
-        MaxReceiveBatchSize = MaxBatchSize,
-        // SQS and SNS accept 256 KiB including attributes. A binary body grows by a third as base64, and the header
-        // envelope needs room, so this is the largest message that always fits.
-        MaxMessageSize = 190 * 1024,
-        MaxLeaseDuration = TimeSpan.FromHours(12),
-        LeaseExpiration = true,
-        OrderedGroups = false,
-        Deduplication = false
-    };
+    /// <summary>
+    /// Standard queues delay sends natively for up to 15 minutes. FIFO queues, and every publish, are delayed by hiding
+    /// the message once received, for up to 13 days; on FIFO queues that holds back the later messages of its group.
+    /// Retries are delayed with a visibility timeout of up to 12 hours from the receive. Messages may be 252 KiB as
+    /// <see cref="MessageSize"/> measures them: SQS and SNS accept 256 KiB including the transport's envelope, which
+    /// keeps 4 KiB for framing and the dead-letter reason. FIFO mode orders groups (dead letters excepted) and
+    /// deduplicates within 5 minutes.
+    /// </summary>
+    public TransportCapabilities Capabilities { get; }
 
     internal SqsMessageTransportOptions Options { get; }
     internal IAmazonSQS Sqs { get; }
@@ -114,17 +136,22 @@ public sealed class SqsMessageTransport : IMessageTransport
             return;
 
         var now = TimeProvider.GetUtcNow();
+        var encoded = messages.Select(m => Encode(destination, m, now)).ToList();
         try
         {
-            if (destination.Kind == MessageDestinationKind.Queue)
+            switch (destination.Kind)
             {
-                var encoded = messages.Select(m => SqsMessageTransportCodec.Encode(m, null) with { DelaySeconds = GetDelaySeconds(m.DeliverAt, now) }).ToList();
-                await SendToQueueAsync(SqsMessageTransportNames.Queue(Options.NamePrefix, destination.Name), null, encoded, cancellationToken).AnyContext();
-            }
-            else
-            {
-                var encoded = messages.Select(m => SqsMessageTransportCodec.Encode(m, m.DeliverAt > now ? m.DeliverAt : null)).ToList();
-                await PublishAsync(SqsMessageTransportNames.Topic(Options.NamePrefix, destination.Name), encoded, cancellationToken).AnyContext();
+                case MessageDestinationKind.Queue:
+                    await SendToQueueAsync(_names.Queue(destination.Name), encoded, cancellationToken).AnyContext();
+                    break;
+                case MessageDestinationKind.Subscription:
+                    string queueName = _names.Subscription(destination.Name, destination.SubscriptionName!);
+                    await SubscribeAsync(destination.Name, queueName, cancellationToken).AnyContext();
+                    await SendToQueueAsync(queueName, encoded, cancellationToken).AnyContext();
+                    break;
+                default:
+                    await PublishAsync(_names.Topic(destination.Name), encoded, cancellationToken).AnyContext();
+                    break;
             }
         }
         catch (AmazonServiceException ex)
@@ -148,12 +175,8 @@ public sealed class SqsMessageTransport : IMessageTransport
             {
                 MessageSourceKind.InstanceSubscription => await CreateInstanceReceiverAsync(source, options, cancellationToken).AnyContext(),
                 MessageSourceKind.Subscription => await CreateSubscriptionReceiverAsync(source, options, cancellationToken).AnyContext(),
-                MessageSourceKind.DeadLetter => new SqsMessageReceiver(this, source, options,
-                    await GetQueueUrlAsync(SqsMessageTransportNames.DeadLetter(Options.NamePrefix, source), DeadLetterQueueAttributes, cancellationToken).AnyContext(),
-                    SqsMessageTransportNames.DeadLetter(Options.NamePrefix, source), null),
-                _ => new SqsMessageReceiver(this, source, options,
-                    await GetQueueUrlAsync(SqsMessageTransportNames.Queue(Options.NamePrefix, source.Name), null, cancellationToken).AnyContext(),
-                    SqsMessageTransportNames.DeadLetter(Options.NamePrefix, source), null)
+                MessageSourceKind.DeadLetter => await CreateQueueReceiverAsync(source, options, _names.DeadLetter(source), cancellationToken).AnyContext(),
+                _ => await CreateQueueReceiverAsync(source, options, _names.Queue(source.Name), cancellationToken).AnyContext()
             };
         }
         catch (AmazonServiceException ex)
@@ -164,6 +187,41 @@ public sealed class SqsMessageTransport : IMessageTransport
         _receivers.TryAdd(receiver, 0);
         receiver.Start();
         return receiver;
+    }
+
+    /// <summary>
+    /// Removes the source's messages and dead letters, and unsubscribes a durable subscription from its topic, but keeps
+    /// the queues, so the source can be used again at once. Messages that were in flight or delayed during the deletion
+    /// are discarded by receivers opened afterwards, using the deletion time tagged on the queue. On FIFO queues, SQS
+    /// keeps dropping deduplication ids seen in the 5 minutes before the deletion.
+    /// </summary>
+    public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ThrowIfDisposed();
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            throw new ArgumentException("Instance subscriptions are removed by disposing their receiver.", nameof(source));
+
+        try
+        {
+            switch (source.Kind)
+            {
+                case MessageSourceKind.Queue:
+                    await PurgeAsync(_names.Queue(source.Name), cancellationToken).AnyContext();
+                    break;
+                case MessageSourceKind.Subscription:
+                    string queueName = _names.Subscription(source.Topic!, source.Name);
+                    await UnsubscribeAsync(source.Topic!, queueName, cancellationToken).AnyContext();
+                    await PurgeAsync(queueName, cancellationToken).AnyContext();
+                    break;
+            }
+
+            await PurgeAsync(_names.DeadLetter(source), cancellationToken).AnyContext();
+        }
+        catch (AmazonServiceException ex)
+        {
+            throw new MessageBusException($"Could not delete {source}: {ex.Message}", ex);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -193,16 +251,30 @@ public sealed class SqsMessageTransport : IMessageTransport
     internal static bool IsLeaseLost(string? errorCode) => errorCode is "ReceiptHandleIsInvalid" or "MessageNotInflight"
         or "AWS.SimpleQueueService.MessageNotInflight" or "InvalidParameterValue" or "InvalidParameterValueException";
 
-    internal async Task SendDeadLetterAsync(string deadLetterQueueName, IncomingMessage message, string reason, CancellationToken cancellationToken)
+    internal static long? GetNumber(Dictionary<string, string>? attributes, string name) =>
+        attributes?.GetValueOrDefault(name) is { } value && Int64.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long number) ? number : null;
+
+    /// <summary>
+    /// Copies a delivery to a dead-letter queue with the reason. Dead letters are not ordered, so on FIFO queues each
+    /// is its own message group and a group's dead letters can be inspected together. The copy is deduplicated by the
+    /// delivery, so a retried dead-lettering is not copied twice but a message dead-lettered again after a replay is.
+    /// </summary>
+    internal async Task SendDeadLetterAsync(string deadLetterQueueName, IncomingMessage message, string deliveryId, string reason, CancellationToken cancellationToken)
     {
-        reason ??= String.Empty;
         var headers = new Dictionary<string, string>(message.Headers, StringComparer.Ordinal)
         {
-            [KnownHeaders.DeadLetterReason] = reason.Length > MaxDeadLetterReasonLength ? reason[..MaxDeadLetterReasonLength] : reason
+            [KnownHeaders.DeadLetterReason] = SqsMessageTransportCodec.TruncateUtf8(reason ?? String.Empty, SqsMessageTransportCodec.MaxDeadLetterReasonBytes)
         };
 
         var deadLetter = new OutgoingMessage { MessageId = message.MessageId, Body = message.Body, Headers = headers, GroupKey = message.GroupKey };
-        await SendToQueueAsync(deadLetterQueueName, DeadLetterQueueAttributes, [SqsMessageTransportCodec.Encode(deadLetter, null)], cancellationToken).AnyContext();
+        var encoded = SqsMessageTransportCodec.Encode(deadLetter, null);
+        if (Options.Fifo)
+        {
+            string id = SqsMessageTransportNames.FifoId(deliveryId);
+            encoded = encoded with { GroupId = id, DeduplicationId = id };
+        }
+
+        await SendToQueueAsync(deadLetterQueueName, [encoded], cancellationToken).AnyContext();
     }
 
     internal Task HeartbeatAsync(string queueUrl, CancellationToken cancellationToken) =>
@@ -214,33 +286,92 @@ public sealed class SqsMessageTransport : IMessageTransport
         await DeleteQueueAsync(instance.QueueUrl).AnyContext();
     }
 
+    private static TransportCapabilities CreateCapabilities(bool fifo) => new()
+    {
+        MaxDelay = fifo ? MaxEmulatedDelay : MaxNativeDelay,
+        MaxPublishDelay = MaxEmulatedDelay,
+        MaxRetryDelay = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
+        MaxSendBatchSize = MaxBatchSize,
+        MaxReceiveBatchSize = MaxBatchSize,
+        MaxMessageSize = SqsMessageTransportCodec.MaxMessageSize,
+        MaxLeaseDuration = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
+        LeaseExpiration = true,
+        OrderedGroups = fifo,
+        Deduplication = fifo
+    };
+
+    private SqsEncodedMessage Encode(MessageDestination destination, OutgoingMessage message, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(message, nameof(message));
+        long size = MessageSize.Of(message);
+        if (size > SqsMessageTransportCodec.MaxMessageSize)
+        {
+            throw new MessageTooLargeException($"Message {message.MessageId} is {size} bytes with its headers and ids, which exceeds the SQS transport limit of {SqsMessageTransportCodec.MaxMessageSize} bytes.")
+            {
+                Size = size,
+                Limit = SqsMessageTransportCodec.MaxMessageSize
+            };
+        }
+
+        // Standard queues delay natively; a delay SQS cannot apply travels in the envelope and the receiver hides the
+        // message until it is due.
+        bool nativeDelay = destination.Kind != MessageDestinationKind.Topic && !Options.Fifo;
+        var deliverAt = message.DeliverAt > now ? message.DeliverAt : null;
+        var hideUntil = deliverAt is { } at && (!nativeDelay || at - now > MaxNativeDelay) ? deliverAt : null;
+        var encoded = SqsMessageTransportCodec.Encode(message, hideUntil) with { DelaySeconds = nativeDelay ? GetDelaySeconds(deliverAt, now) : 0 };
+        if (encoded.Size > SqsMessageTransportCodec.MaxBrokerMessageSize)
+        {
+            throw new MessageTooLargeException($"Message {message.MessageId} is {encoded.Size} bytes once encoded, over the {SqsMessageTransportCodec.MaxBrokerMessageSize} bytes SQS and SNS accept: its {message.Headers.Count} headers need more framing than the transport reserves.")
+            {
+                Size = encoded.Size,
+                Limit = SqsMessageTransportCodec.MaxBrokerMessageSize
+            };
+        }
+
+        if (!Options.Fifo)
+            return encoded;
+
+        // An ungrouped message is its own group, so it is not held behind others. Without a deduplication id, a random
+        // one makes SQS drop only the retries of this very send.
+        return encoded with
+        {
+            GroupId = SqsMessageTransportNames.FifoId(message.GroupKey ?? message.MessageId),
+            DeduplicationId = message.DeduplicationId is { } deduplicationId ? SqsMessageTransportNames.FifoId(deduplicationId) : Guid.NewGuid().ToString("N")
+        };
+    }
+
+    private async Task<SqsMessageReceiver> CreateQueueReceiverAsync(MessageSource source, ReceiverOptions options, string queueName, CancellationToken cancellationToken)
+    {
+        string queueUrl = await GetQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        long? purgedBefore = await GetPurgedBeforeAsync(queueUrl, cancellationToken).AnyContext();
+        return new SqsMessageReceiver(this, source, options, queueUrl, _names.DeadLetter(source), null, purgedBefore);
+    }
+
     private async Task<SqsMessageReceiver> CreateSubscriptionReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
-        string topicArn = await GetTopicArnAsync(SqsMessageTransportNames.Topic(Options.NamePrefix, source.Topic!), cancellationToken).AnyContext();
-        string queueName = SqsMessageTransportNames.Subscription(Options.NamePrefix, source.Topic!, source.Name);
-        string queueUrl = await GetQueueUrlAsync(queueName, null, cancellationToken).AnyContext();
-        await GetOrCreateAsync(_subscriptions, $"{queueName}|{topicArn}", () => SubscribeAsync(queueUrl, topicArn), cancellationToken).AnyContext();
-
-        return new SqsMessageReceiver(this, source, options, queueUrl, SqsMessageTransportNames.DeadLetter(Options.NamePrefix, source), null);
+        string queueName = _names.Subscription(source.Topic!, source.Name);
+        await SubscribeAsync(source.Topic!, queueName, cancellationToken).AnyContext();
+        return await CreateQueueReceiverAsync(source, options, queueName, cancellationToken).AnyContext();
     }
 
     private async Task<SqsMessageReceiver> CreateInstanceReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken)
     {
-        string topicName = SqsMessageTransportNames.Topic(Options.NamePrefix, source.Topic!);
+        string topicName = _names.Topic(source.Topic!);
         string topicArn = await GetTopicArnAsync(topicName, cancellationToken).AnyContext();
-        string instancePrefix = SqsMessageTransportNames.InstancePrefix(Options.NamePrefix, source.Topic!);
-        string queueName = SqsMessageTransportNames.NewInstance(instancePrefix, source.Name);
+        string instancePrefix = _names.InstancePrefix(source.Topic!);
+        string queueName = _names.NewInstance(instancePrefix, source.Name);
 
         var created = await Sqs.CreateQueueAsync(new CreateQueueRequest
         {
             QueueName = queueName,
+            Attributes = Options.Fifo ? new Dictionary<string, string> { [QueueAttributeName.FifoQueue] = "true" } : null,
             Tags = new Dictionary<string, string> { [TopicTag] = topicName, [HeartbeatTag] = GetHeartbeat() }
         }, cancellationToken).AnyContext();
 
         string subscriptionArn;
         try
         {
-            subscriptionArn = await SubscribeAsync(created.QueueUrl, topicArn).AnyContext();
+            subscriptionArn = await SubscribeQueueAsync(created.QueueUrl, topicArn, cancellationToken).AnyContext();
         }
         catch
         {
@@ -251,17 +382,17 @@ public sealed class SqsMessageTransport : IMessageTransport
         Logger.LogDebug("Created instance subscription queue {QueueName} for topic {Topic}", queueName, topicName);
         var instance = new SqsInstanceSubscription(topicArn, topicName, instancePrefix, queueName, created.QueueUrl, subscriptionArn);
         await SweepInstancesAsync(instance).AnyContext();
-        return new SqsMessageReceiver(this, source, options, created.QueueUrl, null, instance);
+        return new SqsMessageReceiver(this, source, options, created.QueueUrl, null, instance, null);
     }
 
-    private async Task SendToQueueAsync(string queueName, IReadOnlyDictionary<string, string>? queueAttributes, IReadOnlyList<SqsEncodedMessage> messages, CancellationToken cancellationToken)
+    private async Task SendToQueueAsync(string queueName, IReadOnlyList<SqsEncodedMessage> messages, CancellationToken cancellationToken)
     {
         foreach (var batch in Batch(messages))
         {
             var pending = batch;
             for (int attempt = 1; ; attempt++)
             {
-                string queueUrl = await GetQueueUrlAsync(queueName, queueAttributes, cancellationToken).AnyContext();
+                string queueUrl = await GetQueueUrlAsync(queueName, cancellationToken).AnyContext();
                 SendMessageBatchResponse response;
                 try
                 {
@@ -272,7 +403,9 @@ public sealed class SqsMessageTransport : IMessageTransport
                         {
                             Id = i.ToString(CultureInfo.InvariantCulture),
                             MessageBody = m.Body,
-                            DelaySeconds = m.DelaySeconds,
+                            DelaySeconds = m.DelaySeconds > 0 ? m.DelaySeconds : null,
+                            MessageGroupId = m.GroupId,
+                            MessageDeduplicationId = m.DeduplicationId,
                             MessageAttributes = SqsMessageTransportCodec.ToSqsAttributes(m)
                         }).ToList()
                     }, cancellationToken).AnyContext();
@@ -309,6 +442,8 @@ public sealed class SqsMessageTransport : IMessageTransport
                         {
                             Id = i.ToString(CultureInfo.InvariantCulture),
                             Message = m.Body,
+                            MessageGroupId = m.GroupId,
+                            MessageDeduplicationId = m.DeduplicationId,
                             MessageAttributes = SqsMessageTransportCodec.ToSnsAttributes(m)
                         }).ToList()
                     }, cancellationToken).AnyContext();
@@ -366,18 +501,39 @@ public sealed class SqsMessageTransport : IMessageTransport
             yield return batch;
     }
 
-    private Task<string> GetQueueUrlAsync(string queueName, IReadOnlyDictionary<string, string>? attributes, CancellationToken cancellationToken) =>
-        GetOrCreateAsync(_queueUrls, queueName, () => ResolveQueueUrlAsync(queueName, attributes), cancellationToken);
+    private Task<string> GetQueueUrlAsync(string queueName, CancellationToken cancellationToken) =>
+        GetOrCreateAsync(_queueUrls, queueName, () => ResolveQueueUrlAsync(queueName), cancellationToken);
+
+    /// <summary>Returns the queue's URL without creating it, or <c>null</c> when it does not exist.</summary>
+    private async Task<string?> FindQueueUrlAsync(string queueName, CancellationToken cancellationToken)
+    {
+        if (await GetCachedAsync(_queueUrls, queueName).AnyContext() is { } cached)
+            return cached;
+
+        try
+        {
+            return (await Sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = queueName }, cancellationToken).AnyContext()).QueueUrl;
+        }
+        catch (QueueDoesNotExistException)
+        {
+            return null;
+        }
+    }
 
     private Task<string> GetTopicArnAsync(string topicName, CancellationToken cancellationToken) =>
         GetOrCreateAsync(_topicArns, topicName, async () =>
         {
-            var response = await Sns.CreateTopicAsync(new CreateTopicRequest { Name = topicName }).AnyContext();
+            var response = await Sns.CreateTopicAsync(new CreateTopicRequest
+            {
+                Name = topicName,
+                Attributes = Options.Fifo ? new Dictionary<string, string> { ["FifoTopic"] = "true" } : null
+            }).AnyContext();
+
             Logger.LogDebug("Using topic {TopicArn}", response.TopicArn);
             return response.TopicArn;
         }, cancellationToken);
 
-    private async Task<string> ResolveQueueUrlAsync(string queueName, IReadOnlyDictionary<string, string>? attributes)
+    private async Task<string> ResolveQueueUrlAsync(string queueName)
     {
         try
         {
@@ -392,7 +548,7 @@ public sealed class SqsMessageTransport : IMessageTransport
             var response = await Sqs.CreateQueueAsync(new CreateQueueRequest
             {
                 QueueName = queueName,
-                Attributes = attributes is null ? null : new Dictionary<string, string>(attributes)
+                Attributes = new Dictionary<string, string>(_queueAttributes)
             }).AnyContext();
 
             Logger.LogDebug("Created queue {QueueName}", queueName);
@@ -404,14 +560,36 @@ public sealed class SqsMessageTransport : IMessageTransport
         }
     }
 
+    /// <summary>
+    /// The time of the queue's last purge, on the queue's own clock: receivers discard messages sent before it. Read
+    /// when a receiver opens; a receiver left open across a deletion keeps delivering its source's older messages.
+    /// </summary>
+    private async Task<long?> GetPurgedBeforeAsync(string queueUrl, CancellationToken cancellationToken)
+    {
+        var tags = (await Sqs.ListQueueTagsAsync(new ListQueueTagsRequest { QueueUrl = queueUrl }, cancellationToken).AnyContext()).Tags;
+        return GetNumber(tags, PurgedBeforeTag);
+    }
+
+    /// <summary>
+    /// Subscribes the queue to the topic, creating both if needed. Done on every receiver and every send to the
+    /// subscription, not cached, so a subscription deleted by another process is restored; SNS returns the existing
+    /// subscription when there is one.
+    /// </summary>
+    private async Task SubscribeAsync(string topic, string queueName, CancellationToken cancellationToken)
+    {
+        string topicArn = await GetTopicArnAsync(_names.Topic(topic), cancellationToken).AnyContext();
+        string queueUrl = await GetQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        await SubscribeQueueAsync(queueUrl, topicArn, cancellationToken).AnyContext();
+    }
+
     /// <summary>Allows the topic to send to the queue, keeping the queue's other policy statements, then subscribes it with raw delivery.</summary>
-    private async Task<string> SubscribeAsync(string queueUrl, string topicArn)
+    private async Task<string> SubscribeQueueAsync(string queueUrl, string topicArn, CancellationToken cancellationToken)
     {
         var attributes = await Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
         {
             QueueUrl = queueUrl,
             AttributeNames = [QueueAttributeName.QueueArn, QueueAttributeName.Policy]
-        }).AnyContext();
+        }, cancellationToken).AnyContext();
 
         string queueArn = attributes.Attributes?.GetValueOrDefault(QueueAttributeName.QueueArn)
             ?? throw new MessageBusException($"Queue {queueUrl} did not report its ARN.");
@@ -423,7 +601,7 @@ public sealed class SqsMessageTransport : IMessageTransport
             {
                 QueueUrl = queueUrl,
                 Attributes = new Dictionary<string, string> { [QueueAttributeName.Policy] = policy }
-            }).AnyContext();
+            }, cancellationToken).AnyContext();
         }
 
         try
@@ -435,14 +613,15 @@ public sealed class SqsMessageTransport : IMessageTransport
                 Endpoint = queueArn,
                 ReturnSubscriptionArn = true,
                 Attributes = new Dictionary<string, string> { ["RawMessageDelivery"] = "true" }
-            }).AnyContext();
+            }, cancellationToken).AnyContext();
 
             return response.SubscriptionArn;
         }
         catch (InvalidParameterException)
         {
             // The queue may already be subscribed with other attributes, for example without raw delivery.
-            string? existing = await FindSubscriptionAsync(topicArn, queueArn).AnyContext();
+            string? existing = (await ListSubscriptionsAsync(topicArn, MaxSubscriptionPagesPerDelete, cancellationToken).AnyContext())
+                .FirstOrDefault(s => s.Protocol == "sqs" && s.Endpoint == queueArn)?.SubscriptionArn;
             if (existing is null)
                 throw;
 
@@ -451,25 +630,174 @@ public sealed class SqsMessageTransport : IMessageTransport
                 SubscriptionArn = existing,
                 AttributeName = "RawMessageDelivery",
                 AttributeValue = "true"
-            }).AnyContext();
+            }, cancellationToken).AnyContext();
 
             return existing;
         }
     }
 
-    private async Task<string?> FindSubscriptionAsync(string topicArn, string queueArn)
+    /// <summary>
+    /// Removes every subscription of the topic that delivers to the queue, then the topic's permission to send to it,
+    /// so a subscription SNS has not finished removing cannot deliver either. Creates nothing.
+    /// </summary>
+    private async Task UnsubscribeAsync(string topic, string queueName, CancellationToken cancellationToken)
     {
-        var subscriptions = await ListSubscriptionsAsync(topicArn).AnyContext();
-        return subscriptions.FirstOrDefault(s => s.Protocol == "sqs" && s.Endpoint == queueArn)?.SubscriptionArn;
+        string? queueUrl = await FindQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        if (queueUrl is null)
+            return;
+
+        GetQueueAttributesResponse attributes;
+        try
+        {
+            attributes = await Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+            {
+                QueueUrl = queueUrl,
+                AttributeNames = [QueueAttributeName.QueueArn, QueueAttributeName.Policy]
+            }, cancellationToken).AnyContext();
+        }
+        catch (QueueDoesNotExistException)
+        {
+            return;
+        }
+
+        string? queueArn = attributes.Attributes?.GetValueOrDefault(QueueAttributeName.QueueArn);
+        if (queueArn is null)
+            return;
+
+        string topicName = _names.Topic(topic);
+        string? topicArn = await GetCachedAsync(_topicArns, topicName).AnyContext() ?? GetTopicArn(queueArn, topicName);
+        if (topicArn is null)
+            return;
+
+        foreach (var subscription in await ListSubscriptionsAsync(topicArn, MaxSubscriptionPagesPerDelete, cancellationToken).AnyContext())
+        {
+            if (subscription.Protocol == "sqs" && subscription.Endpoint == queueArn)
+                await UnsubscribeAsync(subscription.SubscriptionArn).AnyContext();
+        }
+
+        string? policy = SqsMessageTransportPolicy.Remove(attributes.Attributes!.GetValueOrDefault(QueueAttributeName.Policy), queueArn, topicArn);
+        if (policy is not null)
+        {
+            await Sqs.SetQueueAttributesAsync(new SetQueueAttributesRequest
+            {
+                QueueUrl = queueUrl,
+                Attributes = new Dictionary<string, string> { [QueueAttributeName.Policy] = policy }
+            }, cancellationToken).AnyContext();
+        }
+
+        Logger.LogDebug("Unsubscribed queue {QueueName} from topic {Topic}", queueName, topicName);
     }
 
-    private async Task<IReadOnlyList<Subscription>> ListSubscriptionsAsync(string topicArn)
+    /// <summary>
+    /// Deletes every message of the queue without deleting the queue. A marker message gives the queue's own time of
+    /// the purge, which is tagged on the queue so receivers discard older messages that were not visible to the purge
+    /// (delayed, hidden until due, or held by a receiver). SQS's PurgeQueue is not used: it runs once a minute at most
+    /// and may also delete messages sent during the following minute.
+    /// </summary>
+    private async Task PurgeAsync(string queueName, CancellationToken cancellationToken)
+    {
+        string? queueUrl = await FindQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        if (queueUrl is null)
+            return;
+
+        try
+        {
+            string markerId = Guid.NewGuid().ToString("N");
+            var marker = SqsMessageTransportCodec.EncodePurgeMarker(markerId);
+            await Sqs.SendMessageAsync(new SendMessageRequest
+            {
+                QueueUrl = queueUrl,
+                MessageBody = marker.Body,
+                MessageAttributes = SqsMessageTransportCodec.ToSqsAttributes(marker),
+                MessageGroupId = Options.Fifo ? markerId : null,
+                MessageDeduplicationId = Options.Fifo ? markerId : null
+            }, cancellationToken).AnyContext();
+
+            long? purgedBefore = null;
+            int deleted = 0;
+            long started = Stopwatch.GetTimestamp();
+            while (true)
+            {
+                var response = await Sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+                {
+                    QueueUrl = queueUrl,
+                    MaxNumberOfMessages = MaxBatchSize,
+                    WaitTimeSeconds = 1,
+                    VisibilityTimeout = PurgeVisibilityTimeoutSeconds,
+                    MessageSystemAttributeNames = [SentTimestampAttribute],
+                    MessageAttributeNames = [SqsMessageTransportCodec.AttributeName],
+                    ReceiveRequestAttemptId = Options.Fifo ? Guid.NewGuid().ToString("N") : null
+                }, cancellationToken).AnyContext();
+
+                var messages = response.Messages ?? [];
+                if (messages.Count == 0)
+                {
+                    if (purgedBefore is not null || Stopwatch.GetElapsedTime(started) > PurgeMarkerTimeout)
+                        break;
+
+                    continue;
+                }
+
+                foreach (var message in messages)
+                {
+                    var decoded = SqsMessageTransportCodec.Decode(message.Body, message.MessageAttributes?.GetValueOrDefault(SqsMessageTransportCodec.AttributeName), message.MessageId);
+                    if (!decoded.IsPurgeMarker)
+                        deleted++;
+                    else if (decoded.MessageId == markerId)
+                        purgedBefore = GetNumber(message.Attributes, SentTimestampAttribute);
+                }
+
+                await Sqs.DeleteMessageBatchAsync(new DeleteMessageBatchRequest
+                {
+                    QueueUrl = queueUrl,
+                    Entries = messages.Select((m, i) => new DeleteMessageBatchRequestEntry { Id = i.ToString(CultureInfo.InvariantCulture), ReceiptHandle = m.ReceiptHandle }).ToList()
+                }, cancellationToken).AnyContext();
+            }
+
+            if (purgedBefore is { } before)
+            {
+                await Sqs.TagQueueAsync(new TagQueueRequest
+                {
+                    QueueUrl = queueUrl,
+                    Tags = new Dictionary<string, string> { [PurgedBeforeTag] = before.ToString(CultureInfo.InvariantCulture) }
+                }, cancellationToken).AnyContext();
+            }
+            else
+            {
+                Logger.LogWarning("Purged queue {QueueName} without receiving its marker; messages that were in flight or delayed may still be delivered", queueName);
+            }
+
+            Logger.LogDebug("Purged {Count} messages from queue {QueueName}", deleted, queueName);
+        }
+        catch (QueueDoesNotExistException)
+        {
+            _queueUrls.TryRemove(queueName, out _);
+        }
+    }
+
+    /// <summary>The ARN of a topic in the queue's account and region, built without creating the topic.</summary>
+    private static string? GetTopicArn(string queueArn, string topicName)
+    {
+        string[] parts = queueArn.Split(':');
+        return parts.Length == 6 ? $"{parts[0]}:{parts[1]}:sns:{parts[3]}:{parts[4]}:{topicName}" : null;
+    }
+
+    private async Task<IReadOnlyList<Subscription>> ListSubscriptionsAsync(string topicArn, int maxPages, CancellationToken cancellationToken = default)
     {
         var subscriptions = new List<Subscription>();
         string? nextToken = null;
-        for (int page = 0; page < MaxSubscriptionPagesPerSweep; page++)
+        for (int page = 0; page < maxPages; page++)
         {
-            var response = await Sns.ListSubscriptionsByTopicAsync(new ListSubscriptionsByTopicRequest { TopicArn = topicArn, NextToken = nextToken }).AnyContext();
+            ListSubscriptionsByTopicResponse response;
+            try
+            {
+                response = await Sns.ListSubscriptionsByTopicAsync(new ListSubscriptionsByTopicRequest { TopicArn = topicArn, NextToken = nextToken }, cancellationToken).AnyContext();
+            }
+            catch (SnsNotFoundException)
+            {
+                break;
+            }
+
             if (response.Subscriptions is not null)
                 subscriptions.AddRange(response.Subscriptions);
 
@@ -526,7 +854,7 @@ public sealed class SqsMessageTransport : IMessageTransport
             if (stale.Count == 0)
                 return;
 
-            var subscriptions = await ListSubscriptionsAsync(own.TopicArn).AnyContext();
+            var subscriptions = await ListSubscriptionsAsync(own.TopicArn, MaxSubscriptionPagesPerSweep).AnyContext();
             foreach (string queueUrl in stale)
             {
                 string queueName = GetQueueName(queueUrl);
@@ -575,7 +903,17 @@ public sealed class SqsMessageTransport : IMessageTransport
         if (deliverAt is not { } at || at <= now)
             return 0;
 
-        return (int)Math.Min(Math.Ceiling((at - now).TotalSeconds), TimeSpan.FromMinutes(15).TotalSeconds);
+        return (int)Math.Min(Math.Ceiling((at - now).TotalSeconds), MaxNativeDelay.TotalSeconds);
+    }
+
+    /// <summary>A value already resolved by <see cref="GetOrCreateAsync"/>, without resolving it.</summary>
+    private static async Task<string?> GetCachedAsync(ConcurrentDictionary<string, Lazy<Task<string>>> cache, string key)
+    {
+        if (!cache.TryGetValue(key, out var entry) || !entry.IsValueCreated)
+            return null;
+
+        var task = entry.Value;
+        return task.IsCompletedSuccessfully ? await task.AnyContext() : null;
     }
 
     private static async Task<string> GetOrCreateAsync(ConcurrentDictionary<string, Lazy<Task<string>>> cache, string key, Func<Task<string>> factory, CancellationToken cancellationToken)

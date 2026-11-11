@@ -11,6 +11,7 @@ using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
+using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Configuration;
@@ -21,13 +22,19 @@ namespace Foundatio.AWS.Tests.Messaging;
 
 public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTransportTestsBase(output)
 {
-    private const string NamePrefix = "ft-";
+    protected const string NamePrefix = "ft-";
+    private const int MaxSqsMessageSize = 256 * 1024;
 
     private static readonly IConfiguration _configuration = new ConfigurationBuilder()
         .SetBasePath(Directory.GetCurrentDirectory())
         .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
         .AddEnvironmentVariables()
         .Build();
+
+    /// <summary>Runs every test against FIFO queues and topics when true.</summary>
+    protected virtual bool Fifo => false;
+
+    protected string Suffix => Fifo ? ".fifo" : String.Empty;
 
     protected override IMessageTransport CreateTransport() => new SqsMessageTransport(CreateOptions());
 
@@ -69,7 +76,7 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
             var created = (await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = NamePrefix + name, MaxResults = 1000 }, TestCancellationToken)).QueueUrls ?? [];
             var queueNames = created.Select(url => url[(url.LastIndexOf('/') + 1)..]).ToList();
             Assert.Equal(receivers.Count, queueNames.Count);
-            Assert.All(queueNames, n => Assert.Matches("^[A-Za-z0-9_-]{1,80}$", n));
+            Assert.All(queueNames, n => Assert.Matches(Fifo ? "^[A-Za-z0-9_-]{1,75}\\.fifo$" : "^[A-Za-z0-9_-]{1,80}$", n));
         }
         finally
         {
@@ -85,21 +92,29 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         var source = MessageSource.Queue(NewName("foreign"));
         await using var receiver = await CreateReceiverAsync(source);
         using var sqs = CreateSqsClient();
-        string queueUrl = (await sqs.GetQueueUrlAsync(NamePrefix + source.Name, TestCancellationToken)).QueueUrl;
+        string queueUrl = (await sqs.GetQueueUrlAsync(NamePrefix + source.Name + Suffix, TestCancellationToken)).QueueUrl;
         string[] bodies = ["{\"orderId\":42,\"note\":\"héllo\"}", "aGVsbG8=", "-"];
 
         // Act
         var sent = new Dictionary<string, string>();
         foreach (string body in bodies)
-            sent[(await sqs.SendMessageAsync(new SendMessageRequest { QueueUrl = queueUrl, MessageBody = body }, TestCancellationToken)).MessageId] = body;
+            sent[(await RawSendAsync(sqs, new SendMessageRequest { QueueUrl = queueUrl, MessageBody = body })).MessageId] = body;
 
-        var notAnEnvelope = await sqs.SendMessageAsync(new SendMessageRequest
+        var notAnEnvelope = await RawSendAsync(sqs, new SendMessageRequest
         {
             QueueUrl = queueUrl,
             MessageBody = "{\"e\":\"base64\"}",
-            MessageAttributes = new Dictionary<string, SqsMessageAttributeValue> { ["foundatio"] = new() { DataType = "String", StringValue = "not json" } }
-        }, TestCancellationToken);
+            MessageAttributes = new Dictionary<string, SqsMessageAttributeValue> { ["foundatio"] = new() { DataType = "String", StringValue = "not an envelope" } }
+        });
         sent[notAnEnvelope.MessageId] = "{\"e\":\"base64\"}";
+
+        var unknownVersion = await RawSendAsync(sqs, new SendMessageRequest
+        {
+            QueueUrl = queueUrl,
+            MessageBody = "versioned",
+            MessageAttributes = new Dictionary<string, SqsMessageAttributeValue> { ["foundatio"] = new() { DataType = "Binary", BinaryValue = new MemoryStream([99, 0, 1, 2]) } }
+        });
+        sent[unknownVersion.MessageId] = "versioned";
 
         // Assert
         var messages = await ReceiveAsync(receiver, sent.Count);
@@ -175,22 +190,156 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
-    public async Task Publish_WithDeliverAt_IsHeldUntilDueAndKeepsItsDeliveryCount()
+    public async Task Publish_DelayedBeyondTheLongestVisibilityTimeout_IsHiddenUntilDue()
     {
         // Arrange
-        string topic = NewName("topic-delay");
+        string topic = NewName("long-delay");
         await using var receiver = await CreateReceiverAsync(MessageSource.Subscription(topic, "later"));
-        var stopwatch = Stopwatch.StartNew();
+        using var sqs = CreateSqsClient();
+        string queueUrl = Assert.Single((await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = $"{NamePrefix}{topic}-later" }, TestCancellationToken)).QueueUrls ?? []);
 
-        // Act
-        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("held") with { DeliverAt = DateTimeOffset.UtcNow.Add(ShortDelay) }], TestCancellationToken);
-        var message = await ReceiveOneAsync(receiver, ShortDelay + DeliveryTimeout);
+        // Act: SQS hides a message for at most 12 hours, so this one is hidden again when it next appears.
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("tomorrow") with { DeliverAt = DateTimeOffset.UtcNow.AddHours(13) }], TestCancellationToken);
 
         // Assert
-        Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"Delivered after {stopwatch.Elapsed}, expected at least {ShortDelay}.");
-        Assert.Equal("held", Encoding.UTF8.GetString(message.Body.Span));
-        Assert.Equal(1, message.DeliveryCount);
-        await receiver.CompleteAsync(message, TestCancellationToken);
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+        var attributes = await sqs.GetQueueAttributesAsync(queueUrl, [QueueAttributeName.ApproximateNumberOfMessagesNotVisible, QueueAttributeName.ApproximateNumberOfMessages], TestCancellationToken);
+        Assert.Equal("1", attributes.Attributes[QueueAttributeName.ApproximateNumberOfMessagesNotVisible]);
+        Assert.Equal("0", attributes.Attributes[QueueAttributeName.ApproximateNumberOfMessages]);
+    }
+
+    [Fact]
+    public async Task Delete_Subscription_UnsubscribesAndRevokesTheTopicButKeepsTheQueue()
+    {
+        // Arrange
+        string topic = NewName("delete-keeps");
+        var source = MessageSource.Subscription(topic, "audit");
+        await (await CreateReceiverAsync(source)).DisposeAsync();
+        using var sqs = CreateSqsClient();
+        using var sns = CreateSnsClient();
+        string queueUrl = Assert.Single((await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = $"{NamePrefix}{topic}-audit" }, TestCancellationToken)).QueueUrls ?? []);
+        Assert.Single(await ListSubscriptionsAsync(sns, topic));
+
+        // Act
+        await Transport.DeleteAsync(source, TestCancellationToken);
+
+        // Assert
+        Assert.Empty(await ListSubscriptionsAsync(sns, topic));
+        var attributes = await sqs.GetQueueAttributesAsync(queueUrl, [QueueAttributeName.Policy], TestCancellationToken);
+        Assert.DoesNotContain("FoundatioTopic", attributes.Attributes?.GetValueOrDefault(QueueAttributeName.Policy) ?? String.Empty);
+
+        await using var receiver = await CreateReceiverAsync(source);
+        Assert.Single(await ListSubscriptionsAsync(sns, topic));
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("restored", "id-restored")], TestCancellationToken);
+        Assert.Equal("id-restored", (await ReceiveOneAsync(receiver)).MessageId);
+    }
+
+    [Fact]
+    public async Task Delete_DiscardsMessagesThatWereInvisibleDuringTheDelete()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("delete-hidden"));
+        await using (var receiver = await CreateReceiverAsync(source))
+        {
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("retried", "id-retried")], TestCancellationToken);
+            await receiver.AbandonAsync(await ReceiveOneAsync(receiver), TimeSpan.FromSeconds(3), TestCancellationToken);
+        }
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("delayed", "id-delayed") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(3) }], TestCancellationToken);
+
+        // Act
+        await Transport.DeleteAsync(source, TestCancellationToken);
+
+        // Assert
+        await using var recreated = await CreateReceiverAsync(source);
+        await AssertNothingReceivedAsync(recreated, TimeSpan.FromSeconds(5));
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+        Assert.Equal("id-after", (await ReceiveOneAsync(recreated)).MessageId);
+    }
+
+    [Fact]
+    public async Task MaxMessageSize_TextBodyWithHeadersThatNeedEscaping_FitsSqsAndCanBeDeadLettered()
+    {
+        // Arrange: a text body is sent as-is; these headers would grow several times over if escaped as JSON.
+        var headers = new Dictionary<string, string>
+        {
+            [KnownHeaders.MessageType] = "conformance.size",
+            ["control"] = new('\u0001', 2000),
+            ["quotes"] = new('"', 2000),
+            ["emoji"] = String.Concat(Enumerable.Repeat("😀", 1000))
+        };
+        for (int i = 0; i < 200; i++)
+            headers[$"h{i}"] = "v";
+
+        long overhead = MessageSize.Of("at-limit", ReadOnlySpan<byte>.Empty, headers, groupKey: "group");
+        string body = "{\"data\":\"" + new string('a', (int)(Transport.Capabilities.MaxMessageSize!.Value - overhead) - 11) + "\"}";
+        var outgoing = new OutgoingMessage { MessageId = "at-limit", Body = Encoding.UTF8.GetBytes(body), Headers = headers, GroupKey = "group" };
+        Assert.Equal(Transport.Capabilities.MaxMessageSize, MessageSize.Of(outgoing));
+        var source = MessageSource.Queue(NewName("size-text"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [outgoing], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        await receiver.DeadLetterAsync(message, new string('r', 5000), TestCancellationToken);
+
+        // Assert
+        Assert.Equal(body, Encoding.UTF8.GetString(message.Body.Span));
+        Assert.Equal(headers, message.Headers);
+
+        using var sqs = CreateSqsClient();
+        string deadLetterUrl = Assert.Single((await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = $"{NamePrefix}{source.Name}-dlq" }, TestCancellationToken)).QueueUrls ?? []);
+        var raw = Assert.Single((await sqs.ReceiveMessageAsync(new ReceiveMessageRequest
+        {
+            QueueUrl = deadLetterUrl,
+            WaitTimeSeconds = 5,
+            VisibilityTimeout = 0,
+            MessageAttributeNames = ["All"]
+        }, TestCancellationToken)).Messages ?? []);
+        Assert.InRange(GetSqsSize(raw), Transport.Capabilities.MaxMessageSize.Value, MaxSqsMessageSize);
+
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var deadLetter = await ReceiveOneAsync(deadLetters);
+        Assert.Equal(body, Encoding.UTF8.GetString(deadLetter.Body.Span));
+        Assert.Equal(new string('r', 1024), deadLetter.Headers[KnownHeaders.DeadLetterReason]);
+    }
+
+    [Fact]
+    public async Task MaxMessageSize_BinaryBodyPublishedAtTheLimit_RoundTripsThroughSns()
+    {
+        // Arrange
+        var headers = new Dictionary<string, string> { [KnownHeaders.MessageType] = "conformance.size" };
+        var body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - MessageSize.Of("at-limit", ReadOnlySpan<byte>.Empty, headers))];
+        Random.Shared.NextBytes(body);
+        string topic = NewName("size-topic");
+        await using var receiver = await CreateReceiverAsync(MessageSource.Subscription(topic, "large"));
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Topic(topic), [new OutgoingMessage { MessageId = "at-limit", Body = body, Headers = headers }], TestCancellationToken);
+
+        // Assert
+        var message = await ReceiveOneAsync(receiver);
+        Assert.True(message.Body.Span.SequenceEqual(body), "The published body at the size limit did not round-trip.");
+    }
+
+    [Fact]
+    public async Task Send_WhenTheEnvelopeWouldExceedWhatSqsAccepts_ThrowsMessageTooLarge()
+    {
+        // Arrange: each header costs framing that MaxMessageSize does not count; the transport reserves room for about 1,500.
+        var headers = Enumerable.Range(0, 5000).ToDictionary(i => $"h{i}", _ => String.Empty);
+        var message = new OutgoingMessage
+        {
+            MessageId = "many-headers",
+            Headers = headers,
+            Body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - MessageSize.Of("many-headers", ReadOnlySpan<byte>.Empty, headers))]
+        };
+
+        // Act
+        var exception = await Assert.ThrowsAsync<MessageTooLargeException>(() => Transport.SendAsync(MessageDestination.Queue(NewName("envelope")), [message], TestCancellationToken));
+
+        // Assert
+        Assert.Equal(MaxSqsMessageSize, exception.Limit);
+        Assert.True(exception.Size > MaxSqsMessageSize);
     }
 
     [Fact]
@@ -285,13 +434,31 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.Equal("audited", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
     }
 
-    private SqsMessageTransportOptions CreateOptions(TimeSpan? instanceSubscriptionTimeout = null) => new()
+    protected SqsMessageTransportOptions CreateOptions(TimeSpan? instanceSubscriptionTimeout = null) => new()
     {
         ConnectionString = GetConnectionString(),
         NamePrefix = NamePrefix,
+        Fifo = Fifo,
         LoggerFactory = Log,
         InstanceSubscriptionTimeout = instanceSubscriptionTimeout ?? TimeSpan.FromMinutes(5)
     };
+
+    /// <summary>Sends a message straight to SQS, as another producer would.</summary>
+    protected Task<SendMessageResponse> RawSendAsync(IAmazonSQS sqs, SendMessageRequest request)
+    {
+        if (Fifo)
+        {
+            request.MessageGroupId ??= Guid.NewGuid().ToString("N");
+            request.MessageDeduplicationId ??= Guid.NewGuid().ToString("N");
+        }
+
+        return sqs.SendMessageAsync(request, TestCancellationToken);
+    }
+
+    /// <summary>What SQS counts against its size limit: the body plus every attribute's name, data type and value.</summary>
+    private static long GetSqsSize(Amazon.SQS.Model.Message message) => Encoding.UTF8.GetByteCount(message.Body) + (message.MessageAttributes ?? new()).Sum(a =>
+        Encoding.UTF8.GetByteCount(a.Key) + Encoding.UTF8.GetByteCount(a.Value.DataType)
+        + (a.Value.BinaryValue is { } binary ? binary.Length : Encoding.UTF8.GetByteCount(a.Value.StringValue ?? String.Empty)));
 
     private static string GetConnectionString()
     {
@@ -300,7 +467,7 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         return connectionString;
     }
 
-    private static AmazonSQSClient CreateSqsClient()
+    protected static AmazonSQSClient CreateSqsClient()
     {
         var builder = new SqsMessageTransportConnectionStringBuilder(GetConnectionString());
         var config = new AmazonSQSConfig();
@@ -317,7 +484,7 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         return builder.GetCredentials() is { } credentials ? new AmazonSQSClient(credentials, config) : new AmazonSQSClient(config);
     }
 
-    private static AmazonSimpleNotificationServiceClient CreateSnsClient()
+    protected static AmazonSimpleNotificationServiceClient CreateSnsClient()
     {
         var builder = new SqsMessageTransportConnectionStringBuilder(GetConnectionString());
         var config = new AmazonSimpleNotificationServiceConfig();
@@ -340,9 +507,18 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         return (response.QueueUrls ?? []).Where(url => Regex.IsMatch(url, "-i-[^/]*$")).ToList();
     }
 
-    private async Task<List<Subscription>> ListSubscriptionsAsync(IAmazonSimpleNotificationService sns, string topic)
+    protected async Task<List<Subscription>> ListSubscriptionsAsync(IAmazonSimpleNotificationService sns, string topic)
     {
-        string topicArn = (await sns.CreateTopicAsync(NamePrefix + topic, TestCancellationToken)).TopicArn;
+        string topicArn = await GetTopicArnAsync(sns, topic);
         return (await sns.ListSubscriptionsByTopicAsync(topicArn, TestCancellationToken)).Subscriptions ?? [];
+    }
+
+    protected async Task<string> GetTopicArnAsync(IAmazonSimpleNotificationService sns, string topic)
+    {
+        var request = new CreateTopicRequest { Name = NamePrefix + topic + Suffix };
+        if (Fifo)
+            request.Attributes = new Dictionary<string, string> { ["FifoTopic"] = "true" };
+
+        return (await sns.CreateTopicAsync(request, TestCancellationToken)).TopicArn;
     }
 }

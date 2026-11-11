@@ -1,31 +1,45 @@
 using System;
-using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Text.Unicode;
 
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>
-/// Encodes a message as an SQS or SNS body plus one string message attribute holding a JSON envelope with the message
-/// id, every header, the group key and, for topics, the requested delivery time. A body that is valid UTF-8 made of
-/// characters SQS accepts is sent as-is; any other body is sent as base64, and an empty body as a placeholder, with the
-/// encoding recorded in the envelope. A message without the envelope attribute was not sent by this transport: its
-/// body is used exactly as received and the SQS message id is used.
+/// Encodes a message as an SQS or SNS body plus one binary message attribute, the envelope, holding the message id, the
+/// group key, the requested delivery time, every header and, for a body that cannot be sent as text, the body. A body
+/// that is valid UTF-8 made of characters SQS accepts is sent as-is; any other body travels in the envelope behind a
+/// one-character placeholder. SQS and SNS count a binary attribute by its raw bytes, so neither binary bodies nor
+/// headers grow in transit: a message costs its body and header bytes plus a small, bounded overhead. A message
+/// without the envelope was not sent by this transport: its body is used exactly as received and the SQS message id
+/// is used.
 /// </summary>
 internal static class SqsMessageTransportCodec
 {
     public const string AttributeName = "foundatio";
-    private const string AttributeDataType = "String";
-    private const string IdProperty = "id";
-    private const string HeadersProperty = "h";
-    private const string EncodingProperty = "e";
-    private const string GroupKeyProperty = "g";
-    private const string DeliverAtProperty = "at";
-    private const string Base64Encoding = "base64";
-    private const string EmptyEncoding = "empty";
-    private const string EmptyBodyPlaceholder = "-";
+
+    /// <summary>What SQS and SNS accept for one message: the body plus every attribute's name, type and value.</summary>
+    public const int MaxBrokerMessageSize = 256 * 1024;
+
+    /// <summary>
+    /// Room kept for what <see cref="MessageSize"/> does not count: the envelope's attribute name and type, the body
+    /// placeholder, the delivery time, length prefixes for the id, group key and about 1,500 short headers, and the
+    /// dead-letter reason header that <see cref="MaxDeadLetterReasonBytes"/> bounds, so a message at the limit can
+    /// still be dead-lettered.
+    /// </summary>
+    public const int ReservedSize = 4 * 1024;
+
+    /// <summary>The declared limit, measured by <see cref="MessageSize.Of(OutgoingMessage)"/>.</summary>
+    public const int MaxMessageSize = MaxBrokerMessageSize - ReservedSize;
+
+    public const int MaxDeadLetterReasonBytes = 1024;
+
+    private const string AttributeDataType = "Binary";
+    private const byte Version = 1;
+    private const string BodyPlaceholder = "-";
     private static readonly IReadOnlyDictionary<string, string> EmptyHeaders = new Dictionary<string, string>();
 
     public static SqsEncodedMessage Encode(OutgoingMessage message, DateTimeOffset? deliverAt)
@@ -34,12 +48,12 @@ internal static class SqsMessageTransportCodec
         ArgumentException.ThrowIfNullOrEmpty(message.MessageId, nameof(message));
 
         var bodyBytes = message.Body.Span;
-        string? encoding = null;
+        var flags = EnvelopeFlags.None;
         string body;
         if (bodyBytes.IsEmpty)
         {
-            encoding = EmptyEncoding;
-            body = EmptyBodyPlaceholder;
+            flags |= EnvelopeFlags.EmptyBody;
+            body = BodyPlaceholder;
         }
         else if (TryGetText(bodyBytes) is { } text)
         {
@@ -47,74 +61,139 @@ internal static class SqsMessageTransportCodec
         }
         else
         {
-            encoding = Base64Encoding;
-            body = Convert.ToBase64String(bodyBytes);
+            flags |= EnvelopeFlags.BodyInEnvelope;
+            body = BodyPlaceholder;
         }
 
-        var buffer = new ArrayBufferWriter<byte>(256);
-        using (var writer = new Utf8JsonWriter(buffer))
+        if (message.GroupKey is not null)
+            flags |= EnvelopeFlags.GroupKey;
+        if (deliverAt is not null)
+            flags |= EnvelopeFlags.DeliverAt;
+
+        int size = 2 + StringSize(message.MessageId) + VarIntSize(message.Headers.Count);
+        if (message.GroupKey is not null)
+            size += StringSize(message.GroupKey);
+        if (deliverAt is not null)
+            size += sizeof(long);
+        foreach (var (name, value) in message.Headers)
+            size += StringSize(name) + StringSize(value);
+        if (flags.HasFlag(EnvelopeFlags.BodyInEnvelope))
+            size += bodyBytes.Length;
+
+        var envelope = new byte[size];
+        var writer = new Writer(envelope);
+        writer.WriteByte(Version);
+        writer.WriteByte((byte)flags);
+        writer.WriteString(message.MessageId);
+        if (message.GroupKey is not null)
+            writer.WriteString(message.GroupKey);
+        if (deliverAt is { } at)
+            writer.WriteInt64(at.ToUnixTimeMilliseconds());
+        writer.WriteVarInt(message.Headers.Count);
+        foreach (var (name, value) in message.Headers)
         {
-            writer.WriteStartObject();
-            writer.WriteString(IdProperty, message.MessageId);
-            if (message.Headers.Count > 0)
-            {
-                writer.WriteStartObject(HeadersProperty);
-                foreach (var (name, value) in message.Headers)
-                    writer.WriteString(name, value);
-                writer.WriteEndObject();
-            }
-
-            if (encoding is not null)
-                writer.WriteString(EncodingProperty, encoding);
-            if (message.GroupKey is not null)
-                writer.WriteString(GroupKeyProperty, message.GroupKey);
-            if (deliverAt is { } at)
-                writer.WriteNumber(DeliverAtProperty, at.ToUnixTimeMilliseconds());
-            writer.WriteEndObject();
+            writer.WriteString(name);
+            writer.WriteString(value);
         }
 
-        // The default JSON encoder escapes everything outside printable ASCII, so the attribute is always legal for SQS.
-        string attribute = Encoding.ASCII.GetString(buffer.WrittenSpan);
-        int size = Encoding.UTF8.GetByteCount(body) + AttributeName.Length + AttributeDataType.Length + attribute.Length;
-        return new SqsEncodedMessage(message.MessageId, body, attribute, size);
+        if (flags.HasFlag(EnvelopeFlags.BodyInEnvelope))
+            writer.WriteBytes(bodyBytes);
+
+        return new SqsEncodedMessage(message.MessageId, body, envelope, GetBrokerSize(body, envelope));
     }
 
-    public static SqsDecodedMessage Decode(string? body, string? attribute, string fallbackMessageId)
+    /// <summary>A marker a purge sends to learn the queue's own clock; receivers delete it on sight.</summary>
+    public static SqsEncodedMessage EncodePurgeMarker(string markerId)
+    {
+        var envelope = new byte[2 + StringSize(markerId) + VarIntSize(0)];
+        var writer = new Writer(envelope);
+        writer.WriteByte(Version);
+        writer.WriteByte((byte)(EnvelopeFlags.PurgeMarker | EnvelopeFlags.EmptyBody));
+        writer.WriteString(markerId);
+        writer.WriteVarInt(0);
+        return new SqsEncodedMessage(markerId, BodyPlaceholder, envelope, GetBrokerSize(BodyPlaceholder, envelope));
+    }
+
+    public static SqsDecodedMessage Decode(string? body, Amazon.SQS.Model.MessageAttributeValue? attribute, string fallbackMessageId)
     {
         body ??= String.Empty;
-        if (attribute is null || !TryReadEnvelope(attribute, out var envelope))
-            return new SqsDecodedMessage(fallbackMessageId, Encoding.UTF8.GetBytes(body), EmptyHeaders, null, null);
+        if (attribute is not { DataType: AttributeDataType, BinaryValue: { } value } || !TryReadEnvelope(GetBytes(value), body, out var decoded))
+            return new SqsDecodedMessage(fallbackMessageId, Encoding.UTF8.GetBytes(body), EmptyHeaders, null, null, false);
 
-        byte[] bytes = envelope.Encoding switch
-        {
-            EmptyEncoding => [],
-            Base64Encoding => FromBase64(body),
-            _ => Encoding.UTF8.GetBytes(body)
-        };
-
-        return new SqsDecodedMessage(envelope.Id ?? fallbackMessageId, bytes, envelope.Headers, envelope.GroupKey, envelope.DeliverAt);
+        return decoded with { MessageId = decoded.MessageId.Length > 0 ? decoded.MessageId : fallbackMessageId };
     }
 
     public static Dictionary<string, Amazon.SQS.Model.MessageAttributeValue> ToSqsAttributes(SqsEncodedMessage message) => new()
     {
-        [AttributeName] = new Amazon.SQS.Model.MessageAttributeValue { DataType = AttributeDataType, StringValue = message.Attribute }
+        [AttributeName] = new Amazon.SQS.Model.MessageAttributeValue { DataType = AttributeDataType, BinaryValue = new MemoryStream(message.Envelope, writable: false) }
     };
 
     public static Dictionary<string, Amazon.SimpleNotificationService.Model.MessageAttributeValue> ToSnsAttributes(SqsEncodedMessage message) => new()
     {
-        [AttributeName] = new Amazon.SimpleNotificationService.Model.MessageAttributeValue { DataType = AttributeDataType, StringValue = message.Attribute }
+        [AttributeName] = new Amazon.SimpleNotificationService.Model.MessageAttributeValue { DataType = AttributeDataType, BinaryValue = new MemoryStream(message.Envelope, writable: false) }
     };
 
-    private static byte[] FromBase64(string body)
+    /// <summary>Shortens <paramref name="value"/> to at most <paramref name="maxBytes"/> UTF-8 bytes without splitting a character.</summary>
+    public static string TruncateUtf8(string value, int maxBytes)
     {
-        try
+        if (Encoding.UTF8.GetByteCount(value) <= maxBytes)
+            return value;
+
+        Span<byte> buffer = stackalloc byte[maxBytes];
+        Utf8.FromUtf16(value, buffer, out int charsRead, out _, replaceInvalidSequences: true, isFinalBlock: false);
+        return value[..charsRead];
+    }
+
+    /// <summary>SQS and SNS count the body's UTF-8 bytes plus the attribute's name, data type and raw value bytes.</summary>
+    private static int GetBrokerSize(string body, byte[] envelope) =>
+        Encoding.UTF8.GetByteCount(body) + AttributeName.Length + AttributeDataType.Length + envelope.Length;
+
+    private static ReadOnlySpan<byte> GetBytes(MemoryStream stream) =>
+        stream.TryGetBuffer(out var buffer) ? buffer.AsSpan() : stream.ToArray();
+
+    private static bool TryReadEnvelope(ReadOnlySpan<byte> envelope, string body, [NotNullWhen(true)] out SqsDecodedMessage? decoded)
+    {
+        decoded = null;
+        var reader = new Reader(envelope);
+        if (!reader.TryReadByte(out byte version) || version != Version || !reader.TryReadByte(out byte flagByte) || !reader.TryReadString(out string? id))
+            return false;
+
+        var flags = (EnvelopeFlags)flagByte;
+        string? groupKey = null;
+        if (flags.HasFlag(EnvelopeFlags.GroupKey) && !reader.TryReadString(out groupKey))
+            return false;
+
+        DateTimeOffset? deliverAt = null;
+        if (flags.HasFlag(EnvelopeFlags.DeliverAt))
         {
-            return Convert.FromBase64String(body);
+            if (!reader.TryReadInt64(out long milliseconds) || milliseconds < -62135596800000 || milliseconds > 253402300799999)
+                return false;
+
+            deliverAt = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
         }
-        catch (FormatException)
+
+        if (!reader.TryReadVarInt(out int headerCount))
+            return false;
+
+        var headers = new Dictionary<string, string>(Math.Min(headerCount, 64), StringComparer.Ordinal);
+        for (int i = 0; i < headerCount; i++)
         {
-            return Encoding.UTF8.GetBytes(body);
+            if (!reader.TryReadString(out string? name) || !reader.TryReadString(out string? value))
+                return false;
+
+            headers[name] = value;
         }
+
+        byte[] bytes;
+        if (flags.HasFlag(EnvelopeFlags.EmptyBody))
+            bytes = [];
+        else if (flags.HasFlag(EnvelopeFlags.BodyInEnvelope))
+            bytes = reader.Remaining.ToArray();
+        else
+            bytes = Encoding.UTF8.GetBytes(body);
+
+        decoded = new SqsDecodedMessage(id, bytes, headers, groupKey, deliverAt, flags.HasFlag(EnvelopeFlags.PurgeMarker));
+        return true;
     }
 
     private static string? TryGetText(ReadOnlySpan<byte> bytes)
@@ -137,61 +216,140 @@ internal static class SqsMessageTransportCodec
         return text;
     }
 
-    private static bool TryReadEnvelope(string attribute, out Envelope envelope)
+    private static int StringSize(string value)
     {
-        envelope = default;
-        try
-        {
-            using var document = JsonDocument.Parse(attribute);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-                return false;
+        int length = Encoding.UTF8.GetByteCount(value);
+        return VarIntSize(length) + length;
+    }
 
-            string? id = null, encoding = null, groupKey = null;
-            DateTimeOffset? deliverAt = null;
-            var headers = new Dictionary<string, string>(StringComparer.Ordinal);
-            foreach (var property in root.EnumerateObject())
+    private static int VarIntSize(int value)
+    {
+        int size = 1;
+        for (uint remaining = (uint)value >> 7; remaining != 0; remaining >>= 7)
+            size++;
+
+        return size;
+    }
+
+    [Flags]
+    private enum EnvelopeFlags : byte
+    {
+        None = 0,
+        BodyInEnvelope = 1,
+        EmptyBody = 2,
+        GroupKey = 4,
+        DeliverAt = 8,
+        PurgeMarker = 16
+    }
+
+    private ref struct Writer(Span<byte> buffer)
+    {
+        private readonly Span<byte> _buffer = buffer;
+        private int _position;
+
+        public void WriteByte(byte value) => _buffer[_position++] = value;
+
+        public void WriteVarInt(int value)
+        {
+            uint remaining = (uint)value;
+            while (remaining >= 0x80)
             {
-                switch (property.Name)
-                {
-                    case IdProperty when property.Value.ValueKind == JsonValueKind.String:
-                        id = property.Value.GetString();
-                        break;
-                    case HeadersProperty when property.Value.ValueKind == JsonValueKind.Object:
-                        foreach (var header in property.Value.EnumerateObject())
-                        {
-                            if (header.Value.ValueKind == JsonValueKind.String)
-                                headers[header.Name] = header.Value.GetString()!;
-                        }
-                        break;
-                    case EncodingProperty when property.Value.ValueKind == JsonValueKind.String:
-                        encoding = property.Value.GetString();
-                        break;
-                    case GroupKeyProperty when property.Value.ValueKind == JsonValueKind.String:
-                        groupKey = property.Value.GetString();
-                        break;
-                    case DeliverAtProperty when property.Value.TryGetInt64(out long milliseconds):
-                        deliverAt = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds);
-                        break;
-                }
+                _buffer[_position++] = (byte)(remaining | 0x80);
+                remaining >>= 7;
             }
 
-            envelope = new Envelope(id, headers, encoding, groupKey, deliverAt);
-            return true;
+            _buffer[_position++] = (byte)remaining;
         }
-        catch (JsonException)
+
+        public void WriteInt64(long value)
         {
-            return false;
+            BinaryPrimitives.WriteInt64LittleEndian(_buffer[_position..], value);
+            _position += sizeof(long);
+        }
+
+        public void WriteString(string value)
+        {
+            WriteVarInt(Encoding.UTF8.GetByteCount(value));
+            _position += Encoding.UTF8.GetBytes(value, _buffer[_position..]);
+        }
+
+        public void WriteBytes(ReadOnlySpan<byte> value)
+        {
+            value.CopyTo(_buffer[_position..]);
+            _position += value.Length;
         }
     }
 
-    private readonly record struct Envelope(string? Id, IReadOnlyDictionary<string, string> Headers, string? Encoding, string? GroupKey, DateTimeOffset? DeliverAt);
+    private ref struct Reader(ReadOnlySpan<byte> buffer)
+    {
+        private readonly ReadOnlySpan<byte> _buffer = buffer;
+        private int _position;
+
+        public readonly ReadOnlySpan<byte> Remaining => _buffer[_position..];
+
+        public bool TryReadByte(out byte value)
+        {
+            value = 0;
+            if (_position >= _buffer.Length)
+                return false;
+
+            value = _buffer[_position++];
+            return true;
+        }
+
+        public bool TryReadVarInt(out int value)
+        {
+            value = 0;
+            uint result = 0;
+            for (int shift = 0; shift < 35; shift += 7)
+            {
+                if (!TryReadByte(out byte next))
+                    return false;
+
+                result |= (uint)(next & 0x7F) << shift;
+                if ((next & 0x80) == 0)
+                {
+                    value = (int)result;
+                    return value >= 0;
+                }
+            }
+
+            return false;
+        }
+
+        public bool TryReadInt64(out long value)
+        {
+            value = 0;
+            if (_buffer.Length - _position < sizeof(long))
+                return false;
+
+            value = BinaryPrimitives.ReadInt64LittleEndian(_buffer[_position..]);
+            _position += sizeof(long);
+            return true;
+        }
+
+        public bool TryReadString(out string value)
+        {
+            value = String.Empty;
+            if (!TryReadVarInt(out int length) || length > _buffer.Length - _position)
+                return false;
+
+            value = Encoding.UTF8.GetString(_buffer.Slice(_position, length));
+            _position += length;
+            return true;
+        }
+    }
 }
 
-/// <summary>A message ready to send: <see cref="Size"/> is what SQS and SNS count against their payload limit.</summary>
-internal sealed record SqsEncodedMessage(string MessageId, string Body, string Attribute, int Size)
+/// <summary>
+/// A message ready to send: <see cref="Size"/> is what SQS and SNS count against their payload limit. FIFO queues and
+/// topics also get <see cref="GroupId"/> and <see cref="DeduplicationId"/>.
+/// </summary>
+internal sealed record SqsEncodedMessage(string MessageId, string Body, byte[] Envelope, int Size)
 {
     public int DelaySeconds { get; init; }
+    public string? GroupId { get; init; }
+    public string? DeduplicationId { get; init; }
 }
 
-internal sealed record SqsDecodedMessage(string MessageId, byte[] Body, IReadOnlyDictionary<string, string> Headers, string? GroupKey, DateTimeOffset? DeliverAt);
+internal sealed record SqsDecodedMessage(string MessageId, byte[] Body, IReadOnlyDictionary<string, string> Headers, string? GroupKey, DateTimeOffset? DeliverAt, bool IsPurgeMarker);
