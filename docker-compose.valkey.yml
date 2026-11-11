@@ -1,0 +1,17 @@
+services:
+  valkey:
+    image: valkey/valkey:9.1.2
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  ready:
+    image: andrewlock/wait-for-dependencies
+    command: valkey:6379
+    depends_on:
+      valkey:
+        condition: service_healthy
