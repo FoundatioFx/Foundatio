@@ -30,16 +30,25 @@ internal sealed class MessagingHostedService : IHostedService
             return Task.CompletedTask;
 
         if (_startupGate is null)
+        {
+            _runtime.HostState = ProcessingState.Running;
             return StartProcessorsAsync(cancellationToken);
+        }
 
         _gatedStart = Task.Run(async () =>
         {
             try
             {
                 if (await _startupGate.WaitAsync(_stopping.Token).AnyContext())
+                {
+                    _runtime.HostState = ProcessingState.Running;
                     await StartProcessorsAsync(_stopping.Token).AnyContext();
+                }
                 else
+                {
+                    _runtime.HostState = ProcessingState.Faulted;
                     _runtime.LoggerFactory.CreateLogger<MessagingHostedService>().LogCritical("Startup failed; message handlers will not run");
+                }
             }
             catch (OperationCanceledException) when (_stopping.IsCancellationRequested)
             {
@@ -53,6 +62,9 @@ internal sealed class MessagingHostedService : IHostedService
     {
         _stopping.Cancel();
         await _gatedStart.AnyContext();
+        if (_runtime.HostState != ProcessingState.Faulted)
+            _runtime.HostState = ProcessingState.Stopped;
+
         await _runtime.StopAllAsync(cancellationToken).AnyContext();
     }
 

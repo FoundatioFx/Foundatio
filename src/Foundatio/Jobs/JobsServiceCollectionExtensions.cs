@@ -36,6 +36,7 @@ public static class JobsServiceCollectionExtensions
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton(sp => new JobClient(sp.GetRequiredService<JobsRuntime>()));
             services.TryAddSingleton<IJobClient>(sp => sp.GetRequiredService<JobClient>());
+            services.TryAddSingleton(sp => new JobsStatus(sp.GetRequiredService<JobsRuntime>()));
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, JobsHostedService>());
         }
 
@@ -64,6 +65,9 @@ public static class JobsServiceCollectionExtensions
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
-            services.GetService<TimeProvider>() ?? TimeProvider.System);
+            services.GetService<TimeProvider>() ?? TimeProvider.System)
+        {
+            Observer = services.GetService<IJobsObserver>()
+        };
     }
 }

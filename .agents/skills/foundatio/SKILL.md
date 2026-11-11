@@ -290,6 +290,35 @@ builder.Services.AddFoundatioJobs(j => j
 - Gotchas: `[Job(Name)]` for `IJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
 - Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MaxMessageSize` after encoding overhead), and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (one override each).
 
+Whole-app integration tests (`Foundatio.Testing`, no xUnit dependency):
+
+```csharp
+builder.Services.AddOrdersApp();              // real AddFoundatioMessaging/AddFoundatioJobs registrations
+builder.Services.AddFoundatioTestHarness();   // LAST: replaces transport + job store with in-memory, records everything
+await host.StartAsync();
+var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+await messages.PublishAsync(new OrderPlaced(1));
+await harness.WaitForIdleAsync();                                   // handlers idle, no queued/running jobs
+Assert.Single(harness.Sent<SendReceipt>());                         // payloads; SentMessages/PublishedMessages for metadata
+var dead = await harness.WaitForDeadLetteredAsync<SendReceipt>();   // also WaitForHandledAsync<T>(count)
+var run = (await harness.WaitForJobAsync<GenerateReport>())[0];     // finished runs; check run.Status
+await harness.TriggerCronJobAsync<CleanupJob>();                    // CRON never fires on its own under the harness
+```
+
+- `HandledMessages[i].Outcome`: `Completed`, `Retried`, `DeadLettered`, `Skipped` (no handler on a topic), `Expired`, `Released` (shutdown/lease lost). `JobRuns` includes retried runs (`Status == Queued`).
+- Waits are real time (default 30s) and throw `TimeoutException` explaining what happened. Retries honor the policy delay: set `o.DefaultRetryPolicy` to a short `RetryPolicy.Fixed(...)` in tests. `WaitForIdleAsync` ignores queues the app sends to but does not consume.
+
+Health checks (`Foundatio.Extensions.Hosting`):
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddFoundatioMessaging(tags: ["live"])                          // per-source data: queue:x, subscription:t/s
+    .AddFoundatioJobs(tags: ["live"], unhealthyAfter: TimeSpan.FromMinutes(5)); // worker (running per job name) + scheduler
+```
+
+- Starting (waiting for startup actions) = Healthy; retried receive/claim/schedule errors = Degraded with last error; Unhealthy (or `failureStatus`) only if a loop stopped, startup failed, or errors lasted `unhealthyAfter` (default 5 min). Handler/job exceptions never affect health. `MessagingStatus` / `JobsStatus` expose the raw `ProcessingStatus` snapshots.
+
 ## Testing
 
 Use `Foundatio.Xunit.v3` for test logging and DI integration. Two base classes:

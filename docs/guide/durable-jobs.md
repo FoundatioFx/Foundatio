@@ -93,10 +93,48 @@ Existing `IJob` and `JobBase` classes work as CRON jobs and on-demand jobs witho
 
 Workers and schedulers wait for Foundatio.Extensions.Hosting startup actions (such as migrations) to finish, and do not start if they fail. Implement `IStartupGate` to supply your own condition.
 
-## Testing jobs
+## Health checks
+
+With Foundatio.Extensions.Hosting, report message processors, the job worker and the CRON scheduler to ASP.NET Core health checks, for example for a Kubernetes liveness probe:
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddFoundatioMessaging(tags: ["live"])
+    .AddFoundatioJobs(tags: ["live"]);
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = check => check.Tags.Contains("live") });
+```
+
+| What is happening | Reported |
+|---|---|
+| Waiting for startup actions | Healthy, described as Starting |
+| Receiving, claiming and scheduling | Healthy |
+| Receive, claim or scheduling errors being retried with backoff | Degraded, with the last error in the description |
+| Errors without a success for `unhealthyAfter` (default 5 minutes) | Unhealthy |
+| A processor or the worker stopped unexpectedly, or startup failed | Unhealthy |
+
+A handler or job that throws is not a health problem: it is retried, then dead-lettered or failed. The data has an entry per message source (`queue:orders`, `subscription:orders/billing`), for the `worker` (with running jobs per job name) and for the `scheduler`. Pass `failureStatus: HealthStatus.Degraded` to report problems without failing the probe, and `name` to rename a check. Your own code can read the same information from `MessagingStatus` and `JobsStatus`.
+
+## Testing
+
+Unit test a job with `TestJobContext`:
 
 ```csharp
 var context = new TestJobContext();
 await new GenerateReportJob(fakeReports).RunAsync(new GenerateReport("pdf", 2), context, CancellationToken.None);
 Assert.Equal(100, context.Progress);
 ```
+
+With [`AddFoundatioTestHarness()`](./messages#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt and error:
+
+```csharp
+await jobs.EnqueueAsync(new GenerateReport("pdf", 2));
+var run = Assert.Single(await harness.WaitForJobAsync<GenerateReport>());
+Assert.Equal(JobStatus.Succeeded, run.Status);
+
+// CRON schedules only run when a test triggers them
+await harness.TriggerCronJobAsync<CleanupJob>();
+Assert.Equal(JobStatus.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).Status);
+```
+
+`WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `Status`. `JobRuns` also lists runs that will be retried, with `Status` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day.
