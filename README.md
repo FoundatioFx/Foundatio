@@ -59,12 +59,12 @@ await using var handle = await locker.AcquireAsync("resource-key");
 | Provider | Caching | Queues | Messaging | Storage | Locks |
 |----------|---------|--------|-----------|---------|-------|
 | [In-Memory](https://foundatio.dev/guide/implementations/in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Redis](https://github.com/FoundatioFx/Foundatio.Redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Redis](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) | | ✅ | | ✅ | |
 | [Azure Service Bus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) | | ✅ | ✅ | | |
-| [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
+| [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
 | [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
-| [Kafka](https://github.com/FoundatioFx/Foundatio.Kafka) | | | ✅ | | |
+| [Kafka](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka) | | | ✅ | | |
 | [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) | | | | ✅ | |
 | [SFTP](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) | | | | ✅ | |
 
@@ -123,6 +123,8 @@ Contributions are welcome! Please feel free to submit a Pull Request. See our [d
 2. Open `Foundatio.slnx` in Visual Studio or VS Code
 3. Run `dotnet build` to build
 4. Run `dotnet test` to run tests
+
+The Redis, AWS and Kafka providers live in this repo (`src/Foundatio.Redis`, `src/Foundatio.AWS`, `src/Foundatio.Kafka`), and their tests need real services. Start them with `docker compose up -d && docker compose up ready` before `dotnet test`. Without Docker, run only the core tests with `dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj`.
 
 ## 🔗 Related Projects
 

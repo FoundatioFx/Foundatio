@@ -67,7 +67,7 @@ if (entry != null)
 
 Distributed queue using Redis (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Queues/RedisQueue.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Queues/RedisQueue.cs)
 
 ```csharp
 // dotnet add package Foundatio.Redis
@@ -119,7 +119,7 @@ var queue = new AzureStorageQueue<WorkItem>(o => {
 
 Queue using AWS SQS (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AWS/blob/main/src/Foundatio.AWS/Queues/SQSQueue.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AWS/Queues/SQSQueue.cs)
 
 ```csharp
 // dotnet add package Foundatio.AWS
