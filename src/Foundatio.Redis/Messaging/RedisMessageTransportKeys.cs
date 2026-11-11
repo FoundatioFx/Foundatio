@@ -12,27 +12,37 @@ internal sealed class RedisSourceKeys
 {
     private readonly string _base;
 
-    private RedisSourceKeys(string baseKey, string? deadLetterBase = null)
+    private RedisSourceKeys(string baseKey, bool orderedGroups = true, string? deadLetterBase = null)
     {
         _base = baseKey;
+        OrderedGroups = orderedGroups;
         Stream = baseKey + ":stream";
         Leases = baseKey + ":leases";
         Delayed = baseKey + ":delayed";
         DelayedData = baseKey + ":delayed-data";
+        Groups = baseKey + ":groups";
+        Held = baseKey + ":held";
         DeadLetterStream = (deadLetterBase ?? baseKey + ":dlq") + ":stream";
     }
+
+    /// <summary>
+    /// False for dead-letter queues: they are read in batches to peek and replay, so their groups are not held back.
+    /// </summary>
+    public bool OrderedGroups { get; }
 
     public RedisKey Stream { get; }
     public RedisKey Leases { get; }
     public RedisKey Delayed { get; }
     public RedisKey DelayedData { get; }
+    public RedisKey Groups { get; }
+    public RedisKey Held { get; }
     public RedisKey DeadLetterStream { get; }
 
-    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData];
+    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held];
 
     public RedisKey DeduplicationKey(string deduplicationId) => $"{_base}:dedup:{deduplicationId}";
 
-    public RedisSourceKeys DeadLetter => new(_base + ":dlq", _base + ":dlq");
+    public RedisSourceKeys DeadLetter => new(_base + ":dlq", orderedGroups: false, deadLetterBase: _base + ":dlq");
 
     public static RedisSourceKeys Queue(string prefix, string name) => new($"{prefix}:{{q:{RedisTransportNames.Validate(name)}}}");
 

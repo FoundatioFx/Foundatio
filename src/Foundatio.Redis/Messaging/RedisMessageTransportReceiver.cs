@@ -19,6 +19,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private readonly RedisInstanceSubscription? _instance;
     private readonly string _consumer = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private readonly CancellationTokenSource _disposing = new();
+    private TaskCompletionSource _released = NewReleasedSignal();
     private Task _heartbeat = Task.CompletedTask;
     private int _disposed;
 
@@ -51,6 +52,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
+            var released = Volatile.Read(ref _released).Task;
             var (messages, nextChange) = await ReceiveOnceAsync(count).AnyContext();
             if (messages.Count > 0)
                 return messages;
@@ -63,8 +65,11 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             if (nextChange is { } change && change < wait)
                 wait = change < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : change;
 
-            await Task.Delay(wait, cancellationToken).AnyContext();
-            poll = TimeSpan.FromTicks(Math.Min(poll.Ticks * 2, _transport.Options.MaxPollInterval.Ticks));
+            // Settling a group's message here releases its next one, which is worth polling for at once.
+            if (await Task.WhenAny(Task.Delay(wait, cancellationToken), released).AnyContext() == released)
+                poll = _transport.Options.MinPollInterval;
+            else
+                poll = TimeSpan.FromTicks(Math.Min(poll.Ticks * 2, _transport.Options.MaxPollInterval.Ticks));
         }
     }
 
@@ -112,7 +117,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private async Task<(IReadOnlyList<IncomingMessage> Messages, TimeSpan? NextChange)> ReceiveOnceAsync(int count)
     {
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
-            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData],
+            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups],
             [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive]).AnyContext())!;
 
         var entries = (RedisResult[])result[0]!;
@@ -184,12 +189,17 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         if (message is not RedisIncomingMessage delivery || delivery.Owner != this)
             throw new ArgumentException("The message was not received by this receiver.", nameof(message));
 
-        var result = await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
-            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream],
-            [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer, RedisMessageTransport.DeadLetterReasonField]).AnyContext();
+        bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
+        long result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
+            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData],
+            [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
+                RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty]).AnyContext();
 
-        if ((long)result != 1)
+        if (result == 0)
             throw new MessageLeaseLostException($"The lease for message {message.MessageId} was lost.");
+
+        if (result == 2)
+            Interlocked.Exchange(ref _released, NewReleasedSignal()).TrySetResult();
     }
 
     private async Task HeartbeatLoopAsync()
@@ -215,6 +225,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             }
         }
     }
+
+    private static TaskCompletionSource NewReleasedSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1 || _transport.IsDisposed, this);
 

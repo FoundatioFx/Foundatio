@@ -17,6 +17,14 @@ public sealed record RedisMessageTransportOptions
     /// </summary>
     public TimeSpan InstanceSubscriptionTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// The largest message accepted, as body bytes plus the UTF-8 bytes of every header name and value; larger ones are
+    /// rejected with <see cref="MessageTooLargeException"/>. Defaults to 16 MiB and can be raised to 256 MiB. Each
+    /// message is a single Redis value that scripts copy while sending and receiving, so large messages block Redis
+    /// and use its memory; store large payloads elsewhere and send a reference instead.
+    /// </summary>
+    public long MaxMessageSize { get; init; } = 16 * 1024 * 1024;
+
     /// <summary>How long a <see cref="OutgoingMessage.DeduplicationId"/> is remembered.</summary>
     public TimeSpan DeduplicationWindow { get; init; } = TimeSpan.FromMinutes(5);
 

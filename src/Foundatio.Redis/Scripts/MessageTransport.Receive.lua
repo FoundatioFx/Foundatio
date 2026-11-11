@@ -1,18 +1,11 @@
--- KEYS: stream, leases, delayed, delayed-data
+-- KEYS: stream, leases, delayed, delayed-data, groups
 -- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote
-local stream, leases, delayed, delayedData = KEYS[1], KEYS[2], KEYS[3], KEYS[4]
+local stream, leases, delayed = KEYS[1], KEYS[2], KEYS[3]
 local group, consumer = ARGV[1], ARGV[2]
 local maxMessages, lease = tonumber(ARGV[3]), tonumber(ARGV[4])
 local now = nowMs()
 
-for _, id in ipairs(redis.call('ZRANGEBYSCORE', delayed, '-inf', now, 'LIMIT', 0, tonumber(ARGV[5]))) do
-    local fields = redis.call('HGET', delayedData, id)
-    if fields then
-        redis.call('XADD', stream, '*', unpack(decodeFields(fields)))
-        redis.call('HDEL', delayedData, id)
-    end
-    redis.call('ZREM', delayed, id)
-end
+promote({ stream = stream, delayed = delayed, delayedData = KEYS[4], groups = KEYS[5] }, now, tonumber(ARGV[5]))
 
 if redis.call('EXISTS', stream) == 0 then
     redis.call('XGROUP', 'CREATE', stream, group, '0', 'MKSTREAM')
