@@ -51,7 +51,7 @@ Proof: `MessageTransportTestsBase` (43 tests) plus `JobStoreTestsBase` (20 tests
 
 ### Redis proof
 
-A Redis Streams transport and a Redis job store were written in Foundatio.Redis (branch `feature/messaging-transport-v2`) against this contract, without changing core:
+A Redis Streams transport and a Redis job store (`src/Foundatio.Redis`, which came into this repo with its history in #603) were written against this contract, without changing core:
 
 - **Transport:** about 680 lines of C# and 235 of Lua.
   - Each source is one stream and consumer group, plus sorted sets for leases and delays (scored by Redis `TIME`).
@@ -76,7 +76,7 @@ The implementer's friction notes were folded back into the contract:
 
 ### AWS proof
 
-An SQS/SNS transport was written in Foundatio.AWS (branch `feature/messaging-transport-v2`), about 1,400 lines, also without changing core:
+An SQS/SNS transport was written in `src/Foundatio.AWS`, about 1,400 lines, also without changing core:
 
 - **Mapping:**
   - queues → SQS queues;
@@ -92,7 +92,7 @@ An SQS/SNS transport was written in Foundatio.AWS (branch `feature/messaging-tra
 
 ### Kafka proof
 
-A Kafka transport was written in Foundatio.Kafka (branch `feature/messaging-transport-v2`), about 2,200 lines, with queues and pub/sub through the same contract:
+A Kafka transport was written in `src/Foundatio.Kafka`, about 2,200 lines, with queues and pub/sub through the same contract:
 
 - **Mapping:**
   - queues → a topic read by one consumer group from the earliest offset;
@@ -168,7 +168,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 | `IJobRuntimeStore` mixes job queue, broker tracking, delayed dispatch, CRON storage, counters | `IJobStore` is jobs only. No broker tracking; delays are transport-native or emulated; CRON needs no storage |
 | About 155 public types; 18-member `IMessageBus`; about 7 settlement models; 11 `ISupports*` | 66 new public types, including the test harness, health status and dead-letter admin; 5-member `IMessageClient`; one handler model; one SPI and a capabilities record |
 | No group/partition/dedup key; #579 GroupId regresses | `GroupKey` and `DeduplicationId` on every send; `OrderedGroups` and `Deduplication` capabilities with conformance tests |
-| In-repo `Foundatio.Redis`/`Foundatio.Aws` collide with published packages | Providers stay in provider repos; the core repo ships in-memory implementations and the suites |
+| In-repo `Foundatio.Redis`/`Foundatio.Aws` collide with published packages | Redis, AWS and Kafka move into this repo whole, with their history and unchanged package IDs (#603), so there is one source per package; the other providers stay in their own repos |
 | Mediator duplicates handler registration and routing | Core owns registration and routing; Mediator can map its handlers to `AddConsumer`/`AddSubscriber` |
 | Big-bang delete of queues and jobs | Side by side; legacy adapter; existing jobs reused |
 | Shutdown redelivers handled messages | 25s drain; settlement on an uncancelled token (tested) |
