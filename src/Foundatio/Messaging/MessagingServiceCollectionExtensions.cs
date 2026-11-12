@@ -67,14 +67,17 @@ public static class MessagingServiceCollectionExtensions
             ?? Assembly.GetEntryAssembly()?.GetName().Name
             ?? "foundatio";
 
-        return new MessagingRuntime(transport, options, types,
+        var runtime = new MessagingRuntime(transport, options, types,
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
             services.GetRequiredService<IServiceScopeFactory>(),
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
             services.GetService<TimeProvider>() ?? TimeProvider.System,
-            serviceName)
+            serviceName, serviceNameIsDefault: options.ServiceName is null)
         {
             Observer = services.GetService<IMessagingObserver>()
         };
+
+        HandlerRegistrationValidator.Validate(runtime, registrations.Handlers);
+        return runtime;
     }
 }

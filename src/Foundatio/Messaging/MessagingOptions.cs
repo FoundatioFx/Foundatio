@@ -7,7 +7,12 @@ namespace Foundatio.Messaging;
 /// <summary>Settings shared by all handlers.</summary>
 public sealed class MessagingOptions
 {
-    /// <summary>Names durable subscriptions. Defaults to the host's application name.</summary>
+    /// <summary>
+    /// Names this service's durable subscriptions, which the broker keeps under that name: services that share it split
+    /// each other's events, and renaming it starts new subscriptions. Required when a service-scoped subscriber has no
+    /// <see cref="SubscriptionOptions.Name"/>, unless the transport is <see cref="Transport.InMemoryMessageTransport"/>,
+    /// which defaults it to the host's application name.
+    /// </summary>
     public string? ServiceName { get; set; }
 
     /// <summary>Used when a handler does not set its own policy.</summary>

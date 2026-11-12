@@ -45,7 +45,10 @@ public sealed class FoundatioMessagingBuilder
         return this;
     }
 
-    /// <summary>Names this service's durable subscriptions. Defaults to the host's application name.</summary>
+    /// <summary>
+    /// Names this service's durable subscriptions; see <see cref="MessagingOptions.ServiceName"/>. Required for
+    /// service-scoped subscribers on any transport but the in-memory one.
+    /// </summary>
     public FoundatioMessagingBuilder UseServiceName(string serviceName)
     {
         MessageTypeRegistry.ValidateName(serviceName, nameof(serviceName));
@@ -95,6 +98,10 @@ public sealed class FoundatioMessagingBuilder
     /// Handles messages sent with <see cref="IMessageClient.SendAsync{T}"/> for every <see cref="IMessageHandler{T}"/>
     /// that <typeparamref name="THandler"/> implements. Replicas compete, so each message is handled once.
     /// </summary>
+    /// <remarks>
+    /// Consumers of message types routed to the same queue share its deliveries, so they must set the same
+    /// <see cref="HandlerOptions"/>, or the host fails to start.
+    /// </remarks>
     public FoundatioMessagingBuilder AddConsumer<THandler>(HandlerOptions? options = null) where THandler : class
     {
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Consumer, Validate(options ?? new HandlerOptions())).ToList());
@@ -111,6 +118,12 @@ public sealed class FoundatioMessagingBuilder
     /// that <typeparamref name="THandler"/> implements. Each service gets its own copy; use
     /// <see cref="SubscriptionScope.Instance"/> to give every running instance a copy.
     /// </summary>
+    /// <remarks>
+    /// Subscribers of one topic in one service share its subscription, and so each delivery: if one throws, all of them
+    /// run again, and they must set the same <see cref="HandlerOptions.RetryPolicy"/>, <see cref="HandlerOptions.LeaseDuration"/>
+    /// and <see cref="HandlerOptions.MaxConcurrency"/>, or the host fails to start. Give a subscriber its own
+    /// <see cref="SubscriptionOptions.Name"/> to isolate it.
+    /// </remarks>
     public FoundatioMessagingBuilder AddSubscriber<THandler>(SubscriptionOptions? options = null) where THandler : class
     {
         return AddHandlers(MessageHandlerRegistration.ForHandlerType(typeof(THandler), MessageHandlerKind.Subscriber, Validate(options ?? new SubscriptionOptions())).ToList());

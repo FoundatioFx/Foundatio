@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(args.Where(a => a != "--verify").ToAr
 builder.Services.AddSingleton<SampleActivity>();
 
 builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("quickstart")
     .UseInMemory()
     .AddSubscriber<OrderPlacedHandler>()
     .AddConsumer<SendReceiptHandler>());

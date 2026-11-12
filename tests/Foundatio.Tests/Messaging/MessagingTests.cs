@@ -573,6 +573,176 @@ public class MessagingTests : TestWithLoggingBase
         Assert.All(waits, wait => Assert.True(wait >= TimeSpan.FromSeconds(1), $"A dead-letter receive waited only {wait}."));
     }
 
+    [Fact]
+    public async Task AddSubscriber_HandlersSharingASubscription_AllRunAgainWhenOneThrows()
+    {
+        var calls = new HandlerCalls { FailCrmSyncOnFirstAttempt = true };
+        var policy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) };
+        await using var host = await StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { RetryPolicy = policy })
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { RetryPolicy = policy }), s => s.AddSingleton(calls));
+
+        await host.Client.PublishAsync(new UserRegistered(1), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => calls.Count(nameof(CrmSyncHandler)) == 2);
+        Assert.Equal(2, calls.Count(nameof(WelcomeEmailHandler)));
+    }
+
+    [Fact]
+    public async Task AddSubscriber_WithItsOwnSubscriptionName_IsRetriedOnItsOwn()
+    {
+        var calls = new HandlerCalls { FailCrmSyncOnFirstAttempt = true };
+        await using var host = await StartAsync(m => m
+            .Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) })
+            .AddSubscriber<WelcomeEmailHandler>()
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { Name = "crm-sync" }), s => s.AddSingleton(calls));
+
+        await host.Client.PublishAsync(new UserRegistered(1), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => calls.Count(nameof(CrmSyncHandler)) == 2);
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal(1, calls.Count(nameof(WelcomeEmailHandler)));
+    }
+
+    [Fact]
+    public async Task AddSubscriber_HandlersSharingASubscriptionWithDifferentRetryPolicies_FailsAtStartupNamingBoth()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>()
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { RetryPolicy = RetryPolicy.None }), s => s.AddSingleton(new HandlerCalls())));
+
+        Assert.Contains("WelcomeEmailHandler and CrmSyncHandler", error.Message);
+        Assert.Contains($"subscription:{QueueName<UserRegistered>()}/tests", error.Message);
+        Assert.Contains("RetryPolicy", error.Message);
+        Assert.Contains("SubscriptionOptions.Name", error.Message);
+    }
+
+    [Fact]
+    public async Task AddSubscriber_OneHandlerSetsALeaseAndAnotherLeavesItUnset_FailsAtStartup()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { LeaseDuration = TimeSpan.FromMinutes(5) })
+            .AddSubscriber<CrmSyncHandler>(), s => s.AddSingleton(new HandlerCalls())));
+
+        Assert.Contains("LeaseDuration values (00:05:00 and not set)", error.Message);
+    }
+
+    [Fact]
+    public async Task AddSubscriber_InstanceSubscribersWithDifferentConcurrency_FailsAtStartup()
+    {
+        var instance = new SubscriptionOptions { Scope = SubscriptionScope.Instance };
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(instance)
+            .AddSubscriber<CrmSyncHandler>(instance with { MaxConcurrency = 1 }), s => s.AddSingleton(new HandlerCalls())));
+
+        Assert.Contains($"instance:{QueueName<UserRegistered>()}/tests", error.Message);
+        Assert.Contains("MaxConcurrency", error.Message);
+    }
+
+    [Fact]
+    public async Task AddSubscriber_InstanceSubscribersWithTheirOwnNames_GetSeparateSubscriptions()
+    {
+        var calls = new HandlerCalls();
+        await using var host = await StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { Scope = SubscriptionScope.Instance })
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { Scope = SubscriptionScope.Instance, Name = "crm", MaxConcurrency = 1 }), s => s.AddSingleton(calls));
+
+        await host.Client.PublishAsync(new UserRegistered(1), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => calls.Count(nameof(CrmSyncHandler)) == 1 && calls.Count(nameof(WelcomeEmailHandler)) == 1);
+        Assert.Equal(2, host.Services.GetRequiredService<MessagingStatus>().GetProcessors().Count);
+    }
+
+    [Fact]
+    public async Task AddConsumer_TypesRoutedToOneQueueWithDifferentOptions_FailsAtStartup()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(m => m
+            .MapMessage<PlaceOrder>("tests.place-order", queue: "tests.orders")
+            .MapMessage<ShipOrder>("tests.ship-order", queue: "tests.orders")
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask, new HandlerOptions { MaxConcurrency = 2 })
+            .AddConsumer<ShipOrder>((_, _, _) => Task.CompletedTask)));
+
+        Assert.Contains("PlaceOrder delegate and ShipOrder delegate share queue:tests.orders", error.Message);
+        Assert.Contains("MaxConcurrency values (2 and not set)", error.Message);
+        Assert.Contains("a queue of its own", error.Message);
+    }
+
+    [Fact]
+    public async Task AddSubscriber_HandlersSharingOneRetryPolicyInstance_Start()
+    {
+        var policy = RetryPolicy.Default.DoNotRetry<ArgumentException>();
+        await using var host = await StartAsync(m => m
+            .AddSubscriber<WelcomeEmailHandler>(new SubscriptionOptions { RetryPolicy = policy, MaxConcurrency = 2 })
+            .AddSubscriber<CrmSyncHandler>(new SubscriptionOptions { RetryPolicy = policy, MaxConcurrency = 2 }), s => s.AddSingleton(new HandlerCalls()));
+
+        Assert.Single(host.Services.GetRequiredService<MessagingStatus>().GetProcessors());
+    }
+
+    [Fact]
+    public void AddSubscriber_WithoutAServiceNameOnABrokerTransport_FailsAtStartupListingTheSubscriptions()
+    {
+        using var provider = BuildServices(m => m
+            .UseTransport(new InterceptingMessageTransport(_transport))
+            .AddSubscriber<WelcomeEmailHandler>()
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask)
+            .AddSubscriber<OrderCancelled>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Name = "cancellations" })
+            .AddSubscriber<Note>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Scope = SubscriptionScope.Instance })
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask));
+
+        var error = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<IMessageClient>());
+
+        Assert.Contains("UseServiceName(\"orders\")", error.Message);
+        Assert.Contains($"WelcomeEmailHandler (topic {QueueName<UserRegistered>()})", error.Message);
+        Assert.Contains($"OrderShipped delegate (topic {QueueName<OrderShipped>()})", error.Message);
+        Assert.DoesNotContain("OrderCancelled", error.Message);
+        Assert.DoesNotContain("Note delegate", error.Message);
+        Assert.DoesNotContain("PlaceOrder", error.Message);
+    }
+
+    [Fact]
+    public void AddSubscriber_WhenEveryServiceSubscriptionIsNamed_NeedsNoServiceNameOnABrokerTransport()
+    {
+        using var provider = BuildServices(m => m
+            .UseTransport(new InterceptingMessageTransport(_transport))
+            .AddSubscriber<OrderShipped>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Name = "shipping" })
+            .AddSubscriber<Note>((_, _, _) => Task.CompletedTask, new SubscriptionOptions { Scope = SubscriptionScope.Instance })
+            .AddConsumer<PlaceOrder>((_, _, _) => Task.CompletedTask));
+
+        Assert.NotNull(provider.GetRequiredService<IMessageClient>());
+    }
+
+    [Fact]
+    public async Task AddSubscriber_WithoutAServiceNameOnTheInMemoryTransport_UsesTheApplicationName()
+    {
+        var handled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(Log);
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostEnvironment>(new TestHostEnvironment { ApplicationName = "Api" });
+        services.AddFoundatioMessaging(m => m.UseTransport(_transport).AddSubscriber<OrderShipped>((_, _, _) => { handled.TrySetResult(); return Task.CompletedTask; }));
+        await using var provider = services.BuildServiceProvider();
+        var hosted = Assert.Single(provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>());
+        await hosted.StartAsync(TestCancellationToken);
+
+        await provider.GetRequiredService<IMessageClient>().PublishAsync(new OrderShipped(1), cancellationToken: TestCancellationToken);
+
+        await handled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.Equal($"subscription:{QueueName<OrderShipped>()}/Api", Assert.Single(provider.GetRequiredService<MessagingStatus>().GetProcessors()).Name);
+        await hosted.StopAsync(TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_ServiceScopedWithoutAServiceNameOnABrokerTransport_Throws()
+    {
+        using var provider = BuildServices(m => m.UseTransport(new InterceptingMessageTransport(_transport)));
+        var client = provider.GetRequiredService<IMessageClient>();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => client.SubscribeAsync<OrderShipped>((_, _, _) => Task.CompletedTask,
+            new SubscriptionOptions { Scope = SubscriptionScope.Service }, TestCancellationToken));
+
+        Assert.Contains("UseServiceName", error.Message);
+        await using var instance = await client.SubscribeAsync<OrderShipped>((_, _, _) => Task.CompletedTask, cancellationToken: TestCancellationToken);
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();
@@ -584,6 +754,15 @@ public class MessagingTests : TestWithLoggingBase
     private Task<MessagingTestHost> StartAsync(Action<FoundatioMessagingBuilder> configure, Action<IServiceCollection>? services = null)
     {
         return MessagingTestHost.StartAsync(_transport, Log, "tests", configure, services);
+    }
+
+    private ServiceProvider BuildServices(Action<FoundatioMessagingBuilder> configure)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<Microsoft.Extensions.Logging.ILoggerFactory>(Log);
+        services.AddSingleton(new HandlerCalls());
+        services.AddFoundatioMessaging(configure);
+        return services.BuildServiceProvider();
     }
 
     private async Task<IReadOnlyList<IncomingMessage>> ReceiveDeadLettersAsync(MessageSource source)
@@ -620,6 +799,48 @@ public class MessagingTests : TestWithLoggingBase
     public record OrderShipped(int OrderId) : OrderEvent(OrderId);
     public record OrderCancelled(int OrderId) : OrderEvent(OrderId);
     public record Note(string Text);
+
+    public record UserRegistered(int UserId);
+
+    public sealed class HandlerCalls
+    {
+        private readonly ConcurrentQueue<string> _calls = new();
+
+        public bool FailCrmSyncOnFirstAttempt { get; init; }
+
+        public void Add(string handler) => _calls.Enqueue(handler);
+
+        public int Count(string handler) => _calls.Count(c => c == handler);
+    }
+
+    public sealed class WelcomeEmailHandler(HandlerCalls calls) : IMessageHandler<UserRegistered>
+    {
+        public Task HandleAsync(UserRegistered message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            calls.Add(nameof(WelcomeEmailHandler));
+            return Task.CompletedTask;
+        }
+    }
+
+    public sealed class CrmSyncHandler(HandlerCalls calls) : IMessageHandler<UserRegistered>
+    {
+        public Task HandleAsync(UserRegistered message, IMessageContext context, CancellationToken cancellationToken)
+        {
+            calls.Add(nameof(CrmSyncHandler));
+            if (calls.FailCrmSyncOnFirstAttempt && context.Attempt == 1)
+                throw new InvalidOperationException("The CRM is unavailable");
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestHostEnvironment : Microsoft.Extensions.Hosting.IHostEnvironment
+    {
+        public string EnvironmentName { get; set; } = "Test";
+        public required string ApplicationName { get; set; }
+        public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
+        public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = new Microsoft.Extensions.FileProviders.NullFileProvider();
+    }
 
     [Message("orders.same")]
     public record SameNameMessage;

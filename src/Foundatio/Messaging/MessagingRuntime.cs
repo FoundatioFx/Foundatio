@@ -23,7 +23,7 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
     private bool _disposed;
 
     public MessagingRuntime(IMessageTransport transport, MessagingOptions options, MessageTypeRegistry types, ISerializer serializer,
-        IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider, string serviceName)
+        IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider, string serviceName, bool serviceNameIsDefault)
     {
         Transport = transport;
         Options = options;
@@ -33,6 +33,7 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
         LoggerFactory = loggerFactory;
         TimeProvider = timeProvider;
         ServiceName = MessageTypeRegistry.NormalizeName(serviceName);
+        ServiceNameIsDefault = serviceNameIsDefault;
         _logger = loggerFactory.CreateLogger<MessagingRuntime>();
     }
 
@@ -44,6 +45,16 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
     public ILoggerFactory LoggerFactory { get; }
     public TimeProvider TimeProvider { get; }
     public string ServiceName { get; }
+
+    /// <summary>True when no service name was set and <see cref="ServiceName"/> is the application name.</summary>
+    public bool ServiceNameIsDefault { get; }
+
+    /// <summary>
+    /// Whether unnamed durable subscriptions may be named after a default service name. Only the in-memory transport
+    /// allows it: on a broker the name is persistent state, and two services that share a default would split each
+    /// other's events.
+    /// </summary>
+    public bool CanNameSubscriptionsByDefault => !ServiceNameIsDefault || Transport is InMemoryMessageTransport;
 
     /// <summary>Notified of sends and settled deliveries; set by the test harness.</summary>
     public IMessagingObserver? Observer { get; init; }
@@ -67,9 +78,13 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
         if (registration.Kind == MessageHandlerKind.Consumer)
             return MessageSource.Queue(route.Queue);
 
-        return registration.Scope == SubscriptionScope.Instance
-            ? MessageSource.InstanceSubscription(route.Topic, ServiceName)
-            : MessageSource.Subscription(route.Topic, registration.SubscriptionName ?? ServiceName);
+        if (registration.Scope == SubscriptionScope.Instance)
+            return MessageSource.InstanceSubscription(route.Topic, registration.SubscriptionName ?? ServiceName);
+
+        if (registration.SubscriptionName is null && !CanNameSubscriptionsByDefault)
+            throw HandlerRegistrationValidator.CreateMissingServiceNameException(this, [registration]);
+
+        return MessageSource.Subscription(route.Topic, registration.SubscriptionName ?? ServiceName);
     }
 
     /// <summary>Creates a processor and opens its receiver. When <paramref name="retryInBackground"/> is true a failure is logged and retried.</summary>
