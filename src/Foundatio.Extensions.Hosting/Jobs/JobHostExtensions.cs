@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Extensions.Hosting.Cronos;
 using Foundatio.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -78,102 +79,102 @@ public static class JobHostExtensions
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
 
-    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null) where T : class, IJob
+    public static IServiceCollection AddCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null, CronFormat cronFormat = CronFormat.Standard) where T : class, IJob
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
-        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
+        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => sp.GetRequiredService<T>());
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, action)));
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, action)));
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, Task> action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (xp, _) => action(xp))));
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (xp, _) => action(xp))));
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<Task> action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Func<Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, _) => action())));
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, _) => action())));
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action<IServiceProvider, CancellationToken> action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action<IServiceProvider, CancellationToken> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (xp, ct) =>
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (xp, ct) =>
         {
             action(xp, ct);
             return Task.CompletedTask;
         })));
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action<CancellationToken> action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action<CancellationToken> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, ct) =>
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, ct) =>
         {
             action(ct);
             return Task.CompletedTask;
         })));
     }
 
-    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action action)
+    public static IServiceCollection AddCronJob(this IServiceCollection services, string name, string cronSchedule, Action action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, _) =>
+        return services.AddCronJob(o => o.Name(name).CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, _) =>
         {
             action();
             return Task.CompletedTask;
         })));
     }
 
-    public static IServiceCollection AddDistributedCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null) where T : class, IJob
+    public static IServiceCollection AddDistributedCronJob<T>(this IServiceCollection services, string cronSchedule, Action<ScheduledJobOptionsBuilder>? configureJobOptions = null, CronFormat cronFormat = CronFormat.Standard) where T : class, IJob
     {
         services.AddTransient<T>();
         var jobOptionsBuilder = new ScheduledJobOptionsBuilder();
-        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).Distributed().CronSchedule(cronSchedule).JobFactory(sp => sp.GetRequiredService<T>());
+        jobOptionsBuilder.Name(JobOptions.GetDefaultJobName(typeof(T))).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => sp.GetRequiredService<T>());
         configureJobOptions?.Invoke(jobOptionsBuilder);
         return services.AddCronJob(jobOptionsBuilder.Target);
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, CancellationToken, Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, action)));
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, action)));
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, Task> action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<IServiceProvider, Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (xp, _) => action(xp))));
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (xp, _) => action(xp))));
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<Task> action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Func<Task> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, _) => action())));
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, _) => action())));
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action<IServiceProvider, CancellationToken> action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action<IServiceProvider, CancellationToken> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (xp, ct) =>
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (xp, ct) =>
         {
             action(xp, ct);
             return Task.CompletedTask;
         })));
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action<CancellationToken> action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action<CancellationToken> action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, ct) =>
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, ct) =>
         {
             action(ct);
             return Task.CompletedTask;
         })));
     }
 
-    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action action)
+    public static IServiceCollection AddDistributedCronJob(this IServiceCollection services, string name, string cronSchedule, Action action, CronFormat cronFormat = CronFormat.Standard)
     {
-        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).JobFactory(sp => new DynamicJob(sp, (_, _) =>
+        return services.AddCronJob(o => o.Name(name).Distributed().CronSchedule(cronSchedule).CronFormat(cronFormat).JobFactory(sp => new DynamicJob(sp, (_, _) =>
         {
             action();
             return Task.CompletedTask;
