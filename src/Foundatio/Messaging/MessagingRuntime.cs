@@ -11,12 +11,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-/// <summary>State shared by the client and the processors of one messaging configuration.</summary>
-internal sealed class MessagingRuntime
+/// <summary>
+/// State shared by the client and the processors of one messaging configuration. Disposing it, which the service
+/// provider does, stops every processor, so they never outlive a host that was disposed without being stopped.
+/// </summary>
+internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
 {
     private readonly List<MessageProcessor> _processors = [];
     private readonly ILogger _logger;
     private volatile ProcessingState _hostState;
+    private bool _disposed;
 
     public MessagingRuntime(IMessageTransport transport, MessagingOptions options, MessageTypeRegistry types, ISerializer serializer,
         IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider, string serviceName)
@@ -73,7 +77,10 @@ internal sealed class MessagingRuntime
     {
         var processor = CreateProcessor(source, handlers);
         lock (_processors)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             _processors.Add(processor);
+        }
 
         try
         {
@@ -104,6 +111,21 @@ internal sealed class MessagingRuntime
     }
 
     public Task StopAllAsync(CancellationToken cancellationToken) => StopAllAsync(Options.ShutdownTimeout, cancellationToken);
+
+    public async ValueTask DisposeAsync()
+    {
+        lock (_processors)
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+        }
+
+        await StopAllAsync(TimeSpan.Zero, CancellationToken.None).AnyContext();
+    }
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     private MessageProcessor CreateProcessor(MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers)
     {

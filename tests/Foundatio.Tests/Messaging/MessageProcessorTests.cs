@@ -8,8 +8,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Foundatio.Tests.Messaging;
@@ -193,6 +196,68 @@ public class MessageProcessorTests : TestWithLoggingBase
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"Stopping took {stopwatch.Elapsed}.");
     }
 
+    [Fact]
+    public async Task DisposeServiceProvider_WithoutStoppingTheHost_StopsEveryProcessor()
+    {
+        var transport = new InterceptingMessageTransport(_transport);
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddFoundatioMessaging(m => m.UseTransport(transport).UseServiceName("tests")
+            .AddConsumer<RenewedCommand>((_, _, _) => Task.CompletedTask));
+        var provider = services.BuildServiceProvider();
+        foreach (var hostedService in provider.GetServices<IHostedService>())
+            await hostedService.StartAsync(TestCancellationToken);
+
+        await using var subscription = await provider.GetRequiredService<IMessageClient>()
+            .SubscribeAsync<GroupedCommand>((_, _, _) => Task.CompletedTask, cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => transport.OpenReceivers == 2, TimeSpan.FromSeconds(5));
+
+        await provider.DisposeAsync();
+
+        Assert.Equal(0, transport.OpenReceivers);
+    }
+
+    [Fact]
+    public async Task StopAsync_WhenAnotherProcessorFailsToStartDuringShutdown_StillStopsTheStartedOnes()
+    {
+        int handled = 0;
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnCreateReceiver = async (source, ct) =>
+            {
+                if (!source.Name.Contains(nameof(SlowCommand), StringComparison.Ordinal))
+                    return;
+
+                try
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new IOException("The connection was aborted while connecting");
+                }
+            }
+        };
+
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddSingleton<IStartupGate>(new OpenGate());
+        services.AddFoundatioMessaging(m => m.UseTransport(transport).UseServiceName("tests")
+            .AddConsumer<RenewedCommand>((_, _, _) => { Interlocked.Increment(ref handled); return Task.CompletedTask; })
+            .AddConsumer<SlowCommand>((_, _, _) => Task.CompletedTask));
+        await using var provider = services.BuildServiceProvider();
+        var hostedService = Assert.Single(provider.GetServices<IHostedService>());
+        await hostedService.StartAsync(TestCancellationToken);
+
+        await provider.GetRequiredService<IMessageClient>().SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref handled) == 1, TimeSpan.FromSeconds(5));
+
+        await hostedService.StopAsync(TestCancellationToken);
+
+        Assert.Equal(0, transport.OpenReceivers);
+        Assert.DoesNotContain(provider.GetRequiredService<MessagingStatus>().GetProcessors(), p => p.State == ProcessingState.Running);
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();
@@ -220,4 +285,9 @@ public class MessageProcessorTests : TestWithLoggingBase
     public record RenewedCommand(int Id);
     public record SlowCommand(int Id);
     public record PoisonCommand(int Id);
+
+    private sealed class OpenGate : IStartupGate
+    {
+        public Task<bool> WaitAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+    }
 }
