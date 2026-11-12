@@ -5,7 +5,7 @@ using Foundatio.Serializer;
 namespace Foundatio.Jobs;
 
 /// <summary>Settings for the job worker and scheduler.</summary>
-public sealed class JobsOptions
+public sealed class JobWorkerOptions
 {
     /// <summary>How many jobs this instance runs at once. Defaults to the processor count.</summary>
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;

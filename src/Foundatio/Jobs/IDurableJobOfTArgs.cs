@@ -15,7 +15,7 @@ namespace Foundatio.Jobs;
 /// job interrupted by shutdown is run again later without using up an attempt; a job that lost its lease is run again
 /// by whichever worker claims it next. Jobs run at least once, so make them safe to repeat.
 /// </remarks>
-public interface IJob<in TArgs> where TArgs : class
+public interface IDurableJob<in TArgs> where TArgs : class
 {
     Task RunAsync(TArgs arguments, IJobContext context, CancellationToken cancellationToken);
 }

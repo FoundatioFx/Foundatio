@@ -11,7 +11,7 @@ Decisions: side-by-side with the legacy APIs for v14 (delete them in v15); store
 ## Layers
 
 ```
-  Application        IMessageClient   IMessageHandler<T>   IJobClient   IJob<TArgs> / IJob
+  Application        IMessageClient   IMessageHandler<T>   IJobClient   IDurableJob<TArgs> / IJob
   ───────────────────────────────────────────────────────────────────────────────────────
   Foundatio core     routing · serialization · retries · dead letters · concurrency · leases
                      delays · shutdown drain · tracing · metrics · CRON · startup gate
@@ -144,7 +144,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 
 ## Job semantics
 
-- **Contract-first**: `IJob<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. Existing `IJob`/`JobBase` classes are parameterless jobs, unchanged.
+- **Contract-first**: `IDurableJob<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. Existing `IJob`/`JobBase` classes are parameterless jobs, unchanged.
 - **Claim token fencing.** A run's result is accepted unless another worker has claimed the job since, even if the lease expired. The worker also cancels a job shortly before its lease would run out when it can no longer renew it, and records no result for that run.
 - **Names come from the arguments' runtime type**, so arguments passed as `object` or a base type run the job for their actual type.
 - **The result is authoritative.** A job that finishes successfully succeeds even if cancellation was requested. Cancellation marks it cancelled only when the job stops because of it.

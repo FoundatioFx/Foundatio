@@ -42,7 +42,7 @@ public sealed class FoundatioJobsBuilder
         return this;
     }
 
-    public FoundatioJobsBuilder Configure(Action<JobsOptions> configure)
+    public FoundatioJobsBuilder Configure(Action<JobWorkerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
         _registrations.ConfigureOptions.Add(configure);
@@ -50,7 +50,7 @@ public sealed class FoundatioJobsBuilder
     }
 
     /// <summary>
-    /// Runs <typeparamref name="TJob"/> in this process. It may implement <see cref="IJob{TArgs}"/> (enqueued by its
+    /// Runs <typeparamref name="TJob"/> in this process. It may implement <see cref="IDurableJob{TArgs}"/> (enqueued by its
     /// arguments) and/or <see cref="IJob"/> (enqueued by its type).
     /// </summary>
     public FoundatioJobsBuilder AddJob<TJob>(JobTypeOptions? options = null) where TJob : class
@@ -80,7 +80,7 @@ public sealed class FoundatioJobsBuilder
     public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IJob
     {
         options ??= new CronJobOptions();
-        AddJob<TJob>(options.JobOptions);
+        AddJob<TJob>(options.JobTypeOptions);
         return AddSchedule(JobNaming.GetName(typeof(TJob)), cronExpression, null, options);
     }
 
@@ -102,7 +102,7 @@ public sealed class FoundatioJobsBuilder
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(cronExpression);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.MisfireThreshold, TimeSpan.Zero, nameof(options.MisfireThreshold));
-        options.JobOptions?.Validate();
+        options.JobTypeOptions?.Validate();
 
         string name = options.Name is { } scheduleName ? Messaging.MessageTypeRegistry.ValidateName(scheduleName, nameof(options.Name)) : jobName;
         CronExpression expression;

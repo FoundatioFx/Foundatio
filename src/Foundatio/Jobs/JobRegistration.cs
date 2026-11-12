@@ -25,7 +25,7 @@ internal sealed class JobRegistration
             throw new ArgumentException($"{jobType.FullName} must be a concrete class.", nameof(jobType));
 
         var registrations = jobType.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJob<>))
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableJob<>))
             .Select(i => i.GetGenericArguments()[0])
             .Select(argumentsType => new JobRegistration
             {
@@ -60,13 +60,13 @@ internal sealed class JobRegistration
         }
 
         if (registrations.Count == 0)
-            throw new ArgumentException($"{jobType.FullName} does not implement IJob or IJob<TArgs>.", nameof(jobType));
+            throw new ArgumentException($"{jobType.FullName} does not implement IJob or IDurableJob<TArgs>.", nameof(jobType));
 
         return registrations;
     }
 
     private static Func<IServiceProvider, object?, IJobContext, CancellationToken, Task<JobResult?>> CreateInvoker<TJob, TArgs>()
-        where TJob : class, IJob<TArgs> where TArgs : class
+        where TJob : class, IDurableJob<TArgs> where TArgs : class
     {
         return async (services, arguments, context, cancellationToken) =>
         {

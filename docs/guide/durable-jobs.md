@@ -11,7 +11,7 @@ Use a job when you need status, progress, cancellation or a schedule. Otherwise 
 [Job(Name = "reports.generate")]
 public record GenerateReport(string Format, int Days);
 
-public class GenerateReportJob(IReportService reports) : IJob<GenerateReport>
+public class GenerateReportJob(IReportService reports) : IDurableJob<GenerateReport>
 {
     public async Task RunAsync(GenerateReport args, IJobContext context, CancellationToken ct)
     {
@@ -73,7 +73,7 @@ var handle = await jobs.EnqueueAsync<CleanupJob>();   // a job without arguments
 JobInfo done = await handle.WaitForCompletionAsync(TimeSpan.FromMinutes(1));
 ```
 
-`QueryAsync` lists jobs newest first by status and name; `CountAsync` counts them. Finished jobs are kept for a day (failures for a week); see `JobsOptions`.
+`QueryAsync` lists jobs newest first by status and name; `CountAsync` counts them. Finished jobs are kept for a day (failures for a week); see `JobWorkerOptions`.
 
 ## CRON jobs
 

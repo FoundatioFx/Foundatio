@@ -18,7 +18,7 @@ internal sealed class JobsRuntime
     private volatile JobWorker? _worker;
     private volatile JobScheduler? _scheduler;
 
-    public JobsRuntime(IJobStore store, JobsOptions options, JobsRegistrations registrations, ISerializer serializer,
+    public JobsRuntime(IJobStore store, JobWorkerOptions options, JobsRegistrations registrations, ISerializer serializer,
         IServiceScopeFactory scopeFactory, ILoggerFactory loggerFactory, TimeProvider timeProvider)
     {
         Store = store;
@@ -32,7 +32,7 @@ internal sealed class JobsRuntime
     }
 
     public IJobStore Store { get; }
-    public JobsOptions Options { get; }
+    public JobWorkerOptions Options { get; }
     public JobsRegistrations Registrations { get; }
     public IReadOnlyDictionary<string, JobRegistration> Jobs => Registrations.Jobs;
     public ISerializer Serializer { get; }

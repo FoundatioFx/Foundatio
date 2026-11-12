@@ -601,19 +601,19 @@ public class DurableJobsTests : TestWithLoggingBase
 
     public record DetailedExport(string Format, int Detail) : Export(Format);
 
-    public sealed class ExportJob : IJob<Export>
+    public sealed class ExportJob : IDurableJob<Export>
     {
         public Task RunAsync(Export arguments, IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, arguments.Format, cancellationToken);
     }
 
-    public sealed class DetailedExportJob : IJob<DetailedExport>
+    public sealed class DetailedExportJob : IDurableJob<DetailedExport>
     {
         public Task RunAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
             context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
     }
 
     /// <summary>Runs until cancelled on its first attempt, recording when it starts and stops; later attempts succeed at once.</summary>
-    public sealed class OverlapJob(JobProbe probe) : IJob<Overlap>
+    public sealed class OverlapJob(JobProbe probe) : IDurableJob<Overlap>
     {
         public async Task RunAsync(Overlap arguments, IJobContext context, CancellationToken cancellationToken)
         {
@@ -681,7 +681,7 @@ public class DurableJobsTests : TestWithLoggingBase
         public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Inner.DeleteAsync(jobId, cancellationToken);
     }
 
-    public sealed class ResizeImageJob : IJob<ResizeImage>
+    public sealed class ResizeImageJob : IDurableJob<ResizeImage>
     {
         public async Task RunAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken)
         {
@@ -690,12 +690,12 @@ public class DurableJobsTests : TestWithLoggingBase
         }
     }
 
-    public sealed class OtherResizeImageJob : IJob<ResizeImage>
+    public sealed class OtherResizeImageJob : IDurableJob<ResizeImage>
     {
         public Task RunAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    public sealed class FlakyJob(JobProbe probe) : IJob<Flaky>
+    public sealed class FlakyJob(JobProbe probe) : IDurableJob<Flaky>
     {
         public Task RunAsync(Flaky arguments, IJobContext context, CancellationToken cancellationToken)
         {
@@ -707,7 +707,7 @@ public class DurableJobsTests : TestWithLoggingBase
         }
     }
 
-    public sealed class WaitForCancellationJob(JobProbe probe) : IJob<WaitForCancellation>
+    public sealed class WaitForCancellationJob(JobProbe probe) : IDurableJob<WaitForCancellation>
     {
         public async Task RunAsync(WaitForCancellation arguments, IJobContext context, CancellationToken cancellationToken)
         {
@@ -720,12 +720,12 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Job(Name = "ignored")]
-    public sealed class NamedArgumentsJob : IJob<Slow>
+    public sealed class NamedArgumentsJob : IDurableJob<Slow>
     {
         public Task RunAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    public sealed class SlowJob(JobProbe probe) : IJob<Slow>
+    public sealed class SlowJob(JobProbe probe) : IDurableJob<Slow>
     {
         public async Task RunAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken)
         {

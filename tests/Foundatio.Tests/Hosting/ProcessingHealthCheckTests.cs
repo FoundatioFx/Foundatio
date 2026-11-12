@@ -432,7 +432,7 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
         public void Release() => _released.TrySetResult();
     }
 
-    public sealed class WorkJob(WorkGate gate) : IJob<Work>
+    public sealed class WorkJob(WorkGate gate) : IDurableJob<Work>
     {
         public Task RunAsync(Work arguments, IJobContext context, CancellationToken cancellationToken) => gate.Released.WaitAsync(cancellationToken);
     }

@@ -100,7 +100,7 @@ public static class OrdersApp
         }
     }
 
-    public sealed class GenerateInvoiceJob : IJob<GenerateInvoice>
+    public sealed class GenerateInvoiceJob : IDurableJob<GenerateInvoice>
     {
         public Task RunAsync(GenerateInvoice arguments, IJobContext context, CancellationToken cancellationToken)
         {

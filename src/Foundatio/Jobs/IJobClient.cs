@@ -7,7 +7,7 @@ namespace Foundatio.Jobs;
 public interface IJobClient
 {
     /// <summary>
-    /// Enqueues the job whose <see cref="IJob{TArgs}"/> takes these arguments. The job is identified by the
+    /// Enqueues the job whose <see cref="IDurableJob{TArgs}"/> takes these arguments. The job is identified by the
     /// arguments' runtime type (not <typeparamref name="TArgs"/>), so the caller does not need to reference the job
     /// class and can pass arguments typed as <see cref="object"/> or a base type.
     /// </summary>

@@ -497,7 +497,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     private static IReadOnlyCollection<string> GetJobNames(Type type)
     {
         var names = type.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJob<>))
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableJob<>))
             .Select(i => JobNaming.GetName(i.GetGenericArguments()[0]))
             .ToList();
 

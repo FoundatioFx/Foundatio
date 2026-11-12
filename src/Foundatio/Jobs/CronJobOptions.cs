@@ -21,5 +21,5 @@ public sealed record CronJobOptions
     public bool AllowConcurrent { get; init; }
 
     /// <summary>Settings for the job type, applied when this registers it.</summary>
-    public JobTypeOptions? JobOptions { get; init; }
+    public JobTypeOptions? JobTypeOptions { get; init; }
 }

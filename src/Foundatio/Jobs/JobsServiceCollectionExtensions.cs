@@ -46,7 +46,7 @@ public static class JobsServiceCollectionExtensions
 
     private static JobsRuntime CreateRuntime(IServiceProvider services, JobsRegistrations registrations)
     {
-        var options = new JobsOptions();
+        var options = new JobWorkerOptions();
         foreach (var configure in registrations.ConfigureOptions)
             configure(options);
         options.Validate();

@@ -6,10 +6,10 @@ namespace Foundatio.Jobs;
 /// <summary>Settings for one job type.</summary>
 public sealed record JobTypeOptions
 {
-    /// <summary>Defaults to <see cref="JobsOptions.DefaultRetryPolicy"/>.</summary>
+    /// <summary>Defaults to <see cref="JobWorkerOptions.DefaultRetryPolicy"/>.</summary>
     public RetryPolicy? RetryPolicy { get; init; }
 
-    /// <summary>How many jobs of this type one instance runs at once. Limited by <see cref="JobsOptions.MaxConcurrency"/>.</summary>
+    /// <summary>How many jobs of this type one instance runs at once. Limited by <see cref="JobWorkerOptions.MaxConcurrency"/>.</summary>
     public int? MaxConcurrency { get; init; }
 
     internal void Validate()

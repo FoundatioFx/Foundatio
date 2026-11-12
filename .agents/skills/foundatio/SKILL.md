@@ -34,7 +34,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `IMessageClient` | Send commands / publish events to `IMessageHandler<T>` | `UseInMemory()` (`InMemoryMessageTransport`) | Provider `IMessageTransport`s |
-| `IJobClient` | Durable jobs (`IJob<TArgs>`, `IJob`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
+| `IJobClient` | Durable jobs (`IDurableJob<TArgs>`, `IJob`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
 | `IJob` | Background job processing | N/A | Hosted services, or durable via `AddFoundatioJobs` |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
 | `IResiliencePolicy` | Retry, circuit breaker, timeout | `ResiliencePolicyBuilder` | N/A |
@@ -277,7 +277,7 @@ public class SendReceiptHandler(IEmail email) : IMessageHandler<SendReceipt>
 
 builder.Services.AddFoundatioJobs(j => j
     .UseInMemory()
-    .AddJob<GenerateReportJob>()            // IJob<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
+    .AddJob<GenerateReportJob>()            // IDurableJob<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
     .AddCronJob<CleanupJob>("0 3 * * *"));  // existing IJob/JobBase classes work; one run per occurrence cluster-wide
 ```
 
@@ -287,7 +287,7 @@ builder.Services.AddFoundatioJobs(j => j
 - Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.
 - `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
 - Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
-- Gotchas: `[Job(Name)]` for `IJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
+- Gotchas: `[Job(Name)]` for `IDurableJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
 - Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
 
 Whole-app integration tests (`Foundatio.Testing`, no xUnit dependency):

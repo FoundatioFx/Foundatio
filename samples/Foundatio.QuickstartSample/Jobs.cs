@@ -3,7 +3,7 @@ using Foundatio.Jobs;
 namespace Foundatio.QuickstartSample;
 
 /// <summary>A durable job with arguments, progress and cancellation. Throwing retries it with backoff.</summary>
-public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IJob<GenerateReport>
+public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IDurableJob<GenerateReport>
 {
     public async Task RunAsync(GenerateReport report, IJobContext context, CancellationToken cancellationToken)
     {
