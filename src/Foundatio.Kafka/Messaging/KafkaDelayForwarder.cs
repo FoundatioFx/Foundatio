@@ -35,6 +35,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private bool _offsetsChanged;
+    private string[] _heldTopics = [];
     private int _disposed;
 
     public KafkaDelayForwarder(KafkaMessageTransport transport, IReadOnlyDictionary<string, TimeSpan> tiers)
@@ -52,6 +53,12 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
     }
 
     public void Start() => new Thread(Run) { IsBackground = true, Name = "Foundatio Kafka delay forwarder" }.Start();
+
+    /// <summary>The tier topics whose partitions are paused holding a record that is not due yet. For tests.</summary>
+    internal IReadOnlyList<string> HeldTopics => Volatile.Read(ref _heldTopics);
+
+    /// <summary>The tier partitions currently assigned to the consumer. For tests.</summary>
+    internal List<TopicPartition> Assignment => _consumer.Assignment;
 
     public async ValueTask DisposeAsync()
     {
@@ -159,6 +166,7 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
         while (_failed.TryDequeue(out var failed))
             _scheduled.Add(failed with { Due = now.Add(RetryDelay) });
 
+        Volatile.Write(ref _heldTopics, _paused.Keys.Select(p => p.Topic).ToArray());
         DateTimeOffset? nextDue = null;
         foreach (var (partition, waiting) in _paused.ToList())
         {
@@ -304,9 +312,11 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
 
     private void OnRevoked(List<TopicPartition> partitions, bool commit)
     {
+        // librdkafka keeps a revoked partition paused, so one assigned back would never be read again.
         var revoked = partitions.ToHashSet();
-        foreach (var partition in partitions)
-            _paused.Remove(partition);
+        var paused = partitions.Where(_paused.Remove).ToList();
+        if (paused.Count > 0)
+            _consumer.Resume(paused);
 
         _scheduled.RemoveAll(w => revoked.Contains(w.State.TopicPartition));
         if (commit)

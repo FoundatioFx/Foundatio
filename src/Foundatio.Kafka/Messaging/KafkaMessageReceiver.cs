@@ -39,6 +39,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private TaskCompletionSource _changed = NewSignal();
     private bool _offsetsChanged;
     private Exception? _failure;
+    private int _pausedCount;
     private int _started;
     private int _disposed;
 
@@ -65,6 +66,12 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     }
 
     public MessageSource Source => _topology.Source;
+
+    /// <summary>How many partitions the receiver has paused. For tests.</summary>
+    internal int PausedCount => Volatile.Read(ref _pausedCount);
+
+    /// <summary>The partitions currently assigned to the consumer. For tests.</summary>
+    internal List<TopicPartition> Assignment => _consumer.Assignment;
 
     public void Start()
     {
@@ -356,12 +363,14 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             {
                 _consumer.Pause(pause);
                 _paused.UnionWith(pause);
+                Volatile.Write(ref _pausedCount, _paused.Count);
             }
         }
         else if (drained && _paused.Count > 0)
         {
             var resume = _consumer.Assignment.Where(_paused.Contains).ToList();
             _paused.Clear();
+            Volatile.Write(ref _pausedCount, 0);
             if (resume.Count > 0)
                 _consumer.Resume(resume);
         }
@@ -548,7 +557,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 state.Revoking = true;
         }
 
-        _paused.ExceptWith(partitions);
+        ForgetPaused(partitions);
         if (states.Count == 0)
             return;
 
@@ -660,9 +669,22 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             }
         }
 
-        _paused.ExceptWith(partitions);
+        ForgetPaused(partitions);
         _logger.LogWarning("{Source} lost {Partitions}; their unsettled messages will be delivered again", Source, String.Join(", ", partitions));
         Signal();
+    }
+
+    /// <summary>
+    /// librdkafka keeps a partition paused after it is revoked, and a partition assigned back to the same consumer
+    /// would stay paused, so resume it while it is still assigned.
+    /// </summary>
+    private void ForgetPaused(List<TopicPartition> partitions)
+    {
+        var paused = partitions.Where(_paused.Remove).ToList();
+        if (paused.Count > 0)
+            _consumer.Resume(paused);
+
+        Volatile.Write(ref _pausedCount, _paused.Count);
     }
 
     private KafkaIncomingMessage GetDelivery(IncomingMessage message)

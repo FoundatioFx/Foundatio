@@ -208,6 +208,73 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    [Fact]
+    public async Task Rebalance_OfAPausedPartitionAndBack_ResumesReadingIt()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 2,
+            DelayedDelivery = false,
+            RebalanceGracePeriod = TimeSpan.FromMilliseconds(500),
+            ConfigureProducer = c => c.StickyPartitioningLingerMs = 0
+        }));
+        var source = MessageSource.Queue(NewName("paused-moved"));
+        await using var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 1 }, TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 40).Select(i => Message($"first-{i}")).ToList(), TestCancellationToken);
+        await WaitForAsync(() => first.PausedCount == 2);
+
+        await MovePartitionAwayAndBackAsync(transport, source, first);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"second-{i}")).ToList(), TestCancellationToken);
+
+        var received = await ReceiveAsync(first, 60);
+        Assert.Equal(60, received.Select(m => m.MessageId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task Rebalance_OfHeldDelayTierPartitionsAndBack_HoldsTheirHeadsAgain()
+    {
+        var options = CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 };
+        var transport = Track(new KafkaMessageTransport(options));
+        var source = MessageSource.Queue(NewName("tiers"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var forwarder = await transport.GetForwarderAsync();
+        await WaitForAsync(() => forwarder.Assignment.Count == KafkaDelayTiers.All.Count);
+
+        var now = DateTimeOffset.UtcNow;
+        TimeSpan[] delays = [TimeSpan.FromSeconds(40), TimeSpan.FromMinutes(3), TimeSpan.FromMinutes(11), TimeSpan.FromMinutes(61), TimeSpan.FromHours(7)];
+        await transport.SendAsync(MessageDestination.Queue(source.Name), delays.Select(d => Message($"later-{d}") with { DeliverAt = now.Add(d) }).ToList(), TestCancellationToken);
+        string[] longTiers = [.. new[] { TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(10), TimeSpan.FromHours(1), TimeSpan.FromHours(6) }.Select(t => $"{options.Prefix}.delay.{KafkaDelayTiers.Label(t)}")];
+        await WaitForAsync(() => longTiers.All(forwarder.HeldTopics.Contains));
+
+        // Only a held partition that moves away and back can be left paused; with five of seven held, the other
+        // forwarder's share includes one, but it may be the 30s tier, whose head comes due during the test.
+        bool movedALongTier = false;
+        for (int attempt = 0; attempt < 3 && !movedALongTier; attempt++)
+        {
+            await using var other = new KafkaMessageTransport(options);
+            await using var otherReceiver = await other.CreateReceiverAsync(MessageSource.Queue(NewName("other")), new ReceiverOptions(), TestCancellationToken);
+            var otherForwarder = await other.GetForwarderAsync();
+            await WaitForAsync(() => otherForwarder.Assignment.Count > 0 && forwarder.Assignment.Count + otherForwarder.Assignment.Count == KafkaDelayTiers.All.Count, TimeSpan.FromSeconds(30));
+            movedALongTier = otherForwarder.Assignment.Any(p => longTiers.Contains(p.Topic));
+        }
+
+        Assert.True(movedALongTier, "No held long-tier partition moved to the other forwarder.");
+        await WaitForAsync(() => forwarder.Assignment.Count == KafkaDelayTiers.All.Count, TimeSpan.FromSeconds(30));
+        await WaitForAsync(() => longTiers.All(forwarder.HeldTopics.Contains));
+    }
+
+    private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)
+    {
+        int assigned = first.Assignment.Count;
+        await using (var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+            await WaitForAsync(() => second.Assignment.Count > 0 && first.Assignment.Count + second.Assignment.Count == assigned, TimeSpan.FromSeconds(30));
+
+        await WaitForAsync(() => first.Assignment.Count == assigned, TimeSpan.FromSeconds(30));
+    }
+
+    /// <summary>A prefix of its own, for tests that need the delay forwarders' consumer group to themselves.</summary>
+    private static string UniquePrefix() => $"{Prefix}-{Guid.NewGuid():N}"[..(Prefix.Length + 9)];
+
     private async Task<IncomingMessage> SendAndReceiveAsync(MessageSource source, IMessageReceiver receiver)
     {
         await Transport.SendAsync(MessageDestination.For(source), [Message("delete me")], TestCancellationToken);

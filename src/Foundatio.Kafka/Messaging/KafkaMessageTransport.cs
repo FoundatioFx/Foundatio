@@ -329,6 +329,17 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     internal void Remove(KafkaMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
 
+    /// <summary>Starts the delay forwarder if needed and returns it. For tests.</summary>
+    internal async Task<KafkaDelayForwarder> GetForwarderAsync()
+    {
+        await EnsureForwarderAsync(CancellationToken.None).AnyContext();
+        Task<KafkaDelayForwarder> forwarder;
+        lock (_forwarderLock)
+            forwarder = _forwarder!;
+
+        return await forwarder.AnyContext();
+    }
+
     internal void OnLog(LogMessage message)
     {
         var level = message.Level switch
