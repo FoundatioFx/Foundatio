@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
@@ -302,6 +303,99 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         }
 
         Assert.Equal(["a", "a", "a"], peeks);
+    }
+
+    [Fact]
+    public async Task DeliverAt_WithATargetOutsideTheTransportsTopics_IsNotForwarded()
+    {
+        var options = CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 };
+        var transport = Track(new KafkaMessageTransport(options));
+        var source = MessageSource.Queue(NewName("foreign"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.GetForwarderAsync();
+        string foreign = NewName("foundatio-tests-foreign");
+        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build();
+        await admin.CreateTopicsAsync([new TopicSpecification { Name = foreign, NumPartitions = 1, ReplicationFactor = 1 }]);
+        try
+        {
+            // Anyone who can write to the delay topics could name any target; only the transport's own are forwarded.
+            using (var producer = new ProducerBuilder<byte[]?, byte[]>(new ProducerConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build())
+            {
+                await producer.ProduceAsync($"{options.Prefix}.delay.1s", new Message<byte[]?, byte[]>
+                {
+                    Value = Encoding.UTF8.GetBytes("forged"),
+                    Headers = new Headers
+                    {
+                        { "x-foundatio-id", Encoding.UTF8.GetBytes("forged") },
+                        { "x-foundatio-target", Encoding.UTF8.GetBytes(foreign) },
+                        { "x-foundatio-deliver-at", Encoding.UTF8.GetBytes(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()) }
+                    }
+                }, TestCancellationToken);
+            }
+
+            await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("genuine") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(1) }], TestCancellationToken);
+            Assert.Equal("genuine", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
+
+            using var consumer = new ConsumerBuilder<Ignore, Ignore>(new ConsumerConfig { BootstrapServers = KafkaTestConnection.BootstrapServers, GroupId = foreign }).Build();
+            Assert.Equal(0, consumer.QueryWatermarkOffsets(new TopicPartition(foreign, 0), TimeSpan.FromSeconds(10)).High.Value);
+        }
+        finally
+        {
+            await admin.DeleteTopicsAsync([foreign]);
+        }
+    }
+
+    [Fact]
+    public async Task DeliverAt_ToATargetThatRejectsTheRecord_IsDroppedWithoutHoldingBackItsTier()
+    {
+        var options = CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1, DelayForwardRetryDelay = TimeSpan.FromMilliseconds(100), DelayForwardMaxAttempts = 3 };
+        var source = MessageSource.Queue(NewName("too-large"));
+        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build();
+        await admin.CreateTopicsAsync([new TopicSpecification
+        {
+            Name = $"{options.Prefix}.queue.{source.Name}",
+            NumPartitions = 1,
+            ReplicationFactor = 1,
+            Configs = new Dictionary<string, string> { ["max.message.bytes"] = "4096" }
+        }]);
+
+        // The delay tiers take the record, but the queue it is due on takes only small ones.
+        var first = new KafkaMessageTransport(options);
+        await using (var receiver = await first.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+        {
+            var due = DateTimeOffset.UtcNow.AddSeconds(1.5);
+            await first.SendAsync(MessageDestination.Queue(source.Name), [new OutgoingMessage { MessageId = "large", Body = new byte[20_000], DeliverAt = due }], TestCancellationToken);
+            await first.SendAsync(MessageDestination.Queue(source.Name), [Message("small", "small") with { DeliverAt = due }], TestCancellationToken);
+
+            var message = await ReceiveOneAsync(receiver);
+            Assert.Equal("small", message.MessageId);
+            await receiver.CompleteAsync(message, TestCancellationToken);
+            var forwarder = await first.GetForwarderAsync();
+            await WaitForAsync(() => forwarder.PendingCount == 0);
+        }
+
+        await first.DisposeAsync();
+
+        // A forwarder that takes over the tier starts after both records instead of forwarding the small one again.
+        var second = Track(new KafkaMessageTransport(options));
+        await using var again = await second.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await second.GetForwarderAsync();
+        await AssertNothingReceivedAsync(again, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task DeliverAt_WhenTheDelayForwarderFails_IsDeliveredByTheRestartedForwarder()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("forwarder-restart"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var forwarder = await transport.GetForwarderAsync();
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("later") with { DeliverAt = DateTimeOffset.UtcNow.AddSeconds(3) }], TestCancellationToken);
+
+        forwarder.FailForTesting(new KafkaException(ErrorCode.Local_Fatal));
+
+        var message = await ReceiveOneAsync(receiver, TimeSpan.FromSeconds(45));
+        Assert.Equal("later", Encoding.UTF8.GetString(message.Body.Span));
     }
 
     private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)

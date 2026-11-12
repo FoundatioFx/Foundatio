@@ -83,4 +83,10 @@ public sealed record KafkaMessageTransportOptions
 
     /// <summary>Receives the transport's logs, including librdkafka's (its info and notice logs at debug level).</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
+
+    /// <summary>How long the delay forwarder waits before it tries again to forward a record it could not.</summary>
+    internal TimeSpan DelayForwardRetryDelay { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>How many times the delay forwarder tries a record that its target rejects before dropping it.</summary>
+    internal int DelayForwardMaxAttempts { get; init; } = 12;
 }

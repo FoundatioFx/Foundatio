@@ -37,6 +37,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private static readonly TimeSpan AdminTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan TopicReadyTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan ForwarderRestartDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan MaxForwarderRestartDelay = TimeSpan.FromSeconds(30);
 
     private readonly IAdminClient _admin;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _topics = new(StringComparer.Ordinal);
@@ -82,10 +84,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
             Deduplication = false
         };
 
-        Producer = new ProducerBuilder<byte[]?, byte[]>(CreateProducerConfig())
-            .SetLogHandler((_, message) => OnLog(message))
-            .SetErrorHandler((_, error) => OnError(error))
-            .Build();
+        Producer = CreateProducer();
         _admin = new DependentAdminClientBuilder(Producer.Handle).Build();
     }
 
@@ -536,7 +535,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
         Task<KafkaDelayForwarder> forwarder;
         lock (_forwarderLock)
         {
-            if (_forwarder is null || _forwarder.IsFaulted || _forwarder.IsCanceled)
+            ThrowIfDisposed();
+            if (_forwarder is null || _forwarder.IsFaulted || _forwarder.IsCanceled || _forwarder.IsCompletedSuccessfully && _forwarder.Result.Failed)
                 _forwarder = StartForwarderAsync();
 
             forwarder = _forwarder;
@@ -551,7 +551,38 @@ public sealed class KafkaMessageTransport : IMessageTransport
         await EnsureTopicsAsync(tiers.Keys.ToList()).AnyContext();
         var forwarder = new KafkaDelayForwarder(this, tiers);
         forwarder.Start();
+        _ = RestartWhenFailedAsync(forwarder);
         return forwarder;
+    }
+
+    /// <summary>
+    /// Delayed sends and retries stop moving in this process while its forwarder is down, and nothing else would start
+    /// it again until the next delayed send, so a forwarder that fails is restarted, backing off while it keeps failing.
+    /// </summary>
+    private async Task RestartWhenFailedAsync(KafkaDelayForwarder forwarder)
+    {
+        await forwarder.Completion.AnyContext();
+        var delay = ForwarderRestartDelay;
+        while (forwarder.Failed && Volatile.Read(ref _disposed) == 0)
+        {
+            Logger.LogError("The Kafka delay forwarder failed; delayed messages wait until it restarts in {Delay}", delay);
+            await Task.Delay(delay).AnyContext();
+            try
+            {
+                await EnsureForwarderAsync(CancellationToken.None).AnyContext();
+                Logger.LogInformation("Restarted the Kafka delay forwarder");
+                return;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Could not restart the Kafka delay forwarder: {Message}", ex.Message);
+                delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, MaxForwarderRestartDelay.Ticks));
+            }
+        }
     }
 
     private Task ProduceAsync(IReadOnlyList<(string Topic, Message<byte[]?, byte[]> Message)> records, CancellationToken cancellationToken)
@@ -685,7 +716,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
     }
 
-    private ProducerConfig CreateProducerConfig()
+    /// <summary>A producer with the transport's configuration, adjusted last by <paramref name="adjust"/>.</summary>
+    internal IProducer<byte[]?, byte[]> CreateProducer(Action<ProducerConfig>? adjust = null)
     {
         var config = new ProducerConfig(CopyClientConfig())
         {
@@ -698,7 +730,11 @@ public sealed class KafkaMessageTransport : IMessageTransport
         };
 
         Options.ConfigureProducer?.Invoke(config);
-        return config;
+        adjust?.Invoke(config);
+        return new ProducerBuilder<byte[]?, byte[]>(config)
+            .SetLogHandler((_, message) => OnLog(message))
+            .SetErrorHandler((_, error) => OnError(error))
+            .Build();
     }
 
     private Dictionary<string, string> CopyClientConfig()

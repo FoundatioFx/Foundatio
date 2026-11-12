@@ -43,6 +43,16 @@ internal sealed class KafkaMessageTransportNames
 
     public bool IsDelay(string topic) => topic.StartsWith($"{_prefix}.delay.", StringComparison.Ordinal);
 
+    /// <summary>Whether a delayed record may be forwarded to <paramref name="topic"/>: a queue, topic, subscription or dead-letter topic of this prefix.</summary>
+    public bool IsDelayTarget(string topic)
+    {
+        return topic.Length <= MaxTopicLength
+            && (topic.StartsWith($"{_prefix}.queue.", StringComparison.Ordinal)
+                || topic.StartsWith($"{_prefix}.topic.", StringComparison.Ordinal)
+                || topic.StartsWith($"{_prefix}.subscription.", StringComparison.Ordinal)
+                || topic.StartsWith($"{_prefix}.deadletter.", StringComparison.Ordinal));
+    }
+
     private string Build(string kind, params string[] parts)
     {
         string readable = $"{_prefix}.{kind}.{String.Join('.', parts.Select(p => p.Replace('_', '-')))}";
