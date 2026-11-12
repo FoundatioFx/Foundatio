@@ -274,6 +274,40 @@ public class HostingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task StartupActionsGate_WhenStartupOutlastsTheTimeout_KeepsWaitingAndOpensOnceStartupSucceeds()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var host = new HostBuilder().ConfigureServices(s =>
+        {
+            s.AddSingleton<Foundatio.Utility.IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>(), TimeSpan.FromMilliseconds(100)));
+            s.AddStartupAction("slow", (_, ct) => release.Task.WaitAsync(ct));
+        }).Build();
+        await host.StartAsync(TestCancellationToken);
+        var gate = host.Services.GetRequiredService<Foundatio.Utility.IStartupGate>();
+
+        var wait = gate.WaitAsync(TestCancellationToken);
+        var first = await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(1.5), TestCancellationToken));
+        release.SetResult();
+
+        Assert.NotSame(wait, first);
+        Assert.True(await wait.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.True(await gate.WaitAsync(TestCancellationToken));
+        await host.StopAsync(TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task StartupActionsGate_WhenAStartupActionFails_ReturnsFalse()
+    {
+        using var host = new HostBuilder().ConfigureServices(s => s.AddStartupAction("broken", (_, _) => throw new InvalidOperationException("migration failed"))).Build();
+        await host.StartAsync(TestCancellationToken);
+
+        var gate = host.Services.GetRequiredService<Foundatio.Utility.IStartupGate>();
+
+        Assert.False(await gate.WaitAsync(TestCancellationToken).WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        await host.StopAsync(TestCancellationToken);
+    }
+
+    [Fact]
     public void StartupActionsTimeout_ConfiguredThenReset_PreservesDefaultAndWaitSetting()
     {
         // Arrange
