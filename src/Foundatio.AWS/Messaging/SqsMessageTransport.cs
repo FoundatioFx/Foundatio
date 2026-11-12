@@ -50,16 +50,16 @@ public sealed class SqsMessageTransport : IMessageTransport
     internal const string TopicTag = "foundatio-topic";
     internal const string PurgedBeforeTag = "foundatio-purged-before";
     internal const string SentTimestampAttribute = "SentTimestamp";
+    internal const string ReceiveCountAttribute = "ApproximateReceiveCount";
+    internal const string FirstReceiveTimestampAttribute = "ApproximateFirstReceiveTimestamp";
     private const int MaxBatchPayloadSize = 256 * 1024;
     private const int MaxSendAttempts = 3;
     private const int MaxInstanceChecksPerSweep = 20;
     private const int MaxSubscriptionPagesPerSweep = 10;
     private const int MaxSubscriptionPagesPerDelete = 100;
     private const int SweepIntervalInTimeouts = 6;
-    private const int PurgeVisibilityTimeoutSeconds = 60;
     private static readonly TimeSpan MaxNativeDelay = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MessageRetention = TimeSpan.FromDays(14);
-    private static readonly TimeSpan PurgeMarkerTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>Hidden messages are kept until due, but a day short of the retention period, so they can still be retried.</summary>
     private static readonly TimeSpan MaxEmulatedDelay = MessageRetention - TimeSpan.FromDays(1);
@@ -690,10 +690,10 @@ public sealed class SqsMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Deletes every message of the queue without deleting the queue. A marker message gives the queue's own time of
-    /// the purge, which is tagged on the queue so receivers discard older messages that were not visible to the purge
-    /// (delayed, hidden until due, or held by a receiver). SQS's PurgeQueue is not used: it runs once a minute at most
-    /// and may also delete messages sent during the following minute.
+    /// Deletes the messages the queue held when the purge started, without deleting the queue, and tags the queue with
+    /// the purge's time on the queue's own clock so receivers discard older messages the purge did not see (delayed,
+    /// hidden until due, or held by a receiver). Messages sent during the purge are kept. SQS's PurgeQueue is not
+    /// used: it runs once a minute at most and may also delete messages sent during the following minute.
     /// </summary>
     private async Task PurgeAsync(string queueName, CancellationToken cancellationToken)
     {
@@ -703,59 +703,8 @@ public sealed class SqsMessageTransport : IMessageTransport
 
         try
         {
-            string markerId = Guid.NewGuid().ToString("N");
-            var marker = SqsMessageTransportCodec.EncodePurgeMarker(markerId);
-            await Sqs.SendMessageAsync(new SendMessageRequest
-            {
-                QueueUrl = queueUrl,
-                MessageBody = marker.Body,
-                MessageAttributes = SqsMessageTransportCodec.ToSqsAttributes(marker),
-                MessageGroupId = Options.Fifo ? markerId : null,
-                MessageDeduplicationId = Options.Fifo ? markerId : null
-            }, cancellationToken).AnyContext();
-
-            long? purgedBefore = null;
-            int deleted = 0;
-            long started = Stopwatch.GetTimestamp();
-            while (true)
-            {
-                var response = await Sqs.ReceiveMessageAsync(new ReceiveMessageRequest
-                {
-                    QueueUrl = queueUrl,
-                    MaxNumberOfMessages = MaxBatchSize,
-                    WaitTimeSeconds = 1,
-                    VisibilityTimeout = PurgeVisibilityTimeoutSeconds,
-                    MessageSystemAttributeNames = [SentTimestampAttribute],
-                    MessageAttributeNames = [SqsMessageTransportCodec.AttributeName],
-                    ReceiveRequestAttemptId = Options.Fifo ? Guid.NewGuid().ToString("N") : null
-                }, cancellationToken).AnyContext();
-
-                var messages = response.Messages ?? [];
-                if (messages.Count == 0)
-                {
-                    if (purgedBefore is not null || Stopwatch.GetElapsedTime(started) > PurgeMarkerTimeout)
-                        break;
-
-                    continue;
-                }
-
-                foreach (var message in messages)
-                {
-                    var decoded = SqsMessageTransportCodec.Decode(message.Body, message.MessageAttributes?.GetValueOrDefault(SqsMessageTransportCodec.AttributeName), message.MessageId);
-                    if (!decoded.IsPurgeMarker)
-                        deleted++;
-                    else if (decoded.MessageId == markerId)
-                        purgedBefore = GetNumber(message.Attributes, SentTimestampAttribute);
-                }
-
-                await Sqs.DeleteMessageBatchAsync(new DeleteMessageBatchRequest
-                {
-                    QueueUrl = queueUrl,
-                    Entries = messages.Select((m, i) => new DeleteMessageBatchRequestEntry { Id = i.ToString(CultureInfo.InvariantCulture), ReceiptHandle = m.ReceiptHandle }).ToList()
-                }, cancellationToken).AnyContext();
-            }
-
-            if (purgedBefore is { } before)
+            var purge = await SqsMessageTransportPurge.RunAsync(Sqs, queueUrl, Options.Fifo, Logger, cancellationToken).AnyContext();
+            if (purge.PurgedBefore is { } before)
             {
                 await Sqs.TagQueueAsync(new TagQueueRequest
                 {
@@ -768,7 +717,7 @@ public sealed class SqsMessageTransport : IMessageTransport
                 Logger.LogWarning("Purged queue {QueueName} without receiving its marker; messages that were in flight or delayed may still be delivered", queueName);
             }
 
-            Logger.LogDebug("Purged {Count} messages from queue {QueueName}", deleted, queueName);
+            Logger.LogDebug("Purged {Count} messages from queue {QueueName}", purge.Deleted, queueName);
         }
         catch (QueueDoesNotExistException)
         {

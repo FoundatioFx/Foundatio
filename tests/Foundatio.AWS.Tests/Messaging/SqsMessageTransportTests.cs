@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -14,6 +17,7 @@ using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Xunit;
 using SqsMessageAttributeValue = Amazon.SQS.Model.MessageAttributeValue;
 
@@ -297,6 +301,74 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         await AssertNothingReceivedAsync(recreated, TimeSpan.FromSeconds(5));
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
         Assert.Equal("id-after", (await ReceiveOneAsync(recreated)).MessageId);
+    }
+
+    [Fact]
+    public async Task Delete_WhileAProducerKeepsSending_ReturnsAndKeepsWhatWasSentAfterItStarted()
+    {
+        // Arrange: the purge sends its marker on its own; everything sent after that is newer than the deletion. Slow
+        // receives keep the purge running while the producer sends.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        var markerSent = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is ReceiveMessageRequest)
+                await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
+
+            var response = await send();
+            if (request is SendMessageRequest)
+                markerSent.TrySetResult();
+
+            return response;
+        };
+
+        var source = MessageSource.Queue(NewName("delete-busy"));
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 25).Select(i => Message("old", $"old-{i}")).ToList(), TestCancellationToken);
+
+        using var stopProducing = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var sentAfterTheMarker = new ConcurrentBag<string>();
+        var producer = Task.Run(async () =>
+        {
+            for (int i = 0; !stopProducing.IsCancellationRequested; i++)
+            {
+                bool afterMarker = markerSent.Task.IsCompleted;
+                await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("new", $"new-{i}")], TestCancellationToken);
+                if (afterMarker)
+                    sentAfterTheMarker.Add($"new-{i}");
+
+                await Task.Delay(TimeSpan.FromMilliseconds(200), TestCancellationToken);
+            }
+        }, TestCancellationToken);
+
+        // Act
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        var stopwatch = Stopwatch.StartNew();
+        await transport.DeleteAsync(source, timeout.Token);
+        var elapsed = stopwatch.Elapsed;
+        int sentDuringTheDelete = sentAfterTheMarker.Count;
+        await WaitForAsync(() => sentAfterTheMarker.Count >= sentDuringTheDelete + 3);
+        await stopProducing.CancelAsync();
+        await producer;
+
+        // Assert
+        _logger.LogInformation("Deleted in {Elapsed} while {Count} messages were sent after its marker", elapsed, sentDuringTheDelete);
+        Assert.True(sentDuringTheDelete > 0, "No message was sent while the delete was running.");
+        var expected = sentAfterTheMarker.ToHashSet();
+        var received = new HashSet<string>();
+        await using var receiver = await CreateReceiverAsync(source);
+        var deadline = DateTime.UtcNow + DeliveryTimeout * 3;
+        while (!expected.IsSubsetOf(received) && DateTime.UtcNow < deadline)
+        {
+            foreach (var message in await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(1), TestCancellationToken))
+            {
+                received.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        Assert.DoesNotContain(received, id => id.StartsWith("old-", StringComparison.Ordinal));
+        Assert.Empty(expected.Except(received));
     }
 
     [Fact]
