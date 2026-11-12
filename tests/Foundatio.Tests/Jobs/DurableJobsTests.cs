@@ -475,7 +475,7 @@ public class DurableJobsTests : TestWithLoggingBase
         await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), s => s.AddSingleton<Foundatio.Utility.IStartupGate>(gate));
         var handle = await host.Jobs.EnqueueAsync(new ResizeImage("gated.png", 1), cancellationToken: TestCancellationToken);
 
-        await Task.Delay(300, TestCancellationToken);
+        await gate.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
         Assert.Equal(JobStatus.Queued, (await handle.GetAsync(TestCancellationToken))!.Status);
 
         gate.Open(true);
@@ -490,7 +490,8 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new ResizeImage("never.png", 1), cancellationToken: TestCancellationToken);
 
         gate.Open(false);
-        await Task.Delay(300, TestCancellationToken);
+        var status = host.Services.GetRequiredService<JobsStatus>();
+        await WaitForAsync(() => Task.FromResult(status.GetComponents().Single().State == Foundatio.Utility.ProcessingState.Faulted));
 
         Assert.Equal(JobStatus.Queued, (await handle.GetAsync(TestCancellationToken))!.Status);
     }
@@ -499,9 +500,15 @@ public class DurableJobsTests : TestWithLoggingBase
     {
         private readonly TaskCompletionSource<bool> _result = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Open(bool success) => _result.TrySetResult(success);
 
-        public Task<bool> WaitAsync(CancellationToken cancellationToken) => _result.Task.WaitAsync(cancellationToken);
+        public Task<bool> WaitAsync(CancellationToken cancellationToken)
+        {
+            Waiting.TrySetResult();
+            return _result.Task.WaitAsync(cancellationToken);
+        }
     }
 
     private async Task<TestHost> StartAsync(Action<FoundatioJobsBuilder> configure, Action<IServiceCollection>? services = null, bool startHostedServices = true, IJobStore? store = null)

@@ -279,8 +279,10 @@ public class MessagingTests : TestWithLoggingBase
         await host.Client.PublishAsync(new OrderShipped(1), cancellationToken: TestCancellationToken);
         await WaitForAsync(() => received.Count == 1);
         await subscription.DisposeAsync();
+        var witnessed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var witness = await host.Client.SubscribeAsync<OrderShipped>((_, _, _) => { witnessed.TrySetResult(); return Task.CompletedTask; }, cancellationToken: TestCancellationToken);
         await host.Client.PublishAsync(new OrderShipped(2), cancellationToken: TestCancellationToken);
-        await Task.Delay(200, TestCancellationToken);
+        await witnessed.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
 
         Assert.Equal([1], received);
     }
