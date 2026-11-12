@@ -6,6 +6,7 @@ namespace Foundatio.Testing;
 /// <summary>A message <see cref="FoundatioTestHarness"/> saw being sent, published, or delivered to a handler.</summary>
 public sealed record RecordedMessage
 {
+    /// <summary>The message's id.</summary>
     public required string MessageId { get; init; }
 
     /// <summary>The message's wire name, from <c>[Message]</c>, <c>MapMessage</c> or its full type name.</summary>
@@ -20,11 +21,13 @@ public sealed record RecordedMessage
     /// </summary>
     public required string Address { get; init; }
 
+    /// <summary>The correlation id it was sent with, or null.</summary>
     public string? CorrelationId { get; init; }
 
     /// <summary>The delivery attempt, starting at 1. Zero for sent and published messages.</summary>
     public int Attempt { get; init; }
 
+    /// <summary>Every header, including <see cref="Foundatio.Messaging.KnownHeaders"/>.</summary>
     public required IReadOnlyDictionary<string, string> Headers { get; init; }
 
     /// <summary>For sent and published messages, the requested delivery time of a delayed message.</summary>

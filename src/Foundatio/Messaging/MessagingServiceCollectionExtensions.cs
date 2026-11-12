@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Registers Foundatio messaging.</summary>
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>

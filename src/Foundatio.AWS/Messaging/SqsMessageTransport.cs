@@ -144,6 +144,7 @@ public sealed class SqsMessageTransport : IMessageTransport
     internal ILogger Logger { get; }
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
+    /// <inheritdoc />
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -178,6 +179,7 @@ public sealed class SqsMessageTransport : IMessageTransport
         }
     }
 
+    /// <inheritdoc />
     public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -243,6 +245,7 @@ public sealed class SqsMessageTransport : IMessageTransport
         }
     }
 
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)

@@ -25,6 +25,7 @@ public interface IJobStore
     /// </summary>
     Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default);
 
+    /// <summary>Returns the job, or null when it does not exist or its retention has passed.</summary>
     Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default);
 
     /// <summary>

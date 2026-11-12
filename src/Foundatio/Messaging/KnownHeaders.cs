@@ -12,6 +12,7 @@ public static class KnownHeaders
     /// </summary>
     public const string MessageBaseTypes = "message-base-types";
 
+    /// <summary>The <see cref="DeliveryOptions.CorrelationId"/>.</summary>
     public const string CorrelationId = "correlation-id";
 
     /// <summary>When the message was first sent, in round-trip ("O") format.</summary>
@@ -20,6 +21,7 @@ public static class KnownHeaders
     /// <summary>W3C trace context, propagated so a handler's activity continues the sender's trace.</summary>
     public const string TraceParent = "traceparent";
 
+    /// <summary>W3C trace state that goes with <see cref="TraceParent"/>.</summary>
     public const string TraceState = "tracestate";
 
     /// <summary>The requested delivery time when it is beyond the transport's native delay limit.</summary>

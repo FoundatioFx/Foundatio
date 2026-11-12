@@ -29,6 +29,7 @@ namespace Foundatio.Tests.Jobs;
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public abstract class JobStoreTestsBase : TestWithLoggingBase
 {
+    /// <summary>Creates the suite, logging to <paramref name="output"/>.</summary>
     protected JobStoreTestsBase(ITestOutputHelper output) : base(output)
     {
     }
@@ -39,11 +40,13 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     /// <summary>The lease used by tests that wait for leases to expire.</summary>
     protected virtual TimeSpan ShortLease => TimeSpan.FromSeconds(1);
 
+    /// <summary>The store under test, created by <see cref="CreateStore"/> on first use.</summary>
     protected IJobStore Store => field ??= CreateStore();
 
     /// <summary>How long tests poll for a lease or retention to run out on the store's clock before failing.</summary>
     protected virtual TimeSpan ExpiryTimeout => TimeSpan.FromSeconds(15);
 
+    /// <summary>A created job reads back queued with attempt 0 and its fields as given; an unknown id reads as null.</summary>
     [Fact]
     public async Task Create_ThenGet_ReturnsTheJob()
     {
@@ -63,6 +66,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.GetAsync(Guid.NewGuid().ToString("N"), TestCancellationToken));
     }
 
+    /// <summary>Creating a job whose id exists returns false and changes nothing.</summary>
     [Fact]
     public async Task Create_WithAnExistingId_ReturnsFalseAndKeepsTheOriginal()
     {
@@ -74,6 +78,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal([1], (await Store.GetAsync(job.Id, TestCancellationToken))!.Payload.ToArray());
     }
 
+    /// <summary>A claim takes a due job, marks it running and sets its attempt, worker, claim token and lease.</summary>
     [Fact]
     public async Task Claim_ReturnsADueJobAndMarksItRunning()
     {
@@ -94,6 +99,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
     }
 
+    /// <summary>A claim skips jobs that are not due yet and jobs with names it did not ask for.</summary>
     [Fact]
     public async Task Claim_IgnoresJobsThatAreNotDueOrNotRequested()
     {
@@ -107,6 +113,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(other.Id, (await Store.ClaimAsync(Claim(later.Name, other.Name), TestCancellationToken))?.Id);
     }
 
+    /// <summary>Claims of one name return its jobs in the order they became due.</summary>
     [Fact]
     public async Task Claim_ReturnsTheJobDueLongestFirst()
     {
@@ -121,6 +128,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(newer.Id, (await Store.ClaimAsync(Claim(name), TestCancellationToken))?.Id);
     }
 
+    /// <summary>A claim of several names returns the job that has been due longest among all of them.</summary>
     [Fact]
     public async Task Claim_ReturnsTheJobDueLongestAcrossAllRequestedNames()
     {
@@ -133,6 +141,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(overdue.Id, (await Store.ClaimAsync(Claim(recent.Name, overdue.Name), TestCancellationToken))?.Id);
     }
 
+    /// <summary>Concurrent claims never hand the same job to two workers.</summary>
     [Fact]
     public async Task Claim_FromConcurrentWorkers_ClaimsEachJobOnce()
     {
@@ -151,6 +160,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(20, claimed.Distinct().Count());
     }
 
+    /// <summary>A job whose lease ran out is claimed again with a new claim token and the next attempt.</summary>
     [Fact]
     public async Task Claim_AfterTheLeaseExpires_ReclaimsWithANewTokenAndAttempt()
     {
@@ -166,6 +176,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal("worker-2", second.WorkerId);
     }
 
+    /// <summary>Renewing extends the lease, and reports when cancellation has been requested.</summary>
     [Fact]
     public async Task Renew_ExtendsTheLeaseAndReportsCancellation()
     {
@@ -186,6 +197,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(JobLeaseStatus.Lost, await Store.RenewAsync(job.Id, "not-the-token", TimeSpan.FromMinutes(1), TestCancellationToken));
     }
 
+    /// <summary>A renewal that comes after the lease ran out, but before another claim, keeps the job.</summary>
     [Fact]
     public async Task Renew_AfterTheLeaseExpiresButBeforeAReclaim_KeepsTheJob()
     {
@@ -201,6 +213,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
     }
 
+    /// <summary>Completing as succeeded records the state, message and completion time, and clears the claim so a second completion is rejected.</summary>
     [Fact]
     public async Task Complete_Succeeded_RecordsTheResultAndClearsTheClaim()
     {
@@ -219,6 +232,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(JobState.Succeeded, (await Store.GetAsync(job.Id, TestCancellationToken))!.State);
     }
 
+    /// <summary>Completion is accepted for the current claim token, even after its lease ran out, and rejected for a replaced one.</summary>
     [Fact]
     public async Task Complete_IsFencedByTheClaimTokenNotTheLease()
     {
@@ -236,6 +250,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(JobState.Succeeded, (await Store.GetAsync(expired.Id, TestCancellationToken))!.State);
     }
 
+    /// <summary>A retry queues the job again once the delay has passed, keeping the attempt and the error.</summary>
     [Fact]
     public async Task Complete_Retry_RequeuesAfterTheDelayAndKeepsTheError()
     {
@@ -254,6 +269,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(2, (await WaitForClaimAsync(Claim(job.Name))).Attempt);
     }
 
+    /// <summary>A release queues the job again at once without counting the attempt.</summary>
     [Fact]
     public async Task Complete_Release_RefundsTheAttemptAndRequeuesImmediately()
     {
@@ -268,6 +284,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(1, again.Attempt);
     }
 
+    /// <summary>Progress is recorded for the current claim token and rejected for any other.</summary>
     [Fact]
     public async Task ReportProgress_IsRecordedOnlyForTheCurrentClaim()
     {
@@ -284,6 +301,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal("reading", stored.Message);
     }
 
+    /// <summary>Requesting cancellation cancels a queued job and flags a running one for its worker; it returns false for a finished or unknown job.</summary>
     [Fact]
     public async Task RequestCancellation_CancelsQueuedJobsAndFlagsRunningOnes()
     {
@@ -308,6 +326,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.False(await Store.RequestCancellationAsync(Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(5), TestCancellationToken));
     }
 
+    /// <summary>Queries and counts filter by state and name, and queries page through jobs newest first.</summary>
     [Fact]
     public async Task QueryAndCount_FilterByStatusAndName_NewestFirst()
     {
@@ -337,6 +356,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Single((await Store.QueryAsync(new JobQuery { Name = name, State = JobState.Running }, TestCancellationToken)).Jobs);
     }
 
+    /// <summary>A finished job disappears once its retention has passed.</summary>
     [Fact]
     public async Task FinishedJobs_ExpireAfterTheirRetention()
     {
@@ -353,6 +373,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CreateAsync(job, TestCancellationToken));
     }
 
+    /// <summary>Claiming and retrying a job keep the fields they do not change, such as the payload, correlation id and schedule.</summary>
     [Fact]
     public async Task ClaimAndRetry_KeepTheJobsOtherFields()
     {
@@ -383,6 +404,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>Every header round-trips exactly, through reads, claims and retries.</summary>
     [Fact]
     public async Task Create_WithHeaders_KeepsThemThroughGetClaimAndRetry()
     {
@@ -415,6 +437,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>A succeeded job loses its payload and keeps the rest of its record; failed and cancelled jobs keep their payload.</summary>
     [Fact]
     public async Task Complete_Succeeded_DropsThePayloadAndKeepsTheRestWhileFailedAndCancelledJobsKeepTheirs()
     {
@@ -453,6 +476,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>Completing as failed or cancelled records the state, error or message and completion time, and clears the claim.</summary>
     [Fact]
     public async Task Complete_FailedAndCancelled_RecordTheirStatusAndClearTheClaim()
     {
@@ -486,6 +510,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>A success after a failed attempt clears the error.</summary>
     [Fact]
     public async Task Complete_SucceededAfterARetry_ClearsTheError()
     {
@@ -503,6 +528,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(2, stored.Attempt);
     }
 
+    /// <summary>A completion racing a claim of the same expired lease either completes the job or loses it to the claim, never both.</summary>
     [Fact]
     public Task Complete_RacingAReclaim_EitherCompletesOrIsReclaimed()
     {
@@ -523,6 +549,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }));
     }
 
+    /// <summary>Renewals and progress reports with a replaced claim token are rejected.</summary>
     [Fact]
     public async Task RenewAndReportProgress_WithATokenFromBeforeAReclaim_AreRejected()
     {
@@ -542,6 +569,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(JobLeaseStatus.Renewed, await Store.RenewAsync(job.Id, second.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
     }
 
+    /// <summary>A job reclaimed after its lease ran out keeps its cancellation request.</summary>
     [Fact]
     public async Task Claim_AfterTheLeaseExpires_KeepsTheCancellationRequest()
     {
@@ -556,6 +584,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal(JobLeaseStatus.CancellationRequested, await Store.RenewAsync(job.Id, reclaimed.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
     }
 
+    /// <summary>A queued job that was cancelled disappears after the retention passed with the request, and its id can be reused.</summary>
     [Fact]
     public async Task RequestCancellation_OfAQueuedJob_ExpiresAfterTheRetention()
     {
@@ -571,6 +600,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CreateAsync(job, TestCancellationToken));
     }
 
+    /// <summary>Queries and counts by state find succeeded, failed and cancelled jobs under their own state.</summary>
     [Fact]
     public async Task QueryAndCount_FinishedAndCancelledJobs_FilterByTheirStatus()
     {
@@ -609,6 +639,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             (await Store.QueryAsync(new JobQuery { Name = name, State = status }, TestCancellationToken)).Jobs.Select(j => j.Id).Order().ToArray();
     }
 
+    /// <summary>Every operation throws <see cref="ArgumentException"/> for a missing job id or claim token, or an invalid claim request.</summary>
     [Fact]
     public async Task Operations_WithAMissingIdOrToken_ThrowArgumentException()
     {
@@ -632,6 +663,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.ClaimAsync(new JobClaimRequest { Names = [NewName()], WorkerId = "worker-1", LeaseDuration = TimeSpan.Zero }, TestCancellationToken));
     }
 
+    /// <summary>A deleted job can no longer be read, and deleting it again returns false.</summary>
     [Fact]
     public async Task Delete_RemovesTheJob()
     {
@@ -643,6 +675,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.False(await Store.DeleteAsync(job.Id, TestCancellationToken));
     }
 
+    /// <summary>Deleting a running job rejects its worker's later renewals, progress reports and completion.</summary>
     [Fact]
     public async Task Delete_ARunningJob_FencesItsWorker()
     {
@@ -658,8 +691,10 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Null(await Store.GetAsync(job.Id, TestCancellationToken));
     }
 
+    /// <summary>A job name no other test uses.</summary>
     protected static string NewName() => $"job-{Guid.NewGuid():N}"[..16];
 
+    /// <summary>A job that is already due, named <paramref name="name"/> or a new name, with <paramref name="payload"/> or an empty one.</summary>
     protected static JobInfo NewJob(string? name = null, byte[]? payload = null)
     {
         var now = DateTimeOffset.UtcNow;
@@ -674,8 +709,10 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         };
     }
 
+    /// <summary>A claim of <paramref name="names"/> with a one-minute lease.</summary>
     protected static JobClaimRequest Claim(params string[] names) => Claim(names, TimeSpan.FromMinutes(1));
 
+    /// <summary>A claim of <paramref name="name"/> with the given lease.</summary>
     protected static JobClaimRequest Claim(string name, TimeSpan lease) => Claim([name], lease);
 
     private static JobClaimRequest Claim(string[] names, TimeSpan lease) => new() { Names = names, WorkerId = "worker-1", LeaseDuration = lease };

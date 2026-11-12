@@ -18,6 +18,7 @@ public sealed class FoundatioJobsBuilder
         _registrations = registrations;
     }
 
+    /// <summary>The service collection being configured, for provider extensions that register their own services.</summary>
     public IServiceCollection Services { get; }
 
     /// <summary>Stores jobs in memory. They are lost when the process stops, and are not shared between processes.</summary>
@@ -35,6 +36,7 @@ public sealed class FoundatioJobsBuilder
         return this;
     }
 
+    /// <summary>Uses a store created, and disposed, by the service provider.</summary>
     public FoundatioJobsBuilder UseStore(Func<IServiceProvider, IJobStore> factory)
     {
         ArgumentNullException.ThrowIfNull(factory);
@@ -42,6 +44,7 @@ public sealed class FoundatioJobsBuilder
         return this;
     }
 
+    /// <summary>Changes <see cref="JobWorkerOptions"/>. Callbacks run in the order they were added, when jobs are first resolved.</summary>
     public FoundatioJobsBuilder Configure(Action<JobWorkerOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

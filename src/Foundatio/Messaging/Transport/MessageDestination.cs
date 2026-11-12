@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
+/// <summary>What a <see cref="MessageDestination"/> sends to.</summary>
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public enum MessageDestinationKind
 {
@@ -35,6 +36,7 @@ public sealed record MessageDestination
         SubscriptionName = subscriptionName;
     }
 
+    /// <summary>Whether this is a queue, a topic or one subscription of a topic.</summary>
     public MessageDestinationKind Kind { get; }
 
     /// <summary>The queue name, or the topic name for topic and subscription destinations.</summary>
@@ -43,7 +45,9 @@ public sealed record MessageDestination
     /// <summary>The subscription name of a <see cref="MessageDestinationKind.Subscription"/> destination.</summary>
     public string? SubscriptionName { get; }
 
+    /// <summary>The queue <paramref name="name"/>.</summary>
     public static MessageDestination Queue(string name) => new(MessageDestinationKind.Queue, name, null);
+    /// <summary>The topic <paramref name="name"/>, which copies each message to all of its subscriptions.</summary>
     public static MessageDestination Topic(string name) => new(MessageDestinationKind.Topic, name, null);
 
     /// <summary>
@@ -64,6 +68,7 @@ public sealed record MessageDestination
         };
     }
 
+    /// <summary>Returns <c>queue:name</c>, <c>topic:name</c> or <c>subscription:topic/name</c>, for logs.</summary>
     public override string ToString() => Kind == MessageDestinationKind.Subscription
         ? $"subscription:{Name}/{SubscriptionName}"
         : $"{Kind.ToString().ToLowerInvariant()}:{Name}";

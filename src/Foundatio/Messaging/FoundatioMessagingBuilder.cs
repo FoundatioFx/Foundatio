@@ -20,6 +20,7 @@ public sealed class FoundatioMessagingBuilder
         _registrations = registrations;
     }
 
+    /// <summary>The service collection being configured, for provider extensions that register their own services.</summary>
     public IServiceCollection Services { get; }
 
     /// <summary>Uses a process-local transport. Messages are lost when the process stops.</summary>
@@ -55,6 +56,7 @@ public sealed class FoundatioMessagingBuilder
         return Configure(o => o.ServiceName = serviceName);
     }
 
+    /// <summary>Changes <see cref="MessagingOptions"/>. Callbacks run in the order they were added, when messaging is first resolved.</summary>
     public FoundatioMessagingBuilder Configure(Action<MessagingOptions> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

@@ -16,11 +16,13 @@ public sealed class InMemoryJobStore : IJobStore
     private readonly object _lock = new();
     private DateTimeOffset _nextCleanup;
 
+    /// <summary>Creates an empty store that reads "now" from <paramref name="timeProvider"/>, or the system clock when null.</summary>
     public InMemoryJobStore(TimeProvider? timeProvider = null)
     {
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
+    /// <inheritdoc />
     public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -47,6 +49,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -54,6 +57,7 @@ public sealed class InMemoryJobStore : IJobStore
             return Task.FromResult(Find(jobId, Now())?.Job);
     }
 
+    /// <inheritdoc />
     public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -93,12 +97,14 @@ public sealed class InMemoryJobStore : IJobStore
         return (ticks, token[(separator + 1)..]);
     }
 
+    /// <inheritdoc />
     public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         lock (_lock)
             return Task.FromResult((long)Matching(state, name, Now()).Count());
     }
 
+    /// <inheritdoc />
     public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -151,6 +157,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -167,6 +174,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -183,6 +191,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -225,6 +234,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -249,6 +259,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);

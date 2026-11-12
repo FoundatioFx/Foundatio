@@ -41,6 +41,7 @@ namespace Foundatio.Messaging.Transport;
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public interface IMessageReceiver : IAsyncDisposable
 {
+    /// <summary>The source this receiver was created for.</summary>
     MessageSource Source { get; }
 
     /// <summary>

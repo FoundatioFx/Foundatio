@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging.Transport;
 
+/// <summary>Settings for <see cref="RedisMessageTransport"/>.</summary>
 public sealed record RedisMessageTransportOptions
 {
     /// <summary>Prepended to every key. Each source's keys share a hash tag, so a source lives on one cluster slot.</summary>
@@ -62,5 +63,6 @@ public sealed record RedisMessageTransportOptions
     /// <summary>Used to turn <see cref="OutgoingMessage.DeliverAt"/> into a delay. Delays are then measured by the Redis clock.</summary>
     public TimeProvider? TimeProvider { get; init; }
 
+    /// <summary>Receives the transport's logs. Null for no logging.</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
 }

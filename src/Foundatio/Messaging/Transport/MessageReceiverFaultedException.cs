@@ -10,10 +10,12 @@ namespace Foundatio.Messaging.Transport;
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public class MessageReceiverFaultedException : MessageBusException
 {
+    /// <summary>Creates the exception with an error message.</summary>
     public MessageReceiverFaultedException(string message) : base(message)
     {
     }
 
+    /// <summary>Creates the exception with an error message and the exception that caused it.</summary>
     public MessageReceiverFaultedException(string message, Exception innerException) : base(message, innerException)
     {
     }

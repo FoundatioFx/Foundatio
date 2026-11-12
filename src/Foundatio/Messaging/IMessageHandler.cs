@@ -12,5 +12,9 @@ namespace Foundatio.Messaging;
 /// </remarks>
 public interface IMessageHandler<in T> where T : class
 {
+    /// <summary>Handles one delivery of <paramref name="message"/>.</summary>
+    /// <param name="message">The deserialized message.</param>
+    /// <param name="context">The delivery's metadata, and a way to dead-letter or retry it without throwing.</param>
+    /// <param name="cancellationToken">Cancelled when shutdown outlasts <see cref="MessagingOptions.ShutdownTimeout"/> or the delivery's lease is lost; the message is then delivered again.</param>
     Task HandleAsync(T message, IMessageContext context, CancellationToken cancellationToken);
 }

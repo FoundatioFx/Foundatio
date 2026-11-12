@@ -7,10 +7,12 @@ namespace Foundatio.Messaging.Transport;
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public class MessageLeaseLostException : MessageBusException
 {
+    /// <summary>Creates the exception with an error message.</summary>
     public MessageLeaseLostException(string message) : base(message)
     {
     }
 
+    /// <summary>Creates the exception with an error message and the exception that caused it.</summary>
     public MessageLeaseLostException(string message, Exception innerException) : base(message, innerException)
     {
     }

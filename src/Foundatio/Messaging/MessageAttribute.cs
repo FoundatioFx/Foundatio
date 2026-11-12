@@ -11,11 +11,13 @@ namespace Foundatio.Messaging;
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class MessageAttribute : Attribute
 {
+    /// <summary>Gives the message type the wire name <paramref name="name"/>, or keeps its full type name when null.</summary>
     public MessageAttribute(string? name = null)
     {
         Name = name;
     }
 
+    /// <summary>The wire name, or null to use the type's full name.</summary>
     public string? Name { get; }
 
     /// <summary>The queue <see cref="IMessageClient.SendAsync{T}"/> delivers to. Defaults to the message name.</summary>

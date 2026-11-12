@@ -2,6 +2,7 @@ using System;
 
 namespace Foundatio.Messaging.Transport;
 
+/// <summary>What a <see cref="MessageSource"/> receives from.</summary>
 public enum MessageSourceKind
 {
     /// <summary>Competing receivers share the messages sent to a queue.</summary>
@@ -32,6 +33,7 @@ public sealed record MessageSource
         DeadLetterOf = deadLetterOf;
     }
 
+    /// <summary>Whether this is a queue, a durable or instance subscription, or a dead-letter queue.</summary>
     public MessageSourceKind Kind { get; }
 
     /// <summary>The queue name, the subscription name, or a descriptive hint for instance subscriptions.</summary>
@@ -43,12 +45,14 @@ public sealed record MessageSource
     /// <summary>For <see cref="MessageSourceKind.DeadLetter"/>, the source whose dead letters are received.</summary>
     public MessageSource? DeadLetterOf { get; }
 
+    /// <summary>The queue <paramref name="name"/>.</summary>
     public static MessageSource Queue(string name)
     {
         TransportNames.Validate(name, nameof(name));
         return new MessageSource(MessageSourceKind.Queue, name, null, null);
     }
 
+    /// <summary>The durable subscription <paramref name="name"/> of <paramref name="topic"/>, usually named after the service.</summary>
     public static MessageSource Subscription(string topic, string name)
     {
         TransportNames.Validate(topic, nameof(topic));
@@ -56,6 +60,10 @@ public sealed record MessageSource
         return new MessageSource(MessageSourceKind.Subscription, name, topic, null);
     }
 
+    /// <summary>
+    /// A subscription to <paramref name="topic"/> that lasts while its receiver is open. <paramref name="nameHint"/>, with
+    /// characters that are not allowed replaced by '-', becomes <see cref="Name"/>: a hint for the name the transport chooses.
+    /// </summary>
     public static MessageSource InstanceSubscription(string topic, string? nameHint = null)
     {
         TransportNames.Validate(topic, nameof(topic));
@@ -63,6 +71,8 @@ public sealed record MessageSource
         return new MessageSource(MessageSourceKind.InstanceSubscription, hint.Length > 0 ? hint : "instance", topic, null);
     }
 
+    /// <summary>The dead-letter queue of a queue or durable subscription.</summary>
+    /// <exception cref="ArgumentException"><paramref name="source"/> is a dead-letter queue or an instance subscription.</exception>
     public static MessageSource DeadLetter(MessageSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -72,6 +82,7 @@ public sealed record MessageSource
         return new MessageSource(MessageSourceKind.DeadLetter, source.Name, source.Topic, source);
     }
 
+    /// <summary>Returns <c>queue:name</c>, <c>subscription:topic/name</c>, <c>instance:topic/name</c> or <c>deadletter:source</c>, for logs.</summary>
     public override string ToString() => Kind switch
     {
         MessageSourceKind.Queue => $"queue:{Name}",

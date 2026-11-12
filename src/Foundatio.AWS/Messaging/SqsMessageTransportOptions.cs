@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging.Transport;
 
+/// <summary>Settings for <see cref="SqsMessageTransport"/>.</summary>
 public sealed record SqsMessageTransportOptions
 {
     /// <summary>
@@ -47,6 +48,7 @@ public sealed record SqsMessageTransportOptions
     /// <summary>Used to turn <see cref="OutgoingMessage.DeliverAt"/> into a delay and to write instance heartbeats.</summary>
     public TimeProvider? TimeProvider { get; init; }
 
+    /// <summary>Receives the transport's logs. Null for no logging.</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
 
     /// <summary>Prints the options for <see cref="ToString"/> with the secret key in <see cref="ConnectionString"/> masked.</summary>

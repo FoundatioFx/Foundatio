@@ -17,5 +17,9 @@ namespace Foundatio.Jobs;
 /// </remarks>
 public interface IDurableJob<in TArgs> where TArgs : class
 {
+    /// <summary>Runs the job.</summary>
+    /// <param name="arguments">The arguments it was enqueued with.</param>
+    /// <param name="context">The job's id, attempt and scheduled time, and a way to report progress.</param>
+    /// <param name="cancellationToken">Fires when the job is cancelled, the host stops or the lease is lost.</param>
     Task RunAsync(TArgs arguments, IJobContext context, CancellationToken cancellationToken);
 }

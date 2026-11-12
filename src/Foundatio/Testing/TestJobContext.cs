@@ -19,11 +19,17 @@ public sealed class TestJobContext : IJobContext
 {
     private readonly List<(int? Percent, string? Message)> _reports = [];
 
+    /// <inheritdoc />
     public string JobId { get; init; } = Guid.NewGuid().ToString("N");
+    /// <inheritdoc />
     public string JobName { get; init; } = "test";
+    /// <inheritdoc />
     public int Attempt { get; init; } = 1;
+    /// <inheritdoc />
     public string? CorrelationId { get; init; }
+    /// <inheritdoc />
     public DateTimeOffset ScheduledFor { get; init; } = DateTimeOffset.UtcNow;
+    /// <inheritdoc />
     public string? ScheduleName { get; init; }
 
     /// <inheritdoc />
@@ -38,6 +44,7 @@ public sealed class TestJobContext : IJobContext
     /// <summary>The last reported message.</summary>
     public string? Message { get; private set; }
 
+    /// <summary>Records the report in <see cref="ProgressReports"/>, <see cref="Progress"/> and <see cref="Message"/>.</summary>
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
         _reports.Add((percent, message));

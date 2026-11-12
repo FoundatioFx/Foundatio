@@ -11,8 +11,11 @@ namespace Foundatio.Messaging.Transport;
 [Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public class IncomingMessage
 {
+    /// <summary>The <see cref="OutgoingMessage.MessageId"/> it was sent with.</summary>
     public required string MessageId { get; init; }
+    /// <summary>The serialized message, exactly as it was sent.</summary>
     public required ReadOnlyMemory<byte> Body { get; init; }
+    /// <summary>The headers it was sent with, unchanged.</summary>
     public IReadOnlyDictionary<string, string> Headers { get; init; } = EmptyHeaders.Instance;
 
     /// <summary>

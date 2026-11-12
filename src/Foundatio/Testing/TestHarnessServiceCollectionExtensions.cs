@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Foundatio.Testing;
 
+/// <summary>Registers <see cref="FoundatioTestHarness"/> for an app's integration tests.</summary>
 public static class TestHarnessServiceCollectionExtensions
 {
     /// <summary>

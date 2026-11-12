@@ -14,6 +14,7 @@ public sealed record ProcessingStatus
     /// </summary>
     public required string Name { get; init; }
 
+    /// <summary>Whether the loop is starting, running, stopped or faulted.</summary>
     public required ProcessingState State { get; init; }
 
     /// <summary>Messages being handled, or jobs running, right now.</summary>
@@ -32,5 +33,6 @@ public sealed record ProcessingStatus
     /// <summary>The most recent error, kept after recovery for diagnostics.</summary>
     public string? LastError { get; init; }
 
+    /// <summary>When <see cref="LastError"/> happened, or null when there has been no error.</summary>
     public DateTimeOffset? LastErrorAt { get; init; }
 }

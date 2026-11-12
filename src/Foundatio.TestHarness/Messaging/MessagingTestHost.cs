@@ -28,9 +28,17 @@ public sealed class MessagingTestHost : IAsyncDisposable
         _hostedServices = hostedServices;
     }
 
+    /// <summary>The host's service provider.</summary>
     public IServiceProvider Services => _services;
+    /// <summary>The host's message client, for sending and publishing as this service.</summary>
     public IMessageClient Client => _services.GetRequiredService<IMessageClient>();
 
+    /// <summary>Starts a host named <paramref name="serviceName"/> on <paramref name="transport"/>, which the caller disposes.</summary>
+    /// <param name="transport">The transport, shared with the other hosts of the test.</param>
+    /// <param name="loggerFactory">Receives the host's logs.</param>
+    /// <param name="serviceName">The service name of the host's durable subscriptions.</param>
+    /// <param name="configure">Registers the host's handlers and messaging settings.</param>
+    /// <param name="configureServices">Registers other services the handlers need.</param>
     public static async Task<MessagingTestHost> StartAsync(IMessageTransport transport, ILoggerFactory loggerFactory, string serviceName,
         Action<FoundatioMessagingBuilder> configure, Action<IServiceCollection>? configureServices = null)
     {
@@ -52,6 +60,7 @@ public sealed class MessagingTestHost : IAsyncDisposable
         return new MessagingTestHost(provider, hostedServices);
     }
 
+    /// <summary>Stops the host, allowing up to 10 seconds, and disposes its services. The transport stays open.</summary>
     public async ValueTask DisposeAsync()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));

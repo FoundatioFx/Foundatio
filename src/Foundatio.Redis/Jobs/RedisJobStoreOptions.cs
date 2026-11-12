@@ -1,5 +1,6 @@
 namespace Foundatio.Jobs.Store;
 
+/// <summary>Settings for <see cref="RedisJobStore"/>.</summary>
 public sealed record RedisJobStoreOptions
 {
     /// <summary>Prepended to every key and used as the store's hash tag, so the whole store lives on one cluster slot.</summary>

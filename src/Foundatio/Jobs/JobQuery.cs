@@ -5,7 +5,9 @@ namespace Foundatio.Jobs;
 /// <summary>Filters for listing jobs, newest first.</summary>
 public sealed record JobQuery
 {
+    /// <summary>Only jobs in this state, or all states when null.</summary>
     public JobState? State { get; init; }
+    /// <summary>Only jobs with this job name, or every name when null.</summary>
     public string? Name { get; init; }
 
     /// <summary>Between 1 and 1000.</summary>

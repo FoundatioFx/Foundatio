@@ -1,5 +1,6 @@
 namespace Foundatio.Jobs;
 
+/// <summary>Helpers for <see cref="JobState"/>.</summary>
 public static class JobStateExtensions
 {
     /// <summary>True for <see cref="JobState.Succeeded"/>, <see cref="JobState.Failed"/> and <see cref="JobState.Cancelled"/>.</summary>

@@ -41,6 +41,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     private IMessageTransport? _transport;
     private IMessageTransport? _peerTransport;
 
+    /// <summary>Creates the suite, logging to <paramref name="output"/>.</summary>
     protected MessageTransportTestsBase(ITestOutputHelper output) : base(output)
     {
     }
@@ -67,11 +68,13 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The delay used by delayed-delivery tests.</summary>
     protected virtual TimeSpan ShortDelay => TimeSpan.FromSeconds(2);
 
+    /// <summary>The transport under test, created by <see cref="CreateTransport"/> on first use and disposed after the test.</summary>
     protected IMessageTransport Transport => _transport ??= Track(CreateTransport());
 
     /// <summary>A transport from <see cref="CreatePeerTransport"/>: another process connected to the same broker.</summary>
     protected IMessageTransport PeerTransport => _peerTransport ??= Track(CreatePeerTransport());
 
+    /// <summary>A sent message is received with the same id, body, headers and group key, and a delivery count of 1.</summary>
     [Fact]
     public async Task SendThenReceive_RoundTripsIdBodyAndHeaders()
     {
@@ -92,6 +95,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Ids and group keys of the longest allowed length, with spaces, punctuation and non-ASCII characters, are received unchanged.</summary>
     [Fact]
     public async Task SendThenReceive_IdsAndGroupKeyWithAnyCharacters_RoundTrip()
     {
@@ -111,6 +115,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>A receive from an empty source returns an empty list once its maximum wait has passed.</summary>
     [Fact]
     public async Task Receive_WhenEmpty_ReturnsEmptyWithinMaxWait()
     {
@@ -123,6 +128,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(4), $"ReceiveAsync took {stopwatch.Elapsed} with a 1s maxWait.");
     }
 
+    /// <summary>A cancelled receive throws promptly, and a message sent afterwards is still received.</summary>
     [Fact]
     public async Task Receive_WhenCancelled_ThrowsPromptlyAndLosesNothing()
     {
@@ -141,6 +147,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>A receive never returns more messages than it asked for.</summary>
     [Fact]
     public async Task Receive_ReturnsAtMostMaxMessages()
     {
@@ -156,6 +163,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(5, all.Select(m => m.MessageId).Distinct().Count());
     }
 
+    /// <summary>A message sent to a queue before any receiver exists is kept until one opens.</summary>
     [Fact]
     public async Task Send_BeforeAnyReceiverExists_KeepsTheMessage()
     {
@@ -168,6 +176,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("early", Encoding.UTF8.GetString(message.Body.Span));
     }
 
+    /// <summary>A completed message is not delivered again.</summary>
     [Fact]
     public async Task Complete_RemovesTheMessage()
     {
@@ -180,6 +189,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertNothingReceivedAsync(receiver, ShortLease + TimeSpan.FromSeconds(1));
     }
 
+    /// <summary>An abandoned message is delivered again with a higher delivery count.</summary>
     [Fact]
     public async Task Abandon_RedeliversWithIncrementedDeliveryCount()
     {
@@ -196,6 +206,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(second, TestCancellationToken);
     }
 
+    /// <summary>A message abandoned while another receive is waiting reaches that receive.</summary>
     [Fact]
     public async Task Abandon_WhileAReceiveIsWaiting_RedeliversTheMessage()
     {
@@ -218,6 +229,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(again, TestCancellationToken);
     }
 
+    /// <summary>A message abandoned with a delay is not delivered again before the delay has passed.</summary>
     [Fact]
     public async Task Abandon_WithDelay_WaitsBeforeRedelivering()
     {
@@ -235,6 +247,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(second, TestCancellationToken);
     }
 
+    /// <summary>A message that is not settled is delivered again once its lease runs out.</summary>
     [Fact]
     public async Task UnsettledMessage_IsRedeliveredAfterLeaseExpires()
     {
@@ -251,6 +264,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(second, TestCancellationToken);
     }
 
+    /// <summary>Renewing keeps a message from being delivered again past its original lease.</summary>
     [Fact]
     public async Task Renew_ExtendsTheLease()
     {
@@ -269,6 +283,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>A delivery that still holds its lease can be renewed many times in a row.</summary>
     [Fact]
     public async Task Renew_OfAHeldDelivery_SucceedsRepeatedly()
     {
@@ -284,6 +299,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertNothingReceivedAsync(receiver, ShortDelay);
     }
 
+    /// <summary>A renewal after the lease ran out either takes the lease back, keeping the message with this delivery, or throws <see cref="MessageLeaseLostException"/> and the message is delivered again.</summary>
     [Fact]
     public async Task Renew_AfterTheLeaseExpired_TakesItBackOrThrowsLeaseLost()
     {
@@ -312,6 +328,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Messages a disposed receiver did not settle are delivered again, with a higher delivery count.</summary>
     [Fact]
     public async Task DisposingAReceiver_ReleasesItsUnsettledMessages()
     {
@@ -328,6 +345,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await next.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Disposing a transport makes its receivers' unsettled messages available to another process.</summary>
     [Fact]
     public async Task DisposingATransport_ReleasesItsUnsettledMessagesToAnotherProcess()
     {
@@ -355,6 +373,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>Settling a delivery whose lease moved to a newer delivery throws <see cref="MessageLeaseLostException"/> and leaves the newer one alone.</summary>
     [Fact]
     public async Task StaleSettlement_FailsWithLeaseLostAndLeavesTheNewDeliveryIntact()
     {
@@ -371,6 +390,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(source, first, stale, second, current, receiverDisposed: false);
     }
 
+    /// <summary>Settling through a disposed receiver throws and leaves the message's newer delivery alone.</summary>
     [Fact]
     public async Task StaleSettlement_AfterTheReceiverIsDisposed_FailsAndLeavesTheNewDeliveryIntact()
     {
@@ -388,6 +408,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(source, first, stale, second, current, receiverDisposed: true);
     }
 
+    /// <summary>A dead-lettered message leaves its queue and is received from its dead-letter queue with its id, body, headers and reason.</summary>
     [Fact]
     public async Task DeadLetter_MovesTheMessageToTheDeadLetterQueue()
     {
@@ -408,6 +429,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertNothingReceivedAsync(receiver, ShortLease + TimeSpan.FromSeconds(1));
     }
 
+    /// <summary>A message dead-lettered from a subscription goes to that subscription's dead-letter queue and no other.</summary>
     [Fact]
     public async Task DeadLetter_FromASubscription_GoesToThatSubscriptionsDeadLetterQueue()
     {
@@ -424,6 +446,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await deadLetters.CompleteAsync(deadLetter, TestCancellationToken);
     }
 
+    /// <summary>A message at the size limit can be dead-lettered with a long reason without being lost.</summary>
     [Fact]
     public async Task DeadLetter_OfAMessageAtTheSizeLimitWithALongReason_KeepsTheMessage()
     {
@@ -447,6 +470,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(kept.Length >= 1024, $"The dead-letter reason was cut to {kept.Length} characters; at least the first 1,024 must be kept.");
     }
 
+    /// <summary>Dead-lettering two messages with the same id keeps both dead letters, each with its reason.</summary>
     [Fact]
     public async Task DeadLetter_OfTheSameMessageAgain_KeepsBothDeadLetters()
     {
@@ -465,6 +489,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.All(messages, m => Assert.Equal("id-poison", m.MessageId));
     }
 
+    /// <summary>A message sent with a delivery time is not received before it.</summary>
     [Fact]
     public async Task DeliverAt_DelaysDelivery()
     {
@@ -480,6 +505,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>A message published with a delivery time reaches subscriptions no earlier than it.</summary>
     [Fact]
     public async Task DeliverAt_DelaysPublishedMessages()
     {
@@ -496,6 +522,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Receivers sharing a queue each get different messages, and every message is delivered.</summary>
     [Fact]
     public async Task CompetingReceivers_EachMessageIsDeliveredOnce()
     {
@@ -526,6 +553,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(20, received.Distinct().Count());
     }
 
+    /// <summary>A published message reaches every subscription of the topic.</summary>
     [Fact]
     public async Task Publish_DeliversACopyToEverySubscription()
     {
@@ -544,6 +572,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>A publish reaches the durable and instance subscriptions another process opened after the topic was first used.</summary>
     [Fact]
     public async Task Publish_AfterAnotherProcessSubscribes_ReachesItsNewSubscriptions()
     {
@@ -562,6 +591,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>A durable subscription keeps the messages published while none of its receivers is open.</summary>
     [Fact]
     public async Task Subscription_KeepsMessagesWhileNoReceiverIsOpen()
     {
@@ -577,6 +607,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Receivers of one durable subscription share its messages, each delivered to one of them.</summary>
     [Fact]
     public async Task Subscription_CompetingReceiversShareMessages()
     {
@@ -607,6 +638,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(10, received.Count);
     }
 
+    /// <summary>Every open instance subscription gets a copy of each published message; a closed one stops getting copies, and a new one gets only what is published after it opens.</summary>
     [Fact]
     public async Task InstanceSubscriptions_EachGetACopyOnlyWhileOpen()
     {
@@ -633,12 +665,14 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(late, "id-late");
     }
 
+    /// <summary>Publishing to a topic without subscriptions succeeds.</summary>
     [Fact]
     public Task Publish_WithoutSubscriptions_Succeeds()
     {
         return Transport.SendAsync(MessageDestination.Topic(NewName("nobody")), [Message("unheard")], TestCancellationToken);
     }
 
+    /// <summary>A message sent to one subscription reaches it and none of the topic's other subscriptions.</summary>
     [Fact]
     public async Task SendToSubscription_DeliversOnlyToThatSubscription()
     {
@@ -660,6 +694,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(instance, "id-everyone");
     }
 
+    /// <summary>A message sent to a subscription before any receiver exists is kept until one opens.</summary>
     [Fact]
     public async Task SendToSubscription_BeforeAnyReceiverExists_KeepsTheMessage()
     {
@@ -673,6 +708,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Deleting a queue removes its pending messages and its dead letters.</summary>
     [Fact]
     public async Task Delete_Queue_RemovesItsMessagesAndDeadLetters()
     {
@@ -693,6 +729,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(deadLetters, "id-after");
     }
 
+    /// <summary>A deleted subscription loses its pending copies and gets none of later publishes until it is received from again.</summary>
     [Fact]
     public async Task Delete_Subscription_StopsCopiesUntilItIsReceivedAgain()
     {
@@ -709,6 +746,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(receiver, "id-after");
     }
 
+    /// <summary>Deleting a dead-letter source removes the dead letters and keeps the source's pending messages.</summary>
     [Fact]
     public async Task Delete_DeadLetterSource_RemovesOnlyTheDeadLetters()
     {
@@ -727,6 +765,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await AssertOnlyReceivedAsync(deadLetters, "id-good");
     }
 
+    /// <summary>Deleting a source with an open receiver either throws, or leaves the receiver receiving what is sent afterwards, or makes it throw; it never silently stops delivering.</summary>
     [Fact]
     public async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults()
     {
@@ -772,6 +811,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>Deleting a source that does not exist succeeds.</summary>
     [Fact]
     public async Task Delete_WhenTheSourceDoesNotExist_Succeeds()
     {
@@ -783,6 +823,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await Assert.ThrowsAsync<ArgumentException>(() => Transport.DeleteAsync(MessageSource.InstanceSubscription(NewName("instances")), TestCancellationToken));
     }
 
+    /// <summary>A sent message of exactly <see cref="TransportCapabilities.MaxMessageSize"/>, as <see cref="MessageSize"/> measures it, is received unchanged.</summary>
     [Fact]
     public async Task MaxMessageSize_MessageAtTheLimit_RoundTrips()
     {
@@ -800,6 +841,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(headers, message.Headers);
     }
 
+    /// <summary>A published message of exactly <see cref="TransportCapabilities.MaxMessageSize"/> is received unchanged.</summary>
     [Fact]
     public async Task MaxMessageSize_PublishedMessageAtTheLimit_RoundTrips()
     {
@@ -817,6 +859,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(headers, message.Headers);
     }
 
+    /// <summary>A message one byte over <see cref="TransportCapabilities.MaxMessageSize"/> throws <see cref="MessageTooLargeException"/>.</summary>
     [Fact]
     public Task MaxMessageSize_LargerMessage_ThrowsMessageTooLarge()
     {
@@ -829,6 +872,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             [new OutgoingMessage { MessageId = "too-big", Body = body }], TestCancellationToken));
     }
 
+    /// <summary>A batch of <see cref="TransportCapabilities.MaxSendBatchSize"/> messages is delivered in full.</summary>
     [Fact]
     public async Task SendBatch_AtTheMaximumBatchSize_DeliversEveryMessage()
     {
@@ -842,6 +886,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(count, messages.Select(m => m.MessageId).Distinct().Count());
     }
 
+    /// <summary>A batch of large messages is delivered in full.</summary>
     [Fact]
     public async Task SendBatch_OfLargeMessages_DeliversEveryMessage()
     {
@@ -863,6 +908,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.All(messages, m => Assert.True(received[m.MessageId].Body.Span.SequenceEqual(m.Body.Span), $"The body of {m.MessageId} changed."));
     }
 
+    /// <summary>Queue, topic and subscription names with upper and lower case letters, digits, '.', '_' and '-' work.</summary>
     [Fact]
     public async Task Names_WithEveryAllowedCharacter_Work()
     {
@@ -877,6 +923,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("published", Encoding.UTF8.GetString((await ReceiveOneAsync(subscription)).Body.Span));
     }
 
+    /// <summary>Empty bodies and large binary bodies are received unchanged.</summary>
     [Fact]
     public async Task EmptyAndLargeBodies_RoundTrip()
     {
@@ -896,6 +943,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(messages["large"].Body.Span.SequenceEqual(large));
     }
 
+    /// <summary>Messages of a group are delivered in order, and none is delivered while an earlier one of its group is unsettled.</summary>
     [Fact]
     public async Task OrderedGroups_AreDeliveredInOrderAndHeldWhileEarlierOnesAreUnsettled()
     {
@@ -934,6 +982,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Contains("b-0", order);
     }
 
+    /// <summary>Receivers in different processes never handle two messages of one group at the same time.</summary>
     [Fact]
     public async Task OrderedGroups_WithCompetingReceiversInSeparateProcesses_HoldTheGroupUntilItsEarlierMessageIsSettled()
     {
@@ -960,6 +1009,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(["a-1", "a-2"], order);
     }
 
+    /// <summary>A message abandoned with a delay holds back the rest of its group, on receivers in every process, until it is delivered again.</summary>
     [Fact]
     public async Task OrderedGroups_WithCompetingReceivers_ARetriedMessageHoldsBackItsGroupUntilItIsRedelivered()
     {
@@ -1002,6 +1052,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(["a-0", "a-1"], order);
     }
 
+    /// <summary>An abandoned message of a group is delivered again before the group's later messages.</summary>
     [Fact]
     public async Task OrderedGroups_AnAbandonedMessageIsRedeliveredBeforeLaterOnes()
     {
@@ -1030,6 +1081,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(["a-0", "a-1", "a-2"], order);
     }
 
+    /// <summary>A delayed message holds back the group's later messages until it is delivered.</summary>
     [Fact]
     public async Task OrderedGroups_ADelayedMessageHoldsBackItsGroup()
     {
@@ -1058,6 +1110,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(stopwatch.Elapsed >= ShortDelay * 0.75, $"The group was released after {stopwatch.Elapsed}, before its delayed first message was due.");
     }
 
+    /// <summary>A dead-letter queue does not hold groups back, so all dead letters of one group are received together.</summary>
     [Fact]
     public async Task DeadLetters_OfOneGroup_CanAllBeReceivedAtOnce()
     {
@@ -1075,6 +1128,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.All(messages, m => Assert.Equal("a", m.GroupKey));
     }
 
+    /// <summary>A message whose deduplication id was recently sent to the same destination is dropped.</summary>
     [Fact]
     public async Task Deduplication_DropsMessagesWithASeenId()
     {
@@ -1092,6 +1146,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
+    /// <summary>A repeated deduplication id is dropped within one batch, and when another process sends it.</summary>
     [Fact]
     public async Task Deduplication_InTheSameBatchOrFromAnotherProcess_DropsTheRepeat()
     {
@@ -1108,6 +1163,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(["canary", "first"], messages.Select(m => m.MessageId).Order());
     }
 
+    /// <summary>A deduplication id seen on one destination does not drop a message sent to another.</summary>
     [Fact]
     public async Task Deduplication_OnAnotherDestination_DeliversTheMessage()
     {
@@ -1124,6 +1180,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("there", (await ReceiveOneAsync(otherReceiver)).MessageId);
     }
 
+    /// <summary>A send that failed does not remember its deduplication ids, so the caller's retry is delivered.</summary>
     [Fact]
     public async Task Deduplication_AfterAFailedSend_DeliversTheRetry()
     {
@@ -1156,6 +1213,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             Assert.Single(ids, id => id.StartsWith("rejected", StringComparison.Ordinal));
     }
 
+    /// <summary>End to end: a sent message is handled once across competing hosts on this transport.</summary>
     [Fact]
     public async Task Messaging_SentMessageIsHandledOnceByCompetingServices()
     {
@@ -1180,6 +1238,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal([0, 1, 2, 3, 4, 99], handled.Order());
     }
 
+    /// <summary>End to end: a published event reaches every service's subscriber once, and every instance subscriber.</summary>
     [Fact]
     public async Task Messaging_PublishedEventReachesEveryServiceAndEveryInstance()
     {
@@ -1210,6 +1269,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>End to end: a handler that keeps throwing is retried, then its message is dead-lettered.</summary>
     [Fact]
     public async Task Messaging_FailingMessageIsRetriedThenDeadLettered()
     {
@@ -1233,6 +1293,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal(name, deadLetter.Headers[KnownHeaders.MessageType]);
     }
 
+    /// <summary>End to end: a delayed send is handled no earlier than its delay.</summary>
     [Fact]
     public async Task Messaging_DelayedSendIsHandledAfterTheDelay()
     {
@@ -1251,6 +1312,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.True(elapsed >= ShortDelay * 0.75, $"Handled after {elapsed}, expected at least {ShortDelay}.");
     }
 
+    /// <summary>End to end: dead letters replayed through <see cref="IMessageAdmin"/> are handled again.</summary>
     [Fact]
     public async Task Messaging_ReplayedDeadLettersAreHandledAgain()
     {
@@ -1290,6 +1352,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Empty(await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken));
     }
 
+    /// <summary>Deletes the sources the test created, then disposes every transport it tracked.</summary>
     public override async ValueTask DisposeAsync()
     {
         if (_transport is not null && !_createdSources.IsEmpty)
@@ -1310,6 +1373,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await base.DisposeAsync();
     }
 
+    /// <summary>Disposes <paramref name="transport"/> when the test ends, and returns it.</summary>
     protected T Track<T>(T transport) where T : IMessageTransport
     {
         _transports.Add(transport);
@@ -1332,6 +1396,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>A unique, valid name so concurrent tests never share queues or topics.</summary>
     protected static string NewName(string prefix) => $"{prefix}-{Guid.NewGuid():N}"[..(prefix.Length + 13)];
 
+    /// <summary>Opens a receiver through <see cref="Transport"/> with <paramref name="lease"/> (30 seconds by default), and deletes the source after the test.</summary>
     protected Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, TimeSpan? lease = null)
     {
         DeleteAfterTest(source);
@@ -1345,6 +1410,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         return PeerTransport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = lease ?? TimeSpan.FromSeconds(30) }, TestCancellationToken);
     }
 
+    /// <summary>A message with a UTF-8 <paramref name="body"/>, and <paramref name="id"/> or a new one.</summary>
     protected static OutgoingMessage Message(string body, string? id = null, IReadOnlyDictionary<string, string>? headers = null)
     {
         return new OutgoingMessage
@@ -1355,11 +1421,13 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         };
     }
 
+    /// <summary>Receives one message, failing after <paramref name="timeout"/> (<see cref="DeliveryTimeout"/> by default).</summary>
     protected async Task<IncomingMessage> ReceiveOneAsync(IMessageReceiver receiver, TimeSpan? timeout = null)
     {
         return (await ReceiveAsync(receiver, 1, timeout)).Single();
     }
 
+    /// <summary>Receives <paramref name="count"/> messages without settling them, failing after <paramref name="timeout"/> (<see cref="DeliveryTimeout"/> by default).</summary>
     protected async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(IMessageReceiver receiver, int count, TimeSpan? timeout = null)
     {
         var messages = new List<IncomingMessage>();
@@ -1411,6 +1479,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         return messages;
     }
 
+    /// <summary>Fails if <paramref name="receiver"/> receives anything within <paramref name="duration"/>.</summary>
     protected async Task AssertNothingReceivedAsync(IMessageReceiver receiver, TimeSpan duration)
     {
         var deadline = DateTime.UtcNow + duration;
@@ -1422,6 +1491,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>Polls <paramref name="condition"/> until it holds, failing after <paramref name="timeout"/> (<see cref="DeliveryTimeout"/> by default).</summary>
     protected async Task WaitForAsync(Func<bool> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow + (timeout ?? DeliveryTimeout);
@@ -1595,5 +1665,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
     private static string PadToMaxIdLength(string prefix, char fill) => prefix + new string(fill, OutgoingMessage.MaxIdLength - prefix.Length);
 
+    /// <summary>The message the end-to-end tests send.</summary>
+    /// <param name="Value">Tells the messages of a test apart.</param>
     public sealed record ConformanceMessage(int Value);
 }

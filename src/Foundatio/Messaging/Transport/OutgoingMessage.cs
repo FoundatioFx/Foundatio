@@ -15,7 +15,9 @@ public sealed record OutgoingMessage
     /// </summary>
     public const int MaxIdLength = 128;
 
+    /// <summary>Identifies the message; at most <see cref="MaxIdLength"/> characters. Delivered unchanged as <see cref="IncomingMessage.MessageId"/>.</summary>
     public required string MessageId { get; init; }
+    /// <summary>The serialized message. May be empty.</summary>
     public required ReadOnlyMemory<byte> Body { get; init; }
 
     /// <summary>

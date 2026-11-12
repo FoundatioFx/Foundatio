@@ -6,18 +6,22 @@ namespace Foundatio.Messaging;
 /// <summary>Information about the message being handled, and ways to decide its outcome without throwing.</summary>
 public interface IMessageContext
 {
+    /// <summary>The id the message was sent with: <see cref="DeliveryOptions.MessageId"/>, or a generated one.</summary>
     string MessageId { get; }
 
     /// <summary>The stable type name the message was sent with.</summary>
     string MessageType { get; }
 
+    /// <summary>The <see cref="DeliveryOptions.CorrelationId"/> the message was sent with, or null.</summary>
     string? CorrelationId { get; }
 
     /// <summary>The 1-based delivery attempt.</summary>
     int Attempt { get; }
 
+    /// <summary>When the message was first sent, or null when that is unknown.</summary>
     DateTimeOffset? SentAt { get; }
 
+    /// <summary>The <see cref="DeliveryOptions.GroupKey"/> the message was sent with, or null.</summary>
     string? GroupKey { get; }
 
     /// <summary>All headers, including <see cref="KnownHeaders"/>.</summary>

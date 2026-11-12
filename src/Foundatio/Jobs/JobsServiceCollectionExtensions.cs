@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Registers Foundatio durable jobs.</summary>
 public static class JobsServiceCollectionExtensions
 {
     /// <summary>

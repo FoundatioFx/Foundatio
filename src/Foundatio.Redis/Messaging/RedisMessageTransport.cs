@@ -64,6 +64,8 @@ public sealed class RedisMessageTransport : IMessageTransport
     private int _evictionPolicyChecked;
     private int _disposed;
 
+    /// <summary>Creates a transport on <paramref name="connection"/>, which the caller owns and disposes.</summary>
+    /// <exception cref="ArgumentException"><see cref="RedisMessageTransportOptions.Prefix"/> is empty or contains '{' or '}'.</exception>
     public RedisMessageTransport(IConnectionMultiplexer connection, RedisMessageTransportOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -117,6 +119,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal IDatabase Database => _connection.GetDatabase(Options.Database);
     internal ISubscriber Subscriber => _connection.GetSubscriber();
 
+    /// <inheritdoc />
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -171,6 +174,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         }
     }
 
+    /// <inheritdoc />
     public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -245,6 +249,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         return await streamLength.AnyContext() + await delayed.AnyContext() + await held.AnyContext();
     }
 
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 1)

@@ -9,6 +9,7 @@ using Microsoft.Extensions.Hosting;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
+/// <summary>Adds health checks for Foundatio messaging and jobs.</summary>
 public static class FoundatioHealthChecksBuilderExtensions
 {
     private static readonly TimeSpan DefaultUnhealthyAfter = TimeSpan.FromMinutes(5);

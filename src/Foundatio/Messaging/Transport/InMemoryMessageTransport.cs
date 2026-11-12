@@ -67,6 +67,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     /// <summary>Every capability with no limits, or the capabilities this transport was created to emulate.</summary>
     public TransportCapabilities Capabilities { get; }
 
+    /// <inheritdoc />
     public Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -106,6 +107,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
     public Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -133,6 +135,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return Task.FromResult<IMessageReceiver>(new Receiver(this, source, state, options));
     }
 
+    /// <inheritdoc />
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -179,6 +182,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return _sources.TryGetValue(source.ToString(), out var state) ? state.Count : 0;
     }
 
+    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         _disposed = true;

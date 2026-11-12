@@ -50,6 +50,8 @@ public sealed class RedisJobStore : IJobStore
     private long _nextSweep;
     private int _sweeping;
 
+    /// <summary>Creates a store on <paramref name="connection"/>, which the caller owns and disposes.</summary>
+    /// <exception cref="ArgumentException"><see cref="RedisJobStoreOptions.Prefix"/> is empty or contains '{' or '}'.</exception>
     public RedisJobStore(IConnectionMultiplexer connection, RedisJobStoreOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -64,6 +66,7 @@ public sealed class RedisJobStore : IJobStore
 
     private IDatabase Database => _connection.GetDatabase(_options.Database);
 
+    /// <inheritdoc />
     public async Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -104,6 +107,7 @@ public sealed class RedisJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public async Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -111,6 +115,7 @@ public sealed class RedisJobStore : IJobStore
         return await ReadJobAsync(jobId).AnyContext();
     }
 
+    /// <inheritdoc />
     public async Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -129,6 +134,7 @@ public sealed class RedisJobStore : IJobStore
         return new JobPage<JobInfo>(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
     }
 
+    /// <inheritdoc />
     public async Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -136,6 +142,7 @@ public sealed class RedisJobStore : IJobStore
         return await Database.SortedSetLengthAsync(IndexKey(state, name)).AnyContext();
     }
 
+    /// <inheritdoc />
     public async Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -179,6 +186,7 @@ public sealed class RedisJobStore : IJobStore
         return null;
     }
 
+    /// <inheritdoc />
     public async Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -196,6 +204,7 @@ public sealed class RedisJobStore : IJobStore
         };
     }
 
+    /// <inheritdoc />
     public async Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -206,6 +215,7 @@ public sealed class RedisJobStore : IJobStore
             [claimToken, percent.HasValue ? 1 : 0, percent ?? 0, message is not null ? 1 : 0, message ?? String.Empty]).AnyContext() == 1;
     }
 
+    /// <inheritdoc />
     public async Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -231,6 +241,7 @@ public sealed class RedisJobStore : IJobStore
         ]).AnyContext() == 1;
     }
 
+    /// <inheritdoc />
     public async Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
@@ -254,6 +265,7 @@ public sealed class RedisJobStore : IJobStore
         }
     }
 
+    /// <inheritdoc />
     public async Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
