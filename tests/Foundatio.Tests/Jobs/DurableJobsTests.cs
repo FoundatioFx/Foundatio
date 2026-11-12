@@ -147,6 +147,20 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task DisposeServiceProvider_WithoutStoppingTheHost_StopsTheWorker()
+    {
+        var host = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        var handle = await host.Jobs.EnqueueAsync(new WaitForCancellation(CompleteOnSecondRun: true), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await ((ServiceProvider)host.Services).DisposeAsync();
+
+        var interrupted = (await handle.GetAsync(TestCancellationToken))!;
+        Assert.Equal(JobStatus.Queued, interrupted.Status);
+        Assert.Equal(0, interrupted.Attempt);
+    }
+
+    [Fact]
     public async Task EnqueueWithAJobId_IsIdempotent()
     {
         await using var host = await StartAsync(_ => { });

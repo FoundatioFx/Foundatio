@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Foundatio.Jobs;
 
 /// <summary>Runs the worker when job types are registered and the scheduler when CRON jobs are registered.</summary>
-internal sealed class JobsHostedService : IHostedService
+internal sealed class JobsHostedService : IHostedService, IAsyncDisposable
 {
     private readonly JobsRuntime _runtime;
     private readonly JobClient _client;
@@ -17,6 +17,7 @@ internal sealed class JobsHostedService : IHostedService
     private Task _gatedStart = Task.CompletedTask;
     private JobWorker? _worker;
     private JobScheduler? _scheduler;
+    private int _stopped;
 
     public JobsHostedService(JobsRuntime runtime, JobClient client, IServiceProvider services)
     {
@@ -60,6 +61,9 @@ internal sealed class JobsHostedService : IHostedService
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        if (Interlocked.Exchange(ref _stopped, 1) == 1)
+            return;
+
         _stopping.Cancel();
         await _gatedStart.AnyContext();
         if (_runtime.HostState != ProcessingState.Faulted)
@@ -70,6 +74,21 @@ internal sealed class JobsHostedService : IHostedService
 
         if (_worker is not null)
             await _worker.StopAsync(cancellationToken).AnyContext();
+    }
+
+    /// <summary>
+    /// Stops the worker and scheduler when the host is disposed without being stopped, for example a test's
+    /// <c>using var host</c>. Running jobs are cancelled at once; they run again without using an attempt.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        using (var cancelled = new CancellationTokenSource())
+        {
+            await cancelled.CancelAsync().AnyContext();
+            await StopAsync(cancelled.Token).AnyContext();
+        }
+
+        _stopping.Dispose();
     }
 
     private void Start()
