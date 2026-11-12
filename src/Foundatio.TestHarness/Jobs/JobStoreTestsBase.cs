@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -12,7 +13,9 @@ namespace Foundatio.Tests.Jobs;
 
 /// <summary>
 /// The conformance suite every <see cref="IJobStore"/> must pass. Derive from it and implement <see cref="CreateStore"/>.
-/// Tests use unique job names so they can run in parallel against a shared database.
+/// Tests use unique job names so they can run in parallel against a shared database. Tests that wait for a lease or
+/// retention to run out poll the store until its own clock says so, so a store whose clock is a few seconds off the
+/// test machine's, or whose calls are slow, still passes.
 /// </summary>
 /// <example>
 /// <code>
@@ -35,6 +38,9 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     protected virtual TimeSpan ShortLease => TimeSpan.FromSeconds(1);
 
     protected IJobStore Store => field ??= CreateStore();
+
+    /// <summary>How long tests poll for a lease or retention to run out on the store's clock before failing.</summary>
+    protected virtual TimeSpan ExpiryTimeout => TimeSpan.FromSeconds(15);
 
     [Fact]
     public async Task Create_ThenGet_ReturnsTheJob()
@@ -104,7 +110,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     {
         string name = NewName();
         var now = DateTimeOffset.UtcNow;
-        var newer = NewJob(name) with { AvailableAt = now.AddSeconds(-1) };
+        var newer = NewJob(name) with { AvailableAt = now.AddMinutes(-1) };
         var older = NewJob(name) with { AvailableAt = now.AddMinutes(-5) };
         await Store.CreateAsync(newer, TestCancellationToken);
         await Store.CreateAsync(older, TestCancellationToken);
@@ -117,7 +123,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     public async Task Claim_ReturnsTheJobDueLongestAcrossAllRequestedNames()
     {
         var now = DateTimeOffset.UtcNow;
-        var recent = NewJob() with { AvailableAt = now.AddSeconds(-1) };
+        var recent = NewJob() with { AvailableAt = now.AddMinutes(-1) };
         var overdue = NewJob() with { AvailableAt = now.AddMinutes(-5) };
         await Store.CreateAsync(recent, TestCancellationToken);
         await Store.CreateAsync(overdue, TestCancellationToken);
@@ -151,10 +157,8 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         var first = (await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken))!;
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
 
-        await Task.Delay(ShortLease + TimeSpan.FromMilliseconds(250), TestCancellationToken);
-        var second = await Store.ClaimAsync(Claim(job.Name) with { WorkerId = "worker-2" }, TestCancellationToken);
+        var second = await WaitForClaimAsync(Claim(job.Name) with { WorkerId = "worker-2" });
 
-        Assert.NotNull(second);
         Assert.Equal(2, second.Attempt);
         Assert.NotEqual(first.ClaimToken, second.ClaimToken);
         Assert.Equal("worker-2", second.WorkerId);
@@ -164,11 +168,14 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     public async Task Renew_ExtendsTheLeaseAndReportsCancellation()
     {
         var job = NewJob();
+        var control = NewJob();
         await Store.CreateAsync(job, TestCancellationToken);
+        await Store.CreateAsync(control, TestCancellationToken);
         var claimed = (await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken))!;
+        await Store.ClaimAsync(Claim(control.Name, lease: ShortLease), TestCancellationToken);
 
         Assert.Equal(JobLeaseStatus.Renewed, await Store.RenewAsync(job.Id, claimed.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
-        await Task.Delay(ShortLease + TimeSpan.FromMilliseconds(250), TestCancellationToken);
+        await WaitForClaimAsync(Claim(control.Name));
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
 
         Assert.True(await Store.RequestCancellationAsync(job.Id, TimeSpan.FromMinutes(1), TestCancellationToken));
@@ -181,9 +188,12 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     public async Task Renew_AfterTheLeaseExpiresButBeforeAReclaim_KeepsTheJob()
     {
         var job = NewJob();
+        var control = NewJob();
         await Store.CreateAsync(job, TestCancellationToken);
+        await Store.CreateAsync(control, TestCancellationToken);
         var claimed = (await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken))!;
-        await Task.Delay(ShortLease + TimeSpan.FromMilliseconds(250), TestCancellationToken);
+        await Store.ClaimAsync(Claim(control.Name, lease: ShortLease), TestCancellationToken);
+        await WaitForClaimAsync(Claim(control.Name));
 
         Assert.Equal(JobLeaseStatus.Renewed, await Store.RenewAsync(job.Id, claimed.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
@@ -214,10 +224,9 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         var expired = NewJob();
         await Store.CreateAsync(reclaimed, TestCancellationToken);
         await Store.CreateAsync(expired, TestCancellationToken);
-        var first = (await Store.ClaimAsync(Claim(reclaimed.Name, lease: ShortLease), TestCancellationToken))!;
         var lapsed = (await Store.ClaimAsync(Claim(expired.Name, lease: ShortLease), TestCancellationToken))!;
-        await Task.Delay(ShortLease + TimeSpan.FromMilliseconds(250), TestCancellationToken);
-        var second = (await Store.ClaimAsync(Claim(reclaimed.Name), TestCancellationToken))!;
+        var first = (await Store.ClaimAsync(Claim(reclaimed.Name, lease: ShortLease), TestCancellationToken))!;
+        var second = await WaitForClaimAsync(Claim(reclaimed.Name));
 
         Assert.False(await Store.CompleteAsync(reclaimed.Id, first.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
         Assert.True(await Store.CompleteAsync(reclaimed.Id, second.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
@@ -240,8 +249,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.Equal("transient", stored.Error);
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
 
-        await Task.Delay(ShortLease + TimeSpan.FromMilliseconds(250), TestCancellationToken);
-        Assert.Equal(2, (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))?.Attempt);
+        Assert.Equal(2, (await WaitForClaimAsync(Claim(job.Name))).Attempt);
     }
 
     [Fact]
@@ -336,11 +344,220 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Succeeded(ShortLease), TestCancellationToken);
         Assert.NotNull(await Store.GetAsync(job.Id, TestCancellationToken));
 
-        await Task.Delay(ShortLease + TimeSpan.FromSeconds(1), TestCancellationToken);
+        await WaitUntilAsync(async () => await Store.GetAsync(job.Id, TestCancellationToken) is null);
 
-        Assert.Null(await Store.GetAsync(job.Id, TestCancellationToken));
         Assert.Equal(0, await Store.CountAsync(name: job.Name, cancellationToken: TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobStatus.Succeeded, job.Name, TestCancellationToken));
         Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task ClaimAndRetry_KeepTheJobsOtherFields()
+    {
+        var createdAt = DateTimeOffset.UtcNow.AddHours(-1);
+        var job = NewJob(payload: [9, 8, 7]) with { CorrelationId = "correlation", ScheduleName = "hourly", CreatedAt = createdAt };
+        await Store.CreateAsync(job, TestCancellationToken);
+
+        var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+        AssertKeptFields(claimed);
+
+        Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Retry(TimeSpan.Zero, "transient"), TestCancellationToken));
+        var retried = (await Store.GetAsync(job.Id, TestCancellationToken))!;
+        AssertKeptFields(retried);
+        Assert.Equal(claimed.StartedAt, retried.StartedAt);
+        Assert.Null(retried.ClaimToken);
+        Assert.Null(retried.WorkerId);
+        Assert.Null(retried.LeaseExpiresAt);
+
+        AssertKeptFields(await WaitForClaimAsync(Claim(job.Name)));
+
+        void AssertKeptFields(JobInfo stored)
+        {
+            Assert.Equal(job.Name, stored.Name);
+            Assert.Equal([9, 8, 7], stored.Payload.ToArray());
+            Assert.Equal("correlation", stored.CorrelationId);
+            Assert.Equal("hourly", stored.ScheduleName);
+            AssertClose(createdAt, stored.CreatedAt);
+        }
+    }
+
+    [Fact]
+    public async Task Complete_FailedAndCancelled_RecordTheirStatusAndClearTheClaim()
+    {
+        var failed = NewJob();
+        var cancelled = NewJob();
+        await Store.CreateAsync(failed, TestCancellationToken);
+        await Store.CreateAsync(cancelled, TestCancellationToken);
+        var failedClaim = (await Store.ClaimAsync(Claim(failed.Name), TestCancellationToken))!;
+        var cancelledClaim = (await Store.ClaimAsync(Claim(cancelled.Name), TestCancellationToken))!;
+
+        Assert.True(await Store.CompleteAsync(failed.Id, failedClaim.ClaimToken!, JobCompletion.Failed(TimeSpan.FromMinutes(5), "boom"), TestCancellationToken));
+        Assert.True(await Store.CompleteAsync(cancelled.Id, cancelledClaim.ClaimToken!, JobCompletion.Cancelled(TimeSpan.FromMinutes(5), "stopped"), TestCancellationToken));
+
+        var storedFailure = (await Store.GetAsync(failed.Id, TestCancellationToken))!;
+        Assert.Equal(JobStatus.Failed, storedFailure.Status);
+        Assert.Equal("boom", storedFailure.Error);
+        Assert.Equal(1, storedFailure.Attempt);
+        AssertFinished(storedFailure);
+        var storedCancellation = (await Store.GetAsync(cancelled.Id, TestCancellationToken))!;
+        Assert.Equal(JobStatus.Cancelled, storedCancellation.Status);
+        Assert.Equal("stopped", storedCancellation.Message);
+        AssertFinished(storedCancellation);
+        Assert.Null(await Store.ClaimAsync(Claim(failed.Name, cancelled.Name), TestCancellationToken));
+
+        static void AssertFinished(JobInfo stored)
+        {
+            Assert.NotNull(stored.CompletedAt);
+            Assert.Null(stored.ClaimToken);
+            Assert.Null(stored.WorkerId);
+            Assert.Null(stored.LeaseExpiresAt);
+        }
+    }
+
+    [Fact]
+    public async Task Complete_SucceededAfterARetry_ClearsTheError()
+    {
+        var job = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        var first = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+        await Store.CompleteAsync(job.Id, first.ClaimToken!, JobCompletion.Retry(TimeSpan.Zero, "transient"), TestCancellationToken);
+        var second = await WaitForClaimAsync(Claim(job.Name));
+
+        Assert.True(await Store.CompleteAsync(job.Id, second.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
+
+        var stored = (await Store.GetAsync(job.Id, TestCancellationToken))!;
+        Assert.Equal(JobStatus.Succeeded, stored.Status);
+        Assert.Null(stored.Error);
+        Assert.Equal(2, stored.Attempt);
+    }
+
+    [Fact]
+    public Task Complete_RacingAReclaim_EitherCompletesOrIsReclaimed()
+    {
+        return Task.WhenAll(Enumerable.Range(0, 20).Select(async _ =>
+        {
+            var job = NewJob();
+            await Store.CreateAsync(job, TestCancellationToken);
+            var claimed = (await Store.ClaimAsync(Claim(job.Name, lease: TimeSpan.FromMilliseconds(1)), TestCancellationToken))!;
+            await Task.Delay(TimeSpan.FromMilliseconds(20), TestCancellationToken);
+
+            var complete = Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken);
+            var reclaim = Store.ClaimAsync(Claim(job.Name), TestCancellationToken);
+            bool completed = await complete;
+            var reclaimed = await reclaim;
+
+            Assert.NotEqual(completed, reclaimed is not null);
+            Assert.Equal(completed ? JobStatus.Succeeded : JobStatus.Running, (await Store.GetAsync(job.Id, TestCancellationToken))?.Status);
+        }));
+    }
+
+    [Fact]
+    public async Task RenewAndReportProgress_WithATokenFromBeforeAReclaim_AreRejected()
+    {
+        var job = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        var first = (await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken))!;
+        var second = await WaitForClaimAsync(Claim(job.Name) with { WorkerId = "worker-2" });
+
+        Assert.Equal(JobLeaseStatus.Lost, await Store.RenewAsync(job.Id, first.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
+        Assert.False(await Store.ReportProgressAsync(job.Id, first.ClaimToken!, 90, "stale", TestCancellationToken));
+
+        var stored = (await Store.GetAsync(job.Id, TestCancellationToken))!;
+        Assert.Equal(second.ClaimToken, stored.ClaimToken);
+        Assert.Equal("worker-2", stored.WorkerId);
+        Assert.Null(stored.Progress);
+        Assert.Null(stored.Message);
+        Assert.Equal(JobLeaseStatus.Renewed, await Store.RenewAsync(job.Id, second.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task Claim_AfterTheLeaseExpires_KeepsTheCancellationRequest()
+    {
+        var job = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken);
+        Assert.True(await Store.RequestCancellationAsync(job.Id, TimeSpan.FromMinutes(5), TestCancellationToken));
+
+        var reclaimed = await WaitForClaimAsync(Claim(job.Name));
+
+        Assert.True(reclaimed.CancellationRequested);
+        Assert.Equal(JobLeaseStatus.CancellationRequested, await Store.RenewAsync(job.Id, reclaimed.ClaimToken!, TimeSpan.FromMinutes(1), TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task RequestCancellation_OfAQueuedJob_ExpiresAfterTheRetention()
+    {
+        var job = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+
+        Assert.True(await Store.RequestCancellationAsync(job.Id, ShortLease, TestCancellationToken));
+        Assert.Equal(JobStatus.Cancelled, (await Store.GetAsync(job.Id, TestCancellationToken))?.Status);
+        await WaitUntilAsync(async () => await Store.GetAsync(job.Id, TestCancellationToken) is null);
+
+        Assert.Equal(0, await Store.CountAsync(JobStatus.Cancelled, job.Name, TestCancellationToken));
+        Assert.Empty((await Store.QueryAsync(new JobQuery { Name = job.Name }, TestCancellationToken)).Jobs);
+        Assert.True(await Store.CreateAsync(job, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task QueryAndCount_FinishedAndCancelledJobs_FilterByTheirStatus()
+    {
+        string name = NewName();
+        var now = DateTimeOffset.UtcNow;
+        var succeeded = NewJob(name) with { AvailableAt = now.AddMinutes(-4) };
+        var failed = NewJob(name) with { AvailableAt = now.AddMinutes(-3) };
+        var cancelledWhileRunning = NewJob(name) with { AvailableAt = now.AddMinutes(-2) };
+        var cancelledWhileQueued = NewJob(name);
+        foreach (var job in new[] { succeeded, failed, cancelledWhileRunning, cancelledWhileQueued })
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        Assert.True(await Store.RequestCancellationAsync(cancelledWhileQueued.Id, TimeSpan.FromMinutes(5), TestCancellationToken));
+        var retain = TimeSpan.FromMinutes(5);
+        foreach (var (job, completion) in new[] { (succeeded, JobCompletion.Succeeded(retain)), (failed, JobCompletion.Failed(retain, "boom")), (cancelledWhileRunning, JobCompletion.Cancelled(retain)) })
+        {
+            var claimed = (await Store.ClaimAsync(Claim(name), TestCancellationToken))!;
+            Assert.Equal(job.Id, claimed.Id);
+            Assert.True(await Store.CompleteAsync(claimed.Id, claimed.ClaimToken!, completion, TestCancellationToken));
+        }
+
+        Assert.Equal(0, await Store.CountAsync(JobStatus.Queued, name, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobStatus.Running, name, TestCancellationToken));
+        Assert.Equal(1, await Store.CountAsync(JobStatus.Succeeded, name, TestCancellationToken));
+        Assert.Equal(1, await Store.CountAsync(JobStatus.Failed, name, TestCancellationToken));
+        Assert.Equal(2, await Store.CountAsync(JobStatus.Cancelled, name, TestCancellationToken));
+        Assert.Equal(4, await Store.CountAsync(name: name, cancellationToken: TestCancellationToken));
+
+        Assert.Equal([succeeded.Id], await QueryIdsAsync(JobStatus.Succeeded));
+        Assert.Equal([failed.Id], await QueryIdsAsync(JobStatus.Failed));
+        Assert.Equal(new[] { cancelledWhileRunning.Id, cancelledWhileQueued.Id }.Order(), await QueryIdsAsync(JobStatus.Cancelled));
+        Assert.Empty(await QueryIdsAsync(JobStatus.Queued));
+        Assert.Contains(failed.Id, (await Store.QueryAsync(new JobQuery { Status = JobStatus.Failed, Limit = 1000 }, TestCancellationToken)).Jobs.Select(j => j.Id));
+
+        async Task<string[]> QueryIdsAsync(JobStatus status) =>
+            (await Store.QueryAsync(new JobQuery { Name = name, Status = status }, TestCancellationToken)).Jobs.Select(j => j.Id).Order().ToArray();
+    }
+
+    [Fact]
+    public async Task Operations_WithAMissingIdOrToken_ThrowArgumentException()
+    {
+        var lease = TimeSpan.FromMinutes(1);
+        var done = JobCompletion.Succeeded(lease);
+        foreach (string? missing in new[] { null, "", " " })
+        {
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.GetAsync(missing!, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.RenewAsync(missing!, "token", lease, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.RenewAsync("job", missing!, lease, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.ReportProgressAsync(missing!, "token", 50, null, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.ReportProgressAsync("job", missing!, 50, null, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.CompleteAsync(missing!, "token", done, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.CompleteAsync("job", missing!, done, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.RequestCancellationAsync(missing!, lease, TestCancellationToken));
+            await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.DeleteAsync(missing!, TestCancellationToken));
+        }
+
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.CompleteAsync("job", "token", null!, TestCancellationToken));
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.ClaimAsync(new JobClaimRequest { Names = [NewName()], WorkerId = " ", LeaseDuration = lease }, TestCancellationToken));
+        await Assert.ThrowsAnyAsync<ArgumentException>(() => Store.ClaimAsync(new JobClaimRequest { Names = [NewName()], WorkerId = "worker-1", LeaseDuration = TimeSpan.Zero }, TestCancellationToken));
     }
 
     [Fact]
@@ -381,7 +598,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             Payload = payload ?? [],
             CreatedAt = now,
             UpdatedAt = now,
-            AvailableAt = now.AddSeconds(-1)
+            AvailableAt = now.AddMinutes(-1)
         };
     }
 
@@ -390,6 +607,27 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     protected static JobClaimRequest Claim(string name, TimeSpan lease) => Claim([name], lease);
 
     private static JobClaimRequest Claim(string[] names, TimeSpan lease) => new() { Names = names, WorkerId = "worker-1", LeaseDuration = lease };
+
+    /// <summary>Claims a job once the store considers one due, polling until <see cref="ExpiryTimeout"/>.</summary>
+    protected async Task<JobInfo> WaitForClaimAsync(JobClaimRequest request)
+    {
+        JobInfo? claimed = null;
+        await WaitUntilAsync(async () => (claimed = await Store.ClaimAsync(request, TestCancellationToken)) is not null);
+        return claimed!;
+    }
+
+    /// <summary>Polls <paramref name="condition"/> until it holds, failing after <see cref="ExpiryTimeout"/>.</summary>
+    protected async Task WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        long started = Stopwatch.GetTimestamp();
+        while (!await condition())
+        {
+            if (Stopwatch.GetElapsedTime(started) > ExpiryTimeout)
+                Assert.Fail($"The store did not reach the expected state within {ExpiryTimeout}.");
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), TestCancellationToken);
+        }
+    }
 
     private static void AssertClose(DateTimeOffset expected, DateTimeOffset actual)
     {

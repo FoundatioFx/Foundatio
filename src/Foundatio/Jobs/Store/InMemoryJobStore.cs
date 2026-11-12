@@ -92,6 +92,9 @@ public sealed class InMemoryJobStore : IJobStore
     public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.Names, nameof(request));
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.WorkerId, nameof(request));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.LeaseDuration, TimeSpan.Zero, nameof(request));
         lock (_lock)
         {
             var now = Now();
@@ -140,6 +143,8 @@ public sealed class InMemoryJobStore : IJobStore
 
     public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         lock (_lock)
         {
             var now = Now();
@@ -154,6 +159,8 @@ public sealed class InMemoryJobStore : IJobStore
 
     public Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         lock (_lock)
         {
             var now = Now();
@@ -168,7 +175,12 @@ public sealed class InMemoryJobStore : IJobStore
 
     public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         ArgumentNullException.ThrowIfNull(completion);
+        if (completion.Status == JobStatus.Running)
+            throw new ArgumentException("A run cannot complete as Running.", nameof(completion));
+
         lock (_lock)
         {
             var now = Now();
@@ -198,6 +210,7 @@ public sealed class InMemoryJobStore : IJobStore
 
     public Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         lock (_lock)
         {
             var now = Now();
@@ -221,6 +234,7 @@ public sealed class InMemoryJobStore : IJobStore
 
     public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         lock (_lock)
             return Task.FromResult(_jobs.Remove(jobId));
     }
