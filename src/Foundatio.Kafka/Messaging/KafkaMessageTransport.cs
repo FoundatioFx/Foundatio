@@ -3,7 +3,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Confluent.Kafka;
@@ -434,17 +433,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private async Task InitializeSubscriptionAsync(string groupId, string topic, CancellationToken cancellationToken)
     {
         var partitions = await GetPartitionsAsync(topic, cancellationToken).AnyContext();
-        List<TopicPartition> missing;
-        try
-        {
-            var committed = await _admin.ListConsumerGroupOffsetsAsync([new ConsumerGroupTopicPartitions(groupId, partitions)],
-                new ListConsumerGroupOffsetsOptions { RequestTimeout = AdminTimeout }).AnyContext();
-            missing = committed.SelectMany(g => g.Partitions).Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
-        }
-        catch (ListConsumerGroupOffsetsException)
-        {
-            missing = partitions;
-        }
+        var missing = await GetUncommittedPartitionsAsync(groupId, partitions, cancellationToken).AnyContext();
 
         // Partitions added to an existing subscription's topic are read from the start (auto.offset.reset).
         if (missing.Count == 0 || missing.Count < partitions.Count)
@@ -462,6 +451,24 @@ public sealed class KafkaMessageTransport : IMessageTransport
             // A receiver in another process joined first; the group already has a position.
             Logger.LogDebug(ex, "Could not set the starting offsets of subscription group {GroupId}", groupId);
         }
+    }
+
+    /// <summary>
+    /// The partitions a group has no committed offset for, read through a consumer of the group. The admin client's
+    /// ListConsumerGroupOffsets is not used: on a client without a consumer group, librdkafka crashes the process when
+    /// the group coordinator answers with a retriable error, as a broker that is still starting does.
+    /// </summary>
+    private Task<List<TopicPartition>> GetUncommittedPartitionsAsync(string groupId, List<TopicPartition> partitions, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            using var consumer = new ConsumerBuilder<byte[]?, byte[]?>(CreateConsumerConfig(groupId))
+                .SetLogHandler((_, message) => OnLog(message))
+                .SetErrorHandler((_, error) => OnError(error))
+                .Build();
+
+            return consumer.Committed(partitions, AdminTimeout).Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
+        }, cancellationToken);
     }
 
     private Task EnsureForwarderAsync(CancellationToken cancellationToken)
