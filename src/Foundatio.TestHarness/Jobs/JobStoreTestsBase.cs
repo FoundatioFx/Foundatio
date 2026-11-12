@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -25,6 +26,7 @@ namespace Foundatio.Tests.Jobs;
 /// }
 /// </code>
 /// </example>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public abstract class JobStoreTestsBase : TestWithLoggingBase
 {
     protected JobStoreTestsBase(ITestOutputHelper output) : base(output)

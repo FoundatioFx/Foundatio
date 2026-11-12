@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,6 +20,7 @@ namespace Foundatio.Messaging.Transport;
 /// if the broker needs to.
 /// </para>
 /// </remarks>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public interface IMessageTransport : IAsyncDisposable
 {
     /// <summary>What this transport supports natively. Foundatio adapts its behavior to these values.</summary>

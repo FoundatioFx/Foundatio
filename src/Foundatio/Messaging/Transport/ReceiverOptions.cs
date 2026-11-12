@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>Settings for a receiver.</summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public sealed record ReceiverOptions
 {
     /// <summary>

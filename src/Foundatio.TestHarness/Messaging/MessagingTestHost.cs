@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,6 +16,7 @@ namespace Foundatio.Tests.Messaging;
 /// A minimal host for tests: one service's messaging configuration over a shared transport. Start several with the
 /// same transport to simulate several services or replicas.
 /// </summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public sealed class MessagingTestHost : IAsyncDisposable
 {
     private readonly ServiceProvider _services;

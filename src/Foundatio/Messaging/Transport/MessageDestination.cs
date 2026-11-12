@@ -1,7 +1,9 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public enum MessageDestinationKind
 {
     /// <summary>A queue: one receiver handles each message.</summary>
@@ -19,6 +21,7 @@ public enum MessageDestinationKind
 /// durable subscription of a topic (for example to replay its dead letters). Names contain only
 /// letters, digits, '.', '_' and '-'.
 /// </summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public sealed record MessageDestination
 {
     private MessageDestination(MessageDestinationKind kind, string name, string? subscriptionName)

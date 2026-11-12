@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
@@ -6,6 +7,7 @@ namespace Foundatio.Messaging.Transport;
 /// Thrown by <see cref="IMessageReceiver.ReceiveAsync"/> when the receiver can no longer deliver, for example after a
 /// fatal client error. Foundatio lets the receiver's in-flight messages finish, disposes it and opens a new one.
 /// </summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public class MessageReceiverFaultedException : MessageBusException
 {
     public MessageReceiverFaultedException(string message) : base(message)

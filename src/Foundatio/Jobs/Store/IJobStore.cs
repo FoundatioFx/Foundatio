@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,6 +13,7 @@ namespace Foundatio.Jobs.Store;
 /// Use the store's own clock for "now" (lease expiry, availability, retention) so workers with skewed clocks agree.
 /// Implementations are verified by <c>JobStoreTestsBase</c> in Foundatio.TestHarness.
 /// </remarks>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public interface IJobStore
 {
     /// <summary>

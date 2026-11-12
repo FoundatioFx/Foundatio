@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
@@ -7,6 +8,7 @@ namespace Foundatio.Messaging.Transport;
 /// A leased delivery returned by <see cref="IMessageReceiver.ReceiveAsync"/>. Transports derive from this type to
 /// carry their receipt (delivery tag, receipt handle, stream entry id, offset).
 /// </summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public class IncomingMessage
 {
     public required string MessageId { get; init; }

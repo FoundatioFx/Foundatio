@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -30,6 +31,7 @@ namespace Foundatio.Tests.Messaging;
 /// }
 /// </code>
 /// </example>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public abstract class MessageTransportTestsBase : TestWithLoggingBase
 {
     private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(60);

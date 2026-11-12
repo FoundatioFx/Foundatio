@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>A message handed to <see cref="IMessageTransport.SendAsync"/>.</summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public sealed record OutgoingMessage
 {
     /// <summary>

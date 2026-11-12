@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -37,6 +38,7 @@ namespace Foundatio.Messaging.Transport;
 /// delivering.
 /// </para>
 /// </remarks>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public interface IMessageReceiver : IAsyncDisposable
 {
     MessageSource Source { get; }

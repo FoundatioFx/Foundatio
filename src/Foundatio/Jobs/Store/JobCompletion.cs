@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Foundatio.Jobs.Store;
 
 /// <summary>How a run ended.</summary>
+[Experimental(ProviderApi.DiagnosticId, UrlFormat = ProviderApi.UrlFormat)]
 public sealed record JobCompletion
 {
     private JobCompletion()
