@@ -55,6 +55,65 @@ IFileStorage storage = new RedisFileStorage(o => o.ConnectionMultiplexer(muxer))
 await storage.SaveFileAsync("docs/readme.txt", "Hello World");
 ```
 
+## Redis message transport
+
+`RedisMessageTransport` runs Foundatio messaging (`IMessageClient`, consumers, durable and instance subscriptions) on Redis Streams. Register it as the transport, with the multiplexer your app already uses:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseTransport(sp => new RedisMessageTransport(sp.GetRequiredService<IConnectionMultiplexer>(), new RedisMessageTransportOptions
+    {
+        KeyPrefix = "myapp:messaging",
+        DeadLetterRetention = TimeSpan.FromDays(14)
+    }))
+    .AddConsumer<SendReceiptHandler>());
+```
+
+It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and subscription lives on one cluster slot. It needs Redis 5.0 or later (6.2 for `DeadLetterRetention`), or Valkey.
+
+### Options
+
+| Option | Default | |
+|---|---|---|
+| `KeyPrefix` | `foundatio:messaging` | Prepended to every key and signal channel. Cannot contain `{` or `}`. |
+| `Database` | `-1` | The database to use; `-1` is the connection's default. |
+| `MaxMessageSize` | 16 MiB | The largest message, measured by `MessageSize.Of`. Can be raised to 256 MiB. |
+| `DeduplicationWindow` | 5 minutes | How long a `DeduplicationId` is remembered. |
+| `MinPollInterval` / `MaxPollInterval` | 20 ms / 500 ms | The backoff between polls of an empty source. |
+| `InstanceSubscriptionTimeout` | 30 seconds | How long an instance subscription survives without a heartbeat. |
+| `DeadLetterMaxLength` | none | The most dead letters kept per dead-letter queue; the oldest are removed first. |
+| `DeadLetterRetention` | none | How long a dead letter is kept. |
+| `TimeProvider`, `LoggerFactory` | system clock, none | |
+
+### Redis must not evict its keys
+
+Each source is a stream with a few sorted sets and hashes beside it. If Redis evicts one, its messages are lost, and an ordered group can be left waiting on a message that no longer exists.
+
+- Use `maxmemory-policy noeviction`, or a Redis that holds only messaging data. Under the `volatile-*` policies, instance subscriptions and deduplication ids go first, because they have expiry times. Under `allkeys-*`, any key can go, including a whole queue.
+- The transport logs a warning when it starts if a primary has a `maxmemory` limit and another policy.
+- When it finds that a stream or a delayed message was lost, it releases the groups that waited on it and logs a warning. The lost messages themselves can't be recovered.
+- Redis replicates asynchronously, so a failover can lose a send or settle that was already acknowledged.
+
+### Memory and retention
+
+Everything is kept in Redis memory, which is often shared with the app's cache and locks.
+
+- **Fan-out:** publishing to a topic copies the full message into every durable and instance subscription of that topic.
+- **Settled messages** are removed at once.
+- **Dead letters** are kept until they are replayed or purged, unless you set `DeadLetterMaxLength` or `DeadLetterRetention`. Expired dead letters are removed when another message is dead-lettered into the same queue, or when the queue is read.
+- **Durable subscriptions** stay on their topic, and keep getting a copy of every publish, until you delete them with `IMessageAdmin.DeleteAsync`. Delete the subscription of a service you rename or retire. The transport logs a warning when a subscription has 1,000 or more messages and none sent to it in the last hour has been received.
+- **Instance subscriptions** are removed when their receiver is disposed. Publishers remove those that miss their heartbeats for `InstanceSubscriptionTimeout`, for example after a crash. A process that stalls longer than that misses what was published meanwhile, and logs a warning when its subscription is restored.
+- `RedisMessageTransport.GetMessageCountAsync(source)` returns a source's backlog.
+
+### Latency and cost
+
+- Receivers poll their sources with Lua scripts on the shared multiplexer; there are no blocking reads.
+- Every send also publishes a small pub/sub signal on the source's channel (`<KeyPrefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond.
+- Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a signal is lost, for example while a connection reconnects. Each idle receiver runs about one script per `MaxPollInterval`.
+- Signals use classic `PUBLISH`, which Redis Cluster forwards to every node.
+- One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
