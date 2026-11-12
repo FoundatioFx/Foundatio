@@ -23,11 +23,19 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
 {
     private const int MaxWaitSecondsPerPoll = 20;
     private const int MaxVisibilityTimeoutSeconds = SqsMessageTransport.MaxVisibilityTimeoutSeconds;
-    private static readonly TimeSpan MaxVisibilityTimeout = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds);
     private static readonly TimeSpan EarlyDeliveryTolerance = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan LongPollRounding = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan ShortPollInterval = TimeSpan.FromMilliseconds(100);
     private static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// A message that arrives early is hidden until the next multiple of this since its first receive (or until due),
+    /// so it is received once per interval. It is short of the 12 hours SQS allows by <see cref="HideIntervalTolerance"/>.
+    /// </summary>
+    private static readonly TimeSpan HideInterval = TimeSpan.FromHours(11);
+
+    /// <summary>How far the transport's clock may run ahead of SQS's without a hide ending in the interval it began in.</summary>
+    private static readonly TimeSpan HideIntervalTolerance = TimeSpan.FromMinutes(30);
     private const string ReceiveCountAttribute = "ApproximateReceiveCount";
     private const string SentTimestampAttribute = SqsMessageTransport.SentTimestampAttribute;
     private const string FirstReceiveTimestampAttribute = "ApproximateFirstReceiveTimestamp";
@@ -159,7 +167,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     {
         var delivery = GetDelivery(message);
         ThrowIfLeaseExpired(delivery);
-        await ChangeVisibilityAsync(delivery, Math.Min(ToSeconds(delay, minimum: 0), RemainingVisibilitySeconds(delivery)), cancellationToken).AnyContext();
+        await ChangeVisibilityAsync(delivery, Math.Min(ToSeconds(delay, minimum: 0), RemainingVisibilitySeconds(delivery.ReceivedAt)), cancellationToken).AnyContext();
         _inFlight.TryRemove(delivery.ReceiptHandle, out _);
     }
 
@@ -189,7 +197,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         var delivery = GetDelivery(message);
         ThrowIfLeaseExpired(delivery);
         long started = Stopwatch.GetTimestamp();
-        int seconds = Math.Min(_leaseSeconds, RemainingVisibilitySeconds(delivery));
+        int seconds = Math.Min(_leaseSeconds, RemainingVisibilitySeconds(delivery.ReceivedAt));
         if (seconds <= 0)
             throw LeaseLost(delivery, new InvalidOperationException("SQS does not keep a message invisible for more than 12 hours from its receive."));
 
@@ -242,7 +250,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
             string? groupId = _fifo ? message.Attributes?.GetValueOrDefault(MessageGroupIdAttribute) : null;
             if (groupId is not null && heldGroups?.Contains(groupId) == true)
             {
-                await SetVisibilityAsync(message, decoded.MessageId, 0).AnyContext();
+                await SetVisibilityAsync(message, decoded.MessageId, 0, LogLevel.Debug).AnyContext();
                 continue;
             }
 
@@ -253,7 +261,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
                 var early = deliverAt - now;
                 if (early > EarlyDeliveryTolerance)
                 {
-                    await SetVisibilityAsync(message, decoded.MessageId, ToSeconds(early, minimum: 1)).AnyContext();
+                    await SetVisibilityAsync(message, decoded.MessageId, GetHideSeconds(message, early, now, leaseStarted), LogLevel.Warning).AnyContext();
                     if (groupId is not null)
                         (heldGroups ??= new HashSet<string>(StringComparer.Ordinal)).Add(groupId);
                     continue;
@@ -285,8 +293,28 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     }
 
     /// <summary>
-    /// How many receives hid the message before it was due: each hid it for up to 12 hours, starting from its first
-    /// receive. They are not deliveries, so they are not counted as attempts.
+    /// How long to hide a message that arrived <paramref name="early"/>: until it is due, but at most until the end of
+    /// the current <see cref="HideInterval"/> since its first receive, and never past the 12 hours SQS allows from
+    /// this receive (it rejects a longer visibility timeout).
+    /// </summary>
+    private static int GetHideSeconds(SqsMessage message, TimeSpan early, DateTimeOffset now, long receivedAt)
+    {
+        var hide = early;
+        if (SqsMessageTransport.GetNumber(message.Attributes, FirstReceiveTimestampAttribute) is { } firstReceived)
+        {
+            var sinceFirstReceive = now - DateTimeOffset.FromUnixTimeMilliseconds(firstReceived);
+            long interval = Math.Max(0, (long)Math.Floor((sinceFirstReceive + HideIntervalTolerance) / HideInterval));
+            var intervalEnd = HideInterval * (interval + 1) - sinceFirstReceive;
+            if (intervalEnd < hide)
+                hide = intervalEnd;
+        }
+
+        return Math.Min(ToSeconds(hide, minimum: 1), RemainingVisibilitySeconds(receivedAt));
+    }
+
+    /// <summary>
+    /// How many receives hid the message before it was due: one per <see cref="HideInterval"/> since its first receive,
+    /// as <see cref="GetHideSeconds"/> schedules them. They are not deliveries, so they are not counted as attempts.
     /// </summary>
     private static int GetEarlyReceives(SqsMessage message, DateTimeOffset deliverAt)
     {
@@ -294,7 +322,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
             return 0;
 
         var hiddenFor = deliverAt - EarlyDeliveryTolerance - DateTimeOffset.FromUnixTimeMilliseconds(firstReceived);
-        return hiddenFor > TimeSpan.Zero ? (int)Math.Ceiling(hiddenFor / MaxVisibilityTimeout) : 0;
+        return hiddenFor > TimeSpan.Zero ? (int)Math.Ceiling(hiddenFor / HideInterval) : 0;
     }
 
     private async Task DiscardAsync(SqsMessage message, string messageId)
@@ -310,7 +338,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         }
     }
 
-    private async Task SetVisibilityAsync(SqsMessage message, string messageId, int seconds)
+    private async Task SetVisibilityAsync(SqsMessage message, string messageId, int seconds, LogLevel failureLevel)
     {
         try
         {
@@ -323,7 +351,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         }
         catch (AmazonServiceException ex)
         {
-            _transport.Logger.LogDebug(ex, "Could not change the visibility of message {MessageId} from {Source}; it will be received again when its lease expires", messageId, Source);
+            _transport.Logger.Log(failureLevel, ex, "Could not change the visibility of message {MessageId} from {Source} to {Seconds} seconds; it will be received again when its lease expires", messageId, Source, seconds);
         }
     }
 
@@ -424,9 +452,12 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
         return new MessageLeaseLostException($"The lease for message {delivery.MessageId} from {Source} was lost.", innerException);
     }
 
-    /// <summary>How much longer SQS lets the delivery stay invisible, measured conservatively from before the receive request.</summary>
-    private static int RemainingVisibilitySeconds(SqsIncomingMessage delivery) =>
-        Math.Max(0, MaxVisibilityTimeoutSeconds - (int)Math.Ceiling(Stopwatch.GetElapsedTime(delivery.ReceivedAt).TotalSeconds));
+    /// <summary>
+    /// How much longer SQS lets a delivery stay invisible, measured conservatively from <paramref name="receivedAt"/>,
+    /// a <see cref="Stopwatch"/> timestamp taken before the receive request was sent.
+    /// </summary>
+    private static int RemainingVisibilitySeconds(long receivedAt) =>
+        Math.Max(0, MaxVisibilityTimeoutSeconds - (int)Math.Ceiling(Stopwatch.GetElapsedTime(receivedAt).TotalSeconds));
 
     private static int ToSeconds(TimeSpan value, int minimum) =>
         (int)Math.Clamp(Math.Ceiling(value.TotalSeconds), minimum, MaxVisibilityTimeoutSeconds);

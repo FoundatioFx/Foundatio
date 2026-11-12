@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -30,6 +29,8 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false)
         .AddEnvironmentVariables()
         .Build();
+
+    private readonly List<IDisposable> _clients = [];
 
     /// <summary>Runs every test against FIFO queues and topics when true.</summary>
     protected virtual bool Fifo => false;
@@ -192,20 +193,61 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     [Fact]
     public async Task Publish_DelayedBeyondTheLongestVisibilityTimeout_IsHiddenUntilDue()
     {
-        // Arrange
+        // Arrange: real SQS rejects a visibility that ends more than 12 hours after the receive; the emulator does not.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        sqsInterceptor.EnforceVisibilityLimit = true;
         string topic = NewName("long-delay");
-        await using var receiver = await CreateReceiverAsync(MessageSource.Subscription(topic, "later"));
+        await using var receiver = await transport.CreateReceiverAsync(MessageSource.Subscription(topic, "later"), new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(1) }, TestCancellationToken);
         using var sqs = CreateSqsClient();
         string queueUrl = Assert.Single((await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = $"{NamePrefix}{topic}-later" }, TestCancellationToken)).QueueUrls ?? []);
 
         // Act: SQS hides a message for at most 12 hours, so this one is hidden again when it next appears.
-        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("tomorrow") with { DeliverAt = DateTimeOffset.UtcNow.AddHours(13) }], TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("tomorrow") with { DeliverAt = DateTimeOffset.UtcNow.AddHours(13) }], TestCancellationToken);
 
-        // Assert
-        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+        // Assert: the message stays hidden after its 1-second lease, so it is not received again.
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(4));
+        Assert.Equal(0, sqsInterceptor.RejectedVisibilityChanges);
+        var hide = Assert.Single(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>());
+        Assert.InRange(hide.VisibilityTimeout.GetValueOrDefault(), (int)TimeSpan.FromHours(11).TotalSeconds, (int)TimeSpan.FromHours(12).TotalSeconds - 1);
         var attributes = await sqs.GetQueueAttributesAsync(queueUrl, [QueueAttributeName.ApproximateNumberOfMessagesNotVisible, QueueAttributeName.ApproximateNumberOfMessages], TestCancellationToken);
         Assert.Equal("1", attributes.Attributes[QueueAttributeName.ApproximateNumberOfMessagesNotVisible]);
         Assert.Equal("0", attributes.Attributes[QueueAttributeName.ApproximateNumberOfMessages]);
+    }
+
+    [Fact]
+    public async Task Publish_DelayedForSeveralVisibilityTimeouts_IsDeliveredWhenDueAsTheFirstAttempt()
+    {
+        // Arrange: each time the message is hidden, the clock jumps ahead by the hide and SQS shows it again a second later.
+        var clock = new OffsetTimeProvider();
+        var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        sqsInterceptor.EnforceVisibilityLimit = true;
+        var hides = new List<int>();
+        sqsInterceptor.Intercept = (request, send) =>
+        {
+            if (request is ChangeMessageVisibilityRequest { VisibilityTimeout: > 1 } change)
+            {
+                lock (hides)
+                    hides.Add(change.VisibilityTimeout.Value);
+                clock.Advance(TimeSpan.FromSeconds(change.VisibilityTimeout.Value));
+                change.VisibilityTimeout = 1;
+            }
+
+            return send();
+        };
+
+        string topic = NewName("hops");
+        await using var receiver = await transport.CreateReceiverAsync(MessageSource.Subscription(topic, "later"), new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+
+        // Act
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("in 30 hours", "id-30h") with { DeliverAt = clock.GetUtcNow().AddHours(30) }], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver, TimeSpan.FromSeconds(30));
+
+        // Assert: three hides of at most 12 hours from their receives, none counted as an attempt.
+        Assert.Equal("id-30h", message.MessageId);
+        Assert.Equal(1, message.DeliveryCount);
+        Assert.Equal(0, sqsInterceptor.RejectedVisibilityChanges);
+        Assert.Equal(3, hides.Count);
+        Assert.True(clock.GetUtcNow() >= message.EnqueuedAt!.Value.AddHours(30).AddSeconds(-1), $"Delivered at {clock.GetUtcNow()}, before it was due.");
     }
 
     [Fact]
@@ -432,6 +474,23 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
 
         await restarted.SendAsync(MessageDestination.Topic(topic), [Message("audited")], TestCancellationToken);
         Assert.Equal("audited", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        await base.DisposeAsync();
+        foreach (var client in _clients)
+            client.Dispose();
+    }
+
+    /// <summary>A transport whose SQS requests go through an interceptor, so a test can watch and alter them.</summary>
+    protected SqsMessageTransport CreateInterceptedTransport(out InterceptingSqsClient sqsInterceptor, TimeProvider? timeProvider = null)
+    {
+        var sqs = CreateSqsClient();
+        var sns = CreateSnsClient();
+        _clients.Add(sqs);
+        _clients.Add(sns);
+        return Track(new SqsMessageTransport(InterceptingSqsClient.Create(sqs, out sqsInterceptor), sns, CreateOptions() with { TimeProvider = timeProvider }));
     }
 
     protected SqsMessageTransportOptions CreateOptions(TimeSpan? instanceSubscriptionTimeout = null) => new()
