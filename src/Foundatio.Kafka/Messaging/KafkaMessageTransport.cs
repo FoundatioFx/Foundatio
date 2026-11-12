@@ -440,16 +440,27 @@ public sealed class KafkaMessageTransport : IMessageTransport
             return;
 
         var ends = await GetEndOffsetsAsync(missing, cancellationToken).AnyContext();
-        try
+        long started = Stopwatch.GetTimestamp();
+        while (true)
         {
-            await _admin.AlterConsumerGroupOffsetsAsync([new ConsumerGroupTopicPartitionOffsets(groupId, ends)],
-                new AlterConsumerGroupOffsetsOptions { RequestTimeout = AdminTimeout }).AnyContext();
-            Logger.LogDebug("Started subscription group {GroupId} at the end of {Topic}", groupId, topic);
-        }
-        catch (AlterConsumerGroupOffsetsException ex)
-        {
-            // A receiver in another process joined first; the group already has a position.
-            Logger.LogDebug(ex, "Could not set the starting offsets of subscription group {GroupId}", groupId);
+            try
+            {
+                await _admin.AlterConsumerGroupOffsetsAsync([new ConsumerGroupTopicPartitionOffsets(groupId, ends)],
+                    new AlterConsumerGroupOffsetsOptions { RequestTimeout = AdminTimeout }).AnyContext();
+                Logger.LogDebug("Started subscription group {GroupId} at the end of {Topic}", groupId, topic);
+                return;
+            }
+            catch (AlterConsumerGroupOffsetsException ex) when (!IsCoordinatorUnavailable(ex))
+            {
+                // A receiver in another process joined first; the group already has a position.
+                Logger.LogDebug(ex, "Could not set the starting offsets of subscription group {GroupId}", groupId);
+                return;
+            }
+            catch (AlterConsumerGroupOffsetsException ex) when (Stopwatch.GetElapsedTime(started) < TopicReadyTimeout)
+            {
+                Logger.LogDebug(ex, "Retrying setting the starting offsets of subscription group {GroupId}", groupId);
+                await Task.Delay(100, cancellationToken).AnyContext();
+            }
         }
     }
 
@@ -460,15 +471,38 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// </summary>
     private Task<List<TopicPartition>> GetUncommittedPartitionsAsync(string groupId, List<TopicPartition> partitions, CancellationToken cancellationToken)
     {
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             using var consumer = new ConsumerBuilder<byte[]?, byte[]?>(CreateConsumerConfig(groupId))
                 .SetLogHandler((_, message) => OnLog(message))
                 .SetErrorHandler((_, error) => OnError(error))
                 .Build();
 
-            return consumer.Committed(partitions, AdminTimeout).Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
+            long started = Stopwatch.GetTimestamp();
+            while (true)
+            {
+                try
+                {
+                    return consumer.Committed(partitions, AdminTimeout).Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
+                }
+                catch (KafkaException ex) when (IsCoordinatorUnavailable(ex.Error) && Stopwatch.GetElapsedTime(started) < TopicReadyTimeout)
+                {
+                    Logger.LogDebug(ex, "Retrying reading the committed offsets of group {GroupId}", groupId);
+                    await Task.Delay(100, cancellationToken).AnyContext();
+                }
+            }
         }, cancellationToken);
+    }
+
+    private static bool IsCoordinatorUnavailable(AlterConsumerGroupOffsetsException ex)
+    {
+        return IsCoordinatorUnavailable(ex.Error) || ex.Results.Any(r => IsCoordinatorUnavailable(r.Error) || r.Partitions.Any(p => IsCoordinatorUnavailable(p.Error)));
+    }
+
+    /// <summary>The errors of a group coordinator that has moved or is still loading, as on a broker that is starting.</summary>
+    private static bool IsCoordinatorUnavailable(Error error)
+    {
+        return error.Code is ErrorCode.GroupLoadInProgress or ErrorCode.GroupCoordinatorNotAvailable or ErrorCode.NotCoordinatorForGroup or ErrorCode.RequestTimedOut;
     }
 
     private Task EnsureForwarderAsync(CancellationToken cancellationToken)
