@@ -18,14 +18,14 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
     protected override IMessageTransport CreateTransport()
     {
-        return new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log });
+        return new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log });
     }
 
     [Fact]
     public async Task InstanceSubscription_OfAStoppedProcess_IsRemovedByTheNextPublish()
     {
         string topic = NewName("crash");
-        var options = new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, InstanceSubscriptionTimeout = TimeSpan.FromSeconds(1) };
+        var options = new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log, InstanceSubscriptionTimeout = TimeSpan.FromSeconds(1) };
         var crashedConnection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
         var crashed = new RedisMessageTransport(crashedConnection, options);
         await crashed.CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "crashed"), new ReceiverOptions(), TestCancellationToken);
@@ -50,7 +50,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         string topic = NewName("swept");
         var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions
         {
-            KeyPrefix = KeyPrefix,
+            Prefix = KeyPrefix,
             LoggerFactory = Log,
             InstanceSubscriptionTimeout = TimeSpan.FromSeconds(3)
         }));
@@ -235,7 +235,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
         var transport = Track(new RedisMessageTransport(connection, new RedisMessageTransportOptions
         {
-            KeyPrefix = KeyPrefix,
+            Prefix = KeyPrefix,
             LoggerFactory = Log,
             MinPollInterval = TimeSpan.FromMilliseconds(50),
             MaxPollInterval = TimeSpan.FromMilliseconds(400)
@@ -379,7 +379,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     [Fact]
     public async Task MaxMessageSize_FromOptions_CountsTheIdsGroupKeyAndHeadersLikeMessageSize()
     {
-        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, MaxMessageSize = 1024 }));
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log, MaxMessageSize = 1024 }));
         Assert.Equal(1024, transport.Capabilities.MaxMessageSize);
         var headers = new Dictionary<string, string> { ["name"] = "välue" };
         var message = new OutgoingMessage { MessageId = "over", Body = new byte[1000], Headers = headers, GroupKey = "group", DeduplicationId = "dedup-id" };
@@ -435,7 +435,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     [Fact]
     public async Task DeadLetterAsync_WithDeadLetterMaxLength_KeepsTheNewestDeadLetters()
     {
-        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, DeadLetterMaxLength = 2 }));
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log, DeadLetterMaxLength = 2 }));
         var source = MessageSource.Queue(NewName("dlq-max-length"));
         await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
         await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 4).Select(i => Message($"m{i}", $"m-{i}")).ToList(), TestCancellationToken);
@@ -451,7 +451,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     public async Task DeadLetterAsync_WithDeadLetterRetention_RemovesExpiredDeadLetters()
     {
         var retention = TimeSpan.FromSeconds(1);
-        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, DeadLetterRetention = retention }));
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log, DeadLetterRetention = retention }));
         var source = MessageSource.Queue(NewName("dlq-retention"));
         var deadLetterSource = MessageSource.DeadLetter(source);
         await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
@@ -530,7 +530,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     // Polls too rarely to deliver within DeliveryTimeout, so only a wake-up can.
     private RedisMessageTransportOptions SlowPollingOptions => new()
     {
-        KeyPrefix = KeyPrefix,
+        Prefix = KeyPrefix,
         LoggerFactory = Log,
         MinPollInterval = TimeSpan.FromMinutes(1),
         MaxPollInterval = TimeSpan.FromMinutes(1)

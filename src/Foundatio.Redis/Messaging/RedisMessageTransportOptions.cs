@@ -6,7 +6,7 @@ namespace Foundatio.Messaging.Transport;
 public sealed record RedisMessageTransportOptions
 {
     /// <summary>Prepended to every key. Each source's keys share a hash tag, so a source lives on one cluster slot.</summary>
-    public string KeyPrefix { get; init; } = "foundatio:messaging";
+    public string Prefix { get; init; } = "foundatio:messaging";
 
     /// <summary>The Redis database to use, or -1 for the connection's default.</summary>
     public int Database { get; init; } = -1;

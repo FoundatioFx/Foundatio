@@ -711,7 +711,7 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     protected SqsMessageTransportOptions CreateOptions(TimeSpan? instanceSubscriptionTimeout = null) => new()
     {
         ConnectionString = GetConnectionString(),
-        NamePrefix = NamePrefix,
+        Prefix = NamePrefix,
         Fifo = Fifo,
         LoggerFactory = Log,
         InstanceSubscriptionTimeout = instanceSubscriptionTimeout ?? TimeSpan.FromMinutes(5)

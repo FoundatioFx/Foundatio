@@ -64,7 +64,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexe
 builder.Services.AddFoundatioMessaging(m => m
     .UseTransport(sp => new RedisMessageTransport(sp.GetRequiredService<IConnectionMultiplexer>(), new RedisMessageTransportOptions
     {
-        KeyPrefix = "myapp:messaging",
+        Prefix = "myapp:messaging",
         DeadLetterRetention = TimeSpan.FromDays(14)
     }))
     .AddConsumer<SendReceiptHandler>());
@@ -76,7 +76,7 @@ It supports ordered groups, deduplication, delays of any length and lease expiry
 
 | Option | Default | |
 |---|---|---|
-| `KeyPrefix` | `foundatio:messaging` | Prepended to every key and signal channel. Cannot contain `{` or `}`. |
+| `Prefix` | `foundatio:messaging` | Prepended to every key and signal channel. Cannot contain `{` or `}`. |
 | `Database` | `-1` | The database to use; `-1` is the connection's default. |
 | `MaxMessageSize` | 16 MiB | The largest message, measured by `MessageSize.Of`. Can be raised to 256 MiB. |
 | `DeduplicationWindow` | 5 minutes | How long a `DeduplicationId` is remembered. |
@@ -109,7 +109,7 @@ Everything is kept in Redis memory, which is often shared with the app's cache a
 ### Latency and cost
 
 - Receivers poll their sources with Lua scripts on the shared multiplexer; there are no blocking reads.
-- Every send also publishes a small pub/sub signal on the source's channel (`<KeyPrefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond. Each signal makes every idle receiver of that source poll once.
+- Every send also publishes a small pub/sub signal on the source's channel (`<Prefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond. Each signal makes every idle receiver of that source poll once.
 - Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a signal is lost, for example while a connection reconnects. Each idle receiver runs about one script per `MaxPollInterval`.
 - Signals use classic `PUBLISH`, which Redis Cluster forwards to every node.
 - One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.

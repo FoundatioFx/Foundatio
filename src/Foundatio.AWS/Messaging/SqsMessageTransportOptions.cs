@@ -18,7 +18,7 @@ public sealed record SqsMessageTransportOptions
     /// Prepended to every queue and topic name, so several environments can share an AWS account. Letters, digits,
     /// '_' and '-' only, at most 32 characters.
     /// </summary>
-    public string NamePrefix { get; init; } = String.Empty;
+    public string Prefix { get; init; } = String.Empty;
 
     /// <summary>
     /// Makes every queue, topic and subscription an SQS FIFO queue or SNS FIFO topic (names end in ".fifo"), so
@@ -53,7 +53,7 @@ public sealed record SqsMessageTransportOptions
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append(nameof(ConnectionString)).Append(" = ").Append(RedactSecrets(ConnectionString))
-            .Append(", ").Append(nameof(NamePrefix)).Append(" = ").Append(NamePrefix)
+            .Append(", ").Append(nameof(Prefix)).Append(" = ").Append(Prefix)
             .Append(", ").Append(nameof(Fifo)).Append(" = ").Append(Fifo)
             .Append(", ").Append(nameof(InstanceSubscriptionTimeout)).Append(" = ").Append(InstanceSubscriptionTimeout)
             .Append(", ").Append(nameof(TimeProvider)).Append(" = ").Append(TimeProvider)

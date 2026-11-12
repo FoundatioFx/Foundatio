@@ -18,7 +18,7 @@ public class SqsMessageTransportOptionsTests
         var options = new SqsMessageTransportOptions
         {
             ConnectionString = $"ServiceUrl=http://localhost:4566;AccessKey=AKIDEXAMPLE;{secretName}=wJalrXUtnFEMI/K7MDENG;Region=us-east-1",
-            NamePrefix = "dev-"
+            Prefix = "dev-"
         };
 
         // Act
@@ -37,13 +37,13 @@ public class SqsMessageTransportOptionsTests
     public void ToString_WithoutAConnectionString_PrintsTheOtherOptions()
     {
         // Arrange
-        var options = new SqsMessageTransportOptions { NamePrefix = "dev-", Fifo = true };
+        var options = new SqsMessageTransportOptions { Prefix = "dev-", Fifo = true };
 
         // Act
         string text = options.ToString();
 
         // Assert
-        Assert.Contains("NamePrefix = dev-", text);
+        Assert.Contains("Prefix = dev-", text);
         Assert.Contains("Fifo = True", text);
     }
 }

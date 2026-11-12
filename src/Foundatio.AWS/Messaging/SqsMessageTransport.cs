@@ -108,13 +108,13 @@ public sealed class SqsMessageTransport : IMessageTransport
         ArgumentNullException.ThrowIfNull(sqs);
         ArgumentNullException.ThrowIfNull(sns);
         Options = options ?? new SqsMessageTransportOptions();
-        SqsMessageTransportNames.ValidatePrefix(Options.NamePrefix, nameof(options));
+        SqsMessageTransportNames.ValidatePrefix(Options.Prefix, nameof(options));
         ArgumentOutOfRangeException.ThrowIfLessThan(Options.InstanceSubscriptionTimeout, TimeSpan.FromSeconds(1), nameof(options));
 
         Sqs = sqs;
         Sns = sns;
         _ownsClients = ownsClients;
-        _names = new SqsMessageTransportNames(Options.NamePrefix, Options.Fifo);
+        _names = new SqsMessageTransportNames(Options.Prefix, Options.Fifo);
         _queueAttributes = new Dictionary<string, string>
         {
             [QueueAttributeName.MessageRetentionPeriod] = ((int)MessageRetention.TotalSeconds).ToString(CultureInfo.InvariantCulture)

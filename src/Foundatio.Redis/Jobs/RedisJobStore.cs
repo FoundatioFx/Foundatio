@@ -52,12 +52,12 @@ public sealed class RedisJobStore : IJobStore
     {
         ArgumentNullException.ThrowIfNull(connection);
         _options = options ?? new RedisJobStoreOptions();
-        ArgumentException.ThrowIfNullOrWhiteSpace(_options.KeyPrefix, nameof(options));
-        if (_options.KeyPrefix.AsSpan().IndexOfAny('{', '}') >= 0)
+        ArgumentException.ThrowIfNullOrWhiteSpace(_options.Prefix, nameof(options));
+        if (_options.Prefix.AsSpan().IndexOfAny('{', '}') >= 0)
             throw new ArgumentException("The key prefix cannot contain '{' or '}'; it is used as the store's hash tag.", nameof(options));
 
         _connection = connection;
-        _prefix = $"{{{_options.KeyPrefix}}}:";
+        _prefix = $"{{{_options.Prefix}}}:";
     }
 
     private IDatabase Database => _connection.GetDatabase(_options.Database);

@@ -64,7 +64,7 @@ services.AddFoundatioMessaging(m => m
     .UseTransport(new SqsMessageTransport(new SqsMessageTransportOptions
     {
         ConnectionString = "Region=us-east-1",
-        NamePrefix = "prod-",
+        Prefix = "prod-",
         Fifo = false
     })));
 ```
@@ -82,7 +82,7 @@ Things to plan for:
 - **In-flight quota**: hidden messages count toward SQS's quota of about 120,000 messages in flight per queue, past which SQS returns no message of the queue. On a standard queue with 50,000 in flight, an early message is instead sent again with a delay of up to 15 minutes, which costs a send and a delete every 15 minutes. FIFO queues can only hide, so a burst of long-delayed FIFO messages can stall a queue. Use jobs for long or high-volume delays.
 - **FIFO groups behind a delay**: a hidden FIFO message holds back the rest of its group, and each hide adds one to the delivery count (the attempt number) of every message waiting behind it. Messages queued behind one delayed by days start with fewer retries, or none.
 - **New subscriptions**: queues are created with the policy that lets their topic send to them. A subscription whose queue already existed without that permission, for example one re-created after `DeleteAsync`, gets it with `SetQueueAttributes`, which AWS can take a minute to apply; SNS drops what it is not allowed to deliver meanwhile.
-- **Names**: an empty `NamePrefix` shares names with `SQSQueue<T>` and `SQSMessageBus`, whose messages the transport cannot read. Use a prefix while both run side by side.
+- **Names**: an empty `Prefix` shares names with `SQSQueue<T>` and `SQSMessageBus`, whose messages the transport cannot read. Use a prefix while both run side by side.
 
 IAM actions the transport needs at runtime:
 

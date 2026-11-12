@@ -20,7 +20,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
     {
         var muxer = SharedConnection.GetMuxer(Log);
         Assert.SkipWhen(muxer is null, "RedisConnectionString is not configured.");
-        return new RedisJobStore(muxer, new RedisJobStoreOptions { KeyPrefix = "foundatio-tests:jobs" });
+        return new RedisJobStore(muxer, new RedisJobStoreOptions { Prefix = "foundatio-tests:jobs" });
     }
 
     /// <summary>
@@ -58,7 +58,7 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         try
         {
             string prefix = $"foundatio-tests:race-{Guid.NewGuid():N}"[..32];
-            var stores = connections.Select(c => new RedisJobStore(c, new RedisJobStoreOptions { KeyPrefix = prefix })).ToArray();
+            var stores = connections.Select(c => new RedisJobStore(c, new RedisJobStoreOptions { Prefix = prefix })).ToArray();
             const string name = "race";
             const int jobCount = 100;
             var now = DateTimeOffset.UtcNow;
