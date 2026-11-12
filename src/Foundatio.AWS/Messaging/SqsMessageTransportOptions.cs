@@ -29,7 +29,8 @@ public sealed record SqsMessageTransportOptions
     /// A message without a group key is its own group, so ungrouped messages are not ordered or held behind each
     /// other. A message without a deduplication id is never deduplicated. FIFO queues cannot delay single messages,
     /// so a delayed message is hidden when it is first received and holds back the later messages of its group until
-    /// it is due. Dead letters are not ordered: each is its own group, so all of a group's dead letters can be
+    /// it is due; each time it is hidden adds one to the delivery count of every message waiting behind it, so they
+    /// start with fewer retries. Dead letters are not ordered: each is its own group, so all of a group's dead letters can be
     /// inspected and replayed together. FIFO queues and topics have lower throughput limits than standard ones, and
     /// an SNS FIFO topic allows fewer subscriptions, which includes instance subscriptions. A transport with this
     /// option does not use the queues and topics of one without it.

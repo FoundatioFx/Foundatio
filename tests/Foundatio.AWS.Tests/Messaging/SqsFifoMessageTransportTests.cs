@@ -110,6 +110,9 @@ public class SqsFifoMessageTransportTests(ITestOutputHelper output) : SqsMessage
         Assert.All(received.Where(r => r.Message.GroupKey == "g"), r => Assert.True(r.At >= ShortDelay * 0.75, $"{r.Message.MessageId} was delivered after {r.At}, before its group's delayed message was due."));
         Assert.True(received.Single(r => r.Message.MessageId == "o-0").At < ShortDelay, "A message of another group was held back.");
         Assert.Equal(1, received.Single(r => r.Message.MessageId == "g-0").Message.DeliveryCount);
+
+        // SQS counts g-1's receive alongside g-0 each time g-0 is hidden; here g-0 is hidden once.
+        Assert.InRange(received.Single(r => r.Message.MessageId == "g-1").Message.DeliveryCount, 1, 2);
     }
 
     [Fact]

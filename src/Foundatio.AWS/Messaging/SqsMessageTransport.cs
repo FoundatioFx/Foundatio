@@ -41,6 +41,11 @@ namespace Foundatio.Messaging.Transport;
 /// high-volume delays.
 /// </para>
 /// <para>
+/// On FIFO queues a hidden message holds back the later messages of its group. SQS returns those in the same receive
+/// and counts it, so each hide adds one to the delivery count, and so the attempt number, of each message waiting
+/// behind it: a group's messages queued behind one delayed by days start with fewer retries, or none.
+/// </para>
+/// <para>
 /// Subscription and instance queues are created with the policy that lets their topic send to them, so SNS may deliver
 /// as soon as the subscription exists. AWS applies a policy changed on an existing queue within about a minute, and
 /// SNS drops a message it is not allowed to deliver, so messages published in that time to a subscription whose queue
