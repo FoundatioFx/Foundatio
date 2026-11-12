@@ -15,7 +15,8 @@ public static class TestHarnessServiceCollectionExtensions
     /// Runs the app's messaging and jobs on a fresh in-memory transport and job store, and records what they do in
     /// <see cref="FoundatioTestHarness"/>. Call it after the app's own registrations so it replaces their transport and
     /// store, then resolve <see cref="FoundatioTestHarness"/> from the service provider. CRON schedules only run when
-    /// triggered with <see cref="FoundatioTestHarness.TriggerCronJobAsync{TJobOrArgs}"/>.
+    /// triggered with <see cref="FoundatioTestHarness.TriggerCronJobAsync{TJobOrArgs}"/>. Set
+    /// <see cref="FoundatioTestHarnessOptions.TransportCapabilities"/> to emulate your production transport's guarantees.
     /// </summary>
     /// <example>
     /// <code>
@@ -27,11 +28,19 @@ public static class TestHarnessServiceCollectionExtensions
     /// var harness = host.Services.GetRequiredService&lt;FoundatioTestHarness&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddFoundatioTestHarness(this IServiceCollection services)
+    public static IServiceCollection AddFoundatioTestHarness(this IServiceCollection services, Action<FoundatioTestHarnessOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.ReplaceSingleton<IMessageTransport>(sp => new InMemoryMessageTransport(sp.GetService<TimeProvider>()));
+        var options = new FoundatioTestHarnessOptions();
+        configure?.Invoke(options);
+        var capabilities = options.TransportCapabilities;
+        if (capabilities is not null)
+            InMemoryMessageTransport.ValidateCapabilities(capabilities);
+
+        services.ReplaceSingleton<IMessageTransport>(sp => capabilities is null
+            ? new InMemoryMessageTransport(sp.GetService<TimeProvider>())
+            : new InMemoryMessageTransport(capabilities, sp.GetService<TimeProvider>()));
         services.ReplaceSingleton<IJobStore>(sp => new InMemoryJobStore(sp.GetService<TimeProvider>()));
         services.TryAddSingleton(sp => new FoundatioTestHarness(sp));
         services.TryAddSingleton<IMessagingObserver>(sp => sp.GetRequiredService<FoundatioTestHarness>());

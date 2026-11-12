@@ -743,6 +743,52 @@ public class MessagingTests : TestWithLoggingBase
         await using var instance = await client.SubscribeAsync<OrderShipped>((_, _, _) => Task.CompletedTask, cancellationToken: TestCancellationToken);
     }
 
+    [Fact]
+    public async Task Send_WithOptionsTheTransportIgnores_WarnsOncePerMessageType()
+    {
+        await using var transport = new InMemoryMessageTransport(new TransportCapabilities());
+        await using var host = await MessagingTestHost.StartAsync(transport, Log, "tests", _ => { });
+
+        await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { GroupKey = "customer-1" }, TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(2), new SendOptions { GroupKey = "customer-2", DeduplicationId = "order-2" }, TestCancellationToken);
+        await host.Client.SendBatchAsync([new PlaceOrder(3), new PlaceOrder(4)], new SendOptions { GroupKey = "customer-3" }, TestCancellationToken);
+        await host.Client.PublishAsync(new OrderShipped(1), new PublishOptions { GroupKey = "customer-1" }, TestCancellationToken);
+
+        var warnings = Log.LogEntries.Where(e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Warning).Select(e => e.Message).ToList();
+        Assert.Single(warnings, w => w.StartsWith($"{QueueName<PlaceOrder>()} was sent with a GroupKey") && w.Contains("may be handled concurrently and out of order"));
+        Assert.Single(warnings, w => w.StartsWith($"{QueueName<PlaceOrder>()} was sent with a DeduplicationId") && w.Contains("repeated sends are all delivered"));
+        Assert.Single(warnings, w => w.StartsWith($"{QueueName<OrderShipped>()} was sent with a GroupKey"));
+        Assert.Equal(4, transport.GetMessageCount(MessageSource.Queue(QueueName<PlaceOrder>())));
+    }
+
+    [Fact]
+    public async Task Send_WithOptionsTheTransportHonours_DoesNotWarn()
+    {
+        await using var host = await StartAsync(_ => { });
+
+        await host.Client.SendAsync(new PlaceOrder(1), new SendOptions { GroupKey = "customer-1", DeduplicationId = "order-1" }, TestCancellationToken);
+
+        Assert.DoesNotContain(Log.LogEntries, e => e.Message.Contains("was sent with a"));
+    }
+
+    [Fact]
+    public async Task Send_WithRequireTransportCapabilities_ThrowsInsteadOfSendingWhatTheTransportIgnores()
+    {
+        await using var transport = new InMemoryMessageTransport(new TransportCapabilities { OrderedGroups = true });
+        await using var host = await MessagingTestHost.StartAsync(transport, Log, "tests", m => m.Configure(o => o.RequireTransportCapabilities = true));
+
+        var deduplication = await Assert.ThrowsAsync<MessageBusException>(() => host.Client.SendAsync(new PlaceOrder(1), new SendOptions { DeduplicationId = "order-1" }, TestCancellationToken));
+        Assert.Contains("does not deduplicate", deduplication.Message);
+        await host.Client.SendAsync(new PlaceOrder(2), new SendOptions { GroupKey = "customer-2" }, TestCancellationToken);
+
+        await using var unordered = new InMemoryMessageTransport(new TransportCapabilities { Deduplication = true });
+        await using var other = await MessagingTestHost.StartAsync(unordered, Log, "tests", m => m.Configure(o => o.RequireTransportCapabilities = true));
+        var group = await Assert.ThrowsAsync<MessageBusException>(() => other.Client.PublishAsync(new OrderShipped(1), new PublishOptions { GroupKey = "customer-1" }, TestCancellationToken));
+        Assert.Contains("does not keep groups in order", group.Message);
+
+        Assert.Equal(1, transport.GetMessageCount(MessageSource.Queue(QueueName<PlaceOrder>())));
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();

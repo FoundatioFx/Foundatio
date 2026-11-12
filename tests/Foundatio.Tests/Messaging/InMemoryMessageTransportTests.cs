@@ -10,7 +10,10 @@ namespace Foundatio.Tests.Messaging;
 
 public class InMemoryMessageTransportTests(ITestOutputHelper output) : MessageTransportTestsBase(output)
 {
-    protected override IMessageTransport CreateTransport() => new InMemoryMessageTransport();
+    /// <summary>The capabilities to emulate, or null for the default transport, which supports everything.</summary>
+    protected virtual TransportCapabilities? EmulatedCapabilities => null;
+
+    protected override IMessageTransport CreateTransport() => EmulatedCapabilities is { } capabilities ? new InMemoryMessageTransport(capabilities) : new InMemoryMessageTransport();
 
     /// <summary>Separate in-memory transports share nothing, so another process shares this test's instance instead.</summary>
     protected override IMessageTransport CreatePeerTransport() => new ProcessView(Transport);

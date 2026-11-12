@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
+using Foundatio.Messaging.Transport;
 using Foundatio.Resilience;
 using Foundatio.Testing;
 using Foundatio.Xunit;
@@ -252,6 +253,44 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         Assert.Equal(handle.Id, archive.JobId);
         Assert.Equal("tests.legacy-archive", archive.ScheduleName);
         await Assert.ThrowsAsync<InvalidOperationException>(() => harness.TriggerCronJobAsync<LegacyJob<LegacyReportJob>>(TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task AddFoundatioTestHarness_WithTransportCapabilities_DeliversWhatTheProductionTransportWould()
+    {
+        var withoutDeduplication = await StartHarnessAsync(o => o.TransportCapabilities = new TransportCapabilities { OrderedGroups = true });
+        var deduplicating = await StartHarnessAsync();
+
+        foreach (var host in new[] { withoutDeduplication, deduplicating })
+        {
+            var messages = host.Services.GetRequiredService<IMessageClient>();
+            await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions { DeduplicationId = "receipt-1" }, TestCancellationToken);
+            await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions { DeduplicationId = "receipt-1" }, TestCancellationToken);
+            await host.Services.GetRequiredService<FoundatioTestHarness>().WaitForIdleAsync(cancellationToken: TestCancellationToken);
+        }
+
+        Assert.Equal(2, withoutDeduplication.Services.GetRequiredService<FoundatioTestHarness>().HandledMessages.Count(m => m.Message is SendReceipt));
+        Assert.Equal(1, deduplicating.Services.GetRequiredService<FoundatioTestHarness>().HandledMessages.Count(m => m.Message is SendReceipt));
+    }
+
+    [Fact]
+    public void AddFoundatioTestHarness_WithCapabilitiesTheInMemoryTransportCannotEmulate_Throws()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<ArgumentException>(() => services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { MaxReceiveBatchSize = 0 }));
+    }
+
+    private async Task<IHost> StartHarnessAsync(Action<FoundatioTestHarnessOptions>? configure = null)
+    {
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders().AddTestLogger(_output);
+        builder.Services.AddOrdersApp();
+        builder.Services.AddFoundatioTestHarness(configure);
+        var host = builder.Build();
+        _hosts.Add(host);
+        await host.StartAsync(TestCancellationToken);
+        return host;
     }
 
     public record ArchiveOrders(int OlderThanDays);

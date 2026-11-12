@@ -24,6 +24,14 @@ public sealed class MessagingOptions
     /// <summary>Defaults to the registered <see cref="ISerializer"/>, or JSON.</summary>
     public ISerializer? Serializer { get; set; }
 
+    /// <summary>
+    /// When true, sending or publishing with a <see cref="DeliveryOptions.GroupKey"/> on a transport without
+    /// <see cref="Transport.TransportCapabilities.OrderedGroups"/>, or with a <see cref="DeliveryOptions.DeduplicationId"/>
+    /// on one without <see cref="Transport.TransportCapabilities.Deduplication"/>, throws <see cref="MessageBusException"/>
+    /// instead of sending. When false (the default), the message is sent and a warning is logged once per message type.
+    /// </summary>
+    public bool RequireTransportCapabilities { get; set; }
+
     internal void Validate()
     {
         ArgumentNullException.ThrowIfNull(DefaultRetryPolicy);

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -8,16 +9,22 @@ using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Serializer;
 using Foundatio.Utility;
+using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
 internal sealed class MessageClient : IMessageClient
 {
+    private const int MaxReportedMessageTypes = 1024;
+
     private readonly MessagingRuntime _runtime;
+    private readonly ILogger _logger;
+    private readonly ConcurrentDictionary<string, byte> _reportedUnsupportedOptions = new(StringComparer.Ordinal);
 
     public MessageClient(MessagingRuntime runtime)
     {
         _runtime = runtime;
+        _logger = runtime.LoggerFactory.CreateLogger<MessageClient>();
     }
 
     public Task SendAsync<T>(T message, SendOptions? options = null, CancellationToken cancellationToken = default) where T : class
@@ -70,6 +77,9 @@ internal sealed class MessageClient : IMessageClient
         ValidateIdLength(options?.DeduplicationId, nameof(DeliveryOptions.DeduplicationId));
 
         var capabilities = _runtime.Transport.Capabilities;
+        if (options is not null)
+            CheckUnsupportedOptions(options, capabilities, items);
+
         var now = _runtime.TimeProvider.GetUtcNow();
         var deliverAt = options?.DeliverAt ?? (options?.Delay is { } delay ? now.Add(delay) : null);
         if (deliverAt <= now)
@@ -162,6 +172,56 @@ internal sealed class MessageClient : IMessageClient
             }
         }
     }
+
+    /// <summary>
+    /// Warns, once per message type, or with <see cref="MessagingOptions.RequireTransportCapabilities"/> throws, when a
+    /// group key or deduplication id would not do on this transport what it does on one that supports it.
+    /// </summary>
+    private void CheckUnsupportedOptions<T>(DeliveryOptions options, TransportCapabilities capabilities, IReadOnlyCollection<T> messages) where T : class
+    {
+        bool unorderedGroup = options.GroupKey is not null && !capabilities.OrderedGroups;
+        bool ignoredDeduplicationId = options.DeduplicationId is not null && !capabilities.Deduplication;
+        if (!unorderedGroup && !ignoredDeduplicationId)
+            return;
+
+        string transport = _runtime.Transport.GetType().Name;
+        foreach (var type in messages.Where(m => m is not null).Select(m => m.GetType()).Distinct())
+        {
+            string messageType = _runtime.Types.GetRoute(type).Name;
+            if (unorderedGroup)
+            {
+                if (_runtime.Options.RequireTransportCapabilities)
+                {
+                    throw new MessageBusException($"{messageType} was sent with a GroupKey, but {transport} does not keep groups in order: messages of one group " +
+                        "could be handled concurrently and out of order. Remove the GroupKey, or turn off MessagingOptions.RequireTransportCapabilities to send it anyway.");
+                }
+
+                if (ShouldReport("group", messageType))
+                {
+                    _logger.LogWarning("{MessageType} was sent with a GroupKey, but {Transport} does not keep groups in order: messages of one group may be handled " +
+                        "concurrently and out of order. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transport);
+                }
+            }
+
+            if (ignoredDeduplicationId)
+            {
+                if (_runtime.Options.RequireTransportCapabilities)
+                {
+                    throw new MessageBusException($"{messageType} was sent with a DeduplicationId, but {transport} does not deduplicate: a repeated send would be " +
+                        "delivered again. Remove the DeduplicationId, or turn off MessagingOptions.RequireTransportCapabilities to send it anyway.");
+                }
+
+                if (ShouldReport("deduplication", messageType))
+                {
+                    _logger.LogWarning("{MessageType} was sent with a DeduplicationId, but {Transport} does not deduplicate: repeated sends are all delivered, " +
+                        "so its handlers must be idempotent. Set MessagingOptions.RequireTransportCapabilities to make this an error", messageType, transport);
+                }
+            }
+        }
+    }
+
+    private bool ShouldReport(string option, string messageType)
+        => _reportedUnsupportedOptions.Count < MaxReportedMessageTypes && _reportedUnsupportedOptions.TryAdd(String.Concat(option, "|", messageType), 0);
 
     private static void ValidateIdLength(string? value, string name)
     {

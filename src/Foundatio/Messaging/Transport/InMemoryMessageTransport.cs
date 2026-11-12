@@ -9,26 +9,15 @@ using Foundatio.Utility;
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>
-/// A process-local transport for development and tests. It supports every capability: unlimited delays, ordered
-/// groups, deduplication and any message size. Share one instance between hosts to simulate several services.
+/// A process-local transport for development and tests. By default it supports every capability: unlimited delays,
+/// ordered groups, deduplication and any message size. Pass <see cref="TransportCapabilities"/> to emulate the
+/// guarantees and limits of a production transport instead. Share one instance between hosts to simulate several services.
 /// </summary>
 public sealed class InMemoryMessageTransport : IMessageTransport
 {
     private static readonly TimeSpan DeduplicationWindow = TimeSpan.FromMinutes(5);
 
-    private readonly ConcurrentDictionary<string, InMemorySource> _sources = new();
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, InMemorySource>> _topics = new();
-    private readonly ConcurrentDictionary<string, DateTimeOffset> _deduplication = new();
-    private readonly TimeProvider _timeProvider;
-    private long _sequence;
-    private bool _disposed;
-
-    public InMemoryMessageTransport(TimeProvider? timeProvider = null)
-    {
-        _timeProvider = timeProvider ?? TimeProvider.System;
-    }
-
-    public TransportCapabilities Capabilities { get; } = new()
+    private static readonly TransportCapabilities AllCapabilities = new()
     {
         MaxDelay = null,
         MaxSendBatchSize = 1000,
@@ -38,6 +27,46 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         Deduplication = true
     };
 
+    private readonly ConcurrentDictionary<string, InMemorySource> _sources = new();
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, InMemorySource>> _topics = new();
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _deduplication = new();
+    private readonly TimeProvider _timeProvider;
+    private long _sequence;
+    private bool _disposed;
+
+    /// <summary>Creates a transport that supports every capability, with no limits.</summary>
+    public InMemoryMessageTransport(TimeProvider? timeProvider = null) : this(AllCapabilities, timeProvider)
+    {
+    }
+
+    /// <summary>
+    /// Creates a transport that offers only <paramref name="capabilities"/>, so tests observe what a production transport
+    /// would do. Without <see cref="TransportCapabilities.OrderedGroups"/>, a group's messages are not held back for each
+    /// other, so they may be handled concurrently and out of order. Without <see cref="TransportCapabilities.Deduplication"/>,
+    /// deduplication ids are ignored. Without <see cref="TransportCapabilities.LeaseExpiration"/>, a delivery stays leased
+    /// until it is settled or its receiver is disposed. Messages over <see cref="TransportCapabilities.MaxMessageSize"/>
+    /// are rejected with <see cref="MessageTooLargeException"/>, and delays over <see cref="TransportCapabilities.MaxDelay"/>,
+    /// <see cref="TransportCapabilities.MaxPublishDelay"/> or <see cref="TransportCapabilities.MaxRetryDelay"/> with
+    /// <see cref="ArgumentOutOfRangeException"/>; Foundatio emulates longer send and retry delays as it does for the real
+    /// transport. Leases and receive batches are cut to <see cref="TransportCapabilities.MaxLeaseDuration"/> and
+    /// <see cref="TransportCapabilities.MaxReceiveBatchSize"/>.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="capabilities"/> cannot be emulated: a batch size below 1, a negative delay limit, a
+    /// <see cref="TransportCapabilities.MinRetryDelay"/> above a non-zero <see cref="TransportCapabilities.MaxRetryDelay"/>,
+    /// or a message size or lease limit that is not positive.
+    /// </exception>
+    public InMemoryMessageTransport(TransportCapabilities capabilities, TimeProvider? timeProvider = null)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        ValidateCapabilities(capabilities);
+        Capabilities = capabilities;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    /// <summary>Every capability with no limits, or the capabilities this transport was created to emulate.</summary>
+    public TransportCapabilities Capabilities { get; }
+
     public Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -46,9 +75,10 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         cancellationToken.ThrowIfCancellationRequested();
 
         var now = _timeProvider.GetUtcNow();
+        ValidateOutgoing(destination, messages, now);
         foreach (var message in messages)
         {
-            if (message.DeduplicationId is { } deduplicationId && IsDuplicate($"{destination}|{deduplicationId}", now))
+            if (Capabilities.Deduplication && message.DeduplicationId is { } deduplicationId && IsDuplicate($"{destination}|{deduplicationId}", now))
                 continue;
 
             if (destination.Kind == MessageDestinationKind.Queue)
@@ -82,10 +112,14 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         ArgumentNullException.ThrowIfNull(options);
         ThrowIfDisposed();
 
+        // Like a broker with a lease limit, grant at most the limit.
+        if (Capabilities.MaxLeaseDuration is { } maxLease && options.LeaseDuration > maxLease)
+            options = options with { LeaseDuration = maxLease };
+
         InMemorySource state;
         if (source.Kind == MessageSourceKind.InstanceSubscription)
         {
-            state = new InMemorySource($"{source}/{Guid.NewGuid():N}");
+            state = CreateSource($"{source}/{Guid.NewGuid():N}", isDeadLetter: false);
             _sources[state.Key] = state;
             _topics.GetOrAdd(source.Topic!, _ => new()).TryAdd(state.Key, state);
         }
@@ -157,7 +191,49 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     private InMemorySource GetOrAddSource(MessageSource source)
     {
         string key = source.ToString();
-        return _sources.GetOrAdd(key, k => new InMemorySource(k) { IsDeadLetter = source.Kind == MessageSourceKind.DeadLetter });
+        return _sources.GetOrAdd(key, k => CreateSource(k, source.Kind == MessageSourceKind.DeadLetter));
+    }
+
+    private InMemorySource CreateSource(string key, bool isDeadLetter) => new(key)
+    {
+        IsDeadLetter = isDeadLetter,
+        OrderedGroups = Capabilities.OrderedGroups,
+        LeaseExpiration = Capabilities.LeaseExpiration
+    };
+
+    private void ValidateOutgoing(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, DateTimeOffset now)
+    {
+        bool publish = destination.Kind == MessageDestinationKind.Topic;
+        var maxDelay = publish ? Capabilities.MaxPublishDelay : Capabilities.MaxDelay;
+        foreach (var message in messages)
+        {
+            ArgumentNullException.ThrowIfNull(message, nameof(messages));
+            if (Capabilities.MaxMessageSize is { } maxSize && MessageSize.Of(message) is var size && size > maxSize)
+            {
+                throw new MessageTooLargeException($"Message {message.MessageId} is {size} bytes with its headers and ids, which exceeds this transport's limit of {maxSize} bytes.")
+                {
+                    Size = size,
+                    Limit = maxSize
+                };
+            }
+
+            if (maxDelay is { } limit && message.DeliverAt is { } deliverAt && deliverAt - now > limit)
+                throw new ArgumentOutOfRangeException(nameof(messages), $"Message {message.MessageId} is delayed by {deliverAt - now}, longer than this transport's {(publish ? "MaxPublishDelay" : "MaxDelay")} of {limit}.");
+        }
+    }
+
+    internal static void ValidateCapabilities(TransportCapabilities capabilities)
+    {
+        if (capabilities.MaxSendBatchSize < 1 || capabilities.MaxReceiveBatchSize < 1)
+            throw new ArgumentException("MaxSendBatchSize and MaxReceiveBatchSize must be at least 1.", nameof(capabilities));
+        if (capabilities.MaxDelay < TimeSpan.Zero || capabilities.MaxPublishDelay < TimeSpan.Zero || capabilities.MaxRetryDelay < TimeSpan.Zero || capabilities.MinRetryDelay < TimeSpan.Zero)
+            throw new ArgumentException("Delay limits cannot be negative.", nameof(capabilities));
+        if (capabilities.MaxRetryDelay is { } maxRetryDelay && maxRetryDelay > TimeSpan.Zero && capabilities.MinRetryDelay > maxRetryDelay)
+            throw new ArgumentException("MinRetryDelay cannot be longer than a non-zero MaxRetryDelay.", nameof(capabilities));
+        if (capabilities.MaxMessageSize <= 0)
+            throw new ArgumentException("MaxMessageSize must be positive, or null for no limit.", nameof(capabilities));
+        if (capabilities.MaxLeaseDuration <= TimeSpan.Zero)
+            throw new ArgumentException("MaxLeaseDuration must be positive, or null for no limit.", nameof(capabilities));
     }
 
     private void RemoveSource(string key)
@@ -205,6 +281,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         public async Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default)
         {
             ArgumentOutOfRangeException.ThrowIfLessThan(maxMessages, 1);
+            maxMessages = Math.Min(maxMessages, _transport.Capabilities.MaxReceiveBatchSize);
             var deadline = _transport._timeProvider.GetUtcNow().Add(maxWait);
 
             while (true)
@@ -239,7 +316,11 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
         public Task AbandonAsync(IncomingMessage message, TimeSpan delay, CancellationToken cancellationToken = default)
         {
-            _state.Release(GetDelivery(message), _transport._timeProvider.GetUtcNow().Add(delay < TimeSpan.Zero ? TimeSpan.Zero : delay));
+            var delivery = GetDelivery(message);
+            if (delay > TimeSpan.Zero && _transport.Capabilities.MaxRetryDelay is { } maxDelay && delay > maxDelay)
+                throw new ArgumentOutOfRangeException(nameof(delay), $"A retry delay of {delay} is longer than this transport's MaxRetryDelay of {maxDelay}.");
+
+            _state.Release(delivery, _transport._timeProvider.GetUtcNow().Add(delay < TimeSpan.Zero ? TimeSpan.Zero : delay));
             return Task.CompletedTask;
         }
 
@@ -319,6 +400,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
         public string Key { get; }
         public bool IsDeadLetter { get; init; }
+        public bool OrderedGroups { get; init; }
+        public bool LeaseExpiration { get; init; }
         public bool IsDeleted => _deleted;
 
         public bool IsEmpty
@@ -366,19 +449,17 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
                 foreach (var entry in _entries)
                 {
-                    bool leased = entry.Receipt is not null && entry.LeaseExpiresAt > now;
+                    // Without lease expiration a delivery stays leased until it is settled or its receiver is disposed, which signal.
+                    bool leased = entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now);
                     bool available = !leased && entry.AvailableAt <= now;
-                    if (!available)
-                    {
-                        var changesAt = leased ? entry.LeaseExpiresAt : entry.AvailableAt;
-                        if (nextChange is null || changesAt < nextChange)
-                            nextChange = changesAt;
-                    }
+                    DateTimeOffset? changesAt = available ? null : leased ? (LeaseExpiration ? entry.LeaseExpiresAt : null) : entry.AvailableAt;
+                    if (changesAt is { } at && (nextChange is null || at < nextChange))
+                        nextChange = at;
 
                     // A group's messages are handed out in order: later ones wait while an earlier one is leased or not yet due.
                     // Dead letters are not ordered, so all of a group's dead letters can be inspected at once.
                     string? group = entry.Message.GroupKey;
-                    string? orderedGroup = IsDeadLetter ? null : group;
+                    string? orderedGroup = IsDeadLetter || !OrderedGroups ? null : group;
                     if (orderedGroup is not null && blockedGroups.Contains(orderedGroup))
                         continue;
 
