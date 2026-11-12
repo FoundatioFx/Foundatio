@@ -24,6 +24,7 @@
     <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
     <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
     <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
+    <Project Path="tests/Foundatio.SourceCompatibility/Foundatio.SourceCompatibility.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
   <Folder Name="/Benchmarks/">
