@@ -141,7 +141,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         if (delay < TimeSpan.Zero)
             delay = TimeSpan.Zero;
 
-        if (_topology.IsInstance || delivery.GroupKey is not null)
+        if (ReleasesInPlace(delivery))
         {
             ReleaseLocally(delivery, delay);
             return;
@@ -545,7 +545,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     /// <summary>
     /// Gives up partitions: waits up to <paramref name="gracePeriod"/> for handed-out messages to be settled, copies
-    /// those still unsettled (without a group key) with an incremented delivery count, then commits.
+    /// those still unsettled (unless they are released in place) with an incremented delivery count, then commits.
     /// </summary>
     private void Release(List<TopicPartition> partitions, TimeSpan gracePeriod)
     {
@@ -601,7 +601,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
         Signal();
 
-        foreach (var delivery in unsettled.Where(d => d.GroupKey is null))
+        foreach (var delivery in unsettled.Where(d => !ReleasesInPlace(d)))
         {
             try
             {
@@ -694,6 +694,16 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             throw new ArgumentException("The message was not received by this receiver.", nameof(message));
 
         return delivery;
+    }
+
+    /// <summary>
+    /// Whether an abandoned or released delivery stays at its offset instead of being copied to the retry topic: on
+    /// instance subscriptions, which have none; for groups, to keep them in order; and for dead letters, so that
+    /// peeking at them leaves them where they are.
+    /// </summary>
+    private bool ReleasesInPlace(KafkaIncomingMessage delivery)
+    {
+        return _topology.IsInstance || _topology.Source.Kind == MessageSourceKind.DeadLetter || delivery.GroupKey is not null;
     }
 
     private static void ThrowIfLost(KafkaIncomingMessage delivery)

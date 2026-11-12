@@ -280,6 +280,30 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal(3, (await ReceiveAsync(receiver, 3)).Count);
     }
 
+    [Fact]
+    public async Task Abandon_OfADeadLetter_LeavesItInPlace()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("peek"));
+        await using (var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+        {
+            await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a", "a"), Message("b", "b"), Message("c", "c")], TestCancellationToken);
+            foreach (var message in await ReceiveAsync(receiver, 3))
+                await receiver.DeadLetterAsync(message, "peeked", TestCancellationToken);
+        }
+
+        var peeks = new List<string>();
+        for (int i = 0; i < 3; i++)
+        {
+            await using var deadLetters = await transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions(), TestCancellationToken);
+            var message = await ReceiveOneAsync(deadLetters);
+            peeks.Add(message.MessageId);
+            await deadLetters.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+        }
+
+        Assert.Equal(["a", "a", "a"], peeks);
+    }
+
     private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)
     {
         int assigned = first.Assignment.Count;
