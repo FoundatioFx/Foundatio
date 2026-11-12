@@ -47,7 +47,10 @@ A job with arguments is named after its arguments record, which is why `[Job(Nam
 - **Return** to succeed. **Throw** to fail; the job is retried by its `RetryPolicy` (5 attempts with backoff by default).
 - The cancellation token fires when someone calls `CancelAsync`; the job ends as `Cancelled`. If it finishes anyway, the result counts.
 - A job interrupted by shutdown is run again later and the interrupted attempt is not counted.
+- The token also fires when the worker can no longer renew the job's lease, shortly before another worker could take it. That run's result is not recorded, and the job runs again.
+- A store error while reporting progress doesn't fail the job; the report is retried with the next one.
 - Jobs run at least once. Make them safe to repeat.
+- A job is identified by the runtime type of its arguments, so arguments passed as `object` or a base type run the job for their actual type.
 
 ```csharp
 j.AddJob<GenerateReportJob>(new JobTypeOptions
@@ -95,15 +98,17 @@ Workers and schedulers wait for Foundatio.Extensions.Hosting startup actions (su
 
 ## Health checks
 
-With Foundatio.Extensions.Hosting, report message processors, the job worker and the CRON scheduler to ASP.NET Core health checks, for example for a Kubernetes liveness probe:
+With Foundatio.Extensions.Hosting, report message processors, the job worker and the CRON scheduler to ASP.NET Core health checks. Use them for readiness: errors that last minutes are almost always a broker or store outage, and restarting the process does not fix one.
 
 ```csharp
 builder.Services.AddHealthChecks()
-    .AddFoundatioMessaging(tags: ["live"])
-    .AddFoundatioJobs(tags: ["live"]);
+    .AddFoundatioMessaging(tags: ["ready"])
+    .AddFoundatioJobs(tags: ["ready"]);
 
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = check => check.Tags.Contains("live") });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 ```
+
+The host fails to start if you add a check without the matching `AddFoundatioMessaging` or `AddFoundatioJobs`.
 
 | What is happening | Reported |
 |---|---|
@@ -113,7 +118,7 @@ app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = check =
 | Errors without a success for `unhealthyAfter` (default 5 minutes) | Unhealthy |
 | A processor or the worker stopped unexpectedly, or startup failed | Unhealthy |
 
-A handler or job that throws is not a health problem: it is retried, then dead-lettered or failed. The data has an entry per message source (`queue:orders`, `subscription:orders/billing`), for the `worker` (with running jobs per job name) and for the `scheduler`. Pass `failureStatus: HealthStatus.Degraded` to report problems without failing the probe, and `name` to rename a check. Your own code can read the same information from `MessagingStatus` and `JobsStatus`.
+A handler or job that throws is not a health problem: it is retried, then dead-lettered or failed. The data has an entry per message source (`queue:orders`, `subscription:orders/billing`), for the `worker` (with running jobs per job name) and for the `scheduler`. Pass `failureStatus: HealthStatus.Degraded` to report problems without failing the probe (do this if a liveness probe uses the checks), and `name` to rename a check. Your own code can read the same information from `MessagingStatus` and `JobsStatus`.
 
 ## Testing
 
@@ -137,4 +142,4 @@ await harness.TriggerCronJobAsync<CleanupJob>();
 Assert.Equal(JobStatus.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).Status);
 ```
 
-`WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `Status`. `JobRuns` also lists runs that will be retried, with `Status` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day.
+`WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `Status`. `WaitForIdleAsync` also waits for queued jobs that nothing in the app runs, and its timeout names them, so a forgotten `AddJob` fails the test instead of passing it. `JobRuns` also lists runs that will be retried, with `Status` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day.

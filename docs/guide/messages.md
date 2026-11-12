@@ -103,7 +103,7 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 
 Delays longer than the transport supports natively (for example 15 minutes on SQS) are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
 
-With `GroupKey` on a transport that orders groups, messages of one group are handled one at a time, in order. When one is retried, the group's later messages wait for it, and each of them counts that as a delivery attempt.
+With `GroupKey` on a transport that orders groups, messages of one group are handled one at a time, in order. When one is retried, the group's later messages wait for it, and each of them counts that as a delivery attempt. On SQS FIFO, a long-delayed message at the head of a group also adds an attempt to the messages behind it for about every 11 hours of its delay.
 
 ## Message names and routing
 
@@ -114,7 +114,7 @@ A message's name identifies it on the wire. By default it is the type's full nam
 [Message("orders.cancelled", Topic = "orders")] public record OrderCancelled(int OrderId);
 ```
 
-A subscriber ignores types on its topic that it has no handler for. A handler for a base type receives mapped derived types.
+A subscriber ignores types on its topic that it has no handler for. A handler for a base type or interface receives derived types, including ones published by another service that this one doesn't know; it receives them deserialized as the type it handles.
 
 ## Testing
 

@@ -12,7 +12,8 @@ namespace Foundatio.Messaging.Transport;
 /// is not settled before its lease expires, or before the receiver is disposed, must be delivered again.
 /// Disposing a receiver for an <see cref="MessageSourceKind.InstanceSubscription"/> removes that subscription; one
 /// left behind by a crashed process must be removed by the transport (for example with a heartbeat and expiry).
-/// Settlement and <see cref="RenewAsync"/> are called concurrently with <see cref="ReceiveAsync"/> and with each other.
+/// Settlement and <see cref="RenewAsync"/> are called concurrently with <see cref="ReceiveAsync"/> and with each other
+/// for different messages. Foundatio stops renewing a message, and waits for a renewal in flight, before it settles it.
 /// </para>
 /// <para>
 /// A delivery's lease is lost once its lease expired and the message was delivered again, once this receiver was

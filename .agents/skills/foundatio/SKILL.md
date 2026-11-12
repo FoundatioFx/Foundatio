@@ -288,7 +288,7 @@ builder.Services.AddFoundatioJobs(j => j
 - `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
 - Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
 - Gotchas: `[Job(Name)]` for `IJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
-- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (one override each).
+- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
 
 Whole-app integration tests (`Foundatio.Testing`, no xUnit dependency):
 
@@ -307,15 +307,17 @@ await harness.TriggerCronJobAsync<CleanupJob>();                    // CRON neve
 ```
 
 - `HandledMessages[i].Outcome`: `Completed`, `Retried`, `DeadLettered`, `Skipped` (no handler on a topic), `Expired`, `Released` (shutdown/lease lost). `JobRuns` includes retried runs (`Status == Queued`).
-- Waits are real time (default 30s) and throw `TimeoutException` explaining what happened. Retries honor the policy delay: set `o.DefaultRetryPolicy` to a short `RetryPolicy.Fixed(...)` in tests. `WaitForIdleAsync` ignores queues the app sends to but does not consume.
+- Waits are real time (default 30s) and throw `TimeoutException` explaining what happened. Retries honor the policy delay: set `o.DefaultRetryPolicy` to a short `RetryPolicy.Fixed(...)` in tests. `WaitForIdleAsync` ignores queues the app sends to but does not consume, but waits for (and its timeout names) queued jobs nothing in the app runs.
 
 Health checks (`Foundatio.Extensions.Hosting`):
 
 ```csharp
 builder.Services.AddHealthChecks()
-    .AddFoundatioMessaging(tags: ["live"])                          // per-source data: queue:x, subscription:t/s
-    .AddFoundatioJobs(tags: ["live"], unhealthyAfter: TimeSpan.FromMinutes(5)); // worker (running per job name) + scheduler
+    .AddFoundatioMessaging(tags: ["ready"])                         // per-source data: queue:x, subscription:t/s
+    .AddFoundatioJobs(tags: ["ready"], unhealthyAfter: TimeSpan.FromMinutes(5)); // worker (running per job name) + scheduler
 ```
+
+- Use these for readiness, not liveness: a broker outage would restart every pod. On a liveness probe pass `failureStatus: HealthStatus.Degraded`. The host fails to start if a check's feature isn't registered.
 
 - Starting (waiting for startup actions) = Healthy; retried receive/claim/schedule errors = Degraded with last error; Unhealthy (or `failureStatus`) only if a loop stopped, startup failed, or errors lasted `unhealthyAfter` (default 5 min). Handler/job exceptions never affect health. `MessagingStatus` / `JobsStatus` expose the raw `ProcessingStatus` snapshots.
 
