@@ -208,10 +208,11 @@ public sealed class SqsMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Removes the source's messages and dead letters, and unsubscribes a durable subscription from its topic, but keeps
-    /// the queues, so the source can be used again at once. Messages that were in flight or delayed during the deletion
-    /// are discarded by receivers opened afterwards, using the deletion time tagged on the queue. On FIFO queues, SQS
-    /// keeps dropping deduplication ids seen in the 5 minutes before the deletion.
+    /// Removes the messages and dead letters the source held when called, and unsubscribes a durable subscription from
+    /// its topic, but keeps the queues, so the source can be used again at once. Messages sent during the call are kept;
+    /// those it receives are hidden until it returns, which adds one to their delivery count. Messages that were in
+    /// flight or delayed during the deletion are discarded by receivers opened afterwards, using the deletion time
+    /// tagged on the queue. On FIFO queues, SQS keeps dropping deduplication ids seen in the 5 minutes before the deletion.
     /// </summary>
     public async Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
     {

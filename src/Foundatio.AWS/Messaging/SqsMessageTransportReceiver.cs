@@ -40,6 +40,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
 
     /// <summary>How far the transport's clock may run ahead of SQS's without a hide ending in the interval it began in.</summary>
     private static readonly TimeSpan HideIntervalTolerance = TimeSpan.FromMinutes(30);
+
     private const string ReceiveCountAttribute = SqsMessageTransport.ReceiveCountAttribute;
     private const string SentTimestampAttribute = SqsMessageTransport.SentTimestampAttribute;
     private const string FirstReceiveTimestampAttribute = SqsMessageTransport.FirstReceiveTimestampAttribute;
