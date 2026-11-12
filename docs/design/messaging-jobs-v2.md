@@ -11,13 +11,15 @@ Decisions: side-by-side with the legacy APIs for v14 (delete them in v15); store
 ## Layers
 
 ```
-  Application        IMessageClient   IMessageHandler<T>   IJobClient   IDurableJob<TArgs> / IJob
+  Application        IMessageClient   IMessageHandler<T>   IJobClient   IDurableJob<TArgs> / IDurableJob
   ───────────────────────────────────────────────────────────────────────────────────────
   Foundatio core     routing · serialization · retries · dead letters · concurrency · leases
                      delays · shutdown drain · tracing · metrics · CRON · startup gate
   ───────────────────────────────────────────────────────────────────────────────────────
   Provider SPI       IMessageTransport + IMessageReceiver (8 methods)    IJobStore (10 members)
 ```
+
+The provider SPI is `[Experimental("FOUNDATIO0001")]` in v14, because it has not yet been tried against Service Bus or RabbitMQ and may change in a minor release. That covers `IMessageTransport`, `IMessageReceiver`, `IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease-lost and receiver-faulted exceptions, `IJobStore` with `JobClaimRequest`, `JobCompletion`, `JobLeaseStatus` and `JobInfo`, and the conformance suites. The diagnostic is an error by default, so provider projects suppress it with `NoWarn`. App code that uses the builders, the provider helpers, the clients, the handlers and the test harness never sees it. `TransportCapabilities` (the harness and the in-memory transport take it), `MessageSource` (`IMessageAdmin` takes it) and `MessageTooLargeException` (apps catch it) stay unmarked.
 
 Messaging and jobs are independent: neither depends on the other's contracts. They interact only through ambient correlation (a job enqueued from a handler inherits the message's correlation id, and vice versa).
 
@@ -31,6 +33,8 @@ Messaging and jobs are independent: neither depends on the other's contracts. Th
 | `DeleteAsync(source)` | Remove a queue or subscription (with its dead letters), or only a source's dead letters. |
 | `ReceiveAsync(max, maxWait)` | Leased deliveries. |
 | `CompleteAsync` / `AbandonAsync(delay)` / `DeadLetterAsync(reason)` / `RenewAsync` | Settlement. |
+
+A transport whose broker decides the lease (Service Bus sets a lock duration per entity) sets `IncomingMessage.LeaseExpiresAt`, and core renews a third of the way through the remaining lease instead of by its own `LeaseDuration`.
 
 Everything else is core: there are no optional capability interfaces to discover, no push/pull split, no provisioning API, no stats API and no outcome model in the SPI. `TransportCapabilities` (send, publish and retry delay limits, batch/message/lease limits, lease expiration, ordered groups, deduplication) is data, not interfaces, and the conformance suite reads it to decide which tests apply.
 
@@ -47,7 +51,7 @@ How brokers map:
 
 The Kafka transport sets `LeaseExpiration = false`, commits the lowest unfinished offset per partition, and copies abandoned messages to the source's own topic. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (58 tests) plus `JobStoreTestsBase` (28 tests). A provider test class is one override, plus `CreatePeerTransport` when a second transport over the same backend, which the suite uses as another process, needs different setup. The suite fails a transport that keeps group order only within one receiver, or that settles by message id and ignores receipts.
+Proof: `MessageTransportTestsBase` (60 tests) plus `JobStoreTestsBase` (31 tests). A provider test class is one override, plus `CreatePeerTransport` when a second transport over the same backend, which the suite uses as another process, needs different setup. The suite fails a transport that keeps group order only within one receiver, or that settles by message id and ignores receipts.
 
 ### Redis proof
 
@@ -131,20 +135,27 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 ## Messaging semantics
 
 - **One handler model.** `Task HandleAsync(T message, IMessageContext context, CancellationToken ct)`. Return completes; throw retries by `RetryPolicy`, then dead-letters; `context.DeadLetter(reason)` and `context.Retry(delay)` decide without throwing. Manual settlement exists only for transport authors.
-- **Send vs publish** is the only topology choice. `AddConsumer` (queue, competing) or `AddSubscriber` (topic; `Scope = Service | Instance`). The service name defaults to the host's application name.
+- **Send vs publish** is the only topology choice. `AddConsumer` (queue, competing) or `AddSubscriber` (topic; `Scope = Service | Instance`).
+- **Service names.** Durable subscriptions are named after the service, so on any transport but the in-memory one the host fails to start when a service subscriber has no `Name` and `UseServiceName(...)` isn't set. The application-name fallback is for the in-memory transport and the test harness only.
+- **Shared subscriptions.** A service has one subscription per topic, and the handlers on it share each delivery. Handlers on the same source must agree on `RetryPolicy`, `LeaseDuration` and `MaxConcurrency` (unset differs from set, and policies compare by value, delegates included); the host fails to start otherwise, naming both handlers. `SubscriptionOptions.Name` gives a handler a subscription of its own, at any scope.
+- **Options a transport ignores.** A `GroupKey` on a transport without `OrderedGroups`, or a `DeduplicationId` without `Deduplication`, logs a warning once per message type. `MessagingOptions.RequireTransportCapabilities` makes it throw instead.
 - **Names** come from `[Message("...")]`, `MapMessage<T>()`, or the full type name; they are validated to `[A-Za-z0-9._-]`, and collisions throw. Only registered types are deserialized.
 - **Routing uses the runtime type**, so `PublishAsync<Base>(derived)` reaches derived subscribers; base-type handlers receive mapped derived types on a shared topic.
 - **Unknown types**: skipped on a subscription (topics carry many types); retried then dead-lettered on a queue (usually a rolling deploy). A published message lists its `[Message]` base types and interfaces in `message-base-types`, so a base-type handler receives derived types from services this one doesn't know.
 - **Delays**: native up to `MaxDelay`; longer sends hop (re-sent when they arrive early); longer publishes throw rather than duplicate; no native retry delay, or one under `MinRetryDelay` → retries are held in-process, still leased.
-- **Leases** renew from receipt until settlement, including messages waiting their turn in a group batch, at a third of the lease (about once a second, as an ownership check, without lease expiration). A failed renewal is retried within what remains of the lease; renewal stops before a message is settled. A lost lease cancels the handler and skips settlement. A receiver that faults, or fails five receives in a row, is drained and replaced.
+- **Leases** renew from receipt until settlement (by `LeaseExpiresAt` when the transport sets it), including messages waiting their turn in a group batch, at a third of the lease (about once a second, as an ownership check, without lease expiration). A failed renewal is retried within what remains of the lease; renewal stops before a message is settled. A lost lease cancels the handler and skips settlement. A receiver that faults, or fails five receives in a row, is drained and replaced.
 - **Dead-letter failures**: when the transport refuses a dead-letter, the redelivered message retries only the dead-letter, without running handlers again, and health reports it. Reasons are capped at 1,024 UTF-8 bytes.
 - **Shutdown** stops receiving, drains for `ShutdownTimeout` (25s), then cancels and releases what remains. Settlement never uses a cancelled token.
 - **Hosting**: registering handlers is enough. Every `AddFoundatioMessaging` call accumulates; roles are decided when the host starts, not when a method is called. Disposing the service provider stops processors, the job worker and the scheduler even if the host was never stopped.
 - **Tracing and metrics**: producer/consumer activities linked by `traceparent`; counters for sent, handled (by outcome), dead-lettered, unmatched, discarded; handling duration.
+- **Provider helpers.** `UseRedis`, `UseSqs` and `UseKafka` (and `UseRedis` for jobs) take options, a factory or, for Redis, a connection. They fill an unset logger factory and time provider from DI, and the container creates and disposes the transport or store; a connection from DI stays the app's. A missing `IConnectionMultiplexer` fails host start.
 
 ## Job semantics
 
-- **Contract-first**: `IDurableJob<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. Existing `IJob`/`JobBase` classes are parameterless jobs, unchanged.
+- **Contract-first**: `IDurableJob<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. A job without arguments implements `IDurableJob` and gets the same `IJobContext`.
+- **Legacy jobs** run through one bridge, `LegacyJob<TJob>` (`AddLegacyJob<TJob>()`, `AddCronJob<LegacyJob<TJob>>`), named after the job class; a failed `JobResult` fails the attempt and a success message becomes the job's message. `EnqueueAsync<TJob>` and `AddCronJob<TJob>` require `IDurableJob`, and `AddJob<TJob>` rejects an `IJob` at registration, so the bridge can be made `[Obsolete]` together with `IJob`.
+- **App view and store record.** `IJobClient` returns `JobDetails`, with `GetArguments<TArgs>()`; `JobInfo` in `Foundatio.Jobs.Store` is the store's record, part of the SPI.
+- **Headers and tracing.** `EnqueueOptions.Headers` are stored with the job and passed to `IJobContext.Headers`. Enqueueing under an activity stores its `traceparent` and `tracestate`, and the job's activity continues that trace. `CorrelationId` defaults to the current message's, then the current job's, then `Activity.Current.Id`, as `QueueBase` does.
 - **Claim token fencing.** A run's result is accepted unless another worker has claimed the job since, even if the lease expired. The worker also cancels a job shortly before its lease would run out when it can no longer renew it, and records no result for that run.
 - **Names come from the arguments' runtime type**, so arguments passed as `object` or a base type run the job for their actual type.
 - **The result is authoritative.** A job that finishes successfully succeeds even if cancellation was requested. Cancellation marks it cancelled only when the job stops because of it.
@@ -153,11 +164,12 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 - **CRON without leaders or stored schedules.** Every instance computes the latest occurrence within the misfire threshold and creates `cron:{schedule}:{utc}`; the store keeps one. Each schedule is isolated in its own try/catch; overlap is skipped by default, checked against the previous occurrence in the store, so it holds across instances. Schedules are code, so removing one removes it.
 - **Cancellation and progress** ride on lease renewal; progress writes are throttled.
 - **Store time** is used for leases, availability and retention.
+- **Succeeded jobs drop their arguments** in both stores and keep the rest of the record until retention ends. Measured: a succeeded job takes about 1.6 KB in Redis, a failed one with 200 bytes of arguments about 2 KB, and an in-memory job about 1 KB.
 - **Startup gate**: workers, schedulers and message handlers wait for Foundatio.Extensions.Hosting startup actions, however long they take, and do not start if they fail.
 
 ## Testing and health
 
-- **Whole-app tests**: `services.AddFoundatioTestHarness()` swaps in the in-memory transport and job store and records through internal observers in the client, the processor and the worker, so outcomes are what core decided (completed, retried, dead-lettered, skipped), not transport calls. Waits are signalled by recordings rather than polled by tests. CRON fires only through `TriggerCronJobAsync`, because the misfire catch-up would otherwise run schedules at startup depending on the time of day.
+- **Whole-app tests**: `services.AddFoundatioTestHarness()` swaps in the in-memory transport and job store and records through internal observers in the client, the processor and the worker, so outcomes are what core decided (completed, retried, dead-lettered, skipped), not transport calls. Waits are signalled by recordings rather than polled by tests. CRON fires only through `TriggerCronJobAsync`, because the misfire catch-up would otherwise run schedules at startup depending on the time of day. `FoundatioTestHarnessOptions.TransportCapabilities` makes the in-memory transport behave like the production one (no deduplication, no ordered groups, delay, batch and lease limits, no lease expiration); the conformance suite also runs against an SQS-standard-like and a Kafka-like in-memory setup.
 - **Health**: each processor, the worker and the scheduler keep their state, when the current run of errors began and the last error. `MessagingStatus` and `JobsStatus` expose it, and Foundatio.Extensions.Hosting turns it into health checks: retried errors are Degraded; a stopped loop, failed startup, or errors lasting past `unhealthyAfter` (5 minutes) are Unhealthy.
 
 ## Compatibility
@@ -165,7 +177,9 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 - No existing public type changed. `IQueue<T>`, `IMessageBus`, `JobBase`, `JobRunner` and hosted jobs are untouched, so v13 providers keep loading.
 - `AddLegacyMessageBus()` serves the original `IMessageBus` from any new transport; it passes all 35 tests of the original `MessageBusTestBase`. It runs on a message processor, so its receiver is replaced when it faults and leases are renewed; like the original buses, it handles messages one at a time in order and runs a message's subscribers concurrently. `HybridCacheClient` and `CacheLockProvider` run on new transports unchanged.
 - `IJob` and `JobBase` work as CRON and on-demand jobs; `[Job(Name)]` names them.
-- Pending before v14 ships (see the API recommendations): the new `Foundatio.Jobs.JobStatus` and `Foundatio.RetryPolicy` collide with the hosting package's `JobStatus` and Polly's `RetryPolicy` (CS0104 in v13 code), and argument-free jobs still use the legacy `IJob`, so v15 cannot yet remove the legacy types without renaming anything new.
+- New names don't collide with v13 code: the job lifecycle is `JobState` (the hosting package has a `JobStatus`), and `RetryPolicy` lives in `Foundatio.Resilience`. `tests/Foundatio.SourceCompatibility` compiles v13-style app code, with Polly and ASP.NET Core imported, against the new packages; it failed on both names before the rename. A file that imports `Foundatio.Resilience` together with `Polly.Retry`, `Quartz` or `Amazon.Runtime` and names a bare `RetryPolicy` still needs an alias; that one was kept.
+- Nothing new depends on `IJob`, so v15 can delete the legacy types and `LegacyJob<TJob>` without renaming anything new.
+- The new code's public members are documented, and `.editorconfig` turns CS1591 on for its files (legacy files stay exempt).
 - Core gains `Microsoft.Extensions.Hosting.Abstractions` (8.0) and an internal copy of Cronos.
 
 ## Compared with PR #533
@@ -173,7 +187,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 | PR #533 issue | Here |
 |---|---|
 | `IJobRuntimeStore` mixes job queue, broker tracking, delayed dispatch, CRON storage, counters | `IJobStore` is jobs only. No broker tracking; delays are transport-native or emulated; CRON needs no storage |
-| About 155 public types; 18-member `IMessageBus`; about 7 settlement models; 11 `ISupports*` | 66 new public types, including the test harness, health status and dead-letter admin; 5-member `IMessageClient`; one handler model; one SPI and a capabilities record |
+| About 155 public types; 18-member `IMessageBus`; about 7 settlement models; 11 `ISupports*` | About 72 new public types, including the test harness, health status and dead-letter admin; 5-member `IMessageClient`; one handler model; one SPI and a capabilities record |
 | No group/partition/dedup key; #579 GroupId regresses | `GroupKey` and `DeduplicationId` on every send; `OrderedGroups` and `Deduplication` capabilities with conformance tests |
 | In-repo `Foundatio.Redis`/`Foundatio.Aws` collide with published packages | Redis, AWS and Kafka move into this repo whole, with their history and unchanged package IDs (#603), so there is one source per package; the other providers stay in their own repos |
 | Mediator duplicates handler registration and routing | Core owns registration and routing; Mediator can map its handlers to `AddConsumer`/`AddSubscriber` |
@@ -200,3 +214,5 @@ Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k
 - Mediator mapping onto `AddConsumer`/`AddSubscriber` and `IJobClient`.
 - Ordering for transports without `OrderedGroups` is not emulated in core: it would only hold within one process, which is worse than an honest "unordered".
 - Marking legacy types `[Obsolete]` once providers ship transports.
+- One transport per app. Reserved for later, without SPI changes: named transports chosen per message type or queue (`UseTransport("fifo", …)` plus `MapMessage<T>(…, transport: "fifo")`), so one FIFO queue doesn't make every queue FIFO.
+- Left until a Service Bus or RabbitMQ provider exists: a `MaxHeaderSize` capability and core-owned holds for delayed grouped messages. Then the SPI can drop `[Experimental]`; until then, providers outside this repo need `NoWarn` FOUNDATIO0001.
