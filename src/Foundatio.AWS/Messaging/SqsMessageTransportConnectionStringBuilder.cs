@@ -1,6 +1,6 @@
 namespace Foundatio.Messaging.Transport;
 
-public class SqsMessageTransportConnectionStringBuilder : AmazonConnectionStringBuilder
+internal class SqsMessageTransportConnectionStringBuilder : AmazonConnectionStringBuilder
 {
     public SqsMessageTransportConnectionStringBuilder()
     {

@@ -232,7 +232,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     }
 
     /// <summary>The number of pending, delayed, held and in-flight messages in a source.</summary>
-    public async Task<long> GetMessageCountAsync(MessageSource source)
+    internal async Task<long> GetMessageCountAsync(MessageSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
         if (source.Kind == MessageSourceKind.InstanceSubscription)
