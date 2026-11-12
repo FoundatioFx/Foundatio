@@ -81,3 +81,18 @@ Implement `IJobStore` (10 methods). [View source](https://github.com/FoundatioFx
 - Terminal jobs expire after `JobCompletion.RetainFor`. A job that succeeds drops its `Payload` and keeps the rest of its record; failed and cancelled jobs keep theirs.
 
 Use the database's clock for "now" so workers with skewed clocks agree. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
+
+## Experimental API {#experimental-api}
+
+The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have not been tried against Azure Service Bus or RabbitMQ yet, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
+
+Any reference to one of these types is a compile error, FOUNDATIO0001, until you suppress it. Suppress it for the whole provider project and its test project:
+
+```xml
+<PropertyGroup>
+  <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
+</PropertyGroup>
+```
+
+Or suppress it for one use with `#pragma warning disable FOUNDATIO0001`.
+
