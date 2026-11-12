@@ -469,8 +469,8 @@ internal sealed class JobWorker
         public async Task StopAsync()
         {
             _stop.Cancel();
-            _lost.CancelAfter(Timeout.InfiniteTimeSpan);
             await _task.AnyContext();
+            _lost.CancelAfter(Timeout.InfiniteTimeSpan);
         }
 
         public void Dispose()
