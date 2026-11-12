@@ -148,16 +148,17 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
-    public async Task MaxMessageSize_FromOptions_CountsBodyAndHeaders()
+    public async Task MaxMessageSize_FromOptions_CountsTheIdsGroupKeyAndHeadersLikeMessageSize()
     {
         var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, MaxMessageSize = 1024 }));
         Assert.Equal(1024, transport.Capabilities.MaxMessageSize);
         var headers = new Dictionary<string, string> { ["name"] = "välue" };
+        var message = new OutgoingMessage { MessageId = "over", Body = new byte[1000], Headers = headers, GroupKey = "group", DeduplicationId = "dedup-id" };
 
-        var ex = await Assert.ThrowsAsync<MessageTooLargeException>(() => transport.SendAsync(MessageDestination.Queue(NewName("limit")),
-            [new OutgoingMessage { MessageId = "over", Body = new byte[1015], Headers = headers }], TestCancellationToken));
+        var ex = await Assert.ThrowsAsync<MessageTooLargeException>(() => transport.SendAsync(MessageDestination.Queue(NewName("limit")), [message], TestCancellationToken));
 
-        Assert.Equal(1025, ex.Size);
+        Assert.Equal(MessageSize.Of(message), ex.Size);
+        Assert.Equal(1027, ex.Size);
         Assert.Equal(1024, ex.Limit);
     }
 

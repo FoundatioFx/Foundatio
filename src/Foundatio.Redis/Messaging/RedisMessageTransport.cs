@@ -380,9 +380,7 @@ public sealed class RedisMessageTransport : IMessageTransport
             ArgumentNullException.ThrowIfNull(message);
             ArgumentException.ThrowIfNullOrEmpty(message.MessageId, nameof(message));
 
-            long size = message.Body.Length;
-            foreach (var (name, value) in message.Headers)
-                size += Encoding.UTF8.GetByteCount(name) + Encoding.UTF8.GetByteCount(value);
+            long size = MessageSize.Of(message);
             if (size > maxSize)
                 throw new MessageTooLargeException($"Message {message.MessageId} is {size} bytes; the Redis message transport accepts at most {maxSize}.") { Size = size, Limit = maxSize };
 
