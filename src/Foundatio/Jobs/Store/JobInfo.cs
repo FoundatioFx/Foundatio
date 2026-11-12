@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace Foundatio.Jobs.Store;
 
@@ -25,6 +27,9 @@ public sealed record JobInfo
 
     /// <summary>The CRON schedule that created the job, if any.</summary>
     public string? ScheduleName { get; init; }
+
+    /// <summary>Headers the job was enqueued with, including the W3C trace context. Never null; empty when there are none.</summary>
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 
     /// <summary>How many times the job has started, including the current run.</summary>
     public int Attempt { get; init; }

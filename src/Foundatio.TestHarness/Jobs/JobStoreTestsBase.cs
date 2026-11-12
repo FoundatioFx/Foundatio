@@ -382,6 +382,38 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Create_WithHeaders_KeepsThemThroughGetClaimAndRetry()
+    {
+        var headers = new Dictionary<string, string>
+        {
+            ["traceparent"] = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+            ["tracestate"] = "vendor=1,other=2",
+            ["tenant:id"] = "acme / ünïcode",
+            ["Tenant:Id"] = "case matters",
+            ["empty"] = ""
+        };
+        var job = NewJob() with { Headers = headers };
+        var plain = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        await Store.CreateAsync(plain, TestCancellationToken);
+
+        AssertHeaders((await Store.GetAsync(job.Id, TestCancellationToken))!);
+        var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+        AssertHeaders(claimed);
+        Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Retry(TimeSpan.Zero, "transient"), TestCancellationToken));
+        AssertHeaders((await Store.GetAsync(job.Id, TestCancellationToken))!);
+        AssertHeaders(await WaitForClaimAsync(Claim(job.Name)));
+
+        Assert.Empty((await Store.GetAsync(plain.Id, TestCancellationToken))!.Headers);
+        Assert.Empty((await Store.ClaimAsync(Claim(plain.Name), TestCancellationToken))!.Headers);
+
+        void AssertHeaders(JobInfo stored)
+        {
+            Assert.Equal(headers.OrderBy(h => h.Key, StringComparer.Ordinal), stored.Headers.OrderBy(h => h.Key, StringComparer.Ordinal));
+        }
+    }
+
+    [Fact]
     public async Task Complete_FailedAndCancelled_RecordTheirStatusAndClearTheClaim()
     {
         var failed = NewJob();

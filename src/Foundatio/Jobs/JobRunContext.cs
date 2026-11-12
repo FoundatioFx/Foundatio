@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
@@ -29,6 +30,7 @@ internal sealed class JobRunContext : IJobContext
         CorrelationId = job.CorrelationId;
         ScheduledFor = job.AvailableAt;
         ScheduleName = job.ScheduleName;
+        Headers = job.Headers;
         _store = store;
         _claimToken = job.ClaimToken!;
         _timeProvider = timeProvider;
@@ -41,6 +43,7 @@ internal sealed class JobRunContext : IJobContext
     public string? CorrelationId { get; }
     public DateTimeOffset ScheduledFor { get; }
     public string? ScheduleName { get; }
+    public IReadOnlyDictionary<string, string> Headers { get; }
 
     /// <summary>The latest reported message, whether or not it has been saved yet.</summary>
     public string? Message { get; private set; }

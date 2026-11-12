@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -24,6 +25,7 @@ public sealed class RedisJobStore : IJobStore
     private const int SweepLimit = 100;
     private const int CountSweepLimit = 1000;
     private const int TokenNameOffset = 32;
+    private const string HeaderFieldPrefix = "header:";
     private static readonly long SweepIntervalMilliseconds = (long)TimeSpan.FromSeconds(1).TotalMilliseconds;
 
     private static readonly string Common =
@@ -82,6 +84,8 @@ public sealed class RedisJobStore : IJobStore
         AddIfPresent(values, "error", job.Error);
         if (job.CancellationRequested)
             values.AddRange(["cancel", "1"]);
+        foreach (var (header, value) in job.Headers)
+            values.AddRange([HeaderFieldPrefix + header, value]);
 
         RedisKey[] keys =
         [
@@ -356,8 +360,15 @@ public sealed class RedisJobStore : IJobStore
     private static JobInfo ToJob(RedisValue[] pairs)
     {
         var fields = new Dictionary<string, RedisValue>(pairs.Length / 2, StringComparer.Ordinal);
+        Dictionary<string, string>? headers = null;
         for (int i = 0; i + 1 < pairs.Length; i += 2)
-            fields[pairs[i]!] = pairs[i + 1];
+        {
+            string field = pairs[i]!;
+            if (field.StartsWith(HeaderFieldPrefix, StringComparison.Ordinal))
+                (headers ??= new Dictionary<string, string>(StringComparer.Ordinal))[field[HeaderFieldPrefix.Length..]] = (string?)pairs[i + 1] ?? String.Empty;
+            else
+                fields[field] = pairs[i + 1];
+        }
 
         string? Text(string field) => fields.TryGetValue(field, out var value) ? (string?)value : null;
         DateTimeOffset? Time(string field) => fields.TryGetValue(field, out var value) ? FromMicroseconds((long)value) : null;
@@ -370,6 +381,7 @@ public sealed class RedisJobStore : IJobStore
             Payload = fields.TryGetValue("payload", out var payload) ? (byte[]?)payload ?? [] : [],
             CorrelationId = Text("correlation"),
             ScheduleName = Text("schedule"),
+            Headers = headers ?? (IReadOnlyDictionary<string, string>)ReadOnlyDictionary<string, string>.Empty,
             Attempt = (int)fields["attempt"],
             CreatedAt = Time("created") ?? default,
             AvailableAt = Time("available") ?? default,

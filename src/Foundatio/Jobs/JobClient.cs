@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -66,8 +69,9 @@ internal sealed class JobClient : IJobClient
             Id = options?.JobId ?? Guid.NewGuid().ToString("N"),
             Name = name,
             Payload = payload,
-            CorrelationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId ?? JobRunContext.Current?.CorrelationId,
+            CorrelationId = options?.CorrelationId ?? MessageContext.Current?.CorrelationId ?? JobRunContext.Current?.CorrelationId ?? Activity.Current?.Id,
             ScheduleName = scheduleName,
+            Headers = CreateHeaders(options),
             CreatedAt = now,
             UpdatedAt = now,
             AvailableAt = options?.RunAt ?? (options?.Delay is { } delay ? now.Add(delay) : now)
@@ -84,5 +88,34 @@ internal sealed class JobClient : IJobClient
         }
 
         return new JobHandle(job.Id, this);
+    }
+
+    /// <summary>The caller's headers, plus the current activity's W3C trace context unless the caller set a <c>traceparent</c>.</summary>
+    private static IReadOnlyDictionary<string, string> CreateHeaders(EnqueueOptions? options)
+    {
+        Dictionary<string, string>? headers = null;
+        if (options?.Headers is { Count: > 0 } requested)
+        {
+            headers = new Dictionary<string, string>(requested.Count + 2, StringComparer.Ordinal);
+            foreach (var (name, value) in requested)
+            {
+                if (String.IsNullOrWhiteSpace(name))
+                    throw new ArgumentException("Header names cannot be empty.", nameof(options));
+                if (value is null)
+                    throw new ArgumentException($"Header {name} has no value.", nameof(options));
+
+                headers[name] = value;
+            }
+        }
+
+        if (Activity.Current is { IdFormat: ActivityIdFormat.W3C, Id: { } traceParent } activity && headers?.ContainsKey(KnownHeaders.TraceParent) != true)
+        {
+            headers ??= new Dictionary<string, string>(2, StringComparer.Ordinal);
+            headers[KnownHeaders.TraceParent] = traceParent;
+            if (!String.IsNullOrEmpty(activity.TraceStateString))
+                headers.TryAdd(KnownHeaders.TraceState, activity.TraceStateString);
+        }
+
+        return headers ?? (IReadOnlyDictionary<string, string>)ReadOnlyDictionary<string, string>.Empty;
     }
 }

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using Foundatio.Jobs.Store;
 using Foundatio.Serializer;
@@ -38,6 +40,7 @@ public sealed class JobDetails
         ScheduleName = job.ScheduleName;
         CorrelationId = job.CorrelationId;
         WorkerId = job.WorkerId;
+        Headers = job.Headers;
         _payload = job.Payload;
         _serializer = serializer;
     }
@@ -89,6 +92,9 @@ public sealed class JobDetails
 
     /// <summary>The worker running the job, while it runs.</summary>
     public string? WorkerId { get; init; }
+
+    /// <summary>Headers the job was enqueued with, including the W3C trace context. Empty when there are none.</summary>
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 
     /// <summary>
     /// Deserializes the job's arguments as <typeparamref name="TArgs"/> with the jobs serializer, which throws when they

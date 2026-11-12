@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -202,7 +203,8 @@ internal sealed class JobWorker
         using var cancelled = new CancellationTokenSource();
         using var lease = new LeaseRenewal(this, job, cancelled, leaseStarted);
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, lease.LostToken, _abortJobs.Token);
-        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}");
+        ActivityContext.TryParse(job.Headers.GetValueOrDefault(KnownHeaders.TraceParent), job.Headers.GetValueOrDefault(KnownHeaders.TraceState), out var parent);
+        using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}", ActivityKind.Consumer, parent);
         activity?.SetTag("job.id", job.Id);
         activity?.SetTag("job.name", job.Name);
         long started = Stopwatch.GetTimestamp();

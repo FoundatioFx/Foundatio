@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -32,7 +33,16 @@ public sealed class InMemoryJobStore : IJobStore
             if (_jobs.TryGetValue(job.Id, out var existing) && !existing.IsExpired(now))
                 return Task.FromResult(false);
 
-            _jobs[job.Id] = new Entry(job with { State = JobState.Queued, Attempt = 0, UpdatedAt = now, ClaimToken = null, LeaseExpiresAt = null, WorkerId = null });
+            _jobs[job.Id] = new Entry(job with
+            {
+                State = JobState.Queued,
+                Attempt = 0,
+                UpdatedAt = now,
+                ClaimToken = null,
+                LeaseExpiresAt = null,
+                WorkerId = null,
+                Headers = job.Headers is { Count: > 0 } headers ? new Dictionary<string, string>(headers, StringComparer.Ordinal) : ReadOnlyDictionary<string, string>.Empty
+            });
             return Task.FromResult(true);
         }
     }

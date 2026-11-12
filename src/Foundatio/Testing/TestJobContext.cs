@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
@@ -24,6 +25,9 @@ public sealed class TestJobContext : IJobContext
     public string? CorrelationId { get; init; }
     public DateTimeOffset ScheduledFor { get; init; } = DateTimeOffset.UtcNow;
     public string? ScheduleName { get; init; }
+
+    /// <inheritdoc />
+    public IReadOnlyDictionary<string, string> Headers { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 
     /// <summary>Every call to <see cref="ReportProgressAsync"/>, in order.</summary>
     public IReadOnlyList<(int? Percent, string? Message)> ProgressReports => _reports;

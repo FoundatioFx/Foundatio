@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Foundatio.Jobs;
 
@@ -17,6 +18,16 @@ public sealed record EnqueueOptions
     /// <summary>Run at this time. Takes precedence over <see cref="Delay"/>.</summary>
     public DateTimeOffset? RunAt { get; init; }
 
-    /// <summary>Defaults to the correlation id of the message or job being handled, if any.</summary>
+    /// <summary>
+    /// Links the job to what enqueued it. Defaults to the correlation id of the message or job being handled, then to
+    /// the id of <see cref="System.Diagnostics.Activity.Current"/>.
+    /// </summary>
     public string? CorrelationId { get; init; }
+
+    /// <summary>
+    /// Stored with the job and visible to it as <see cref="IJobContext.Headers"/>. When an activity is current, its W3C
+    /// trace context is added as <c>traceparent</c> and <c>tracestate</c> unless you set <c>traceparent</c> yourself, so
+    /// the job's activity continues the caller's trace.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Headers { get; init; }
 }

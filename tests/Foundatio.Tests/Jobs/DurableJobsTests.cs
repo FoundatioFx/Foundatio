@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -280,6 +281,59 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(new ResizeImage("later.png", 8), details.GetArguments<ResizeImage>());
         Assert.Equal(new ResizeImage("later.png", 8), listed.GetArguments<ResizeImage>());
         Assert.DoesNotContain(typeof(JobDetails).GetProperties(), p => p.Name is nameof(JobInfo.ClaimToken) or nameof(JobInfo.LeaseExpiresAt) or nameof(JobInfo.Payload));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_UnderAnActivity_StoresItsTraceAndRunsTheJobInThatTrace()
+    {
+        using var listener = ListenToFoundatioActivities();
+        await using var host = await StartAsync(j => j.AddJob<TracedJob>());
+        using var request = new Activity("request").SetIdFormat(ActivityIdFormat.W3C).Start();
+        request.TraceStateString = "vendor=1";
+
+        var handle = await host.Jobs.EnqueueAsync<TracedJob>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(request.Id, job.Headers[KnownHeaders.TraceParent]);
+        Assert.Equal("vendor=1", job.Headers[KnownHeaders.TraceState]);
+        Assert.Equal(request.Id, job.CorrelationId);
+        var run = Assert.Single(_probe.Traces);
+        Assert.Equal(request.TraceId, run.TraceId);
+        Assert.Equal(request.SpanId, run.ParentSpanId);
+        Assert.Equal("vendor=1", run.TraceState);
+        Assert.Equal(request.Id, run.Headers[KnownHeaders.TraceParent]);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithHeaders_KeepsThemAndATraceParentTheCallerSet()
+    {
+        await using var host = await StartAsync(_ => { });
+        using var request = new Activity("request").SetIdFormat(ActivityIdFormat.W3C).Start();
+        request.TraceStateString = "vendor=1";
+        const string traceParent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("headers.png", 1), new EnqueueOptions
+        {
+            Delay = TimeSpan.FromMinutes(5),
+            Headers = new Dictionary<string, string> { ["tenant"] = "acme", [KnownHeaders.TraceParent] = traceParent }
+        }, TestCancellationToken);
+        var job = (await handle.GetAsync(TestCancellationToken))!;
+
+        Assert.Equal(new Dictionary<string, string> { ["tenant"] = "acme", [KnownHeaders.TraceParent] = traceParent }, job.Headers);
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImage("bad.png", 1), new EnqueueOptions { Headers = new Dictionary<string, string> { [" "] = "blank" } }, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_OutsideAnActivity_StoresNoTraceOrCorrelation()
+    {
+        await using var host = await StartAsync(_ => { });
+        Activity.Current = null;
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("untraced.png", 1), new EnqueueOptions { Delay = TimeSpan.FromMinutes(5) }, TestCancellationToken);
+        var job = (await handle.GetAsync(TestCancellationToken))!;
+
+        Assert.Empty(job.Headers);
+        Assert.Null(job.CorrelationId);
     }
 
     [Fact]
@@ -649,6 +703,20 @@ public class DurableJobsTests : TestWithLoggingBase
         return new TestHost(provider, hosted);
     }
 
+    private static ActivityListener ListenToFoundatioActivities()
+    {
+        // Read the source before adding the listener: initializing it from ShouldListenTo would create it while the
+        // listener is being added, and the listener would never attach to it.
+        var foundatio = FoundatioDiagnostics.ActivitySource;
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source == foundatio,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded
+        };
+        ActivitySource.AddActivityListener(listener);
+        return listener;
+    }
+
     private async Task WaitForAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
         var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(10));
@@ -685,6 +753,7 @@ public class DurableJobsTests : TestWithLoggingBase
         public ConcurrentBag<int> Runs { get; } = [];
         public ConcurrentQueue<string> Events { get; } = new();
         public ConcurrentQueue<IJobContext> Contexts { get; } = new();
+        public ConcurrentQueue<(ActivityTraceId TraceId, ActivitySpanId ParentSpanId, string? TraceState, IReadOnlyDictionary<string, string> Headers)> Traces { get; } = new();
         public string? LegacyResult { get; set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int RunCount;
@@ -859,6 +928,17 @@ public class DurableJobsTests : TestWithLoggingBase
         {
             probe.Runs.Add(0);
             probe.Contexts.Enqueue(context);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>Records the activity it runs in and the headers it was enqueued with.</summary>
+    public sealed class TracedJob(JobProbe probe) : IDurableJob
+    {
+        public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            var activity = Activity.Current;
+            probe.Traces.Enqueue((activity?.TraceId ?? default, activity?.ParentSpanId ?? default, activity?.TraceStateString, context.Headers));
             return Task.CompletedTask;
         }
     }

@@ -16,9 +16,10 @@ public interface IJobStore
 {
     /// <summary>
     /// Adds a new job as <see cref="JobState.Queued"/> with <see cref="JobInfo.Attempt"/> 0 and no claim, keeping the
-    /// other fields as given. Returns false, changing nothing, when a job with the same id exists (including a finished
-    /// job that is still retained). <see cref="JobInfo.CreatedAt"/> and <see cref="JobInfo.AvailableAt"/> come from the
-    /// caller's clock.
+    /// other fields as given, including every <see cref="JobInfo.Headers"/> entry exactly (names are case-sensitive and
+    /// values may be empty); every read of the job returns them. Returns false, changing nothing, when a job with the
+    /// same id exists (including a finished job that is still retained). <see cref="JobInfo.CreatedAt"/> and
+    /// <see cref="JobInfo.AvailableAt"/> come from the caller's clock.
     /// </summary>
     Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default);
 
