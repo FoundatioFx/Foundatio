@@ -203,16 +203,33 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task AddFoundatioMessaging_WhenNothingIsHandledOrConfigured_SaysSo()
+    public async Task AddFoundatioMessaging_WhenNothingIsHandled_SaysSo()
     {
-        await StartAsync(messaging: _ => { });
+        await StartAsync(messaging: _ => { }, health: h => h.AddFoundatioMessaging());
+
         var sendOnly = await CheckAsync(Messaging);
-        var notConfigured = await CheckAsync(Jobs);
 
         Assert.Equal(HealthStatus.Healthy, sendOnly.Status);
         Assert.Equal("No message handlers are registered", sendOnly.Description);
-        Assert.Equal(HealthStatus.Unhealthy, notConfigured.Status);
-        Assert.Contains("call AddFoundatioJobs", notConfigured.Description);
+    }
+
+    [Fact]
+    public async Task AddFoundatioJobsHealthCheck_WithoutAddFoundatioJobs_FailsAtStartup()
+    {
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => StartAsync(messaging: _ => { }, health: h => h.AddFoundatioMessaging().AddFoundatioJobs()));
+
+        Assert.Contains("AddFoundatioJobs", error.Message);
+        Assert.DoesNotContain("AddFoundatioMessaging", error.Message);
+    }
+
+    [Fact]
+    public async Task AddFoundatioMessagingHealthCheck_WithoutAddFoundatioMessaging_FailsHostStartup()
+    {
+        using var host = new HostBuilder().ConfigureServices(s => s.AddHealthChecks().AddFoundatioMessaging()).Build();
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync(TestCancellationToken));
+
+        Assert.Contains("AddFoundatioMessaging", error.Message);
     }
 
     [Fact]
@@ -350,9 +367,16 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
 
         var healthChecks = services.AddHealthChecks();
         if (health is not null)
+        {
             health(healthChecks);
+        }
         else
-            healthChecks.AddFoundatioMessaging(unhealthyAfter: UnhealthyAfter).AddFoundatioJobs(unhealthyAfter: UnhealthyAfter);
+        {
+            if (messaging is not null)
+                healthChecks.AddFoundatioMessaging(unhealthyAfter: UnhealthyAfter);
+            if (jobs is not null)
+                healthChecks.AddFoundatioJobs(unhealthyAfter: UnhealthyAfter);
+        }
 
         _provider = services.BuildServiceProvider();
         _hostedServices = _provider.GetServices<IHostedService>().ToList();

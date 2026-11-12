@@ -157,7 +157,16 @@ Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
 
 ## Health checks
 
-With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors that are being retried report Degraded; only a processor that stopped, or one that has failed for 5 minutes, reports Unhealthy. A receiver that fails five times in a row, or that its transport reports dead, is replaced after its in-flight messages finish. See [health checks](./durable-jobs#health-checks).
+With Foundatio.Extensions.Hosting, `builder.Services.AddHealthChecks().AddFoundatioMessaging()` reports each source your handlers receive from. Receive errors, and dead letters the transport refuses, report Degraded while they are retried; a processor that stopped, or one whose errors have lasted 5 minutes, reports Unhealthy. A receiver that fails five times in a row, or that its transport reports dead, is replaced after its in-flight messages finish. The host fails to start if you add the check without `AddFoundatioMessaging`.
+
+Errors that last minutes are almost always a broker outage, and restarting the process does not fix one. Use the check for readiness, so an instance stops taking traffic until it can process again:
+
+```csharp
+builder.Services.AddHealthChecks().AddFoundatioMessaging(tags: ["ready"]);
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+```
+
+If a liveness probe uses it, pass `failureStatus: HealthStatus.Degraded`, so an outage doesn't restart every instance. See [health checks](./durable-jobs#health-checks) for the jobs check and the states each check reports.
 
 ## Existing code using `IMessageBus`
 
