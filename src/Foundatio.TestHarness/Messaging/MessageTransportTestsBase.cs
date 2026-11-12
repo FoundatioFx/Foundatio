@@ -725,15 +725,30 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task Delete_WhileAReceiverIsOpen_TheReceiverKeepsReceivingOrFaults()
+    public async Task Delete_WhileAReceiverIsOpen_RefusesOrTheReceiverKeepsReceivingOrFaults()
     {
         var source = MessageSource.Queue(NewName("delete-open"));
         await using var receiver = await CreatePeerReceiverAsync(source);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("before", "id-before")], TestCancellationToken);
         await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
 
-        await Transport.DeleteAsync(source, TestCancellationToken);
+        bool refused = false;
+        try
+        {
+            await Transport.DeleteAsync(source, TestCancellationToken);
+        }
+        catch (MessageBusException ex)
+        {
+            _logger.LogInformation(ex, "The transport refused to delete a source with an open receiver");
+            refused = true;
+        }
+
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+        if (refused)
+        {
+            await AssertOnlyReceivedAsync(receiver, "id-after");
+            return;
+        }
 
         IncomingMessage message;
         try
