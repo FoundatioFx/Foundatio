@@ -31,5 +31,53 @@ public class CronExpressionTests
         Assert.Equal(Parse(expected).Offset, next?.Offset);
     }
 
+    [Theory]
+    [InlineData("@every_minute", false, "* * * * *")]
+    [InlineData("@hourly", false, "0 * * * *")]
+    [InlineData("@DAILY", false, "0 0 * * *")]
+    [InlineData("  @midnight  ", false, "0 0 * * *")]
+    [InlineData("@every_second", false, "* * * * * *")]
+    [InlineData("*/15 9-17 ? JAN-mar,Jul MON-FRI", false, "*/15 9-17 * 1-3,7 1-5")]
+    [InlineData("0 30 2 LW * *", true, "30 2 LW * *")]
+    [InlineData("0 0 L-3 * *", false, "0 0 L-3 * *")]
+    [InlineData("0 12 * * 5#3", false, "0 12 * * 5#3")]
+    [InlineData("0 12 * * SUNL", false, "0 12 * * 0L")]
+    [InlineData("0 12 15W * *", false, "0 12 15W * *")]
+    [InlineData("5/20 1,3,5 * * *", false, "5-59/20 1,3,5 * * *")]
+    public void Parse_ValidExpressions_MatchTheirEquivalents(string expression, bool includeSeconds, string equivalent)
+    {
+        var parsed = CronExpression.Parse(expression, includeSeconds ? CronFormat.IncludeSeconds : CronFormat.Standard);
+        var expected = CronExpression.Parse(equivalent, equivalent.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length == 6 ? CronFormat.IncludeSeconds : CronFormat.Standard);
+
+        Assert.Equal(expected, parsed);
+        var from = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        Assert.Equal(expected.GetOccurrences(from, from.AddDays(400), TimeZoneInfo.Utc).Take(50), parsed.GetOccurrences(from, from.AddDays(400), TimeZoneInfo.Utc).Take(50));
+    }
+
+    [Theory]
+    [InlineData("", "")]
+    [InlineData("* * * *", "Months: Unexpected character")]
+    [InlineData("* * * * * *", "Unexpected character")]
+    [InlineData("60 * * * *", "Minutes: Value must be a number between 0 and 59")]
+    [InlineData("* 24 * * *", "Hours: Value must be a number between 0 and 23")]
+    [InlineData("* * 32 * *", "Days of month: Value must be a number between 1 and 31")]
+    [InlineData("* * * 13 *", "Months: Value must be a number between 1 and 12")]
+    [InlineData("* * * FOO *", "Months: Value must be a number between 1 and 12")]
+    [InlineData("* * * * 8", "Days of week: Value must be a number between 0 and 7")]
+    [InlineData("*/0 * * * *", "Minutes: Value must be a number between 1 and 59")]
+    [InlineData("@nope", "Macro")]
+    [InlineData("@hourly extra", "Macro")]
+    public void Parse_InvalidExpressions_Throw(string expression, string message)
+    {
+        if (expression.Length == 0)
+        {
+            Assert.Throws<ArgumentNullException>(() => CronExpression.Parse(expression, CronFormat.Standard));
+            return;
+        }
+
+        var error = Assert.Throws<CronFormatException>(() => CronExpression.Parse(expression, CronFormat.Standard));
+        Assert.Contains(message, error.Message);
+    }
+
     private static DateTimeOffset Parse(string value) => DateTimeOffset.ParseExact(value, "yyyy-MM-dd HH:mm zzz", CultureInfo.InvariantCulture);
 }

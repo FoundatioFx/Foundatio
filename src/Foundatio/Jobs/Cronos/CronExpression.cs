@@ -100,63 +100,60 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    public static unsafe CronExpression Parse(string expression, CronFormat format)
+    public static CronExpression Parse(string expression, CronFormat format)
     {
         if (string.IsNullOrEmpty(expression)) throw new ArgumentNullException(nameof(expression));
 
-        fixed (char* value = expression)
-        {
-            var pointer = value;
+        var pointer = new Cursor(expression);
 
+        SkipWhiteSpaces(ref pointer);
+
+        CronExpression? cronExpression;
+
+        if (Accept(ref pointer, '@'))
+        {
+            cronExpression = ParseMacro(ref pointer);
             SkipWhiteSpaces(ref pointer);
 
-            CronExpression? cronExpression;
+            if (cronExpression == null || !IsEndOfString(pointer.Current)) ThrowFormatException("Macro: Unexpected character '{0}' on position {1}.", pointer.Current, pointer.Position);
 
-            if (Accept(ref pointer, '@'))
-            {
-                cronExpression = ParseMacro(ref pointer);
-                SkipWhiteSpaces(ref pointer);
-
-                if (cronExpression == null || !IsEndOfString(*pointer)) ThrowFormatException("Macro: Unexpected character '{0}' on position {1}.", *pointer, pointer - value);
-
-                return cronExpression!;
-            }
-
-            cronExpression = new CronExpression();
-
-            if (format == CronFormat.IncludeSeconds)
-            {
-                cronExpression._second = ParseField(CronField.Seconds, ref pointer, ref cronExpression._flags);
-                ParseWhiteSpace(CronField.Seconds, ref pointer);
-            }
-            else
-            {
-                SetBit(ref cronExpression._second, CronField.Seconds.First);
-            }
-
-            cronExpression._minute = ParseField(CronField.Minutes, ref pointer, ref cronExpression._flags);
-            ParseWhiteSpace(CronField.Minutes, ref pointer);
-
-            cronExpression._hour = (int)ParseField(CronField.Hours, ref pointer, ref cronExpression._flags);
-            ParseWhiteSpace(CronField.Hours, ref pointer);
-
-            cronExpression._dayOfMonth = (int)ParseDayOfMonth(ref pointer, ref cronExpression._flags, ref cronExpression._lastMonthOffset);
-            ParseWhiteSpace(CronField.DaysOfMonth, ref pointer);
-
-            cronExpression._month = (short)ParseField(CronField.Months, ref pointer, ref cronExpression._flags);
-            ParseWhiteSpace(CronField.Months, ref pointer);
-
-            cronExpression._dayOfWeek = (byte)ParseDayOfWeek(ref pointer, ref cronExpression._flags, ref cronExpression._nthDayOfWeek);
-            ParseEndOfString(ref pointer);
-
-            // Make sundays equivalent.
-            if ((cronExpression._dayOfWeek & SundayBits) != 0)
-            {
-                cronExpression._dayOfWeek |= SundayBits;
-            }
-
-            return cronExpression;
+            return cronExpression!;
         }
+
+        cronExpression = new CronExpression();
+
+        if (format == CronFormat.IncludeSeconds)
+        {
+            cronExpression._second = ParseField(CronField.Seconds, ref pointer, ref cronExpression._flags);
+            ParseWhiteSpace(CronField.Seconds, ref pointer);
+        }
+        else
+        {
+            SetBit(ref cronExpression._second, CronField.Seconds.First);
+        }
+
+        cronExpression._minute = ParseField(CronField.Minutes, ref pointer, ref cronExpression._flags);
+        ParseWhiteSpace(CronField.Minutes, ref pointer);
+
+        cronExpression._hour = (int)ParseField(CronField.Hours, ref pointer, ref cronExpression._flags);
+        ParseWhiteSpace(CronField.Hours, ref pointer);
+
+        cronExpression._dayOfMonth = (int)ParseDayOfMonth(ref pointer, ref cronExpression._flags, ref cronExpression._lastMonthOffset);
+        ParseWhiteSpace(CronField.DaysOfMonth, ref pointer);
+
+        cronExpression._month = (short)ParseField(CronField.Months, ref pointer, ref cronExpression._flags);
+        ParseWhiteSpace(CronField.Months, ref pointer);
+
+        cronExpression._dayOfWeek = (byte)ParseDayOfWeek(ref pointer, ref cronExpression._flags, ref cronExpression._nthDayOfWeek);
+        ParseEndOfString(ref pointer);
+
+        // Make sundays equivalent.
+        if ((cronExpression._dayOfWeek & SundayBits) != 0)
+        {
+            cronExpression._dayOfWeek |= SundayBits;
+        }
+
+        return cronExpression;
     }
 
     /// <summary>
@@ -548,34 +545,34 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe void SkipWhiteSpaces(ref char* pointer)
+    private static void SkipWhiteSpaces(ref Cursor pointer)
     {
-        while (IsWhiteSpace(*pointer)) { pointer++; }
+        while (IsWhiteSpace(pointer.Current)) { pointer.Position++; }
     }
 
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe void ParseWhiteSpace(CronField prevField, ref char* pointer)
+    private static void ParseWhiteSpace(CronField prevField, ref Cursor pointer)
     {
-        if (!IsWhiteSpace(*pointer)) ThrowFormatException(prevField, "Unexpected character '{0}'.", *pointer);
+        if (!IsWhiteSpace(pointer.Current)) ThrowFormatException(prevField, "Unexpected character '{0}'.", pointer.Current);
         SkipWhiteSpaces(ref pointer);
     }
 
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe void ParseEndOfString(ref char* pointer)
+    private static void ParseEndOfString(ref Cursor pointer)
     {
-        if (!IsWhiteSpace(*pointer) && !IsEndOfString(*pointer)) ThrowFormatException(CronField.DaysOfWeek, "Unexpected character '{0}'.", *pointer);
+        if (!IsWhiteSpace(pointer.Current) && !IsEndOfString(pointer.Current)) ThrowFormatException(CronField.DaysOfWeek, "Unexpected character '{0}'.", pointer.Current);
 
         SkipWhiteSpaces(ref pointer);
-        if (!IsEndOfString(*pointer)) ThrowFormatException("Unexpected character '{0}'.", *pointer);
+        if (!IsEndOfString(pointer.Current)) ThrowFormatException("Unexpected character '{0}'.", pointer.Current);
     }
 
-    private static unsafe CronExpression? ParseMacro(ref char* pointer)
+    private static CronExpression? ParseMacro(ref Cursor pointer)
     {
-        switch (ToUpper(*pointer++))
+        switch (ToUpper(pointer.Next()))
         {
             case 'A':
                 if (AcceptCharacter(ref pointer, 'N') &&
@@ -609,7 +606,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
                         AcceptCharacter(ref pointer, 'E'))
                         return Minutely;
 
-                    if (*(pointer - 1) != '_') return null;
+                    if (pointer.Previous != '_') return null;
 
                     if (AcceptCharacter(ref pointer, 'S') &&
                         AcceptCharacter(ref pointer, 'E') &&
@@ -638,7 +635,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
                     AcceptCharacter(ref pointer, 'Y'))
                     return Monthly;
 
-                if (ToUpper(*(pointer - 1)) == 'M' &&
+                if (ToUpper(pointer.Previous) == 'M' &&
                     AcceptCharacter(ref pointer, 'I') &&
                     AcceptCharacter(ref pointer, 'D') &&
                     AcceptCharacter(ref pointer, 'N') &&
@@ -666,12 +663,12 @@ internal sealed class CronExpression : IEquatable<CronExpression>
                     return Yearly;
                 return null;
             default:
-                pointer--;
+                pointer.Position--;
                 return null;
         }
     }
 
-    private static unsafe long ParseField(CronField field, ref char* pointer, ref CronExpressionFlag flags)
+    private static long ParseField(CronField field, ref Cursor pointer, ref CronExpressionFlag flags)
     {
         if (Accept(ref pointer, '*') || Accept(ref pointer, '?'))
         {
@@ -687,7 +684,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
         return bits;
     }
 
-    private static unsafe long ParseDayOfMonth(ref char* pointer, ref CronExpressionFlag flags, ref byte lastDayOffset)
+    private static long ParseDayOfMonth(ref Cursor pointer, ref CronExpressionFlag flags, ref byte lastDayOffset)
     {
         var field = CronField.DaysOfMonth;
 
@@ -712,7 +709,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe long ParseDayOfWeek(ref char* pointer, ref CronExpressionFlag flags, ref byte nthWeekDay)
+    private static long ParseDayOfWeek(ref Cursor pointer, ref CronExpressionFlag flags, ref byte nthWeekDay)
     {
         var field = CronField.DaysOfWeek;
         if (Accept(ref pointer, '*') || Accept(ref pointer, '?')) return ParseStar(field, ref pointer);
@@ -732,7 +729,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe long ParseStar(CronField field, ref char* pointer)
+    private static long ParseStar(CronField field, ref Cursor pointer)
     {
         return Accept(ref pointer, '/')
             ? ParseStep(field, ref pointer, field.First, field.Last)
@@ -742,7 +739,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe long ParseList(CronField field, ref char* pointer, ref CronExpressionFlag flags)
+    private static long ParseList(CronField field, ref Cursor pointer, ref CronExpressionFlag flags)
     {
         var num = ParseValue(field, ref pointer);
         var bits = ParseRange(field, ref pointer, num, ref flags);
@@ -755,7 +752,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
         } while (true);
     }
 
-    private static unsafe long ParseRange(CronField field, ref char* pointer, int low, ref CronExpressionFlag flags)
+    private static long ParseRange(CronField field, ref Cursor pointer, int low, ref CronExpressionFlag flags)
     {
         if (!Accept(ref pointer, '-'))
         {
@@ -772,7 +769,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
         return GetBits(field, low, high, 1);
     }
 
-    private static unsafe long ParseStep(CronField field, ref char* pointer, int low, int high)
+    private static long ParseStep(CronField field, ref Cursor pointer, int low, int high)
     {
         // Get the step size -- note: we don't pass the
         // names here, because the number is not an
@@ -785,7 +782,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe long ParseLastDayOfMonth(CronField field, ref char* pointer, ref CronExpressionFlag flags, ref byte lastMonthOffset)
+    private static long ParseLastDayOfMonth(CronField field, ref Cursor pointer, ref CronExpressionFlag flags, ref byte lastMonthOffset)
     {
         flags |= CronExpressionFlag.DayOfMonthLast;
 
@@ -797,7 +794,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe long ParseNthWeekDay(CronField field, ref char* pointer, int dayOfWeek, ref CronExpressionFlag flags, out byte nthDayOfWeek)
+    private static long ParseNthWeekDay(CronField field, ref Cursor pointer, int dayOfWeek, ref CronExpressionFlag flags, out byte nthDayOfWeek)
     {
         nthDayOfWeek = (byte)ParseNumber(field, ref pointer, MinNthDayOfWeek, MaxNthDayOfWeek);
         flags |= CronExpressionFlag.NthDayOfWeek;
@@ -816,11 +813,11 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe bool Accept(ref char* pointer, char character)
+    private static bool Accept(ref Cursor pointer, char character)
     {
-        if (*pointer == character)
+        if (pointer.Current == character)
         {
-            pointer++;
+            pointer.Position++;
             return true;
         }
 
@@ -830,18 +827,18 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe bool AcceptCharacter(ref char* pointer, char character)
+    private static bool AcceptCharacter(ref Cursor pointer, char character)
     {
-        if (ToUpper(*pointer) == character)
+        if (ToUpper(pointer.Current) == character)
         {
-            pointer++;
+            pointer.Position++;
             return true;
         }
 
         return false;
     }
 
-    private static unsafe int ParseNumber(CronField field, ref char* pointer, int low, int high)
+    private static int ParseNumber(CronField field, ref Cursor pointer, int low, int high)
     {
         var num = GetNumber(ref pointer, null);
         if (num == -1 || num < low || num > high)
@@ -854,7 +851,7 @@ internal sealed class CronExpression : IEquatable<CronExpression>
 #if !NET40
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
 #endif
-    private static unsafe int ParseValue(CronField field, ref char* pointer)
+    private static int ParseValue(CronField field, ref Cursor pointer)
     {
         var num = GetNumber(ref pointer, field.Names);
         if (num == -1 || num < field.First || num > field.Last)
@@ -962,30 +959,30 @@ internal sealed class CronExpression : IEquatable<CronExpression>
         return 1L << num1;
     }
 
-    private static unsafe int GetNumber(ref char* pointer, int[]? names)
+    private static int GetNumber(ref Cursor pointer, int[]? names)
     {
-        if (IsDigit(*pointer))
+        if (IsDigit(pointer.Current))
         {
-            var num = GetNumeric(*pointer++);
+            var num = GetNumeric(pointer.Next());
 
-            if (!IsDigit(*pointer)) return num;
+            if (!IsDigit(pointer.Current)) return num;
 
-            num = num * 10 + GetNumeric(*pointer++);
+            num = num * 10 + GetNumeric(pointer.Next());
 
-            if (!IsDigit(*pointer)) return num;
+            if (!IsDigit(pointer.Current)) return num;
             return -1;
         }
 
         if (names == null) return -1;
 
-        if (!IsLetter(*pointer)) return -1;
-        var buffer = ToUpper(*pointer++);
+        if (!IsLetter(pointer.Current)) return -1;
+        var buffer = ToUpper(pointer.Next());
 
-        if (!IsLetter(*pointer)) return -1;
-        buffer |= ToUpper(*pointer++) << 8;
+        if (!IsLetter(pointer.Current)) return -1;
+        buffer |= ToUpper(pointer.Next()) << 8;
 
-        if (!IsLetter(*pointer)) return -1;
-        buffer |= ToUpper(*pointer++) << 16;
+        if (!IsLetter(pointer.Current)) return -1;
+        buffer |= ToUpper(pointer.Next()) << 16;
 
         var length = names.Length;
 
@@ -1091,5 +1088,30 @@ internal sealed class CronExpression : IEquatable<CronExpression>
         }
 
         return code;
+    }
+
+    /// <summary>
+    /// The parser's position in an expression. Reads '\0' at and past the end, like the null terminator the parser
+    /// originally read through a pointer, so error messages are unchanged.
+    /// </summary>
+    private struct Cursor
+    {
+        private readonly string _text;
+
+        public Cursor(string text)
+        {
+            _text = text;
+            Position = 0;
+        }
+
+        public int Position;
+
+        public readonly char Current => At(Position);
+
+        public readonly char Previous => At(Position - 1);
+
+        public char Next() => At(Position++);
+
+        private readonly char At(int index) => index >= 0 && index < _text.Length ? _text[index] : '\0';
     }
 }
