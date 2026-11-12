@@ -18,15 +18,21 @@ namespace Foundatio.Messaging;
 /// </summary>
 /// <remarks>
 /// Semantics match the original buses: every running instance receives every message once, subscribers also receive
-/// derived types, delivery is best effort, and handler exceptions are logged rather than retried.
+/// derived types, delivery is best effort, and handler exceptions are logged rather than retried. Messages are
+/// received by a <see cref="MessageProcessor"/>, so a failed receiver is replaced, leases are renewed while subscribers
+/// run, and a slow subscriber does not hold up the others or later messages.
 /// </remarks>
-internal sealed class LegacyMessageBusAdapter : IMessageBus
+internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHandler
 {
     private const string LegacyTypeHeader = "legacy-type";
+    private const int MaxCachedTypeMisses = 1000;
+    private static readonly TimeSpan LeaseDuration = TimeSpan.FromMinutes(1);
+    private static readonly TimeSpan ReplaceTimeout = TimeSpan.FromSeconds(5);
 
     private readonly IMessageTransport _transport;
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
     private readonly string _topic;
     private readonly IReadOnlyDictionary<string, Type> _typeMappings;
@@ -35,8 +41,8 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
     private readonly ConcurrentDictionary<string, Type?> _types = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _startLock = new(1, 1);
     private readonly CancellationTokenSource _disposed = new();
-    private IMessageReceiver? _receiver;
-    private Task _receiveLoop = Task.CompletedTask;
+    private MessageProcessor? _processor;
+    private int _typeMisses;
 
     public LegacyMessageBusAdapter(IMessageTransport transport, SharedMessageBusOptions options)
     {
@@ -45,8 +51,12 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         _topic = MessageTypeRegistry.NormalizeName(options.Topic);
         _typeMappings = new Dictionary<string, Type>(options.MessageTypeMappings);
         _timeProvider = options.TimeProvider;
+        _loggerFactory = options.LoggerFactory;
         _logger = options.LoggerFactory.CreateLogger<LegacyMessageBusAdapter>();
     }
+
+    /// <summary>How many legacy type names are cached; misses are bounded so foreign names cannot grow it without limit.</summary>
+    internal int CachedTypeCount => _types.Count;
 
     public async Task PublishAsync(Type messageType, object message, MessageOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -87,7 +97,7 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
             return;
         }
 
-        if (_transport.Capabilities.MaxDelay is not { } maxDelay || delay <= maxDelay)
+        if (_transport.Capabilities.MaxPublishDelay is not { } maxDelay || delay <= maxDelay)
         {
             await _transport.SendAsync(MessageDestination.Topic(_topic), [outgoing with { DeliverAt = _timeProvider.GetUtcNow().Add(delay) }], cancellationToken).AnyContext();
             return;
@@ -133,53 +143,63 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
 
         _disposed.Cancel();
         _subscribers.Clear();
-        await _receiveLoop.AnyContext();
-        if (_receiver is not null)
-            await _receiver.DisposeAsync().AnyContext();
-    }
 
-    private async Task EnsureReceivingAsync(CancellationToken cancellationToken)
-    {
-        if (_receiver is not null)
-            return;
-
-        await _startLock.WaitAsync(cancellationToken).AnyContext();
+        MessageProcessor? processor;
+        await _startLock.WaitAsync(CancellationToken.None).AnyContext();
         try
         {
-            if (_receiver is not null)
-                return;
-
-            _receiver = await _transport.CreateReceiverAsync(MessageSource.InstanceSubscription(_topic, "legacy-bus"), new ReceiverOptions(), cancellationToken).AnyContext();
-            _receiveLoop = Task.Run(ReceiveLoopAsync, CancellationToken.None);
+            processor = _processor;
+            _processor = null;
         }
         finally
         {
             _startLock.Release();
         }
+
+        if (processor is not null)
+            await processor.StopAsync(TimeSpan.Zero).AnyContext();
     }
 
-    private async Task ReceiveLoopAsync()
+    async Task<bool> IMessageDeliveryHandler.HandleAsync(MessageDelivery delivery, CancellationToken abortToken)
     {
-        var token = _disposed.Token;
-        while (!token.IsCancellationRequested)
+        await DispatchAsync(delivery.Message, abortToken).AnyContext();
+        if (delivery.IsLeaseLost)
+            return false;
+
+        return await delivery.SettleAsync(static (receiver, message, ct) => receiver.CompleteAsync(message, ct), "complete", _logger).AnyContext() is null;
+    }
+
+    void IMessageDeliveryHandler.OnReleased(MessageDelivery delivery, string outcome)
+    {
+    }
+
+    private async Task EnsureReceivingAsync(CancellationToken cancellationToken)
+    {
+        if (Volatile.Read(ref _processor) is not null)
+            return;
+
+        await _startLock.WaitAsync(cancellationToken).AnyContext();
+        try
         {
-            try
-            {
-                foreach (var message in await _receiver!.ReceiveAsync(100, TimeSpan.FromSeconds(5), token).AnyContext())
-                {
-                    await DispatchAsync(message, token).AnyContext();
-                    await _receiver.CompleteAsync(message, CancellationToken.None).AnyContext();
-                }
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
+            if (_processor is not null || _disposed.IsCancellationRequested)
                 return;
-            }
-            catch (Exception ex)
+
+            var settings = new MessageProcessorSettings
             {
-                _logger.LogError(ex, "Error receiving legacy bus messages");
-                await _timeProvider.SafeDelay(TimeSpan.FromSeconds(1), token).AnyContext();
-            }
+                MaxConcurrency = Math.Max(4, Environment.ProcessorCount),
+                LeaseDuration = LeaseDuration,
+                ReplaceTimeout = ReplaceTimeout,
+                Description = "legacy message bus subscribers"
+            };
+            var processor = new MessageProcessor(_transport, MessageSource.InstanceSubscription(_topic, "legacy-bus"), settings, this,
+                new ProcessingStatusTracker(_timeProvider), _timeProvider, _loggerFactory);
+
+            await processor.StartAsync(cancellationToken).AnyContext();
+            _processor = processor;
+        }
+        finally
+        {
+            _startLock.Release();
         }
     }
 
@@ -191,20 +211,8 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         if (subscribers.Count == 0)
             return;
 
-        object? body = null;
-        bool deserialized = false;
-        object? GetBody()
-        {
-            if (!deserialized && type is not null)
-            {
-                body = _serializer.Deserialize(message.Body, type);
-                deserialized = true;
-            }
-
-            return body;
-        }
-
-        var raw = new Message(message.Body, _ => GetBody())
+        var body = new Lazy<object?>(() => type is null ? null : _serializer.Deserialize(message.Body, type), LazyThreadSafetyMode.ExecutionAndPublication);
+        var raw = new Message(message.Body, _ => body.Value)
         {
             UniqueId = message.MessageId,
             CorrelationId = message.Headers.GetValueOrDefault(KnownHeaders.CorrelationId),
@@ -217,25 +225,32 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
         if (activity is not null)
             activity.DisplayName = $"Message: {type?.Name ?? typeName}";
 
-        foreach (var subscriber in subscribers)
-        {
-            try
-            {
-                object? argument = subscriber.Kind switch
-                {
-                    SubscriberKind.Raw => raw,
-                    SubscriberKind.Typed => Activator.CreateInstance(typeof(Message<>).MakeGenericType(subscriber.BodyType), raw),
-                    _ => GetBody()
-                };
-                if (argument is null || subscriber.Kind == SubscriberKind.Typed && GetBody() is null)
-                    continue;
+        // Like the original buses, subscribers run concurrently, so a slow one does not hold up the others.
+        if (subscribers.Count == 1)
+            await InvokeAsync(subscribers[0], message, raw, body, typeName, cancellationToken).AnyContext();
+        else
+            await Task.WhenAll(subscribers.Select(s => Task.Run(() => InvokeAsync(s, message, raw, body, typeName, cancellationToken), CancellationToken.None))).AnyContext();
+    }
 
-                await subscriber.Handler(argument, cancellationToken).AnyContext();
-            }
-            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+    private async Task InvokeAsync(Subscriber subscriber, IncomingMessage message, Message raw, Lazy<object?> body, string? typeName, CancellationToken cancellationToken)
+    {
+        try
+        {
+            object? argument = subscriber.Kind switch
             {
+                SubscriberKind.Raw => raw,
+                SubscriberKind.Typed => Activator.CreateInstance(typeof(Message<>).MakeGenericType(subscriber.BodyType), raw),
+                _ => body.Value
+            };
+            if (argument is null || subscriber.Kind == SubscriberKind.Typed && body.Value is null)
+                return;
+
+            await subscriber.Handler(argument, cancellationToken).AnyContext();
+        }
+        catch (Exception ex)
+        {
+            if (!cancellationToken.IsCancellationRequested)
                 _logger.LogError(ex, "Error handling legacy bus message {MessageId} of type {MessageType}", message.MessageId, typeName);
-            }
         }
     }
 
@@ -250,23 +265,36 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus
             throw new MessageBusException("The message bus has been disposed.");
     }
 
+    /// <summary>Resolves a legacy type name. Hits are always cached; misses only up to a limit, since any sender can make them up.</summary>
     private Type? GetType(string typeName)
     {
-        return _types.GetOrAdd(typeName, name =>
-        {
-            if (_typeMappings.TryGetValue(name, out var mapped))
-                return mapped;
+        if (_types.TryGetValue(typeName, out var cached))
+            return cached;
 
+        Type? type;
+        if (_typeMappings.TryGetValue(typeName, out var mapped))
+        {
+            type = mapped;
+        }
+        else
+        {
             try
             {
-                return Type.GetType(name, throwOnError: false);
+                type = Type.GetType(typeName, throwOnError: false);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Could not resolve legacy bus message type {MessageType}", name);
-                return null;
+                _logger.LogWarning(ex, "Could not resolve legacy bus message type {MessageType}", typeName);
+                type = null;
             }
-        });
+        }
+
+        if (type is not null)
+            _types.TryAdd(typeName, type);
+        else if (Volatile.Read(ref _typeMisses) < MaxCachedTypeMisses && Interlocked.Increment(ref _typeMisses) <= MaxCachedTypeMisses && !_types.TryAdd(typeName, null))
+            Interlocked.Decrement(ref _typeMisses);
+
+        return type;
     }
 
     private enum SubscriberKind

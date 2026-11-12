@@ -1,4 +1,9 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
@@ -235,9 +240,115 @@ public class LegacyMessageBusAdapterTests : MessageBusTestBase, IAsyncDisposable
         return base.SubscribeAsync_WithCancellationTokenHandler_ReceivesCancellationTokenAsync();
     }
 
+    [Fact]
+    public async Task SubscribeAsync_WhenTheReceiverFaults_ReplacesItAndKeepsReceiving()
+    {
+        var transport = new InterceptingMessageTransport(_transport);
+        await using var bus = new LegacyMessageBusAdapter(transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-faults" });
+        var received = new ConcurrentQueue<int>();
+        await bus.SubscribeAsync<LegacyEvent>(e => received.Enqueue(e.Id), TestCancellationToken);
+
+        await bus.PublishAsync(new LegacyEvent(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => received.Count == 1);
+        transport.FaultReceivers();
+        await WaitForAsync(() => transport.ReceiversCreated > 1 && transport.OpenReceivers == 1);
+        await bus.PublishAsync(new LegacyEvent(2), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Contains(2));
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithASlowSubscriber_DeliversToOtherSubscribersAndLaterMessagesMeanwhile()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var bus = new LegacyMessageBusAdapter(_transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-slow" });
+        var fast = new ConcurrentQueue<int>();
+        await bus.SubscribeAsync<LegacyEvent>(async (_, ct) => await release.Task.WaitAsync(ct), TestCancellationToken);
+        await bus.SubscribeAsync<LegacyEvent>(e => fast.Enqueue(e.Id), TestCancellationToken);
+
+        await bus.PublishAsync(new LegacyEvent(1), cancellationToken: TestCancellationToken);
+        await bus.PublishAsync(new LegacyEvent(2), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => fast.Count == 2);
+        release.SetResult();
+    }
+
+    [Fact]
+    public async Task SubscribeAsync_WithASubscriberSlowerThanTheLease_ReceivesEachMessageOnce()
+    {
+        var transport = new InterceptingMessageTransport(_transport, _transport.Capabilities with { MaxLeaseDuration = TimeSpan.FromSeconds(1) });
+        await using var bus = new LegacyMessageBusAdapter(transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-lease" });
+        int received = 0;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await bus.SubscribeAsync<LegacyEvent>(async (_, _) =>
+        {
+            Interlocked.Increment(ref received);
+            await Task.Delay(TimeSpan.FromSeconds(2.5), CancellationToken.None);
+            done.TrySetResult();
+        }, TestCancellationToken);
+
+        await bus.PublishAsync(new LegacyEvent(1), cancellationToken: TestCancellationToken);
+        await done.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal(1, Volatile.Read(ref received));
+    }
+
+    [Fact]
+    public async Task PublishAsync_WithADelayWithinThePublishLimit_LetsTheTransportHoldIt()
+    {
+        var sent = new ConcurrentQueue<OutgoingMessage>();
+        var transport = new InterceptingMessageTransport(_transport, _transport.Capabilities with { MaxDelay = TimeSpan.FromMilliseconds(100), MaxPublishDelay = null })
+        {
+            OnSend = (_, messages) =>
+            {
+                foreach (var message in messages)
+                    sent.Enqueue(message);
+            }
+        };
+        await using var bus = new LegacyMessageBusAdapter(transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-delay" });
+
+        await bus.PublishAsync(new LegacyEvent(1), new MessageOptions { DeliveryDelay = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+
+        Assert.NotNull(Assert.Single(sent).DeliverAt);
+    }
+
+    [Fact]
+    public async Task Receive_WithManyUnknownTypeNames_BoundsTheTypeCache()
+    {
+        await using var bus = new LegacyMessageBusAdapter(_transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-types" });
+        int received = 0;
+        await bus.SubscribeAsync<IMessage>(_ => Interlocked.Increment(ref received), TestCancellationToken);
+
+        const int count = 1500;
+        await _transport.SendAsync(MessageDestination.Topic("legacy-types"), Enumerable.Range(0, count).Select(i => new OutgoingMessage
+        {
+            MessageId = Guid.NewGuid().ToString("N"),
+            Body = Encoding.UTF8.GetBytes("{}"),
+            Headers = new Dictionary<string, string> { ["legacy-type"] = $"Unknown.Type{i}, Unknown.Assembly" }
+        }).ToList(), TestCancellationToken);
+
+        await WaitForAsync(() => Volatile.Read(ref received) == count);
+        Assert.InRange(bus.CachedTypeCount, 0, 1000);
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();
         await base.DisposeAsync();
     }
+
+    private async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (!condition())
+        {
+            if (DateTime.UtcNow > deadline)
+                throw new TimeoutException("The condition was not met in time.");
+
+            await Task.Delay(20, TestCancellationToken);
+        }
+    }
+
+    public record LegacyEvent(int Id);
 }
