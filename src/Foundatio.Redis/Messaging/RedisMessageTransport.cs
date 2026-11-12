@@ -289,14 +289,15 @@ public sealed class RedisMessageTransport : IMessageTransport
     {
         var timeout = Options.InstanceSubscriptionTimeout;
         bool added = (long)await Database.ScriptEvaluateAsync(HeartbeatScript, [topic.Instances], [instance, (long)timeout.TotalMilliseconds]).AnyContext() == 1;
-        bool streamExists = await Database.KeyExpireAsync(keys.Stream, timeout * 2).AnyContext();
+        var stream = Database.KeyExpireAsync(keys.Stream, timeout * 2);
+        await Task.WhenAll(keys.All.Where(k => k != keys.Stream).Select(k => Database.KeyExpireAsync(k, timeout * 2)).Append(stream)).AnyContext();
+        bool streamExists = await stream.AnyContext();
         if (!streamExists)
         {
             await CreateGroupAsync(keys).AnyContext();
             await Database.KeyExpireAsync(keys.Stream, timeout * 2).AnyContext();
         }
 
-        await Task.WhenAll(keys.All.Where(k => k != keys.Stream).Select(k => Database.KeyExpireAsync(k, timeout * 2))).AnyContext();
         return added || !streamExists;
     }
 

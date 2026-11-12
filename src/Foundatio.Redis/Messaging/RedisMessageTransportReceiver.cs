@@ -286,8 +286,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             }
             catch (Exception ex)
             {
+                _transport.Logger.Log(failed ? LogLevel.Debug : LogLevel.Warning, ex, "Could not renew instance subscription {Instance} of topic {Topic}", instance.Name, instance.Topic.Topic);
                 failed = true;
-                _transport.Logger.LogWarning(ex, "Could not renew instance subscription {Instance} of topic {Topic}", instance.Name, instance.Topic.Topic);
             }
         }
     }
