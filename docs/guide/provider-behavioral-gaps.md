@@ -138,6 +138,10 @@ Handlers should be idempotent with every provider; see [message loss and duplica
 
 Service Bus delayed retries reuse the original `MessageId`, so on a queue with [duplicate detection](https://learn.microsoft.com/azure/service-bus-messaging/duplicate-detection) enabled (`RequiresDuplicateDetection`) the copy would be discarded as a duplicate. The queue therefore abandons immediately instead and does not apply `RetryDelay` when duplicate detection is enabled.
 
+::: warning Pending next-release change
+The fix in [Foundatio.AzureServiceBus #106](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/pull/106) is pending. With a provider version that includes this fix, non-session queues with duplicate detection can apply `RetryDelay` by sending a scheduled copy under a new broker `MessageId`, while `entry.Id` remains the original id. The copy preserves `CorrelationId`, `SessionId` (`GroupId`) and application properties. The fix reads the duplicate-detection setting from the queue; on the Service Bus emulator, `RequiresDuplicateDetection` must match the queue configuration. Session-enabled queues still abandon immediately to preserve group order. Until the provider fix is included, the immediate-abandon behavior above applies.
+:::
+
 ---
 
 ## IMessageBus
