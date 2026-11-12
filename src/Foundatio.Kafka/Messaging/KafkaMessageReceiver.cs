@@ -185,20 +185,20 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             return;
         }
 
-        lock (_lock)
-            ThrowIfLost(delivery);
-
+        var copied = BeginSettling(delivery);
         try
         {
             await _transport.RepublishAsync(_topology, delivery, delay, cancellationToken).AnyContext();
         }
         catch (Exception ex) when (ex is not MessageLeaseLostException)
         {
+            copied.TrySetResult(false);
             ReleaseAfterFailure(delivery, delay);
             throw;
         }
 
-        Finish(delivery);
+        copied.TrySetResult(true);
+        Finish(delivery, copied: true);
     }
 
     public async Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default)
@@ -208,20 +208,20 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             throw new InvalidOperationException("Instance subscriptions do not have a dead-letter queue.");
 
         var delivery = GetDelivery(message);
-        lock (_lock)
-            ThrowIfLost(delivery);
-
+        var copied = BeginSettling(delivery);
         try
         {
             await _transport.DeadLetterAsync(_topology, delivery, reason, cancellationToken).AnyContext();
         }
         catch (Exception ex) when (ex is not MessageLeaseLostException)
         {
+            copied.TrySetResult(false);
             ReleaseAfterFailure(delivery, FailedSettlementDelay);
             throw;
         }
 
-        Finish(delivery);
+        copied.TrySetResult(true);
+        Finish(delivery, copied: true);
     }
 
     public Task RenewAsync(IncomingMessage message, CancellationToken cancellationToken = default)
@@ -629,10 +629,30 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         _timed.EnqueueRange(kept);
     }
 
-    private void Finish(KafkaIncomingMessage delivery)
+    /// <summary>Records that a copy of the delivery is being written, so a release meanwhile does not copy it again.</summary>
+    private TaskCompletionSource<bool> BeginSettling(KafkaIncomingMessage delivery)
+    {
+        var copied = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_lock)
+        {
+            ThrowIfLost(delivery);
+            delivery.Settling = copied.Task;
+        }
+
+        return copied;
+    }
+
+    /// <summary>
+    /// Finishes a delivery's offset. One whose copy was written (<paramref name="copied"/>) has been settled even if
+    /// its partition moved meanwhile; the release then finished its offset if the copy was written in time.
+    /// </summary>
+    private void Finish(KafkaIncomingMessage delivery, bool copied = false)
     {
         lock (_lock)
         {
+            if (copied && delivery.Partition.Revoked)
+                return;
+
             ThrowIfLost(delivery);
             delivery.Partition.InFlight.Remove(delivery.Offset);
             delivery.Partition.Pending.Remove(delivery.Offset);
@@ -759,46 +779,84 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         }
 
         Signal();
-
-        foreach (var delivery in unsettled.Where(d => !ReleasesInPlace(d)))
-        {
-            try
-            {
-                if (_transport.RepublishAsync(_topology, delivery, TimeSpan.Zero, CancellationToken.None).Wait(ReleaseTimeout))
-                {
-                    lock (_lock)
-                        delivery.Partition.Pending.Remove(delivery.Offset);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Could not release message {MessageId} from {Source}; it will be read again from offset {Offset}", delivery.MessageId, Source, delivery.Offset);
-            }
-        }
+        CopyUnsettled(unsettled);
 
         List<TopicPartitionOffset> offsets;
         lock (_lock)
             offsets = states.Where(s => s.CommitOffset is not null).Select(s => new TopicPartitionOffset(s.TopicPartition, s.CommitOffset!.Value)).ToList();
 
-        if (offsets.Count == 0)
+        // librdkafka commits the stored offsets of partitions it unassigns, while the generation is still valid, and
+        // Close commits them when stopping. A synchronous commit here could block the rebalance without a bound.
+        foreach (var offset in offsets)
+        {
+            try
+            {
+                _consumer.StoreOffset(offset);
+            }
+            catch (KafkaException ex)
+            {
+                _logger.LogWarning(ex, "Could not store offset {Offset} for {Source} while releasing partitions: {Reason}", offset, Source, ex.Error.Reason);
+            }
+        }
+
+        if (offsets.Count > 0)
+            _logger.LogDebug("{Source} released {Offsets}", Source, String.Join(", ", offsets));
+    }
+
+    /// <summary>
+    /// Copies released deliveries that are not released in place to the retry topic, all at once and within one
+    /// <see cref="ReleaseTimeout"/>, and finishes the offsets of those copied. A delivery whose abandon or dead-letter
+    /// copy is still being written is not copied again; its offset is finished if that copy is written in time.
+    /// </summary>
+    private void CopyUnsettled(List<KafkaIncomingMessage> unsettled)
+    {
+        var copies = new List<(KafkaIncomingMessage Delivery, Task<bool> Copied)>();
+        foreach (var delivery in unsettled)
+        {
+            if (delivery.Settling is { } settling)
+                copies.Add((delivery, settling));
+            else if (!ReleasesInPlace(delivery))
+                copies.Add((delivery, CopyAsync(delivery)));
+        }
+
+        if (copies.Count == 0)
             return;
 
         try
         {
-            // Store before committing, so a later automatic commit of the offset store cannot move the offsets back.
-            foreach (var offset in offsets)
-                _consumer.StoreOffset(offset);
-
-            // In a revoke callback the generation is still valid, so commit before the partitions move. When closing,
-            // Close commits the stored offsets: a commit here could wait behind a JoinGroup the broker is holding.
-            if (!_stopping.IsCancellationRequested)
-                _consumer.Commit(offsets);
-
-            _logger.LogDebug("{Source} released {Offsets}", Source, String.Join(", ", offsets));
+            Task.WhenAll(copies.Select(c => c.Copied)).Wait(ReleaseTimeout);
         }
-        catch (KafkaException ex)
+        catch (AggregateException)
         {
-            _logger.LogWarning(ex, "Could not commit offsets for {Source} while releasing partitions: {Reason}", Source, ex.Error.Reason);
+        }
+
+        int failed = 0;
+        lock (_lock)
+        {
+            foreach (var (delivery, copied) in copies)
+            {
+                if (copied.IsCompletedSuccessfully && copied.Result)
+                    delivery.Partition.Pending.Remove(delivery.Offset);
+                else
+                    failed++;
+            }
+        }
+
+        if (failed > 0)
+            _logger.LogWarning("Could not release {Count} messages from {Source} in time; they will be read again from their offsets", failed, Source);
+    }
+
+    private async Task<bool> CopyAsync(KafkaIncomingMessage delivery)
+    {
+        try
+        {
+            await _transport.RepublishAsync(_topology, delivery, TimeSpan.Zero, CancellationToken.None).AnyContext();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not release message {MessageId} from {Source}", delivery.MessageId, Source);
+            return false;
         }
     }
 

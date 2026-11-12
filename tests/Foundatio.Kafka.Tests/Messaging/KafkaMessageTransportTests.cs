@@ -212,6 +212,29 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Rebalance_CommitsWhatWasCompletedOnTheMovedPartition()
+    {
+        // No periodic commit happens during the test, so only releasing the partition can commit its offsets.
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 2,
+            DelayedDelivery = false,
+            CommitInterval = TimeSpan.FromMinutes(5),
+            ConfigureProducer = c => c.StickyPartitioningLingerMs = 0
+        }));
+        var source = MessageSource.Queue(NewName("revoke-commit"));
+        await using var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"m{i}")).ToList(), TestCancellationToken);
+        foreach (var message in await ReceiveAsync(first, 20))
+            await first.CompleteAsync(message, TestCancellationToken);
+
+        await using var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await WaitForAsync(() => second.Assignment.Count == 1, TimeSpan.FromSeconds(30));
+
+        await AssertNothingReceivedAsync(second, TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
     public async Task Rebalance_OfAPausedPartitionAndBack_ResumesReadingIt()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with

@@ -437,21 +437,21 @@ internal sealed class KafkaDelayForwarder : IAsyncDisposable
             }
         }
 
-        if (!commit || offsets.Count == 0)
+        if (!commit)
             return;
 
-        try
+        // librdkafka commits the stored offsets of partitions it unassigns, and Close those of the rest; a synchronous
+        // commit here could block the rebalance without a bound.
+        foreach (var offset in offsets)
         {
-            foreach (var offset in offsets)
+            try
+            {
                 _consumer.StoreOffset(offset);
-
-            // When closing, Close commits the stored offsets; a commit here could wait behind a JoinGroup.
-            if (!_stopping.IsCancellationRequested)
-                _consumer.Commit(offsets);
-        }
-        catch (KafkaException ex)
-        {
-            _logger.LogWarning(ex, "Could not commit delay offsets while releasing partitions: {Reason}", ex.Error.Reason);
+            }
+            catch (KafkaException ex)
+            {
+                _logger.LogWarning(ex, "Could not store delay offset {Offset} while releasing partitions: {Reason}", offset, ex.Error.Reason);
+            }
         }
     }
 

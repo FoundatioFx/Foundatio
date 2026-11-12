@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+
 namespace Foundatio.Messaging.Transport;
 
 /// <summary>A delivery from a Kafka receiver: the partition assignment it came from and its offset.</summary>
@@ -9,4 +11,7 @@ internal sealed class KafkaIncomingMessage : IncomingMessage
 
     /// <summary>The record's <see cref="KafkaRecord.Size"/>, kept for when it is released back into the buffer.</summary>
     public int Size { get; init; }
+
+    /// <summary>Completes with whether the copy an abandon or dead-letter is writing was written. Guarded by the receiver's lock.</summary>
+    public Task<bool>? Settling { get; set; }
 }
