@@ -31,8 +31,10 @@ public interface IMessageTransport : IAsyncDisposable
     /// subscription, not the topic's others.
     /// </summary>
     /// <remarks>
-    /// Throw if any message could not be sent; messages before the failure may already have been sent. Throw
-    /// <see cref="MessageTooLargeException"/> for a message over <see cref="TransportCapabilities.MaxMessageSize"/>.
+    /// Throw if any message could not be sent; messages before the failure may already have been sent. Remember a
+    /// <see cref="OutgoingMessage.DeduplicationId"/> only for a message that was sent: when the call throws, forget the
+    /// ids of the messages it did not send, or the caller's retry would be dropped as a duplicate and the message lost.
+    /// Throw <see cref="MessageTooLargeException"/> for a message over <see cref="TransportCapabilities.MaxMessageSize"/>.
     /// </remarks>
     Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default);
 
@@ -47,9 +49,11 @@ public interface IMessageTransport : IAsyncDisposable
     /// <summary>
     /// Deletes a queue or durable subscription with its pending messages and dead letters, or, for a
     /// <see cref="MessageSourceKind.DeadLetter"/> source, only the dead letters. Succeeds when the source does not
-    /// exist. Close its receivers first. Receiving from the source again creates it anew; a deleted subscription
-    /// does not get copies of messages published before then. Deduplication state may outlive the delete, and a
-    /// receiver still open on the source, in any process, may keep delivering its older messages.
+    /// exist. Close its receivers first; a transport may throw while one of its own receivers is still open on the
+    /// source. Receiving from the source again creates it anew; a deleted subscription does not get copies of messages
+    /// published before then. Deduplication state may outlive the delete. A receiver still open on the source, in any
+    /// process, may keep delivering its older messages, and must then keep receiving or fault (see
+    /// <see cref="IMessageReceiver"/>).
     /// </summary>
     /// <exception cref="ArgumentException">The source is an instance subscription; dispose its receiver instead.</exception>
     Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default);

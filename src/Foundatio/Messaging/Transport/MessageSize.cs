@@ -4,7 +4,10 @@ using System.Text;
 
 namespace Foundatio.Messaging.Transport;
 
-/// <summary>How Foundatio and the conformance suite measure a message against <see cref="TransportCapabilities.MaxMessageSize"/>.</summary>
+/// <summary>
+/// How Foundatio and the conformance suite measure a message against <see cref="TransportCapabilities.MaxMessageSize"/>.
+/// It counts no overhead per header; transports reserve room for their own framing when they declare the limit.
+/// </summary>
 public static class MessageSize
 {
     /// <summary>Body bytes plus the UTF-8 bytes of every header name and value, the message id, the group key and the deduplication id.</summary>

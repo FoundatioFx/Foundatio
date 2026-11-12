@@ -76,9 +76,19 @@ public sealed record TransportCapabilities
     /// overhead: any message within the limit must be accepted, including binary bodies, and a larger one must be
     /// rejected with <see cref="MessageTooLargeException"/>.
     /// </summary>
+    /// <remarks>
+    /// <see cref="MessageSize"/> counts no overhead per header. A transport whose encoding frames each header reserves
+    /// room for that framing within the limit it declares, for at least 100 headers, plus room for the
+    /// <see cref="KnownHeaders.DeadLetterReason"/> it adds when dead-lettering. It may reject a message whose
+    /// header framing goes beyond what it reserved with <see cref="MessageTooLargeException"/>.
+    /// </remarks>
     public long? MaxMessageSize { get; init; }
 
-    /// <summary>The longest lease the broker allows, or <c>null</c> when unlimited.</summary>
+    /// <summary>
+    /// The longest single lease the broker allows, or <c>null</c> when unlimited. A broker may also cap how long one
+    /// delivery can be held across renewals (SQS: 12 hours from the receive); <see cref="IMessageReceiver.RenewAsync"/>
+    /// then throws <see cref="MessageLeaseLostException"/> when that cap is reached.
+    /// </summary>
     public TimeSpan? MaxLeaseDuration { get; init; }
 
     /// <summary>
@@ -91,8 +101,11 @@ public sealed record TransportCapabilities
 
     /// <summary>
     /// True when messages with the same <see cref="OutgoingMessage.GroupKey"/> are delivered in send order and no
-    /// message of a group is delivered while an earlier one of that group is unsettled. Send order includes delayed
-    /// messages: a delayed message holds back its group's later messages until it has been delivered and settled.
+    /// message of a group is delivered to any receiver of the source, in any process, while an earlier one of that
+    /// group is unsettled. Send order is the order within one <see cref="IMessageTransport.SendAsync"/> call and of
+    /// calls that complete one after another; messages sent concurrently, for example by different processes, may be
+    /// ordered either way. Send order includes delayed and retried messages: a delayed message, or one abandoned with a
+    /// delay, holds back its group's later messages until it has been delivered again and settled.
     /// A single receive may return several messages of one group, in order; Foundatio then handles them one after
     /// another, and if one is not completed or dead-lettered, it abandons the rest of that group's messages in the
     /// batch so they are delivered again in order. Dead-letter sources are not ordered: every dead letter of a group
@@ -100,6 +113,9 @@ public sealed record TransportCapabilities
     /// </summary>
     public bool OrderedGroups { get; init; }
 
-    /// <summary>True when the broker drops messages whose <see cref="OutgoingMessage.DeduplicationId"/> was already seen.</summary>
+    /// <summary>
+    /// True when the broker drops messages whose <see cref="OutgoingMessage.DeduplicationId"/> was already sent to the
+    /// same destination, from any process, within its deduplication window.
+    /// </summary>
     public bool Deduplication { get; init; }
 }

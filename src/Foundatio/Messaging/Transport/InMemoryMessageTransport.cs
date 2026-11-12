@@ -43,6 +43,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(messages);
         ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
 
         var now = _timeProvider.GetUtcNow();
         foreach (var message in messages)
@@ -105,13 +106,12 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         if (source.Kind == MessageSourceKind.InstanceSubscription)
             throw new ArgumentException("Instance subscriptions are removed by disposing their receiver.", nameof(source));
 
-        _sources.TryRemove(source.ToString(), out _);
-        if (source.Kind == MessageSourceKind.DeadLetter)
-            return Task.CompletedTask;
-
-        _sources.TryRemove(MessageSource.DeadLetter(source).ToString(), out _);
         if (source.Kind == MessageSourceKind.Subscription && _topics.TryGetValue(source.Topic!, out var subscriptions))
             subscriptions.TryRemove(source.ToString(), out _);
+
+        RemoveSource(source.ToString());
+        if (source.Kind != MessageSourceKind.DeadLetter)
+            RemoveSource(MessageSource.DeadLetter(source).ToString());
 
         return Task.CompletedTask;
     }
@@ -160,6 +160,12 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return _sources.GetOrAdd(key, k => new InMemorySource(k) { IsDeadLetter = source.Kind == MessageSourceKind.DeadLetter });
     }
 
+    private void RemoveSource(string key)
+    {
+        if (_sources.TryRemove(key, out var state))
+            state.Delete();
+    }
+
     private bool IsDuplicate(string key, DateTimeOffset now)
     {
         foreach (var expired in _deduplication.Where(d => d.Value <= now))
@@ -205,6 +211,8 @@ public sealed class InMemoryMessageTransport : IMessageTransport
             {
                 ObjectDisposedException.ThrowIf(_disposed || _transport._disposed, this);
                 cancellationToken.ThrowIfCancellationRequested();
+                if (_state.IsDeleted)
+                    throw new MessageReceiverFaultedException($"{Source} was deleted while this receiver was open.");
 
                 var now = _transport._timeProvider.GetUtcNow();
                 var (messages, nextChange, changed) = _state.Take(this, maxMessages, now, _options.LeaseDuration);
@@ -302,6 +310,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     {
         private readonly LinkedList<InMemoryEntry> _entries = new();
         private TaskCompletionSource _changed = NewSignal();
+        private volatile bool _deleted;
 
         public InMemorySource(string key)
         {
@@ -310,6 +319,7 @@ public sealed class InMemoryMessageTransport : IMessageTransport
 
         public string Key { get; }
         public bool IsDeadLetter { get; init; }
+        public bool IsDeleted => _deleted;
 
         public bool IsEmpty
         {
@@ -434,6 +444,17 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 ThrowIfStale(delivery);
                 delivery.Entry.LeaseExpiresAt = leaseExpiresAt;
             }
+        }
+
+        public void Delete()
+        {
+            lock (_entries)
+            {
+                _deleted = true;
+                _entries.Clear();
+            }
+
+            Signal();
         }
 
         public void ReleaseAll(Receiver owner)
