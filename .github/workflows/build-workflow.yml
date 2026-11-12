@@ -115,12 +115,27 @@ jobs:
       if: hashFiles('docker-compose.yml') != ''
       run: ${{ inputs.compose-command }}
     - name: Run Tests
+      env:
+        DOTNET_DbgEnableMiniDump: '1'
+        DOTNET_DbgMiniDumpType: '1'
+        DOTNET_DbgMiniDumpName: ${{ runner.temp }}/crash/%e.%p.dmp
+        DOTNET_EnableCrashReport: '1'
       run: |
+        mkdir -p "${{ runner.temp }}/crash"
         if [ "${{ inputs.new-test-runner }}" = "true" ]; then
           dotnet test --solution ${{ steps.slnx.outputs.file }} --configuration Release --no-build --report-github
         else
           dotnet test ${{ steps.slnx.outputs.file }} --configuration Release --no-build --logger GitHubActions
         fi
+    - name: Show Test Host Crash Reports
+      if: failure()
+      run: |
+        for report in "${{ runner.temp }}"/crash/*.crashreport.json; do
+          [ -f "$report" ] || continue
+          echo "::group::$(basename "$report")"
+          jq -r '(.payload.threads | sort_by(.crashed != "true"))[] | "--- thread \(.native_thread_id) crashed=\(.crashed)", (.stack_frames[] | if .is_managed == "true" then "  \(.filename // "?")!\(.method_name // "?")" else "  \(.native_module // "?")!\(.unmanaged_name // .native_image_offset)" end)' "$report" || cat "$report"
+          echo "::endgroup::"
+        done
     - name: Package
       if: github.event_name != 'pull_request'
       run: dotnet pack ${{ steps.slnx.outputs.file }} --configuration Release --no-build
