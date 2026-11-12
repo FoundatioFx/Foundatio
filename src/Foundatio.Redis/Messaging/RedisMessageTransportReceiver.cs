@@ -117,12 +117,13 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private async Task<(IReadOnlyList<IncomingMessage> Messages, TimeSpan? NextChange)> ReceiveOnceAsync(int count)
     {
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
-            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups],
+            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held],
             [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive,
                 RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize]).AnyContext())!;
 
         var entries = (RedisResult[])result[0]!;
         long wait = (long)result[1];
+        _transport.LogReleasedGroups(_keys, (long)result[2]);
         if (entries.Length == 0)
             return ([], wait >= 0 ? TimeSpan.FromMilliseconds(wait) : null);
 

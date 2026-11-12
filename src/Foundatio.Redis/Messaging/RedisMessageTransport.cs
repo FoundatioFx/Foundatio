@@ -45,6 +45,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     private static readonly string HeartbeatScript = LoadScript("Heartbeat");
     private static readonly string PruneScript = LoadScript("Prune");
     private static readonly string DeleteScript = LoadScript("Delete");
+    private static readonly string CreateScript = LoadScript("Create");
     internal static readonly string ReceiveScript = LoadScript("Receive");
     internal static readonly string SettleScript = LoadScript("Settle");
     internal static readonly string ReleaseScript = LoadScript("Release");
@@ -52,6 +53,7 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     private readonly IConnectionMultiplexer _connection;
     private readonly ConcurrentDictionary<RedisMessageReceiver, byte> _receivers = new();
+    private int _evictionPolicyChecked;
     private int _disposed;
 
     public RedisMessageTransport(IConnectionMultiplexer connection, RedisMessageTransportOptions? options = null)
@@ -109,6 +111,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         if (messages.Count == 0)
             return;
 
+        CheckEvictionPolicy();
         var now = TimeProvider.GetUtcNow();
         var encoded = messages.Select(m => new EncodedMessage(m, now, Options.MaxMessageSize)).ToList();
 
@@ -158,6 +161,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(options.LeaseDuration, TimeSpan.Zero, nameof(options));
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
+        CheckEvictionPolicy();
 
         RedisMessageReceiver receiver;
         if (source.Kind == MessageSourceKind.InstanceSubscription)
@@ -238,6 +242,13 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
 
+    internal void LogReleasedGroups(RedisSourceKeys keys, long released)
+    {
+        if (released > 0)
+            Logger.LogWarning("Released {Count} message groups of {Source} whose outstanding message Redis no longer has, so their later messages are delivered; " +
+                "it was evicted or deleted. Redis must not evict messaging keys: use maxmemory-policy noeviction", released, keys.Description);
+    }
+
     internal async Task HeartbeatAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
     {
         var timeout = Options.InstanceSubscriptionTimeout;
@@ -261,12 +272,42 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     private async Task CreateGroupAsync(RedisSourceKeys keys)
     {
+        long released = (long)await Database.ScriptEvaluateAsync(CreateScript, [keys.Stream, keys.Delayed, keys.DelayedData, keys.Groups, keys.Held], [GroupName]).AnyContext();
+        LogReleasedGroups(keys, released);
+    }
+
+    private void CheckEvictionPolicy()
+    {
+        if (Interlocked.Exchange(ref _evictionPolicyChecked, 1) == 0)
+            _ = Task.Run(WarnIfKeysCanBeEvictedAsync);
+    }
+
+    private async Task WarnIfKeysCanBeEvictedAsync()
+    {
         try
         {
-            await Database.StreamCreateConsumerGroupAsync(keys.Stream, GroupName, "0", createStream: true).AnyContext();
+            foreach (var server in _connection.GetServers().Where(s => s.IsConnected && !s.IsReplica))
+            {
+                string? policy = null, maxMemory = null;
+                foreach (var (name, value) in (await server.InfoAsync("memory").AnyContext()).SelectMany(g => g))
+                {
+                    if (name == "maxmemory_policy")
+                        policy = value;
+                    else if (name == "maxmemory")
+                        maxMemory = value;
+                }
+
+                if (policy is not null and not "noeviction" && maxMemory is not null and not "0")
+                {
+                    Logger.LogWarning("Redis {Server} evicts keys when it is full (maxmemory-policy {Policy}); an evicted messaging key loses its messages. " +
+                        "Use maxmemory-policy noeviction, or a Redis that holds only messaging data", server.EndPoint, policy);
+                    return;
+                }
+            }
         }
-        catch (RedisServerException ex) when (ex.Message.StartsWith("BUSYGROUP", StringComparison.Ordinal))
+        catch (Exception ex)
         {
+            Logger.LogDebug(ex, "Could not read the Redis eviction policy");
         }
     }
 
@@ -333,8 +374,11 @@ public sealed class RedisMessageTransport : IMessageTransport
                 values.Add(message.Fields);
             }
 
-            if ((long)await Database.ScriptEvaluateAsync(EnqueueScript, keys.ToArray(), values.ToArray()).AnyContext() < 0)
+            var result = (RedisResult[])(await Database.ScriptEvaluateAsync(EnqueueScript, keys.ToArray(), values.ToArray()).AnyContext())!;
+            if ((long)result[0] < 0)
                 return;
+
+            LogReleasedGroups(target, (long)result[1]);
         }
     }
 

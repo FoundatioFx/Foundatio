@@ -12,9 +12,10 @@ internal sealed class RedisSourceKeys
 {
     private readonly string _base;
 
-    private RedisSourceKeys(string baseKey, bool orderedGroups = true, string? deadLetterBase = null)
+    private RedisSourceKeys(string description, string baseKey, bool orderedGroups = true, string? deadLetterBase = null)
     {
         _base = baseKey;
+        Description = description;
         OrderedGroups = orderedGroups;
         Stream = baseKey + ":stream";
         Leases = baseKey + ":leases";
@@ -30,6 +31,9 @@ internal sealed class RedisSourceKeys
     /// </summary>
     public bool OrderedGroups { get; }
 
+    /// <summary>The source as <see cref="MessageSource.ToString"/> describes it, for logging.</summary>
+    public string Description { get; }
+
     public RedisKey Stream { get; }
     public RedisKey Leases { get; }
     public RedisKey Delayed { get; }
@@ -42,15 +46,16 @@ internal sealed class RedisSourceKeys
 
     public RedisKey DeduplicationKey(string deduplicationId) => $"{_base}:dedup:{deduplicationId}";
 
-    public RedisSourceKeys DeadLetter => new(_base + ":dlq", orderedGroups: false, deadLetterBase: _base + ":dlq");
+    public RedisSourceKeys DeadLetter => new($"deadletter:{Description}", _base + ":dlq", orderedGroups: false, deadLetterBase: _base + ":dlq");
 
-    public static RedisSourceKeys Queue(string prefix, string name) => new($"{prefix}:{{q:{RedisTransportNames.Validate(name)}}}");
+    public static RedisSourceKeys Queue(string prefix, string name) =>
+        new($"queue:{name}", $"{prefix}:{{q:{RedisTransportNames.Validate(name)}}}");
 
     public static RedisSourceKeys Subscription(string prefix, string topic, string name) =>
-        new($"{prefix}:{{s:{RedisTransportNames.ValidateTopic(topic)}/{RedisTransportNames.Validate(name)}}}");
+        new($"subscription:{topic}/{name}", $"{prefix}:{{s:{RedisTransportNames.ValidateTopic(topic)}/{RedisTransportNames.Validate(name)}}}");
 
     public static RedisSourceKeys Instance(string prefix, string topic, string instance) =>
-        new($"{prefix}:{{i:{RedisTransportNames.ValidateTopic(topic)}/{instance}}}");
+        new($"instance:{topic}/{instance}", $"{prefix}:{{i:{RedisTransportNames.ValidateTopic(topic)}/{instance}}}");
 }
 
 /// <summary>The keys that route a topic: its durable subscriptions and its live instance subscriptions.</summary>

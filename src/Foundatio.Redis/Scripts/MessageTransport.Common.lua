@@ -109,24 +109,76 @@ local function advance(k, now, group, id)
 end
 
 -- Moves up to max due delayed messages into the stream, stopping once about maxBytes were moved (always moving at
--- least one); a promoted message stays its group's outstanding one.
+-- least one); a promoted message stays its group's outstanding one. A delayed message whose data was lost releases its
+-- group instead. Returns the number of groups released that way.
 local function promote(k, now, max, maxBytes)
     local bytes = 0
+    local released = 0
     for _, id in ipairs(redis.call('ZRANGEBYSCORE', k.delayed, '-inf', now, 'LIMIT', 0, max)) do
         if bytes >= maxBytes then
             break
         end
         local encoded = redis.call('HGET', k.delayedData, id)
+        local group = redis.call('HGET', k.groups, 'd:' .. id)
         if encoded then
             bytes = bytes + #encoded
             local entryId = redis.call('XADD', k.stream, '*', unpack(decodeFields(encoded)))
-            local group = redis.call('HGET', k.groups, 'd:' .. id)
             if group then
                 redis.call('HSET', k.groups, 'a:' .. group, entryId)
                 redis.call('HDEL', k.groups, 'd:' .. id)
             end
             redis.call('HDEL', k.delayedData, id)
+        elseif group then
+            redis.call('HDEL', k.groups, 'd:' .. id)
+            advance(k, now, group, 'd:' .. id)
+            released = released + 1
         end
         redis.call('ZREM', k.delayed, id)
     end
+    return released
+end
+
+-- Releases every group whose outstanding message is gone: any message of a stream that was lost, or a delayed message
+-- that is no longer in the delayed set. Returns the number of groups released.
+local function releaseLostGroups(k, now)
+    local lost = {}
+    local cursor = '0'
+    repeat
+        local page = redis.call('HSCAN', k.groups, cursor, 'MATCH', 'a:*', 'COUNT', 1000)
+        cursor = page[1]
+        local fields = page[2]
+        for i = 1, #fields, 2 do
+            local outstanding = fields[i + 1]
+            if string.sub(outstanding, 1, 2) ~= 'd:' or not redis.call('ZSCORE', k.delayed, string.sub(outstanding, 3)) then
+                lost[#lost + 1] = { string.sub(fields[i], 3), outstanding }
+            end
+        end
+    until cursor == '0'
+
+    -- HSCAN can return a field twice, so a group is only released while it still waits on the lost message.
+    local released = 0
+    for _, entry in ipairs(lost) do
+        local group, outstanding = entry[1], entry[2]
+        if redis.call('HGET', k.groups, 'a:' .. group) == outstanding then
+            if string.sub(outstanding, 1, 2) == 'd:' then
+                redis.call('HDEL', k.groups, outstanding)
+                redis.call('HDEL', k.delayedData, string.sub(outstanding, 3))
+            end
+            advance(k, now, group, outstanding)
+            released = released + 1
+        end
+    end
+    return released
+end
+
+-- Creates the stream and its consumer group when the stream is missing. A missing stream whose source still has group
+-- state was lost (evicted, or deleted by hand), so every group waiting on one of its messages is released. Returns the
+-- number of groups released.
+local function ensureStream(k, group, now)
+    if redis.call('EXISTS', k.stream) == 1 then
+        return 0
+    end
+
+    redis.call('XGROUP', 'CREATE', k.stream, group, '0', 'MKSTREAM')
+    return releaseLostGroups(k, now)
 end

@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Xunit;
 
@@ -148,6 +149,76 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task SendAsync_AfterTheStreamWasLost_ReleasesTheGroupWaitingOnIt()
+    {
+        var source = MessageSource.Queue(NewName("lost-stream"));
+        var transport = (RedisMessageTransport)Transport;
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("g0", "g-0") with { GroupKey = "g" }], TestCancellationToken);
+        await LoseKeyAsync(source, "stream");
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("g1", "g-1") with { GroupKey = "g" },
+            Message("g2", "g-2") with { GroupKey = "g" },
+            Message("u0", "u-0")
+        ], TestCancellationToken);
+
+        var received = await ReceiveAsync(receiver, 2);
+        Assert.Equal(["g-1", "u-0"], received.Select(m => m.MessageId).Order());
+        foreach (var message in received)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+        var next = await ReceiveOneAsync(receiver);
+        Assert.Equal("g-2", next.MessageId);
+        await receiver.CompleteAsync(next, TestCancellationToken);
+
+        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        AssertLostMessageWarning(source);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReceiveAsync_AfterTheStreamWasLost_ReleasesHeldMessages(bool receiverCreatedBeforeTheLoss)
+    {
+        var source = MessageSource.Queue(NewName("lost-held"));
+        var transport = (RedisMessageTransport)Transport;
+        var early = receiverCreatedBeforeTheLoss ? await CreateReceiverAsync(source) : null;
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("g0", "g-0") with { GroupKey = "g" },
+            Message("g1", "g-1") with { GroupKey = "g" }
+        ], TestCancellationToken);
+        await LoseKeyAsync(source, "stream");
+
+        await using var receiver = early ?? await CreateReceiverAsync(source);
+        var next = await ReceiveOneAsync(receiver);
+
+        Assert.Equal("g-1", next.MessageId);
+        await receiver.CompleteAsync(next, TestCancellationToken);
+        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        AssertLostMessageWarning(source);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_AfterADelayedMessageWasLost_ReleasesItsGroup()
+    {
+        var source = MessageSource.Queue(NewName("lost-delayed"));
+        var transport = (RedisMessageTransport)Transport;
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("g0", "g-0") with { GroupKey = "g", DeliverAt = DateTimeOffset.UtcNow.AddMilliseconds(500) },
+            Message("g1", "g-1") with { GroupKey = "g" }
+        ], TestCancellationToken);
+        await LoseKeyAsync(source, "delayed-data");
+
+        await using var receiver = await CreateReceiverAsync(source);
+        var next = await ReceiveOneAsync(receiver, ShortDelay + DeliveryTimeout);
+
+        Assert.Equal("g-1", next.MessageId);
+        await receiver.CompleteAsync(next, TestCancellationToken);
+        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        AssertLostMessageWarning(source);
+    }
+
+    [Fact]
     public async Task ReceiveAsync_WithLargeMessages_BoundsEachBatchByBytes()
     {
         var source = MessageSource.Queue(NewName("byte-budget"));
@@ -266,6 +337,13 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal(3, third.DeliveryCount);
         await second.CompleteAsync(third, TestCancellationToken);
     }
+
+    // As if Redis evicted the key under memory pressure, or someone deleted it.
+    private Task LoseKeyAsync(MessageSource queue, string key) =>
+        GetMuxer().GetDatabase().KeyDeleteAsync($"{KeyPrefix}:{{q:{queue.Name}}}:{key}");
+
+    private void AssertLostMessageWarning(MessageSource source) =>
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("noeviction"));
 
     private static void AssertWithinReceiveBudget(IReadOnlyList<IncomingMessage> batch, int messageSize, int total)
     {

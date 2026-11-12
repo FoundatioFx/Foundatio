@@ -1,17 +1,17 @@
--- KEYS: stream, leases, delayed, delayed-data, groups
+-- KEYS: stream, leases, delayed, delayed-data, groups, held
 -- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote, max bytes, max message bytes
 -- Reads stop once about max bytes were read, always returning at least one message when one is available.
+-- Returns the messages, the ms until the next delayed or leased message is due (-1 when there is none or messages were
+-- returned), and the number of groups released because their outstanding message was lost
 local stream, leases, delayed = KEYS[1], KEYS[2], KEYS[3]
+local k = { stream = stream, delayed = delayed, delayedData = KEYS[4], groups = KEYS[5], held = KEYS[6] }
 local group, consumer = ARGV[1], ARGV[2]
 local maxMessages, lease = tonumber(ARGV[3]), tonumber(ARGV[4])
 local maxBytes, maxMessageBytes = tonumber(ARGV[6]), tonumber(ARGV[7])
 local now = nowMs()
 
-promote({ stream = stream, delayed = delayed, delayedData = KEYS[4], groups = KEYS[5] }, now, tonumber(ARGV[5]), maxBytes)
-
-if redis.call('EXISTS', stream) == 0 then
-    redis.call('XGROUP', 'CREATE', stream, group, '0', 'MKSTREAM')
-end
+local released = ensureStream(k, group, now)
+released = released + promote(k, now, tonumber(ARGV[5]), maxBytes)
 
 local messages = {}
 local bytes = 0
@@ -81,4 +81,4 @@ if #messages == 0 then
     end
 end
 
-return { messages, wait }
+return { messages, wait, released }
