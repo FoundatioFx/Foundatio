@@ -3,10 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Amazon.Runtime;
+using Amazon.SQS;
 using Amazon.SQS.Model;
 using Foundatio.Extensions;
 using Microsoft.Extensions.Logging;
@@ -17,7 +19,9 @@ namespace Foundatio.Messaging.Transport;
 /// <summary>
 /// Receives from one SQS queue. Besides leasing deliveries it deletes messages sent before the queue's last purge and
 /// purge markers, and hides messages that arrive before their delivery time; on a FIFO queue it then also releases the
-/// later messages of that group it received, so none is handed out ahead of the hidden one.
+/// later messages of that group it received, so none is handed out ahead of the hidden one. On a standard queue that
+/// already has <see cref="MaxHiddenInFlight"/> messages in flight, an early message is sent again with a delay of up to
+/// 15 minutes instead, since delayed messages do not count toward SQS's in-flight quota.
 /// </summary>
 internal sealed class SqsMessageReceiver : IMessageReceiver
 {
@@ -40,6 +44,16 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private const string SentTimestampAttribute = SqsMessageTransport.SentTimestampAttribute;
     private const string FirstReceiveTimestampAttribute = SqsMessageTransport.FirstReceiveTimestampAttribute;
     private const string MessageGroupIdAttribute = "MessageGroupId";
+    private const int MaxNativeDelaySeconds = 15 * 60;
+
+    /// <summary>
+    /// How many messages may be in flight on a standard queue before early messages are sent again with a delay rather
+    /// than hidden. SQS stops returning messages from a standard queue with about 120,000 in flight.
+    /// </summary>
+    private const long MaxHiddenInFlight = 50_000;
+
+    /// <summary>How often the number of messages in flight is read from SQS while early messages arrive.</summary>
+    private static readonly TimeSpan InFlightCheckInterval = TimeSpan.FromMinutes(1);
 
     private readonly SqsMessageTransport _transport;
     private readonly string _queueUrl;
@@ -51,6 +65,9 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private readonly ConcurrentDictionary<string, SqsIncomingMessage> _inFlight = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _disposing = new();
     private Task _heartbeat = Task.CompletedTask;
+    private long _inFlightCheckedAt;
+    private long _measuredInFlight;
+    private long _hiddenSinceCheck;
     private int _disposed;
 
     public SqsMessageReceiver(SqsMessageTransport transport, MessageSource source, ReceiverOptions options, string queueUrl, string? deadLetterQueueName,
@@ -261,7 +278,11 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
                 var early = deliverAt - now;
                 if (early > EarlyDeliveryTolerance)
                 {
+                    if (!_fifo && await IsCrowdedAsync().AnyContext() && await TrySendAgainAsync(message, decoded, early).AnyContext())
+                        continue;
+
                     await SetVisibilityAsync(message, decoded.MessageId, GetHideSeconds(message, early, now, leaseStarted), LogLevel.Warning).AnyContext();
+                    Interlocked.Increment(ref _hiddenSinceCheck);
                     if (groupId is not null)
                         (heldGroups ??= new HashSet<string>(StringComparer.Ordinal)).Add(groupId);
                     continue;
@@ -323,6 +344,80 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
 
         var hiddenFor = deliverAt - EarlyDeliveryTolerance - DateTimeOffset.FromUnixTimeMilliseconds(firstReceived);
         return hiddenFor > TimeSpan.Zero ? (int)Math.Ceiling(hiddenFor / HideInterval) : 0;
+    }
+
+    /// <summary>
+    /// Whether the queue has so many messages in flight that hiding another early one risks SQS's in-flight quota, past
+    /// which no message of the queue can be received. Read from SQS at most every <see cref="InFlightCheckInterval"/>,
+    /// adding what this receiver has hidden since.
+    /// </summary>
+    private async Task<bool> IsCrowdedAsync()
+    {
+        long checkedAt = Interlocked.Read(ref _inFlightCheckedAt);
+        if (checkedAt == 0 || Stopwatch.GetElapsedTime(checkedAt) > InFlightCheckInterval)
+        {
+            Interlocked.Exchange(ref _inFlightCheckedAt, Stopwatch.GetTimestamp());
+            try
+            {
+                var response = await _transport.Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+                {
+                    QueueUrl = _queueUrl,
+                    AttributeNames = [QueueAttributeName.ApproximateNumberOfMessagesNotVisible]
+                }).AnyContext();
+
+                Interlocked.Exchange(ref _measuredInFlight, SqsMessageTransport.GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessagesNotVisible) ?? 0);
+                Interlocked.Exchange(ref _hiddenSinceCheck, 0);
+            }
+            catch (AmazonServiceException ex)
+            {
+                _transport.Logger.LogDebug(ex, "Could not read how many messages of {Source} are in flight", Source);
+            }
+        }
+
+        return Interlocked.Read(ref _measuredInFlight) + Interlocked.Read(ref _hiddenSinceCheck) >= MaxHiddenInFlight;
+    }
+
+    /// <summary>
+    /// Sends a copy of an early message to the queue with a delay of up to 15 minutes, then deletes the original. A
+    /// copy is received for the first time, so the original's receives are not counted as attempts. Returns false,
+    /// so the message is hidden instead, when the copy could not be sent.
+    /// </summary>
+    private async Task<bool> TrySendAgainAsync(SqsMessage message, SqsDecodedMessage decoded, TimeSpan early)
+    {
+        var envelope = message.MessageAttributes?.GetValueOrDefault(SqsMessageTransportCodec.AttributeName);
+        if (envelope?.BinaryValue is not { } envelopeBytes)
+            return false;
+
+        try
+        {
+            await _transport.Sqs.SendMessageAsync(new SendMessageRequest
+            {
+                QueueUrl = _queueUrl,
+                MessageBody = message.Body,
+                MessageAttributes = new Dictionary<string, MessageAttributeValue>
+                {
+                    [SqsMessageTransportCodec.AttributeName] = new() { DataType = envelope.DataType, BinaryValue = new MemoryStream(envelopeBytes.ToArray(), writable: false) }
+                },
+                DelaySeconds = (int)Math.Min(Math.Ceiling(early.TotalSeconds), MaxNativeDelaySeconds),
+                MessageGroupId = decoded.GroupKey is { } groupKey ? SqsMessageTransportNames.FifoId(groupKey) : null
+            }).AnyContext();
+        }
+        catch (AmazonServiceException ex)
+        {
+            _transport.Logger.LogWarning(ex, "Could not send early message {MessageId} from {Source} again with a delay; hiding it instead", decoded.MessageId, Source);
+            return false;
+        }
+
+        try
+        {
+            await _transport.Sqs.DeleteMessageAsync(new DeleteMessageRequest { QueueUrl = _queueUrl, ReceiptHandle = message.ReceiptHandle }).AnyContext();
+        }
+        catch (AmazonServiceException ex)
+        {
+            _transport.Logger.LogWarning(ex, "Could not delete early message {MessageId} from {Source} after sending it again with a delay; it may be delivered twice", decoded.MessageId, Source);
+        }
+
+        return true;
     }
 
     private async Task DiscardAsync(SqsMessage message, string messageId)

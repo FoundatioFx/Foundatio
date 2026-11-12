@@ -33,9 +33,12 @@ namespace Foundatio.Messaging.Transport;
 /// <remarks>
 /// <para>
 /// SNS cannot delay a publish and FIFO queues cannot delay a single message, so such a message carries its delivery
-/// time and is hidden with a visibility timeout when it is first received, again every 12 hours, until it is due.
-/// Hidden messages count toward SQS's limit of in-flight messages per queue, so prefer delayed sends (or jobs) for
-/// long or high-volume delays on standard queues.
+/// time and is hidden with a visibility timeout when it is first received, again every 11 hours, until it is due.
+/// Hidden messages count toward SQS's quota of messages in flight per queue (about 120,000), past which SQS returns no
+/// message of the queue at all. So on a standard queue that already has 50,000 in flight, an early message is instead
+/// sent again with a delay of up to 15 minutes, which does not count toward the quota but costs a send and a delete
+/// every 15 minutes. FIFO queues can only hide, so a burst of long-delayed messages can stall one; use jobs for long or
+/// high-volume delays.
 /// </para>
 /// <para>
 /// Subscription and instance queues are created with the policy that lets their topic send to them, so SNS may deliver

@@ -288,6 +288,54 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
+    public async Task Receive_EarlyMessageWhileManyAreInFlight_IsSentAgainWithADelayInsteadOfHidden()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange: SQS stops returning messages from a queue with about 120,000 in flight. Hidden messages count;
+        // delayed ones do not. Each delay moves the clock ahead by the delay and SQS shows the copy a second later.
+        var clock = new OffsetTimeProvider();
+        var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        var delays = new List<int>();
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is SendMessageRequest { DelaySeconds: > 1 } copy)
+            {
+                lock (delays)
+                    delays.Add(copy.DelaySeconds.Value);
+                clock.Advance(TimeSpan.FromSeconds(copy.DelaySeconds.Value));
+                copy.DelaySeconds = 1;
+            }
+
+            var response = await send();
+            if (request is GetQueueAttributesRequest attributes && attributes.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible))
+                ((GetQueueAttributesResponse)response).Attributes[QueueAttributeName.ApproximateNumberOfMessagesNotVisible] = "100000";
+
+            return response;
+        };
+
+        string topic = NewName("in-flight");
+        await using var receiver = await transport.CreateReceiverAsync(MessageSource.Subscription(topic, "later"), new ReceiverOptions(), TestCancellationToken);
+        var headers = new Dictionary<string, string> { ["tenant"] = "42" };
+
+        // Act
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("in 20 minutes", "id-later", headers) with { GroupKey = "g", DeliverAt = clock.GetUtcNow().AddMinutes(20) }], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver, TimeSpan.FromSeconds(30));
+
+        // Assert
+        Assert.Equal("id-later", message.MessageId);
+        Assert.Equal("in 20 minutes", Encoding.UTF8.GetString(message.Body.Span));
+        Assert.Equal(headers, message.Headers);
+        Assert.Equal("g", message.GroupKey);
+        Assert.Equal(1, message.DeliveryCount);
+        Assert.Equal(2, delays.Count);
+        Assert.Equal(900, delays[0]);
+        Assert.InRange(delays[1], 280, 300);
+        Assert.DoesNotContain(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>(), r => r.VisibilityTimeout > 0);
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
     public async Task Delete_Subscription_UnsubscribesAndRevokesTheTopicButKeepsTheQueue()
     {
         // Arrange
