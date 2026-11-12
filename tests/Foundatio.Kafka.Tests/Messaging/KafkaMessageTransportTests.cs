@@ -398,6 +398,47 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal("later", Encoding.UTF8.GetString(message.Body.Span));
     }
 
+    [Fact]
+    public async Task CreateTopics_WithShortRetentionOrCompaction_KeepsTheDelayAndDeadLetterTopicsSafe()
+    {
+        var options = CreateOptions() with
+        {
+            Prefix = UniquePrefix(),
+            TopicConfigs = new Dictionary<string, string> { ["retention.ms"] = "60000", ["retention.bytes"] = "1048576", ["cleanup.policy"] = "compact" }
+        };
+        var transport = Track(new KafkaMessageTransport(options));
+        var source = MessageSource.Queue(NewName("retention"));
+        await using (await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+        await using (await transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions(), TestCancellationToken))
+        {
+        }
+
+        using var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = KafkaTestConnection.BootstrapServers }).Build();
+        async Task<Dictionary<string, string>> DescribeAsync(string topic)
+        {
+            var result = await admin.DescribeConfigsAsync([new ConfigResource { Type = ResourceType.Topic, Name = topic }]);
+            return result.Single().Entries.ToDictionary(e => e.Key, e => e.Value.Value);
+        }
+
+        var queue = await DescribeAsync($"{options.Prefix}.queue.{source.Name}");
+        Assert.Equal("60000", queue["retention.ms"]);
+        Assert.Equal("compact", queue["cleanup.policy"]);
+
+        var deadLetters = await DescribeAsync($"{options.Prefix}.deadletter.queue.{source.Name}");
+        Assert.Equal("delete", deadLetters["cleanup.policy"]);
+        Assert.Equal(TimeSpan.FromDays(14).TotalMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture), deadLetters["retention.ms"]);
+        Assert.Equal("-1", deadLetters["retention.bytes"]);
+
+        foreach (var tier in KafkaDelayTiers.All)
+        {
+            var delay = await DescribeAsync($"{options.Prefix}.delay.{KafkaDelayTiers.Label(tier)}");
+            Assert.Equal("delete", delay["cleanup.policy"]);
+            Assert.Equal("LogAppendTime", delay["message.timestamp.type"]);
+            Assert.Equal(TimeSpan.FromDays(7).TotalMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture), delay["retention.ms"]);
+            Assert.Equal("-1", delay["retention.bytes"]);
+        }
+    }
+
     private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)
     {
         int assigned = first.Assignment.Count;

@@ -26,7 +26,11 @@ public sealed record KafkaMessageTransportOptions
     /// <summary>Replication factor for topics the transport creates, or <c>null</c> for the broker's default.</summary>
     public short? ReplicationFactor { get; init; }
 
-    /// <summary>Topic-level configs for topics the transport creates, for example <c>retention.ms</c>.</summary>
+    /// <summary>
+    /// Topic-level configs for topics the transport creates, for example <c>retention.ms</c>. Delay and dead-letter
+    /// topics take them too, except that they are never compacted and always keep their records for at least seven
+    /// days (delay) or fourteen days (dead letters), whatever their size. Topics that already exist are not changed.
+    /// </summary>
     public IReadOnlyDictionary<string, string>? TopicConfigs { get; init; }
 
     /// <summary>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,6 +40,15 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ForwarderRestartDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxForwarderRestartDelay = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The shortest retention of a delay tier topic. A record moves on within six hours while forwarders run; the rest
+    /// covers time without any.
+    /// </summary>
+    internal static readonly TimeSpan DelayRetention = TimeSpan.FromDays(7);
+
+    /// <summary>The shortest retention of a dead-letter topic, the longest SQS keeps a message.</summary>
+    internal static readonly TimeSpan DeadLetterRetention = TimeSpan.FromDays(14);
 
     private readonly IAdminClient _admin;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _topics = new(StringComparer.Ordinal);
@@ -641,7 +651,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     private async Task EnsureTopicAsync(string name)
     {
-        var creation = _topics.GetOrAdd(name, n => new Lazy<Task>(() => CreateTopicAsync(n, logAppendTime: Names.IsDelay(n))));
+        var creation = _topics.GetOrAdd(name, n => new Lazy<Task>(() => CreateTopicAsync(n)));
         try
         {
             await creation.Value.AnyContext();
@@ -653,12 +663,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
     }
 
-    private async Task CreateTopicAsync(string name, bool logAppendTime)
+    private async Task CreateTopicAsync(string name)
     {
-        var configs = Options.TopicConfigs is { } topicConfigs ? new Dictionary<string, string>(topicConfigs) : new Dictionary<string, string>();
-        if (logAppendTime)
-            configs["message.timestamp.type"] = "LogAppendTime";
-
+        var configs = GetTopicConfigs(name);
         var specification = new TopicSpecification
         {
             Name = name,
@@ -677,6 +684,33 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
 
         await GetPartitionsAsync(name, CancellationToken.None).AnyContext();
+    }
+
+    /// <summary>
+    /// <see cref="KafkaMessageTransportOptions.TopicConfigs"/>, except where they would lose messages the transport
+    /// keeps for itself: delay tiers and dead-letter topics are never compacted (their records have no key) and keep
+    /// their records at least <see cref="DelayRetention"/> and <see cref="DeadLetterRetention"/>, whatever their size;
+    /// delay tiers also need the broker's append time to know when a record is due.
+    /// </summary>
+    private Dictionary<string, string> GetTopicConfigs(string topic)
+    {
+        var configs = Options.TopicConfigs is { } topicConfigs ? new Dictionary<string, string>(topicConfigs) : new Dictionary<string, string>();
+        TimeSpan? minimumRetention = Names.IsDelay(topic) ? DelayRetention : Names.IsDeadLetter(topic) ? DeadLetterRetention : null;
+        if (minimumRetention is not { } minimum)
+            return configs;
+
+        configs["cleanup.policy"] = "delete";
+        configs["retention.bytes"] = "-1";
+        if (!(configs.TryGetValue("retention.ms", out string? retention) && Int64.TryParse(retention, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long milliseconds)
+            && (milliseconds < 0 || milliseconds >= minimum.TotalMilliseconds)))
+        {
+            configs["retention.ms"] = ((long)minimum.TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (Names.IsDelay(topic))
+            configs["message.timestamp.type"] = "LogAppendTime";
+
+        return configs;
     }
 
     /// <summary>The partitions of a topic, waiting until a newly created topic has leaders for all of them.</summary>
