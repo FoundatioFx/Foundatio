@@ -61,13 +61,17 @@ The examples above point at [Floci](https://github.com/floci-io/floci), a free l
 
 ```csharp
 services.AddFoundatioMessaging(m => m
-    .UseTransport(new SqsMessageTransport(new SqsMessageTransportOptions
+    .UseSqs(new SqsMessageTransportOptions
     {
         ConnectionString = "Region=us-east-1",
         Prefix = "prod-",
         Fifo = false
-    })));
+    }));
 ```
+
+- `UseSqs()`, with no connection string, uses the default AWS credential and region resolution, such as an IAM role.
+- `UseSqs(sp => new SqsMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
+- The service provider creates the transport and disposes it, with its SQS and SNS clients, at shutdown. `LoggerFactory` and `TimeProvider` come from DI unless the options set them.
 
 How it maps to AWS:
 

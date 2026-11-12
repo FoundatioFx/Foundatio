@@ -9,6 +9,7 @@ Foundatio provides AWS implementations for file storage, queuing, and messaging 
 | `S3FileStorage` | `IFileStorage` | Foundatio.AWS |
 | `SQSMessageBus` | `IMessageBus` | Foundatio.AWS |
 | `SQSQueue<T>` | `IQueue<T>` | Foundatio.AWS |
+| `SqsMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.AWS |
 
 ## Installation
 
@@ -177,6 +178,18 @@ Things to know:
 `SQSQueue` creates a `<name>-deadletter` queue with a native SQS redrive policy, and moves a message there itself once `Retries` is exceeded. FIFO queues use `<name>-deadletter.fifo`, because AWS requires the dead-letter queue of a FIFO queue to be a FIFO queue ([CreateQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_CreateQueue.html)). Without a dead-letter queue, the message is deleted once `Retries` is exceeded. If the dead-letter queue can't be resolved, the error is logged and the message stays on the source queue to be retried. `GetDeadletterItemsAsync` is not supported for SQS; read the dead-letter queue directly. The dead-letter queue uses the same encryption settings as the source queue, and its name must fit the 80-character SQS limit, so a source queue name can be at most 69 characters (including `.fifo`). Moving a message is at-least-once: the copy is sent before the original is deleted, so a failed delete can leave the message in both queues. `RetryDelay` is applied as the visibility timeout and capped at the SQS maximum of 12 hours.
 
 Deleting a queue takes up to 60 seconds in SQS, and a send during that window can succeed and then be lost with the queue ([DeleteQueue](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteQueue.html)). Stop producers and workers before `DeleteQueueAsync` and wait at least 60 seconds before reusing the name. After a `QueueDoesNotExistException`, the cached queue url is cleared so the next call recreates the queue.
+
+## Messages and Events
+
+`SqsMessageTransport` runs [Messages and Events](/guide/messages) on SQS queues and SNS topics. Register it with `UseSqs`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseSqs(new SqsMessageTransportOptions { ConnectionString = "Region=us-east-1", Prefix = "prod-" })
+    .AddConsumer<SendReceiptHandler>());
+```
+
+See [Using SQS](/guide/messages#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
 
 ## Running the Tests
 

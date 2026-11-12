@@ -27,7 +27,7 @@ public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceip
 // Registration
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")             // names this service's subscriptions
-    .UseInMemory()                        // or a provider, e.g. UseRedis(...)
+    .UseInMemory()                        // or UseRedis(), UseSqs() or UseKafka(...); see Transports
     .AddSubscriber<OrderPlacedHandler>()  // events
     .AddConsumer<SendReceiptHandler>());  // commands
 
@@ -36,6 +36,72 @@ app.MapPost("/orders", (IMessageClient messages) => messages.PublishAsync(new Or
 ```
 
 Registered handlers start receiving when the host starts. A process that registers no handlers only sends.
+
+## Transports
+
+`UseInMemory()` keeps messages in the process, which suits tests and a single instance. To run several instances, use a broker. Each provider package adds a `Use...` method to the builder, with no extra `using`; the options types are in `Foundatio.Messaging.Transport`.
+
+- The service provider creates the transport and disposes it when the host shuts down.
+- `LoggerFactory` and `TimeProvider` come from the service provider unless the options set them.
+- Each method takes the options, or a `Func<IServiceProvider, TOptions>` that builds them, for example from configuration.
+
+### Using Redis
+
+`dotnet add package Foundatio.Redis`. The transport uses Redis Streams. It needs Redis 6.2 or later, or Valkey, on a single server, Sentinel or a cluster.
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRedis(new RedisMessageTransportOptions { Prefix = "myapp:messaging" })   // or UseRedis() for the defaults
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+```
+
+- `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`. Either way the connection stays yours; the transport doesn't close it.
+- It orders groups, honors `DeduplicationId`, and delays messages for any length of time.
+- Messages live in Redis memory. Set `maxmemory-policy noeviction`, and bound dead letters with `DeadLetterMaxLength` or `DeadLetterRetention`.
+- See the [Redis README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option, memory use and latency.
+
+### Using SQS
+
+`dotnet add package Foundatio.AWS`. Queues are SQS queues; topics are SNS topics, and each subscription is an SQS queue subscribed to its topic.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseSqs(new SqsMessageTransportOptions { ConnectionString = "Region=us-east-1", Prefix = "prod-" })
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or build the options from configuration
+m.UseSqs(sp => new SqsMessageTransportOptions
+{
+    ConnectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("Sqs"),
+    Prefix = "prod-"
+});
+```
+
+- Without a connection string (`UseSqs()`), the default AWS credential and region resolution is used, such as an IAM role.
+- Standard queues neither order groups nor deduplicate. Set `Fifo = true` for both, at lower throughput.
+- An empty `Prefix` shares queue names with `SQSQueue<T>` and `SQSMessageBus`. Use a prefix while they run side by side.
+- See the [AWS README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for delays, quotas and the IAM actions the transport needs.
+
+### Using Kafka
+
+`dotnet add package Foundatio.Kafka`. Queues and topics are Kafka topics, and each queue and durable subscription reads its topic as a consumer group.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseKafka("localhost:9092")
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options
+m.UseKafka(new KafkaMessageTransportOptions { BootstrapServers = "broker:9092", Partitions = 6, ReplicationFactor = 3 });
+```
+
+- It orders groups and delays messages through delay topics. It doesn't deduplicate, and leases never expire.
+- Competing instances share a topic's partitions, so create topics with at least as many partitions as you run instances.
+- See the [Kafka README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for how it maps to Kafka, retention and limits.
 
 ## Send or publish?
 

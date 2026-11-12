@@ -20,7 +20,7 @@ The original queue, message bus and job APIs keep working alongside the new ones
 
 ## Step by step
 
-1. Add `AddFoundatioMessaging(m => m.UseRedis(...))` (or another provider) next to your existing registrations.
+1. Add `AddFoundatioMessaging(m => m.UseRedis())` next to your existing registrations. It uses the `IConnectionMultiplexer` you already register for Redis; for SQS or Kafka, see [Transports](./messages#transports).
 2. Add `m.AddLegacyMessageBus()` so code that injects `IMessageBus`, including `HybridCacheClient` and `CacheLockProvider`, uses the same transport.
 3. Move a queue: change its producers to `SendAsync`, turn its `QueueJobBase<T>` into an `IMessageHandler<T>`, and register it with `AddConsumer`. Drain the old queue before removing its job.
 4. Move scheduled jobs: convert each to `IDurableJob` and replace `services.AddCronJob<T>(...)` with `j.AddCronJob<T>(...)`, or schedule it unchanged with `j.AddCronJob<LegacyJob<T>>(...)`. Give each job a stable `[Job(Name = "...")]`. Leave jobs that run continuously on `services.AddJob<T>()`.

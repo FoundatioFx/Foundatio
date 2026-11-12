@@ -7,6 +7,7 @@ Foundatio provides Apache Kafka messaging for high-throughput event streaming. [
 | Implementation | Interface | Package |
 |----------------|-----------|---------|
 | `KafkaMessageBus` | `IMessageBus` | Foundatio.Kafka |
+| `KafkaMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.Kafka |
 
 ## Installation
 
@@ -46,6 +47,18 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 | `SaslPassword` | `string` | | SASL password |
 
 For additional options, see [KafkaMessageBusOptions source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Kafka/Messaging/KafkaMessageBusOptions.cs).
+
+## Messages and Events
+
+`KafkaMessageTransport` runs [Messages and Events](/guide/messages) on Kafka. Register it with `UseKafka`:
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseKafka("localhost:9092")
+    .AddConsumer<SendReceiptHandler>());
+```
+
+See [Using Kafka](/guide/messages#using-kafka) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for options, topics and limits.
 
 ## Running the Tests
 

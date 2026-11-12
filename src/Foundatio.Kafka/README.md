@@ -47,13 +47,17 @@ await messageBus.PublishAsync(new MyMessage { Data = "Hello" });
 
 ```csharp
 services.AddFoundatioMessaging(m => m
-    .UseTransport(new KafkaMessageTransport(new KafkaMessageTransportOptions
+    .UseKafka(new KafkaMessageTransportOptions
     {
         BootstrapServers = "localhost:9092",
         Partitions = 6,
         ReplicationFactor = 3
-    })));
+    }));
 ```
+
+- `UseKafka("localhost:9092")` uses the default options.
+- `UseKafka(sp => new KafkaMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
+- The service provider creates the transport and disposes it at shutdown. `LoggerFactory` and `TimeProvider` come from DI unless the options set them.
 
 How it maps to Kafka:
 

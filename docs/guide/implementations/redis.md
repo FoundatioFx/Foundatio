@@ -10,6 +10,8 @@ Foundatio provides Redis implementations for caching, queues, messaging, locks, 
 | `RedisHybridCacheClient` | `ICacheClient` | Foundatio.Redis |
 | `RedisQueue<T>` | `IQueue<T>` | Foundatio.Redis |
 | `RedisMessageBus` | `IMessageBus` | Foundatio.Redis |
+| `RedisMessageTransport` | `IMessageTransport` ([Messages and Events](/guide/messages)) | Foundatio.Redis |
+| `RedisJobStore` | `IJobStore` ([Durable Jobs](/guide/durable-jobs)) | Foundatio.Redis |
 | `RedisFileStorage` | `IFileStorage` | Foundatio.Redis |
 | `CacheLockProvider` | `ILockProvider` | Foundatio (with Redis cache) |
 
@@ -321,6 +323,22 @@ var messageBus = new RedisMessageBus(options =>
 // All instances subscribed to this type receive the message
 await messageBus.SubscribeAsync<OrderCreatedEvent>(HandleOrder);
 ```
+
+## Messages and Durable Jobs
+
+`RedisMessageTransport` runs [Messages and Events](/guide/messages) on Redis Streams, and `RedisJobStore` stores [Durable Jobs](/guide/durable-jobs). Register both with `UseRedis`, which uses the `IConnectionMultiplexer` registered in DI:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRedis()
+    .AddConsumer<SendReceiptHandler>());
+builder.Services.AddFoundatioJobs(j => j
+    .UseRedis()
+    .AddJob<GenerateReportJob>());
+```
+
+See [Using Redis](/guide/messages#using-redis) for messaging, [Using Redis](/guide/durable-jobs#using-redis) for jobs, and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option.
 
 ## RedisFileStorage
 

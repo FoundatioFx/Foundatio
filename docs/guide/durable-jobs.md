@@ -32,7 +32,7 @@ public class CleanupJob(IReportService reports) : IDurableJob
 }
 
 builder.Services.AddFoundatioJobs(j => j
-    .UseInMemory()                            // or a provider, e.g. UseRedis(...)
+    .UseInMemory()                            // or UseRedis(); see Using Redis
     .AddJob<GenerateReportJob>()
     .AddCronJob<CleanupJob>("0 3 * * *"));    // 03:00 UTC daily
 
@@ -46,9 +46,24 @@ app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
     await jobs.GetAsync(id) is { } job ? Results.Ok(new { job.State, job.Progress, job.Message }) : Results.NotFound());
 ```
 
-The worker and scheduler start with the host in any process that registers jobs. A process that only enqueues just needs `UseInMemory()` (or a provider) and the argument records.
+The worker and scheduler start with the host in any process that registers jobs. A process that only enqueues needs the argument records and the same store as the workers, such as `UseRedis()`. An in-memory store is private to its process, so jobs enqueued into it run only there.
 
 A job with arguments is named after its arguments record, which is why `[Job(Name = ...)]` goes on `GenerateReport` rather than on the job class; putting it on the job class is rejected at startup. A job without arguments is named after its class, so its attribute goes on the class.
+
+## Using Redis
+
+`UseInMemory()` keeps jobs in the process, so they are lost when it stops and other instances never see them. To share jobs between instances and keep them across restarts, store them in Redis with `dotnet add package Foundatio.Redis`:
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync("localhost"));
+builder.Services.AddFoundatioJobs(j => j
+    .UseRedis(new RedisJobStoreOptions { Prefix = "myapp:jobs" })   // or UseRedis() for the defaults
+    .AddJob<GenerateReportJob>());
+```
+
+- `UseRedis()` uses the `IConnectionMultiplexer` registered in DI, and the host fails to start without one. To use another connection, call `UseRedis(connection, options)`; to build the options from configuration, pass a `Func<IServiceProvider, RedisJobStoreOptions>`. The connection stays yours.
+- `RedisJobStoreOptions` is in `Foundatio.Jobs.Store`. Every process that enqueues or runs the same jobs must use the same `Prefix` and `Database`.
+- The prefix is the store's hash tag, so on a cluster the whole store lives on one shard. Give each application its own prefix.
 
 ## Running a job
 

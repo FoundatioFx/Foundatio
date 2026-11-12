@@ -3,7 +3,8 @@
 //   curl -X POST localhost:5000/reports                 enqueue a durable job with arguments
 //   curl localhost:5000/reports/{id}                    poll the job's status and progress
 // `dotnet run -- --verify` runs the same flow once and exits (used in CI).
-// For production, replace UseInMemory() with a provider such as UseRedis(...). Handlers and jobs do not change.
+// To run several instances, add Foundatio.Redis, register an IConnectionMultiplexer and replace both UseInMemory() calls
+// with UseRedis(). Handlers and jobs do not change.
 using Foundatio.Jobs;
 using Foundatio.Messaging;
 using Foundatio.QuickstartSample;

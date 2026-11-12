@@ -266,7 +266,7 @@ builder.Services.AddDistributedCronJob<CleanupJob>("0 */6 * * *");
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")               // names durable subscriptions; required on every transport but in-memory
-    .UseInMemory()                          // provider: m.UseRedis(...) etc.
+    .UseInMemory()                          // or UseRedis() / UseSqs(options) / UseKafka("host:9092")
     .AddConsumer<SendReceiptHandler>()      // commands: SendAsync -> exactly one consumer
     .AddSubscriber<OrderPlacedHandler>()    // events: PublishAsync -> one copy per service
     .AddSubscriber<CacheBuster>(new SubscriptionOptions { Scope = SubscriptionScope.Instance }));
@@ -277,12 +277,13 @@ public class SendReceiptHandler(IEmail email) : IMessageHandler<SendReceipt>
 }
 
 builder.Services.AddFoundatioJobs(j => j
-    .UseInMemory()
+    .UseInMemory()                          // or UseRedis()
     .AddJob<GenerateReportJob>()            // IDurableJob<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
     .AddCronJob<CleanupJob>("0 3 * * *"));  // IDurableJob (no args, gets IJobContext); one run per occurrence cluster-wide
 ```
 
 - Registered handlers/jobs start with the host; `AddFoundatio*` calls accumulate. No handlers registered = send/enqueue only.
+- Providers: `UseRedis` (Foundatio.Redis, messaging and jobs), `UseSqs` (Foundatio.AWS), `UseKafka` (Foundatio.Kafka), in namespace `Microsoft.Extensions.DependencyInjection`. Each takes an options record or a `Func<IServiceProvider, TOptions>`; `UseRedis()` resolves `IConnectionMultiplexer` from DI (host fails to start without one) or takes one. DI creates and disposes the transport; unset `LoggerFactory`/`TimeProvider` come from DI. Options types live in `Foundatio.Messaging.Transport` / `Foundatio.Jobs.Store`. An enqueue-only process needs the workers' store, not `UseInMemory()`.
 - Throw to retry (`RetryPolicy`, default 5 attempts, 1s/4s/16s/64s), then dead-letter (messages) or `Failed` (jobs). `context.DeadLetter(reason)` / `context.Retry(delay)` decide without throwing; `RetryPolicy.Default.DoNotRetry<T>()` fails fast.
 - At-least-once: handlers and jobs must be idempotent. Give contracts stable names: `[Message("orders.placed")]`, `[Job(Name = "reports.generate")]` (defaults are full type names).
 - Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.

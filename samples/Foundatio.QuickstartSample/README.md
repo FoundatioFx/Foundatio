@@ -12,4 +12,4 @@ dotnet run -- --verify     # runs the flow once and exits
 - `Jobs.cs`: a durable job with progress, and a CRON job.
 - `Program.cs`: registration and three endpoints.
 
-Swap `UseInMemory()` for a provider (for example `UseRedis(...)`) to run several instances. Nothing else changes.
+To run several instances, add `Foundatio.Redis`, register an `IConnectionMultiplexer` and replace both `UseInMemory()` calls with `UseRedis()`. Nothing else changes. See [Transports](../../docs/guide/messages.md#transports) for SQS and Kafka.
