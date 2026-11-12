@@ -41,6 +41,9 @@ internal sealed class KafkaMessageTransportNames
 
     public string DelayGroup => $"{_prefix}.delay";
 
+    /// <summary>The compacted topic receivers keep partition state in (<see cref="KafkaReceiverState"/>).</summary>
+    public string ReceiverState => $"{_prefix}.state";
+
     public bool IsDelay(string topic) => topic.StartsWith($"{_prefix}.delay.", StringComparison.Ordinal);
 
     public bool IsDeadLetter(string topic) => topic.StartsWith($"{_prefix}.deadletter.", StringComparison.Ordinal);

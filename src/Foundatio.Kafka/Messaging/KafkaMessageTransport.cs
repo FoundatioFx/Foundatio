@@ -50,11 +50,20 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// <summary>The shortest retention of a dead-letter topic, the longest SQS keeps a message.</summary>
     internal static readonly TimeSpan DeadLetterRetention = TimeSpan.FromDays(14);
 
+    /// <summary>How long a receiver waits for a partition's state before handing out its records without it.</summary>
+    private static readonly TimeSpan StateLoadTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>How long after the state topic could not be read a receiver tries again.</summary>
+    private static readonly TimeSpan StateStoreRetryDelay = TimeSpan.FromMinutes(1);
+
     private readonly IAdminClient _admin;
     private readonly ConcurrentDictionary<string, Lazy<Task>> _topics = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<KafkaMessageReceiver, byte> _receivers = new();
     private readonly object _forwarderLock = new();
     private Task<KafkaDelayForwarder>? _forwarder;
+    private readonly object _stateStoreLock = new();
+    private Task<KafkaReceiverStateStore?>? _stateStore;
+    private long _stateStoreFailedAt;
     private int _disposed;
 
     /// <summary>Creates a transport with its own producer and admin client. Receivers each get their own consumer.</summary>
@@ -274,6 +283,13 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
         await Task.WhenAll(_receivers.Keys.Select(r => r.DisposeAsync().AsTask())).AnyContext();
 
+        Task<KafkaReceiverStateStore?>? stateStore;
+        lock (_stateStoreLock)
+            stateStore = _stateStore;
+
+        if (stateStore is { IsCompletedSuccessfully: true, Result: { } store })
+            await store.DisposeAsync().ConfigureAwait(false);
+
         Task<KafkaDelayForwarder>? forwarder;
         lock (_forwarderLock)
             forwarder = _forwarder;
@@ -348,6 +364,74 @@ public sealed class KafkaMessageTransport : IMessageTransport
     }
 
     internal void Remove(KafkaMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
+
+    /// <summary>
+    /// The state a receiver kept for <paramref name="key"/> in the state topic, or <c>null</c> when there is none, or
+    /// when the state topic cannot be read within <see cref="StateLoadTimeout"/>.
+    /// </summary>
+    internal async Task<KafkaReceiverState?> LoadReceiverStateAsync(string key, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(StateLoadTimeout);
+        try
+        {
+            if (await GetStateStoreAsync().WaitAsync(timeout.Token).AnyContext() is not { } store)
+                return null;
+
+            return await store.LoadAsync(key, timeout.Token).AnyContext() is { } value ? KafkaReceiverState.Decode(value) : null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            Logger.LogWarning("Could not read the receiver state for {Key} within {Timeout}; delivering without it", key.Replace('\n', '/'), StateLoadTimeout);
+            return null;
+        }
+    }
+
+    /// <summary>Writes a receiver's state for <paramref name="key"/> to the state topic; an empty state deletes it.</summary>
+    internal async Task WriteReceiverStateAsync(string key, KafkaReceiverState state)
+    {
+        if (await GetStateStoreAsync().AnyContext() is { } store)
+            await store.WriteAsync(key, state.IsEmpty ? null : state.Encode()).AnyContext();
+    }
+
+    private Task<KafkaReceiverStateStore?> GetStateStoreAsync()
+    {
+        lock (_stateStoreLock)
+        {
+            bool retry = _stateStore is { IsCompletedSuccessfully: true, Result: null } && Stopwatch.GetElapsedTime(_stateStoreFailedAt) > StateStoreRetryDelay;
+            if (_stateStore is null || retry)
+                _stateStore = StartStateStoreAsync();
+
+            return _stateStore;
+        }
+    }
+
+    private async Task<KafkaReceiverStateStore?> StartStateStoreAsync()
+    {
+        string topic = Names.ReceiverState;
+        try
+        {
+            if (!Options.CreateTopics)
+            {
+                var metadata = await Task.Run(() => _admin.GetMetadata(topic, AdminTimeout)).AnyContext();
+                if (metadata.Topics.FirstOrDefault(t => t.Topic == topic) is not { Error.IsError: false })
+                    throw new MessageBusException($"Topic {topic} does not exist.");
+            }
+
+            await EnsureTopicsAsync([topic]).AnyContext();
+            var partitions = await GetPartitionsAsync(topic, CancellationToken.None).AnyContext();
+            ThrowIfDisposed();
+            var store = new KafkaReceiverStateStore(this, topic, partitions);
+            store.Start();
+            return store;
+        }
+        catch (Exception ex)
+        {
+            _stateStoreFailedAt = Stopwatch.GetTimestamp();
+            Logger.LogWarning(ex, "Cannot use the receiver state topic {Topic}: delivery counts of grouped retries restart when a partition moves, and messages finished behind an unfinished one are delivered again", topic);
+            return null;
+        }
+    }
 
     /// <summary>How many receivers are open. For tests.</summary>
     internal int ReceiverCount => _receivers.Count;
@@ -697,6 +781,15 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private Dictionary<string, string> GetTopicConfigs(string topic)
     {
         var configs = Options.TopicConfigs is { } topicConfigs ? new Dictionary<string, string>(topicConfigs) : new Dictionary<string, string>();
+        if (topic == Names.ReceiverState)
+        {
+            // Only the latest state of each key matters; small segments let the log cleaner drop the rest soon.
+            configs["cleanup.policy"] = "compact";
+            configs["segment.ms"] = ((long)TimeSpan.FromHours(1).TotalMilliseconds).ToString(CultureInfo.InvariantCulture);
+            configs["min.cleanable.dirty.ratio"] = "0.1";
+            return configs;
+        }
+
         TimeSpan? minimumRetention = Names.IsDelay(topic) ? DelayRetention : Names.IsDeadLetter(topic) ? DeadLetterRetention : null;
         if (minimumRetention is not { } minimum)
             return configs;

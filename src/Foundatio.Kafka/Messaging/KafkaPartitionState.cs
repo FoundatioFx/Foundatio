@@ -39,6 +39,30 @@ internal sealed class KafkaPartitionState
     /// <summary>The partition is no longer owned; settling its deliveries fails with <see cref="MessageLeaseLostException"/>.</summary>
     public bool Revoked { get; set; }
 
+    /// <summary>The partition's state is being read from the state topic: nothing is handed out from it until it is.</summary>
+    public bool Loading { get; set; }
+
+    /// <summary>The state the partition's previous owner kept, while records it describes are still to be read.</summary>
+    public KafkaReceiverState? Recovered { get; set; }
+
+    /// <summary>The anchor of <see cref="Recovered"/> was read with its message id, so its finished ranges apply.</summary>
+    public bool RecoveredAnchorSeen { get; set; }
+
+    /// <summary>The state topic holds a state for the partition, so an empty state must be written to delete it.</summary>
+    public bool StateStored { get; set; }
+
+    /// <summary>The partition's delivery counts or retry times changed since its state was last written.</summary>
+    public bool StateChanged { get; set; }
+
+    /// <summary>When the partition's state was last written (a <see cref="System.Diagnostics.Stopwatch"/> timestamp), or 0.</summary>
+    public long StateWrittenAt { get; set; }
+
+    /// <summary>The anchor and finished count behind it in the state last written.</summary>
+    public (long Anchor, long Finished) StateWrittenRanges { get; set; } = (-1, 0);
+
+    /// <summary>How many offsets after the lowest unfinished one are finished.</summary>
+    public long FinishedBehind => Pending.Count > 0 ? NextOffset - Pending.Min - Pending.Count : 0;
+
     /// <summary>The offset to commit: the lowest unfinished one, or the next to read when everything read is finished.</summary>
     public long? CommitOffset => Pending.Count > 0 ? Pending.Min : NextOffset >= 0 ? NextOffset : null;
 

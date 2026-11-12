@@ -531,6 +531,140 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.All(messages.Where(m => m.MessageId.StartsWith("later-", StringComparison.Ordinal)), _ => Assert.True(DateTimeOffset.UtcNow >= due));
     }
 
+    [Fact]
+    public async Task Rebalance_OfAPartitionWithRetriedGroupedMessages_KeepsTheirDeliveryCounts()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 2, RebalanceGracePeriod = TimeSpan.FromMilliseconds(500) }));
+        var source = MessageSource.Queue(NewName("grouped-rebalance"));
+        await using var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Ten groups land on both partitions, so whichever one moves takes retried messages with it.
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 10).Select(i => Message($"m{i}", $"m{i}") with { GroupKey = $"group-{i}" }).ToList(), TestCancellationToken);
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            var delivered = await ReceiveAsync(first, 10);
+            Assert.All(delivered, m => Assert.Equal(attempt, m.DeliveryCount));
+            foreach (var message in delivered)
+                await first.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+        }
+
+        await using var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await WaitForAsync(() => first.Assignment.Count == 1 && second.Assignment.Count == 1, TimeSpan.FromSeconds(30));
+
+        var moved = new List<IncomingMessage>();
+        var stayed = new List<IncomingMessage>();
+        await WaitForAsync(() =>
+        {
+            moved.AddRange(second.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), TestCancellationToken).GetAwaiter().GetResult());
+            stayed.AddRange(first.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), TestCancellationToken).GetAwaiter().GetResult());
+            return moved.Count + stayed.Count >= 10;
+        });
+
+        Assert.NotEmpty(moved);
+        Assert.Equal(10, moved.Concat(stayed).Select(m => m.MessageId).Distinct().Count());
+        Assert.All(moved.Concat(stayed), m => Assert.Equal(3, m.DeliveryCount));
+    }
+
+    [Fact]
+    public async Task Abandon_OfAGroupedMessage_KeepsItsDeliveryCountWhileTheReceiverRuns()
+    {
+        var options = CreateOptions() with { Partitions = 1 };
+        var transport = Track(new KafkaMessageTransport(options));
+        var source = MessageSource.Queue(NewName("grouped-crash"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "poison") with { GroupKey = "customer-1" }], TestCancellationToken);
+        var retryAt = DateTimeOffset.UtcNow.AddMinutes(1);
+        await receiver.AbandonAsync(await ReceiveOneAsync(receiver), TimeSpan.FromMinutes(1), TestCancellationToken);
+
+        // A process that stops without releasing its partitions leaves what it last wrote; another one reads it.
+        await using var other = new KafkaMessageTransport(options);
+        string queue = $"{options.Prefix}.queue.{source.Name}";
+        KafkaReceiverAttempt? attempt = null;
+        await WaitForAsync(() =>
+        {
+            var state = other.LoadReceiverStateAsync($"{queue}\n{queue}\n0", TestCancellationToken).GetAwaiter().GetResult();
+            attempt = state?.Attempts.Values.SingleOrDefault();
+            return attempt is not null;
+        });
+
+        Assert.Equal("poison", attempt!.MessageId);
+        Assert.Equal(2, attempt.DeliveryCount);
+        Assert.InRange(attempt.AvailableAt!.Value, retryAt.AddSeconds(-5), retryAt.AddSeconds(5));
+    }
+
+    [Fact]
+    public async Task Dispose_WithARetriedGroupedMessage_KeepsItsDeliveryCount()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("grouped-count"));
+        var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "poison") with { GroupKey = "customer-1" }], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(first);
+        for (int attempt = 1; attempt < 4; attempt++)
+        {
+            Assert.Equal(attempt, message.DeliveryCount);
+            await first.AbandonAsync(message, TimeSpan.Zero, TestCancellationToken);
+            message = await ReceiveOneAsync(first);
+        }
+
+        await first.DisposeAsync();
+
+        await using var second = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var again = await ReceiveOneAsync(second);
+        Assert.Equal("poison", again.MessageId);
+        Assert.Equal(5, again.DeliveryCount);
+    }
+
+    [Fact]
+    public async Task Dispose_WithAGroupedMessageWaitingToBeRetried_KeepsItsRetryDelay()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("grouped-delay"));
+        var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("retry", "retry") with { GroupKey = "customer-1" }], TestCancellationToken);
+        var message = await ReceiveOneAsync(first);
+        var retryAt = DateTimeOffset.UtcNow.AddSeconds(6);
+        await first.AbandonAsync(message, TimeSpan.FromSeconds(6), TestCancellationToken);
+        await first.DisposeAsync();
+
+        await using var second = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var again = await ReceiveOneAsync(second, TimeSpan.FromSeconds(30));
+        Assert.True(DateTimeOffset.UtcNow >= retryAt.AddSeconds(-1), $"The retry was delivered {retryAt - DateTimeOffset.UtcNow} early.");
+        Assert.Equal(2, again.DeliveryCount);
+    }
+
+    [Fact]
+    public async Task Dispose_WithAnUnsettledGroupedMessage_RedeliversItWithAHigherDeliveryCount()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("grouped-dispose"));
+        var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("orphan", "orphan") with { GroupKey = "customer-1" }], TestCancellationToken);
+        Assert.Equal(1, (await ReceiveOneAsync(first)).DeliveryCount);
+        await first.DisposeAsync();
+
+        await using var second = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        Assert.Equal(2, (await ReceiveOneAsync(second)).DeliveryCount);
+    }
+
+    [Fact]
+    public async Task Dispose_WithADelayedGroupedMessageHeld_DoesNotRedeliverWhatWasCompletedBehindIt()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1 }));
+        var source = MessageSource.Queue(NewName("pinned"));
+        var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("reminder", "reminder") with { GroupKey = "user-1", DeliverAt = DateTimeOffset.UtcNow.AddMinutes(30) }], TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 10).Select(i => Message($"now-{i}", $"now-{i}")).ToList(), TestCancellationToken);
+        foreach (var message in await ReceiveAsync(first, 10))
+            await first.CompleteAsync(message, TestCancellationToken);
+
+        await first.DisposeAsync();
+
+        await using var second = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await AssertNothingReceivedAsync(second, TimeSpan.FromSeconds(3));
+    }
+
     /// <summary>A prefix of its own, for tests that need the delay forwarders' consumer group to themselves.</summary>
     private static string UniquePrefix() => $"{Prefix}-{Guid.NewGuid():N}"[..(Prefix.Length + 9)];
 

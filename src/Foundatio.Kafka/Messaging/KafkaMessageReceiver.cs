@@ -29,6 +29,12 @@ namespace Foundatio.Messaging.Transport;
 /// are kept apart from the buffer, ordered by when they are due. A group's later records on the same partition stay
 /// in the buffer, held back, until the one that waits is due.
 /// </para>
+/// <para>
+/// A queue or subscription receiver keeps what its partitions' committed offsets cannot say in the state topic
+/// (<see cref="KafkaReceiverState"/>): delivery counts and retry times of records released in place, and, behind an
+/// unfinished record, the offsets already finished. It writes a partition's state when it releases the partition, and
+/// while it holds it soon after those change; the partition's next owner reads it before it hands anything out.
+/// </para>
 /// </remarks>
 internal sealed class KafkaMessageReceiver : IMessageReceiver
 {
@@ -37,8 +43,14 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan FailedSettlementDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StateWriteTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan StateCheckInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan FinishedWriteInterval = TimeSpan.FromSeconds(5);
     private const long BufferBytesLimit = 8 * 1024 * 1024;
     private const long TimedBytesLimit = 16 * 1024 * 1024;
+
+    /// <summary>How many offsets must be finished behind an unfinished one before a live partition keeps them in the state topic.</summary>
+    private const long FinishedWriteThreshold = 1000;
 
     private readonly KafkaMessageTransport _transport;
     private readonly KafkaSourceTopology _topology;
@@ -47,6 +59,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly int _bufferLimit;
     private readonly int _timedLimit;
     private readonly bool _ordered;
+    private readonly bool _stateful;
     private readonly object _lock = new();
     private readonly LinkedList<KafkaRecord> _buffer = new();
     private readonly PriorityQueue<KafkaRecord, (DateTimeOffset Due, long Sequence)> _timed = new();
@@ -61,6 +74,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private long _bufferedBytes;
     private long _timedBytes;
     private long _timedSequence;
+    private long _stateCheckedAt;
     private bool _offsetsChanged;
     private bool _pausesChanged;
     private bool _pauseAll;
@@ -78,6 +92,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         _bufferLimit = Math.Max(1, transport.Options.ReceiverBufferLimit ?? Math.Clamp(options.PrefetchCount * 8, 256, 4096));
         _timedLimit = Math.Max(1, transport.Options.ReceiverTimedLimit);
         _ordered = topology.Source.Kind != MessageSourceKind.DeadLetter;
+        _stateful = topology.Source.Kind is MessageSourceKind.Queue or MessageSourceKind.Subscription;
 
         var builder = new ConsumerBuilder<byte[]?, byte[]?>(transport.CreateConsumerConfig(topology.GroupId))
             .SetLogHandler((_, message) => transport.OnLog(message))
@@ -414,6 +429,12 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             }
         }
 
+        if (_stateful && Stopwatch.GetElapsedTime(_stateCheckedAt) >= StateCheckInterval)
+        {
+            _stateCheckedAt = Stopwatch.GetTimestamp();
+            WriteChangedStates();
+        }
+
         bool pauseAll = overfull || _pauseAll && full;
         bool pauseTimed = timedOver || _pauseTimed && !timedDrained;
         if (pauseAll != _pauseAll || pauseTimed != _pauseTimed || pauseTimed && pausesChanged || pauseAll && pausesChanged)
@@ -468,13 +489,59 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             record.Partition = state;
             record.Offset = result.Offset.Value;
             state.Read(record.Offset);
-            if (record.AvailableAt > now)
-                AddTimed(record);
-            else
-                AddBuffered(record, last: true);
+            Admit(record, now);
         }
 
         Signal();
+    }
+
+    /// <summary>
+    /// Buffers a record read from Kafka, or holds it until its delivery time, after applying what the partition's
+    /// previous owner kept about it: a record it finished is finished, and one it released keeps its count and retry time.
+    /// </summary>
+    private void Admit(KafkaRecord record, DateTimeOffset now)
+    {
+        var state = record.Partition!;
+        if (!state.Loading && state.Recovered is { } recovered && Recover(state, recovered, record))
+        {
+            state.Pending.Remove(record.Offset);
+            _offsetsChanged = true;
+            return;
+        }
+
+        if (record.AvailableAt > now)
+            AddTimed(record);
+        else
+            AddBuffered(record, last: true);
+    }
+
+    /// <summary>Applies a recovered state to a record; returns whether the record was finished already.</summary>
+    private static bool Recover(KafkaPartitionState state, KafkaReceiverState recovered, KafkaRecord record)
+    {
+        if (!state.RecoveredAnchorSeen && recovered.Finished.Count > 0 && record.Offset >= recovered.AnchorOffset)
+        {
+            // Read from past the anchor, or a different record at its offset: the ranges cannot be shown to be this topic's.
+            if (record.Offset == recovered.AnchorOffset && record.MessageId == recovered.AnchorMessageId)
+                state.RecoveredAnchorSeen = true;
+            else
+                state.Recovered = recovered = recovered.WithoutFinished();
+        }
+
+        if (recovered.Attempts.TryGetValue(record.Offset, out var attempt) && attempt.MessageId == record.MessageId)
+        {
+            record.DeliveryCount = Math.Max(record.DeliveryCount, attempt.DeliveryCount);
+            if (attempt.AvailableAt > record.AvailableAt || record.AvailableAt is null && attempt.AvailableAt is not null)
+                record.AvailableAt = attempt.AvailableAt;
+
+            record.Released = true;
+            state.StateChanged = true;
+        }
+
+        bool finished = state.RecoveredAnchorSeen && recovered.IsFinished(record.Offset);
+        if (record.Offset + 1 >= recovered.End)
+            state.Recovered = null;
+
+        return finished;
     }
 
     private (List<IncomingMessage> Messages, TimeSpan? NextChange, Task Changed) Take(int count)
@@ -497,7 +564,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 var state = record.Partition!;
                 string? group = _ordered ? record.GroupKey : null;
 
-                bool available = !state.Revoking;
+                bool available = !state.Revoking && !state.Loading;
                 if (group is not null && (held?.Contains(group) == true || _inFlightGroups.ContainsKey(group) && taken?.Contains(group) != true || IsBehindTimed(record, group)))
                     available = false;
 
@@ -514,6 +581,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                         Partition = state,
                         Offset = record.Offset,
                         Size = record.Size,
+                        Released = record.Released,
                         MessageId = record.MessageId,
                         Body = record.Body,
                         Headers = record.Headers,
@@ -658,6 +726,8 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             delivery.Partition.Pending.Remove(delivery.Offset);
             ReleaseGroup(delivery.GroupKey);
             _offsetsChanged = true;
+            if (delivery.Released)
+                delivery.Partition.StateChanged = true;
         }
 
         Signal();
@@ -684,10 +754,13 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 DeliveryCount = delivery.DeliveryCount + 1,
                 EnqueuedAt = delivery.EnqueuedAt,
                 Size = delivery.Size,
+                Released = true,
                 Partition = delivery.Partition,
                 Offset = delivery.Offset,
                 AvailableAt = delay > TimeSpan.Zero ? _transport.TimeProvider.GetUtcNow().Add(delay) : null
             };
+
+            delivery.Partition.StateChanged = true;
 
             if (record.AvailableAt is not null)
                 AddTimed(record);
@@ -715,18 +788,231 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     private void OnAssigned(List<TopicPartition> partitions)
     {
+        var loading = new List<KafkaPartitionState>();
         lock (_lock)
         {
             foreach (var partition in partitions)
-                _partitions[partition] = new KafkaPartitionState(partition);
+            {
+                var state = new KafkaPartitionState(partition) { Loading = _stateful };
+                _partitions[partition] = state;
+                if (state.Loading)
+                    loading.Add(state);
+            }
+
+            _pausesChanged = true;
         }
 
-        lock (_lock)
-            _pausesChanged = true;
-
         _paused.ExceptWith(partitions);
-        _joined.TrySetResult();
+        if (loading.Count > 0)
+            _ = LoadStatesAsync(loading);
+        else
+            _joined.TrySetResult();
+
         _logger.LogDebug("{Source} was assigned {Partitions}", Source, String.Join(", ", partitions));
+    }
+
+    /// <summary>Reads the state the partitions' previous owners kept, then lets their records be handed out.</summary>
+    private async Task LoadStatesAsync(List<KafkaPartitionState> states)
+    {
+        await Task.WhenAll(states.Select(LoadStateAsync)).AnyContext();
+        _joined.TrySetResult();
+    }
+
+    private async Task LoadStateAsync(KafkaPartitionState state)
+    {
+        KafkaReceiverState? recovered = null;
+        try
+        {
+            recovered = await _transport.LoadReceiverStateAsync(StateKey(state.TopicPartition), _stopping.Token).AnyContext();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not read the state of {Partition} for {Source}; delivering without it", state.TopicPartition, Source);
+        }
+
+        var now = _transport.TimeProvider.GetUtcNow();
+        lock (_lock)
+        {
+            state.Loading = false;
+            state.StateStored = recovered is not null;
+            if (!state.Revoked && recovered is { IsEmpty: false })
+            {
+                state.Recovered = recovered;
+                foreach (var record in TakeRecords(state).OrderBy(r => r.Offset))
+                    Admit(record, now);
+            }
+        }
+
+        Signal();
+    }
+
+    /// <summary>Removes and returns the buffered and timed records of a partition.</summary>
+    private List<KafkaRecord> TakeRecords(KafkaPartitionState state)
+    {
+        var records = new List<KafkaRecord>();
+        for (var node = _buffer.First; node is not null;)
+        {
+            var next = node.Next;
+            if (node.Value.Partition == state)
+            {
+                _buffer.Remove(node);
+                _bufferedBytes -= node.Value.Size;
+                records.Add(node.Value);
+            }
+
+            node = next;
+        }
+
+        if (state.TimedCount > 0)
+        {
+            var timed = _timed.UnorderedItems.Where(t => t.Element.Partition == state).Select(t => t.Element).ToList();
+            var kept = _timed.UnorderedItems.Where(t => t.Element.Partition != state).ToList();
+            foreach (var record in timed)
+                ForgetTimed(record);
+
+            _timed.Clear();
+            _timed.EnqueueRange(kept);
+            records.AddRange(timed);
+        }
+
+        return records;
+    }
+
+    private string StateKey(TopicPartition partition) => $"{_topology.GroupId}\n{partition.Topic}\n{partition.Partition.Value}";
+
+    /// <summary>
+    /// The state to keep for a partition: the delivery counts of its records released in place (and of
+    /// <paramref name="unsettled"/> deliveries, which count one more), what was recovered for records not read yet, and
+    /// the offsets finished behind its lowest unfinished one.
+    /// </summary>
+    private static KafkaReceiverState BuildState(KafkaPartitionState state, List<KafkaRecord> records, IEnumerable<KafkaIncomingMessage> unsettled)
+    {
+        var attempts = new Dictionary<long, KafkaReceiverAttempt>();
+        var recovered = state.Recovered;
+        if (recovered is not null)
+        {
+            foreach (var (offset, attempt) in recovered.Attempts)
+            {
+                if (offset >= state.NextOffset)
+                    attempts[offset] = attempt;
+            }
+        }
+
+        var messageIds = new Dictionary<long, string>();
+        foreach (var record in records)
+        {
+            messageIds[record.Offset] = record.MessageId;
+            if (record.Released)
+                attempts[record.Offset] = new KafkaReceiverAttempt(record.MessageId, record.DeliveryCount, record.AvailableAt);
+        }
+
+        foreach (var delivery in unsettled)
+        {
+            messageIds[delivery.Offset] = delivery.MessageId;
+            attempts[delivery.Offset] = new KafkaReceiverAttempt(delivery.MessageId, delivery.DeliveryCount + 1, null);
+        }
+
+        // Nothing read yet past the recovered anchor: keep its ranges as they were.
+        if (recovered is { Finished.Count: > 0 } && !state.RecoveredAnchorSeen)
+            return new KafkaReceiverState { AnchorOffset = recovered.AnchorOffset, AnchorMessageId = recovered.AnchorMessageId, Finished = recovered.Finished, Attempts = attempts };
+
+        if (state.Pending.Count == 0 || !messageIds.TryGetValue(state.Pending.Min, out string? anchorId))
+            return new KafkaReceiverState { Finished = [], Attempts = attempts };
+
+        var finished = new List<(long Start, long End)>();
+        long previous = state.Pending.Min;
+        foreach (long offset in state.Pending)
+        {
+            if (offset > previous + 1)
+                finished.Add((previous + 1, offset));
+
+            previous = offset;
+        }
+
+        if (state.NextOffset > previous + 1)
+            finished.Add((previous + 1, state.NextOffset));
+
+        if (recovered is not null && state.RecoveredAnchorSeen)
+        {
+            foreach (var (start, end) in recovered.Finished)
+            {
+                if (end > state.NextOffset)
+                    finished.Add((Math.Max(start, state.NextOffset), end));
+            }
+        }
+
+        return new KafkaReceiverState { AnchorOffset = state.Pending.Min, AnchorMessageId = anchorId, Finished = finished, Attempts = attempts };
+    }
+
+    /// <summary>
+    /// Writes the state of live partitions whose delivery counts changed, at most once per commit interval, and of those
+    /// with many offsets finished behind an unfinished one, so a crash loses little of either.
+    /// </summary>
+    private void WriteChangedStates()
+    {
+        var writes = new List<(string Key, KafkaReceiverState State)>();
+        lock (_lock)
+        {
+            foreach (var state in _partitions.Values)
+            {
+                if (state.Revoked || state.Revoking || state.Loading)
+                    continue;
+
+                var sinceWrite = Stopwatch.GetElapsedTime(state.StateWrittenAt);
+                long finished = state.FinishedBehind;
+                long anchor = state.Pending.Count > 0 ? state.Pending.Min : -1;
+                var (writtenAnchor, writtenFinished) = state.StateWrittenRanges;
+                bool rangesChanged = finished >= FinishedWriteThreshold && (anchor != writtenAnchor || finished - writtenFinished >= FinishedWriteThreshold) && sinceWrite >= FinishedWriteInterval;
+                if (!(state.StateChanged && sinceWrite >= _transport.Options.CommitInterval) && !rangesChanged)
+                    continue;
+
+                var snapshot = BuildState(state, RecordsOf(state), []);
+                if (snapshot.IsEmpty && !state.StateStored)
+                {
+                    state.StateChanged = false;
+                    continue;
+                }
+
+                // Small ranges are not worth a write; a crash delivers them again, as it does whatever is not committed.
+                if (finished < FinishedWriteThreshold && snapshot.Finished.Count > 0 && state.Recovered is null)
+                    snapshot = snapshot.WithoutFinished();
+
+                state.StateChanged = false;
+                state.StateWrittenAt = Stopwatch.GetTimestamp();
+                state.StateWrittenRanges = snapshot.Finished.Count > 0 ? (anchor, finished) : (-1, 0);
+                state.StateStored = !snapshot.IsEmpty;
+                writes.Add((StateKey(state.TopicPartition), snapshot));
+            }
+        }
+
+        foreach (var (key, snapshot) in writes)
+            _ = WriteStateAsync(key, snapshot);
+    }
+
+    private List<KafkaRecord> RecordsOf(KafkaPartitionState state)
+    {
+        var records = _buffer.Where(r => r.Partition == state).ToList();
+        if (state.TimedCount > 0)
+            records.AddRange(_timed.UnorderedItems.Select(t => t.Element).Where(r => r.Partition == state));
+
+        return records;
+    }
+
+    private async Task<bool> WriteStateAsync(string key, KafkaReceiverState state)
+    {
+        try
+        {
+            await _transport.WriteReceiverStateAsync(key, state).AnyContext();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not keep the state of {Key} for {Source}", key.Replace('\n', '/'), Source);
+            return false;
+        }
     }
 
     /// <summary>
@@ -760,10 +1046,14 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         }
 
         var unsettled = new List<KafkaIncomingMessage>();
+        var records = new Dictionary<KafkaPartitionState, List<KafkaRecord>>();
         lock (_lock)
         {
             foreach (var state in states)
             {
+                if (_stateful)
+                    records[state] = RecordsOf(state);
+
                 state.Revoked = true;
                 _partitions.Remove(state.TopicPartition);
                 foreach (var delivery in state.InFlight.Values)
@@ -779,7 +1069,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         }
 
         Signal();
-        CopyUnsettled(unsettled);
+        var copied = CopyUnsettled(unsettled);
+        if (_stateful)
+            WriteReleasedStates(states, records, unsettled.Where(d => !copied.Contains(d)).ToList());
 
         List<TopicPartitionOffset> offsets;
         lock (_lock)
@@ -808,8 +1100,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     /// <see cref="ReleaseTimeout"/>, and finishes the offsets of those copied. A delivery whose abandon or dead-letter
     /// copy is still being written is not copied again; its offset is finished if that copy is written in time.
     /// </summary>
-    private void CopyUnsettled(List<KafkaIncomingMessage> unsettled)
+    private HashSet<KafkaIncomingMessage> CopyUnsettled(List<KafkaIncomingMessage> unsettled)
     {
+        var done = new HashSet<KafkaIncomingMessage>();
         var copies = new List<(KafkaIncomingMessage Delivery, Task<bool> Copied)>();
         foreach (var delivery in unsettled)
         {
@@ -820,7 +1113,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         }
 
         if (copies.Count == 0)
-            return;
+            return done;
 
         try
         {
@@ -836,14 +1129,44 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             foreach (var (delivery, copied) in copies)
             {
                 if (copied.IsCompletedSuccessfully && copied.Result)
+                {
                     delivery.Partition.Pending.Remove(delivery.Offset);
+                    done.Add(delivery);
+                }
                 else
+                {
                     failed++;
+                }
             }
         }
 
         if (failed > 0)
             _logger.LogWarning("Could not release {Count} messages from {Source} in time; they will be read again from their offsets", failed, Source);
+
+        return done;
+    }
+
+    /// <summary>Writes the state of released partitions for their next owners, waiting at most <see cref="StateWriteTimeout"/>.</summary>
+    private void WriteReleasedStates(List<KafkaPartitionState> states, Dictionary<KafkaPartitionState, List<KafkaRecord>> records, List<KafkaIncomingMessage> unsettled)
+    {
+        var writes = new List<Task<bool>>();
+        lock (_lock)
+        {
+            foreach (var state in states)
+            {
+                if (state.Loading)
+                    continue;
+
+                var snapshot = BuildState(state, records.GetValueOrDefault(state) ?? [], unsettled.Where(d => d.Partition == state));
+                if (snapshot.IsEmpty && !state.StateStored)
+                    continue;
+
+                writes.Add(WriteStateAsync(StateKey(state.TopicPartition), snapshot));
+            }
+        }
+
+        if (writes.Count > 0 && !Task.WhenAll(writes).Wait(StateWriteTimeout))
+            _logger.LogWarning("Could not keep the state of the partitions {Source} released in time", Source);
     }
 
     private async Task<bool> CopyAsync(KafkaIncomingMessage delivery)
