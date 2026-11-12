@@ -204,8 +204,17 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
 
         receiver.Start();
-        if (!topology.IsInstance && Options.ReceiverJoinTimeout > TimeSpan.Zero && !await receiver.WaitUntilJoinedAsync(Options.ReceiverJoinTimeout, cancellationToken).AnyContext())
-            Logger.LogDebug("{Source} has not joined its consumer group after {Timeout}; it keeps joining in the background", source, Options.ReceiverJoinTimeout);
+        try
+        {
+            if (!topology.IsInstance && Options.ReceiverJoinTimeout > TimeSpan.Zero && !await receiver.WaitUntilJoinedAsync(Options.ReceiverJoinTimeout, cancellationToken).AnyContext())
+                Logger.LogDebug("{Source} has not joined its consumer group after {Timeout}; it keeps joining in the background", source, Options.ReceiverJoinTimeout);
+        }
+        catch
+        {
+            // Nobody holds the receiver, so it would keep its partitions without handing them out.
+            await receiver.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
 
         return receiver;
     }
@@ -328,6 +337,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
     }
 
     internal void Remove(KafkaMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
+
+    /// <summary>How many receivers are open. For tests.</summary>
+    internal int ReceiverCount => _receivers.Count;
 
     /// <summary>Starts the delay forwarder if needed and returns it. For tests.</summary>
     internal async Task<KafkaDelayForwarder> GetForwarderAsync()

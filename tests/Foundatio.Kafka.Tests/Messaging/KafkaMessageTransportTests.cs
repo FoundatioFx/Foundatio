@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Confluent.Kafka;
 using Foundatio.Messaging;
@@ -261,6 +262,22 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.True(movedALongTier, "No held long-tier partition moved to the other forwarder.");
         await WaitForAsync(() => forwarder.Assignment.Count == KafkaDelayTiers.All.Count, TimeSpan.FromSeconds(30));
         await WaitForAsync(() => longTiers.All(forwarder.HeldTopics.Contains));
+    }
+
+    [Fact]
+    public async Task CreateReceiver_CancelledWhileJoining_LeavesNoConsumerBehind()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false }));
+        var source = MessageSource.Queue(NewName("cancelled-join"));
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 3).Select(i => Message($"m{i}")).ToList(), TestCancellationToken);
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => transport.CreateReceiverAsync(source, new ReceiverOptions(), cancellation.Token));
+
+        Assert.Equal(0, transport.ReceiverCount);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        Assert.Equal(3, (await ReceiveAsync(receiver, 3)).Count);
     }
 
     private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)
