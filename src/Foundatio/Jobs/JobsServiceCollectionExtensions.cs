@@ -59,7 +59,7 @@ public static class JobsServiceCollectionExtensions
         }
 
         var store = services.GetService<IJobStore>()
-            ?? throw new InvalidOperationException("No job store is configured. Call UseInMemory() or a provider such as UseRedis() inside AddFoundatioJobs.");
+            ?? throw new InvalidOperationException("No job store is configured. Inside AddFoundatioJobs, call UseInMemory(), UseRedis() from Foundatio.Redis, or UseStore().");
 
         return new JobsRuntime(store, options, registrations,
             options.Serializer ?? services.GetService<ISerializer>() ?? DefaultSerializer.Instance,
