@@ -42,6 +42,7 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal("resized cat.png to 64px", job.Message);
         Assert.Equal(1, job.Attempt);
         Assert.Equal(typeof(ResizeImage).FullName!.Replace('+', '.'), job.Name);
+        Assert.Null(job.GetArguments<ResizeImage>());
     }
 
     [Fact]
@@ -171,6 +172,7 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Equal(3, job.Attempt);
         Assert.Contains("failure 3", job.Error);
         Assert.Equal(3, _probe.Runs.Count);
+        Assert.Equal(new Flaky(FailTimes: 10), job.GetArguments<Flaky>());
     }
 
     [Fact]

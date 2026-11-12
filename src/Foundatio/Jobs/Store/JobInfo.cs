@@ -19,7 +19,7 @@ public sealed record JobInfo
     /// <summary>Where the job is in its lifecycle.</summary>
     public JobState State { get; init; }
 
-    /// <summary>The serialized arguments, empty for jobs without arguments.</summary>
+    /// <summary>The serialized arguments. Empty for jobs without arguments, and once a job has succeeded.</summary>
     public ReadOnlyMemory<byte> Payload { get; init; }
 
     /// <summary>Links the job to the request, message or job that enqueued it.</summary>

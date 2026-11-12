@@ -31,6 +31,9 @@ else
     elseif status == SUCCEEDED then
         redis.call('HDEL', KEYS[1], 'error')
     end
+    if status == SUCCEEDED then
+        redis.call('HDEL', KEYS[1], 'payload')
+    end
     redis.call('ZADD', KEYS[4], expiresAt, id)
 end
 

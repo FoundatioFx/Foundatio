@@ -98,7 +98,8 @@ public sealed class JobDetails
 
     /// <summary>
     /// Deserializes the job's arguments as <typeparamref name="TArgs"/> with the jobs serializer, which throws when they
-    /// cannot be read as that type. Returns null for a job without arguments.
+    /// cannot be read as that type. Returns null for a job without arguments, and for a job that has succeeded: its
+    /// arguments are dropped when it succeeds. Failed and cancelled jobs keep theirs.
     /// </summary>
     public TArgs? GetArguments<TArgs>() where TArgs : class
     {

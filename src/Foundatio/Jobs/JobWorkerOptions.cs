@@ -19,9 +19,10 @@ public sealed class JobWorkerOptions
     /// <summary>How long shutdown waits for running jobs before cancelling them. Cancelled jobs run again later.</summary>
     public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(25);
 
+    /// <summary>How long succeeded jobs are kept, without their arguments. Defaults to one day.</summary>
     public TimeSpan RetainSucceededFor { get; set; } = TimeSpan.FromDays(1);
 
-    /// <summary>How long failed and cancelled jobs are kept.</summary>
+    /// <summary>How long failed and cancelled jobs are kept, with their arguments. Defaults to seven days.</summary>
     public TimeSpan RetainFailedFor { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>Used when a job type does not set its own policy.</summary>

@@ -52,7 +52,9 @@ public interface IJobStore
 
     /// <summary>
     /// Finishes or requeues a running job if <paramref name="claimToken"/> still holds it, even when its lease has
-    /// expired, as long as no other worker has claimed it since. Clears the claim.
+    /// expired, as long as no other worker has claimed it since. Clears the claim. A job that succeeds drops its
+    /// <see cref="JobInfo.Payload"/> and keeps the rest of its record until <see cref="JobCompletion.RetainFor"/> runs
+    /// out, so retained history costs little; failed and cancelled jobs keep their payload.
     /// </summary>
     Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default);
 

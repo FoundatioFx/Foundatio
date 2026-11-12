@@ -414,6 +414,44 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Complete_Succeeded_DropsThePayloadAndKeepsTheRestWhileFailedAndCancelledJobsKeepTheirs()
+    {
+        var succeeded = NewJob(payload: [1, 2, 3]) with { CorrelationId = "correlation", ScheduleName = "nightly", Headers = new Dictionary<string, string> { ["tenant"] = "acme" } };
+        var failed = NewJob(payload: [4, 5]);
+        var cancelled = NewJob(payload: [6]);
+        var cancelledWhileQueued = NewJob(payload: [7]);
+        foreach (var job in new[] { succeeded, failed, cancelled, cancelledWhileQueued })
+            await Store.CreateAsync(job, TestCancellationToken);
+
+        await ClaimAndCompleteAsync(succeeded, JobCompletion.Succeeded(TimeSpan.FromMinutes(5), "done"));
+        await ClaimAndCompleteAsync(failed, JobCompletion.Failed(TimeSpan.FromMinutes(5), "boom"));
+        await ClaimAndCompleteAsync(cancelled, JobCompletion.Cancelled(TimeSpan.FromMinutes(5)));
+        Assert.True(await Store.RequestCancellationAsync(cancelledWhileQueued.Id, TimeSpan.FromMinutes(5), TestCancellationToken));
+
+        var stored = (await Store.GetAsync(succeeded.Id, TestCancellationToken))!;
+        Assert.True(stored.Payload.IsEmpty);
+        Assert.Equal(JobState.Succeeded, stored.State);
+        Assert.Equal(succeeded.Name, stored.Name);
+        Assert.Equal(1, stored.Attempt);
+        Assert.Equal("done", stored.Message);
+        Assert.Equal("correlation", stored.CorrelationId);
+        Assert.Equal("nightly", stored.ScheduleName);
+        Assert.Equal("acme", Assert.Single(stored.Headers).Value);
+        Assert.NotNull(stored.StartedAt);
+        Assert.NotNull(stored.CompletedAt);
+        Assert.True(Assert.Single((await Store.QueryAsync(new JobQuery { Name = succeeded.Name }, TestCancellationToken)).Jobs).Payload.IsEmpty);
+        Assert.Equal([4, 5], (await Store.GetAsync(failed.Id, TestCancellationToken))!.Payload.ToArray());
+        Assert.Equal([6], (await Store.GetAsync(cancelled.Id, TestCancellationToken))!.Payload.ToArray());
+        Assert.Equal([7], (await Store.GetAsync(cancelledWhileQueued.Id, TestCancellationToken))!.Payload.ToArray());
+
+        async Task ClaimAndCompleteAsync(JobInfo job, JobCompletion completion)
+        {
+            var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+            Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, completion, TestCancellationToken));
+        }
+    }
+
+    [Fact]
     public async Task Complete_FailedAndCancelled_RecordTheirStatusAndClearTheClaim()
     {
         var failed = NewJob();

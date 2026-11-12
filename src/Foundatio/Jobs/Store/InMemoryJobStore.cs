@@ -210,7 +210,14 @@ public sealed class InMemoryJobStore : IJobStore
             }
             else
             {
-                entry.Job = job with { CompletedAt = now, Message = completion.Message ?? job.Message, Error = completion.Error ?? (completion.State == JobState.Succeeded ? null : job.Error) };
+                bool succeeded = completion.State == JobState.Succeeded;
+                entry.Job = job with
+                {
+                    CompletedAt = now,
+                    Message = completion.Message ?? job.Message,
+                    Error = completion.Error ?? (succeeded ? null : job.Error),
+                    Payload = succeeded ? ReadOnlyMemory<byte>.Empty : job.Payload
+                };
                 entry.ExpiresAt = now.Add(completion.RetainFor);
             }
 
