@@ -28,9 +28,14 @@ namespace Foundatio.Messaging.Transport;
 /// <para>
 /// Abandoned and released messages without a group key are copied, with an incremented delivery count, to a topic
 /// only their source reads (the queue itself, or the subscription's own topic), and their offset is finished.
-/// Messages with a group key are released in place, so their group stays in order. Dead letters go to a topic per
-/// source. Delays go through shared delay topics that a forwarder, running in every process with a receiver, moves
-/// on when they are due.
+/// Messages with a group key, and dead letters, are released in place, so their group stays in order and a peek
+/// leaves dead letters where they are. Dead letters go to a topic per source. Delays go through shared delay topics
+/// that a forwarder, running in every process with a receiver, moves on when they are due.
+/// </para>
+/// <para>
+/// What a committed offset cannot hold, the delivery counts and retry times of messages released in place and the
+/// offsets finished behind an unfinished one, receivers keep in a compacted state topic, so a partition's next owner
+/// carries on from it.
 /// </para>
 /// </remarks>
 public sealed class KafkaMessageTransport : IMessageTransport
@@ -127,8 +132,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
     /// <remarks>
     /// Topics are created on first use. Delayed messages without a group key go to a delay topic and reach the
     /// destination when due; delayed messages with one go to the destination at once, and receivers hold them (and the
-    /// group's later messages) until they are due. A message to one subscription goes to that subscription's own
-    /// topic, which only it reads.
+    /// group's later messages) until they are due. A receiver holds a bounded number of them in memory and stops
+    /// reading their partitions past that, so long delays are better sent without a group key. A message to one
+    /// subscription goes to that subscription's own topic, which only it reads.
     /// </remarks>
     /// <exception cref="MessageTooLargeException">A message is larger than <see cref="TransportCapabilities.MaxMessageSize"/>.</exception>
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
