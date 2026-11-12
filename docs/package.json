@@ -10,7 +10,7 @@
   },
   "devDependencies": {
     "vitepress": "^2.0.0-alpha.19",
-    "vitepress-plugin-llms": "^1.13.4",
+    "vitepress-plugin-llms": "^1.15.0",
     "mermaid": "^11.16.1"
   }
 }
