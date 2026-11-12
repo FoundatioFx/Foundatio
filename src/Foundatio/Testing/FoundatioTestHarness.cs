@@ -125,13 +125,14 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     /// <summary>
     /// Waits until <paramref name="count"/> runs in total of the job that takes <typeparamref name="TJobOrArgs"/> (or of
-    /// the job class <typeparamref name="TJobOrArgs"/>) have finished, and returns them. Check <see cref="RecordedJob.State"/>:
-    /// a run that failed for good finishes too.
+    /// the job class <typeparamref name="TJobOrArgs"/>: an <see cref="IDurableJob{TArgs}"/>, an <see cref="IDurableJob"/>,
+    /// or a <see cref="LegacyJob{TJob}"/> or the legacy job it runs) have finished, and returns them. Check
+    /// <see cref="RecordedJob.State"/>: a run that failed for good finishes too.
     /// </summary>
     /// <exception cref="TimeoutException">Not enough runs finished within <paramref name="timeout"/> (default 30 seconds).</exception>
     public Task<IReadOnlyList<RecordedJob>> WaitForJobAsync<TJobOrArgs>(int count = 1, TimeSpan? timeout = null, CancellationToken cancellationToken = default) where TJobOrArgs : class
     {
-        return WaitForJobRunsAsync(GetJobNames(typeof(TJobOrArgs)), typeof(TJobOrArgs).Name, count, timeout, cancellationToken);
+        return WaitForJobRunsAsync(GetJobNames(typeof(TJobOrArgs)), JobNaming.GetDisplayName(typeof(TJobOrArgs)), count, timeout, cancellationToken);
     }
 
     /// <summary>Waits until <paramref name="count"/> runs in total of the job named <paramref name="jobName"/> have finished, and returns them.</summary>
@@ -156,8 +157,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         return schedules.Count switch
         {
             1 => TriggerAsync(jobs, schedules[0], cancellationToken),
-            0 => throw new InvalidOperationException($"No CRON schedule runs {typeof(TJobOrArgs).Name}. Register one with AddCronJob."),
-            _ => throw new InvalidOperationException($"Several CRON schedules run {typeof(TJobOrArgs).Name} ({String.Join(", ", schedules.Select(s => s.Name))}). Call TriggerCronJobAsync(scheduleName).")
+            0 => throw new InvalidOperationException($"No CRON schedule runs {JobNaming.GetDisplayName(typeof(TJobOrArgs))}. Register one with AddCronJob."),
+            _ => throw new InvalidOperationException($"Several CRON schedules run {JobNaming.GetDisplayName(typeof(TJobOrArgs))} ({String.Join(", ", schedules.Select(s => s.Name))}). Call TriggerCronJobAsync(scheduleName).")
         };
     }
 
@@ -245,7 +246,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             Arguments = TryDeserializeArguments(job),
             State = completion.State,
             Attempt = job.Attempt,
-            Message = completion.Message,
+            Message = completion.Message ?? job.Message,
             Error = completion.Error,
             CorrelationId = job.CorrelationId,
             ScheduleName = job.ScheduleName
@@ -496,12 +497,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     private static IReadOnlyCollection<string> GetJobNames(Type type)
     {
-        var names = type.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableJob<>))
-            .Select(i => JobNaming.GetName(i.GetGenericArguments()[0]))
-            .ToList();
-
-        if (names.Count == 0 || typeof(IJob).IsAssignableFrom(type))
+        var names = JobRegistration.GetArgumentsTypes(type).Select(JobNaming.GetName).ToList();
+        if (names.Count == 0 || typeof(IDurableJob).IsAssignableFrom(type))
             names.Add(JobNaming.GetName(type));
 
         return names;

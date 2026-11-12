@@ -232,7 +232,41 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         Assert.Contains("nothing in this app runs it", error.Message);
     }
 
+    [Fact]
+    public async Task WaitForJobAsyncAndTriggerCronJobAsync_WithLegacyJobs_FindTheirRuns()
+    {
+        var host = await StartAppAsync(services => services.AddFoundatioJobs(j => j
+            .AddLegacyJob<LegacyReportJob>()
+            .AddCronJob<LegacyJob<LegacyArchiveJob>>("0 4 * * *")));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IJobClient>().EnqueueAsync<LegacyJob<LegacyReportJob>>(cancellationToken: TestCancellationToken);
+        var report = Assert.Single(await harness.WaitForJobAsync<LegacyJob<LegacyReportJob>>(cancellationToken: TestCancellationToken));
+        var handle = await harness.TriggerCronJobAsync<LegacyArchiveJob>(TestCancellationToken);
+        var archive = Assert.Single(await harness.WaitForJobAsync<LegacyJob<LegacyArchiveJob>>(cancellationToken: TestCancellationToken));
+
+        Assert.Same(report, Assert.Single(await harness.WaitForJobAsync<LegacyReportJob>(cancellationToken: TestCancellationToken)));
+        Assert.Equal(JobState.Succeeded, report.State);
+        Assert.Equal("tests.legacy-report", report.JobName);
+        Assert.Equal("reported", report.Message);
+        Assert.Equal(handle.Id, archive.JobId);
+        Assert.Equal("tests.legacy-archive", archive.ScheduleName);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => harness.TriggerCronJobAsync<LegacyJob<LegacyReportJob>>(TestCancellationToken));
+    }
+
     public record ArchiveOrders(int OlderThanDays);
+
+    [Job(Name = "tests.legacy-report")]
+    public sealed class LegacyReportJob : IJob
+    {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.SuccessWithMessage("reported"));
+    }
+
+    [Job(Name = "tests.legacy-archive")]
+    public sealed class LegacyArchiveJob : IJob
+    {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+    }
 
     private async Task<IHost> StartAppAsync(Action<IServiceCollection>? configureTest = null)
     {

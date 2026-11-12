@@ -50,9 +50,13 @@ public sealed class FoundatioJobsBuilder
     }
 
     /// <summary>
-    /// Runs <typeparamref name="TJob"/> in this process. It may implement <see cref="IDurableJob{TArgs}"/> (enqueued by its
-    /// arguments) and/or <see cref="IJob"/> (enqueued by its type).
+    /// Runs <typeparamref name="TJob"/> in this process when it is enqueued. It implements <see cref="IDurableJob{TArgs}"/>
+    /// (enqueued by its arguments), <see cref="IDurableJob"/> (enqueued by its type), or both.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <typeparamref name="TJob"/> implements neither. Register a legacy <see cref="IJob"/> with <see cref="AddLegacyJob{TJob}"/>,
+    /// or run it continuously with <c>services.AddJob&lt;TJob&gt;()</c> from Foundatio.Extensions.Hosting.
+    /// </exception>
     public FoundatioJobsBuilder AddJob<TJob>(JobTypeOptions? options = null) where TJob : class
     {
         options ??= new JobTypeOptions();
@@ -65,7 +69,7 @@ public sealed class FoundatioJobsBuilder
                 if (existing.JobType == registration.JobType)
                     continue;
 
-                throw new ArgumentException($"Job name \"{registration.Name}\" is used by both {existing.JobType.Name} and {registration.JobType.Name}. Give one a unique name with [Job(Name = \"...\")].");
+                throw new ArgumentException($"Job name \"{registration.Name}\" is used by both {JobNaming.GetDisplayName(existing.JobType)} and {JobNaming.GetDisplayName(registration.JobType)}. Give one a unique name with [Job(Name = \"...\")].");
             }
 
             _registrations.Jobs.Add(registration.Name, registration);
@@ -74,10 +78,23 @@ public sealed class FoundatioJobsBuilder
         return this;
     }
 
-    /// <summary>Runs <typeparamref name="TJob"/> on a CRON schedule, once per occurrence across all instances.</summary>
+    /// <summary>
+    /// Runs a legacy <see cref="IJob"/>, such as a <see cref="JobBase"/>, when it is enqueued, through
+    /// <see cref="LegacyJob{TJob}"/>. Enqueue it with <c>EnqueueAsync&lt;LegacyJob&lt;TJob&gt;&gt;()</c> and schedule it with
+    /// <c>AddCronJob&lt;LegacyJob&lt;TJob&gt;&gt;(...)</c>. It keeps <typeparamref name="TJob"/>'s job name.
+    /// </summary>
+    public FoundatioJobsBuilder AddLegacyJob<TJob>(JobTypeOptions? options = null) where TJob : class, IJob
+    {
+        return AddJob<LegacyJob<TJob>>(options);
+    }
+
+    /// <summary>
+    /// Runs <typeparamref name="TJob"/> on a CRON schedule, once per occurrence across all instances, and registers it
+    /// to run in this process. Schedule a legacy <see cref="IJob"/> as <c>AddCronJob&lt;LegacyJob&lt;TJob&gt;&gt;(...)</c>.
+    /// </summary>
     /// <param name="cronExpression">Five fields (minute precision) or six (seconds first), for example <c>"0 * * * *"</c> for hourly.</param>
     /// <param name="options">The schedule's time zone, name, overlap and misfire behavior.</param>
-    public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IJob
+    public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IDurableJob
     {
         options ??= new CronJobOptions();
         AddJob<TJob>(options.JobTypeOptions);
@@ -91,11 +108,8 @@ public sealed class FoundatioJobsBuilder
     public FoundatioJobsBuilder AddCronJob<TArgs>(string cronExpression, TArgs arguments, CronJobOptions? options = null) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var argumentsType = arguments.GetType();
-        if (arguments is IJob)
-            throw new ArgumentException($"{argumentsType.Name} is a job, not job arguments. Call AddCronJob<{argumentsType.Name}>(cronExpression) instead.", nameof(arguments));
-
-        return AddSchedule(JobNaming.GetName(argumentsType), cronExpression, arguments, options ?? new CronJobOptions());
+        JobRegistration.ThrowIfJob(arguments, job => $"AddCronJob<{job}>(cronExpression)", nameof(arguments));
+        return AddSchedule(JobNaming.GetName(arguments.GetType()), cronExpression, arguments, options ?? new CronJobOptions());
     }
 
     private FoundatioJobsBuilder AddSchedule(string jobName, string cronExpression, object? arguments, CronJobOptions options)

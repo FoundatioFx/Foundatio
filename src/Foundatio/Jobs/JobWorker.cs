@@ -207,14 +207,13 @@ internal sealed class JobWorker
         activity?.SetTag("job.name", job.Name);
         long started = Stopwatch.GetTimestamp();
 
-        JobResult? result = null;
         Exception? error = null;
         var previous = JobRunContext.Current;
         JobRunContext.Current = context;
         try
         {
             await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
-            result = await registration.Invoke(scope.ServiceProvider, arguments, context, jobCancellation.Token).AnyContext();
+            await registration.Invoke(scope.ServiceProvider, arguments, context, jobCancellation.Token).AnyContext();
         }
         catch (Exception ex)
         {
@@ -243,18 +242,17 @@ internal sealed class JobWorker
         }
 
         JobCompletion completion;
-        try
+        if (error is null)
         {
-            completion = Decide(job, policy, result, error, cancelled.IsCancellationRequested);
+            _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
+            completion = JobCompletion.Succeeded(_runtime.Options.RetainSucceededFor);
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "The retry policy of job {JobName} threw; failing job {JobId}", job.Name, job.Id);
-            string failure = error is null ? "the job reported failure" : $"{error.GetType().Name}: {error.Message}";
-            completion = JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"The retry policy threw {ex.GetType().Name}: {ex.Message} while handling {failure}");
+            completion = Decide(job, policy, error, cancelled.IsCancellationRequested);
         }
 
-        await CompleteAsync(job, completion).AnyContext();
+        await CompleteAsync(job, completion, context.Message).AnyContext();
 
         RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
         if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
@@ -271,7 +269,7 @@ internal sealed class JobWorker
     /// <summary>Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring them silently.</summary>
     private void WarnAboutIgnoredJobAttributeProperties()
     {
-        foreach (var jobType in _runtime.Jobs.Values.Select(r => r.JobType).Distinct())
+        foreach (var jobType in _runtime.Jobs.Values.Select(r => JobNaming.GetNamedType(r.JobType)).Distinct())
         {
             if (jobType.GetCustomAttribute<JobAttribute>() is not { } attribute)
                 continue;
@@ -296,20 +294,15 @@ internal sealed class JobWorker
         }
     }
 
-    private JobCompletion Decide(JobInfo job, RetryPolicy policy, JobResult? result, Exception? error, bool cancellationRequested)
+    /// <summary>Decides how a run that threw <paramref name="error"/> ends: cancelled, released at shutdown, retried or failed.</summary>
+    private JobCompletion Decide(JobInfo job, RetryPolicy policy, Exception error, bool cancellationRequested)
     {
-        if (error is null && (result is null || result.IsSuccess))
-        {
-            _logger.LogDebug("Job {JobName} {JobId} succeeded", job.Name, job.Id);
-            return JobCompletion.Succeeded(_runtime.Options.RetainSucceededFor, String.IsNullOrEmpty(result?.Message) ? null : result.Message);
-        }
-
-        if (error is OperationCanceledException || result?.IsCancelled == true)
+        if (error is OperationCanceledException)
         {
             if (cancellationRequested)
             {
                 _logger.LogInformation("Job {JobName} {JobId} was cancelled", job.Name, job.Id);
-                return JobCompletion.Cancelled(_runtime.Options.RetainFailedFor, result?.Message is { Length: > 0 } message ? message : null);
+                return JobCompletion.Cancelled(_runtime.Options.RetainFailedFor);
             }
 
             if (_abortJobs.IsCancellationRequested)
@@ -319,20 +312,30 @@ internal sealed class JobWorker
             }
         }
 
-        error ??= result?.Error ?? new JobFailedException(result?.Message is { Length: > 0 } failure ? failure : "The job reported failure.");
         string description = $"{error.GetType().Name}: {error.Message}";
-        if (policy.CanRetry(error, job.Attempt))
+        try
         {
-            var delay = policy.GetDelay(job.Attempt);
-            _logger.LogWarning(error, "Job {JobName} {JobId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}", job.Name, job.Id, job.Attempt, policy.MaxAttempts, delay);
-            return JobCompletion.Retry(delay, description);
+            if (policy.CanRetry(error, job.Attempt))
+            {
+                var delay = policy.GetDelay(job.Attempt);
+                _logger.LogWarning(error, "Job {JobName} {JobId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}", job.Name, job.Id, job.Attempt, policy.MaxAttempts, delay);
+                return JobCompletion.Retry(delay, description);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The retry policy of job {JobName} threw; failing job {JobId}", job.Name, job.Id);
+            return JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"The retry policy threw {ex.GetType().Name}: {ex.Message} while handling {description}");
         }
 
         _logger.LogError(error, "Job {JobName} {JobId} failed after {Attempt} attempts", job.Name, job.Id, job.Attempt);
         return JobCompletion.Failed(_runtime.Options.RetainFailedFor, description);
     }
 
-    private async Task CompleteAsync(JobInfo job, JobCompletion completion)
+    /// <param name="job">The claimed job.</param>
+    /// <param name="completion">How the run ended.</param>
+    /// <param name="message">The run's last progress message, which the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
+    private async Task CompleteAsync(JobInfo job, JobCompletion completion, string? message = null)
     {
         for (int attempt = 1; ; attempt++)
         {
@@ -341,7 +344,7 @@ internal sealed class JobWorker
                 if (!await _runtime.Store.CompleteAsync(job.Id, job.ClaimToken!, completion, CancellationToken.None).AnyContext())
                     _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
                 else
-                    _runtime.Observer?.OnCompleted(job, completion);
+                    _runtime.Observer?.OnCompleted(message is null ? job : job with { Message = message }, completion);
 
                 return;
             }

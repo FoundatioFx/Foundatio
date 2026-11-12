@@ -21,14 +21,11 @@ internal sealed class JobClient : IJobClient
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        var argumentsType = arguments.GetType();
-        if (arguments is IJob)
-            throw new ArgumentException($"{argumentsType.Name} is a job, not job arguments. Call EnqueueAsync<{argumentsType.Name}>() instead.", nameof(arguments));
-
-        return CreateAsync(JobNaming.GetName(argumentsType), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
+        JobRegistration.ThrowIfJob(arguments, job => $"EnqueueAsync<{job}>()", nameof(arguments));
+        return CreateAsync(JobNaming.GetName(arguments.GetType()), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
     }
 
-    public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
+    public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IDurableJob
     {
         return CreateAsync(JobNaming.GetName(typeof(TJob)), ReadOnlyMemory<byte>.Empty, options, cancellationToken);
     }

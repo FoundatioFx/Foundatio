@@ -42,6 +42,9 @@ internal sealed class JobRunContext : IJobContext
     public DateTimeOffset ScheduledFor { get; }
     public string? ScheduleName { get; }
 
+    /// <summary>The latest reported message, whether or not it has been saved yet.</summary>
+    public string? Message { get; private set; }
+
     /// <summary>The job running on this async flow, used to propagate the correlation id.</summary>
     public static JobRunContext? Current
     {
@@ -57,6 +60,7 @@ internal sealed class JobRunContext : IJobContext
         lock (_lock)
         {
             _pending = new ProgressReport(percent, message).Over(_pending);
+            Message = message ?? Message;
             var now = _timeProvider.GetUtcNow();
             if (now - _lastReport < ProgressInterval && percent != 100)
                 return;

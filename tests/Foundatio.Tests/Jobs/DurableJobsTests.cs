@@ -55,16 +55,107 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task ExistingJobBaseJobs_RunUnchanged()
+    public async Task EnqueueAsync_ArgumentFreeJob_RunsWithItsContext()
     {
-        await using var host = await StartAsync(j => j.AddJob<LegacyCleanupJob>());
+        await using var host = await StartAsync(j => j.AddJob<TickJob>());
 
-        var handle = await host.Jobs.EnqueueAsync<LegacyCleanupJob>(cancellationToken: TestCancellationToken);
+        var handle = await host.Jobs.EnqueueAsync<TickJob>(new EnqueueOptions { CorrelationId = "order-3" }, TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Succeeded, job.State);
+        Assert.Equal("tick", job.Name);
+        Assert.Null(job.GetArguments<ResizeImage>());
+        var context = Assert.Single(_probe.Contexts);
+        Assert.Equal(handle.Id, context.JobId);
+        Assert.Equal("tick", context.JobName);
+        Assert.Equal(1, context.Attempt);
+        Assert.Equal("order-3", context.CorrelationId);
+        Assert.Null(context.ScheduleName);
+    }
+
+    [Fact]
+    public async Task AddCronJob_ArgumentFreeJob_SeesTheOccurrenceItRunsFor()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<TickJob>("0 0 1 1 *"));
+        var newYear = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        const string jobId = "cron:tick:20200101T000000Z";
+
+        await host.CreateScheduler().RunDueAsync(newYear.AddSeconds(1), TestCancellationToken);
+        await WaitForAsync(async () => (await host.Jobs.GetAsync(jobId, TestCancellationToken))?.State == JobState.Succeeded);
+
+        var context = Assert.Single(_probe.Contexts, c => c.JobId == jobId);
+        Assert.Equal(newYear, context.ScheduledFor);
+        Assert.Equal("tick", context.ScheduleName);
+        Assert.Equal(1, context.Attempt);
+    }
+
+    [Fact]
+    public async Task AddLegacyJob_JobBaseJob_RunsUnderItsOwnNameWithItsResultMessage()
+    {
+        await using var host = await StartAsync(j => j.AddLegacyJob<LegacyCleanupJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<LegacyCleanupJob>>(cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
         Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal("cleaned up", job.Message);
         Assert.Equal("legacy-cleanup", job.Name);
+    }
+
+    [Theory]
+    [InlineData("failed", "JobFailedException: disk full")]
+    [InlineData("exception", "InvalidOperationException: boom")]
+    [InlineData("cancelled", "JobFailedException: stopped")]
+    public async Task LegacyJob_WithAFailedResult_FailsWithItsErrorOrMessage(string result, string error)
+    {
+        _probe.LegacyResult = result;
+        await using var host = await StartAsync(j => j.AddLegacyJob<ResultLegacyJob>(new JobTypeOptions { RetryPolicy = RetryPolicy.None }));
+
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<ResultLegacyJob>>(cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Failed, job.State);
+        Assert.Equal(error, job.Error);
+    }
+
+    [Fact]
+    public async Task LegacyJob_ReturningCancelledAfterCancellation_EndsCancelledWithItsMessage()
+    {
+        _probe.LegacyResult = "wait";
+        await using var host = await StartAsync(j => j.Configure(o => o.LeaseDuration = TimeSpan.FromSeconds(1.5)).AddLegacyJob<ResultLegacyJob>());
+        var handle = await host.Jobs.EnqueueAsync<LegacyJob<ResultLegacyJob>>(cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await handle.CancelAsync(TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobState.Cancelled, job.State);
+        Assert.Equal("stopped early", job.Message);
+    }
+
+    [Fact]
+    public async Task AddCronJob_OfALegacyJob_SchedulesItUnderTheLegacyJobsName()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<LegacyJob<LegacyCleanupJob>>("*/5 * * * *"), startHostedServices: false);
+
+        await host.CreateScheduler().RunDueAsync(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), TestCancellationToken);
+
+        var job = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+        Assert.Equal("cron:legacy-cleanup:20260101T000000Z", job.Id);
+        Assert.Equal("legacy-cleanup", job.Name);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_WithAJobInsteadOfArguments_ThrowsNamingTheCallToMake()
+    {
+        await using var host = await StartAsync(_ => { });
+
+        var job = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new TickJob(_probe), cancellationToken: TestCancellationToken));
+        var legacy = await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new LegacyCleanupJob(Log), cancellationToken: TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => host.Jobs.EnqueueAsync(new ResizeImageJob(), cancellationToken: TestCancellationToken));
+
+        Assert.Contains("EnqueueAsync<TickJob>()", job.Message);
+        Assert.Contains("EnqueueAsync<LegacyJob<LegacyCleanupJob>>()", legacy.Message);
     }
 
     [Fact]
@@ -398,7 +489,7 @@ public class DurableJobsTests : TestWithLoggingBase
     [Fact]
     public async Task AddJob_WithLegacySchedulingPropertiesOnJobAttribute_LogsThatTheyAreIgnored()
     {
-        await using var host = await StartAsync(j => j.AddJob<IntervalJob>());
+        await using var host = await StartAsync(j => j.AddLegacyJob<IntervalJob>());
 
         Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("Interval") && e.Message.Contains(nameof(IntervalJob)));
     }
@@ -463,6 +554,13 @@ public class DurableJobsTests : TestWithLoggingBase
         Assert.Contains("not a valid CRON expression", cron.Message);
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<JobProbe>()));
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("* * * * *", new TickJob(_probe))));
+        var legacyArguments = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob("* * * * *", new LegacyCleanupJob(Log))));
+        Assert.Contains("AddCronJob<LegacyJob<LegacyCleanupJob>>(cronExpression)", legacyArguments.Message);
+        var legacy = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<LegacyCleanupJob>()));
+        Assert.Contains("AddLegacyJob<LegacyCleanupJob>()", legacy.Message);
+        Assert.Contains("services.AddJob<LegacyCleanupJob>()", legacy.Message);
+        var duplicate = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddLegacyJob<LegacyCleanupJob>().AddJob<NamedLikeTheLegacyJob>()));
+        Assert.Contains("LegacyJob<LegacyCleanupJob> and NamedLikeTheLegacyJob", duplicate.Message);
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddCronJob<TickJob>("* * * * *").AddCronJob<TickJob>("0 * * * *")));
         Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<ResizeImageJob>().AddJob<OtherResizeImageJob>()));
         var ignoredName = Assert.Throws<ArgumentException>(() => services.AddFoundatioJobs(j => j.AddJob<NamedArgumentsJob>()));
@@ -586,6 +684,8 @@ public class DurableJobsTests : TestWithLoggingBase
 
         public ConcurrentBag<int> Runs { get; } = [];
         public ConcurrentQueue<string> Events { get; } = new();
+        public ConcurrentQueue<IJobContext> Contexts { get; } = new();
+        public string? LegacyResult { get; set; }
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int RunCount;
         public int PeakConcurrency => Volatile.Read(ref _peak);
@@ -753,12 +853,49 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Job(Name = "tick")]
-    public sealed class TickJob(JobProbe probe) : IJob
+    public sealed class TickJob(JobProbe probe) : IDurableJob
     {
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
         {
             probe.Runs.Add(0);
-            return Task.FromResult(JobResult.Success);
+            probe.Contexts.Enqueue(context);
+            return Task.CompletedTask;
+        }
+    }
+
+    [Job(Name = "legacy-cleanup")]
+    public sealed class NamedLikeTheLegacyJob : IDurableJob
+    {
+        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>Returns the <see cref="JobResult"/> that <see cref="JobProbe.LegacyResult"/> names; "wait" waits to be cancelled.</summary>
+    [Job(Name = "legacy-result")]
+    public sealed class ResultLegacyJob(JobProbe probe) : IJob
+    {
+        public async Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+        {
+            switch (probe.LegacyResult)
+            {
+                case "failed":
+                    return JobResult.FailedWithMessage("disk full");
+                case "exception":
+                    return JobResult.FromException(new InvalidOperationException("boom"));
+                case "cancelled":
+                    return JobResult.CancelledWithMessage("stopped");
+            }
+
+            probe.Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                return JobResult.CancelledWithMessage("stopped early");
+            }
+
+            return JobResult.Success;
         }
     }
 

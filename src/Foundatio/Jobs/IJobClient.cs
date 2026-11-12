@@ -13,8 +13,11 @@ public interface IJobClient
     /// </summary>
     Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class;
 
-    /// <summary>Enqueues a job that takes no arguments.</summary>
-    Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
+    /// <summary>
+    /// Enqueues the <see cref="IDurableJob"/> <typeparamref name="TJob"/>, which takes no arguments. Enqueue a legacy
+    /// <see cref="IJob"/> as <c>EnqueueAsync&lt;LegacyJob&lt;TJob&gt;&gt;()</c>.
+    /// </summary>
+    Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IDurableJob;
 
     /// <summary>Returns the job, or null when it does not exist or its retention has run out.</summary>
     Task<JobDetails?> GetAsync(string jobId, CancellationToken cancellationToken = default);

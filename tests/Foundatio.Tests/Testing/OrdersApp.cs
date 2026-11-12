@@ -51,9 +51,9 @@ public static class OrdersApp
     public record GenerateInvoice(int OrderId, bool Fail = false);
 
     [Job(Name = "orders.nightly-cleanup")]
-    public sealed class NightlyCleanupJob : IJob
+    public sealed class NightlyCleanupJob : IDurableJob
     {
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.SuccessWithMessage("cleaned"));
+        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, "cleaned", cancellationToken);
     }
 
     public sealed class EmailSender

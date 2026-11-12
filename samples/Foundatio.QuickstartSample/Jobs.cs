@@ -18,15 +18,15 @@ public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IDura
     }
 }
 
-/// <summary>A recurring job. It runs once per CRON occurrence across all instances.</summary>
+/// <summary>A recurring job without arguments. It runs once per CRON occurrence across all instances.</summary>
 [Job(Name = "maintenance.cleanup")]
-public sealed class CleanupJob(SampleActivity activity, ILogger<CleanupJob> logger) : IJob
+public sealed class CleanupJob(SampleActivity activity, ILogger<CleanupJob> logger) : IDurableJob
 {
-    public Task<JobResult> RunAsync(CancellationToken cancellationToken = default)
+    public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
     {
-        logger.LogInformation("Cleanup ran");
+        logger.LogInformation("Cleanup for the {Occurrence:u} occurrence ran", context.ScheduledFor);
         activity.CleanupRan.TrySetResult();
-        return Task.FromResult(JobResult.Success);
+        return Task.CompletedTask;
     }
 }
 

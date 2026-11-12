@@ -20,7 +20,7 @@ public sealed record RecordedJob
     /// <summary>The attempt this run was, starting at 1.</summary>
     public int Attempt { get; init; }
 
-    /// <summary>The result or cancellation message.</summary>
+    /// <summary>The job's message when the run ended: its result or cancellation message, or its last progress message.</summary>
     public string? Message { get; init; }
 
     public string? Error { get; init; }

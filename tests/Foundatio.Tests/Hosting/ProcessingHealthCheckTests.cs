@@ -438,9 +438,9 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
     }
 
     [Job(Name = "tests.tick")]
-    public sealed class TickJob : IJob
+    public sealed class TickJob : IDurableJob
     {
-        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
+        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestStartupGate : IStartupGate
