@@ -258,19 +258,28 @@ public class LegacyMessageBusAdapterTests : MessageBusTestBase, IAsyncDisposable
     }
 
     [Fact]
-    public async Task SubscribeAsync_WithASlowSubscriber_DeliversToOtherSubscribersAndLaterMessagesMeanwhile()
+    public async Task SubscribeAsync_WithASlowSubscriber_DeliversTheMessageToOtherSubscribersAndKeepsMessageOrder()
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await using var bus = new LegacyMessageBusAdapter(_transport, new SharedMessageBusOptions { LoggerFactory = Log, Topic = "legacy-slow" });
+        var slow = new ConcurrentQueue<int>();
         var fast = new ConcurrentQueue<int>();
-        await bus.SubscribeAsync<LegacyEvent>(async (_, ct) => await release.Task.WaitAsync(ct), TestCancellationToken);
+        await bus.SubscribeAsync<LegacyEvent>(async (e, ct) =>
+        {
+            if (e.Id == 1)
+                await release.Task.WaitAsync(ct);
+            slow.Enqueue(e.Id);
+        }, TestCancellationToken);
         await bus.SubscribeAsync<LegacyEvent>(e => fast.Enqueue(e.Id), TestCancellationToken);
 
-        await bus.PublishAsync(new LegacyEvent(1), cancellationToken: TestCancellationToken);
-        await bus.PublishAsync(new LegacyEvent(2), cancellationToken: TestCancellationToken);
+        for (int id = 1; id <= 3; id++)
+            await bus.PublishAsync(new LegacyEvent(id), cancellationToken: TestCancellationToken);
 
-        await WaitForAsync(() => fast.Count == 2);
+        await WaitForAsync(() => fast.Contains(1));
         release.SetResult();
+        await WaitForAsync(() => slow.Count == 3 && fast.Count == 3);
+        Assert.Equal([1, 2, 3], slow);
+        Assert.Equal([1, 2, 3], fast);
     }
 
     [Fact]

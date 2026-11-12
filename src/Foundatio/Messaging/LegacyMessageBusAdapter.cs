@@ -184,9 +184,11 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
             if (_processor is not null || _disposed.IsCancellationRequested)
                 return;
 
+            // Like the original buses, messages are handled one at a time in arrival order, and a subscriber is never
+            // called concurrently with itself; the subscribers of one message run concurrently.
             var settings = new MessageProcessorSettings
             {
-                MaxConcurrency = Math.Max(4, Environment.ProcessorCount),
+                MaxConcurrency = 1,
                 LeaseDuration = LeaseDuration,
                 ReplaceTimeout = ReplaceTimeout,
                 Description = "legacy message bus subscribers"
@@ -225,7 +227,6 @@ internal sealed class LegacyMessageBusAdapter : IMessageBus, IMessageDeliveryHan
         if (activity is not null)
             activity.DisplayName = $"Message: {type?.Name ?? typeName}";
 
-        // Like the original buses, subscribers run concurrently, so a slow one does not hold up the others.
         if (subscribers.Count == 1)
             await InvokeAsync(subscribers[0], message, raw, body, typeName, cancellationToken).AnyContext();
         else
