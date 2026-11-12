@@ -148,6 +148,59 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task ReceiveAsync_WithLargeMessages_BoundsEachBatchByBytes()
+    {
+        var source = MessageSource.Queue(NewName("byte-budget"));
+        await using var receiver = await CreateReceiverAsync(source, ShortLease);
+        var body = new byte[2 * 1024 * 1024];
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 6).Select(i => new OutgoingMessage { MessageId = $"m-{i}", Body = body }).ToList(), TestCancellationToken);
+
+        var first = await receiver.ReceiveAsync(100, DeliveryTimeout, TestCancellationToken);
+        AssertWithinReceiveBudget(first, body.Length, total: 6);
+
+        // The first batch is left unsettled, so it is reclaimed once its leases lapse, again within the budget.
+        var completed = new HashSet<string>();
+        bool reclaimed = false;
+        var deadline = DateTime.UtcNow + ShortLease + DeliveryTimeout;
+        while (completed.Count < 6)
+        {
+            Assert.True(DateTime.UtcNow < deadline, $"Completed {completed.Count} of 6 messages in time.");
+            var batch = await receiver.ReceiveAsync(100, TimeSpan.FromSeconds(1), TestCancellationToken);
+            AssertWithinReceiveBudget(batch, body.Length, total: 6);
+            foreach (var message in batch)
+            {
+                reclaimed |= message.DeliveryCount > 1;
+                await receiver.CompleteAsync(message, TestCancellationToken);
+                completed.Add(message.MessageId);
+            }
+        }
+
+        Assert.True(reclaimed);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_WithLargeDelayedMessages_PromotesThemWithinTheByteBudget()
+    {
+        var source = MessageSource.Queue(NewName("promote-budget"));
+        var body = new byte[2 * 1024 * 1024];
+        var delay = TimeSpan.FromMilliseconds(500);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 6).Select(i => new OutgoingMessage { MessageId = $"m-{i}", Body = body, DeliverAt = DateTimeOffset.UtcNow.Add(delay) }).ToList(), TestCancellationToken);
+        // Every message is due before the first receive, so that receive could promote all of them at once.
+        await Task.Delay(delay * 2, TestCancellationToken);
+        await using var receiver = await CreateReceiverAsync(source);
+
+        var first = await receiver.ReceiveAsync(100, DeliveryTimeout, TestCancellationToken);
+
+        AssertWithinReceiveBudget(first, body.Length, total: 6);
+        Assert.True(await GetMuxer().GetDatabase().SortedSetLengthAsync($"{KeyPrefix}:{{q:{source.Name}}}:delayed") > 0,
+            "Every delayed message was promoted by one receive.");
+        var rest = await ReceiveAsync(receiver, 6 - first.Count);
+        Assert.Equal(Enumerable.Range(0, 6).Select(i => $"m-{i}"), first.Concat(rest).Select(m => m.MessageId).Order());
+    }
+
+    [Fact]
     public async Task MaxMessageSize_FromOptions_CountsTheIdsGroupKeyAndHeadersLikeMessageSize()
     {
         var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, MaxMessageSize = 1024 }));
@@ -212,6 +265,13 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         var third = await ReceiveOneAsync(second);
         Assert.Equal(3, third.DeliveryCount);
         await second.CompleteAsync(third, TestCancellationToken);
+    }
+
+    private static void AssertWithinReceiveBudget(IReadOnlyList<IncomingMessage> batch, int messageSize, int total)
+    {
+        long bytes = batch.Sum(m => (long)m.Body.Length);
+        Assert.True(batch.Count < total, $"One receive returned all {total} messages.");
+        Assert.True(bytes <= RedisMessageTransport.ReceiveBatchBytes + messageSize, $"One receive returned {bytes} bytes.");
     }
 
     private ConnectionMultiplexer GetMuxer()

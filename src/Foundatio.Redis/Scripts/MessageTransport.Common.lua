@@ -20,6 +20,14 @@ local function isError(reply)
     return type(reply) == 'table' and reply.err ~= nil
 end
 
+local function fieldsSize(fields)
+    local size = 0
+    for i = 1, #fields do
+        size = size + #fields[i]
+    end
+    return size
+end
+
 -- Ordered groups: at most one message of a group is outstanding (in the stream, or delayed) per source; later ones
 -- are held until it is completed or dead-lettered. The groups hash maps 'a:<group>' to the outstanding message (a
 -- stream id, or 'd:<delayed id>'), 'd:<delayed id>' back to its group, 'h:<group>' and 't:<group>' to the group's
@@ -100,11 +108,17 @@ local function advance(k, now, group, id)
     return false
 end
 
--- Moves due delayed messages into the stream; a promoted message stays its group's outstanding one.
-local function promote(k, now, max)
+-- Moves up to max due delayed messages into the stream, stopping once about maxBytes were moved (always moving at
+-- least one); a promoted message stays its group's outstanding one.
+local function promote(k, now, max, maxBytes)
+    local bytes = 0
     for _, id in ipairs(redis.call('ZRANGEBYSCORE', k.delayed, '-inf', now, 'LIMIT', 0, max)) do
+        if bytes >= maxBytes then
+            break
+        end
         local encoded = redis.call('HGET', k.delayedData, id)
         if encoded then
+            bytes = bytes + #encoded
             local entryId = redis.call('XADD', k.stream, '*', unpack(decodeFields(encoded)))
             local group = redis.call('HGET', k.groups, 'd:' .. id)
             if group then

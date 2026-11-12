@@ -118,7 +118,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     {
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
             [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups],
-            [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive]).AnyContext())!;
+            [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive,
+                RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize]).AnyContext())!;
 
         var entries = (RedisResult[])result[0]!;
         long wait = (long)result[1];

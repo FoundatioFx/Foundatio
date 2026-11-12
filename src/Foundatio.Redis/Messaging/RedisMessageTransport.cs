@@ -36,6 +36,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal const int ScriptBatchSize = 100;
     private const long MaxMessageSizeLimit = 256 * 1024 * 1024;
     private const int ScriptBatchBytes = 8 * 1024 * 1024;
+    internal const int ReceiveBatchBytes = 8 * 1024 * 1024;
     internal static readonly string DeadLetterReasonField = HeaderFieldPrefix + KnownHeaders.DeadLetterReason;
 
     private static readonly string Common = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.MessageTransport.Common.lua");
