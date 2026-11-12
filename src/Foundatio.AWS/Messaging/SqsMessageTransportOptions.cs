@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using System.Text;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging.Transport;
@@ -45,4 +47,32 @@ public sealed record SqsMessageTransportOptions
     public TimeProvider? TimeProvider { get; init; }
 
     public ILoggerFactory? LoggerFactory { get; init; }
+
+    /// <summary>Prints the options for <see cref="ToString"/> with the secret key in <see cref="ConnectionString"/> masked.</summary>
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append(nameof(ConnectionString)).Append(" = ").Append(RedactSecrets(ConnectionString))
+            .Append(", ").Append(nameof(NamePrefix)).Append(" = ").Append(NamePrefix)
+            .Append(", ").Append(nameof(Fifo)).Append(" = ").Append(Fifo)
+            .Append(", ").Append(nameof(InstanceSubscriptionTimeout)).Append(" = ").Append(InstanceSubscriptionTimeout)
+            .Append(", ").Append(nameof(TimeProvider)).Append(" = ").Append(TimeProvider)
+            .Append(", ").Append(nameof(LoggerFactory)).Append(" = ").Append(LoggerFactory);
+        return true;
+    }
+
+    private static string? RedactSecrets(string? connectionString)
+    {
+        if (String.IsNullOrEmpty(connectionString))
+            return connectionString;
+
+        return String.Join(';', connectionString.Split(';').Select(option =>
+        {
+            int separator = option.IndexOf('=');
+            return separator > 0 && IsSecret(option[..separator]) ? option[..(separator + 1)] + "***" : option;
+        }));
+    }
+
+    /// <summary>The names <see cref="AmazonConnectionStringBuilder"/> accepts for the secret key, ignoring case and spaces.</summary>
+    private static bool IsSecret(string name) => name.Replace(" ", String.Empty) is var key
+        && (key.Equals("SecretKey", StringComparison.OrdinalIgnoreCase) || key.Equals("SecretAccessKey", StringComparison.OrdinalIgnoreCase) || key.Equals("Secret", StringComparison.OrdinalIgnoreCase));
 }
