@@ -41,7 +41,7 @@ internal sealed class JobRegistration
             .ToList();
 
         // A job with arguments is named after its arguments type, so producers can enqueue it without the job class.
-        if (registrations.Count > 0 && !typeof(IJob).IsAssignableFrom(jobType) && jobType.GetCustomAttribute<JobAttribute>()?.Name is { Length: > 0 } ignored)
+        if (registrations.Count > 0 && !typeof(IJob).IsAssignableFrom(jobType) && jobType.GetCustomAttribute<JobAttribute>(inherit: false)?.Name is { Length: > 0 } ignored)
         {
             throw new ArgumentException($"[Job(Name = \"{ignored}\")] on {jobType.FullName} has no effect: a job with arguments is named after its arguments type. "
                 + $"Put the attribute on {String.Join(" and ", registrations.Select(r => r.ArgumentsType!.Name))} instead.", nameof(jobType));

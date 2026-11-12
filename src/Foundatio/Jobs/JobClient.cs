@@ -19,10 +19,11 @@ internal sealed class JobClient : IJobClient
     public Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        var argumentsType = arguments.GetType();
         if (arguments is IJob)
-            throw new ArgumentException($"{typeof(TArgs).Name} is a job, not job arguments. Call EnqueueAsync<{typeof(TArgs).Name}>() instead.", nameof(arguments));
+            throw new ArgumentException($"{argumentsType.Name} is a job, not job arguments. Call EnqueueAsync<{argumentsType.Name}>() instead.", nameof(arguments));
 
-        return CreateAsync(JobNaming.GetName(typeof(TArgs)), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
+        return CreateAsync(JobNaming.GetName(argumentsType), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
     }
 
     public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob
@@ -82,6 +83,6 @@ internal sealed class JobClient : IJobClient
             _runtime.SignalWorkAvailable();
         }
 
-        return new JobHandle(job.Id, this, _runtime.TimeProvider);
+        return new JobHandle(job.Id, this);
     }
 }

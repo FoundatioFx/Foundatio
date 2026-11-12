@@ -91,10 +91,11 @@ public sealed class FoundatioJobsBuilder
     public FoundatioJobsBuilder AddCronJob<TArgs>(string cronExpression, TArgs arguments, CronJobOptions? options = null) where TArgs : class
     {
         ArgumentNullException.ThrowIfNull(arguments);
+        var argumentsType = arguments.GetType();
         if (arguments is IJob)
-            throw new ArgumentException($"{typeof(TArgs).Name} is a job, not job arguments. Call AddCronJob<{typeof(TArgs).Name}>(cronExpression) instead.", nameof(arguments));
+            throw new ArgumentException($"{argumentsType.Name} is a job, not job arguments. Call AddCronJob<{argumentsType.Name}>(cronExpression) instead.", nameof(arguments));
 
-        return AddSchedule(JobNaming.GetName(typeof(TArgs)), cronExpression, arguments, options ?? new CronJobOptions());
+        return AddSchedule(JobNaming.GetName(argumentsType), cronExpression, arguments, options ?? new CronJobOptions());
     }
 
     private FoundatioJobsBuilder AddSchedule(string jobName, string cronExpression, object? arguments, CronJobOptions options)

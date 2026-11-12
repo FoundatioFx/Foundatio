@@ -8,7 +8,8 @@ public interface IJobClient
 {
     /// <summary>
     /// Enqueues the job whose <see cref="IJob{TArgs}"/> takes these arguments. The job is identified by the
-    /// arguments' type, so the caller does not need to reference the job class.
+    /// arguments' runtime type (not <typeparamref name="TArgs"/>), so the caller does not need to reference the job
+    /// class and can pass arguments typed as <see cref="object"/> or a base type.
     /// </summary>
     Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class;
 

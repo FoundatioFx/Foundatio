@@ -12,6 +12,7 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -275,6 +276,45 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task WaitForCompletionAsync_WithAFakeTimeProvider_TimesOutInRealTime()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        await using var host = await StartAsync(_ => { }, s => s.AddSingleton<TimeProvider>(time));
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("never.png", 1), cancellationToken: TestCancellationToken);
+
+        var wait = handle.WaitForCompletionAsync(TimeSpan.FromMilliseconds(500), TestCancellationToken);
+        var finished = await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(15), TestCancellationToken));
+
+        Assert.Same(wait, finished);
+        await Assert.ThrowsAsync<TimeoutException>(() => wait);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_ArgumentsTypedAsObject_RunsTheJobForTheirRuntimeType()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        object arguments = new ResizeImage("boxed.png", 16);
+
+        var handle = await host.Jobs.EnqueueAsync(arguments, cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(typeof(ResizeImage).FullName!.Replace('+', '.'), job.Name);
+        Assert.Equal(JobStatus.Succeeded, job.Status);
+    }
+
+    [Fact]
+    public async Task EnqueueAsync_DerivedArgumentsOfANamedBaseType_RunTheJobForTheDerivedType()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ExportJob>().AddJob<DetailedExportJob>());
+
+        var handle = await host.Jobs.EnqueueAsync<Export>(new DetailedExport("csv", 3), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(typeof(DetailedExport).FullName!.Replace('+', '.'), job.Name);
+        Assert.Equal("csv with detail 3", job.Message);
+    }
+
+    [Fact]
     public void Registration_RejectsMistakesEarlyWithClearErrors()
     {
         var services = new ServiceCollection();
@@ -423,6 +463,22 @@ public class DurableJobsTests : TestWithLoggingBase
     public record Flaky(int FailTimes);
     public record WaitForCancellation(bool CompleteOnSecondRun = false);
     public record Slow;
+
+    [Job(Name = "export")]
+    public record Export(string Format);
+
+    public record DetailedExport(string Format, int Detail) : Export(Format);
+
+    public sealed class ExportJob : IJob<Export>
+    {
+        public Task RunAsync(Export arguments, IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, arguments.Format, cancellationToken);
+    }
+
+    public sealed class DetailedExportJob : IJob<DetailedExport>
+    {
+        public Task RunAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
+            context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
+    }
 
     public sealed class ResizeImageJob : IJob<ResizeImage>
     {
