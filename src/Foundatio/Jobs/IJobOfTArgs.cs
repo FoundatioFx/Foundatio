@@ -9,8 +9,10 @@ namespace Foundatio.Jobs;
 /// </summary>
 /// <remarks>
 /// Return normally to succeed. Throw to fail; the job is retried according to its <see cref="RetryPolicy"/>.
-/// The cancellation token fires when someone cancels the job or the host shuts down; a job interrupted by shutdown
-/// is run again later without using up an attempt. Jobs run at least once, so make them safe to repeat.
+/// The cancellation token fires when someone cancels the job, when the host shuts down, or when this worker can no
+/// longer prove it holds the job's lease (renewals failed until the lease ran out, or another worker took the job). A
+/// job interrupted by shutdown is run again later without using up an attempt; a job that lost its lease is run again
+/// by whichever worker claims it next. Jobs run at least once, so make them safe to repeat.
 /// </remarks>
 public interface IJob<in TArgs> where TArgs : class
 {

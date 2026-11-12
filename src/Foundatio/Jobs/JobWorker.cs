@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
@@ -51,6 +52,7 @@ internal sealed class JobWorker
     public void Start()
     {
         _logger.LogInformation("Job worker {WorkerId} running {Jobs} (concurrency {MaxConcurrency})", _runtime.WorkerId, String.Join(", ", _runtime.Jobs.Keys), _runtime.Options.MaxConcurrency);
+        WarnAboutIgnoredJobAttributeProperties();
         Status.MarkRunning();
         _loop = Task.Run(RunClaimLoopAsync, CancellationToken.None);
     }
@@ -105,6 +107,7 @@ internal sealed class JobWorker
 
             JobInfo? job = null;
             var workAvailable = _runtime.WorkAvailable;
+            long claimSent = _runtime.TimeProvider.GetTimestamp();
             try
             {
                 if (names.Count > 0)
@@ -140,7 +143,7 @@ internal sealed class JobWorker
             {
                 try
                 {
-                    await RunAsync(claimed).AnyContext();
+                    await RunAsync(claimed, claimSent).AnyContext();
                 }
                 catch (Exception ex)
                 {
@@ -158,7 +161,9 @@ internal sealed class JobWorker
         }
     }
 
-    private async Task RunAsync(JobInfo job)
+    /// <param name="job">The claimed job.</param>
+    /// <param name="leaseStarted">A <see cref="TimeProvider"/> timestamp taken before the claim was sent; the lease runs from no earlier than this.</param>
+    private async Task RunAsync(JobInfo job, long leaseStarted)
     {
         var registration = _runtime.Jobs[job.Name];
         var policy = registration.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
@@ -194,8 +199,8 @@ internal sealed class JobWorker
 
         var context = new JobRunContext(job, _runtime.Store, _runtime.TimeProvider, _logger);
         using var cancelled = new CancellationTokenSource();
-        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, _abortJobs.Token);
-        using var lease = new LeaseRenewal(this, job, cancelled);
+        using var lease = new LeaseRenewal(this, job, cancelled, leaseStarted);
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, lease.LostToken, _abortJobs.Token);
         using var activity = FoundatioDiagnostics.ActivitySource.StartActivity($"job {job.Name}");
         activity?.SetTag("job.id", job.Id);
         activity?.SetTag("job.name", job.Name);
@@ -222,7 +227,8 @@ internal sealed class JobWorker
         await lease.StopAsync().AnyContext();
         if (lease.IsLost)
         {
-            _logger.LogWarning(error, "Job {JobId} lost its lease while running; another worker may run it again", job.Id);
+            _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
+            RecordRun(job, "lost", started);
             return;
         }
 
@@ -235,15 +241,58 @@ internal sealed class JobWorker
             _logger.LogWarning(ex, "Could not save the progress of job {JobId}", job.Id);
         }
 
-        var completion = Decide(job, policy, result, error, cancelled.IsCancellationRequested);
+        JobCompletion completion;
+        try
+        {
+            completion = Decide(job, policy, result, error, cancelled.IsCancellationRequested);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "The retry policy of job {JobName} threw; failing job {JobId}", job.Name, job.Id);
+            string failure = error is null ? "the job reported failure" : $"{error.GetType().Name}: {error.Message}";
+            completion = JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"The retry policy threw {ex.GetType().Name}: {ex.Message} while handling {failure}");
+        }
+
         await CompleteAsync(job, completion).AnyContext();
 
-        string outcome = completion.Status == JobStatus.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.Status.ToString().ToLowerInvariant();
+        RecordRun(job, completion.Status == JobStatus.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.Status.ToString().ToLowerInvariant(), started);
+        if (completion.Status is JobStatus.Failed or JobStatus.Queued && !completion.RefundAttempt)
+            activity?.SetErrorStatus(error, completion.Error);
+    }
+
+    private static void RecordRun(JobInfo job, string outcome, long started)
+    {
         var tags = new TagList { { "job.name", job.Name }, { "outcome", outcome } };
         JobsInstruments.Completed.Add(1, tags);
         JobsInstruments.Duration.Record(Stopwatch.GetElapsedTime(started).TotalMilliseconds, tags);
-        if (completion.Status is JobStatus.Failed or JobStatus.Queued && !completion.RefundAttempt)
-            activity?.SetErrorStatus(error, completion.Error);
+    }
+
+    /// <summary>Legacy <see cref="JobAttribute"/> settings for hosted jobs have no effect on durable jobs; say so instead of ignoring them silently.</summary>
+    private void WarnAboutIgnoredJobAttributeProperties()
+    {
+        foreach (var jobType in _runtime.Jobs.Values.Select(r => r.JobType).Distinct())
+        {
+            if (jobType.GetCustomAttribute<JobAttribute>() is not { } attribute)
+                continue;
+
+            var ignored = new List<string>();
+            if (!attribute.IsContinuous)
+                ignored.Add(nameof(JobAttribute.IsContinuous));
+            if (attribute.Interval is not null)
+                ignored.Add(nameof(JobAttribute.Interval));
+            if (attribute.InitialDelay is not null)
+                ignored.Add(nameof(JobAttribute.InitialDelay));
+            if (attribute.IterationLimit != -1)
+                ignored.Add(nameof(JobAttribute.IterationLimit));
+            if (attribute.InstanceCount != 1)
+                ignored.Add(nameof(JobAttribute.InstanceCount));
+
+            if (ignored.Count > 0)
+            {
+                _logger.LogWarning("[Job] sets {Properties} on {JobType}, which durable jobs ignore: a durable job runs once each time it is enqueued or its AddCronJob schedule fires, "
+                    + "and JobTypeOptions.MaxConcurrency limits how many run at once", String.Join(", ", ignored), jobType.Name);
+            }
+        }
     }
 
     private JobCompletion Decide(JobInfo job, RetryPolicy policy, JobResult? result, Exception? error, bool cancellationRequested)
@@ -336,37 +385,66 @@ internal sealed class JobWorker
         return true;
     }
 
-    /// <summary>Renews a running job's lease, and cancels it when cancellation is requested or the lease is lost.</summary>
+    /// <summary>
+    /// Renews a running job's lease and cancels the job when cancellation is requested or the lease is lost: the store
+    /// reports that another claim holds the job, or renewals kept failing until the lease this worker last proved had
+    /// nearly run out. Fencing protects the job's stored state either way; cancelling stops its side effects before
+    /// another worker can claim it.
+    /// </summary>
     private sealed class LeaseRenewal : IDisposable
     {
+        private readonly JobWorker _worker;
+        private readonly JobInfo _job;
+        private readonly TimeSpan _heldFor;
         private readonly CancellationTokenSource _stop = new();
+        private readonly CancellationTokenSource _lost;
+        private readonly CancellationTokenRegistration _expired;
         private readonly Task _task;
+        private volatile bool _lostByStore;
 
-        public LeaseRenewal(JobWorker worker, JobInfo job, CancellationTokenSource cancelled)
+        /// <param name="worker">The worker running the job.</param>
+        /// <param name="job">The claimed job.</param>
+        /// <param name="cancelled">Cancelled when someone requests cancellation of the job.</param>
+        /// <param name="leaseStarted">A <see cref="TimeProvider"/> timestamp from before the claim was sent.</param>
+        public LeaseRenewal(JobWorker worker, JobInfo job, CancellationTokenSource cancelled, long leaseStarted)
         {
+            _worker = worker;
+            _job = job;
+            var timeProvider = worker._runtime.TimeProvider;
             var lease = worker._runtime.Options.LeaseDuration;
             var interval = TimeSpan.FromTicks(Math.Min(lease.Ticks / 3, MaxRenewInterval.Ticks));
+            _heldFor = lease - TimeSpan.FromTicks(Math.Min(lease.Ticks / 4, MaxRenewInterval.Ticks));
+            _lost = new CancellationTokenSource(Remaining(leaseStarted), timeProvider);
+            _expired = _lost.Token.Register(() =>
+            {
+                if (!_lostByStore)
+                    _worker._logger.LogWarning("Cancelling job {JobId}: its lease could not be renewed in time, so another worker may claim it", _job.Id);
+            });
+
             _task = Task.Run(async () =>
             {
-                while (!_stop.IsCancellationRequested)
+                while (!_stop.IsCancellationRequested && !_lost.IsCancellationRequested)
                 {
                     try
                     {
-                        await worker._runtime.TimeProvider.SafeDelay(interval, _stop.Token).AnyContext();
-                        if (_stop.IsCancellationRequested)
+                        await timeProvider.SafeDelay(interval, _stop.Token).AnyContext();
+                        if (_stop.IsCancellationRequested || _lost.IsCancellationRequested)
                             return;
 
+                        long sent = timeProvider.GetTimestamp();
                         var status = await worker._runtime.Store.RenewAsync(job.Id, job.ClaimToken!, lease, _stop.Token).AnyContext();
+                        if (status == JobLeaseStatus.Lost)
+                        {
+                            _lostByStore = true;
+                            await _lost.CancelAsync().AnyContext();
+                            return;
+                        }
+
+                        _lost.CancelAfter(Remaining(sent));
                         if (status == JobLeaseStatus.CancellationRequested && !cancelled.IsCancellationRequested)
                         {
                             worker._logger.LogInformation("Cancellation requested for job {JobId}", job.Id);
                             await cancelled.CancelAsync().AnyContext();
-                        }
-                        else if (status == JobLeaseStatus.Lost)
-                        {
-                            IsLost = true;
-                            await cancelled.CancelAsync().AnyContext();
-                            return;
                         }
                     }
                     catch (OperationCanceledException) when (_stop.IsCancellationRequested)
@@ -381,18 +459,33 @@ internal sealed class JobWorker
             });
         }
 
-        public bool IsLost { get; private set; }
+        /// <summary>Cancelled when the lease is lost.</summary>
+        public CancellationToken LostToken => _lost.Token;
 
+        /// <summary>Whether the lease was lost before <see cref="StopAsync"/>. A lost run's result must not be recorded.</summary>
+        public bool IsLost => _lost.IsCancellationRequested;
+
+        /// <summary>Stops renewing. The lease can no longer be lost after this, so <see cref="IsLost"/> is final.</summary>
         public async Task StopAsync()
         {
             _stop.Cancel();
+            _lost.CancelAfter(Timeout.InfiniteTimeSpan);
             await _task.AnyContext();
         }
 
         public void Dispose()
         {
             _stop.Cancel();
+            _expired.Dispose();
             _stop.Dispose();
+            _lost.Dispose();
+        }
+
+        /// <summary>How much longer a lease that was renewed (or claimed) at <paramref name="sent"/> is certainly held.</summary>
+        private TimeSpan Remaining(long sent)
+        {
+            var remaining = _heldFor - _worker._runtime.TimeProvider.GetElapsedTime(sent);
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
         }
     }
 }

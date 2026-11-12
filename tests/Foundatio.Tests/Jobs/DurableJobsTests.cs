@@ -350,6 +350,47 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task RunAsync_WhenTheRetryPolicyThrows_FailsTheJob()
+    {
+        var policy = new RetryPolicy { MaxAttempts = 3, ShouldRetry = _ => throw new InvalidOperationException("policy bug") };
+        await using var host = await StartAsync(j => j.AddJob<FlakyJob>(new JobTypeOptions { RetryPolicy = policy }));
+
+        var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobStatus.Failed, job.Status);
+        Assert.Contains("policy bug", job.Error);
+    }
+
+    [Fact]
+    public async Task AddJob_WithLegacySchedulingPropertiesOnJobAttribute_LogsThatTheyAreIgnored()
+    {
+        await using var host = await StartAsync(j => j.AddJob<IntervalJob>());
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains("Interval") && e.Message.Contains(nameof(IntervalJob)));
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenTheLeaseCannotBeRenewed_CancelsTheJobBeforeAnotherWorkerTakesIt()
+    {
+        var lease = TimeSpan.FromSeconds(2);
+        var partitioned = new FaultyJobStore(_store);
+        await using var first = await StartAsync(j => j.Configure(o => { o.LeaseDuration = lease; o.WorkerId = "first"; }).AddJob<OverlapJob>(), store: partitioned);
+        var handle = await first.Jobs.EnqueueAsync(new Overlap(), cancellationToken: TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        partitioned.Partitioned = true;
+        await using var second = await StartAsync(j => j.Configure(o => { o.LeaseDuration = lease; o.WorkerId = "second"; }).AddJob<OverlapJob>());
+        await WaitForAsync(async () => (await _store.GetAsync(handle.Id, TestCancellationToken))?.Status.IsTerminal() == true, TimeSpan.FromSeconds(30));
+        var job = (await _store.GetAsync(handle.Id, TestCancellationToken))!;
+
+        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(2, job.Attempt);
+        Assert.Equal(["start 1", "cancelled 1", "start 2"], _probe.Events);
+        Assert.Equal(1, _probe.PeakConcurrency);
+    }
+
+    [Fact]
     public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
     {
         await using var first = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
@@ -470,9 +511,9 @@ public class DurableJobsTests : TestWithLoggingBase
         return new TestHost(provider, hosted);
     }
 
-    private async Task WaitForAsync(Func<Task<bool>> condition)
+    private async Task WaitForAsync(Func<Task<bool>> condition, TimeSpan? timeout = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow.Add(timeout ?? TimeSpan.FromSeconds(10));
         while (!await condition())
         {
             if (DateTime.UtcNow > deadline)
@@ -504,6 +545,7 @@ public class DurableJobsTests : TestWithLoggingBase
         private int _peak;
 
         public ConcurrentBag<int> Runs { get; } = [];
+        public ConcurrentQueue<string> Events { get; } = new();
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int RunCount;
         public int PeakConcurrency => Volatile.Read(ref _peak);
@@ -530,6 +572,8 @@ public class DurableJobsTests : TestWithLoggingBase
     public record WaitForCancellation(bool CompleteOnSecondRun = false);
     public record Slow;
 
+    public record Overlap;
+
     [Job(Name = "export")]
     public record Export(string Format);
 
@@ -544,6 +588,35 @@ public class DurableJobsTests : TestWithLoggingBase
     {
         public Task RunAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
             context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
+    }
+
+    /// <summary>Runs until cancelled on its first attempt, recording when it starts and stops; later attempts succeed at once.</summary>
+    public sealed class OverlapJob(JobProbe probe) : IJob<Overlap>
+    {
+        public async Task RunAsync(Overlap arguments, IJobContext context, CancellationToken cancellationToken)
+        {
+            using var _ = probe.Enter();
+            probe.Events.Enqueue($"start {context.Attempt}");
+            if (context.Attempt > 1)
+                return;
+
+            probe.Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                probe.Events.Enqueue($"cancelled {context.Attempt}");
+                throw;
+            }
+        }
+    }
+
+    [Job(Name = "legacy-interval", Interval = "5m")]
+    public sealed class IntervalJob : IJob
+    {
+        public Task<JobResult> RunAsync(CancellationToken cancellationToken = default) => Task.FromResult(JobResult.Success);
     }
 
     /// <summary>A store that fails on demand: <see cref="ProgressFailures"/> progress reports, or every call once <see cref="Partitioned"/>.</summary>
