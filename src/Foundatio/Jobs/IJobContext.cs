@@ -21,6 +21,10 @@ public interface IJobContext
     /// <summary>The CRON schedule that created this job, if any.</summary>
     string? ScheduleName { get; }
 
-    /// <summary>Records progress visible through <see cref="IJobClient.GetAsync"/>. Frequent calls are throttled.</summary>
+    /// <summary>
+    /// Records progress visible through <see cref="IJobClient.GetAsync"/>. Frequent calls are throttled, and calls from
+    /// parallel branches are safe. A store error does not fail the job: it is logged, and the report is saved with the
+    /// next one or when the job finishes.
+    /// </summary>
     Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default);
 }

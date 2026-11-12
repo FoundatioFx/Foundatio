@@ -12,6 +12,7 @@ using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -315,6 +316,40 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ReportProgressAsync_WhenTheStoreFailsBriefly_DoesNotFailTheAttempt()
+    {
+        var store = new FaultyJobStore(_store) { ProgressFailures = 1 };
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>(), store: store);
+
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("blip.png", 4), cancellationToken: TestCancellationToken);
+        var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+
+        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(1, job.Attempt);
+        Assert.Equal(100, job.Progress);
+        Assert.Equal("resized blip.png to 4px", job.Message);
+    }
+
+    [Fact]
+    public async Task ReportProgressAsync_AfterAThrottledReport_StoresTheThrottledMessage()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new InMemoryJobStore(time);
+        await store.CreateAsync(new JobInfo { Id = "progress", Name = "progress", CreatedAt = time.GetUtcNow(), UpdatedAt = time.GetUtcNow(), AvailableAt = time.GetUtcNow() }, TestCancellationToken);
+        var job = (await store.ClaimAsync(new JobClaimRequest { Names = ["progress"], WorkerId = "test", LeaseDuration = TimeSpan.FromMinutes(1) }, TestCancellationToken))!;
+        var context = new JobRunContext(job, store, time, NullLogger.Instance);
+
+        await context.ReportProgressAsync(40, "reading", TestCancellationToken);
+        await context.ReportProgressAsync(50, "writing", TestCancellationToken);
+        time.Advance(TimeSpan.FromSeconds(1));
+        await context.ReportProgressAsync(60, cancellationToken: TestCancellationToken);
+
+        var stored = (await store.GetAsync("progress", TestCancellationToken))!;
+        Assert.Equal(60, stored.Progress);
+        Assert.Equal("writing", stored.Message);
+    }
+
+    [Fact]
     public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
     {
         await using var first = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
@@ -414,7 +449,7 @@ public class DurableJobsTests : TestWithLoggingBase
         public Task<bool> WaitAsync(CancellationToken cancellationToken) => _result.Task.WaitAsync(cancellationToken);
     }
 
-    private async Task<TestHost> StartAsync(Action<FoundatioJobsBuilder> configure, Action<IServiceCollection>? services = null, bool startHostedServices = true)
+    private async Task<TestHost> StartAsync(Action<FoundatioJobsBuilder> configure, Action<IServiceCollection>? services = null, bool startHostedServices = true, IJobStore? store = null)
     {
         var collection = new ServiceCollection();
         collection.AddSingleton<ILoggerFactory>(Log);
@@ -423,7 +458,7 @@ public class DurableJobsTests : TestWithLoggingBase
         services?.Invoke(collection);
         collection.AddFoundatioJobs(j =>
         {
-            j.UseStore(_store).Configure(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
+            j.UseStore(store ?? _store).Configure(o => o.ShutdownTimeout = TimeSpan.FromSeconds(5));
             configure(j);
         });
 
@@ -509,6 +544,46 @@ public class DurableJobsTests : TestWithLoggingBase
     {
         public Task RunAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
             context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
+    }
+
+    /// <summary>A store that fails on demand: <see cref="ProgressFailures"/> progress reports, or every call once <see cref="Partitioned"/>.</summary>
+    private sealed class FaultyJobStore(IJobStore inner) : IJobStore
+    {
+        private int _progressFailures;
+        private int _partitioned;
+
+        public bool Partitioned
+        {
+            get => Volatile.Read(ref _partitioned) == 1;
+            set => Volatile.Write(ref _partitioned, value ? 1 : 0);
+        }
+
+        public int ProgressFailures
+        {
+            get => Volatile.Read(ref _progressFailures);
+            init => _progressFailures = value;
+        }
+
+        private IJobStore Inner => Partitioned ? throw new TimeoutException("Timeout performing EVALSHA") : inner;
+
+        public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Inner.CreateAsync(job, cancellationToken);
+        public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => Inner.GetAsync(jobId, cancellationToken);
+        public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Inner.QueryAsync(query, cancellationToken);
+        public Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default) => Inner.CountAsync(status, name, cancellationToken);
+        public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => Inner.ClaimAsync(request, cancellationToken);
+        public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Inner.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
+
+        public Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Decrement(ref _progressFailures) >= 0)
+                throw new TimeoutException("Timeout performing EVALSHA");
+
+            return Inner.ReportProgressAsync(jobId, claimToken, percent, message, cancellationToken);
+        }
+
+        public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => Inner.CompleteAsync(jobId, claimToken, completion, cancellationToken);
+        public Task<bool> RequestCancellationAsync(string jobId, TimeSpan retainFor, CancellationToken cancellationToken = default) => Inner.RequestCancellationAsync(jobId, retainFor, cancellationToken);
+        public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Inner.DeleteAsync(jobId, cancellationToken);
     }
 
     public sealed class ResizeImageJob : IJob<ResizeImage>

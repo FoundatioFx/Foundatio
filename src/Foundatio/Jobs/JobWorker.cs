@@ -192,7 +192,7 @@ internal sealed class JobWorker
             }
         }
 
-        var context = new JobRunContext(job, _runtime.Store, _runtime.TimeProvider);
+        var context = new JobRunContext(job, _runtime.Store, _runtime.TimeProvider, _logger);
         using var cancelled = new CancellationTokenSource();
         using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancelled.Token, _abortJobs.Token);
         using var lease = new LeaseRenewal(this, job, cancelled);
