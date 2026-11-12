@@ -24,6 +24,9 @@ internal sealed class KafkaPartitionState
     /// <summary>Handed-out deliveries by offset.</summary>
     public Dictionary<long, KafkaIncomingMessage> InFlight { get; } = [];
 
+    /// <summary>How many of the partition's records wait in memory for their delivery time.</summary>
+    public int TimedCount { get; set; }
+
     /// <summary>The offset after the last one read, or -1 before the first read.</summary>
     public long NextOffset { get; set; } = -1;
 

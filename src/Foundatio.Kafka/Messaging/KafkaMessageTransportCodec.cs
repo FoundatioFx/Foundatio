@@ -27,6 +27,9 @@ internal static class KafkaMessageTransportCodec
     /// <summary>Dead-letter reasons are cut to this many characters so a dead letter always fits in <see cref="EncodingReserve"/>.</summary>
     public const int MaxReasonLength = 1024;
 
+    /// <summary>What a decoded record costs in memory beyond its bytes: the record, its strings and its header dictionary.</summary>
+    private const int DecodedOverhead = 512;
+
     public static Message<byte[]?, byte[]> Encode(string messageId, ReadOnlyMemory<byte> body, IReadOnlyDictionary<string, string> headers,
         string? groupKey, int deliveryCount = 1, DateTimeOffset? enqueuedAt = null)
     {
@@ -91,6 +94,7 @@ internal static class KafkaMessageTransportCodec
     {
         var message = result.Message;
         var headers = new Dictionary<string, string>(StringComparer.Ordinal);
+        long size = DecodedOverhead + (message.Key?.Length ?? 0) + (message.Value?.Length ?? 0);
         string? messageId = null;
         int deliveryCount = 1;
         DateTimeOffset? enqueuedAt = null;
@@ -98,7 +102,9 @@ internal static class KafkaMessageTransportCodec
 
         foreach (var header in message.Headers ?? [])
         {
-            string value = header.GetValueBytes() is { } bytes ? Encoding.UTF8.GetString(bytes) : String.Empty;
+            var bytes = header.GetValueBytes();
+            size += header.Key.Length + (bytes?.Length ?? 0);
+            string value = bytes is null ? String.Empty : Encoding.UTF8.GetString(bytes);
             switch (header.Key)
             {
                 case IdHeader:
@@ -128,6 +134,7 @@ internal static class KafkaMessageTransportCodec
             GroupKey = message.Key is null ? null : Encoding.UTF8.GetString(message.Key),
             DeliveryCount = deliveryCount,
             EnqueuedAt = enqueuedAt ?? (message.Timestamp.Type == TimestampType.NotAvailable ? null : new DateTimeOffset(message.Timestamp.UtcDateTime)),
+            Size = (int)Math.Min(size, Int32.MaxValue),
             AvailableAt = deliverAt
         };
     }

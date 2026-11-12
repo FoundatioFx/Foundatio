@@ -88,6 +88,12 @@ public sealed record KafkaMessageTransportOptions
     /// <summary>Receives the transport's logs, including librdkafka's (its info and notice logs at debug level).</summary>
     public ILoggerFactory? LoggerFactory { get; init; }
 
+    /// <summary>How many records a receiver buffers ready to hand out before it stops reading, or <c>null</c> for one based on its prefetch count.</summary>
+    internal int? ReceiverBufferLimit { get; init; }
+
+    /// <summary>How many records a receiver holds in memory until their delivery time before it stops reading their partitions.</summary>
+    internal int ReceiverTimedLimit { get; init; } = 10_000;
+
     /// <summary>How long the delay forwarder waits before it tries again to forward a record it could not.</summary>
     internal TimeSpan DelayForwardRetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 

@@ -10,6 +10,7 @@ using Confluent.Kafka.Admin;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace Foundatio.Kafka.Tests.Messaging;
@@ -218,17 +219,33 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
             Partitions = 2,
             DelayedDelivery = false,
             RebalanceGracePeriod = TimeSpan.FromMilliseconds(500),
-            ConfigureProducer = c => c.StickyPartitioningLingerMs = 0
+            ConfigureProducer = c => c.StickyPartitioningLingerMs = 0,
+            ReceiverBufferLimit = 4
         }));
         var source = MessageSource.Queue(NewName("paused-moved"));
-        await using var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 1 }, TestCancellationToken);
+        await using var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Nothing is received, so the buffer fills, then grows past twice its limit as the receiver keeps polling.
         await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 40).Select(i => Message($"first-{i}")).ToList(), TestCancellationToken);
         await WaitForAsync(() => first.PausedCount == 2);
 
-        await MovePartitionAwayAndBackAsync(transport, source, first);
+        var received = new List<IncomingMessage>();
+        await using (var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+        {
+            await WaitForAsync(() => first.Assignment.Count == 1 && second.Assignment.Count == 1, TimeSpan.FromSeconds(30));
+
+            // Drain the first receiver so it no longer pauses anything when the moved partition comes back.
+            await WaitForAsync(() =>
+            {
+                received.AddRange(first.ReceiveAsync(10, TimeSpan.FromMilliseconds(100), TestCancellationToken).GetAwaiter().GetResult());
+                return first.PausedCount == 0;
+            });
+        }
+
+        await WaitForAsync(() => first.Assignment.Count == 2, TimeSpan.FromSeconds(30));
         await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"second-{i}")).ToList(), TestCancellationToken);
 
-        var received = await ReceiveAsync(first, 60);
+        received.AddRange(await ReceiveAsync(first, 60 - received.Count));
         Assert.Equal(60, received.Select(m => m.MessageId).Distinct().Count());
     }
 
@@ -439,13 +456,56 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
         }
     }
 
-    private async Task MovePartitionAwayAndBackAsync(KafkaMessageTransport transport, MessageSource source, KafkaMessageReceiver first)
+    [Fact]
+    public async Task Receive_FromABacklogWithSlowHandlers_KeepsUpWithTheHandlers()
     {
-        int assigned = first.Assignment.Count;
-        await using (var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
-            await WaitForAsync(() => second.Assignment.Count > 0 && first.Assignment.Count + second.Assignment.Count == assigned, TimeSpan.FromSeconds(30));
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false }));
+        var source = MessageSource.Queue(NewName("backlog"));
+        const int count = 3000;
+        var body = new byte[1000];
+        for (int i = 0; i < count; i += 1000)
+            await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(i, 1000).Select(n => new OutgoingMessage { MessageId = n.ToString(), Body = body }).ToList(), TestCancellationToken);
 
-        await WaitForAsync(() => first.Assignment.Count == assigned, TimeSpan.FromSeconds(30));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 8 }, TestCancellationToken);
+        var stopwatch = Stopwatch.StartNew();
+        int received = 0;
+        while (received < count && stopwatch.Elapsed < TimeSpan.FromSeconds(60))
+        {
+            // Handlers that take 5ms per batch of 16 could handle 3,200 messages a second.
+            var batch = await receiver.ReceiveAsync(16, TimeSpan.FromSeconds(1), TestCancellationToken);
+            await Task.Delay(5, TestCancellationToken);
+            foreach (var message in batch)
+                await receiver.CompleteAsync(message, TestCancellationToken);
+
+            received += batch.Count;
+        }
+
+        _logger.LogInformation("Received {Count} messages in {Elapsed} ({Rate:0} a second)", received, stopwatch.Elapsed, received / stopwatch.Elapsed.TotalSeconds);
+        Assert.Equal(count, received);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(15), $"Receiving the backlog took {stopwatch.Elapsed}.");
+    }
+
+    [Fact]
+    public async Task DeliverAt_ManyGroupedDelays_HoldsOnlyABoundedNumberInMemory()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1, ReceiverTimedLimit = 20 }));
+        var source = MessageSource.Queue(NewName("many-delays"));
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var due = DateTimeOffset.UtcNow.AddSeconds(8);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 50).Select(i => Message($"later-{i}", $"later-{i}") with { GroupKey = $"user-{i}", DeliverAt = due }).ToList(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 5).Select(i => Message($"now-{i}", $"now-{i}")).ToList(), TestCancellationToken);
+
+        int mostHeld = 0;
+        while (DateTimeOffset.UtcNow < due.AddSeconds(-2))
+        {
+            mostHeld = Math.Max(mostHeld, receiver.TimedCount);
+            await Task.Delay(50, TestCancellationToken);
+        }
+
+        Assert.InRange(mostHeld, 1, 21);
+        var messages = await ReceiveAsync(receiver, 55, TimeSpan.FromSeconds(30));
+        Assert.Equal(55, messages.Select(m => m.MessageId).Distinct().Count());
+        Assert.All(messages.Where(m => m.MessageId.StartsWith("later-", StringComparison.Ordinal)), _ => Assert.True(DateTimeOffset.UtcNow >= due));
     }
 
     /// <summary>A prefix of its own, for tests that need the delay forwarders' consumer group to themselves.</summary>

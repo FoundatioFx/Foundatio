@@ -15,21 +15,42 @@ namespace Foundatio.Messaging.Transport;
 /// storing offsets, pausing and rebalance callbacks. Records are buffered until <see cref="ReceiveAsync"/> hands them
 /// out; settlement only updates in-memory state under a lock, and the thread then stores the new commit offsets.
 /// </summary>
+/// <remarks>
+/// <para>
+/// While the buffer is full the thread stops reading and polls only every <see cref="KeepAliveInterval"/>, which
+/// serves rebalances and keeps the member in its group; librdkafka's own prefetch queue, bounded by
+/// <c>queued.max.messages.kbytes</c>, then stops fetching. Partitions are not paused for this: a paused partition
+/// drops what librdkafka has fetched for it and takes about a second to deliver again once resumed. They are paused
+/// only when the buffer passes twice its limit (handlers stalled for minutes, so polls kept adding a record each), and
+/// when too many records wait for their delivery time, which only a partition being read further would add to.
+/// </para>
+/// <para>
+/// Records that wait for their delivery time (delayed messages with a group key, and records released with a delay)
+/// are kept apart from the buffer, ordered by when they are due. A group's later records on the same partition stay
+/// in the buffer, held back, until the one that waits is due.
+/// </para>
+/// </remarks>
 internal sealed class KafkaMessageReceiver : IMessageReceiver
 {
     private static readonly TimeSpan PollTimeout = TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan KeepAliveInterval = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan ReleaseTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan FailedSettlementDelay = TimeSpan.FromSeconds(5);
+    private const long BufferBytesLimit = 8 * 1024 * 1024;
+    private const long TimedBytesLimit = 16 * 1024 * 1024;
 
     private readonly KafkaMessageTransport _transport;
     private readonly KafkaSourceTopology _topology;
     private readonly IConsumer<byte[]?, byte[]?> _consumer;
     private readonly ILogger _logger;
     private readonly int _bufferLimit;
+    private readonly int _timedLimit;
     private readonly bool _ordered;
     private readonly object _lock = new();
     private readonly LinkedList<KafkaRecord> _buffer = new();
+    private readonly PriorityQueue<KafkaRecord, (DateTimeOffset Due, long Sequence)> _timed = new();
+    private readonly Dictionary<string, List<KafkaRecord>> _timedGroups = new(StringComparer.Ordinal);
     private readonly Dictionary<TopicPartition, KafkaPartitionState> _partitions = [];
     private readonly Dictionary<string, int> _inFlightGroups = new(StringComparer.Ordinal);
     private readonly HashSet<TopicPartition> _paused = [];
@@ -37,7 +58,13 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
     private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _joined = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource _changed = NewSignal();
+    private long _bufferedBytes;
+    private long _timedBytes;
+    private long _timedSequence;
     private bool _offsetsChanged;
+    private bool _pausesChanged;
+    private bool _pauseAll;
+    private bool _pauseTimed;
     private Exception? _failure;
     private int _pausedCount;
     private int _started;
@@ -48,7 +75,8 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         _transport = transport;
         _topology = topology;
         _logger = transport.Logger;
-        _bufferLimit = Math.Max(32, options.PrefetchCount * 2);
+        _bufferLimit = Math.Max(1, transport.Options.ReceiverBufferLimit ?? Math.Clamp(options.PrefetchCount * 8, 256, 4096));
+        _timedLimit = Math.Max(1, transport.Options.ReceiverTimedLimit);
         _ordered = topology.Source.Kind != MessageSourceKind.DeadLetter;
 
         var builder = new ConsumerBuilder<byte[]?, byte[]?>(transport.CreateConsumerConfig(topology.GroupId))
@@ -69,6 +97,16 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
 
     /// <summary>How many partitions the receiver has paused. For tests.</summary>
     internal int PausedCount => Volatile.Read(ref _pausedCount);
+
+    /// <summary>How many records wait in memory for their delivery time. For tests.</summary>
+    internal int TimedCount
+    {
+        get
+        {
+            lock (_lock)
+                return _timed.Count;
+        }
+    }
 
     /// <summary>The partitions currently assigned to the consumer. For tests.</summary>
     internal List<TopicPartition> Assignment => _consumer.Assignment;
@@ -246,19 +284,33 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 _consumer.Subscribe(_topology.Topics);
             }
 
+            long lastPoll = Stopwatch.GetTimestamp();
             while (!_stopping.IsCancellationRequested)
             {
-                Maintain();
+                var (full, changed) = Maintain();
+                if (full)
+                {
+                    var sincePoll = Stopwatch.GetElapsedTime(lastPoll);
+                    if (sincePoll < KeepAliveInterval)
+                    {
+                        changed.Wait(KeepAliveInterval - sincePoll);
+                        continue;
+                    }
+                }
 
                 ConsumeResult<byte[]?, byte[]?>? result;
                 try
                 {
-                    result = _consumer.Consume(PollTimeout);
+                    result = _consumer.Consume(full ? TimeSpan.Zero : PollTimeout);
                 }
                 catch (ConsumeException ex) when (!ex.Error.IsFatal)
                 {
                     _logger.LogWarning(ex, "Error reading {Source}: {Reason}", Source, ex.Error.Reason);
                     continue;
+                }
+                finally
+                {
+                    lastPoll = Stopwatch.GetTimestamp();
                 }
 
                 if (result?.Message is not null)
@@ -300,7 +352,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                     state.Revoked = true;
 
                 _partitions.Clear();
-                _buffer.Clear();
+                DropRevokedRecords();
             }
 
             _joined.TrySetResult();
@@ -309,13 +361,20 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         }
     }
 
-    /// <summary>Stores advanced commit offsets and pauses reading while the buffer is full.</summary>
-    private void Maintain()
+    /// <summary>
+    /// Stores advanced commit offsets, moves records whose delivery time has come into the buffer, and pauses or
+    /// resumes partitions. Returns whether the buffer is full, so nothing more should be read for now, and a task that
+    /// completes when something changes.
+    /// </summary>
+    private (bool Full, Task Changed) Maintain()
     {
         List<TopicPartitionOffset>? store = null;
-        bool full, drained;
+        List<TopicPartition>? timedPartitions = null;
+        Task changed;
+        bool full, overfull, timedOver, timedDrained, pausesChanged;
         lock (_lock)
         {
+            changed = _changed.Task;
             if (_offsetsChanged && !_topology.IsInstance)
             {
                 _offsetsChanged = false;
@@ -329,16 +388,15 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 }
             }
 
-            // Records waiting for their delivery time stay in memory but do not stop the partition being read.
-            int buffered = _buffer.Count;
-            if (buffered >= _bufferLimit)
-            {
-                var now = _transport.TimeProvider.GetUtcNow();
-                buffered -= _buffer.Count(r => r.AvailableAt > now);
-            }
-
-            full = buffered >= _bufferLimit;
-            drained = buffered <= _bufferLimit / 2;
+            PromoteDue(_transport.TimeProvider.GetUtcNow());
+            full = _buffer.Count >= _bufferLimit || _bufferedBytes >= BufferBytesLimit;
+            overfull = _buffer.Count >= _bufferLimit * 2 || _bufferedBytes >= BufferBytesLimit * 2;
+            timedOver = _timed.Count >= _timedLimit || _timedBytes >= TimedBytesLimit;
+            timedDrained = _timed.Count <= _timedLimit / 2 && _timedBytes <= TimedBytesLimit / 2;
+            pausesChanged = _pausesChanged;
+            _pausesChanged = false;
+            if (timedOver || _pauseTimed)
+                timedPartitions = _partitions.Values.Where(p => p.TimedCount > 0).Select(p => p.TopicPartition).ToList();
         }
 
         if (store is not null)
@@ -356,29 +414,49 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             }
         }
 
-        if (full)
+        bool pauseAll = overfull || _pauseAll && full;
+        bool pauseTimed = timedOver || _pauseTimed && !timedDrained;
+        if (pauseAll != _pauseAll || pauseTimed != _pauseTimed || pauseTimed && pausesChanged || pauseAll && pausesChanged)
         {
-            var pause = _consumer.Assignment.Where(p => !_paused.Contains(p)).ToList();
-            if (pause.Count > 0)
-            {
-                _consumer.Pause(pause);
-                _paused.UnionWith(pause);
-                Volatile.Write(ref _pausedCount, _paused.Count);
-            }
+            _pauseAll = pauseAll;
+            _pauseTimed = pauseTimed;
+            UpdatePaused(timedPartitions);
         }
-        else if (drained && _paused.Count > 0)
+
+        return (full, changed);
+    }
+
+    /// <summary>Pauses what should not be read (every partition while the buffer is far over its limit, those holding timed records while too many are held) and resumes the rest.</summary>
+    private void UpdatePaused(List<TopicPartition>? timedPartitions)
+    {
+        var wanted = new HashSet<TopicPartition>();
+        if (_pauseAll)
+            wanted.UnionWith(_consumer.Assignment);
+        if (_pauseTimed && timedPartitions is not null)
+            wanted.UnionWith(timedPartitions);
+
+        var pause = wanted.Where(p => !_paused.Contains(p)).ToList();
+        var resume = _paused.Where(p => !wanted.Contains(p)).ToList();
+        if (pause.Count > 0)
         {
-            var resume = _consumer.Assignment.Where(_paused.Contains).ToList();
-            _paused.Clear();
-            Volatile.Write(ref _pausedCount, 0);
-            if (resume.Count > 0)
-                _consumer.Resume(resume);
+            _consumer.Pause(pause);
+            _paused.UnionWith(pause);
+            _logger.LogDebug("{Source} paused {Partitions}: {Buffered} records buffered, {Timed} waiting for their delivery time", Source, String.Join(", ", pause), _buffer.Count, _timed.Count);
         }
+
+        if (resume.Count > 0)
+        {
+            _consumer.Resume(resume);
+            _paused.ExceptWith(resume);
+        }
+
+        Volatile.Write(ref _pausedCount, _paused.Count);
     }
 
     private void Accept(ConsumeResult<byte[]?, byte[]?> result)
     {
         var record = KafkaMessageTransportCodec.Decode(result);
+        var now = _transport.TimeProvider.GetUtcNow();
         lock (_lock)
         {
             if (!_partitions.TryGetValue(result.TopicPartition, out var state))
@@ -390,7 +468,10 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             record.Partition = state;
             record.Offset = result.Offset.Value;
             state.Read(record.Offset);
-            _buffer.AddLast(record);
+            if (record.AvailableAt > now)
+                AddTimed(record);
+            else
+                AddBuffered(record, last: true);
         }
 
         Signal();
@@ -402,13 +483,13 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
         lock (_lock)
         {
             var changed = _changed.Task;
+            PromoteDue(now);
             var messages = new List<IncomingMessage>();
             HashSet<string>? taken = null;
             HashSet<string>? held = null;
-            DateTimeOffset? nextChange = null;
 
             // A group's records are handed out in buffer order, several per batch, but none while one handed out by
-            // an earlier receive is unsettled, and none after a record of the group that has to wait.
+            // an earlier receive is unsettled, and none after a record of the group that waits for its time.
             for (var node = _buffer.First; node is not null && messages.Count < count;)
             {
                 var next = node.Next;
@@ -417,15 +498,8 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 string? group = _ordered ? record.GroupKey : null;
 
                 bool available = !state.Revoking;
-                if (group is not null && (held?.Contains(group) == true || _inFlightGroups.ContainsKey(group) && taken?.Contains(group) != true))
+                if (group is not null && (held?.Contains(group) == true || _inFlightGroups.ContainsKey(group) && taken?.Contains(group) != true || IsBehindTimed(record, group)))
                     available = false;
-
-                if (available && record.AvailableAt is { } availableAt && availableAt > now)
-                {
-                    available = false;
-                    if (nextChange is null || availableAt < nextChange)
-                        nextChange = availableAt;
-                }
 
                 if (!available && group is not null)
                     (held ??= new HashSet<string>(StringComparer.Ordinal)).Add(group);
@@ -433,11 +507,13 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 if (available)
                 {
                     _buffer.Remove(node);
+                    _bufferedBytes -= record.Size;
                     var delivery = new KafkaIncomingMessage
                     {
                         Owner = this,
                         Partition = state,
                         Offset = record.Offset,
+                        Size = record.Size,
                         MessageId = record.MessageId,
                         Body = record.Body,
                         Headers = record.Headers,
@@ -459,8 +535,98 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 node = next;
             }
 
-            return (messages, nextChange - now, changed);
+            TimeSpan? nextChange = _timed.TryPeek(out _, out var first) ? first.Due - now : null;
+            return (messages, nextChange, changed);
         }
+    }
+
+    /// <summary>Whether a record of an ordered group comes after one of its group, on its partition, that waits for its delivery time.</summary>
+    private bool IsBehindTimed(KafkaRecord record, string group)
+    {
+        return _timedGroups.TryGetValue(group, out var waiting) && waiting.Exists(w => w.Partition == record.Partition && w.Offset < record.Offset);
+    }
+
+    /// <summary>Adds a record to the buffer: at the end, or ahead of the later records of its partition.</summary>
+    private void AddBuffered(KafkaRecord record, bool last)
+    {
+        record.AvailableAt = null;
+        _bufferedBytes += record.Size;
+        var later = last ? null : _buffer.First;
+        while (later is not null && !(later.Value.Partition == record.Partition && later.Value.Offset > record.Offset))
+            later = later.Next;
+
+        if (later is null)
+            _buffer.AddLast(record);
+        else
+            _buffer.AddBefore(later, record);
+    }
+
+    private void AddTimed(KafkaRecord record)
+    {
+        _timed.Enqueue(record, (record.AvailableAt!.Value, _timedSequence++));
+        _timedBytes += record.Size;
+        if (record.Partition!.TimedCount++ == 0)
+            _pausesChanged = true;
+
+        if (_ordered && record.GroupKey is { } group)
+        {
+            if (!_timedGroups.TryGetValue(group, out var waiting))
+                _timedGroups[group] = waiting = [];
+
+            waiting.Add(record);
+        }
+    }
+
+    /// <summary>Moves records whose delivery time has come into the buffer, ahead of the later records of their partition.</summary>
+    private void PromoteDue(DateTimeOffset now)
+    {
+        while (_timed.TryPeek(out var record, out var due) && due.Due <= now)
+        {
+            _timed.Dequeue();
+            ForgetTimed(record);
+            if (!record.Partition!.Revoked)
+                AddBuffered(record, last: false);
+        }
+    }
+
+    private void ForgetTimed(KafkaRecord record)
+    {
+        _timedBytes -= record.Size;
+        if (--record.Partition!.TimedCount == 0)
+            _pausesChanged = true;
+
+        if (_ordered && record.GroupKey is { } group && _timedGroups.TryGetValue(group, out var waiting))
+        {
+            waiting.Remove(record);
+            if (waiting.Count == 0)
+                _timedGroups.Remove(group);
+        }
+    }
+
+    /// <summary>Drops the buffered and timed records of revoked partitions; they are read again by the partition's next owner.</summary>
+    private void DropRevokedRecords()
+    {
+        for (var node = _buffer.First; node is not null;)
+        {
+            var next = node.Next;
+            if (node.Value.Partition!.Revoked)
+            {
+                _buffer.Remove(node);
+                _bufferedBytes -= node.Value.Size;
+            }
+
+            node = next;
+        }
+
+        if (!_timed.UnorderedItems.Any(t => t.Element.Partition!.Revoked))
+            return;
+
+        var kept = _timed.UnorderedItems.Where(t => !t.Element.Partition!.Revoked).ToList();
+        foreach (var (record, _) in _timed.UnorderedItems.Where(t => t.Element.Partition!.Revoked).ToList())
+            ForgetTimed(record);
+
+        _timed.Clear();
+        _timed.EnqueueRange(kept);
     }
 
     private void Finish(KafkaIncomingMessage delivery)
@@ -497,19 +663,16 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 GroupKey = delivery.GroupKey,
                 DeliveryCount = delivery.DeliveryCount + 1,
                 EnqueuedAt = delivery.EnqueuedAt,
+                Size = delivery.Size,
                 Partition = delivery.Partition,
                 Offset = delivery.Offset,
                 AvailableAt = delay > TimeSpan.Zero ? _transport.TimeProvider.GetUtcNow().Add(delay) : null
             };
 
-            var later = _buffer.First;
-            while (later is not null && !(later.Value.Partition == delivery.Partition && later.Value.Offset > delivery.Offset))
-                later = later.Next;
-
-            if (later is null)
-                _buffer.AddLast(record);
+            if (record.AvailableAt is not null)
+                AddTimed(record);
             else
-                _buffer.AddBefore(later, record);
+                AddBuffered(record, last: false);
         }
 
         Signal();
@@ -537,6 +700,9 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             foreach (var partition in partitions)
                 _partitions[partition] = new KafkaPartitionState(partition);
         }
+
+        lock (_lock)
+            _pausesChanged = true;
 
         _paused.ExceptWith(partitions);
         _joined.TrySetResult();
@@ -589,14 +755,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 state.InFlight.Clear();
             }
 
-            for (var node = _buffer.First; node is not null;)
-            {
-                var next = node.Next;
-                if (node.Value.Partition!.Revoked)
-                    _buffer.Remove(node);
-
-                node = next;
-            }
+            DropRevokedRecords();
         }
 
         Signal();
@@ -659,14 +818,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
                 state.InFlight.Clear();
             }
 
-            for (var node = _buffer.First; node is not null;)
-            {
-                var next = node.Next;
-                if (node.Value.Partition!.Revoked)
-                    _buffer.Remove(node);
-
-                node = next;
-            }
+            DropRevokedRecords();
         }
 
         ForgetPaused(partitions);

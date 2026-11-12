@@ -307,7 +307,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
             AutoOffsetReset = AutoOffsetReset.Earliest,
             PartitionAssignmentStrategy = PartitionAssignmentStrategy.CooperativeSticky,
             AllowAutoCreateTopics = false,
-            EnablePartitionEof = false
+            EnablePartitionEof = false,
+            // Receivers buffer what they hand out themselves; librdkafka's prefetch only needs to keep them fed.
+            QueuedMaxMessagesKbytes = 16 * 1024
         };
 
         Options.ConfigureConsumer?.Invoke(config);
