@@ -12,8 +12,10 @@ public sealed record RedisMessageTransportOptions
     public int Database { get; init; } = -1;
 
     /// <summary>
-    /// How long an instance subscription survives without a heartbeat. Its receiver renews it every third of this
-    /// time; once it lapses (the process stopped), publishers and new receivers on the topic delete it.
+    /// How long an instance subscription survives without a heartbeat. Its receiver renews it every sixth of this time,
+    /// and retries a failed renewal within a second; once it lapses (the process stopped), publishers and new receivers
+    /// on the topic delete it. A process that stalls for longer loses the messages published meanwhile, and logs a
+    /// warning when its subscription is restored. At least 1 millisecond.
     /// </summary>
     public TimeSpan InstanceSubscriptionTimeout { get; init; } = TimeSpan.FromSeconds(30);
 

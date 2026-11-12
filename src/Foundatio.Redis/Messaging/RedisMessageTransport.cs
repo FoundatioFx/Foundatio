@@ -186,7 +186,6 @@ public sealed class RedisMessageTransport : IMessageTransport
             var topic = new RedisTopicKeys(Options.KeyPrefix, source.Topic!);
             string instance = RedisTransportNames.NewInstanceName(source.Name);
             var keys = RedisSourceKeys.Instance(Options.KeyPrefix, topic.Topic, instance);
-            await CreateGroupAsync(keys).AnyContext();
             await HeartbeatAsync(topic, instance, keys).AnyContext();
             await SweepInstancesAsync(topic).AnyContext();
             receiver = new RedisMessageReceiver(this, source, keys, options, new RedisInstanceSubscription(topic, instance));
@@ -282,11 +281,23 @@ public sealed class RedisMessageTransport : IMessageTransport
                 "it was evicted or deleted. Redis must not evict messaging keys: use maxmemory-policy noeviction", released, keys.Description);
     }
 
-    internal async Task HeartbeatAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
+    /// <summary>
+    /// Adds or renews an instance subscription, creating its stream when it is missing. Returns true when either was
+    /// missing: the subscription is new, or it was removed as stale with its keys.
+    /// </summary>
+    internal async Task<bool> HeartbeatAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
     {
         var timeout = Options.InstanceSubscriptionTimeout;
-        await Database.ScriptEvaluateAsync(HeartbeatScript, [topic.Instances], [instance, (long)timeout.TotalMilliseconds]).AnyContext();
-        await Task.WhenAll(keys.All.Select(k => Database.KeyExpireAsync(k, timeout * 2))).AnyContext();
+        bool added = (long)await Database.ScriptEvaluateAsync(HeartbeatScript, [topic.Instances], [instance, (long)timeout.TotalMilliseconds]).AnyContext() == 1;
+        bool streamExists = await Database.KeyExpireAsync(keys.Stream, timeout * 2).AnyContext();
+        if (!streamExists)
+        {
+            await CreateGroupAsync(keys).AnyContext();
+            await Database.KeyExpireAsync(keys.Stream, timeout * 2).AnyContext();
+        }
+
+        await Task.WhenAll(keys.All.Where(k => k != keys.Stream).Select(k => Database.KeyExpireAsync(k, timeout * 2))).AnyContext();
+        return added || !streamExists;
     }
 
     internal async Task RemoveInstanceAsync(RedisTopicKeys topic, string instance, RedisSourceKeys keys)
@@ -356,7 +367,8 @@ public sealed class RedisMessageTransport : IMessageTransport
         try
         {
             await Task.WhenAll(instances.Select(i => Database.KeyDeleteAsync(RedisSourceKeys.Instance(Options.KeyPrefix, topic.Topic, i).All))).AnyContext();
-            Logger.LogDebug("Removed {Count} stale instance subscriptions of topic {Topic}", instances.Count, topic.Topic);
+            Logger.LogInformation("Removed {Count} instance subscriptions of topic {Topic} that missed their heartbeats for {Timeout}: {Instances}",
+                instances.Count, topic.Topic, Options.InstanceSubscriptionTimeout, String.Join(", ", instances));
         }
         catch (Exception ex)
         {

@@ -45,6 +45,31 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task InstanceSubscription_SweptWhileItsReceiverRuns_IsRestoredWithAWarning()
+    {
+        string topic = NewName("swept");
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions
+        {
+            KeyPrefix = KeyPrefix,
+            LoggerFactory = Log,
+            InstanceSubscriptionTimeout = TimeSpan.FromSeconds(3)
+        }));
+        await using var receiver = await transport.CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "live"), new ReceiverOptions(), TestCancellationToken);
+        var database = GetMuxer().GetDatabase();
+        string instances = $"{KeyPrefix}:{{t:{topic}}}:instances";
+        string instance = (await database.SortedSetRangeByRankAsync(instances)).Single()!;
+
+        // As if its heartbeat were late by more than the timeout, so the next publish sweeps it.
+        await database.SortedSetAddAsync(instances, instance, 0);
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("while swept")], TestCancellationToken);
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Information && e.Message.Contains(instance));
+        await WaitForAsync(() => Log.LogEntries.Any(e => e.LogLevel == LogLevel.Warning && e.Message.Contains(instance)));
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("restored")], TestCancellationToken);
+        Assert.Equal("restored", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
+    }
+
+    [Fact]
     public async Task DisposingAnInstanceReceiver_DeletesItsKeys()
     {
         string topic = NewName("instance-keys");

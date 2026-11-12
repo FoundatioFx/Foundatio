@@ -12,6 +12,8 @@ namespace Foundatio.Messaging.Transport;
 internal sealed class RedisMessageReceiver : IMessageReceiver
 {
     private const int MaxPromotedPerReceive = 100;
+    private const int HeartbeatsPerTimeout = 6;
+    private static readonly TimeSpan MaxHeartbeatRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly RedisMessageTransport _transport;
     private readonly RedisSourceKeys _keys;
@@ -257,18 +259,26 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 
     private void Wake() => Interlocked.Exchange(ref _wake, NewWakeSignal()).TrySetResult();
 
+    // Renews often enough to survive several missed or failed heartbeats, and retries a failed one sooner.
     private async Task HeartbeatLoopAsync()
     {
         var instance = _instance!;
-        var interval = _transport.Options.InstanceSubscriptionTimeout / 3;
+        var timeout = _transport.Options.InstanceSubscriptionTimeout;
+        var interval = timeout / HeartbeatsPerTimeout;
+        var retry = interval < MaxHeartbeatRetryDelay ? interval : MaxHeartbeatRetryDelay;
         var token = _disposing.Token;
+        bool failed = false;
 
         while (!token.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(interval, token).AnyContext();
-                await _transport.HeartbeatAsync(instance.Topic, instance.Name, _keys).AnyContext();
+                await Task.Delay(failed ? retry : interval, token).AnyContext();
+                if (await _transport.HeartbeatAsync(instance.Topic, instance.Name, _keys).AnyContext())
+                    _transport.Logger.LogWarning("Instance subscription {Instance} of topic {Topic} was removed because it missed its heartbeats for {Timeout}, and is now restored. " +
+                        "Messages published to the topic meanwhile were not delivered to it, and messages it had received could not be settled", instance.Name, instance.Topic.Topic, timeout);
+
+                failed = false;
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -276,6 +286,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             }
             catch (Exception ex)
             {
+                failed = true;
                 _transport.Logger.LogWarning(ex, "Could not renew instance subscription {Instance} of topic {Topic}", instance.Name, instance.Topic.Topic);
             }
         }
