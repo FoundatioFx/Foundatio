@@ -115,6 +115,8 @@ internal sealed class MessageClient : IMessageClient
                 var route = _runtime.Types.GetRoute(message.GetType());
                 var headers = options?.Headers is { } applicationHeaders ? new Dictionary<string, string>(applicationHeaders) : new Dictionary<string, string>();
                 headers[KnownHeaders.MessageType] = route.Name;
+                if (_runtime.Types.GetBaseTypeNames(route.Type) is { } baseTypes)
+                    headers[KnownHeaders.MessageBaseTypes] = baseTypes;
                 headers[KnownHeaders.SentAt] = now.ToString("O", CultureInfo.InvariantCulture);
                 if (correlationId is not null)
                     headers[KnownHeaders.CorrelationId] = correlationId;

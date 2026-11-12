@@ -162,6 +162,26 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Publish_FromAServiceWhoseTypesTheSubscriberDoesNotKnow_DeliversDerivedEventsToBaseTypeHandlers()
+    {
+        var received = new ConcurrentQueue<string>();
+        await using var subscriber = await StartAsync(m => m.AddSubscriber<AttributedOrderEvent>((message, context, _) =>
+        {
+            received.Enqueue($"{context.MessageType}:{message.OrderId}:{message.GetType().Name}");
+            return Task.CompletedTask;
+        }));
+        await using var publisher = await MessagingTestHost.StartAsync(_transport, Log, "orders", _ => { });
+
+        await publisher.Client.PublishAsync(new AttributedOrderShipped(7), cancellationToken: TestCancellationToken);
+        await publisher.Client.PublishAsync(new AttributedOrderEvent(8), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => received.Count == 2);
+        Assert.Equal(["tests.order-event:8:AttributedOrderEvent", "tests.order-shipped:7:AttributedOrderEvent"], received.Order(StringComparer.Ordinal));
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+        Assert.Equal(2, received.Count);
+    }
+
+    [Fact]
     public async Task Context_DeadLetterAndRetry_DecideTheOutcomeWithoutThrowing()
     {
         var attempts = new ConcurrentBag<int>();
@@ -551,6 +571,12 @@ public class MessagingTests : TestWithLoggingBase
 
     [Message("orders.same")]
     public record SameNameMessage;
+
+    [Message("tests.order-event", Topic = "tests.order-events")]
+    public record AttributedOrderEvent(int OrderId);
+
+    [Message("tests.order-shipped", Topic = "tests.order-events")]
+    public record AttributedOrderShipped(int OrderId) : AttributedOrderEvent(OrderId);
 
     public sealed class ScopedDependency
     {

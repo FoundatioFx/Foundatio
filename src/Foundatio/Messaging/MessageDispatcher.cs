@@ -30,6 +30,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private readonly ProcessingStatusTracker _status;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<string, IReadOnlyList<HandlerMatch>> _matches = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _reportedUnknownTypes = new(StringComparer.Ordinal);
     private readonly FailedDeadLetters _failedDeadLetters = new();
 
     public MessageDispatcher(MessagingRuntime runtime, MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers, ProcessingStatusTracker status)
@@ -261,7 +262,16 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         // Topics carry many message types; a subscriber ignores the ones it does not handle.
         if (_source.Kind is MessageSourceKind.Subscription or MessageSourceKind.InstanceSubscription)
         {
-            _logger.LogDebug("Skipping message {MessageId} of type {MessageType}: no handler on {Source}", message.MessageId, messageType, _source);
+            if (!_runtime.Types.TryGetType(messageType, out _) && _reportedUnknownTypes.Count < MaxCachedTypes && _reportedUnknownTypes.TryAdd(messageType, 0))
+            {
+                _logger.LogInformation("Skipping messages of type {MessageType} on {Source}: the type is unknown here and names no base type a handler accepts. " +
+                    "If a handler should receive it, have the publisher upgrade, or map the type with MapMessage", messageType, _source);
+            }
+            else
+            {
+                _logger.LogDebug("Skipping message {MessageId} of type {MessageType}: no handler on {Source}", message.MessageId, messageType, _source);
+            }
+
             bool skipped = await CompleteAsync(delivery).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "skipped", null, null);
             return skipped;
@@ -334,24 +344,46 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private Task<Exception?> AbandonAsync(MessageDelivery delivery, TimeSpan delay)
         => delivery.SettleAsync((receiver, message, ct) => receiver.AbandonAsync(message, delay, ct), "abandon", _logger);
 
-    /// <summary>Finds the handlers for a message and the type to deserialize it as for each.</summary>
+    /// <summary>
+    /// Finds the handlers for a message and the type to deserialize it as for each. A type unknown here, published by
+    /// another service, matches handlers for any of the base types and interfaces its publisher listed, and is
+    /// deserialized as the most derived one each handler accepts.
+    /// </summary>
     private IReadOnlyList<HandlerMatch> FindHandlers(string messageType, IReadOnlyDictionary<string, string> headers)
     {
-        if (messageType.Length == 0 || !_runtime.Types.TryGetType(messageType, out var type))
+        if (messageType.Length == 0)
             return [];
 
-        if (_matches.TryGetValue(messageType, out var cached))
+        bool known = _runtime.Types.TryGetType(messageType, out var type);
+        string? baseTypes = known ? null : headers.GetValueOrDefault(KnownHeaders.MessageBaseTypes);
+        string key = known ? messageType : String.Concat(messageType, "\n", baseTypes);
+        if (_matches.TryGetValue(key, out var cached))
             return cached;
+
+        var candidates = new List<Type>();
+        if (known)
+        {
+            candidates.Add(type);
+        }
+        else if (baseTypes is not null)
+        {
+            foreach (var name in baseTypes.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (_runtime.Types.TryGetType(name, out var baseType) && !candidates.Contains(baseType))
+                    candidates.Add(baseType);
+            }
+        }
 
         var matches = new List<HandlerMatch>();
         foreach (var handler in _handlers)
         {
-            if (handler.MessageType.IsAssignableFrom(type))
-                matches.Add(new HandlerMatch(handler, type));
+            var payloadType = candidates.Find(handler.MessageType.IsAssignableFrom);
+            if (payloadType is not null)
+                matches.Add(new HandlerMatch(handler, payloadType));
         }
 
         if (_matches.Count < MaxCachedTypes)
-            _matches.TryAdd(messageType, matches);
+            _matches.TryAdd(key, matches);
 
         return matches;
     }

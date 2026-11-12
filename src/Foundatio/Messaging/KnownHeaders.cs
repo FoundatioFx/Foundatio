@@ -6,6 +6,12 @@ public static class KnownHeaders
     /// <summary>The stable message type name used to pick the handler.</summary>
     public const string MessageType = "message-type";
 
+    /// <summary>
+    /// The names of the message type's base classes and interfaces, most derived first, separated by commas. A
+    /// subscriber that does not know <see cref="MessageType"/> uses them to find handlers for a base type.
+    /// </summary>
+    public const string MessageBaseTypes = "message-base-types";
+
     public const string CorrelationId = "correlation-id";
 
     /// <summary>When the message was first sent, in round-trip ("O") format.</summary>
