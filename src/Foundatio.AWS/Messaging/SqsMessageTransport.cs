@@ -26,7 +26,9 @@ namespace Foundatio.Messaging.Transport;
 /// queue that is unsubscribed and deleted when the receiver is disposed, or by a later receiver once its heartbeat
 /// tag goes stale. Every source has its own dead-letter queue. Queues the transport creates keep messages for 14 days.
 /// Leases are visibility timeouts. Queues, topics, subscriptions and queue policies are created on first use. With
-/// <see cref="SqsMessageTransportOptions.Fifo"/>, all of them are FIFO and group keys are ordered.
+/// <see cref="SqsMessageTransportOptions.Fifo"/>, all of them are FIFO and group keys are ordered. Without it, a group
+/// key sent to a queue or subscription is also its SQS message group id, which SQS fair queues use to keep one busy
+/// group from delaying the others; SNS standard topics do not take a group id.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -337,8 +339,10 @@ public sealed class SqsMessageTransport : IMessageTransport
             };
         }
 
+        // On standard queues, SQS fair queues use the group id to keep a busy group from delaying the others. SNS standard
+        // topics do not take one, so a publish keeps its group key only in the envelope.
         if (!Options.Fifo)
-            return encoded;
+            return message.GroupKey is { } groupKey && destination.Kind != MessageDestinationKind.Topic ? encoded with { GroupId = SqsMessageTransportNames.FifoId(groupKey) } : encoded;
 
         // An ungrouped message is its own group, so it is not held behind others. Without a deduplication id, a random
         // one makes SQS drop only the retries of this very send.

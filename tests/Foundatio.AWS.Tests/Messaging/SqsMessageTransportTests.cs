@@ -178,6 +178,38 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
+    public async Task Send_GroupedMessageToAQueueOrSubscription_SetsTheSqsMessageGroupId()
+    {
+        // Arrange: on standard queues, SQS fair queues use the group id to keep a busy group (tenant) from delaying the others.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        string name = NewName("group-id");
+        var destinations = new[] { MessageDestination.Queue(name), MessageDestination.Subscription(name, "sub") };
+        await using var queueReceiver = await transport.CreateReceiverAsync(MessageSource.Queue(name), new ReceiverOptions(), TestCancellationToken);
+        await using var subscriptionReceiver = await transport.CreateReceiverAsync(MessageSource.Subscription(name, "sub"), new ReceiverOptions(), TestCancellationToken);
+
+        foreach (var destination in destinations)
+        {
+            // Act
+            await transport.SendAsync(destination, [Message("grouped", "id-grouped") with { GroupKey = "tenant-42" }], TestCancellationToken);
+            var grouped = Assert.Single(sqsInterceptor.RequestsOf<SendMessageBatchRequest>().Last().Entries);
+            await transport.SendAsync(destination, [Message("ungrouped", "id-ungrouped")], TestCancellationToken);
+            var ungrouped = Assert.Single(sqsInterceptor.RequestsOf<SendMessageBatchRequest>().Last().Entries);
+
+            // Assert
+            Assert.Equal("tenant-42", grouped.MessageGroupId);
+            if (!Fifo)
+                Assert.Null(ungrouped.MessageGroupId);
+        }
+
+        foreach (var receiver in new[] { queueReceiver, subscriptionReceiver })
+        {
+            var messages = await ReceiveAsync(receiver, 2);
+            Assert.Equal("tenant-42", messages.Single(m => m.MessageId == "id-grouped").GroupKey);
+            Assert.Null(messages.Single(m => m.MessageId == "id-ungrouped").GroupKey);
+        }
+    }
+
+    [Fact]
     public async Task Send_BatchOverThePayloadLimit_IsSplitAndDeliversEveryMessage()
     {
         // Arrange
