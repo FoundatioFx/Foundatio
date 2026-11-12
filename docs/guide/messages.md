@@ -26,6 +26,7 @@ public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceip
 
 // Registration
 builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("orders")             // names this service's subscriptions
     .UseInMemory()                        // or a provider, e.g. UseRedis(...)
     .AddSubscriber<OrderPlacedHandler>()  // events
     .AddConsumer<SendReceiptHandler>());  // commands
@@ -54,7 +55,23 @@ m.AddSubscriber<InvalidateLocalCache>(new SubscriptionOptions { Scope = Subscrip
 await using var subscription = await messages.SubscribeAsync<OrderPlaced>((order, context, ct) => hub.NotifyAsync(order, ct));
 ```
 
-Each service's subscription is named after the host's application name. Set it explicitly with `m.UseServiceName("billing")` so a rename never orphans a subscription.
+### Service names and shared subscriptions
+
+A service's subscription to a topic is named after the service, set with `m.UseServiceName("billing")`. The broker keeps the subscription under that name, so choose it deliberately: two services with the same name split each other's events, and renaming a service starts new subscriptions that receive events published from then on, leaving the old ones' backlog behind. On every transport except the in-memory one, the host fails to start when a service-scoped subscriber has no name to use. Only the in-memory transport, and so the test harness, defaults it to the host's application name.
+
+All subscribers of one topic in a service share that subscription, so they share each delivery:
+
+- If one handler throws, every handler of that event runs again on the retry, so keep them all idempotent.
+- They run with one `RetryPolicy`, `LeaseDuration` and `MaxConcurrency`. The host fails to start when handlers that share a subscription set different values. A value set on one handler and left unset on the other counts as different. Two `RetryPolicy` objects built separately differ when their delegates do, so share one instance.
+
+To retry a handler on its own, with its own settings, give it a subscription of its own:
+
+```csharp
+m.AddSubscriber<SendWelcomeEmail>()   // subscription "billing"
+ .AddSubscriber<SyncToCrm>(new SubscriptionOptions { Name = "billing-crm", RetryPolicy = RetryPolicy.None });
+```
+
+Moving a handler to a new subscription name, or renaming one, starts that subscription with events published from then on: events still waiting in the old subscription reach only the handlers left on it. A subscription that no handler uses any more keeps collecting copies until you delete it with `IMessageAdmin.DeleteAsync`. The same rules apply to instance subscribers of one topic, and to consumers of message types that you route to one queue.
 
 ## Handling outcomes
 
@@ -96,12 +113,19 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
     Delay = TimeSpan.FromMinutes(10),   // or DeliverAt
     TimeToLive = TimeSpan.FromHours(1), // discard if not handled by then
     GroupKey = "customer-42",           // ordered delivery where the transport supports it (ids and keys: up to 128 characters)
-    DeduplicationId = "receipt-1",      // dropped if seen recently, where supported
+    DeduplicationId = "receipt-1",      // dropped if seen recently, where the transport supports it
     CorrelationId = "order-1",          // defaults to the message or job being handled
 });
 ```
 
 Delays longer than the transport supports natively (for example 15 minutes on SQS) are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
+
+`GroupKey` and `DeduplicationId` only guarantee something on transports that declare `OrderedGroups` and `Deduplication` in their `TransportCapabilities`. On other transports the message is still sent, and Foundatio logs a warning once per message type:
+
+- Without ordered groups, messages of one group may be handled concurrently and out of order. SQS standard queues still send the key as the `MessageGroupId` of fair queues.
+- Without deduplication (Kafka and SQS standard queues), a repeated `DeduplicationId` is delivered again.
+
+To throw `MessageBusException` instead of sending, set `m.Configure(o => o.RequireTransportCapabilities = true)`.
 
 With `GroupKey` on a transport that orders groups, messages of one group are handled one at a time, in order. When one is retried, the group's later messages wait for it, and each of them counts that as a delivery attempt. On SQS FIFO, a long-delayed message at the head of a group also adds an attempt to the messages behind it for about every 11 hours of its delay.
 
@@ -152,6 +176,23 @@ Assert.Equal(3, deadLetter.Attempt);
 - `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. On timeout (30 seconds by default) the exception says what happened instead.
 - `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
 - Waits use real time, and retries wait for their policy's delay, so give tests a short one: `m.Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) })`.
+
+### Test against your production transport's guarantees
+
+The harness's in-memory transport supports everything: ordered groups, deduplication, unlimited delays and any message size. Give it your production transport's capabilities so a test sees what production would do:
+
+```csharp
+builder.Services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities
+{
+    // Like an SQS standard queue: no ordered groups or deduplication, and its limits
+    MaxDelay = TimeSpan.FromMinutes(15),
+    MaxPublishDelay = TimeSpan.FromDays(13),
+    MaxRetryDelay = TimeSpan.FromHours(12),
+    MaxMessageSize = 256 * 1024
+});
+```
+
+A group's messages then run concurrently and out of order, a repeated `DeduplicationId` is delivered again, and an oversized message throws `MessageTooLargeException`. Outside the harness, `new InMemoryMessageTransport(capabilities)` does the same.
 
 Jobs are recorded too; see [testing jobs](./durable-jobs#testing).
 

@@ -265,6 +265,7 @@ builder.Services.AddDistributedCronJob<CleanupJob>("0 */6 * * *");
 
 ```csharp
 builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("orders")               // names durable subscriptions; required on every transport but in-memory
     .UseInMemory()                          // provider: m.UseRedis(...) etc.
     .AddConsumer<SendReceiptHandler>()      // commands: SendAsync -> exactly one consumer
     .AddSubscriber<OrderPlacedHandler>()    // events: PublishAsync -> one copy per service
@@ -287,15 +288,18 @@ builder.Services.AddFoundatioJobs(j => j
 - Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.
 - Jobs: `IDurableJob` (no args; `jobs.EnqueueAsync<CleanupJob>()`, `[Job(Name)]` on the class) or `IDurableJob<TArgs>`; both get `IJobContext` (`Attempt`, `ScheduledFor` = the CRON occurrence, `Headers`, `ReportProgressAsync`). `j.AddJob<T>()` throws for a legacy `IJob`: wrap it with `j.AddLegacyJob<T>()` + `EnqueueAsync<LegacyJob<T>>()` / `j.AddCronJob<LegacyJob<T>>(...)` (keeps its name), or keep continuous jobs on `services.AddJob<T>()`. `GetAsync`/`QueryAsync` return `JobDetails` (no claim token or payload; `GetArguments<T>()` is null once the job succeeded, since succeeded jobs drop their payload). Enqueue stores `Activity.Current` as `traceparent`/`tracestate` headers and defaults `CorrelationId` to its id; the job's activity continues the trace. A retained job costs ~1.6 KB in Redis: size for rate x `RetainSucceededFor` (1 day).
 - `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
+- One subscription per service and topic, shared by all its subscribers: one delivery, so if any handler throws all of them run again, and they must set equal `RetryPolicy`/`LeaseDuration`/`MaxConcurrency` (unset != set; share one `RetryPolicy` instance) or startup throws. Same for consumers of types routed to one queue. Isolate a handler with `new SubscriptionOptions { Name = "billing-crm" }`; a new name starts at "now" and orphans the old subscription's backlog.
+- `GroupKey` without `Capabilities.OrderedGroups` (SQS standard) or `DeduplicationId` without `Capabilities.Deduplication` (SQS standard, Kafka) is sent anyway with a once-per-type warning; `o.RequireTransportCapabilities = true` throws `MessageBusException` instead.
 - Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
 - Gotchas: `[Job(Name)]` for `IDurableJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
-- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
+- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; when the broker sets the lease (Service Bus lock duration), set `IncomingMessage.LeaseExpiresAt` in `ReceiveAsync` and `RenewAsync` so core renews by it; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
 
 Whole-app integration tests (`Foundatio.Testing`, no xUnit dependency):
 
 ```csharp
 builder.Services.AddOrdersApp();              // real AddFoundatioMessaging/AddFoundatioJobs registrations
 builder.Services.AddFoundatioTestHarness();   // LAST: replaces transport + job store with in-memory, records everything
+// emulate production: AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { MaxDelay = TimeSpan.FromMinutes(15) })
 await host.StartAsync();
 var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
 

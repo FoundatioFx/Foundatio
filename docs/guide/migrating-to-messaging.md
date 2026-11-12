@@ -10,12 +10,12 @@ The original queue, message bus and job APIs keep working alongside the new ones
 | `entry.RenewLockAsync()` | Automatic while the handler runs |
 | `IMessagePublisher.PublishAsync(msg)` | `IMessageClient.PublishAsync(msg)` |
 | `IMessageSubscriber.SubscribeAsync<T>(...)` (every instance) | `AddSubscriber<THandler>(new SubscriptionOptions { Scope = SubscriptionScope.Instance })`, or `IMessageClient.SubscribeAsync` |
-| A queue processed by one service while others publish to it | `AddSubscriber<THandler>()`; each service gets its own copy |
+| A queue processed by one service while others publish to it | `AddSubscriber<THandler>()`; each service, named with `UseServiceName`, gets its own copy |
 | `WorkItemJob` + `WorkItemHandlerBase` with progress | `IDurableJob<TArgs>` + `IJobClient.EnqueueAsync(args)`; progress via `IJobContext` |
 | `JobWithLockBase` CRON jobs, `services.AddCronJob<T>(...)` | An `IDurableJob` + `AddFoundatioJobs(j => j.AddCronJob<T>("..."))`; one run per occurrence, no lock needed |
 | `IJob` / `JobBase` run on demand or on a schedule | `IDurableJob` ([see below](#converting-an-ijob-or-jobbase)), or unchanged through `j.AddLegacyJob<T>()` and `j.AddCronJob<LegacyJob<T>>("...")` |
 | `IJob` / `JobBase` run continuously with `services.AddJob<T>()` | Unchanged: keep `services.AddJob<T>()`. Durable jobs only run when enqueued or scheduled |
-| Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it; otherwise idempotent handlers |
+| Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged); otherwise idempotent handlers |
 | `QueueEntryOptions.GroupId` | `SendOptions.GroupKey` |
 
 ## Step by step
@@ -27,6 +27,8 @@ The original queue, message bus and job APIs keep working alongside the new ones
 5. Move work items: make each work item record the arguments of an `IDurableJob<TArgs>`, and enqueue with `IJobClient`.
 
 Message and job names default to the type's full name. Set stable names before your first deployment so later renames are safe.
+
+Name each service with `m.UseServiceName("orders")`. Its durable subscriptions are kept under that name, so every service needs a name of its own, and on a real broker the host fails to start without one when the service subscribes to events.
 
 ## Converting an IJob or JobBase
 
