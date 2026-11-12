@@ -9,6 +9,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using Amazon.Runtime;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS;
@@ -505,6 +506,68 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
 
         await survivor.SendAsync(MessageDestination.Topic(topic), [Message("after crash")], TestCancellationToken);
         Assert.Equal("after crash", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateReceiver_NewSubscriptionQueue_IsCreatedWithThePolicyForItsTopic(bool instance)
+    {
+        // Arrange: AWS can take a minute to apply a policy set on an existing queue, and SNS drops what it may not deliver.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        string topic = NewName("policy-new");
+        var source = instance ? MessageSource.InstanceSubscription(topic, "node") : MessageSource.Subscription(topic, "audit");
+
+        // Act
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Assert
+        var created = Assert.Single(sqsInterceptor.RequestsOf<CreateQueueRequest>());
+        string policy = Assert.Contains(QueueAttributeName.Policy, created.Attributes ?? []);
+        Assert.Empty(sqsInterceptor.RequestsOf<SetQueueAttributesRequest>());
+
+        using var sqs = CreateSqsClient();
+        using var sns = CreateSnsClient();
+        string queueUrl = (await sqs.GetQueueUrlAsync(created.QueueName, TestCancellationToken)).QueueUrl;
+        string queueArn = (await sqs.GetQueueAttributesAsync(queueUrl, [QueueAttributeName.QueueArn], TestCancellationToken)).Attributes[QueueAttributeName.QueueArn];
+        var statement = Assert.Single(JsonNode.Parse(policy)!["Statement"]!.AsArray())!;
+        Assert.Equal(queueArn, statement["Resource"]!.GetValue<string>());
+        Assert.Equal(await GetTopicArnAsync(sns, topic), statement["Condition"]!["ArnEquals"]!["aws:SourceArn"]!.GetValue<string>());
+
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("first", "id-first")], TestCancellationToken);
+        Assert.Equal("id-first", (await ReceiveOneAsync(receiver)).MessageId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateReceiver_WhenANewQueueIsNotUsableYet_RetriesUntilItIs(bool instance)
+    {
+        // Arrange: right after CreateQueue, SQS may still answer that the queue does not exist.
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        int attributeReads = 0, tagReads = 0;
+        sqsInterceptor.Intercept = (request, send) =>
+        {
+            bool notUsableYet = request switch
+            {
+                GetQueueAttributesRequest => Interlocked.Increment(ref attributeReads) <= 2,
+                ListQueueTagsRequest => Interlocked.Increment(ref tagReads) <= 2,
+                _ => false
+            };
+
+            return notUsableYet ? Task.FromException<AmazonWebServiceResponse>(new QueueDoesNotExistException("The specified queue does not exist.")) : send();
+        };
+
+        string topic = NewName("not-usable");
+        var source = instance ? MessageSource.InstanceSubscription(topic, "node") : MessageSource.Subscription(topic, "audit");
+
+        // Act
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Assert
+        Assert.True(attributeReads > 2);
+        await transport.SendAsync(MessageDestination.Topic(topic), [Message("first", "id-first")], TestCancellationToken);
+        Assert.Equal("id-first", (await ReceiveOneAsync(receiver)).MessageId);
     }
 
     [Fact]

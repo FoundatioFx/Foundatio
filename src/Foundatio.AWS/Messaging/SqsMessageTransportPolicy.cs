@@ -11,6 +11,13 @@ namespace Foundatio.Messaging.Transport;
 /// </summary>
 internal static class SqsMessageTransportPolicy
 {
+    /// <summary>A policy that only allows the topic to send to the queue, for a queue being created.</summary>
+    public static string Create(string queueArn, string topicArn) => new JsonObject
+    {
+        ["Version"] = "2012-10-17",
+        ["Statement"] = new JsonArray(CreateStatement(queueArn, topicArn))
+    }.ToJsonString();
+
     /// <summary>Returns the policy to set, or <c>null</c> when the existing policy already allows the topic.</summary>
     public static string? Merge(string? existingPolicy, string queueArn, string topicArn)
     {

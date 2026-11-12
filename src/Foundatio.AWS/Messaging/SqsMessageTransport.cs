@@ -36,6 +36,12 @@ namespace Foundatio.Messaging.Transport;
 /// long or high-volume delays on standard queues.
 /// </para>
 /// <para>
+/// Subscription and instance queues are created with the policy that lets their topic send to them, so SNS may deliver
+/// as soon as the subscription exists. AWS applies a policy changed on an existing queue within about a minute, and
+/// SNS drops a message it is not allowed to deliver, so messages published in that time to a subscription whose queue
+/// existed without the permission (for example one re-created after <see cref="DeleteAsync"/>) can be lost.
+/// </para>
+/// <para>
 /// Deleting a source keeps its queue, because SQS does not let a deleted queue's name be reused for 60 seconds and
 /// purges are asynchronous. The subscription is removed from its topic, the visible messages are deleted, and the
 /// queue is tagged with the queue's own time of the deletion so receivers discard messages that were in flight or
@@ -54,12 +60,14 @@ public sealed class SqsMessageTransport : IMessageTransport
     internal const string FirstReceiveTimestampAttribute = "ApproximateFirstReceiveTimestamp";
     private const int MaxBatchPayloadSize = 256 * 1024;
     private const int MaxSendAttempts = 3;
+    private const int MaxNewQueueAttempts = 5;
     private const int MaxInstanceChecksPerSweep = 20;
     private const int MaxSubscriptionPagesPerSweep = 10;
     private const int MaxSubscriptionPagesPerDelete = 100;
     private const int SweepIntervalInTimeouts = 6;
     private static readonly TimeSpan MaxNativeDelay = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MessageRetention = TimeSpan.FromDays(14);
+    private static readonly TimeSpan NewQueueRetryDelay = TimeSpan.FromMilliseconds(200);
 
     /// <summary>Hidden messages are kept until due, but a day short of the retention period, so they can still be retried.</summary>
     private static readonly TimeSpan MaxEmulatedDelay = MessageRetention - TimeSpan.FromDays(1);
@@ -362,10 +370,15 @@ public sealed class SqsMessageTransport : IMessageTransport
         string instancePrefix = _names.InstancePrefix(source.Topic!);
         string queueName = _names.NewInstance(instancePrefix, source.Name);
 
+        var attributes = new Dictionary<string, string>();
+        if (Options.Fifo)
+            attributes[QueueAttributeName.FifoQueue] = "true";
+        AddTopicPolicy(attributes, queueName, topicArn);
+
         var created = await Sqs.CreateQueueAsync(new CreateQueueRequest
         {
             QueueName = queueName,
-            Attributes = Options.Fifo ? new Dictionary<string, string> { [QueueAttributeName.FifoQueue] = "true" } : null,
+            Attributes = attributes,
             Tags = new Dictionary<string, string> { [TopicTag] = topicName, [HeartbeatTag] = GetHeartbeat() }
         }, cancellationToken).AnyContext();
 
@@ -413,8 +426,9 @@ public sealed class SqsMessageTransport : IMessageTransport
                 }
                 catch (QueueDoesNotExistException) when (attempt < MaxSendAttempts)
                 {
-                    Logger.LogDebug("Queue {QueueName} no longer exists; creating it again", queueName);
+                    Logger.LogDebug("Queue {QueueName} does not exist or is not usable yet; creating it again", queueName);
                     _queueUrls.TryRemove(queueName, out _);
+                    await Task.Delay(NewQueueRetryDelay * attempt, cancellationToken).AnyContext();
                     continue;
                 }
 
@@ -502,8 +516,9 @@ public sealed class SqsMessageTransport : IMessageTransport
             yield return batch;
     }
 
-    private Task<string> GetQueueUrlAsync(string queueName, CancellationToken cancellationToken) =>
-        GetOrCreateAsync(_queueUrls, queueName, () => ResolveQueueUrlAsync(queueName), cancellationToken);
+    /// <summary>Returns the queue's URL, creating the queue if needed, with the policy letting <paramref name="topicArn"/> send to it if given.</summary>
+    private Task<string> GetQueueUrlAsync(string queueName, CancellationToken cancellationToken, string? topicArn = null) =>
+        GetOrCreateAsync(_queueUrls, queueName, () => ResolveQueueUrlAsync(queueName, topicArn), cancellationToken);
 
     /// <summary>Returns the queue's URL without creating it, or <c>null</c> when it does not exist.</summary>
     private async Task<string?> FindQueueUrlAsync(string queueName, CancellationToken cancellationToken)
@@ -534,7 +549,7 @@ public sealed class SqsMessageTransport : IMessageTransport
             return response.TopicArn;
         }, cancellationToken);
 
-    private async Task<string> ResolveQueueUrlAsync(string queueName)
+    private async Task<string> ResolveQueueUrlAsync(string queueName, string? topicArn)
     {
         try
         {
@@ -544,12 +559,16 @@ public sealed class SqsMessageTransport : IMessageTransport
         {
         }
 
+        var attributes = new Dictionary<string, string>(_queueAttributes);
+        if (topicArn is not null)
+            AddTopicPolicy(attributes, queueName, topicArn);
+
         try
         {
             var response = await Sqs.CreateQueueAsync(new CreateQueueRequest
             {
                 QueueName = queueName,
-                Attributes = new Dictionary<string, string>(_queueAttributes)
+                Attributes = attributes
             }).AnyContext();
 
             Logger.LogDebug("Created queue {QueueName}", queueName);
@@ -567,8 +586,36 @@ public sealed class SqsMessageTransport : IMessageTransport
     /// </summary>
     private async Task<long?> GetPurgedBeforeAsync(string queueUrl, CancellationToken cancellationToken)
     {
-        var tags = (await Sqs.ListQueueTagsAsync(new ListQueueTagsRequest { QueueUrl = queueUrl }, cancellationToken).AnyContext()).Tags;
-        return GetNumber(tags, PurgedBeforeTag);
+        var response = await WhenQueueIsUsableAsync(() => Sqs.ListQueueTagsAsync(new ListQueueTagsRequest { QueueUrl = queueUrl }, cancellationToken), cancellationToken).AnyContext();
+        return GetNumber(response.Tags, PurgedBeforeTag);
+    }
+
+    /// <summary>
+    /// Adds the policy letting the topic send to the queue to the attributes of a queue being created, so SNS can deliver
+    /// to it at once: a policy set on an existing queue can take a minute to apply, and SNS drops the messages it is
+    /// not allowed to deliver.
+    /// </summary>
+    private static void AddTopicPolicy(Dictionary<string, string> attributes, string queueName, string topicArn)
+    {
+        string[] parts = topicArn.Split(':');
+        if (parts.Length == 6)
+            attributes[QueueAttributeName.Policy] = SqsMessageTransportPolicy.Create($"{parts[0]}:{parts[1]}:sqs:{parts[3]}:{parts[4]}:{queueName}", topicArn);
+    }
+
+    /// <summary>Retries for a couple of seconds while SQS reports a queue missing: a new queue can take a second to become usable.</summary>
+    private static async Task<T> WhenQueueIsUsableAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await operation().AnyContext();
+            }
+            catch (QueueDoesNotExistException) when (attempt < MaxNewQueueAttempts)
+            {
+                await Task.Delay(NewQueueRetryDelay * attempt, cancellationToken).AnyContext();
+            }
+        }
     }
 
     /// <summary>
@@ -579,18 +626,21 @@ public sealed class SqsMessageTransport : IMessageTransport
     private async Task SubscribeAsync(string topic, string queueName, CancellationToken cancellationToken)
     {
         string topicArn = await GetTopicArnAsync(_names.Topic(topic), cancellationToken).AnyContext();
-        string queueUrl = await GetQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        string queueUrl = await GetQueueUrlAsync(queueName, cancellationToken, topicArn).AnyContext();
         await SubscribeQueueAsync(queueUrl, topicArn, cancellationToken).AnyContext();
     }
 
-    /// <summary>Allows the topic to send to the queue, keeping the queue's other policy statements, then subscribes it with raw delivery.</summary>
+    /// <summary>
+    /// Allows the topic to send to the queue, keeping the queue's other policy statements, then subscribes it with raw
+    /// delivery. A queue created by the transport already has the permission, so its policy is not changed.
+    /// </summary>
     private async Task<string> SubscribeQueueAsync(string queueUrl, string topicArn, CancellationToken cancellationToken)
     {
-        var attributes = await Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+        var attributes = await WhenQueueIsUsableAsync(() => Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
         {
             QueueUrl = queueUrl,
             AttributeNames = [QueueAttributeName.QueueArn, QueueAttributeName.Policy]
-        }, cancellationToken).AnyContext();
+        }, cancellationToken), cancellationToken).AnyContext();
 
         string queueArn = attributes.Attributes?.GetValueOrDefault(QueueAttributeName.QueueArn)
             ?? throw new MessageBusException($"Queue {queueUrl} did not report its ARN.");
