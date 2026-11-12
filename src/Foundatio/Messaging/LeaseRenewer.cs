@@ -12,7 +12,8 @@ namespace Foundatio.Messaging;
 /// Renews the leases of one processor's unsettled deliveries with a single timer. A delivery is tracked from the moment
 /// it is received until it is settled, so messages waiting behind an earlier message of their group keep their lease
 /// too. Deliveries settled within a renewal interval never touch the timer, and a failed renewal is retried quickly,
-/// well before the lease runs out.
+/// well before the lease runs out. When the transport reports the broker's own lease end in
+/// <see cref="IncomingMessage.LeaseExpiresAt"/>, renewals and retries follow it instead of the requested lease.
 /// </summary>
 internal sealed class LeaseRenewer : IDisposable
 {
@@ -24,6 +25,7 @@ internal sealed class LeaseRenewer : IDisposable
 
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _interval;
+    private readonly bool _leaseExpiration;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly object _lock = new();
@@ -35,6 +37,7 @@ internal sealed class LeaseRenewer : IDisposable
     public LeaseRenewer(TimeSpan leaseDuration, bool leaseExpiration, TimeProvider timeProvider, ILogger logger)
     {
         _leaseDuration = leaseDuration;
+        _leaseExpiration = leaseExpiration;
         _timeProvider = timeProvider;
         _logger = logger;
 
@@ -129,9 +132,9 @@ internal sealed class LeaseRenewer : IDisposable
             return;
 
         if (!renewNow)
-            delivery.LeaseExpiresAt = now + _leaseDuration;
+            delivery.LeaseExpiresAt = delivery.Message.LeaseExpiresAt ?? now + _leaseDuration;
 
-        delivery.RenewAt = renewNow ? now : now + _interval;
+        delivery.RenewAt = renewNow ? now : now + GetRenewInterval(delivery, now);
         delivery.RenewalFailures = 0;
         delivery.Tracked = true;
         _deliveries.Add(delivery);
@@ -212,9 +215,9 @@ internal sealed class LeaseRenewer : IDisposable
                 }
                 else if (error is null)
                 {
-                    delivery.LeaseExpiresAt = started + _leaseDuration;
+                    delivery.LeaseExpiresAt = delivery.Message.LeaseExpiresAt ?? started + _leaseDuration;
                     delivery.RenewalFailures = 0;
-                    delivery.RenewAt = now + _interval;
+                    delivery.RenewAt = now + GetRenewInterval(delivery, now);
                     ScheduleLocked(delivery.RenewAt, now);
                 }
                 else
@@ -234,6 +237,22 @@ internal sealed class LeaseRenewer : IDisposable
             delivery.MarkLeaseLost();
         else if (error is not null)
             _logger.LogWarning(error, "Could not renew the lease on message {MessageId}; retrying in {Delay}", delivery.Message.MessageId, retryIn);
+    }
+
+    /// <summary>
+    /// A third of the requested lease or, when the broker decides the lease, a third of what is left of it, never less
+    /// than <see cref="FirstRetryDelay"/>. Without lease expiration, at most <see cref="OwnershipCheckInterval"/>.
+    /// </summary>
+    private TimeSpan GetRenewInterval(MessageDelivery delivery, DateTimeOffset now)
+    {
+        if (delivery.Message.LeaseExpiresAt is null)
+            return _interval;
+
+        var interval = TimeSpan.FromTicks((delivery.LeaseExpiresAt - now).Ticks / 3);
+        if (!_leaseExpiration && interval > OwnershipCheckInterval)
+            interval = OwnershipCheckInterval;
+
+        return interval < FirstRetryDelay ? FirstRetryDelay : interval;
     }
 
     /// <summary>Backs off from <see cref="FirstRetryDelay"/>, at most to the renewal interval, and to half of what is left of the lease.</summary>

@@ -81,6 +81,33 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task LeaseRenewal_WhenTheBrokerDecidesAShorterLease_RenewsBeforeItEnds()
+    {
+        int handled = 0, renewals = 0;
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            BrokerLeaseDuration = ShortLease,
+            OnRenew = (_, _) =>
+            {
+                Interlocked.Increment(ref renewals);
+                return Task.CompletedTask;
+            }
+        };
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (_, _, _) =>
+        {
+            Interlocked.Increment(ref handled);
+            await Task.Delay(TimeSpan.FromSeconds(3), CancellationToken.None);
+        }, new HandlerOptions { LeaseDuration = TimeSpan.FromMinutes(5), MaxConcurrency = 4 }));
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal(1, Volatile.Read(ref handled));
+        Assert.InRange(Volatile.Read(ref renewals), 3, 30);
+    }
+
+    [Fact]
     public async Task Settle_WhileARenewalIsInFlight_WaitsForTheRenewalToStopFirst()
     {
         int renewing = 0, settledWhileRenewing = 0, renewals = 0;

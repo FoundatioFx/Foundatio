@@ -15,6 +15,12 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
 
     public TransportCapabilities Capabilities { get; } = capabilities ?? inner.Capabilities;
 
+    /// <summary>
+    /// When set, the broker decides the lease, as a Service Bus lock does: receivers lease messages for this long whatever
+    /// <see cref="ReceiverOptions.LeaseDuration"/> asks, and report when it ends in <see cref="IncomingMessage.LeaseExpiresAt"/>.
+    /// </summary>
+    public TimeSpan? BrokerLeaseDuration { get; init; }
+
     /// <summary>Runs before a receiver is opened.</summary>
     public Func<MessageSource, CancellationToken, Task>? OnCreateReceiver { get; set; }
 
@@ -58,6 +64,8 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
         // Like a broker with a lease limit, honour at most the advertised limit.
         if (Capabilities.MaxLeaseDuration is { } maxLease && options.LeaseDuration > maxLease)
             options = options with { LeaseDuration = maxLease };
+        if (BrokerLeaseDuration is { } brokerLease)
+            options = options with { LeaseDuration = brokerLease };
 
         var receiver = new Receiver(this, await inner.CreateReceiverAsync(source, options, cancellationToken));
         _receivers[receiver] = 0;
@@ -86,7 +94,11 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _fault.Token);
             try
             {
-                return await inner.ReceiveAsync(maxMessages, maxWait, linked.Token);
+                var messages = await inner.ReceiveAsync(maxMessages, maxWait, linked.Token);
+                foreach (var message in messages)
+                    ReportBrokerLease(message);
+
+                return messages;
             }
             catch (OperationCanceledException) when (_fault.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
             {
@@ -121,6 +133,13 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
                 await onRenew(message, cancellationToken);
 
             await inner.RenewAsync(message, cancellationToken);
+            ReportBrokerLease(message);
+        }
+
+        private void ReportBrokerLease(IncomingMessage message)
+        {
+            if (transport.BrokerLeaseDuration is { } brokerLease)
+                message.LeaseExpiresAt = DateTimeOffset.UtcNow.Add(brokerLease);
         }
 
         public ValueTask DisposeAsync()

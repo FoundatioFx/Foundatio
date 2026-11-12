@@ -50,6 +50,8 @@ public interface IMessageReceiver : IAsyncDisposable
     /// a message the broker handed out to the cancelled call must still be delivered again, at the latest when its lease
     /// expires. Throw <see cref="MessageReceiverFaultedException"/> when this receiver can never deliver again, so
     /// Foundatio replaces it; other exceptions are retried with backoff, and after five in a row Foundatio replaces it too.
+    /// When the broker, not <see cref="ReceiverOptions.LeaseDuration"/>, decides how long a delivery is leased (a Service
+    /// Bus lock), set each message's <see cref="IncomingMessage.LeaseExpiresAt"/>, so Foundatio renews before it ends.
     /// </remarks>
     Task<IReadOnlyList<IncomingMessage>> ReceiveAsync(int maxMessages, TimeSpan maxWait, CancellationToken cancellationToken = default);
 
@@ -82,8 +84,10 @@ public interface IMessageReceiver : IAsyncDisposable
     Task DeadLetterAsync(IncomingMessage message, string reason, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Extends the lease by <see cref="ReceiverOptions.LeaseDuration"/> from now. Throw <see cref="MessageLeaseLostException"/>
-    /// when the lease is known to be lost; Foundatio then cancels the handler and does not settle the message.
+    /// Extends the lease by <see cref="ReceiverOptions.LeaseDuration"/> from now, or by the broker's own lease duration;
+    /// in that case set the message's <see cref="IncomingMessage.LeaseExpiresAt"/> to the new expiry before returning.
+    /// Throw <see cref="MessageLeaseLostException"/> when the lease is known to be lost; Foundatio then cancels the
+    /// handler and does not settle the message.
     /// </summary>
     /// <remarks>
     /// After the lease has expired but before the message is delivered again, a transport may either take the lease

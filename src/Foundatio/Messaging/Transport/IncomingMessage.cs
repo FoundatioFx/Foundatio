@@ -24,4 +24,17 @@ public class IncomingMessage
     public DateTimeOffset? EnqueuedAt { get; init; }
     /// <summary>The <see cref="OutgoingMessage.GroupKey"/> it was sent with. Must round-trip even when groups are not ordered.</summary>
     public string? GroupKey { get; init; }
+
+    /// <summary>
+    /// When the broker will end this delivery's lease, for a transport whose broker decides that itself rather than
+    /// honouring <see cref="ReceiverOptions.LeaseDuration"/>: for example a Service Bus lock, whose duration is set per
+    /// entity. Leave it null when the lease follows <see cref="ReceiverOptions.LeaseDuration"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only the transport writes it: in <see cref="IMessageReceiver.ReceiveAsync"/>, and again in
+    /// <see cref="IMessageReceiver.RenewAsync"/> when the broker extends the lease by its own duration. Foundatio reads it
+    /// after those calls return, and then renews a third of the way through what is left of the lease, as it does for
+    /// leases it requests, and bounds renewal retries by it.
+    /// </remarks>
+    public DateTimeOffset? LeaseExpiresAt { get; set; }
 }
