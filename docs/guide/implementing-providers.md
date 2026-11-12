@@ -74,10 +74,10 @@ The suite cannot see your broker's internals, so add tests of your own for what 
 
 Implement `IJobStore` (10 methods). [View source](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio/Jobs/Store)
 
-- `CreateAsync` (false if the id exists), `GetAsync`, `QueryAsync` (newest first, continuation token), `CountAsync`, `DeleteAsync`.
+- `CreateAsync` (false if the id exists), `GetAsync`, `QueryAsync` (newest first, continuation token), `CountAsync`, `DeleteAsync`. Persist every field of `JobInfo`, including all `Headers` exactly as given (case-sensitive names, possibly empty values).
 - `ClaimAsync`: atomically take the longest-due job among the requested names: queued and available, or running with an expired lease. Increment `Attempt`, issue a new `ClaimToken` and lease.
 - `RenewAsync`, `ReportProgressAsync`, `CompleteAsync`: only for the current claim token. Completion is fenced by the token, not the lease, so a slow worker that wasn't replaced can still record its result.
 - `RequestCancellationAsync`: queued jobs become cancelled; running jobs are flagged and `RenewAsync` reports it.
-- Terminal jobs expire after `JobCompletion.RetainFor`.
+- Terminal jobs expire after `JobCompletion.RetainFor`. A job that succeeds drops its `Payload` and keeps the rest of its record; failed and cancelled jobs keep theirs.
 
 Use the database's clock for "now" so workers with skewed clocks agree. Prove it with `JobStoreTestsBase`, exactly like the transport suite.
