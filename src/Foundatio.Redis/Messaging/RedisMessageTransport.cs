@@ -24,6 +24,9 @@ namespace Foundatio.Messaging.Transport;
 /// the others wait in Redis, in order, until it is completed or dead-lettered. A receive returns at most one message
 /// of a group, so a single group is handled one message at a time; different groups are handled in parallel.
 /// Dead-letter queues do not hold groups back, so they can be peeked and replayed in batches.
+/// Receivers poll their source with a backoff, and every send to a source also publishes a pub/sub signal on a channel
+/// named after it, which wakes its idle receivers in every process. Redis must not evict the transport's keys: see
+/// <see href="https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport"/>.
 /// </remarks>
 public sealed class RedisMessageTransport : IMessageTransport
 {
@@ -101,6 +104,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal TimeProvider TimeProvider { get; }
     internal ILogger Logger { get; }
     internal IDatabase Database => _connection.GetDatabase(Options.Database);
+    internal ISubscriber Subscriber => _connection.GetSubscriber();
 
     public async Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken = default)
     {
@@ -186,7 +190,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         }
 
         _receivers.TryAdd(receiver, 0);
-        receiver.Start();
+        await receiver.StartAsync().AnyContext();
         return receiver;
     }
 
@@ -241,6 +245,22 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal void Untrack(RedisMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
 
     internal bool IsDisposed => Volatile.Read(ref _disposed) == 1;
+
+    /// <summary>
+    /// Tells idle receivers of a source, in every process, that it may have a message for them. Best effort: a lost
+    /// signal only delays delivery until the receivers' next poll.
+    /// </summary>
+    internal void Signal(RedisChannel channel)
+    {
+        try
+        {
+            Subscriber.Publish(channel, RedisValue.EmptyString, CommandFlags.FireAndForget);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not signal the receivers of {Channel}", channel);
+        }
+    }
 
     internal void LogReleasedGroups(RedisSourceKeys keys, long released)
     {
@@ -375,9 +395,12 @@ public sealed class RedisMessageTransport : IMessageTransport
             }
 
             var result = (RedisResult[])(await Database.ScriptEvaluateAsync(EnqueueScript, keys.ToArray(), values.ToArray()).AnyContext())!;
-            if ((long)result[0] < 0)
+            long added = (long)result[0];
+            if (added < 0)
                 return;
 
+            if (added > 0)
+                Signal(target.Signal);
             LogReleasedGroups(target, (long)result[1]);
         }
     }

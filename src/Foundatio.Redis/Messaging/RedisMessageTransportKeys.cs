@@ -24,6 +24,8 @@ internal sealed class RedisSourceKeys
         Groups = baseKey + ":groups";
         Held = baseKey + ":held";
         DeadLetterStream = (deadLetterBase ?? baseKey + ":dlq") + ":stream";
+        Signal = RedisChannel.Literal(baseKey + ":signal");
+        DeadLetterSignal = RedisChannel.Literal((deadLetterBase ?? baseKey + ":dlq") + ":signal");
     }
 
     /// <summary>
@@ -41,6 +43,11 @@ internal sealed class RedisSourceKeys
     public RedisKey Groups { get; }
     public RedisKey Held { get; }
     public RedisKey DeadLetterStream { get; }
+
+    /// <summary>Published to when the source may have a message to receive, so idle receivers poll at once.</summary>
+    public RedisChannel Signal { get; }
+
+    public RedisChannel DeadLetterSignal { get; }
 
     public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held];
 

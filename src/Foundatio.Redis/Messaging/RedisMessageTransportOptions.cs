@@ -26,13 +26,21 @@ public sealed record RedisMessageTransportOptions
     /// </summary>
     public long MaxMessageSize { get; init; } = 16 * 1024 * 1024;
 
-    /// <summary>How long a <see cref="OutgoingMessage.DeduplicationId"/> is remembered.</summary>
+    /// <summary>How long a <see cref="OutgoingMessage.DeduplicationId"/> is remembered. At least 1 millisecond.</summary>
     public TimeSpan DeduplicationWindow { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>The first wait between polls of an empty source. Waits double up to <see cref="MaxPollInterval"/>.</summary>
+    /// <summary>
+    /// The first wait between polls of an empty source after a receive returned messages. Waits double up to
+    /// <see cref="MaxPollInterval"/> and stay there across receives until messages arrive again. At least 1 millisecond.
+    /// </summary>
     public TimeSpan MinPollInterval { get; init; } = TimeSpan.FromMilliseconds(20);
 
-    /// <summary>The longest wait between polls of an empty source, which bounds the delivery latency of new messages.</summary>
+    /// <summary>
+    /// The longest wait between polls of an empty source; it cannot be shorter than <see cref="MinPollInterval"/>.
+    /// Sending to a source, or settling in a way that makes a message available, also publishes a Redis pub/sub signal
+    /// that wakes its idle receivers in every process at once, so this bounds delivery latency only when a signal is
+    /// lost (for example while a connection reconnects). Each idle receiver polls about once per interval.
+    /// </summary>
     public TimeSpan MaxPollInterval { get; init; } = TimeSpan.FromMilliseconds(500);
 
     /// <summary>Used to turn <see cref="OutgoingMessage.DeliverAt"/> into a delay. Delays are then measured by the Redis clock.</summary>

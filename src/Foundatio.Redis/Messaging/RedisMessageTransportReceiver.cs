@@ -19,7 +19,10 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     private readonly RedisInstanceSubscription? _instance;
     private readonly string _consumer = $"{Environment.MachineName}:{Guid.NewGuid():N}";
     private readonly CancellationTokenSource _disposing = new();
-    private TaskCompletionSource _released = NewReleasedSignal();
+    private readonly Action<RedisChannel, RedisValue> _onSignal;
+    private TaskCompletionSource _wake = NewWakeSignal();
+    private TimeSpan _pollInterval;
+    private bool _subscribed;
     private Task _heartbeat = Task.CompletedTask;
     private int _disposed;
 
@@ -30,12 +33,26 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         _keys = keys;
         _options = options;
         _instance = instance;
+        _onSignal = (_, _) => Wake();
+        _pollInterval = transport.Options.MinPollInterval;
     }
 
     public MessageSource Source { get; }
 
-    public void Start()
+    /// <summary>Subscribes to the source's signal before the first receive, so no message sent after it is missed.</summary>
+    public async Task StartAsync()
     {
+        try
+        {
+            await _transport.Subscriber.SubscribeAsync(_keys.Signal, _onSignal).AnyContext();
+            _subscribed = true;
+        }
+        catch (Exception ex)
+        {
+            _transport.Logger.LogWarning(ex, "Could not subscribe to the new-message signal of {Source}; it waits up to {MaxPollInterval} for new messages instead",
+                Source, _transport.Options.MaxPollInterval);
+        }
+
         if (_instance is not null)
             _heartbeat = Task.Run(HeartbeatLoopAsync, CancellationToken.None);
     }
@@ -45,31 +62,42 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         ArgumentOutOfRangeException.ThrowIfLessThan(maxMessages, 1);
         int count = Math.Min(maxMessages, _transport.Capabilities.MaxReceiveBatchSize);
         long started = Stopwatch.GetTimestamp();
-        var poll = _transport.Options.MinPollInterval;
+        bool lastPoll = false;
 
         while (true)
         {
             ThrowIfDisposed();
             cancellationToken.ThrowIfCancellationRequested();
 
-            var released = Volatile.Read(ref _released).Task;
+            var wake = Volatile.Read(ref _wake).Task;
             var (messages, nextChange) = await ReceiveOnceAsync(count).AnyContext();
             if (messages.Count > 0)
+            {
+                _pollInterval = _transport.Options.MinPollInterval;
                 return messages;
+            }
 
             var remaining = maxWait - Stopwatch.GetElapsedTime(started);
-            if (remaining <= TimeSpan.Zero)
+            if (lastPoll || remaining <= TimeSpan.Zero)
                 return [];
 
+            var poll = _pollInterval;
             var wait = poll < remaining ? poll : remaining;
             if (nextChange is { } change && change < wait)
                 wait = change < TimeSpan.FromMilliseconds(1) ? TimeSpan.FromMilliseconds(1) : change;
 
-            // Settling a group's message here releases its next one, which is worth polling for at once.
-            if (await Task.WhenAny(Task.Delay(wait, cancellationToken), released).AnyContext() == released)
-                poll = _transport.Options.MinPollInterval;
-            else
-                poll = TimeSpan.FromTicks(Math.Min(poll.Ticks * 2, _transport.Options.MaxPollInterval.Ticks));
+            // Polling is the fallback: a message sent to the source, or released by a settle, rings its signal.
+            using var delay = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var woken = await Task.WhenAny(Task.Delay(wait, delay.Token), wake).AnyContext() == wake;
+            await delay.CancelAsync().AnyContext();
+            if (woken)
+                continue;
+
+            // A timer can fire a little early, which must not cost more than one last poll.
+            if (wait == remaining)
+                lastPoll = true;
+            else if (wait == poll)
+                _pollInterval = TimeSpan.FromTicks(Math.Min(poll.Ticks * 2, _transport.Options.MaxPollInterval.Ticks));
         }
     }
 
@@ -100,13 +128,29 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         await _heartbeat.AnyContext();
         _disposing.Dispose();
 
+        if (_subscribed)
+        {
+            try
+            {
+                await _transport.Subscriber.UnsubscribeAsync(_keys.Signal, _onSignal).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                _transport.Logger.LogDebug(ex, "Could not unsubscribe receiver {Consumer} of {Source} from its new-message signal", _consumer, Source);
+            }
+        }
+
         try
         {
             if (_instance is not null)
+            {
                 await _transport.RemoveInstanceAsync(_instance.Topic, _instance.Name, _keys).AnyContext();
-            else
-                await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReleaseScript, [_keys.Stream, _keys.Leases],
-                    [RedisMessageTransport.GroupName, _consumer, RedisMessageTransport.ReleasedConsumer]).AnyContext();
+            }
+            else if ((long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReleaseScript, [_keys.Stream, _keys.Leases],
+                [RedisMessageTransport.GroupName, _consumer, RedisMessageTransport.ReleasedConsumer]).AnyContext() > 0)
+            {
+                _transport.Signal(_keys.Signal);
+            }
         }
         catch (Exception ex)
         {
@@ -200,9 +244,20 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         if (result == 0)
             throw new MessageLeaseLostException($"The lease for message {message.MessageId} was lost.");
 
-        if (result == 2)
-            Interlocked.Exchange(ref _released, NewReleasedSignal()).TrySetResult();
+        // An abandoned message, and the next message of a group released by this settle, can be received at once.
+        if (result == 2 || operation == "abandon")
+        {
+            _transport.Signal(_keys.Signal);
+            if (!_subscribed)
+                Wake();
+        }
+        else if (operation == "deadletter")
+        {
+            _transport.Signal(_keys.DeadLetterSignal);
+        }
     }
+
+    private void Wake() => Interlocked.Exchange(ref _wake, NewWakeSignal()).TrySetResult();
 
     private async Task HeartbeatLoopAsync()
     {
@@ -228,7 +283,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         }
     }
 
-    private static TaskCompletionSource NewReleasedSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private static TaskCompletionSource NewWakeSignal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) == 1 || _transport.IsDisposed, this);
 

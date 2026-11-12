@@ -148,6 +148,86 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal(["a-0", "a-1", "a-2", "a-3", "a-4"], order);
     }
 
+    [Theory]
+    [InlineData(MessageSourceKind.Queue)]
+    [InlineData(MessageSourceKind.Subscription)]
+    [InlineData(MessageSourceKind.InstanceSubscription)]
+    public async Task ReceiveAsync_WhenAnotherConnectionSends_WakesBeforeThePollInterval(MessageSourceKind kind)
+    {
+        using var senderConnection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var sender = Track(new RedisMessageTransport(senderConnection, SlowPollingOptions));
+        var transport = Track(new RedisMessageTransport(GetMuxer(), SlowPollingOptions));
+        string name = NewName("wake");
+        var (source, destination) = kind switch
+        {
+            MessageSourceKind.Queue => (MessageSource.Queue(name), MessageDestination.Queue(name)),
+            MessageSourceKind.Subscription => (MessageSource.Subscription(name, "durable"), MessageDestination.Topic(name)),
+            _ => (MessageSource.InstanceSubscription(name, "instance"), MessageDestination.Topic(name))
+        };
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        var receive = receiver.ReceiveAsync(1, DeliveryTimeout, TestCancellationToken);
+        // Let the first poll find the source empty, so only a wake-up can deliver before the poll interval.
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
+        var sent = Stopwatch.StartNew();
+        await sender.SendAsync(destination, [Message("wake up")], TestCancellationToken);
+
+        var messages = await receive;
+        Assert.Equal("wake up", Encoding.UTF8.GetString(Assert.Single(messages).Body.Span));
+        Assert.True(sent.Elapsed < DeliveryTimeout / 2, $"Delivered {sent.Elapsed} after it was sent.");
+        await receiver.CompleteAsync(messages[0], TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task CompleteAsync_ReleasingTheNextMessageOfAGroup_WakesReceiversOnOtherConnections()
+    {
+        using var otherConnection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var transport = Track(new RedisMessageTransport(GetMuxer(), SlowPollingOptions));
+        var other = Track(new RedisMessageTransport(otherConnection, SlowPollingOptions));
+        var source = MessageSource.Queue(NewName("wake-group"));
+        await using var first = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await using var second = await other.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("g0", "g-0") with { GroupKey = "g" },
+            Message("g1", "g-1") with { GroupKey = "g" }
+        ], TestCancellationToken);
+        var outstanding = Assert.Single(await first.ReceiveAsync(1, DeliveryTimeout, TestCancellationToken));
+
+        var receive = second.ReceiveAsync(1, DeliveryTimeout, TestCancellationToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(300), TestCancellationToken);
+        var completed = Stopwatch.StartNew();
+        await first.CompleteAsync(outstanding, TestCancellationToken);
+
+        var next = Assert.Single(await receive);
+        Assert.Equal("g-1", next.MessageId);
+        Assert.True(completed.Elapsed < DeliveryTimeout / 2, $"Delivered {completed.Elapsed} after the previous one was completed.");
+        await second.CompleteAsync(next, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_CalledRepeatedlyWhileIdle_KeepsItsPollBackoff()
+    {
+        using var connection = await ConnectionMultiplexer.ConnectAsync(GetMuxer().Configuration);
+        var transport = Track(new RedisMessageTransport(connection, new RedisMessageTransportOptions
+        {
+            KeyPrefix = KeyPrefix,
+            LoggerFactory = Log,
+            MinPollInterval = TimeSpan.FromMilliseconds(50),
+            MaxPollInterval = TimeSpan.FromMilliseconds(400)
+        }));
+        await using var receiver = await transport.CreateReceiverAsync(MessageSource.Queue(NewName("backoff")), new ReceiverOptions(), TestCancellationToken);
+        Assert.Empty(await receiver.ReceiveAsync(1, TimeSpan.FromSeconds(2), TestCancellationToken));
+
+        long before = connection.GetCounters().Interactive.OperationCount;
+        for (int i = 0; i < 10; i++)
+            Assert.Empty(await receiver.ReceiveAsync(1, TimeSpan.FromMilliseconds(200), TestCancellationToken));
+        long polls = connection.GetCounters().Interactive.OperationCount - before;
+
+        // At the backed-off interval each call polls when it starts and when its wait is up; starting over at
+        // MinPollInterval would poll twice more (after 50 and 150 ms).
+        Assert.InRange(polls, 10, 25);
+    }
+
     [Fact]
     public async Task SendAsync_AfterTheStreamWasLost_ReleasesTheGroupWaitingOnIt()
     {
@@ -337,6 +417,15 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal(3, third.DeliveryCount);
         await second.CompleteAsync(third, TestCancellationToken);
     }
+
+    // Polls too rarely to deliver within DeliveryTimeout, so only a wake-up can.
+    private RedisMessageTransportOptions SlowPollingOptions => new()
+    {
+        KeyPrefix = KeyPrefix,
+        LoggerFactory = Log,
+        MinPollInterval = TimeSpan.FromMinutes(1),
+        MaxPollInterval = TimeSpan.FromMinutes(1)
+    };
 
     // As if Redis evicted the key under memory pressure, or someone deleted it.
     private Task LoseKeyAsync(MessageSource queue, string key) =>
