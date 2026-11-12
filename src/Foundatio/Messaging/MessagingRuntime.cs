@@ -71,7 +71,7 @@ internal sealed class MessagingRuntime
     /// <summary>Creates a processor and opens its receiver. When <paramref name="retryInBackground"/> is true a failure is logged and retried.</summary>
     public async Task<MessageProcessor> StartProcessorAsync(MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers, bool retryInBackground, CancellationToken cancellationToken)
     {
-        var processor = new MessageProcessor(this, source, handlers);
+        var processor = CreateProcessor(source, handlers);
         lock (_processors)
             _processors.Add(processor);
 
@@ -103,7 +103,23 @@ internal sealed class MessagingRuntime
         await processor.StopAsync(Options.ShutdownTimeout, cancellationToken).AnyContext();
     }
 
-    public async Task StopAllAsync(CancellationToken cancellationToken)
+    public Task StopAllAsync(CancellationToken cancellationToken) => StopAllAsync(Options.ShutdownTimeout, cancellationToken);
+
+    private MessageProcessor CreateProcessor(MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers)
+    {
+        var status = new ProcessingStatusTracker(TimeProvider);
+        var settings = new MessageProcessorSettings
+        {
+            MaxConcurrency = handlers.Max(h => h.Options.MaxConcurrency ?? Environment.ProcessorCount),
+            LeaseDuration = handlers.Max(h => h.Options.LeaseDuration ?? TimeSpan.FromMinutes(1)),
+            ReplaceTimeout = Options.ShutdownTimeout,
+            Description = String.Join(", ", handlers.Select(h => h.HandlerName).Distinct())
+        };
+
+        return new MessageProcessor(Transport, source, settings, new MessageDispatcher(this, source, handlers, status), status, TimeProvider, LoggerFactory);
+    }
+
+    private async Task StopAllAsync(TimeSpan drainTimeout, CancellationToken cancellationToken)
     {
         MessageProcessor[] processors;
         lock (_processors)
@@ -112,7 +128,7 @@ internal sealed class MessagingRuntime
             _processors.Clear();
         }
 
-        await Task.WhenAll(processors.Select(p => p.StopAsync(Options.ShutdownTimeout, cancellationToken))).AnyContext();
+        await Task.WhenAll(processors.Select(p => p.StopAsync(drainTimeout, cancellationToken))).AnyContext();
     }
 
     private async Task RetryStartAsync(MessageProcessor processor)
@@ -120,13 +136,13 @@ internal sealed class MessagingRuntime
         var delay = TimeSpan.FromSeconds(1);
         while (true)
         {
+            await TimeProvider.SafeDelay(delay).AnyContext();
             lock (_processors)
             {
                 if (!_processors.Contains(processor))
                     return;
             }
 
-            await TimeProvider.SafeDelay(delay).AnyContext();
             try
             {
                 await processor.StartAsync(CancellationToken.None).AnyContext();

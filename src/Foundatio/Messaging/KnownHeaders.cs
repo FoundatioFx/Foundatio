@@ -22,6 +22,6 @@ public static class KnownHeaders
     /// <summary>After this time the message is discarded instead of handled.</summary>
     public const string ExpiresAt = "expires-at";
 
-    /// <summary>Why a message was dead-lettered. Added by the transport.</summary>
+    /// <summary>Why a message was dead-lettered, at most 1,024 UTF-8 bytes. Added by the transport.</summary>
     public const string DeadLetterReason = "dead-letter-reason";
 }

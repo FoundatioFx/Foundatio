@@ -9,13 +9,19 @@ namespace Foundatio.Utility;
 /// </summary>
 internal sealed class ProcessingStatusTracker
 {
+    /// <summary>A settle failure stops counting as current when none has recurred for this long.</summary>
+    private static readonly TimeSpan SettleFailureExpiry = TimeSpan.FromMinutes(10);
+
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
     private ProcessingState _state = ProcessingState.Starting;
     private DateTimeOffset? _failingSince;
+    private DateTimeOffset? _settleFailingSince;
+    private DateTimeOffset _lastSettleFailureAt;
     private DateTimeOffset? _lastErrorAt;
     private string? _lastError;
     private volatile bool _failing;
+    private volatile bool _settleFailing;
 
     public ProcessingStatusTracker(TimeProvider timeProvider)
     {
@@ -72,16 +78,48 @@ internal sealed class ProcessingStatusTracker
         }
     }
 
+    /// <summary>
+    /// Records a settlement that failed and will not resolve itself, such as a dead-letter the broker rejects. Unlike
+    /// receive failures, a successful receive does not clear it; <see cref="RecordSettleSuccess"/> does, or ten minutes
+    /// without another failure.
+    /// </summary>
+    public void RecordSettleFailure(Exception exception, string context)
+    {
+        lock (_lock)
+        {
+            var now = _timeProvider.GetUtcNow();
+            if (_settleFailingSince is null || now - _lastSettleFailureAt >= SettleFailureExpiry)
+                _settleFailingSince = now;
+
+            _lastSettleFailureAt = now;
+            _settleFailing = true;
+            SetError($"{context}: {Describe(exception)}");
+        }
+    }
+
+    public void RecordSettleSuccess()
+    {
+        if (!_settleFailing)
+            return;
+
+        lock (_lock)
+        {
+            _settleFailingSince = null;
+            _settleFailing = false;
+        }
+    }
+
     public ProcessingStatus GetStatus(string name, int active = 0, IReadOnlyDictionary<string, int>? activeByName = null)
     {
         lock (_lock)
         {
+            var settleFailingSince = _settleFailingSince is { } since && _timeProvider.GetUtcNow() - _lastSettleFailureAt < SettleFailureExpiry ? since : (DateTimeOffset?)null;
             var status = new ProcessingStatus
             {
                 Name = name,
                 State = _state,
                 Active = active,
-                FailingSince = _failingSince,
+                FailingSince = _failingSince is { } receiveFailingSince && (settleFailingSince is null || receiveFailingSince < settleFailingSince) ? receiveFailingSince : settleFailingSince,
                 LastError = _lastError,
                 LastErrorAt = _lastErrorAt
             };

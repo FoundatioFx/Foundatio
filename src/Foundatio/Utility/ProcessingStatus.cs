@@ -23,8 +23,9 @@ public sealed record ProcessingStatus
     public IReadOnlyDictionary<string, int> ActiveByName { get; init; } = EmptyCounts;
 
     /// <summary>
-    /// When the current run of consecutive receive, claim or scheduling errors began. Null when the last attempt
-    /// succeeded. Errors are retried with backoff, so a short run of failures is usually transient.
+    /// When the current run of consecutive receive, claim or scheduling errors began, or when a message processor
+    /// started failing to dead-letter messages. Null when the last attempt succeeded. Errors are retried with backoff,
+    /// so a short run of failures is usually transient.
     /// </summary>
     public DateTimeOffset? FailingSince { get; init; }
 
