@@ -521,6 +521,55 @@ public class MessagingTests : TestWithLoggingBase
         await Assert.ThrowsAsync<ArgumentException>(() => admin.PeekDeadLettersAsync(MessageSource.InstanceSubscription("unused.topic"), cancellationToken: TestCancellationToken));
     }
 
+    [Fact]
+    public async Task ReplayDeadLetters_WhenTheHandlerStillFails_ReplaysEachDeadLetterOncePerCall()
+    {
+        int calls = 0;
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, _, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            throw new InvalidOperationException("still broken");
+        }, new HandlerOptions { RetryPolicy = RetryPolicy.None }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await host.Client.SendAsync(new PlaceOrder(2), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 2);
+
+        int replayed = await admin.ReplayDeadLettersAsync(source, max: 20, cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => Volatile.Read(ref calls) >= 4 && _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 2);
+
+        Assert.Equal(2, replayed);
+        Assert.Equal(4, Volatile.Read(ref calls));
+    }
+
+    [Fact]
+    public async Task PeekAndReplayDeadLetters_EveryReceive_WaitsLongEnoughToLongPoll()
+    {
+        var waits = new ConcurrentQueue<TimeSpan>();
+        var transport = new InterceptingMessageTransport(_transport, _transport.Capabilities with { MaxReceiveBatchSize = 1 })
+        {
+            OnReceive = (source, _, wait) =>
+            {
+                if (source.Kind == MessageSourceKind.DeadLetter)
+                    waits.Enqueue(wait);
+            }
+        };
+        await using var host = await MessagingTestHost.StartAsync(transport, Log, "tests", m => m.AddConsumer<PlaceOrder>(
+            (_, _, _) => throw new InvalidOperationException("broken"), new HandlerOptions { RetryPolicy = RetryPolicy.None }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+        await host.Client.SendBatchAsync([new PlaceOrder(1), new PlaceOrder(2)], cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 2);
+
+        Assert.Equal(2, (await admin.PeekDeadLettersAsync(source, cancellationToken: TestCancellationToken)).Count);
+        Assert.Equal(2, await admin.ReplayDeadLettersAsync(source, cancellationToken: TestCancellationToken));
+
+        Assert.True(waits.Count >= 4);
+        Assert.All(waits, wait => Assert.True(wait >= TimeSpan.FromSeconds(1), $"A dead-letter receive waited only {wait}."));
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await _transport.DisposeAsync();

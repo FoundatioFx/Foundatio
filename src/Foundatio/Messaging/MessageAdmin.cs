@@ -13,8 +13,9 @@ namespace Foundatio.Messaging;
 
 internal sealed class MessageAdmin : IMessageAdmin
 {
-    private static readonly TimeSpan FirstReceiveWait = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan NextReceiveWait = TimeSpan.FromMilliseconds(100);
+    // Every receive waits long enough to be a long poll: a shorter wait is a short poll on SQS, which often comes back
+    // empty while messages remain, and an empty receive ends a peek or replay.
+    private static readonly TimeSpan ReceiveWait = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan PeekLease = TimeSpan.FromSeconds(30);
 
     // Headers that would stop a replayed message from being handled at once.
@@ -40,7 +41,7 @@ internal sealed class MessageAdmin : IMessageAdmin
         {
             while (received.Count < max)
             {
-                var batch = await receiver.ReceiveAsync(Math.Min(max - received.Count, ReceiveBatchSize), received.Count == 0 ? FirstReceiveWait : NextReceiveWait, cancellationToken).AnyContext();
+                var batch = await receiver.ReceiveAsync(Math.Min(max - received.Count, ReceiveBatchSize), ReceiveWait, cancellationToken).AnyContext();
                 if (batch.Count == 0)
                     break;
 
@@ -51,17 +52,7 @@ internal sealed class MessageAdmin : IMessageAdmin
         }
         finally
         {
-            foreach (var message in received)
-            {
-                try
-                {
-                    await receiver.AbandonAsync(message, TimeSpan.Zero, CancellationToken.None).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "Could not release dead letter {MessageId} after peeking; the transport will release it", message.MessageId);
-                }
-            }
+            await ReleaseAsync(receiver, received).AnyContext();
         }
     }
 
@@ -74,25 +65,49 @@ internal sealed class MessageAdmin : IMessageAdmin
         int batchSize = Math.Min(ReceiveBatchSize, Math.Max(1, _runtime.Transport.Capabilities.MaxSendBatchSize));
         int replayed = 0;
 
+        // A replayed message that fails again is dead-lettered again while this call runs. Those are kept leased until
+        // the end, so each dead letter is replayed at most once per call.
+        var replayedIds = new HashSet<string>(StringComparer.Ordinal);
+        var returned = new List<IncomingMessage>();
+
         await using var receiver = await CreateDeadLetterReceiverAsync(source, cancellationToken).AnyContext();
-        while (replayed < max)
+        try
         {
-            var batch = await receiver.ReceiveAsync(Math.Min(max - replayed, batchSize), replayed == 0 ? FirstReceiveWait : NextReceiveWait, cancellationToken).AnyContext();
-            if (batch.Count == 0)
-                break;
-
-            await _runtime.Transport.SendAsync(destination, batch.Select(m => new OutgoingMessage
+            while (replayed < max)
             {
-                MessageId = m.MessageId,
-                Body = m.Body,
-                Headers = m.Headers.Where(h => !ReplayRemovesHeaders.Contains(h.Key, StringComparer.Ordinal)).ToDictionary(h => h.Key, h => h.Value),
-                GroupKey = m.GroupKey
-            }).ToList(), cancellationToken).AnyContext();
+                var batch = await receiver.ReceiveAsync(Math.Min(max - replayed, batchSize), ReceiveWait, cancellationToken).AnyContext();
+                if (batch.Count == 0)
+                    break;
 
-            foreach (var message in batch)
-                await receiver.CompleteAsync(message, CancellationToken.None).AnyContext();
+                var fresh = new List<IncomingMessage>(batch.Count);
+                foreach (var message in batch)
+                {
+                    if (replayedIds.Add(message.MessageId))
+                        fresh.Add(message);
+                    else
+                        returned.Add(message);
+                }
 
-            replayed += batch.Count;
+                if (fresh.Count == 0)
+                    continue;
+
+                await _runtime.Transport.SendAsync(destination, fresh.Select(m => new OutgoingMessage
+                {
+                    MessageId = m.MessageId,
+                    Body = m.Body,
+                    Headers = m.Headers.Where(h => !ReplayRemovesHeaders.Contains(h.Key, StringComparer.Ordinal)).ToDictionary(h => h.Key, h => h.Value),
+                    GroupKey = m.GroupKey
+                }).ToList(), cancellationToken).AnyContext();
+
+                foreach (var message in fresh)
+                    await receiver.CompleteAsync(message, CancellationToken.None).AnyContext();
+
+                replayed += fresh.Count;
+            }
+        }
+        finally
+        {
+            await ReleaseAsync(receiver, returned).AnyContext();
         }
 
         if (replayed > 0)
@@ -114,6 +129,21 @@ internal sealed class MessageAdmin : IMessageAdmin
     }
 
     private int ReceiveBatchSize => Math.Max(1, _runtime.Transport.Capabilities.MaxReceiveBatchSize);
+
+    private async Task ReleaseAsync(IMessageReceiver receiver, IEnumerable<IncomingMessage> messages)
+    {
+        foreach (var message in messages)
+        {
+            try
+            {
+                await receiver.AbandonAsync(message, TimeSpan.Zero, CancellationToken.None).AnyContext();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not release dead letter {MessageId}; the transport will release it", message.MessageId);
+            }
+        }
+    }
 
     private Task<IMessageReceiver> CreateDeadLetterReceiverAsync(MessageSource source, CancellationToken cancellationToken)
     {
@@ -141,7 +171,7 @@ internal sealed class MessageAdmin : IMessageAdmin
 
     private object? TryDeserialize(IncomingMessage message, string messageType)
     {
-        if (messageType.Length == 0 || !_runtime.Types.TryGetType(messageType, out var type))
+        if (!_runtime.Types.TryGetType(message.Headers, out var type))
             return null;
 
         try
