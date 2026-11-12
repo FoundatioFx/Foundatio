@@ -60,7 +60,11 @@ public sealed class RedisMessageTransport : IMessageTransport
         ArgumentException.ThrowIfNullOrWhiteSpace(Options.KeyPrefix, nameof(options));
         if (Options.KeyPrefix.AsSpan().IndexOfAny('{', '}') >= 0)
             throw new ArgumentException("The key prefix cannot contain '{' or '}'; the transport adds its own hash tags.", nameof(options));
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(Options.InstanceSubscriptionTimeout, TimeSpan.Zero, nameof(options));
+        ThrowIfShorterThanAMillisecond(Options.InstanceSubscriptionTimeout, nameof(RedisMessageTransportOptions.InstanceSubscriptionTimeout));
+        ThrowIfShorterThanAMillisecond(Options.DeduplicationWindow, nameof(RedisMessageTransportOptions.DeduplicationWindow));
+        ThrowIfShorterThanAMillisecond(Options.MinPollInterval, nameof(RedisMessageTransportOptions.MinPollInterval));
+        if (Options.MaxPollInterval < Options.MinPollInterval)
+            throw new ArgumentOutOfRangeException(nameof(options), Options.MaxPollInterval, "MaxPollInterval cannot be shorter than MinPollInterval.");
         if (Options.MaxMessageSize is <= 0 or > MaxMessageSizeLimit)
             throw new ArgumentOutOfRangeException(nameof(options), Options.MaxMessageSize, $"MaxMessageSize must be between 1 and {MaxMessageSizeLimit} bytes.");
 
@@ -355,6 +359,13 @@ public sealed class RedisMessageTransport : IMessageTransport
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+
+    // Intervals are sent to Redis in whole milliseconds, where 0 is rejected or means "no wait".
+    private static void ThrowIfShorterThanAMillisecond(TimeSpan value, string option)
+    {
+        if (value < TimeSpan.FromMilliseconds(1))
+            throw new ArgumentOutOfRangeException("options", value, $"{option} must be at least 1 millisecond.");
+    }
 
     private static string LoadScript(string name) =>
         Common + EmbeddedResourceLoader.GetEmbeddedResource($"Foundatio.Redis.Scripts.MessageTransport.{name}.lua");

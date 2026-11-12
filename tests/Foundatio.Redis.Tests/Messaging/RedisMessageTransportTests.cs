@@ -169,6 +169,28 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Throws<ArgumentOutOfRangeException>(() => new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { MaxMessageSize = maxMessageSize }));
     }
 
+    [Theory]
+    [InlineData(nameof(RedisMessageTransportOptions.MinPollInterval), 0)]
+    [InlineData(nameof(RedisMessageTransportOptions.MinPollInterval), -1)]
+    [InlineData(nameof(RedisMessageTransportOptions.MaxPollInterval), 10)]
+    [InlineData(nameof(RedisMessageTransportOptions.DeduplicationWindow), 0)]
+    [InlineData(nameof(RedisMessageTransportOptions.DeduplicationWindow), -1)]
+    [InlineData(nameof(RedisMessageTransportOptions.InstanceSubscriptionTimeout), 0)]
+    public void Constructor_WithAnIntervalOutOfRange_Throws(string option, int milliseconds)
+    {
+        var value = TimeSpan.FromMilliseconds(milliseconds);
+        var options = option switch
+        {
+            nameof(RedisMessageTransportOptions.MinPollInterval) => new RedisMessageTransportOptions { MinPollInterval = value },
+            nameof(RedisMessageTransportOptions.MaxPollInterval) => new RedisMessageTransportOptions { MinPollInterval = TimeSpan.FromMilliseconds(20), MaxPollInterval = value },
+            nameof(RedisMessageTransportOptions.DeduplicationWindow) => new RedisMessageTransportOptions { DeduplicationWindow = value },
+            _ => new RedisMessageTransportOptions { InstanceSubscriptionTimeout = value }
+        };
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new RedisMessageTransport(GetMuxer(), options));
+        Assert.Contains(option, ex.Message);
+    }
+
     [Fact]
     public async Task Settle_AfterTheMessageWasRedelivered_ThrowsLeaseLost()
     {
