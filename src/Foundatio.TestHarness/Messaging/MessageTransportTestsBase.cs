@@ -18,7 +18,8 @@ namespace Foundatio.Tests.Messaging;
 /// <summary>
 /// The conformance suite every <see cref="IMessageTransport"/> must pass. Derive from it, implement
 /// <see cref="CreateTransport"/>, and every test runs against your broker. Tests use unique names so they can run
-/// in parallel against a shared broker; tests for capabilities a transport does not declare are skipped.
+/// in parallel against a shared broker, and delete the queues and subscriptions they create; tests for capabilities a
+/// transport does not declare are skipped. Add tests of your own for what only your broker does.
 /// </summary>
 /// <example>
 /// <code>
@@ -30,14 +31,29 @@ namespace Foundatio.Tests.Messaging;
 /// </example>
 public abstract class MessageTransportTestsBase : TestWithLoggingBase
 {
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(60);
+
     private readonly List<IMessageTransport> _transports = [];
+    private readonly ConcurrentDictionary<string, MessageSource> _createdSources = new();
+    private IMessageTransport? _transport;
+    private IMessageTransport? _peerTransport;
 
     protected MessageTransportTestsBase(ITestOutputHelper output) : base(output)
     {
     }
 
-    /// <summary>Creates a transport connected to the broker under test. Called one or more times per test.</summary>
+    /// <summary>
+    /// Creates a transport connected to the broker under test. Called one or more times per test; each transport it
+    /// returns must share the broker with the others, as transports in separate processes would.
+    /// </summary>
     protected abstract IMessageTransport CreateTransport();
+
+    /// <summary>
+    /// Creates a second transport over the same broker as <see cref="Transport"/>, standing in for another process.
+    /// Defaults to <see cref="CreateTransport"/>; override it when separate instances of the transport do not share
+    /// state, as with an in-process broker.
+    /// </summary>
+    protected virtual IMessageTransport CreatePeerTransport() => CreateTransport();
 
     /// <summary>The longest a test waits for a message the broker should deliver.</summary>
     protected virtual TimeSpan DeliveryTimeout => TimeSpan.FromSeconds(10);
@@ -48,7 +64,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The delay used by delayed-delivery tests.</summary>
     protected virtual TimeSpan ShortDelay => TimeSpan.FromSeconds(2);
 
-    protected IMessageTransport Transport => field ??= Track(CreateTransport());
+    protected IMessageTransport Transport => _transport ??= Track(CreateTransport());
+
+    /// <summary>A transport from <see cref="CreatePeerTransport"/>: another process connected to the same broker.</summary>
+    protected IMessageTransport PeerTransport => _peerTransport ??= Track(CreatePeerTransport());
 
     [Fact]
     public async Task SendThenReceive_RoundTripsIdBodyAndHeaders()
@@ -71,6 +90,25 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task SendThenReceive_IdsAndGroupKeyWithAnyCharacters_RoundTrip()
+    {
+        string id = PadToMaxIdLength("id with spaces, \"quotes\", slashes/colons: ünïcödé ✓ 😀 ", 'i');
+        string groupKey = PadToMaxIdLength("group with spaces ✓ 😀 ", 'g');
+        string? deduplicationId = Transport.Capabilities.Deduplication ? PadToMaxIdLength("dedup id ✓ 😀 ", 'd') : null;
+        var source = MessageSource.Queue(NewName("odd-ids"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            [Message("odd ids", id) with { GroupKey = groupKey, DeduplicationId = deduplicationId }], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver);
+        Assert.Equal(id, message.MessageId);
+        Assert.Equal(groupKey, message.GroupKey);
+        Assert.Equal("odd ids", Encoding.UTF8.GetString(message.Body.Span));
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
     public async Task Receive_WhenEmpty_ReturnsEmptyWithinMaxWait()
     {
         await using var receiver = await CreateReceiverAsync(MessageSource.Queue(NewName("empty")));
@@ -80,6 +118,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         Assert.Empty(messages);
         Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1) + TimeSpan.FromSeconds(4), $"ReceiveAsync took {stopwatch.Elapsed} with a 1s maxWait.");
+    }
+
+    [Fact]
+    public async Task Receive_WhenCancelled_ThrowsPromptlyAndLosesNothing()
+    {
+        var source = MessageSource.Queue(NewName("cancel"));
+        await using var receiver = await CreateReceiverAsync(source, ShortLease);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(500));
+        var stopwatch = Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => receiver.ReceiveAsync(10, TimeSpan.FromSeconds(30), cancellation.Token));
+
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(5), $"ReceiveAsync took {stopwatch.Elapsed} to observe a cancellation after 500ms.");
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after cancel", "id-after-cancel")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver, ShortLease + DeliveryTimeout);
+        Assert.Equal("id-after-cancel", message.MessageId);
+        await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
     [Fact]
@@ -101,6 +157,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     public async Task Send_BeforeAnyReceiverExists_KeepsTheMessage()
     {
         var source = MessageSource.Queue(NewName("early"));
+        DeleteAfterTest(source);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("early")], TestCancellationToken);
 
         await using var receiver = await CreateReceiverAsync(source);
@@ -134,6 +191,28 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("id-again", second.MessageId);
         Assert.Equal(first.DeliveryCount + 1, second.DeliveryCount);
         await receiver.CompleteAsync(second, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task Abandon_WhileAReceiveIsWaiting_RedeliversTheMessage()
+    {
+        var source = MessageSource.Queue(NewName("settle-race"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("raced", "id-raced")], TestCancellationToken);
+        var first = await ReceiveOneAsync(receiver);
+
+        var waiting = receiver.ReceiveAsync(10, DeliveryTimeout, TestCancellationToken);
+        await receiver.RenewAsync(first, TestCancellationToken);
+        await receiver.AbandonAsync(first, TimeSpan.Zero, TestCancellationToken);
+
+        var messages = (await waiting).ToList();
+        if (messages.Count == 0)
+            messages.AddRange(await ReceiveAsync(receiver, 1));
+
+        var again = Assert.Single(messages);
+        Assert.Equal("id-raced", again.MessageId);
+        Assert.True(again.DeliveryCount > first.DeliveryCount, $"DeliveryCount stayed at {again.DeliveryCount} after the abandon.");
+        await receiver.CompleteAsync(again, TestCancellationToken);
     }
 
     [Fact]
@@ -178,10 +257,12 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("renewed")], TestCancellationToken);
 
         var message = await ReceiveOneAsync(receiver);
-        await Task.Delay(ShortLease / 2, TestCancellationToken);
-        await receiver.RenewAsync(message, TestCancellationToken);
+        for (int i = 0; i < 4; i++)
+        {
+            await AssertNothingReceivedAsync(receiver, ShortLease / 2);
+            await receiver.RenewAsync(message, TestCancellationToken);
+        }
 
-        await AssertNothingReceivedAsync(receiver, ShortLease * 0.75);
         await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
@@ -201,6 +282,34 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Renew_AfterTheLeaseExpired_TakesItBackOrThrowsLeaseLost()
+    {
+        Assert.SkipUnless(Transport.Capabilities.LeaseExpiration, "The transport does not expire leases.");
+        var source = MessageSource.Queue(NewName("renew-late"));
+        await using var receiver = await CreateReceiverAsync(source, ShortLease);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("late", "id-late")], TestCancellationToken);
+        var message = await ReceiveOneAsync(receiver);
+        await Task.Delay(ShortLease + TimeSpan.FromSeconds(1), TestCancellationToken);
+
+        try
+        {
+            await receiver.RenewAsync(message, TestCancellationToken);
+        }
+        catch (MessageLeaseLostException)
+        {
+            var again = await ReceiveOneAsync(receiver, ShortLease + DeliveryTimeout);
+            Assert.Equal("id-late", again.MessageId);
+            Assert.True(again.DeliveryCount > message.DeliveryCount, $"DeliveryCount stayed at {again.DeliveryCount} after the lease was lost.");
+            await receiver.CompleteAsync(again, TestCancellationToken);
+            return;
+        }
+
+        // The renew took the lease back, so the message must stay with this delivery.
+        await AssertNothingReceivedAsync(receiver, ShortLease * 0.75);
+        await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
     public async Task DisposingAReceiver_ReleasesItsUnsettledMessages()
     {
         var source = MessageSource.Queue(NewName("dispose"));
@@ -217,22 +326,63 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task DisposingATransport_ReleasesItsUnsettledMessagesToAnotherProcess()
+    {
+        var source = MessageSource.Queue(NewName("process-stop"));
+        var stopped = CreatePeerTransport();
+        try
+        {
+            var receiver = await stopped.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromMinutes(5) }, TestCancellationToken);
+            DeleteAfterTest(source);
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("orphan", "id-orphan")], TestCancellationToken);
+            var held = await ReceiveOneAsync(receiver);
+
+            await stopped.DisposeAsync();
+
+            await using var survivor = await CreateReceiverAsync(source);
+            var message = await ReceiveOneAsync(survivor);
+            Assert.Equal("id-orphan", message.MessageId);
+            Assert.Equal("orphan", Encoding.UTF8.GetString(message.Body.Span));
+            await AssertLeaseLostAsync(() => receiver.RenewAsync(held, TestCancellationToken), receiverDisposed: true);
+            await survivor.CompleteAsync(message, TestCancellationToken);
+        }
+        finally
+        {
+            await stopped.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task StaleSettlement_FailsWithLeaseLostAndLeavesTheNewDeliveryIntact()
     {
         Assert.SkipUnless(Transport.Capabilities.LeaseExpiration, "The transport does not expire leases.");
         var source = MessageSource.Queue(NewName("stale"));
         await using var first = await CreateReceiverAsync(source, ShortLease);
-        await using var second = await CreateReceiverAsync(source, ShortLease);
-        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("contested")], TestCancellationToken);
+        await using var second = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("contested", "id-contested")], TestCancellationToken);
 
         var stale = await ReceiveOneAsync(first);
         var current = await ReceiveOneAsync(second, ShortLease + DeliveryTimeout);
+        Assert.Equal(stale.MessageId, current.MessageId);
 
-        await AssertLeaseLostOrIgnoredAsync(() => first.RenewAsync(stale, TestCancellationToken));
-        await AssertLeaseLostOrIgnoredAsync(() => first.CompleteAsync(stale, TestCancellationToken));
-        await AssertLeaseLostOrIgnoredAsync(() => first.AbandonAsync(stale, TimeSpan.Zero, TestCancellationToken));
-        await second.CompleteAsync(current, TestCancellationToken);
-        await AssertNothingReceivedAsync(second, ShortLease + TimeSpan.FromSeconds(1));
+        await AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(source, first, stale, second, current, receiverDisposed: false);
+    }
+
+    [Fact]
+    public async Task StaleSettlement_AfterTheReceiverIsDisposed_FailsAndLeavesTheNewDeliveryIntact()
+    {
+        var source = MessageSource.Queue(NewName("stale-closed"));
+        await using var first = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("contested", "id-contested")], TestCancellationToken);
+        var stale = await ReceiveOneAsync(first);
+        await first.DisposeAsync();
+
+        await using var second = await CreateReceiverAsync(source);
+        var current = await ReceiveOneAsync(second);
+
+        Assert.Equal(stale.MessageId, current.MessageId);
+        Assert.True(current.DeliveryCount > stale.DeliveryCount, $"DeliveryCount stayed at {current.DeliveryCount} after the receiver was disposed.");
+        await AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(source, first, stale, second, current, receiverDisposed: true);
     }
 
     [Fact]
@@ -272,6 +422,47 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task DeadLetter_OfAMessageAtTheSizeLimitWithALongReason_KeepsTheMessage()
+    {
+        var headers = new Dictionary<string, string> { [KnownHeaders.MessageType] = "conformance.size" };
+        long limit = Transport.Capabilities.MaxMessageSize ?? 64 * 1024;
+        var body = new byte[(int)(limit - MessageSize.Of("dead-at-limit", ReadOnlySpan<byte>.Empty, headers))];
+        Random.Shared.NextBytes(body);
+        string reason = new('r', 4096);
+        var source = MessageSource.Queue(NewName("dlq-size"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [new OutgoingMessage { MessageId = "dead-at-limit", Body = body, Headers = headers }], TestCancellationToken);
+
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), reason, TestCancellationToken);
+
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var deadLetter = await ReceiveOneAsync(deadLetters);
+        Assert.True(deadLetter.Body.Span.SequenceEqual(body), "The dead letter's body changed.");
+        Assert.Equal("conformance.size", deadLetter.Headers[KnownHeaders.MessageType]);
+        string kept = deadLetter.Headers[KnownHeaders.DeadLetterReason];
+        Assert.StartsWith(kept, reason);
+        Assert.True(kept.Length >= 1024, $"The dead-letter reason was cut to {kept.Length} characters; at least the first 1,024 must be kept.");
+    }
+
+    [Fact]
+    public async Task DeadLetter_OfTheSameMessageAgain_KeepsBothDeadLetters()
+    {
+        var source = MessageSource.Queue(NewName("dlq-twice"));
+        await using var receiver = await CreateReceiverAsync(source);
+
+        for (int i = 0; i < 2; i++)
+        {
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "id-poison")], TestCancellationToken);
+            await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), $"attempt {i}", TestCancellationToken);
+        }
+
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        var messages = await ReceiveAsync(deadLetters, 2);
+        Assert.Equal(["attempt 0", "attempt 1"], messages.Select(m => m.Headers[KnownHeaders.DeadLetterReason]).Order());
+        Assert.All(messages, m => Assert.Equal("id-poison", m.MessageId));
+    }
+
+    [Fact]
     public async Task DeliverAt_DelaysDelivery()
     {
         Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
@@ -307,7 +498,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         var source = MessageSource.Queue(NewName("compete"));
         await using var first = await CreateReceiverAsync(source);
-        await using var second = await CreateReceiverAsync(source);
+        await using var second = await CreatePeerReceiverAsync(source);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"m{i}", $"id-{i}")).ToList(), TestCancellationToken);
 
         var received = new ConcurrentBag<string>();
@@ -318,7 +509,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         {
             while (received.Count < 20 && !timeout.IsCancellationRequested)
             {
-                foreach (var message in await receiver.ReceiveAsync(5, TimeSpan.FromSeconds(1), timeout.Token))
+                foreach (var message in await receiver.ReceiveAsync(5, TimeSpan.FromSeconds(1), TestCancellationToken))
                 {
                     received.Add(message.MessageId);
                     await receiver.CompleteAsync(message, TestCancellationToken);
@@ -351,6 +542,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Publish_AfterAnotherProcessSubscribes_ReachesItsNewSubscriptions()
+    {
+        string topic = NewName("late-process");
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("before", "id-before")], TestCancellationToken);
+
+        await using var durable = await CreatePeerReceiverAsync(MessageSource.Subscription(topic, "late"));
+        await using var instance = await CreatePeerReceiverAsync(MessageSource.InstanceSubscription(topic, "late"));
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after", "id-after")], TestCancellationToken);
+
+        foreach (var receiver in new[] { durable, instance })
+        {
+            var message = await ReceiveOneAsync(receiver);
+            Assert.Equal("id-after", message.MessageId);
+            await receiver.CompleteAsync(message, TestCancellationToken);
+        }
+    }
+
+    [Fact]
     public async Task Subscription_KeepsMessagesWhileNoReceiverIsOpen()
     {
         string topic = NewName("durable");
@@ -371,7 +580,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         string topic = NewName("sub-compete");
         var source = MessageSource.Subscription(topic, "workers");
         await using var first = await CreateReceiverAsync(source);
-        await using var second = await CreateReceiverAsync(source);
+        await using var second = await CreatePeerReceiverAsync(source);
         await Transport.SendAsync(MessageDestination.Topic(topic), Enumerable.Range(0, 10).Select(i => Message($"e{i}", $"id-{i}")).ToList(), TestCancellationToken);
 
         var received = new ConcurrentBag<string>();
@@ -382,7 +591,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         {
             while (received.Count < 10 && !timeout.IsCancellationRequested)
             {
-                foreach (var message in await receiver.ReceiveAsync(3, TimeSpan.FromSeconds(1), timeout.Token))
+                foreach (var message in await receiver.ReceiveAsync(3, TimeSpan.FromSeconds(1), TestCancellationToken))
                 {
                     received.Add(message.MessageId);
                     await receiver.CompleteAsync(message, TestCancellationToken);
@@ -400,7 +609,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         string topic = NewName("instances");
         var first = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "conformance"));
-        await using var second = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "conformance"));
+        await using var second = await CreatePeerReceiverAsync(MessageSource.InstanceSubscription(topic, "conformance"));
 
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("to all", "id-all")], TestCancellationToken);
         foreach (var receiver in new[] { first, second })
@@ -417,7 +626,8 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await second.CompleteAsync(remaining, TestCancellationToken);
 
         await using var late = await CreateReceiverAsync(MessageSource.InstanceSubscription(topic, "conformance"));
-        await AssertNothingReceivedAsync(late, TimeSpan.FromSeconds(1));
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("to the late one", "id-late")], TestCancellationToken);
+        await AssertOnlyReceivedAsync(late, "id-late");
     }
 
     [Fact]
@@ -441,14 +651,17 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         Assert.Equal("just you", Encoding.UTF8.GetString(message.Body.Span));
         Assert.Equal("g", message.GroupKey);
         await target.CompleteAsync(message, TestCancellationToken);
-        await AssertNothingReceivedAsync(other, TimeSpan.FromSeconds(1));
-        await AssertNothingReceivedAsync(instance, TimeSpan.FromMilliseconds(200));
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("to everyone", "id-everyone")], TestCancellationToken);
+        await AssertOnlyReceivedAsync(other, "id-everyone");
+        await AssertOnlyReceivedAsync(instance, "id-everyone");
     }
 
     [Fact]
     public async Task SendToSubscription_BeforeAnyReceiverExists_KeepsTheMessage()
     {
         var source = MessageSource.Subscription(NewName("direct-new"), "late");
+        DeleteAfterTest(source);
         await Transport.SendAsync(MessageDestination.For(source), [Message("kept", "id-kept")], TestCancellationToken);
 
         await using var receiver = await CreateReceiverAsync(source);
@@ -463,7 +676,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         var source = MessageSource.Queue(NewName("delete"));
         await using (var receiver = await CreateReceiverAsync(source))
         {
-            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison"), Message("pending")], TestCancellationToken);
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "id-poison"), Message("pending", "id-pending")], TestCancellationToken);
             await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "conformance", TestCancellationToken);
         }
 
@@ -471,11 +684,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         await using var recreated = await CreateReceiverAsync(source);
         await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
-        await AssertNothingReceivedAsync(recreated, TimeSpan.FromSeconds(1));
-        await AssertNothingReceivedAsync(deadLetters, TimeSpan.FromMilliseconds(200));
-
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
-        Assert.Equal("id-after", (await ReceiveOneAsync(recreated)).MessageId);
+        var after = Assert.Single(await AssertOnlyReceivedAsync(recreated, "id-after", complete: false));
+        await recreated.DeadLetterAsync(after, "conformance", TestCancellationToken);
+        await AssertOnlyReceivedAsync(deadLetters, "id-after");
     }
 
     [Fact]
@@ -484,15 +696,14 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         string topic = NewName("delete-sub");
         var source = MessageSource.Subscription(topic, "removed");
         await (await CreateReceiverAsync(source)).DisposeAsync();
-        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("before delete")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("before delete", "id-before")], TestCancellationToken);
 
         await Transport.DeleteAsync(source, TestCancellationToken);
-        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("while deleted")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("while deleted", "id-while")], TestCancellationToken);
 
         await using var receiver = await CreateReceiverAsync(source);
-        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("after", "id-after")], TestCancellationToken);
-        Assert.Equal("id-after", (await ReceiveOneAsync(receiver)).MessageId);
+        await AssertOnlyReceivedAsync(receiver, "id-after");
     }
 
     [Fact]
@@ -507,8 +718,40 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await Transport.DeleteAsync(MessageSource.DeadLetter(source), TestCancellationToken);
 
         await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
-        await AssertNothingReceivedAsync(deadLetters, TimeSpan.FromSeconds(1));
-        Assert.Equal("id-good", (await ReceiveOneAsync(receiver)).MessageId);
+        var good = await ReceiveOneAsync(receiver);
+        Assert.Equal("id-good", good.MessageId);
+        await receiver.DeadLetterAsync(good, "conformance", TestCancellationToken);
+        await AssertOnlyReceivedAsync(deadLetters, "id-good");
+    }
+
+    [Fact]
+    public async Task Delete_WhileAReceiverIsOpen_TheReceiverKeepsReceivingOrFaults()
+    {
+        var source = MessageSource.Queue(NewName("delete-open"));
+        await using var receiver = await CreatePeerReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("before", "id-before")], TestCancellationToken);
+        await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
+
+        await Transport.DeleteAsync(source, TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+
+        IncomingMessage message;
+        try
+        {
+            message = await ReceiveOneAsync(receiver);
+        }
+        catch (Exception ex) when (ex is not TimeoutException and not OperationCanceledException)
+        {
+            _logger.LogInformation(ex, "The receiver faulted after its source was deleted; replacing it");
+            await using var replacement = await CreateReceiverAsync(source);
+            message = await ReceiveOneAsync(replacement);
+            await replacement.CompleteAsync(message, TestCancellationToken);
+            Assert.Equal("id-after", message.MessageId);
+            return;
+        }
+
+        Assert.Equal("id-after", message.MessageId);
+        await receiver.CompleteAsync(message, TestCancellationToken);
     }
 
     [Fact]
@@ -526,7 +769,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     public async Task MaxMessageSize_MessageAtTheLimit_RoundTrips()
     {
         Assert.SkipUnless(Transport.Capabilities.MaxMessageSize is not null, "The transport does not declare a message size limit.");
-        var headers = new Dictionary<string, string> { [KnownHeaders.MessageType] = "conformance.size", [KnownHeaders.CorrelationId] = "size-test" };
+        var headers = ManyHeaders();
         var body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - MessageSize.Of("at-limit", ReadOnlySpan<byte>.Empty, headers))];
         Random.Shared.NextBytes(body);
         var source = MessageSource.Queue(NewName("size"));
@@ -536,7 +779,24 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         var message = await ReceiveOneAsync(receiver);
         Assert.True(message.Body.Span.SequenceEqual(body), "The body at the size limit did not round-trip.");
-        Assert.Equal("size-test", message.Headers[KnownHeaders.CorrelationId]);
+        Assert.Equal(headers, message.Headers);
+    }
+
+    [Fact]
+    public async Task MaxMessageSize_PublishedMessageAtTheLimit_RoundTrips()
+    {
+        Assert.SkipUnless(Transport.Capabilities.MaxMessageSize is not null, "The transport does not declare a message size limit.");
+        var headers = ManyHeaders();
+        var body = new byte[(int)(Transport.Capabilities.MaxMessageSize!.Value - MessageSize.Of("at-limit", ReadOnlySpan<byte>.Empty, headers))];
+        Random.Shared.NextBytes(body);
+        string topic = NewName("size-topic");
+        await using var receiver = await CreateReceiverAsync(MessageSource.Subscription(topic, "large"));
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [new OutgoingMessage { MessageId = "at-limit", Body = body, Headers = headers }], TestCancellationToken);
+
+        var message = await ReceiveOneAsync(receiver);
+        Assert.True(message.Body.Span.SequenceEqual(body), "The published body at the size limit did not round-trip.");
+        Assert.Equal(headers, message.Headers);
     }
 
     [Fact]
@@ -544,8 +804,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         Assert.SkipUnless(Transport.Capabilities.MaxMessageSize is not null, "The transport does not declare a message size limit.");
         var body = new byte[(int)Transport.Capabilities.MaxMessageSize!.Value + 1];
+        var source = MessageSource.Queue(NewName("too-big"));
+        DeleteAfterTest(source);
 
-        return Assert.ThrowsAsync<MessageTooLargeException>(() => Transport.SendAsync(MessageDestination.Queue(NewName("too-big")),
+        return Assert.ThrowsAsync<MessageTooLargeException>(() => Transport.SendAsync(MessageDestination.Queue(source.Name),
             [new OutgoingMessage { MessageId = "too-big", Body = body }], TestCancellationToken));
     }
 
@@ -560,6 +822,27 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         var messages = await ReceiveAsync(receiver, count);
         Assert.Equal(count, messages.Select(m => m.MessageId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task SendBatch_OfLargeMessages_DeliversEveryMessage()
+    {
+        int count = Math.Min(Transport.Capabilities.MaxSendBatchSize, 10);
+        int size = (int)Math.Min(Transport.Capabilities.MaxMessageSize / 2 - 64 ?? 128 * 1024, 128 * 1024);
+        var source = MessageSource.Queue(NewName("large-batch"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var messages = Enumerable.Range(0, count).Select(i =>
+        {
+            var body = new byte[size];
+            Random.Shared.NextBytes(body);
+            return new OutgoingMessage { MessageId = $"id-{i}", Body = body };
+        }).ToList();
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), messages, TestCancellationToken);
+
+        var received = (await ReceiveAsync(receiver, count)).ToDictionary(m => m.MessageId);
+        Assert.Equal(messages.Select(m => m.MessageId).Order(), received.Keys.Order());
+        Assert.All(messages, m => Assert.True(received[m.MessageId].Body.Span.SequenceEqual(m.Body.Span), $"The body of {m.MessageId} changed."));
     }
 
     [Fact]
@@ -613,8 +896,11 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             var batch = await receiver.ReceiveAsync(10, TimeSpan.FromSeconds(1), TestCancellationToken);
             if (batch.Any(m => m.GroupKey == "a"))
             {
-                // While any of them is unsettled, no later message of the group may be delivered.
-                var meanwhile = await receiver.ReceiveAsync(10, TimeSpan.FromMilliseconds(500), TestCancellationToken);
+                // While any of them is unsettled, no later message of the group may be delivered, even as messages
+                // sent after it are.
+                string canary = $"canary-{order.Count}";
+                await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("canary", canary) with { GroupKey = canary }], TestCancellationToken);
+                var meanwhile = await ReceiveUntilAsync(receiver, canary);
                 Assert.DoesNotContain(meanwhile, m => m.GroupKey == "a");
                 batch = [.. batch, .. meanwhile];
             }
@@ -628,6 +914,74 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         Assert.Equal(["a-0", "a-1", "a-2", "a-3"], order.Where(id => id.StartsWith("a-")));
         Assert.Contains("b-0", order);
+    }
+
+    [Fact]
+    public async Task OrderedGroups_WithCompetingReceiversInSeparateProcesses_HoldTheGroupUntilItsEarlierMessageIsSettled()
+    {
+        Assert.SkipUnless(Transport.Capabilities.OrderedGroups, "The transport does not order groups.");
+        var source = MessageSource.Queue(NewName("groups-compete"));
+        await using var first = await CreateReceiverAsync(source);
+        await using var second = await CreatePeerReceiverAsync(source);
+        IMessageReceiver[] receivers = [first, second];
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 3).Select(i => Message($"a{i}", $"a-{i}") with { GroupKey = "a" }).ToList(), TestCancellationToken);
+
+        var (holder, held) = Assert.Single(await ReceiveFromAnyAsync(receivers, 1, DeliveryTimeout));
+        Assert.Equal("a-0", held.MessageId);
+
+        // While a-0 is unsettled, no receiver may get a later message of its group, even as messages sent after it arrive.
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("b0", "b-0") with { GroupKey = "b" }], TestCancellationToken);
+        var meanwhile = await ReceiveFromAnyUntilAsync(receivers, "b-0", DeliveryTimeout);
+        Assert.DoesNotContain(meanwhile, d => d.Message.GroupKey == "a");
+        foreach (var (receiver, message) in meanwhile)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+
+        await holder.CompleteAsync(held, TestCancellationToken);
+        var order = await DrainGroupInOrderAsync(receivers, "a", 2);
+        Assert.Equal(["a-1", "a-2"], order);
+    }
+
+    [Fact]
+    public async Task OrderedGroups_WithCompetingReceivers_ARetriedMessageHoldsBackItsGroupUntilItIsRedelivered()
+    {
+        Assert.SkipUnless(Transport.Capabilities.OrderedGroups, "The transport does not order groups.");
+        Assert.SkipWhen(Transport.Capabilities.MaxRetryDelay == TimeSpan.Zero, "The transport does not support retry delays.");
+        var source = MessageSource.Queue(NewName("group-retry-compete"));
+        await using var first = await CreateReceiverAsync(source);
+        await using var second = await CreatePeerReceiverAsync(source);
+        IMessageReceiver[] receivers = [first, second];
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 2).Select(i => Message($"a{i}", $"a-{i}") with { GroupKey = "a" }).ToList(), TestCancellationToken);
+
+        var (holder, held) = Assert.Single(await ReceiveFromAnyAsync(receivers, 1, DeliveryTimeout));
+        Assert.Equal("a-0", held.MessageId);
+        var stopwatch = Stopwatch.StartNew();
+        await holder.AbandonAsync(held, ShortDelay, TestCancellationToken);
+
+        var deliveries = await ReceiveFromAnyUntilAsync(receivers, "a-0", ShortDelay + DeliveryTimeout);
+        var elapsed = stopwatch.Elapsed;
+        int retriedAt = deliveries.FindIndex(d => d.Message.MessageId == "a-0");
+        var (retriedBy, retried) = deliveries[retriedAt];
+        Assert.True(elapsed >= ShortDelay * 0.75, $"Redelivered after {elapsed}, expected at least {ShortDelay}.");
+        Assert.True(retried.DeliveryCount > held.DeliveryCount, $"DeliveryCount stayed at {retried.DeliveryCount} after the retry.");
+        Assert.All(deliveries.Where(d => d.Message.MessageId == "a-1"), d =>
+        {
+            Assert.Same(retriedBy, d.Receiver);
+            Assert.True(deliveries.IndexOf(d) > retriedAt, "a-1 was delivered while a-0 was waiting to be retried.");
+        });
+
+        var order = new List<string>();
+        foreach (var (receiver, message) in deliveries)
+        {
+            order.Add(message.MessageId);
+            await receiver.CompleteAsync(message, TestCancellationToken);
+        }
+
+        if (!order.Contains("a-1"))
+            order.AddRange(await DrainGroupInOrderAsync(receivers, "a", 1));
+
+        Assert.Equal(["a-0", "a-1"], order);
     }
 
     [Fact]
@@ -708,67 +1062,141 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         Assert.SkipUnless(Transport.Capabilities.Deduplication, "The transport does not deduplicate.");
         var source = MessageSource.Queue(NewName("dedupe"));
-        await using var receiver = await CreateReceiverAsync(source, ShortLease);
+        await using var receiver = await CreateReceiverAsync(source);
 
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("one", "first") with { DeduplicationId = "same" }], TestCancellationToken);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("two", "second") with { DeduplicationId = "same" }], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("canary", "canary") with { DeduplicationId = "other" }], TestCancellationToken);
 
-        var message = await ReceiveOneAsync(receiver);
-        Assert.Equal("first", message.MessageId);
-        await receiver.CompleteAsync(message, TestCancellationToken);
-        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(1));
+        var messages = await ReceiveUntilAsync(receiver, "canary");
+        Assert.Equal(["canary", "first"], messages.Select(m => m.MessageId).Order());
+        foreach (var message in messages)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task Deduplication_InTheSameBatchOrFromAnotherProcess_DropsTheRepeat()
+    {
+        Assert.SkipUnless(Transport.Capabilities.Deduplication, "The transport does not deduplicate.");
+        var source = MessageSource.Queue(NewName("dedupe-scope"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var destination = MessageDestination.Queue(source.Name);
+
+        await Transport.SendAsync(destination, [Message("one", "first") with { DeduplicationId = "same" }, Message("two", "second") with { DeduplicationId = "same" }], TestCancellationToken);
+        await PeerTransport.SendAsync(destination, [Message("three", "third") with { DeduplicationId = "same" }], TestCancellationToken);
+        await Transport.SendAsync(destination, [Message("canary", "canary")], TestCancellationToken);
+
+        var messages = await ReceiveUntilAsync(receiver, "canary");
+        Assert.Equal(["canary", "first"], messages.Select(m => m.MessageId).Order());
+    }
+
+    [Fact]
+    public async Task Deduplication_OnAnotherDestination_DeliversTheMessage()
+    {
+        Assert.SkipUnless(Transport.Capabilities.Deduplication, "The transport does not deduplicate.");
+        var source = MessageSource.Queue(NewName("dedupe-a"));
+        var other = MessageSource.Queue(NewName("dedupe-b"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await using var otherReceiver = await CreateReceiverAsync(other);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("here", "here") with { DeduplicationId = "same" }], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Queue(other.Name), [Message("there", "there") with { DeduplicationId = "same" }], TestCancellationToken);
+
+        Assert.Equal("here", (await ReceiveOneAsync(receiver)).MessageId);
+        Assert.Equal("there", (await ReceiveOneAsync(otherReceiver)).MessageId);
+    }
+
+    [Fact]
+    public async Task Deduplication_AfterAFailedSend_DeliversTheRetry()
+    {
+        Assert.SkipUnless(Transport.Capabilities.Deduplication, "The transport does not deduplicate.");
+        var source = MessageSource.Queue(NewName("dedupe-retry"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var destination = MessageDestination.Queue(source.Name);
+
+        using (var cancelled = new CancellationTokenSource())
+        {
+            await cancelled.CancelAsync();
+            await SendIgnoringFailureAsync<OperationCanceledException>(destination, [Message("cancelled", "cancelled") with { DeduplicationId = "cancelled" }], cancelled.Token);
+        }
+
+        await Transport.SendAsync(destination, [Message("cancelled retry", "cancelled-retry") with { DeduplicationId = "cancelled" }], TestCancellationToken);
+
+        if (Transport.Capabilities.MaxMessageSize is { } limit)
+        {
+            var tooLarge = new OutgoingMessage { MessageId = "too-large", Body = new byte[(int)limit + 1] };
+            await SendIgnoringFailureAsync<MessageTooLargeException>(destination, [Message("rejected", "rejected") with { DeduplicationId = "rejected" }, tooLarge], TestCancellationToken);
+            await Transport.SendAsync(destination, [Message("rejected retry", "rejected-retry") with { DeduplicationId = "rejected" }], TestCancellationToken);
+        }
+
+        await Transport.SendAsync(destination, [Message("canary", "canary")], TestCancellationToken);
+
+        // Whether or not the failed send got its message through, exactly one message per deduplication id arrives.
+        var ids = (await ReceiveUntilAsync(receiver, "canary")).Select(m => m.MessageId).ToList();
+        Assert.Single(ids, id => id.StartsWith("cancelled", StringComparison.Ordinal));
+        if (Transport.Capabilities.MaxMessageSize is not null)
+            Assert.Single(ids, id => id.StartsWith("rejected", StringComparison.Ordinal));
     }
 
     [Fact]
     public async Task Messaging_SentMessageIsHandledOnceByCompetingServices()
     {
         string name = NewName("cmd");
-        int handled = 0;
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Action<FoundatioMessagingBuilder> configure = m => m.MapMessage<ConformanceMessage>(name).AddConsumer<ConformanceMessage>((_, _, _) =>
+        DeleteAfterTest(MessageSource.Queue(name));
+        var handled = new ConcurrentBag<int>();
+        Action<FoundatioMessagingBuilder> configure = m => m.MapMessage<ConformanceMessage>(name).AddConsumer<ConformanceMessage>((message, _, _) =>
         {
-            if (Interlocked.Increment(ref handled) == 5)
-                done.TrySetResult();
+            handled.Add(message.Value);
             return Task.CompletedTask;
         });
 
         await using var first = await MessagingTestHost.StartAsync(Transport, Log, "worker", configure);
-        await using var second = await MessagingTestHost.StartAsync(Transport, Log, "worker", configure);
+        await using var second = await MessagingTestHost.StartAsync(PeerTransport, Log, "worker", configure);
         for (int i = 0; i < 5; i++)
             await first.Client.SendAsync(new ConformanceMessage(i), cancellationToken: TestCancellationToken);
 
-        await done.Task.WaitAsync(DeliveryTimeout, TestCancellationToken);
-        await Task.Delay(500, TestCancellationToken);
-        Assert.Equal(5, handled);
+        await WaitForAsync(() => handled.Count >= 5);
+        await second.Client.SendAsync(new ConformanceMessage(99), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => handled.Contains(99));
+
+        Assert.Equal([0, 1, 2, 3, 4, 99], handled.Order());
     }
 
     [Fact]
     public async Task Messaging_PublishedEventReachesEveryServiceAndEveryInstance()
     {
         string name = NewName("evt");
+        DeleteAfterTest(MessageSource.Subscription(name, "billing"));
+        DeleteAfterTest(MessageSource.Subscription(name, "shipping"));
         var received = new ConcurrentBag<string>();
         Action<FoundatioMessagingBuilder> Configure(string label) => m => m
             .MapMessage<ConformanceMessage>(name)
-            .AddSubscriber<ConformanceMessage>((_, _, _) => { received.Add($"{label}:service"); return Task.CompletedTask; })
-            .AddSubscriber<ConformanceMessage>((_, _, _) => { received.Add($"{label}:instance"); return Task.CompletedTask; }, new SubscriptionOptions { Scope = SubscriptionScope.Instance });
+            .AddSubscriber<ConformanceMessage>((message, _, _) => { received.Add($"{label}:service:{message.Value}"); return Task.CompletedTask; })
+            .AddSubscriber<ConformanceMessage>((message, _, _) => { received.Add($"{label}:instance:{message.Value}"); return Task.CompletedTask; }, new SubscriptionOptions { Scope = SubscriptionScope.Instance });
 
         await using var billing1 = await MessagingTestHost.StartAsync(Transport, Log, "billing", Configure("billing1"));
-        await using var billing2 = await MessagingTestHost.StartAsync(Transport, Log, "billing", Configure("billing2"));
+        await using var billing2 = await MessagingTestHost.StartAsync(PeerTransport, Log, "billing", Configure("billing2"));
         await using var shipping = await MessagingTestHost.StartAsync(Transport, Log, "shipping", Configure("shipping"));
 
         await billing1.Client.PublishAsync(new ConformanceMessage(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => received.Count(r => r.EndsWith(":1")) >= 5);
+        await billing1.Client.PublishAsync(new ConformanceMessage(2), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => received.Count(r => r.EndsWith(":2")) >= 5);
 
-        await WaitForAsync(() => received.Count >= 5);
-        await Task.Delay(500, TestCancellationToken);
-        Assert.Equal(1, received.Count(r => r.StartsWith("billing") && r.EndsWith(":service")));
-        Assert.Equal(1, received.Count(r => r == "shipping:service"));
-        Assert.Equal(["billing1:instance", "billing2:instance", "shipping:instance"], received.Where(r => r.EndsWith(":instance")).Order());
+        foreach (int value in new[] { 1, 2 })
+        {
+            var copies = received.Where(r => r.EndsWith($":{value}")).ToList();
+            Assert.Equal(1, copies.Count(r => r.StartsWith("billing") && r.Contains(":service:")));
+            Assert.Equal(1, copies.Count(r => r.StartsWith("shipping:service:")));
+            Assert.Equal([$"billing1:instance:{value}", $"billing2:instance:{value}", $"shipping:instance:{value}"], copies.Where(r => r.Contains(":instance:")).Order());
+        }
     }
 
     [Fact]
     public async Task Messaging_FailingMessageIsRetriedThenDeadLettered()
     {
         string name = NewName("poison");
+        DeleteAfterTest(MessageSource.Queue(name));
         int attempts = 0;
         await using var host = await MessagingTestHost.StartAsync(Transport, Log, "worker", m => m
             .MapMessage<ConformanceMessage>(name)
@@ -792,6 +1220,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     {
         Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
         string name = NewName("later");
+        DeleteAfterTest(MessageSource.Queue(name));
         var handledAt = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
         var stopwatch = Stopwatch.StartNew();
         await using var host = await MessagingTestHost.StartAsync(Transport, Log, "worker", m => m
@@ -823,6 +1252,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
         var admin = host.Services.GetRequiredService<IMessageAdmin>();
         var source = MessageSource.Subscription(name, "worker");
+        DeleteAfterTest(source);
         await host.Client.PublishAsync(new ConformanceMessage(7), cancellationToken: TestCancellationToken);
 
         IReadOnlyList<DeadLetterMessage> deadLetters;
@@ -844,6 +1274,9 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
 
     public override async ValueTask DisposeAsync()
     {
+        if (_transport is not null && !_createdSources.IsEmpty)
+            await DeleteCreatedSourcesAsync(_transport);
+
         foreach (var transport in _transports)
         {
             try
@@ -865,12 +1298,33 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         return transport;
     }
 
+    /// <summary>
+    /// Deletes the queue or subscription, with its dead letters, once the test ends. <see cref="CreateReceiverAsync"/>
+    /// and <see cref="CreatePeerReceiverAsync"/> already do this for the sources they open.
+    /// </summary>
+    protected void DeleteAfterTest(MessageSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            return;
+
+        _createdSources.TryAdd(source.ToString(), source);
+    }
+
     /// <summary>A unique, valid name so concurrent tests never share queues or topics.</summary>
     protected static string NewName(string prefix) => $"{prefix}-{Guid.NewGuid():N}"[..(prefix.Length + 13)];
 
     protected Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, TimeSpan? lease = null)
     {
+        DeleteAfterTest(source);
         return Transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = lease ?? TimeSpan.FromSeconds(30) }, TestCancellationToken);
+    }
+
+    /// <summary>Opens a receiver through <see cref="PeerTransport"/>, as another process would.</summary>
+    protected Task<IMessageReceiver> CreatePeerReceiverAsync(MessageSource source, TimeSpan? lease = null)
+    {
+        DeleteAfterTest(source);
+        return PeerTransport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = lease ?? TimeSpan.FromSeconds(30) }, TestCancellationToken);
     }
 
     protected static OutgoingMessage Message(string body, string? id = null, IReadOnlyDictionary<string, string>? headers = null)
@@ -904,6 +1358,41 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         return messages;
     }
 
+    /// <summary>
+    /// Receives until the message with <paramref name="messageId"/> arrives and returns everything received up to and
+    /// including its batch, without settling anything. Send that message after the ones a test expects not to see, so
+    /// the receiver has demonstrably been delivering while they could have arrived.
+    /// </summary>
+    protected async Task<IReadOnlyList<IncomingMessage>> ReceiveUntilAsync(IMessageReceiver receiver, string messageId, TimeSpan? timeout = null)
+    {
+        var messages = new List<IncomingMessage>();
+        var deadline = DateTime.UtcNow + (timeout ?? DeliveryTimeout);
+        while (!messages.Any(m => m.MessageId == messageId))
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException($"Message {messageId} did not arrive from {receiver.Source} within {timeout ?? DeliveryTimeout}; received {String.Join(", ", messages.Select(m => m.MessageId))}.");
+
+            messages.AddRange(await receiver.ReceiveAsync(10, remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), TestCancellationToken));
+        }
+
+        return messages;
+    }
+
+    /// <summary>Asserts that the next message from <paramref name="receiver"/> is <paramref name="messageId"/>, with nothing before it.</summary>
+    protected async Task<IReadOnlyList<IncomingMessage>> AssertOnlyReceivedAsync(IMessageReceiver receiver, string messageId, bool complete = true)
+    {
+        var messages = await ReceiveUntilAsync(receiver, messageId);
+        Assert.Equal([messageId], messages.Select(m => m.MessageId));
+        if (complete)
+        {
+            foreach (var message in messages)
+                await receiver.CompleteAsync(message, TestCancellationToken);
+        }
+
+        return messages;
+    }
+
     protected async Task AssertNothingReceivedAsync(IMessageReceiver receiver, TimeSpan duration)
     {
         var deadline = DateTime.UtcNow + duration;
@@ -912,21 +1401,6 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             var remaining = deadline - DateTime.UtcNow;
             var messages = await receiver.ReceiveAsync(10, remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), TestCancellationToken);
             Assert.True(messages.Count == 0, $"Unexpectedly received message {messages.FirstOrDefault()?.MessageId} from {receiver.Source}.");
-        }
-    }
-
-    private static async Task AssertLeaseLostOrIgnoredAsync(Func<Task> settle)
-    {
-        try
-        {
-            await settle();
-        }
-        catch (Exception ex) when (ex is not MessageLeaseLostException)
-        {
-            Assert.Fail($"Settling a stale delivery threw {ex.GetType().Name} instead of MessageLeaseLostException: {ex.Message}");
-        }
-        catch (MessageLeaseLostException)
-        {
         }
     }
 
@@ -941,6 +1415,167 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             await Task.Delay(50, TestCancellationToken);
         }
     }
+
+    private async Task AssertStaleSettlementLeavesTheNewDeliveryIntactAsync(MessageSource source, IMessageReceiver staleReceiver, IncomingMessage stale,
+        IMessageReceiver currentReceiver, IncomingMessage current, bool receiverDisposed)
+    {
+        await AssertLeaseLostAsync(() => staleReceiver.RenewAsync(stale, TestCancellationToken), receiverDisposed);
+        await AssertLeaseLostAsync(() => staleReceiver.AbandonAsync(stale, TimeSpan.Zero, TestCancellationToken), receiverDisposed);
+        await AssertLeaseLostAsync(() => staleReceiver.DeadLetterAsync(stale, "stale", TestCancellationToken), receiverDisposed);
+        bool staleCompleteFailed = await TryAssertLeaseLostAsync(() => staleReceiver.CompleteAsync(stale, TestCancellationToken), receiverDisposed);
+
+        // The stale abandon must not have released the newer delivery: a message sent afterwards arrives alone.
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("canary", "canary")], TestCancellationToken);
+        var canary = Assert.Single(await AssertOnlyReceivedAsync(currentReceiver, "canary", complete: false));
+
+        if (staleCompleteFailed)
+        {
+            await currentReceiver.RenewAsync(current, TestCancellationToken);
+            await currentReceiver.AbandonAsync(current, TimeSpan.Zero, TestCancellationToken);
+            var again = await ReceiveOneAsync(currentReceiver);
+            Assert.Equal(current.MessageId, again.MessageId);
+            Assert.True(again.DeliveryCount > current.DeliveryCount, $"DeliveryCount stayed at {again.DeliveryCount} after the abandon.");
+            await currentReceiver.CompleteAsync(again, TestCancellationToken);
+        }
+        else
+        {
+            // The broker could not tell the stale receipt from the current one, so the message may be gone.
+            _logger.LogInformation("The stale complete of {MessageId} was accepted", stale.MessageId);
+            await TryAssertLeaseLostAsync(() => currentReceiver.CompleteAsync(current, TestCancellationToken), receiverDisposed: false);
+        }
+
+        // Nor may the stale dead-letter have moved it.
+        await currentReceiver.DeadLetterAsync(canary, "canary", TestCancellationToken);
+        await using var deadLetters = await CreateReceiverAsync(MessageSource.DeadLetter(source));
+        await AssertOnlyReceivedAsync(deadLetters, "canary");
+    }
+
+    /// <summary>Asserts that a settlement of a delivery whose lease was lost throws, as the contract requires.</summary>
+    private static async Task AssertLeaseLostAsync(Func<Task> settle, bool receiverDisposed)
+    {
+        Assert.True(await TryAssertLeaseLostAsync(settle, receiverDisposed), "Settling or renewing a delivery whose lease was lost succeeded instead of throwing MessageLeaseLostException.");
+    }
+
+    /// <summary>Returns false when the settlement succeeded, and fails the test when it threw anything but lease lost.</summary>
+    private static async Task<bool> TryAssertLeaseLostAsync(Func<Task> settle, bool receiverDisposed)
+    {
+        try
+        {
+            await settle();
+            return false;
+        }
+        catch (MessageLeaseLostException)
+        {
+            return true;
+        }
+        catch (ObjectDisposedException) when (receiverDisposed)
+        {
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"Settling a delivery whose lease was lost threw {ex.GetType().Name} instead of MessageLeaseLostException: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Receives from every receiver at once, as competing consumers do, until one of them gets messages.</summary>
+    private async Task<List<(IMessageReceiver Receiver, IncomingMessage Message)>> ReceiveFromAnyAsync(IReadOnlyList<IMessageReceiver> receivers, int maxMessages, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            var batches = await Task.WhenAll(receivers.Select(r => r.ReceiveAsync(maxMessages, TimeSpan.FromSeconds(1), TestCancellationToken)));
+            var deliveries = receivers.Zip(batches).SelectMany(p => p.Second.Select(m => (p.First, m))).ToList();
+            if (deliveries.Count > 0)
+                return deliveries;
+
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException($"No receiver got a message within {timeout}.");
+        }
+    }
+
+    /// <summary>Like <see cref="ReceiveUntilAsync"/>, across competing receivers, in the order they were received.</summary>
+    private async Task<List<(IMessageReceiver Receiver, IncomingMessage Message)>> ReceiveFromAnyUntilAsync(IReadOnlyList<IMessageReceiver> receivers, string messageId, TimeSpan timeout)
+    {
+        var deliveries = new List<(IMessageReceiver Receiver, IncomingMessage Message)>();
+        var deadline = DateTime.UtcNow + timeout;
+        while (!deliveries.Any(d => d.Message.MessageId == messageId))
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException($"Message {messageId} did not arrive within {timeout}; received {String.Join(", ", deliveries.Select(d => d.Message.MessageId))}.");
+
+            deliveries.AddRange(await ReceiveFromAnyAsync(receivers, 10, remaining));
+        }
+
+        return deliveries;
+    }
+
+    /// <summary>Receives a group's remaining messages from competing receivers, settling each, and returns their order.</summary>
+    private async Task<List<string>> DrainGroupInOrderAsync(IReadOnlyList<IMessageReceiver> receivers, string groupKey, int count)
+    {
+        var order = new List<string>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        while (order.Count < count)
+        {
+            var deliveries = await ReceiveFromAnyAsync(receivers, 10, deadline - DateTime.UtcNow);
+            var grouped = deliveries.Where(d => d.Message.GroupKey == groupKey).ToList();
+            Assert.True(grouped.Select(d => d.Receiver).Distinct().Count() <= 1, $"Messages of group {groupKey} were delivered to two receivers at once.");
+            foreach (var (receiver, message) in deliveries)
+            {
+                if (message.GroupKey == groupKey)
+                    order.Add(message.MessageId);
+
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        return order;
+    }
+
+    private async Task SendIgnoringFailureAsync<TException>(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken) where TException : Exception
+    {
+        try
+        {
+            await Transport.SendAsync(destination, messages, cancellationToken);
+        }
+        catch (TException ex)
+        {
+            _logger.LogInformation("The send failed as intended: {Message}", ex.Message);
+        }
+    }
+
+    private async Task DeleteCreatedSourcesAsync(IMessageTransport transport)
+    {
+        using var timeout = new CancellationTokenSource(CleanupTimeout);
+        var sources = _createdSources.Values
+            .Select(s => s.Kind == MessageSourceKind.DeadLetter && _createdSources.ContainsKey(s.DeadLetterOf!.ToString()) ? null : s)
+            .OfType<MessageSource>();
+
+        await Task.WhenAll(sources.Select(async source =>
+        {
+            try
+            {
+                await transport.DeleteAsync(source, timeout.Token);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not delete {Source} after the test", source);
+            }
+        }));
+    }
+
+    private static Dictionary<string, string> ManyHeaders()
+    {
+        var headers = new Dictionary<string, string> { [KnownHeaders.MessageType] = "conformance.size", [KnownHeaders.CorrelationId] = "size-test" };
+        for (int i = 0; i < 100; i++)
+            headers[$"h{i}"] = "v";
+
+        return headers;
+    }
+
+    private static string PadToMaxIdLength(string prefix, char fill) => prefix + new string(fill, OutgoingMessage.MaxIdLength - prefix.Length);
 
     public sealed record ConformanceMessage(int Value);
 }
