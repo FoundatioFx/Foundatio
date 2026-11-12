@@ -70,7 +70,7 @@ builder.Services.AddFoundatioMessaging(m => m
     .AddConsumer<SendReceiptHandler>());
 ```
 
-It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and subscription lives on one cluster slot. It needs Redis 5.0 or later (6.2 for `DeadLetterRetention`), or Valkey.
+It supports ordered groups, deduplication, delays of any length and lease expiry, on a single Redis, Sentinel or Redis Cluster. Each queue and subscription lives on one cluster slot. It needs Redis 6.2 or later, or Valkey.
 
 ### Options
 
@@ -109,7 +109,7 @@ Everything is kept in Redis memory, which is often shared with the app's cache a
 ### Latency and cost
 
 - Receivers poll their sources with Lua scripts on the shared multiplexer; there are no blocking reads.
-- Every send also publishes a small pub/sub signal on the source's channel (`<KeyPrefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond.
+- Every send also publishes a small pub/sub signal on the source's channel (`<KeyPrefix>:{q:<queue>}:signal`, and so on). That wakes idle receivers in every process, so delivery normally takes about a millisecond. Each signal makes every idle receiver of that source poll once.
 - Polling backs off from `MinPollInterval` to `MaxPollInterval`, and is the fallback when a signal is lost, for example while a connection reconnects. Each idle receiver runs about one script per `MaxPollInterval`.
 - Signals use classic `PUBLISH`, which Redis Cluster forwards to every node.
 - One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
