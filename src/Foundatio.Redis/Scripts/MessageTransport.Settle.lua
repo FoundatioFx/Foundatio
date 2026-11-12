@@ -1,6 +1,6 @@
 -- KEYS: stream, leases, dead-letter stream, groups, held, delayed, delayed-data
 -- ARGV: operation, group, consumer, entry id, expected delivery count, value (delay ms, lease ms or reason), released consumer,
---       reason field, has message group, message group
+--       reason field, has message group, message group, dead letters to keep (0 = all), dead-letter retention ms (0 = forever)
 -- Returns 0 when the lease was lost, 1 when settled, 2 when settled and the next held message of its group was released
 local stream, leases = KEYS[1], KEYS[2]
 local operation, group, consumer, id = ARGV[1], ARGV[2], ARGV[3], ARGV[4]
@@ -36,6 +36,7 @@ if operation == 'deadletter' then
         copy[#copy + 1] = ARGV[8]
         copy[#copy + 1] = ARGV[6]
         redis.call('XADD', KEYS[3], '*', unpack(copy))
+        trimDeadLetters(KEYS[3], tonumber(ARGV[11]), tonumber(ARGV[12]))
     end
 end
 

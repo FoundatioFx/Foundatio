@@ -1,15 +1,15 @@
 -- KEYS: stream, delayed, delayed-data, groups, held, then one deduplication key per message that has one
 -- ARGV: deduplication window ms, key ttl ms (0 = none), create ('1' creates a missing source, '0' skips it), consumer group,
 --       then per message: delay ms, has deduplication key, delayed id, has group, group key, encoded fields
--- Returns the number of messages added (-1 when the source does not exist and was not created), and the number of
--- groups released because their outstanding message was lost
+-- Returns the number of messages added (-1 when the source does not exist and was not created), the number of groups
+-- released because their outstanding message was lost, and the number of messages in the source
 local k = { stream = KEYS[1], delayed = KEYS[2], delayedData = KEYS[3], groups = KEYS[4], held = KEYS[5] }
 local window = tonumber(ARGV[1])
 local keyTtl = tonumber(ARGV[2])
 local now = nowMs()
 
 if ARGV[3] ~= '1' and redis.call('EXISTS', k.stream) == 0 then
-    return { -1, 0 }
+    return { -1, 0, 0 }
 end
 local released = ensureStream(k, ARGV[4], now)
 
@@ -42,4 +42,4 @@ if keyTtl > 0 then
     end
 end
 
-return { added, released }
+return { added, released, redis.call('XLEN', k.stream) + redis.call('ZCARD', k.delayed) + redis.call('HLEN', k.held) }

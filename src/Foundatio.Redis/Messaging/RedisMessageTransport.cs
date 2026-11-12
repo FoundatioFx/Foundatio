@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -40,6 +41,9 @@ public sealed class RedisMessageTransport : IMessageTransport
     private const long MaxMessageSizeLimit = 256 * 1024 * 1024;
     private const int ScriptBatchBytes = 8 * 1024 * 1024;
     internal const int ReceiveBatchBytes = 8 * 1024 * 1024;
+    internal const int OrphanedSubscriptionBacklog = 1000;
+    private static readonly TimeSpan OrphanedSubscriptionAge = TimeSpan.FromHours(1);
+    private static readonly TimeSpan OrphanedSubscriptionCheckInterval = TimeSpan.FromMinutes(10);
     internal static readonly string DeadLetterReasonField = HeaderFieldPrefix + KnownHeaders.DeadLetterReason;
 
     private static readonly string Common = EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.MessageTransport.Common.lua");
@@ -56,6 +60,7 @@ public sealed class RedisMessageTransport : IMessageTransport
 
     private readonly IConnectionMultiplexer _connection;
     private readonly ConcurrentDictionary<RedisMessageReceiver, byte> _receivers = new();
+    private readonly ConcurrentDictionary<RedisKey, long> _orphanChecks = new();
     private int _evictionPolicyChecked;
     private int _disposed;
 
@@ -73,6 +78,10 @@ public sealed class RedisMessageTransport : IMessageTransport
             throw new ArgumentOutOfRangeException(nameof(options), Options.MaxPollInterval, "MaxPollInterval cannot be shorter than MinPollInterval.");
         if (Options.MaxMessageSize is <= 0 or > MaxMessageSizeLimit)
             throw new ArgumentOutOfRangeException(nameof(options), Options.MaxMessageSize, $"MaxMessageSize must be between 1 and {MaxMessageSizeLimit} bytes.");
+        if (Options.DeadLetterMaxLength is < 1)
+            throw new ArgumentOutOfRangeException(nameof(options), Options.DeadLetterMaxLength, "DeadLetterMaxLength must be at least 1.");
+        if (Options.DeadLetterRetention is { } retention)
+            ThrowIfShorterThanAMillisecond(retention, nameof(RedisMessageTransportOptions.DeadLetterRetention));
 
         _connection = connection;
         TimeProvider = Options.TimeProvider ?? TimeProvider.System;
@@ -103,6 +112,8 @@ public sealed class RedisMessageTransport : IMessageTransport
     internal RedisMessageTransportOptions Options { get; }
     internal TimeProvider TimeProvider { get; }
     internal ILogger Logger { get; }
+    internal long DeadLetterMaxLength => Options.DeadLetterMaxLength ?? 0;
+    internal long DeadLetterRetentionMilliseconds => Options.DeadLetterRetention is { } retention ? (long)retention.TotalMilliseconds : 0;
     internal IDatabase Database => _connection.GetDatabase(Options.Database);
     internal ISubscriber Subscriber => _connection.GetSubscriber();
 
@@ -129,8 +140,10 @@ public sealed class RedisMessageTransport : IMessageTransport
         if (destination.Kind == MessageDestinationKind.Subscription)
         {
             string subscription = destination.SubscriptionName!;
-            await EnqueueAsync(RedisSourceKeys.Subscription(Options.KeyPrefix, topic.Topic, subscription), encoded, deduplicate: true, create: true, keyTtl: TimeSpan.Zero).AnyContext();
+            var keys = RedisSourceKeys.Subscription(Options.KeyPrefix, topic.Topic, subscription);
+            long backlog = await EnqueueAsync(keys, encoded, deduplicate: true, create: true, keyTtl: TimeSpan.Zero).AnyContext();
             await Database.SetAddAsync(topic.Subscriptions, subscription).AnyContext();
+            await WarnIfOrphanedAsync(keys, backlog).AnyContext();
             return;
         }
 
@@ -145,7 +158,7 @@ public sealed class RedisMessageTransport : IMessageTransport
         {
             var instanceKeyTtl = Options.InstanceSubscriptionTimeout * 2;
             await Task.WhenAll(
-                route.Subscriptions.Select(s => EnqueueAsync(RedisSourceKeys.Subscription(Options.KeyPrefix, topic.Topic, s), route.Accepted, deduplicate: false, create: false, keyTtl: TimeSpan.Zero))
+                route.Subscriptions.Select(s => CopyToSubscriptionAsync(RedisSourceKeys.Subscription(Options.KeyPrefix, topic.Topic, s), route.Accepted))
                     .Concat(route.Instances.Select(i => EnqueueAsync(RedisSourceKeys.Instance(Options.KeyPrefix, topic.Topic, i), route.Accepted, deduplicate: false, create: false, keyTtl: instanceKeyTtl)))).AnyContext();
         }
         catch
@@ -372,9 +385,63 @@ public sealed class RedisMessageTransport : IMessageTransport
         return new Route((string[])result[0]!, (string[])result[1]!, (string[])result[2]!, accepted);
     }
 
-    // Without create, a source that does not exist (a deleted subscription, a removed instance subscription) is skipped.
-    private async Task EnqueueAsync(RedisSourceKeys target, IReadOnlyList<EncodedMessage> messages, bool deduplicate, bool create, TimeSpan keyTtl)
+    private async Task CopyToSubscriptionAsync(RedisSourceKeys subscription, IReadOnlyList<EncodedMessage> messages)
     {
+        long backlog = await EnqueueAsync(subscription, messages, deduplicate: false, create: false, keyTtl: TimeSpan.Zero).AnyContext();
+        await WarnIfOrphanedAsync(subscription, backlog).AnyContext();
+    }
+
+    // A subscription whose service is gone still gets a copy of every publish, in Redis memory, until it is deleted. It
+    // looks that way when it has a backlog and nothing sent to it in the last hour has been received. Entry ids carry
+    // the Redis clock, so they are compared with the real clock rather than the TimeProvider.
+    private async Task WarnIfOrphanedAsync(RedisSourceKeys subscription, long backlog)
+    {
+        if (backlog < OrphanedSubscriptionBacklog)
+            return;
+
+        long now = Stopwatch.GetTimestamp();
+        if (_orphanChecks.TryGetValue(subscription.Stream, out long checkedAt))
+        {
+            if (Stopwatch.GetElapsedTime(checkedAt, now) < OrphanedSubscriptionCheckInterval || !_orphanChecks.TryUpdate(subscription.Stream, now, checkedAt))
+                return;
+        }
+        else if (!_orphanChecks.TryAdd(subscription.Stream, now))
+        {
+            return;
+        }
+
+        try
+        {
+            var group = (await Database.StreamGroupInfoAsync(subscription.Stream).AnyContext()).FirstOrDefault(g => g.Name == GroupName);
+            if (group.Name is null || EntryTime(group.LastDeliveredId) is not { } lastReceived || DateTimeOffset.UtcNow - lastReceived < OrphanedSubscriptionAge)
+                return;
+
+            Logger.LogWarning("{Source} has {Count} messages, and none sent to it in the last hour has been received. If its service is gone, delete it with " +
+                "IMessageAdmin.DeleteAsync; until then every publish to its topic adds a copy to it in Redis memory", subscription.Description, backlog);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Could not check whether {Source} is still received from", subscription.Description);
+        }
+    }
+
+    // Stream entry ids start with the Redis time, in milliseconds, at which the entry was added.
+    internal static DateTimeOffset? EntryTime(string? entryId)
+    {
+        if (entryId is null)
+            return null;
+
+        int separator = entryId.IndexOf('-');
+        return Int64.TryParse(separator > 0 ? entryId.AsSpan(0, separator) : entryId, out long milliseconds)
+            ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
+            : null;
+    }
+
+    // Without create, a source that does not exist (a deleted subscription, a removed instance subscription) is skipped.
+    // Returns the number of messages in the source afterwards, or -1 when it was skipped.
+    private async Task<long> EnqueueAsync(RedisSourceKeys target, IReadOnlyList<EncodedMessage> messages, bool deduplicate, bool create, TimeSpan keyTtl)
+    {
+        long backlog = 0;
         foreach (var chunk in ChunkForScript(messages))
         {
             var keys = new List<RedisKey>(5 + chunk.Count) { target.Stream, target.Delayed, target.DelayedData, target.Groups, target.Held };
@@ -397,12 +464,15 @@ public sealed class RedisMessageTransport : IMessageTransport
             var result = (RedisResult[])(await Database.ScriptEvaluateAsync(EnqueueScript, keys.ToArray(), values.ToArray()).AnyContext())!;
             long added = (long)result[0];
             if (added < 0)
-                return;
+                return -1;
 
             if (added > 0)
                 Signal(target.Signal);
             LogReleasedGroups(target, (long)result[1]);
+            backlog = (long)result[2];
         }
+
+        return backlog;
     }
 
     private static IEnumerable<List<EncodedMessage>> ChunkForScript(IReadOnlyList<EncodedMessage> messages)

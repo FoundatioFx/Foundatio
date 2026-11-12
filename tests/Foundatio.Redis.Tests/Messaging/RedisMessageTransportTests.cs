@@ -381,6 +381,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     [InlineData(nameof(RedisMessageTransportOptions.DeduplicationWindow), 0)]
     [InlineData(nameof(RedisMessageTransportOptions.DeduplicationWindow), -1)]
     [InlineData(nameof(RedisMessageTransportOptions.InstanceSubscriptionTimeout), 0)]
+    [InlineData(nameof(RedisMessageTransportOptions.DeadLetterRetention), 0)]
     public void Constructor_WithAnIntervalOutOfRange_Throws(string option, int milliseconds)
     {
         var value = TimeSpan.FromMilliseconds(milliseconds);
@@ -389,11 +390,94 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
             nameof(RedisMessageTransportOptions.MinPollInterval) => new RedisMessageTransportOptions { MinPollInterval = value },
             nameof(RedisMessageTransportOptions.MaxPollInterval) => new RedisMessageTransportOptions { MinPollInterval = TimeSpan.FromMilliseconds(20), MaxPollInterval = value },
             nameof(RedisMessageTransportOptions.DeduplicationWindow) => new RedisMessageTransportOptions { DeduplicationWindow = value },
+            nameof(RedisMessageTransportOptions.DeadLetterRetention) => new RedisMessageTransportOptions { DeadLetterRetention = value },
             _ => new RedisMessageTransportOptions { InstanceSubscriptionTimeout = value }
         };
 
         var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new RedisMessageTransport(GetMuxer(), options));
         Assert.Contains(option, ex.Message);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Constructor_WithDeadLetterMaxLengthOutOfRange_Throws(long maxLength)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { DeadLetterMaxLength = maxLength }));
+        Assert.Contains(nameof(RedisMessageTransportOptions.DeadLetterMaxLength), ex.Message);
+    }
+
+    [Fact]
+    public async Task DeadLetterAsync_WithDeadLetterMaxLength_KeepsTheNewestDeadLetters()
+    {
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, DeadLetterMaxLength = 2 }));
+        var source = MessageSource.Queue(NewName("dlq-max-length"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 4).Select(i => Message($"m{i}", $"m-{i}")).ToList(), TestCancellationToken);
+        foreach (var message in (await ReceiveAsync(receiver, 4)).OrderBy(m => m.MessageId))
+            await receiver.DeadLetterAsync(message, "conformance", TestCancellationToken);
+
+        Assert.Equal(2, await transport.GetMessageCountAsync(MessageSource.DeadLetter(source)));
+        await using var deadLetters = await transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions(), TestCancellationToken);
+        Assert.Equal(["m-2", "m-3"], (await ReceiveAsync(deadLetters, 2)).Select(m => m.MessageId));
+    }
+
+    [Fact]
+    public async Task DeadLetterAsync_WithDeadLetterRetention_RemovesExpiredDeadLetters()
+    {
+        var retention = TimeSpan.FromSeconds(1);
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { KeyPrefix = KeyPrefix, LoggerFactory = Log, DeadLetterRetention = retention }));
+        var source = MessageSource.Queue(NewName("dlq-retention"));
+        var deadLetterSource = MessageSource.DeadLetter(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("old", "old"), Message("new", "new")], TestCancellationToken);
+        var messages = (await ReceiveAsync(receiver, 2)).ToDictionary(m => m.MessageId);
+
+        await receiver.DeadLetterAsync(messages["old"], "conformance", TestCancellationToken);
+        await Task.Delay(retention * 1.5, TestCancellationToken);
+        await receiver.DeadLetterAsync(messages["new"], "conformance", TestCancellationToken);
+
+        Assert.Equal(1, await transport.GetMessageCountAsync(deadLetterSource));
+        await using var deadLetters = await transport.CreateReceiverAsync(deadLetterSource, new ReceiverOptions(), TestCancellationToken);
+        var kept = await ReceiveOneAsync(deadLetters);
+        Assert.Equal("new", kept.MessageId);
+        await deadLetters.AbandonAsync(kept, TimeSpan.Zero, TestCancellationToken);
+
+        // Receiving removes dead letters that expired since the last one was added.
+        await Task.Delay(retention * 1.5, TestCancellationToken);
+        Assert.Empty(await deadLetters.ReceiveAsync(10, TimeSpan.FromMilliseconds(500), TestCancellationToken));
+        Assert.Equal(0, await transport.GetMessageCountAsync(deadLetterSource));
+    }
+
+    [Fact]
+    public async Task SendAsync_ToATopicWithAnUnreadSubscription_WarnsThatItLooksOrphaned()
+    {
+        string topic = NewName("orphaned");
+        var source = MessageSource.Subscription(topic, "retired-service");
+        // The subscription's service ran once, and is gone.
+        await (await CreateReceiverAsync(source)).DisposeAsync();
+
+        await Transport.SendAsync(MessageDestination.Topic(topic),
+            Enumerable.Range(0, RedisMessageTransport.OrphanedSubscriptionBacklog).Select(i => Message($"event {i}")).ToList(), TestCancellationToken);
+
+        Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("DeleteAsync"));
+        await Transport.DeleteAsync(source, TestCancellationToken);
+    }
+
+    [Fact]
+    public async Task SendAsync_ToATopicWhoseSubscriptionIsRead_DoesNotWarnThatItLooksOrphaned()
+    {
+        string topic = NewName("busy");
+        var source = MessageSource.Subscription(topic, "busy-service");
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("first")], TestCancellationToken);
+        await receiver.CompleteAsync(await ReceiveOneAsync(receiver), TestCancellationToken);
+
+        await Transport.SendAsync(MessageDestination.Topic(topic),
+            Enumerable.Range(0, RedisMessageTransport.OrphanedSubscriptionBacklog).Select(i => Message($"event {i}")).ToList(), TestCancellationToken);
+
+        Assert.DoesNotContain(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()));
+        await Transport.DeleteAsync(source, TestCancellationToken);
     }
 
     [Fact]

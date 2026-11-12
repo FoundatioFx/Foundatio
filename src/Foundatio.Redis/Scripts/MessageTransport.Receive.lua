@@ -1,5 +1,6 @@
 -- KEYS: stream, leases, delayed, delayed-data, groups, held
--- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote, max bytes, max message bytes
+-- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote, max bytes, max message bytes,
+--       dead letters to keep and dead-letter retention ms (0 for sources that are not dead-letter queues)
 -- Reads stop once about max bytes were read, always returning at least one message when one is available.
 -- Returns the messages, the ms until the next delayed or leased message is due (-1 when there is none or messages were
 -- returned), and the number of groups released because their outstanding message was lost
@@ -12,6 +13,7 @@ local now = nowMs()
 
 local released = ensureStream(k, group, now)
 released = released + promote(k, now, tonumber(ARGV[5]), maxBytes)
+trimDeadLetters(stream, tonumber(ARGV[8]), tonumber(ARGV[9]))
 
 local messages = {}
 local bytes = 0

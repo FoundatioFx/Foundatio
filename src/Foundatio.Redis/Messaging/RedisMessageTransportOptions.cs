@@ -26,6 +26,20 @@ public sealed record RedisMessageTransportOptions
     /// </summary>
     public long MaxMessageSize { get; init; } = 16 * 1024 * 1024;
 
+    /// <summary>
+    /// The most dead letters kept in each dead-letter queue, or <c>null</c> (the default) to keep every one until it is
+    /// replayed or deleted. Dead-lettering a message into a full queue removes its oldest dead letters. Dead letters
+    /// are kept in Redis memory, so bound them with this or <see cref="DeadLetterRetention"/>.
+    /// </summary>
+    public long? DeadLetterMaxLength { get; init; }
+
+    /// <summary>
+    /// How long a dead letter is kept, or <c>null</c> (the default) to keep it until it is replayed or deleted. Older
+    /// dead letters are removed whenever a message is dead-lettered into, or received from, the same dead-letter queue.
+    /// At least 1 millisecond; needs Redis 6.2 or later.
+    /// </summary>
+    public TimeSpan? DeadLetterRetention { get; init; }
+
     /// <summary>How long a <see cref="OutgoingMessage.DeduplicationId"/> is remembered. At least 1 millisecond.</summary>
     public TimeSpan DeduplicationWindow { get; init; } = TimeSpan.FromMinutes(5);
 

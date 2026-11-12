@@ -160,10 +160,12 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 
     private async Task<(IReadOnlyList<IncomingMessage> Messages, TimeSpan? NextChange)> ReceiveOnceAsync(int count)
     {
+        bool deadLetters = Source.Kind == MessageSourceKind.DeadLetter;
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
             [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held],
             [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive,
-                RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize]).AnyContext())!;
+                RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize,
+                deadLetters ? _transport.DeadLetterMaxLength : 0, deadLetters ? _transport.DeadLetterRetentionMilliseconds : 0]).AnyContext())!;
 
         var entries = (RedisResult[])result[0]!;
         long wait = (long)result[1];
@@ -210,11 +212,6 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             }
         }
 
-        int separator = entryId.IndexOf('-');
-        DateTimeOffset? enqueuedAt = Int64.TryParse(separator > 0 ? entryId.AsSpan(0, separator) : entryId, out long milliseconds)
-            ? DateTimeOffset.FromUnixTimeMilliseconds(milliseconds)
-            : null;
-
         return new RedisIncomingMessage
         {
             Owner = this,
@@ -224,7 +221,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
             Body = body,
             Headers = headers,
             GroupKey = groupKey,
-            EnqueuedAt = enqueuedAt,
+            EnqueuedAt = RedisMessageTransport.EntryTime(entryId),
             DeliveryCount = (int)Math.Min(deliveries, Int32.MaxValue)
         };
     }
@@ -239,7 +236,8 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
         long result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
             [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData],
             [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
-                RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty]).AnyContext();
+                RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty,
+                _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds]).AnyContext();
 
         if (result == 0)
             throw new MessageLeaseLostException($"The lease for message {message.MessageId} was lost.");

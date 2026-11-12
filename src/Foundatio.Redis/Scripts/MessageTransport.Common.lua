@@ -20,6 +20,16 @@ local function isError(reply)
     return type(reply) == 'table' and reply.err ~= nil
 end
 
+-- Removes the oldest dead letters beyond maxLength, and those dead-lettered more than retention ms ago (0 keeps all).
+local function trimDeadLetters(stream, maxLength, retention)
+    if maxLength > 0 then
+        redis.call('XTRIM', stream, 'MAXLEN', maxLength)
+    end
+    if retention > 0 then
+        redis.call('XTRIM', stream, 'MINID', nowMs() - retention)
+    end
+end
+
 local function fieldsSize(fields)
     local size = 0
     for i = 1, #fields do
