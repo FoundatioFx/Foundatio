@@ -92,7 +92,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     /// <summary>
     /// Waits until no message is waiting for or being handled by this app's handlers, and no job is queued or running.
-    /// Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored.
+    /// Delayed messages and retries count as waiting. Messages sent to queues that nothing in this app consumes are ignored,
+    /// but a queued job that nothing in this app runs is not: it keeps the app busy, and the timeout names it.
     /// </summary>
     /// <exception cref="TimeoutException">Still busy after <paramref name="timeout"/> (default 30 seconds). The message says what is busy.</exception>
     public async Task WaitForIdleAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
@@ -356,15 +357,25 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         if (Jobs is { } jobs)
         {
             bool jobsBusy = false;
+            long active = 0;
             foreach (string name in jobs.Jobs.Keys)
             {
                 long queued = await jobs.Store.CountAsync(JobStatus.Queued, name, cancellationToken).AnyContext();
                 long running = await jobs.Store.CountAsync(JobStatus.Running, name, cancellationToken).AnyContext();
+                active += queued + running;
                 if (queued + running > 0)
                 {
                     jobsBusy = true;
                     busy.Add($"job {name} has {queued} queued and {running} running");
                 }
+            }
+
+            long allActive = await jobs.Store.CountAsync(JobStatus.Queued, cancellationToken: cancellationToken).AnyContext()
+                + await jobs.Store.CountAsync(JobStatus.Running, cancellationToken: cancellationToken).AnyContext();
+            if (allActive > active)
+            {
+                foreach (var (name, count) in await CountUnregisteredJobsAsync(jobs, cancellationToken).AnyContext())
+                    busy.Add($"job {name} has {count} queued or running, but nothing in this app runs it (is it registered with AddJob?)");
             }
 
             if (jobs.Worker is { Running: > 0 } worker)
@@ -378,6 +389,26 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         }
 
         return busy.Count == 0 ? null : String.Join("; ", busy);
+    }
+
+    /// <summary>Counts queued and running jobs by name, for names no job registered in this app runs.</summary>
+    private static async Task<IReadOnlyList<(string Name, int Count)>> CountUnregisteredJobsAsync(JobsRuntime jobs, CancellationToken cancellationToken)
+    {
+        var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var status in new[] { JobStatus.Queued, JobStatus.Running })
+        {
+            string? continuation = null;
+            do
+            {
+                var page = await jobs.Store.QueryAsync(new JobQuery { Status = status, Limit = 1000, ContinuationToken = continuation }, cancellationToken).AnyContext();
+                foreach (var job in page.Jobs.Where(j => !jobs.Jobs.ContainsKey(j.Name)))
+                    counts[job.Name] = counts.GetValueOrDefault(job.Name) + 1;
+
+                continuation = page.ContinuationToken;
+            } while (continuation is not null);
+        }
+
+        return counts.Select(c => (c.Key, c.Value)).ToList();
     }
 
     private bool HasUnconsumedMessages(InMemoryMessageTransport transport, IReadOnlyCollection<MessageSource> consumed)

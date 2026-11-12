@@ -218,6 +218,21 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         await Assert.ThrowsAsync<ArgumentException>(() => harness.TriggerCronJobAsync("nope", TestCancellationToken));
     }
 
+    [Fact]
+    public async Task WaitForIdleAsync_WhenAJobNothingInTheAppRunsIsQueued_TimesOutNamingTheJob()
+    {
+        var host = await StartAppAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IJobClient>().EnqueueAsync(new ArchiveOrders(30), cancellationToken: TestCancellationToken);
+        var error = await Assert.ThrowsAsync<TimeoutException>(() => harness.WaitForIdleAsync(TimeSpan.FromSeconds(1), TestCancellationToken));
+
+        Assert.Contains(typeof(ArchiveOrders).FullName!.Replace('+', '.'), error.Message);
+        Assert.Contains("nothing in this app runs it", error.Message);
+    }
+
+    public record ArchiveOrders(int OlderThanDays);
+
     private async Task<IHost> StartAppAsync(Action<IServiceCollection>? configureTest = null)
     {
         var host = BuildApp(configureTest);
