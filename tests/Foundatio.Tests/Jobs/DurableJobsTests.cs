@@ -315,6 +315,37 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task Cron_WithoutConcurrencyOnTwoInstances_DoesNotStartAnOccurrenceWhileAnotherRuns()
+    {
+        await using var first = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
+        await using var second = await StartAsync(j => j.AddCronJob<TickJob>("0 * * * *"), startHostedServices: false);
+        var a = first.CreateScheduler();
+        var b = second.CreateScheduler();
+        var ten = new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
+        var claim = new JobClaimRequest { Names = ["tick"], WorkerId = "test", LeaseDuration = TimeSpan.FromHours(1) };
+
+        await a.RunDueAsync(ten, TestCancellationToken);
+        await b.RunDueAsync(ten, TestCancellationToken);
+        var tenRun = (await _store.ClaimAsync(claim, TestCancellationToken))!;
+
+        await a.RunDueAsync(ten.AddHours(1), TestCancellationToken);
+        await _store.CompleteAsync(tenRun.Id, tenRun.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await b.RunDueAsync(ten.AddHours(1).AddMilliseconds(500), TestCancellationToken);
+        var elevenRun = (await _store.ClaimAsync(claim, TestCancellationToken))!;
+        Assert.Equal("cron:tick:20260101T110000Z", elevenRun.Id);
+
+        await a.RunDueAsync(ten.AddHours(2), TestCancellationToken);
+        await b.RunDueAsync(ten.AddHours(2), TestCancellationToken);
+
+        Assert.Equal(1, await _store.CountAsync(JobStatus.Running, "tick", TestCancellationToken));
+        Assert.Equal(0, await _store.CountAsync(JobStatus.Queued, "tick", TestCancellationToken));
+
+        await _store.CompleteAsync(elevenRun.Id, elevenRun.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
+        await a.RunDueAsync(ten.AddHours(3), TestCancellationToken);
+        Assert.Equal(1, await _store.CountAsync(JobStatus.Queued, "tick", TestCancellationToken));
+    }
+
+    [Fact]
     public void Registration_RejectsMistakesEarlyWithClearErrors()
     {
         var services = new ServiceCollection();

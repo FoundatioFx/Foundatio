@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -122,26 +121,38 @@ internal sealed class JobScheduler
         if (occurrence is not { } due || _lastCreated.TryGetValue(schedule.Name, out var last) && last >= due)
             return;
 
-        if (!schedule.Options.AllowConcurrent && await IsPreviousOccurrenceActiveAsync(schedule, cancellationToken).AnyContext())
+        if (!schedule.Options.AllowConcurrent && await IsPreviousOccurrenceActiveAsync(schedule, due, cancellationToken).AnyContext())
         {
             _lastCreated[schedule.Name] = due;
             _logger.LogInformation("Skipping {Schedule} at {Occurrence}: the previous occurrence has not finished", schedule.Name, due);
             return;
         }
 
-        string jobId = $"cron:{schedule.Name}:{due.UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)}";
+        string jobId = schedule.GetJobId(due);
         await _client.CreateAsync(schedule.JobName, _payloads[schedule.Name], new EnqueueOptions { JobId = jobId, RunAt = due }, cancellationToken, schedule.Name).AnyContext();
         _lastCreated[schedule.Name] = due;
         _lastJobIds[schedule.Name] = jobId;
         _logger.LogDebug("Scheduled {Schedule} occurrence {Occurrence} as job {JobId}", schedule.Name, due, jobId);
     }
 
-    private async Task<bool> IsPreviousOccurrenceActiveAsync(CronSchedule schedule, CancellationToken cancellationToken)
+    /// <summary>Whether an earlier occurrence of the schedule is still queued or running, whichever instance created it.</summary>
+    private async Task<bool> IsPreviousOccurrenceActiveAsync(CronSchedule schedule, DateTimeOffset due, CancellationToken cancellationToken)
     {
-        // Normally one read: the last occurrence this instance created or found. Only the first check after
-        // startup has to search for an unfinished occurrence created before this instance started.
-        if (_lastJobIds.TryGetValue(schedule.Name, out string? lastJobId))
-            return await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext() is { } last && !last.Status.IsTerminal();
+        // Normally one read: the job of the occurrence just before this one. It is the newest job that can be active,
+        // and its id is the same on every instance, so instances agree even when a different one created it.
+        string? previousJobId = schedule.GetPreviousOccurrence(due) is { } previous ? schedule.GetJobId(previous) : null;
+        if (previousJobId is not null && await _runtime.Store.GetAsync(previousJobId, cancellationToken).AnyContext() is { } previousJob)
+        {
+            _lastJobIds[schedule.Name] = previousJobId;
+            return !previousJob.Status.IsTerminal();
+        }
+
+        // The previous occurrence was skipped or missed, so an older one may still be running.
+        if (_lastJobIds.TryGetValue(schedule.Name, out string? lastJobId) && lastJobId != previousJobId
+            && await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext() is { } last && !last.Status.IsTerminal())
+        {
+            return true;
+        }
 
         foreach (var status in new[] { JobStatus.Running, JobStatus.Queued })
         {
