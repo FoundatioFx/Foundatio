@@ -29,8 +29,6 @@ public class StartupActionsContext
         _completed.TrySetResult(result);
     }
 
-    internal ILogger Logger => _logger;
-
     /// <summary>Completes with the result once startup actions have run, however long they take.</summary>
     internal Task<RunStartupActionsResult> Completion => _completed.Task;
 

@@ -274,14 +274,10 @@ public class HostingTests : TestWithLoggingBase
     }
 
     [Fact]
-    public async Task StartupActionsGate_WhenStartupOutlastsTheTimeout_KeepsWaitingAndOpensOnceStartupSucceeds()
+    public async Task StartupActionsGate_WhileStartupActionsRun_KeepsWaitingAndOpensOnceStartupSucceeds()
     {
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var host = new HostBuilder().ConfigureServices(s =>
-        {
-            s.AddSingleton<Foundatio.Utility.IStartupGate>(sp => new StartupActionsGate(sp.GetRequiredService<StartupActionsContext>(), TimeSpan.FromMilliseconds(100)));
-            s.AddStartupAction("slow", (_, ct) => release.Task.WaitAsync(ct));
-        }).Build();
+        using var host = new HostBuilder().ConfigureServices(s => s.AddStartupAction("slow", (_, ct) => release.Task.WaitAsync(ct))).Build();
         await host.StartAsync(TestCancellationToken);
         var gate = host.Services.GetRequiredService<Foundatio.Utility.IStartupGate>();
 
