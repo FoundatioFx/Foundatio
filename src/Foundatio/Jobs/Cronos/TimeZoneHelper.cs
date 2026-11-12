@@ -41,7 +41,7 @@ internal static class TimeZoneHelper
     public static TimeSpan GetDaylightOffset(TimeZoneInfo zone, DateTime ambiguousDateTime)
     {
         var offsets = GetAmbiguousOffsets(zone, ambiguousDateTime);
-        var baseOffset = zone.BaseUtcOffset;
+        var baseOffset = zone.GetUtcOffset(ambiguousDateTime);
 
         if (offsets[0] != baseOffset) return offsets[0];
 
@@ -66,15 +66,17 @@ internal static class TimeZoneHelper
     public static DateTimeOffset GetStandardTimeStart(TimeZoneInfo zone, DateTime ambiguousTime, TimeSpan daylightOffset)
     {
         var dstTransitionEnd = GetDstTransitionEndDateTime(zone, ambiguousTime);
+        var baseOffset = zone.GetUtcOffset(ambiguousTime);
 
-        return new DateTimeOffset(dstTransitionEnd, daylightOffset).ToOffset(zone.BaseUtcOffset);
+        return new DateTimeOffset(dstTransitionEnd, daylightOffset).ToOffset(baseOffset);
     }
 
     public static DateTimeOffset GetAmbiguousIntervalEnd(TimeZoneInfo zone, DateTime ambiguousTime)
     {
         var dstTransitionEnd = GetDstTransitionEndDateTime(zone, ambiguousTime);
+        var baseOffset = zone.GetUtcOffset(ambiguousTime);
 
-        return new DateTimeOffset(dstTransitionEnd, zone.BaseUtcOffset);
+        return new DateTimeOffset(dstTransitionEnd, baseOffset);
     }
 
     public static DateTimeOffset GetDaylightTimeEnd(TimeZoneInfo zone, DateTime ambiguousTime, TimeSpan daylightOffset)
