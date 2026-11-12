@@ -107,7 +107,7 @@ public sealed class RedisJobStore : IJobStore
         return await ReadJobAsync(jobId).AnyContext();
     }
 
-    public async Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+    public async Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentOutOfRangeException.ThrowIfLessThan(query.Limit, 1, nameof(query));
@@ -122,7 +122,7 @@ public sealed class RedisJobStore : IJobStore
         var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.State, query.Name)], [continuation, query.Limit]).AnyContext())!;
         var page = members.Take(query.Limit).ToArray();
         var jobs = await Task.WhenAll(page.Select(member => ReadJobAsync(member[(member.IndexOf('|') + 1)..]))).AnyContext();
-        return new JobPage(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
+        return new JobPage<JobInfo>(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
     }
 
     public async Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)

@@ -28,7 +28,7 @@ public interface IJobStore
     /// Lists jobs newest first (by <see cref="JobInfo.CreatedAt"/>, then id) matching the query's status and name.
     /// Expired jobs are excluded. Call <see cref="JobQuery.Validate"/> first.
     /// </summary>
-    Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
+    Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>Counts jobs matching the status and name. Jobs past their retention should not be counted.</summary>
     Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default);

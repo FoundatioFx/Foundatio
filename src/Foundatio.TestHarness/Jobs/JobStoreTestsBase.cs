@@ -316,7 +316,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             await Store.CreateAsync(job, TestCancellationToken);
         await Store.CreateAsync(NewJob(), TestCancellationToken);
 
-        var pages = new List<JobPage>();
+        var pages = new List<JobPage<JobInfo>>();
         string? continuation = null;
         do
         {

@@ -44,7 +44,7 @@ public sealed class InMemoryJobStore : IJobStore
             return Task.FromResult(Find(jobId, Now())?.Job);
     }
 
-    public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
+    public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(query);
         query.Validate();
@@ -67,7 +67,7 @@ public sealed class InMemoryJobStore : IJobStore
                 continuation = $"{last.CreatedAt.UtcTicks.ToString(CultureInfo.InvariantCulture)}|{last.Id}";
             }
 
-            return Task.FromResult(new JobPage(page, continuation));
+            return Task.FromResult(new JobPage<JobInfo>(page, continuation));
         }
     }
 

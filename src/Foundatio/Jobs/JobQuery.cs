@@ -11,7 +11,7 @@ public sealed record JobQuery
     /// <summary>Between 1 and 1000.</summary>
     public int Limit { get; init; } = 50;
 
-    /// <summary>From the previous page's <see cref="JobPage.ContinuationToken"/>.</summary>
+    /// <summary>From the previous page's <see cref="JobPage{TJob}.ContinuationToken"/>.</summary>
     public string? ContinuationToken { get; init; }
 
     /// <summary>Throws when the query is out of range. Stores call this before querying.</summary>

@@ -19,17 +19,20 @@ public sealed class JobHandle
         _client = client;
     }
 
+    /// <summary>The job's id.</summary>
     public string Id { get; }
 
-    public Task<JobInfo?> GetAsync(CancellationToken cancellationToken = default) => _client.GetAsync(Id, cancellationToken);
+    /// <summary>Returns the job, or null when it does not exist or its retention has run out.</summary>
+    public Task<JobDetails?> GetAsync(CancellationToken cancellationToken = default) => _client.GetAsync(Id, cancellationToken);
 
+    /// <summary>Cancels the job; see <see cref="IJobClient.CancelAsync"/>.</summary>
     public Task<bool> CancelAsync(CancellationToken cancellationToken = default) => _client.CancelAsync(Id, cancellationToken);
 
     /// <summary>Waits until the job succeeds, fails or is cancelled.</summary>
     /// <param name="timeout">How long to wait, in real time whatever <see cref="TimeProvider"/> the app uses. Defaults to five minutes.</param>
     /// <param name="cancellationToken">Stops waiting; the job keeps running.</param>
     /// <exception cref="TimeoutException">The job did not finish within <paramref name="timeout"/>.</exception>
-    public async Task<JobInfo> WaitForCompletionAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    public async Task<JobDetails> WaitForCompletionAsync(TimeSpan? timeout = null, CancellationToken cancellationToken = default)
     {
         var limit = timeout ?? TimeSpan.FromMinutes(5);
         long started = Stopwatch.GetTimestamp();
@@ -50,5 +53,6 @@ public sealed class JobHandle
         }
     }
 
+    /// <inheritdoc />
     public override string ToString() => Id;
 }

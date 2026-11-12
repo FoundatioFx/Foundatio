@@ -174,6 +174,24 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task GetAsync_OfAQueuedJob_ReturnsItsDetailsAndTypedArgumentsWithoutItsClaim()
+    {
+        await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
+        var handle = await host.Jobs.EnqueueAsync(new ResizeImage("later.png", 8), new EnqueueOptions { Delay = TimeSpan.FromMinutes(5), CorrelationId = "order-1" }, TestCancellationToken);
+
+        var details = await handle.GetAsync(TestCancellationToken);
+        var listed = Assert.Single((await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs);
+
+        Assert.NotNull(details);
+        Assert.Equal(handle.Id, details.Id);
+        Assert.Equal(JobState.Queued, details.State);
+        Assert.Equal("order-1", details.CorrelationId);
+        Assert.Equal(new ResizeImage("later.png", 8), details.GetArguments<ResizeImage>());
+        Assert.Equal(new ResizeImage("later.png", 8), listed.GetArguments<ResizeImage>());
+        Assert.DoesNotContain(typeof(JobDetails).GetProperties(), p => p.Name is nameof(JobInfo.ClaimToken) or nameof(JobInfo.LeaseExpiresAt) or nameof(JobInfo.Payload));
+    }
+
+    [Fact]
     public async Task DelayedJob_DoesNotRunEarly()
     {
         await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>());
@@ -663,7 +681,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Inner.CreateAsync(job, cancellationToken);
         public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => Inner.GetAsync(jobId, cancellationToken);
-        public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Inner.QueryAsync(query, cancellationToken);
+        public Task<JobPage<JobInfo>> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Inner.QueryAsync(query, cancellationToken);
         public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => Inner.CountAsync(state, name, cancellationToken);
         public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => Inner.ClaimAsync(request, cancellationToken);
         public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Inner.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);

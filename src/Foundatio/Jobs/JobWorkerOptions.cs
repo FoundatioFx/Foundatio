@@ -30,7 +30,7 @@ public sealed class JobWorkerOptions
     /// <summary>Defaults to the registered <see cref="ISerializer"/>, or JSON.</summary>
     public ISerializer? Serializer { get; set; }
 
-    /// <summary>Identifies this worker in <see cref="JobInfo.WorkerId"/>. Defaults to the machine name and process id.</summary>
+    /// <summary>Identifies this worker in <see cref="JobDetails.WorkerId"/>. Defaults to the machine name and process id.</summary>
     public string? WorkerId { get; set; }
 
     internal void Validate()

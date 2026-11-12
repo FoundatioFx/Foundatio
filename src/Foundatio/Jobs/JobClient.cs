@@ -1,6 +1,8 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -31,17 +33,18 @@ internal sealed class JobClient : IJobClient
         return CreateAsync(JobNaming.GetName(typeof(TJob)), ReadOnlyMemory<byte>.Empty, options, cancellationToken);
     }
 
-    public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default)
+    public async Task<JobDetails?> GetAsync(string jobId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
-        return _runtime.Store.GetAsync(jobId, cancellationToken);
+        return await _runtime.Store.GetAsync(jobId, cancellationToken).AnyContext() is { } job ? new JobDetails(job, _runtime.Serializer) : null;
     }
 
-    public Task<JobPage> QueryAsync(JobQuery? query = null, CancellationToken cancellationToken = default)
+    public async Task<JobPage<JobDetails>> QueryAsync(JobQuery? query = null, CancellationToken cancellationToken = default)
     {
         query ??= new JobQuery();
         query.Validate();
-        return _runtime.Store.QueryAsync(query, cancellationToken);
+        var page = await _runtime.Store.QueryAsync(query, cancellationToken).AnyContext();
+        return new JobPage<JobDetails>(page.Jobs.Select(job => new JobDetails(job, _runtime.Serializer)).ToList(), page.ContinuationToken);
     }
 
     public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)

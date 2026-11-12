@@ -16,11 +16,13 @@ public interface IJobClient
     /// <summary>Enqueues a job that takes no arguments.</summary>
     Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : IJob;
 
-    Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default);
+    /// <summary>Returns the job, or null when it does not exist or its retention has run out.</summary>
+    Task<JobDetails?> GetAsync(string jobId, CancellationToken cancellationToken = default);
 
     /// <summary>Lists jobs, newest first.</summary>
-    Task<JobPage> QueryAsync(JobQuery? query = null, CancellationToken cancellationToken = default);
+    Task<JobPage<JobDetails>> QueryAsync(JobQuery? query = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Counts retained jobs, optionally only those in <paramref name="state"/> or named <paramref name="name"/>.</summary>
     Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default);
 
     /// <summary>
