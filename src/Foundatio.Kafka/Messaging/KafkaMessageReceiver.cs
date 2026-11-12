@@ -901,7 +901,7 @@ internal sealed class KafkaMessageReceiver : IMessageReceiver
             }
         }
 
-        var messageIds = new Dictionary<long, string>();
+        var messageIds = state.InFlight.ToDictionary(d => d.Key, d => d.Value.MessageId);
         foreach (var record in records)
         {
             messageIds[record.Offset] = record.MessageId;
