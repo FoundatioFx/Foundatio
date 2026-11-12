@@ -144,22 +144,22 @@ internal sealed class JobScheduler
         if (previousJobId is not null && await _runtime.Store.GetAsync(previousJobId, cancellationToken).AnyContext() is { } previousJob)
         {
             _lastJobIds[schedule.Name] = previousJobId;
-            return !previousJob.Status.IsTerminal();
+            return !previousJob.State.IsTerminal();
         }
 
         // The previous occurrence was skipped or missed, so an older one may still be running.
         if (_lastJobIds.TryGetValue(schedule.Name, out string? lastJobId) && lastJobId != previousJobId
-            && await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext() is { } last && !last.Status.IsTerminal())
+            && await _runtime.Store.GetAsync(lastJobId, cancellationToken).AnyContext() is { } last && !last.State.IsTerminal())
         {
             return true;
         }
 
-        foreach (var status in new[] { JobStatus.Running, JobStatus.Queued })
+        foreach (var status in new[] { JobState.Running, JobState.Queued })
         {
             string? continuation = null;
             do
             {
-                var page = await _runtime.Store.QueryAsync(new JobQuery { Name = schedule.JobName, Status = status, Limit = 100, ContinuationToken = continuation }, cancellationToken).AnyContext();
+                var page = await _runtime.Store.QueryAsync(new JobQuery { Name = schedule.JobName, State = status, Limit = 100, ContinuationToken = continuation }, cancellationToken).AnyContext();
                 if (page.Jobs.FirstOrDefault(j => j.ScheduleName == schedule.Name) is { } active)
                 {
                     _lastJobIds[schedule.Name] = active.Id;

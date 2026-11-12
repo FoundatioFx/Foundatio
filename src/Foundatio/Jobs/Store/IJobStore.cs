@@ -15,7 +15,7 @@ namespace Foundatio.Jobs.Store;
 public interface IJobStore
 {
     /// <summary>
-    /// Adds a new job as <see cref="JobStatus.Queued"/> with <see cref="JobInfo.Attempt"/> 0 and no claim, keeping the
+    /// Adds a new job as <see cref="JobState.Queued"/> with <see cref="JobInfo.Attempt"/> 0 and no claim, keeping the
     /// other fields as given. Returns false, changing nothing, when a job with the same id exists (including a finished
     /// job that is still retained). <see cref="JobInfo.CreatedAt"/> and <see cref="JobInfo.AvailableAt"/> come from the
     /// caller's clock.
@@ -31,7 +31,7 @@ public interface IJobStore
     Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default);
 
     /// <summary>Counts jobs matching the status and name. Jobs past their retention should not be counted.</summary>
-    Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default);
+    Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Atomically takes the job that has been due longest among <see cref="JobClaimRequest.Names"/>: a queued job whose

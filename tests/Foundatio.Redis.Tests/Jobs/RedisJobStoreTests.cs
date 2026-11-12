@@ -99,9 +99,9 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
             Assert.Equal(jobCount, completions.Count);
             Assert.All(completions.Values, count => Assert.Equal(1, count));
             Assert.Contains(claims.Values, count => count > 1);
-            Assert.Equal(jobCount, await stores[1].CountAsync(JobStatus.Succeeded, name, TestCancellationToken));
-            Assert.Equal(0, await stores[1].CountAsync(JobStatus.Running, name, TestCancellationToken));
-            Assert.Equal(0, await stores[1].CountAsync(JobStatus.Queued, name, TestCancellationToken));
+            Assert.Equal(jobCount, await stores[1].CountAsync(JobState.Succeeded, name, TestCancellationToken));
+            Assert.Equal(0, await stores[1].CountAsync(JobState.Running, name, TestCancellationToken));
+            Assert.Equal(0, await stores[1].CountAsync(JobState.Queued, name, TestCancellationToken));
             foreach (var job in (await stores[2].QueryAsync(new JobQuery { Name = name, Limit = 1000 }, TestCancellationToken)).Jobs)
             {
                 Assert.Null(job.ClaimToken);

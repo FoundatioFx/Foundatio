@@ -35,7 +35,7 @@ public sealed class FlakyJobStore(TimeProvider timeProvider) : IJobStore
 
     public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => _inner.GetAsync(jobId, cancellationToken);
     public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => _inner.QueryAsync(query, cancellationToken);
-    public Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default) => _inner.CountAsync(status, name, cancellationToken);
+    public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => _inner.CountAsync(state, name, cancellationToken);
     public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => _inner.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
     public Task<bool> ReportProgressAsync(string jobId, string claimToken, int? percent, string? message, CancellationToken cancellationToken = default) => _inner.ReportProgressAsync(jobId, claimToken, percent, message, cancellationToken);
     public Task<bool> CompleteAsync(string jobId, string claimToken, JobCompletion completion, CancellationToken cancellationToken = default) => _inner.CompleteAsync(jobId, claimToken, completion, cancellationToken);

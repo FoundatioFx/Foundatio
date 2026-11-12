@@ -39,7 +39,7 @@ app.MapPost("/reports", async (IJobClient jobs) =>
 
 app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
     await jobs.GetAsync(id) is { } job
-        ? Results.Ok(new { job.Id, Status = job.Status.ToString(), job.Progress, job.Message, job.Error })
+        ? Results.Ok(new { job.Id, State = job.State.ToString(), job.Progress, job.Message, job.Error })
         : Results.NotFound());
 
 if (!verify)
@@ -55,8 +55,8 @@ await activity.ReceiptSent.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
 var report = await app.Services.GetRequiredService<IJobClient>().EnqueueAsync(new GenerateReport("pdf", Days: 3));
 var completed = await report.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
-if (completed.Status != JobStatus.Succeeded || completed.Progress != 100)
-    throw new InvalidOperationException($"Report finished as {completed.Status} at {completed.Progress}%.");
+if (completed.State != JobState.Succeeded || completed.Progress != 100)
+    throw new InvalidOperationException($"Report finished as {completed.State} at {completed.Progress}%.");
 
 await activity.CleanupRan.Task.WaitAsync(TimeSpan.FromSeconds(10));
 Console.WriteLine($"Verified: event -> command, job {completed.Id} -> {completed.Message}, CRON cleanup ran.");

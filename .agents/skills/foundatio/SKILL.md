@@ -302,11 +302,11 @@ await messages.PublishAsync(new OrderPlaced(1));
 await harness.WaitForIdleAsync();                                   // handlers idle, no queued/running jobs
 Assert.Single(harness.Sent<SendReceipt>());                         // payloads; SentMessages/PublishedMessages for metadata
 var dead = await harness.WaitForDeadLetteredAsync<SendReceipt>();   // also WaitForHandledAsync<T>(count)
-var run = (await harness.WaitForJobAsync<GenerateReport>())[0];     // finished runs; check run.Status
+var run = (await harness.WaitForJobAsync<GenerateReport>())[0];     // finished runs; check run.State
 await harness.TriggerCronJobAsync<CleanupJob>();                    // CRON never fires on its own under the harness
 ```
 
-- `HandledMessages[i].Outcome`: `Completed`, `Retried`, `DeadLettered`, `Skipped` (no handler on a topic), `Expired`, `Released` (shutdown/lease lost). `JobRuns` includes retried runs (`Status == Queued`).
+- `HandledMessages[i].Outcome`: `Completed`, `Retried`, `DeadLettered`, `Skipped` (no handler on a topic), `Expired`, `Released` (shutdown/lease lost). `JobRuns` includes retried runs (`State == Queued`).
 - Waits are real time (default 30s) and throw `TimeoutException` explaining what happened. Retries honor the policy delay: set `o.DefaultRetryPolicy` to a short `RetryPolicy.Fixed(...)` in tests. `WaitForIdleAsync` ignores queues the app sends to but does not consume, but waits for (and its timeout names) queued jobs nothing in the app runs.
 
 Health checks (`Foundatio.Extensions.Hosting`):

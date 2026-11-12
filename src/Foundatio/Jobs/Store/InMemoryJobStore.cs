@@ -32,7 +32,7 @@ public sealed class InMemoryJobStore : IJobStore
             if (_jobs.TryGetValue(job.Id, out var existing) && !existing.IsExpired(now))
                 return Task.FromResult(false);
 
-            _jobs[job.Id] = new Entry(job with { Status = JobStatus.Queued, Attempt = 0, UpdatedAt = now, ClaimToken = null, LeaseExpiresAt = null, WorkerId = null });
+            _jobs[job.Id] = new Entry(job with { State = JobState.Queued, Attempt = 0, UpdatedAt = now, ClaimToken = null, LeaseExpiresAt = null, WorkerId = null });
             return Task.FromResult(true);
         }
     }
@@ -53,7 +53,7 @@ public sealed class InMemoryJobStore : IJobStore
         lock (_lock)
         {
             var now = Now();
-            var page = Matching(query.Status, query.Name, now)
+            var page = Matching(query.State, query.Name, now)
                 .Where(j => after is null || j.CreatedAt.UtcTicks < after.Value.Ticks || j.CreatedAt.UtcTicks == after.Value.Ticks && String.CompareOrdinal(j.Id, after.Value.Id) < 0)
                 .OrderByDescending(j => j.CreatedAt.UtcTicks).ThenByDescending(j => j.Id, StringComparer.Ordinal)
                 .Take(query.Limit + 1)
@@ -83,10 +83,10 @@ public sealed class InMemoryJobStore : IJobStore
         return (ticks, token[(separator + 1)..]);
     }
 
-    public Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default)
+    public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         lock (_lock)
-            return Task.FromResult((long)Matching(status, name, Now()).Count());
+            return Task.FromResult((long)Matching(state, name, Now()).Count());
     }
 
     public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
@@ -106,9 +106,9 @@ public sealed class InMemoryJobStore : IJobStore
             {
                 var job = entry.Job;
                 DateTimeOffset due;
-                if (job.Status == JobStatus.Queued && job.AvailableAt <= now)
+                if (job.State == JobState.Queued && job.AvailableAt <= now)
                     due = job.AvailableAt;
-                else if (job.Status == JobStatus.Running && job.LeaseExpiresAt <= now)
+                else if (job.State == JobState.Running && job.LeaseExpiresAt <= now)
                     due = job.LeaseExpiresAt.Value;
                 else
                     continue;
@@ -128,7 +128,7 @@ public sealed class InMemoryJobStore : IJobStore
 
             next.Job = next.Job with
             {
-                Status = JobStatus.Running,
+                State = JobState.Running,
                 Attempt = next.Job.Attempt + 1,
                 ClaimToken = Guid.NewGuid().ToString("N"),
                 LeaseExpiresAt = now.Add(request.LeaseDuration),
@@ -178,7 +178,7 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         ArgumentNullException.ThrowIfNull(completion);
-        if (completion.Status == JobStatus.Running)
+        if (completion.State == JobState.Running)
             throw new ArgumentException("A run cannot complete as Running.", nameof(completion));
 
         lock (_lock)
@@ -188,8 +188,8 @@ public sealed class InMemoryJobStore : IJobStore
             if (entry is null)
                 return Task.FromResult(false);
 
-            var job = entry.Job with { ClaimToken = null, LeaseExpiresAt = null, WorkerId = null, UpdatedAt = now, Status = completion.Status };
-            if (completion.Status == JobStatus.Queued)
+            var job = entry.Job with { ClaimToken = null, LeaseExpiresAt = null, WorkerId = null, UpdatedAt = now, State = completion.State };
+            if (completion.State == JobState.Queued)
             {
                 entry.Job = job with
                 {
@@ -200,7 +200,7 @@ public sealed class InMemoryJobStore : IJobStore
             }
             else
             {
-                entry.Job = job with { CompletedAt = now, Message = completion.Message ?? job.Message, Error = completion.Error ?? (completion.Status == JobStatus.Succeeded ? null : job.Error) };
+                entry.Job = job with { CompletedAt = now, Message = completion.Message ?? job.Message, Error = completion.Error ?? (completion.State == JobState.Succeeded ? null : job.Error) };
                 entry.ExpiresAt = now.Add(completion.RetainFor);
             }
 
@@ -215,12 +215,12 @@ public sealed class InMemoryJobStore : IJobStore
         {
             var now = Now();
             var entry = Find(jobId, now);
-            if (entry is null || entry.Job.Status.IsTerminal())
+            if (entry is null || entry.Job.State.IsTerminal())
                 return Task.FromResult(false);
 
-            if (entry.Job.Status == JobStatus.Queued)
+            if (entry.Job.State == JobState.Queued)
             {
-                entry.Job = entry.Job with { Status = JobStatus.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now };
+                entry.Job = entry.Job with { State = JobState.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now };
                 entry.ExpiresAt = now.Add(retainFor);
             }
             else
@@ -249,13 +249,13 @@ public sealed class InMemoryJobStore : IJobStore
     private Entry? FindClaimed(string jobId, string claimToken, DateTimeOffset now)
     {
         var entry = Find(jobId, now);
-        return entry is { Job.Status: JobStatus.Running } && entry.Job.ClaimToken == claimToken ? entry : null;
+        return entry is { Job.State: JobState.Running } && entry.Job.ClaimToken == claimToken ? entry : null;
     }
 
-    private IEnumerable<JobInfo> Matching(JobStatus? status, string? name, DateTimeOffset now)
+    private IEnumerable<JobInfo> Matching(JobState? status, string? name, DateTimeOffset now)
     {
         return _jobs.Values.Where(e => !e.IsExpired(now)).Select(e => e.Job)
-            .Where(j => (status is null || j.Status == status) && (name is null || j.Name == name));
+            .Where(j => (status is null || j.State == status) && (name is null || j.Name == name));
     }
 
     private void CleanupExpired(DateTimeOffset now)

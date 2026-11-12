@@ -38,12 +38,12 @@ public sealed class JobHandle
         while (true)
         {
             var job = await GetAsync(cancellationToken).AnyContext() ?? throw new InvalidOperationException($"Job {Id} no longer exists.");
-            if (job.Status.IsTerminal())
+            if (job.State.IsTerminal())
                 return job;
 
             var remaining = limit - Stopwatch.GetElapsedTime(started);
             if (remaining <= TimeSpan.Zero)
-                throw new TimeoutException($"Job {Id} is still {job.Status} after {limit}.");
+                throw new TimeoutException($"Job {Id} is still {job.State} after {limit}.");
 
             await Task.Delay(interval < remaining ? interval : remaining, cancellationToken).AnyContext();
             interval = TimeSpan.FromTicks(Math.Min(interval.Ticks * 2, MaxPollInterval.Ticks));

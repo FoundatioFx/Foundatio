@@ -1,4 +1,5 @@
 using System;
+using Foundatio.Resilience;
 
 namespace Foundatio.Messaging;
 

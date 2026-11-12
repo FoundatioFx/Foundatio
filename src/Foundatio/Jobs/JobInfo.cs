@@ -7,7 +7,7 @@ public sealed record JobInfo
 {
     public required string Id { get; init; }
     public required string Name { get; init; }
-    public JobStatus Status { get; init; }
+    public JobState State { get; init; }
 
     /// <summary>The serialized arguments, empty for jobs without arguments.</summary>
     public ReadOnlyMemory<byte> Payload { get; init; }

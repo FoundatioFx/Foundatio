@@ -21,7 +21,7 @@ public interface IJobClient
     /// <summary>Lists jobs, newest first.</summary>
     Task<JobPage> QueryAsync(JobQuery? query = null, CancellationToken cancellationToken = default);
 
-    Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default);
+    Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Cancels a queued job immediately, or signals a running job's cancellation token. Returns false when the job

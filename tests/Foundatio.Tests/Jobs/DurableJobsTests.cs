@@ -8,6 +8,7 @@ using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Resilience;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,7 +36,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new ResizeImage("cat.png", 64), cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(100, job.Progress);
         Assert.Equal("resized cat.png to 64px", job.Message);
         Assert.Equal(1, job.Attempt);
@@ -50,7 +51,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         var handle = await producer.Jobs.EnqueueAsync(new ResizeImage("dog.png", 32), cancellationToken: TestCancellationToken);
 
-        Assert.Equal(JobStatus.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).Status);
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
     }
 
     [Fact]
@@ -61,7 +62,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync<LegacyCleanupJob>(cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal("cleaned up", job.Message);
         Assert.Equal("legacy-cleanup", job.Name);
     }
@@ -74,7 +75,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Failed, job.Status);
+        Assert.Equal(JobState.Failed, job.State);
         Assert.Equal(3, job.Attempt);
         Assert.Contains("failure 3", job.Error);
         Assert.Equal(3, _probe.Runs.Count);
@@ -88,7 +89,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 1), cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(2, job.Attempt);
     }
 
@@ -99,7 +100,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         var job = await (await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken)).WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Failed, job.Status);
+        Assert.Equal(JobState.Failed, job.State);
         Assert.Equal(1, job.Attempt);
     }
 
@@ -111,7 +112,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         Assert.True(await handle.CancelAsync(TestCancellationToken));
 
-        Assert.Equal(JobStatus.Cancelled, (await handle.GetAsync(TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Cancelled, (await handle.GetAsync(TestCancellationToken))!.State);
         Assert.False(await handle.CancelAsync(TestCancellationToken));
     }
 
@@ -125,7 +126,7 @@ public class DurableJobsTests : TestWithLoggingBase
         await handle.CancelAsync(TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Cancelled, job.Status);
+        Assert.Equal(JobState.Cancelled, job.State);
     }
 
     [Fact]
@@ -137,12 +138,12 @@ public class DurableJobsTests : TestWithLoggingBase
 
         await first.DisposeAsync();
         var interrupted = (await handle.GetAsync(TestCancellationToken))!;
-        Assert.Equal(JobStatus.Queued, interrupted.Status);
+        Assert.Equal(JobState.Queued, interrupted.State);
         Assert.Equal(0, interrupted.Attempt);
 
         await using var second = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(1, job.Attempt);
     }
 
@@ -156,7 +157,7 @@ public class DurableJobsTests : TestWithLoggingBase
         await ((ServiceProvider)host.Services).DisposeAsync();
 
         var interrupted = (await handle.GetAsync(TestCancellationToken))!;
-        Assert.Equal(JobStatus.Queued, interrupted.Status);
+        Assert.Equal(JobState.Queued, interrupted.State);
         Assert.Equal(0, interrupted.Attempt);
     }
 
@@ -205,11 +206,11 @@ public class DurableJobsTests : TestWithLoggingBase
         for (int i = 0; i < 3; i++)
             await host.Jobs.EnqueueAsync(new ResizeImage($"{i}.png", i), cancellationToken: TestCancellationToken);
 
-        var page = await host.Jobs.QueryAsync(new JobQuery { Status = JobStatus.Queued, Limit = 2 }, TestCancellationToken);
+        var page = await host.Jobs.QueryAsync(new JobQuery { State = JobState.Queued, Limit = 2 }, TestCancellationToken);
 
         Assert.Equal(2, page.Jobs.Count);
         Assert.NotNull(page.ContinuationToken);
-        Assert.Single((await host.Jobs.QueryAsync(new JobQuery { Status = JobStatus.Queued, ContinuationToken = page.ContinuationToken }, TestCancellationToken)).Jobs);
+        Assert.Single((await host.Jobs.QueryAsync(new JobQuery { State = JobState.Queued, ContinuationToken = page.ContinuationToken }, TestCancellationToken)).Jobs);
     }
 
     [Fact]
@@ -285,8 +286,8 @@ public class DurableJobsTests : TestWithLoggingBase
     {
         await using var host = await StartAsync(j => j.AddJob<ResizeImageJob>().AddCronJob("* * * * * *", new ResizeImage("nightly.png", 8)));
 
-        await WaitForAsync(async () => await host.Jobs.CountAsync(JobStatus.Succeeded, cancellationToken: TestCancellationToken) > 0);
-        var job = (await host.Jobs.QueryAsync(new JobQuery { Status = JobStatus.Succeeded }, TestCancellationToken)).Jobs[0];
+        await WaitForAsync(async () => await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) > 0);
+        var job = (await host.Jobs.QueryAsync(new JobQuery { State = JobState.Succeeded }, TestCancellationToken)).Jobs[0];
         Assert.Equal("resized nightly.png to 8px", job.Message);
     }
 
@@ -314,7 +315,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
         Assert.Equal(typeof(ResizeImage).FullName!.Replace('+', '.'), job.Name);
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
     }
 
     [Fact]
@@ -338,7 +339,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new ResizeImage("blip.png", 4), cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(1, job.Attempt);
         Assert.Equal(100, job.Progress);
         Assert.Equal("resized blip.png to 4px", job.Message);
@@ -372,7 +373,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new Flaky(FailTimes: 10), cancellationToken: TestCancellationToken);
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
 
-        Assert.Equal(JobStatus.Failed, job.Status);
+        Assert.Equal(JobState.Failed, job.State);
         Assert.Contains("policy bug", job.Error);
     }
 
@@ -395,10 +396,10 @@ public class DurableJobsTests : TestWithLoggingBase
 
         partitioned.Partitioned = true;
         await using var second = await StartAsync(j => j.Configure(o => { o.LeaseDuration = lease; o.WorkerId = "second"; }).AddJob<OverlapJob>());
-        await WaitForAsync(async () => (await _store.GetAsync(handle.Id, TestCancellationToken))?.Status.IsTerminal() == true, TimeSpan.FromSeconds(30));
+        await WaitForAsync(async () => (await _store.GetAsync(handle.Id, TestCancellationToken))?.State.IsTerminal() == true, TimeSpan.FromSeconds(30));
         var job = (await _store.GetAsync(handle.Id, TestCancellationToken))!;
 
-        Assert.Equal(JobStatus.Succeeded, job.Status);
+        Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(2, job.Attempt);
         Assert.Equal(["start 1", "cancelled 1", "start 2"], _probe.Events);
         Assert.Equal(1, _probe.PeakConcurrency);
@@ -427,12 +428,12 @@ public class DurableJobsTests : TestWithLoggingBase
         await a.RunDueAsync(ten.AddHours(2), TestCancellationToken);
         await b.RunDueAsync(ten.AddHours(2), TestCancellationToken);
 
-        Assert.Equal(1, await _store.CountAsync(JobStatus.Running, "tick", TestCancellationToken));
-        Assert.Equal(0, await _store.CountAsync(JobStatus.Queued, "tick", TestCancellationToken));
+        Assert.Equal(1, await _store.CountAsync(JobState.Running, "tick", TestCancellationToken));
+        Assert.Equal(0, await _store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
 
         await _store.CompleteAsync(elevenRun.Id, elevenRun.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromDays(1)), TestCancellationToken);
         await a.RunDueAsync(ten.AddHours(3), TestCancellationToken);
-        Assert.Equal(1, await _store.CountAsync(JobStatus.Queued, "tick", TestCancellationToken));
+        Assert.Equal(1, await _store.CountAsync(JobState.Queued, "tick", TestCancellationToken));
     }
 
     [Fact]
@@ -463,7 +464,7 @@ public class DurableJobsTests : TestWithLoggingBase
 
         await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ResizeImage("from-message.png", 1), new SendOptions { CorrelationId = "order-7" }, TestCancellationToken);
 
-        await WaitForAsync(async () => await host.Jobs.CountAsync(JobStatus.Succeeded, cancellationToken: TestCancellationToken) == 1);
+        await WaitForAsync(async () => await host.Jobs.CountAsync(JobState.Succeeded, cancellationToken: TestCancellationToken) == 1);
         Assert.Equal("order-7", (await host.Jobs.QueryAsync(cancellationToken: TestCancellationToken)).Jobs.Single().CorrelationId);
         await transport.DisposeAsync();
     }
@@ -476,10 +477,10 @@ public class DurableJobsTests : TestWithLoggingBase
         var handle = await host.Jobs.EnqueueAsync(new ResizeImage("gated.png", 1), cancellationToken: TestCancellationToken);
 
         await gate.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
-        Assert.Equal(JobStatus.Queued, (await handle.GetAsync(TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Queued, (await handle.GetAsync(TestCancellationToken))!.State);
 
         gate.Open(true);
-        Assert.Equal(JobStatus.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).Status);
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
     }
 
     [Fact]
@@ -493,7 +494,7 @@ public class DurableJobsTests : TestWithLoggingBase
         var status = host.Services.GetRequiredService<JobsStatus>();
         await WaitForAsync(() => Task.FromResult(status.GetComponents().Single().State == Foundatio.Utility.ProcessingState.Faulted));
 
-        Assert.Equal(JobStatus.Queued, (await handle.GetAsync(TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Queued, (await handle.GetAsync(TestCancellationToken))!.State);
     }
 
     private sealed class TestStartupGate : Foundatio.Utility.IStartupGate
@@ -663,7 +664,7 @@ public class DurableJobsTests : TestWithLoggingBase
         public Task<bool> CreateAsync(JobInfo job, CancellationToken cancellationToken = default) => Inner.CreateAsync(job, cancellationToken);
         public Task<JobInfo?> GetAsync(string jobId, CancellationToken cancellationToken = default) => Inner.GetAsync(jobId, cancellationToken);
         public Task<JobPage> QueryAsync(JobQuery query, CancellationToken cancellationToken = default) => Inner.QueryAsync(query, cancellationToken);
-        public Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default) => Inner.CountAsync(status, name, cancellationToken);
+        public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default) => Inner.CountAsync(state, name, cancellationToken);
         public Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default) => Inner.ClaimAsync(request, cancellationToken);
         public Task<JobLeaseStatus> RenewAsync(string jobId, string claimToken, TimeSpan leaseDuration, CancellationToken cancellationToken = default) => Inner.RenewAsync(jobId, claimToken, leaseDuration, cancellationToken);
 

@@ -1,6 +1,6 @@
 using System;
 
-namespace Foundatio;
+namespace Foundatio.Resilience;
 
 /// <summary>How many times a failed message or job is attempted, and how long to wait between attempts.</summary>
 public sealed record RetryPolicy

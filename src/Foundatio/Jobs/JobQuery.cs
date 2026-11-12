@@ -5,7 +5,7 @@ namespace Foundatio.Jobs;
 /// <summary>Filters for listing jobs, newest first.</summary>
 public sealed record JobQuery
 {
-    public JobStatus? Status { get; init; }
+    public JobState? State { get; init; }
     public string? Name { get; init; }
 
     /// <summary>Between 1 and 1000.</summary>

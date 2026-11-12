@@ -35,7 +35,7 @@ app.MapPost("/reports", async (IJobClient jobs) =>
 });
 
 app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
-    await jobs.GetAsync(id) is { } job ? Results.Ok(new { job.Status, job.Progress, job.Message }) : Results.NotFound());
+    await jobs.GetAsync(id) is { } job ? Results.Ok(new { job.State, job.Progress, job.Message }) : Results.NotFound());
 ```
 
 The worker and scheduler start with the host in any process that registers jobs. A process that only enqueues just needs `UseInMemory()` (or a provider) and the argument records.
@@ -135,11 +135,11 @@ With [`AddFoundatioTestHarness()`](./messages#testing), jobs your app enqueues r
 ```csharp
 await jobs.EnqueueAsync(new GenerateReport("pdf", 2));
 var run = Assert.Single(await harness.WaitForJobAsync<GenerateReport>());
-Assert.Equal(JobStatus.Succeeded, run.Status);
+Assert.Equal(JobState.Succeeded, run.State);
 
 // CRON schedules only run when a test triggers them
 await harness.TriggerCronJobAsync<CleanupJob>();
-Assert.Equal(JobStatus.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).Status);
+Assert.Equal(JobState.Succeeded, Assert.Single(await harness.WaitForJobAsync<CleanupJob>()).State);
 ```
 
 `WaitForJobAsync` returns runs that finished (succeeded, failed or cancelled), so check `Status`. `WaitForIdleAsync` also waits for queued jobs that nothing in the app runs, and its timeout names them, so a forgotten `AddJob` fails the test instead of passing it. `JobRuns` also lists runs that will be retried, with `Status` `Queued`. Schedules do not fire on their own under the harness: at startup the scheduler runs the latest occurrence within the misfire threshold, which would make tests depend on the time of day.

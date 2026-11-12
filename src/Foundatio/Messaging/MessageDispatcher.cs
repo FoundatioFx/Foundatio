@@ -7,6 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
+using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;

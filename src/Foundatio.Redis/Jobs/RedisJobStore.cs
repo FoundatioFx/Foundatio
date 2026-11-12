@@ -27,7 +27,7 @@ public sealed class RedisJobStore : IJobStore
     private static readonly long SweepIntervalMilliseconds = (long)TimeSpan.FromSeconds(1).TotalMilliseconds;
 
     private static readonly string Common =
-        $"local QUEUED, RUNNING, SUCCEEDED, CANCELLED = '{Status(JobStatus.Queued)}', '{Status(JobStatus.Running)}', '{Status(JobStatus.Succeeded)}', '{Status(JobStatus.Cancelled)}'\n"
+        $"local QUEUED, RUNNING, SUCCEEDED, CANCELLED = '{Status(JobState.Queued)}', '{Status(JobState.Running)}', '{Status(JobState.Succeeded)}', '{Status(JobState.Cancelled)}'\n"
         + EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.JobStore.Common.lua");
 
     private static readonly string CreateScript = LoadScript("Create");
@@ -86,7 +86,7 @@ public sealed class RedisJobStore : IJobStore
         RedisKey[] keys =
         [
             JobKey(job.Id), QueuedKey(job.Name), IndexKey(null, null), IndexKey(null, job.Name),
-            IndexKey(JobStatus.Queued, null), IndexKey(JobStatus.Queued, job.Name)
+            IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, job.Name)
         ];
 
         for (int attempt = 1; ; attempt++)
@@ -119,17 +119,17 @@ public sealed class RedisJobStore : IJobStore
             throw new ArgumentException("The continuation token is not valid.", nameof(query));
 
         await SweepIfDueAsync().AnyContext();
-        var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.Status, query.Name)], [continuation, query.Limit]).AnyContext())!;
+        var members = (string[])(await Database.ScriptEvaluateAsync(QueryScript, [IndexKey(query.State, query.Name)], [continuation, query.Limit]).AnyContext())!;
         var page = members.Take(query.Limit).ToArray();
         var jobs = await Task.WhenAll(page.Select(member => ReadJobAsync(member[(member.IndexOf('|') + 1)..]))).AnyContext();
         return new JobPage(jobs.Where(j => j is not null).Select(j => j!).ToList(), members.Length > query.Limit ? page[^1] : null);
     }
 
-    public async Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default)
+    public async Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         await SweepAsync(CountSweepLimit).AnyContext();
-        return await Database.SortedSetLengthAsync(IndexKey(status, name)).AnyContext();
+        return await Database.SortedSetLengthAsync(IndexKey(state, name)).AnyContext();
     }
 
     public async Task<JobInfo?> ClaimAsync(JobClaimRequest request, CancellationToken cancellationToken = default)
@@ -154,9 +154,9 @@ public sealed class RedisJobStore : IJobStore
             if (candidates.Length == 0)
                 return null;
 
-            var keys = new List<RedisKey>(2 + 4 * names.Length + candidates.Length / 3) { IndexKey(JobStatus.Queued, null), IndexKey(JobStatus.Running, null) };
+            var keys = new List<RedisKey>(2 + 4 * names.Length + candidates.Length / 3) { IndexKey(JobState.Queued, null), IndexKey(JobState.Running, null) };
             foreach (string name in names)
-                keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(JobStatus.Queued, name), IndexKey(JobStatus.Running, name)]);
+                keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(JobState.Queued, name), IndexKey(JobState.Running, name)]);
 
             var values = new List<RedisValue>(4 + names.Length + candidates.Length) { request.WorkerId, ToMicroseconds(request.LeaseDuration), Guid.NewGuid().ToString("N"), names.Length };
             values.AddRange(names.Select(n => (RedisValue)n));
@@ -208,7 +208,7 @@ public sealed class RedisJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         ArgumentNullException.ThrowIfNull(completion);
         cancellationToken.ThrowIfCancellationRequested();
-        if (completion.Status == JobStatus.Running)
+        if (completion.State == JobState.Running)
             throw new ArgumentException("A run cannot complete as Running.", nameof(completion));
 
         if (await GetClaimedNameAsync(jobId, claimToken).AnyContext() is not { } name)
@@ -216,12 +216,12 @@ public sealed class RedisJobStore : IJobStore
 
         RedisKey[] keys =
         [
-            JobKey(jobId), RunningKey(name), QueuedKey(name), ExpiringKey, IndexKey(JobStatus.Running, null), IndexKey(JobStatus.Running, name),
-            IndexKey(completion.Status, null), IndexKey(completion.Status, name)
+            JobKey(jobId), RunningKey(name), QueuedKey(name), ExpiringKey, IndexKey(JobState.Running, null), IndexKey(JobState.Running, name),
+            IndexKey(completion.State, null), IndexKey(completion.State, name)
         ];
 
         return await EvaluateAsync(CompleteScript, keys, [
-            jobId, claimToken, Status(completion.Status), ToMicroseconds(completion.RetryDelay), completion.RefundAttempt ? 1 : 0,
+            jobId, claimToken, Status(completion.State), ToMicroseconds(completion.RetryDelay), completion.RefundAttempt ? 1 : 0,
             ToMicroseconds(completion.RetainFor), completion.Message is not null ? 1 : 0, completion.Message ?? String.Empty,
             completion.Error is not null ? 1 : 0, completion.Error ?? String.Empty, name
         ]).AnyContext() == 1;
@@ -240,8 +240,8 @@ public sealed class RedisJobStore : IJobStore
 
             RedisKey[] keys =
             [
-                JobKey(jobId), QueuedKey(name), ExpiringKey, IndexKey(JobStatus.Queued, null), IndexKey(JobStatus.Queued, name),
-                IndexKey(JobStatus.Cancelled, null), IndexKey(JobStatus.Cancelled, name)
+                JobKey(jobId), QueuedKey(name), ExpiringKey, IndexKey(JobState.Queued, null), IndexKey(JobState.Queued, name),
+                IndexKey(JobState.Cancelled, null), IndexKey(JobState.Cancelled, name)
             ];
 
             long cancelled = await EvaluateAsync(CancelScript, keys, [jobId, ToMicroseconds(retainFor), name]).AnyContext();
@@ -337,7 +337,7 @@ public sealed class RedisJobStore : IJobStore
 
     private RedisKey ExpiringKey => _prefix + "expiring";
 
-    private RedisKey IndexKey(JobStatus? status, string? name) => status is { } value ? StatusIndexKey(Status(value), name) : name is null ? _prefix + "index" : $"{_prefix}index:name:{name}";
+    private RedisKey IndexKey(JobState? status, string? name) => status is { } value ? StatusIndexKey(Status(value), name) : name is null ? _prefix + "index" : $"{_prefix}index:name:{name}";
 
     private RedisKey StatusIndexKey(string status, string? name) => name is null ? $"{_prefix}index:status:{status}" : $"{_prefix}index:status:{status}:{name}";
 
@@ -366,7 +366,7 @@ public sealed class RedisJobStore : IJobStore
         {
             Id = Text("id")!,
             Name = Text("name")!,
-            Status = (JobStatus)(int)fields["status"],
+            State = (JobState)(int)fields["status"],
             Payload = fields.TryGetValue("payload", out var payload) ? (byte[]?)payload ?? [] : [],
             CorrelationId = Text("correlation"),
             ScheduleName = Text("schedule"),
@@ -392,7 +392,7 @@ public sealed class RedisJobStore : IJobStore
 
     private static DateTimeOffset FromMicroseconds(long microseconds) => DateTimeOffset.UnixEpoch.AddTicks(microseconds * TimeSpan.TicksPerMicrosecond);
 
-    private static string Status(JobStatus status) => ((int)status).ToString(CultureInfo.InvariantCulture);
+    private static string Status(JobState status) => ((int)status).ToString(CultureInfo.InvariantCulture);
 
     private static string LoadScript(string name) => Common + EmbeddedResourceLoader.GetEmbeddedResource($"Foundatio.Redis.Scripts.JobStore.{name}.lua");
 }

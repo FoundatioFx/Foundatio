@@ -44,9 +44,9 @@ internal sealed class JobClient : IJobClient
         return _runtime.Store.QueryAsync(query, cancellationToken);
     }
 
-    public Task<long> CountAsync(JobStatus? status = null, string? name = null, CancellationToken cancellationToken = default)
+    public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
-        return _runtime.Store.CountAsync(status, name, cancellationToken);
+        return _runtime.Store.CountAsync(state, name, cancellationToken);
     }
 
     public Task<bool> CancelAsync(string jobId, CancellationToken cancellationToken = default)

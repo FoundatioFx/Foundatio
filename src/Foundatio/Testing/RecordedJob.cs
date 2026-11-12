@@ -12,10 +12,10 @@ public sealed record RecordedJob
     public object? Arguments { get; init; }
 
     /// <summary>
-    /// <see cref="JobStatus.Succeeded"/>, <see cref="JobStatus.Failed"/> or <see cref="JobStatus.Cancelled"/>; or
-    /// <see cref="JobStatus.Queued"/> when the run failed and will be retried, or was interrupted by shutdown.
+    /// <see cref="JobState.Succeeded"/>, <see cref="JobState.Failed"/> or <see cref="JobState.Cancelled"/>; or
+    /// <see cref="JobState.Queued"/> when the run failed and will be retried, or was interrupted by shutdown.
     /// </summary>
-    public required JobStatus Status { get; init; }
+    public required JobState State { get; init; }
 
     /// <summary>The attempt this run was, starting at 1.</summary>
     public int Attempt { get; init; }

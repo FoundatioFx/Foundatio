@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
+using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
@@ -255,8 +256,8 @@ internal sealed class JobWorker
 
         await CompleteAsync(job, completion).AnyContext();
 
-        RecordRun(job, completion.Status == JobStatus.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.Status.ToString().ToLowerInvariant(), started);
-        if (completion.Status is JobStatus.Failed or JobStatus.Queued && !completion.RefundAttempt)
+        RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
+        if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
             activity?.SetErrorStatus(error, completion.Error);
     }
 

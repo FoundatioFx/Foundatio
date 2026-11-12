@@ -52,7 +52,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         var stored = await Store.GetAsync(job.Id, TestCancellationToken);
         Assert.NotNull(stored);
         Assert.Equal(job.Name, stored.Name);
-        Assert.Equal(JobStatus.Queued, stored.Status);
+        Assert.Equal(JobState.Queued, stored.State);
         Assert.Equal(0, stored.Attempt);
         Assert.Equal([1, 2, 3, 0, 255], stored.Payload.ToArray());
         Assert.Equal("correlation", stored.CorrelationId);
@@ -82,13 +82,13 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
 
         Assert.NotNull(claimed);
         Assert.Equal(job.Id, claimed.Id);
-        Assert.Equal(JobStatus.Running, claimed.Status);
+        Assert.Equal(JobState.Running, claimed.State);
         Assert.Equal(1, claimed.Attempt);
         Assert.False(String.IsNullOrEmpty(claimed.ClaimToken));
         Assert.Equal("worker-1", claimed.WorkerId);
         Assert.NotNull(claimed.StartedAt);
         Assert.True(claimed.LeaseExpiresAt > DateTimeOffset.UtcNow.AddSeconds(30));
-        Assert.Equal(JobStatus.Running, (await Store.GetAsync(job.Id, TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Running, (await Store.GetAsync(job.Id, TestCancellationToken))!.State);
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
     }
 
@@ -209,12 +209,12 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5), "all done"), TestCancellationToken));
 
         var stored = (await Store.GetAsync(job.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Succeeded, stored.Status);
+        Assert.Equal(JobState.Succeeded, stored.State);
         Assert.Equal("all done", stored.Message);
         Assert.NotNull(stored.CompletedAt);
         Assert.Null(stored.ClaimToken);
         Assert.False(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Failed(TimeSpan.FromMinutes(5), "late"), TestCancellationToken));
-        Assert.Equal(JobStatus.Succeeded, (await Store.GetAsync(job.Id, TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Succeeded, (await Store.GetAsync(job.Id, TestCancellationToken))!.State);
     }
 
     [Fact]
@@ -231,7 +231,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.False(await Store.CompleteAsync(reclaimed.Id, first.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
         Assert.True(await Store.CompleteAsync(reclaimed.Id, second.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
         Assert.True(await Store.CompleteAsync(expired.Id, lapsed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
-        Assert.Equal(JobStatus.Succeeded, (await Store.GetAsync(expired.Id, TestCancellationToken))!.Status);
+        Assert.Equal(JobState.Succeeded, (await Store.GetAsync(expired.Id, TestCancellationToken))!.State);
     }
 
     [Fact]
@@ -244,7 +244,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Retry(ShortLease, "transient"), TestCancellationToken));
 
         var stored = (await Store.GetAsync(job.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Queued, stored.Status);
+        Assert.Equal(JobState.Queued, stored.State);
         Assert.Equal(1, stored.Attempt);
         Assert.Equal("transient", stored.Error);
         Assert.Null(await Store.ClaimAsync(Claim(job.Name), TestCancellationToken));
@@ -295,11 +295,11 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.RequestCancellationAsync(running.Id, TimeSpan.FromMinutes(5), TestCancellationToken));
 
         var cancelled = (await Store.GetAsync(queued.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Cancelled, cancelled.Status);
+        Assert.Equal(JobState.Cancelled, cancelled.State);
         Assert.NotNull(cancelled.CompletedAt);
         Assert.Null(await Store.ClaimAsync(Claim(queued.Name), TestCancellationToken));
         var flagged = (await Store.GetAsync(running.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Running, flagged.Status);
+        Assert.Equal(JobState.Running, flagged.State);
         Assert.True(flagged.CancellationRequested);
 
         Assert.False(await Store.RequestCancellationAsync(queued.Id, TimeSpan.FromMinutes(5), TestCancellationToken));
@@ -330,9 +330,9 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
 
         await Store.ClaimAsync(Claim(name), TestCancellationToken);
         Assert.Equal(5, await Store.CountAsync(name: name, cancellationToken: TestCancellationToken));
-        Assert.Equal(4, await Store.CountAsync(JobStatus.Queued, name, TestCancellationToken));
-        Assert.Equal(1, await Store.CountAsync(JobStatus.Running, name, TestCancellationToken));
-        Assert.Single((await Store.QueryAsync(new JobQuery { Name = name, Status = JobStatus.Running }, TestCancellationToken)).Jobs);
+        Assert.Equal(4, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+        Assert.Equal(1, await Store.CountAsync(JobState.Running, name, TestCancellationToken));
+        Assert.Single((await Store.QueryAsync(new JobQuery { Name = name, State = JobState.Running }, TestCancellationToken)).Jobs);
     }
 
     [Fact]
@@ -347,7 +347,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         await WaitUntilAsync(async () => await Store.GetAsync(job.Id, TestCancellationToken) is null);
 
         Assert.Equal(0, await Store.CountAsync(name: job.Name, cancellationToken: TestCancellationToken));
-        Assert.Equal(0, await Store.CountAsync(JobStatus.Succeeded, job.Name, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobState.Succeeded, job.Name, TestCancellationToken));
         Assert.True(await Store.CreateAsync(job, TestCancellationToken));
     }
 
@@ -395,12 +395,12 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CompleteAsync(cancelled.Id, cancelledClaim.ClaimToken!, JobCompletion.Cancelled(TimeSpan.FromMinutes(5), "stopped"), TestCancellationToken));
 
         var storedFailure = (await Store.GetAsync(failed.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Failed, storedFailure.Status);
+        Assert.Equal(JobState.Failed, storedFailure.State);
         Assert.Equal("boom", storedFailure.Error);
         Assert.Equal(1, storedFailure.Attempt);
         AssertFinished(storedFailure);
         var storedCancellation = (await Store.GetAsync(cancelled.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Cancelled, storedCancellation.Status);
+        Assert.Equal(JobState.Cancelled, storedCancellation.State);
         Assert.Equal("stopped", storedCancellation.Message);
         AssertFinished(storedCancellation);
         Assert.Null(await Store.ClaimAsync(Claim(failed.Name, cancelled.Name), TestCancellationToken));
@@ -426,7 +426,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         Assert.True(await Store.CompleteAsync(job.Id, second.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
 
         var stored = (await Store.GetAsync(job.Id, TestCancellationToken))!;
-        Assert.Equal(JobStatus.Succeeded, stored.Status);
+        Assert.Equal(JobState.Succeeded, stored.State);
         Assert.Null(stored.Error);
         Assert.Equal(2, stored.Attempt);
     }
@@ -447,7 +447,7 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             var reclaimed = await reclaim;
 
             Assert.NotEqual(completed, reclaimed is not null);
-            Assert.Equal(completed ? JobStatus.Succeeded : JobStatus.Running, (await Store.GetAsync(job.Id, TestCancellationToken))?.Status);
+            Assert.Equal(completed ? JobState.Succeeded : JobState.Running, (await Store.GetAsync(job.Id, TestCancellationToken))?.State);
         }));
     }
 
@@ -491,10 +491,10 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         await Store.CreateAsync(job, TestCancellationToken);
 
         Assert.True(await Store.RequestCancellationAsync(job.Id, ShortLease, TestCancellationToken));
-        Assert.Equal(JobStatus.Cancelled, (await Store.GetAsync(job.Id, TestCancellationToken))?.Status);
+        Assert.Equal(JobState.Cancelled, (await Store.GetAsync(job.Id, TestCancellationToken))?.State);
         await WaitUntilAsync(async () => await Store.GetAsync(job.Id, TestCancellationToken) is null);
 
-        Assert.Equal(0, await Store.CountAsync(JobStatus.Cancelled, job.Name, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobState.Cancelled, job.Name, TestCancellationToken));
         Assert.Empty((await Store.QueryAsync(new JobQuery { Name = job.Name }, TestCancellationToken)).Jobs);
         Assert.True(await Store.CreateAsync(job, TestCancellationToken));
     }
@@ -520,21 +520,21 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
             Assert.True(await Store.CompleteAsync(claimed.Id, claimed.ClaimToken!, completion, TestCancellationToken));
         }
 
-        Assert.Equal(0, await Store.CountAsync(JobStatus.Queued, name, TestCancellationToken));
-        Assert.Equal(0, await Store.CountAsync(JobStatus.Running, name, TestCancellationToken));
-        Assert.Equal(1, await Store.CountAsync(JobStatus.Succeeded, name, TestCancellationToken));
-        Assert.Equal(1, await Store.CountAsync(JobStatus.Failed, name, TestCancellationToken));
-        Assert.Equal(2, await Store.CountAsync(JobStatus.Cancelled, name, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobState.Queued, name, TestCancellationToken));
+        Assert.Equal(0, await Store.CountAsync(JobState.Running, name, TestCancellationToken));
+        Assert.Equal(1, await Store.CountAsync(JobState.Succeeded, name, TestCancellationToken));
+        Assert.Equal(1, await Store.CountAsync(JobState.Failed, name, TestCancellationToken));
+        Assert.Equal(2, await Store.CountAsync(JobState.Cancelled, name, TestCancellationToken));
         Assert.Equal(4, await Store.CountAsync(name: name, cancellationToken: TestCancellationToken));
 
-        Assert.Equal([succeeded.Id], await QueryIdsAsync(JobStatus.Succeeded));
-        Assert.Equal([failed.Id], await QueryIdsAsync(JobStatus.Failed));
-        Assert.Equal(new[] { cancelledWhileRunning.Id, cancelledWhileQueued.Id }.Order(), await QueryIdsAsync(JobStatus.Cancelled));
-        Assert.Empty(await QueryIdsAsync(JobStatus.Queued));
-        Assert.Contains(failed.Id, (await Store.QueryAsync(new JobQuery { Status = JobStatus.Failed, Limit = 1000 }, TestCancellationToken)).Jobs.Select(j => j.Id));
+        Assert.Equal([succeeded.Id], await QueryIdsAsync(JobState.Succeeded));
+        Assert.Equal([failed.Id], await QueryIdsAsync(JobState.Failed));
+        Assert.Equal(new[] { cancelledWhileRunning.Id, cancelledWhileQueued.Id }.Order(), await QueryIdsAsync(JobState.Cancelled));
+        Assert.Empty(await QueryIdsAsync(JobState.Queued));
+        Assert.Contains(failed.Id, (await Store.QueryAsync(new JobQuery { State = JobState.Failed, Limit = 1000 }, TestCancellationToken)).Jobs.Select(j => j.Id));
 
-        async Task<string[]> QueryIdsAsync(JobStatus status) =>
-            (await Store.QueryAsync(new JobQuery { Name = name, Status = status }, TestCancellationToken)).Jobs.Select(j => j.Id).Order().ToArray();
+        async Task<string[]> QueryIdsAsync(JobState status) =>
+            (await Store.QueryAsync(new JobQuery { Name = name, State = status }, TestCancellationToken)).Jobs.Select(j => j.Id).Order().ToArray();
     }
 
     [Fact]

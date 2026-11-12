@@ -125,7 +125,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     /// <summary>
     /// Waits until <paramref name="count"/> runs in total of the job that takes <typeparamref name="TJobOrArgs"/> (or of
-    /// the job class <typeparamref name="TJobOrArgs"/>) have finished, and returns them. Check <see cref="RecordedJob.Status"/>:
+    /// the job class <typeparamref name="TJobOrArgs"/>) have finished, and returns them. Check <see cref="RecordedJob.State"/>:
     /// a run that failed for good finishes too.
     /// </summary>
     /// <exception cref="TimeoutException">Not enough runs finished within <paramref name="timeout"/> (default 30 seconds).</exception>
@@ -243,7 +243,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             JobId = job.Id,
             JobName = job.Name,
             Arguments = TryDeserializeArguments(job),
-            Status = completion.Status,
+            State = completion.State,
             Attempt = job.Attempt,
             Message = completion.Message,
             Error = completion.Error,
@@ -277,12 +277,12 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     private async Task<IReadOnlyList<RecordedJob>> WaitForJobRunsAsync(IReadOnlyCollection<string> names, string displayName, int count, TimeSpan? timeout, CancellationToken cancellationToken)
     {
-        return await WaitForAsync(() => JobRuns.Where(r => names.Contains(r.JobName) && r.Status.IsTerminal()).ToList(), count, timeout, (limit, found) =>
+        return await WaitForAsync(() => JobRuns.Where(r => names.Contains(r.JobName) && r.State.IsTerminal()).ToList(), count, timeout, (limit, found) =>
         {
             var runs = JobRuns.Where(r => names.Contains(r.JobName)).ToList();
             string seen = runs.Count == 0
                 ? $"No run of {displayName} has finished. Is it registered with AddJob, and has the host started?"
-                : $"Runs of {displayName}: {String.Join(", ", runs.GroupBy(r => r.Status).Select(g => $"{g.Count()} {g.Key}"))}."
+                : $"Runs of {displayName}: {String.Join(", ", runs.GroupBy(r => r.State).Select(g => $"{g.Count()} {g.Key}"))}."
                     + (runs.LastOrDefault(r => r.Error is not null) is { } failed ? $" Last error: {failed.Error}" : "");
 
             return $"Timed out after {limit} waiting for {count} run(s) of {displayName} to finish; {found} did. {seen}";
@@ -360,8 +360,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             long active = 0;
             foreach (string name in jobs.Jobs.Keys)
             {
-                long queued = await jobs.Store.CountAsync(JobStatus.Queued, name, cancellationToken).AnyContext();
-                long running = await jobs.Store.CountAsync(JobStatus.Running, name, cancellationToken).AnyContext();
+                long queued = await jobs.Store.CountAsync(JobState.Queued, name, cancellationToken).AnyContext();
+                long running = await jobs.Store.CountAsync(JobState.Running, name, cancellationToken).AnyContext();
                 active += queued + running;
                 if (queued + running > 0)
                 {
@@ -370,8 +370,8 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
                 }
             }
 
-            long allActive = await jobs.Store.CountAsync(JobStatus.Queued, cancellationToken: cancellationToken).AnyContext()
-                + await jobs.Store.CountAsync(JobStatus.Running, cancellationToken: cancellationToken).AnyContext();
+            long allActive = await jobs.Store.CountAsync(JobState.Queued, cancellationToken: cancellationToken).AnyContext()
+                + await jobs.Store.CountAsync(JobState.Running, cancellationToken: cancellationToken).AnyContext();
             if (allActive > active)
             {
                 foreach (var (name, count) in await CountUnregisteredJobsAsync(jobs, cancellationToken).AnyContext())
@@ -395,12 +395,12 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     private static async Task<IReadOnlyList<(string Name, int Count)>> CountUnregisteredJobsAsync(JobsRuntime jobs, CancellationToken cancellationToken)
     {
         var counts = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        foreach (var status in new[] { JobStatus.Queued, JobStatus.Running })
+        foreach (var status in new[] { JobState.Queued, JobState.Running })
         {
             string? continuation = null;
             do
             {
-                var page = await jobs.Store.QueryAsync(new JobQuery { Status = status, Limit = 1000, ContinuationToken = continuation }, cancellationToken).AnyContext();
+                var page = await jobs.Store.QueryAsync(new JobQuery { State = status, Limit = 1000, ContinuationToken = continuation }, cancellationToken).AnyContext();
                 foreach (var job in page.Jobs.Where(j => !jobs.Jobs.ContainsKey(j.Name)))
                     counts[job.Name] = counts.GetValueOrDefault(job.Name) + 1;
 

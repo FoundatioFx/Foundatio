@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Resilience;
 using Foundatio.Utility;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;

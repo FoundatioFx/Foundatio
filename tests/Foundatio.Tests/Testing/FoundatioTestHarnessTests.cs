@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
 using Foundatio.Messaging;
+using Foundatio.Resilience;
 using Foundatio.Testing;
 using Foundatio.Xunit;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,7 +62,7 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         Assert.Equal(["a@b.com: Receipt for order 1"], host.Services.GetRequiredService<EmailSender>().Sent);
 
         var invoice = Assert.Single(harness.JobRuns);
-        Assert.Equal(JobStatus.Succeeded, invoice.Status);
+        Assert.Equal(JobState.Succeeded, invoice.State);
         Assert.Equal(new GenerateInvoice(1), invoice.Arguments);
         Assert.Equal("order-1", invoice.CorrelationId);
     }
@@ -191,10 +192,10 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         await host.Services.GetRequiredService<IJobClient>().EnqueueAsync(new GenerateInvoice(9, Fail: true), cancellationToken: TestCancellationToken);
         var run = Assert.Single(await harness.WaitForJobAsync<GenerateInvoice>(cancellationToken: TestCancellationToken));
 
-        Assert.Equal(JobStatus.Failed, run.Status);
+        Assert.Equal(JobState.Failed, run.State);
         Assert.Equal(3, run.Attempt);
         Assert.Contains("No billing address for order 9", run.Error);
-        Assert.Equal([JobStatus.Queued, JobStatus.Queued, JobStatus.Failed], harness.JobRuns.Select(r => r.Status));
+        Assert.Equal([JobState.Queued, JobState.Queued, JobState.Failed], harness.JobRuns.Select(r => r.State));
         Assert.Same(run, Assert.Single(await harness.WaitForJobAsync<GenerateInvoiceJob>(cancellationToken: TestCancellationToken)));
     }
 
@@ -211,7 +212,7 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
         var run = Assert.Single(await harness.WaitForJobAsync<NightlyCleanupJob>(cancellationToken: TestCancellationToken));
 
         Assert.Equal(handle.Id, run.JobId);
-        Assert.Equal(JobStatus.Succeeded, run.Status);
+        Assert.Equal(JobState.Succeeded, run.State);
         Assert.Equal("cleaned", run.Message);
         Assert.Equal("orders.nightly-cleanup", run.ScheduleName);
         await Assert.ThrowsAsync<InvalidOperationException>(() => harness.TriggerCronJobAsync<GenerateInvoice>(TestCancellationToken));
