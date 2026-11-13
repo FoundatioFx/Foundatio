@@ -266,6 +266,8 @@ Conditional writes and list updates publish replacement entries atomically. An o
 
 Every write treats an expired entry as missing, even before background maintenance removes it, matching Redis: `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync` and `ListAddAsync` start fresh, `ReplaceAsync`, `SetExpirationAsync` and `ListRemoveAsync` find nothing to change, and `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` rather than letting a stale owner remove or renew it. A write that finds an expired entry reclaims it and raises `ItemExpired` once, without touching a concurrent replacement.
 
+Writes also recheck the existing entry after sizing, cloning, or numeric conversion. If it expired during that work, the update is recomputed from a missing key so expired values are not revived.
+
 Successful removal of a live matching value, or removal of the last list value, frees tracked memory immediately and does not raise an expiration event.
 
 ::: info Behavior changes from earlier versions
@@ -282,8 +284,12 @@ List updates preserve the collection structure of previously returned snapshots.
 
 `Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.
 
+With cloning enabled, dictionary-backed lists also isolate struct elements that contain mutable reference fields when storing or returning them. Cloned dictionary keys retain valid lookups, including when their hash depends on a cloned reference.
+
 ::: tip Large list updates
 Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Lists that shrink substantially rebuild their internal storage so subsequent writes do not retain arrays sized for peak occupancy. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+
+With cloning disabled, built-in dynamic sizing can sample the private list snapshot during updates without copying the entire dictionary. It retains the calculator's sampling rules and validates the complete replacement against `MaxEntrySize`. Custom calculators continue to receive their existing dictionary inputs.
 :::
 
 ### HybridCacheClient
