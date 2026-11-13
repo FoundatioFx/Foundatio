@@ -68,6 +68,9 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
     /// <summary>The delay used by delayed-delivery tests.</summary>
     protected virtual TimeSpan ShortDelay => TimeSpan.FromSeconds(2);
 
+    /// <summary>The longest a test waits for <see cref="IMessageTransport.GetStatsAsync"/> to reflect sends and settlements, which it may lag.</summary>
+    protected virtual TimeSpan StatsTimeout => TimeSpan.FromSeconds(15);
+
     /// <summary>The transport under test, created by <see cref="CreateTransport"/> on first use and disposed after the test.</summary>
     protected IMessageTransport Transport => _transport ??= Track(CreateTransport());
 
@@ -1213,6 +1216,135 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
             Assert.Single(ids, id => id.StartsWith("rejected", StringComparison.Ordinal));
     }
 
+    /// <summary>A queue or subscription that does not exist yet counts as empty instead of throwing.</summary>
+    [Fact]
+    public async Task GetStats_OfASourceThatDoesNotExist_CountsAsEmpty()
+    {
+        var queue = MessageSource.Queue(NewName("stats-none"));
+        var subscription = MessageSource.Subscription(NewName("stats-none-topic"), "none");
+        DeleteAfterTest(queue);
+        DeleteAfterTest(subscription);
+
+        foreach (var source in new[] { queue, subscription })
+        {
+            var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+            if (stats is null)
+                continue;
+
+            Assert.Equal(source, stats.Source);
+            AssertCount(0, stats.Queued, source, "queued");
+            AssertCount(0, stats.Delayed, source, "delayed");
+            AssertCount(0, stats.InFlight, source, "in flight");
+            AssertCount(0, stats.DeadLettered, source, "dead-lettered");
+        }
+    }
+
+    /// <summary>Messages sent to a queue count as queued until they are received.</summary>
+    [Fact]
+    public async Task GetStats_AfterSendsToAQueue_CountsThemAsQueued()
+    {
+        var source = MessageSource.Queue(NewName("stats-queued"));
+        DeleteAfterTest(source);
+        Assert.SkipWhen((await GetStatsOrSkipAsync(source)).Queued is null, "The transport does not count queued messages.");
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a"), Message("b"), Message("c")], TestCancellationToken);
+
+        await WaitForStatsAsync(source, "3 queued and none in flight", s => s.Queued == 3 && Is(s.InFlight, 0) && Is(s.Delayed, 0));
+    }
+
+    /// <summary>A received message that is not settled yet counts as in flight instead of queued, and as neither once it is completed.</summary>
+    [Fact]
+    public async Task GetStats_WhileAMessageIsReceivedAndNotSettled_CountsItInFlightInsteadOfQueued()
+    {
+        var source = MessageSource.Queue(NewName("stats-inflight"));
+        DeleteAfterTest(source);
+        var initial = await GetStatsOrSkipAsync(source);
+        Assert.SkipWhen(initial.InFlight is null && initial.Queued is null, "The transport counts neither queued nor in-flight messages.");
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("leased", "id-leased")], TestCancellationToken);
+        await WaitForStatsAsync(source, "1 queued", s => Is(s.Queued, 1) && Is(s.InFlight, 0));
+
+        await using var receiver = await CreateReceiverAsync(source);
+        var message = await ReceiveOneAsync(receiver);
+
+        await WaitForStatsAsync(source, "1 in flight and none queued", s => Is(s.InFlight, 1) && Is(s.Queued, 0));
+        await receiver.CompleteAsync(message, TestCancellationToken);
+        await WaitForStatsAsync(source, "none in flight or queued after the complete", s => Is(s.InFlight, 0) && Is(s.Queued, 0));
+    }
+
+    /// <summary>A message sent with a future delivery time counts as delayed, not queued.</summary>
+    [Fact]
+    public async Task GetStats_AfterADelayedSend_CountsItAsDelayed()
+    {
+        Assert.SkipWhen(Transport.Capabilities.MaxDelay == TimeSpan.Zero, "The transport does not support delays.");
+        var source = MessageSource.Queue(NewName("stats-delayed"));
+        DeleteAfterTest(source);
+        Assert.SkipWhen((await GetStatsOrSkipAsync(source)).Delayed is null, "The transport does not count delayed messages.");
+        var delay = Transport.Capabilities.MaxDelay is { } maxDelay && maxDelay < TimeSpan.FromMinutes(5) ? maxDelay : TimeSpan.FromMinutes(5);
+
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("later") with { DeliverAt = DateTimeOffset.UtcNow.Add(delay) }], TestCancellationToken);
+
+        await WaitForStatsAsync(source, "1 delayed and none queued", s => s.Delayed == 1 && Is(s.Queued, 0) && Is(s.InFlight, 0));
+    }
+
+    /// <summary>A dead-lettered message counts as dead-lettered, and no longer as queued or in flight.</summary>
+    [Fact]
+    public async Task GetStats_AfterADeadLetter_CountsItAsDeadLettered()
+    {
+        var source = MessageSource.Queue(NewName("stats-dlq"));
+        await using var receiver = await CreateReceiverAsync(source);
+        Assert.SkipWhen((await GetStatsOrSkipAsync(source)).DeadLettered is null, "The transport does not count dead letters.");
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison", "id-poison")], TestCancellationToken);
+
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "conformance", TestCancellationToken);
+
+        await WaitForStatsAsync(source, "1 dead-lettered and none queued or in flight", s => s.DeadLettered == 1 && Is(s.Queued, 0) && Is(s.InFlight, 0));
+    }
+
+    /// <summary>Each durable subscription counts the copies published to it, plus messages sent to it alone.</summary>
+    [Fact]
+    public async Task GetStats_OfEachSubscription_CountsItsOwnPublishedCopies()
+    {
+        string topic = NewName("stats-topic");
+        var first = MessageSource.Subscription(topic, "first");
+        var second = MessageSource.Subscription(topic, "second");
+        await (await CreateReceiverAsync(first)).DisposeAsync();
+        await (await CreateReceiverAsync(second)).DisposeAsync();
+        Assert.SkipWhen((await GetStatsOrSkipAsync(first)).Queued is null, "The transport does not count queued messages.");
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("one"), Message("two")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Subscription(topic, "first"), [Message("only first")], TestCancellationToken);
+
+        await WaitForStatsAsync(first, "3 queued", s => s.Queued == 3);
+        await WaitForStatsAsync(second, "2 queued", s => s.Queued == 2);
+    }
+
+    /// <summary>A dead-letter source has no counts of its own: its count is the DeadLettered of the source it belongs to.</summary>
+    [Fact]
+    public async Task GetStats_OfADeadLetterSource_ThrowsArgumentException()
+    {
+        var queue = MessageSource.Queue(NewName("stats-dlq-source"));
+        DeleteAfterTest(queue);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => Transport.GetStatsAsync(MessageSource.DeadLetter(queue), TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => Transport.GetStatsAsync(MessageSource.DeadLetter(MessageSource.Subscription(NewName("stats-dlq-topic"), "s")), TestCancellationToken));
+    }
+
+    /// <summary>An instance subscription may be uncountable: the call returns null, or counts that are never negative, without throwing.</summary>
+    [Fact]
+    public async Task GetStats_OfAnInstanceSubscription_ReturnsNullOrCounts()
+    {
+        var source = MessageSource.InstanceSubscription(NewName("stats-instances"), "conformance");
+        await using var receiver = await CreateReceiverAsync(source);
+
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+
+        if (stats is null)
+            return;
+
+        Assert.Equal(source, stats.Source);
+        Assert.All(new[] { stats.Queued, stats.Delayed, stats.InFlight, stats.DeadLettered }, count => Assert.True(count is null or >= 0, $"A count was {count}."));
+    }
+
     /// <summary>End to end: a sent message is handled once across competing hosts on this transport.</summary>
     [Fact]
     public async Task Messaging_SentMessageIsHandledOnceByCompetingServices()
@@ -1620,6 +1752,46 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         }
 
         return order;
+    }
+
+    /// <summary>Reads the counts of <paramref name="source"/>, skipping the test when the transport cannot count it.</summary>
+    private async Task<MessageSourceStats> GetStatsOrSkipAsync(MessageSource source)
+    {
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+        Assert.SkipWhen(stats is null, $"The transport does not count {source.Kind} sources.");
+        Assert.Equal(source, stats!.Source);
+        return stats;
+    }
+
+    /// <summary>Polls the counts of <paramref name="source"/> until <paramref name="condition"/> holds, failing after <see cref="StatsTimeout"/>.</summary>
+    private async Task<MessageSourceStats> WaitForStatsAsync(MessageSource source, string expected, Func<MessageSourceStats, bool> condition)
+    {
+        var deadline = DateTime.UtcNow + StatsTimeout;
+        while (true)
+        {
+            var stats = await GetStatsOrSkipAsync(source);
+            if (condition(stats))
+                return stats;
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                Assert.Fail($"{source} did not count {expected} within {StatsTimeout}; it counted {Describe(stats.Queued)} queued, {Describe(stats.Delayed)} delayed, " +
+                    $"{Describe(stats.InFlight)} in flight and {Describe(stats.DeadLettered)} dead-lettered.");
+            }
+
+            await Task.Delay(100, TestCancellationToken);
+        }
+
+        static string Describe(long? count) => count?.ToString() ?? "(not counted)";
+    }
+
+    /// <summary>True when the transport does not report <paramref name="count"/>, or reports <paramref name="expected"/>.</summary>
+    private static bool Is(long? count, long expected) => count is null || count == expected;
+
+    private static void AssertCount(long expected, long? count, MessageSource source, string what)
+    {
+        if (count is not null)
+            Assert.True(count == expected, $"{source} counted {count} {what}; expected {expected}.");
     }
 
     private async Task SendIgnoringFailureAsync<TException>(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken) where TException : Exception

@@ -30,6 +30,15 @@ internal sealed class MessageAdmin : IMessageAdmin
         _logger = runtime.LoggerFactory.CreateLogger<MessageAdmin>();
     }
 
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            throw new ArgumentException($"{source} has no counts of its own; read DeadLettered from the stats of {source.DeadLetterOf}.", nameof(source));
+
+        return _runtime.Transport.GetStatsAsync(source, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default)
     {
         ValidateSource(source);

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,8 +7,8 @@ using Foundatio.Messaging.Transport;
 namespace Foundatio.Messaging;
 
 /// <summary>
-/// Operations for people rather than handlers: inspect and replay dead letters, and remove queues or
-/// subscriptions that are no longer used. Works on every transport.
+/// Operations for people rather than handlers: count a source's messages, inspect and replay dead letters, and remove
+/// queues or subscriptions that are no longer used. Works on every transport.
 /// </summary>
 /// <example>
 /// <code>
@@ -18,6 +19,17 @@ namespace Foundatio.Messaging;
 /// </example>
 public interface IMessageAdmin
 {
+    /// <summary>
+    /// Counts the messages of a queue or durable subscription that are queued, delayed, in flight and dead-lettered, as
+    /// the transport reports them. The counts are approximate and may lag sends and settlements by a few seconds; each is
+    /// null when the transport cannot tell. Returns null when the transport cannot count the source at all, as with
+    /// instance subscriptions on most transports. A source that does not exist yet counts as empty.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="source"/> is a dead-letter source; read <see cref="MessageSourceStats.DeadLettered"/> of the source it belongs to.
+    /// </exception>
+    Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default);
+
     /// <summary>Returns up to <paramref name="max"/> dead letters of a queue or durable subscription, leaving them in place.</summary>
     Task<IReadOnlyList<DeadLetterMessage>> PeekDeadLettersAsync(MessageSource source, int max = 20, CancellationToken cancellationToken = default);
 

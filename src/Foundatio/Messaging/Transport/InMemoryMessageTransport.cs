@@ -135,8 +135,34 @@ public sealed class InMemoryMessageTransport : IMessageTransport
         return Task.FromResult<IMessageReceiver>(new Receiver(this, source, state, options));
     }
 
-    /// <inheritdoc />
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+    /// <summary>
+    /// Counts a queue's or durable subscription's messages exactly: queued, delayed (including retries waiting out
+    /// their delay), in flight and dead-lettered. Returns null for an instance subscription, whose messages belong to
+    /// one receiver.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="source"/> is a dead-letter source.</exception>
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ThrowIfDisposed();
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            throw new ArgumentException($"{source} has no counts of its own; read DeadLettered from the stats of {source.DeadLetterOf}.", nameof(source));
+
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            return Task.FromResult<MessageSourceStats?>(null);
+
+        var now = _timeProvider.GetUtcNow();
+        var (queued, delayed, inFlight) = _sources.TryGetValue(source.ToString(), out var state) ? state.CountByState(now) : (0, 0, 0);
+        int deadLettered = _sources.TryGetValue(MessageSource.DeadLetter(source).ToString(), out var deadLetters) ? deadLetters.Count : 0;
+        return Task.FromResult<MessageSourceStats?>(new MessageSourceStats
+        {
+            Source = source,
+            Queued = queued,
+            Delayed = delayed,
+            InFlight = inFlight,
+            DeadLettered = deadLettered
+        });
+    }
 
     /// <inheritdoc />
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
@@ -427,6 +453,26 @@ public sealed class InMemoryMessageTransport : IMessageTransport
                 lock (_entries)
                     return _entries.Count;
             }
+        }
+
+        /// <summary>Counts entries that are due, waiting for a future delivery time, and leased.</summary>
+        public (int Queued, int Delayed, int InFlight) CountByState(DateTimeOffset now)
+        {
+            int queued = 0, delayed = 0, inFlight = 0;
+            lock (_entries)
+            {
+                foreach (var entry in _entries)
+                {
+                    if (entry.Receipt is not null && (!LeaseExpiration || entry.LeaseExpiresAt > now))
+                        inFlight++;
+                    else if (entry.AvailableAt > now)
+                        delayed++;
+                    else
+                        queued++;
+                }
+            }
+
+            return (queued, delayed, inFlight);
         }
 
         public void Add(OutgoingMessage message, DateTimeOffset now, long sequence)

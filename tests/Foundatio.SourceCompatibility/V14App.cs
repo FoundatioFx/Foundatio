@@ -97,6 +97,10 @@ public static class AppUsage
     public static async Task<int> ReplayFailedReceiptsAsync(IMessageAdmin admin)
     {
         var source = MessageSource.Queue("orders.send-receipt");
+        MessageSourceStats? stats = await admin.GetStatsAsync(source);
+        if (stats is { DeadLettered: 0 })
+            return 0;
+
         IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);
         if (failed.Count == 0)
             return 0;

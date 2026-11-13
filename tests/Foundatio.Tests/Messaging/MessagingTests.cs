@@ -525,6 +525,27 @@ public class MessagingTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AdminGetStatsAsync_CountsTheSourceThroughTheTransportAndRejectsDeadLetterSources()
+    {
+        await using var host = await StartAsync(m => m.AddConsumer<PlaceOrder>((_, context, _) =>
+        {
+            context.DeadLetter("not today");
+            return Task.CompletedTask;
+        }));
+        var admin = host.Services.GetRequiredService<IMessageAdmin>();
+        var source = MessageSource.Queue(QueueName<PlaceOrder>());
+
+        await host.Client.SendAsync(new PlaceOrder(1), cancellationToken: TestCancellationToken);
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(source)) == 1);
+
+        var stats = await admin.GetStatsAsync(source, TestCancellationToken);
+        Assert.NotNull(stats);
+        Assert.Equal((source, 0L, 0L, 0L, 1L), (stats.Source, stats.Queued, stats.Delayed, stats.InFlight, stats.DeadLettered));
+        Assert.Null(await admin.GetStatsAsync(MessageSource.InstanceSubscription("unused.topic"), TestCancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => admin.GetStatsAsync(MessageSource.DeadLetter(source), TestCancellationToken));
+    }
+
+    [Fact]
     public async Task ReplayDeadLetters_WhenTheHandlerStillFails_ReplaysEachDeadLetterOncePerCall()
     {
         int calls = 0;
