@@ -134,24 +134,31 @@ public class InMemoryListSnapshotTests
         }
     }
 
-    [Fact]
-    public void Update_WithRandomOperations_MatchesDictionaryModel()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Update_WithRandomOperations_MatchesDictionaryModel(bool useCollidingComparer)
     {
         // Arrange
         var random = new Random(570);
-        var model = CreateValues(200);
-        var snapshot = new ListSnapshot<int>(new Dictionary<int, DateTime?>(model));
+        IEqualityComparer<int> comparer = useCollidingComparer ? new CollidingModuloComparer() : EqualityComparer<int>.Default;
+        var model = new Dictionary<int, DateTime?>(CreateValues(200), comparer);
+        var snapshot = new ListSnapshot<int>(new Dictionary<int, DateTime?>(model, comparer));
         var utcNow = NowUtc;
+        bool indexed = false;
 
         for (int step = 0; step < 3000; step++)
         {
             // Act
             utcNow = utcNow.AddSeconds(random.Next(0, 3));
             int batchSize = random.Next(10) == 0 ? random.Next(20, 400) : random.Next(1, 3);
-            var items = Enumerable.Range(0, batchSize).Select(_ => random.Next(0, 1500)).Distinct().ToArray();
+            var items = Enumerable.Range(0, batchSize).Select(_ => random.Next(0, useCollidingComparer ? 3000 : 1500)).Distinct().ToArray();
             bool remove = random.Next(2) == 0;
             DateTime? expiresAtUtc = random.Next(4) == 0 ? utcNow.AddSeconds(random.Next(1, 30)) : null;
+            var previous = snapshot;
+            var previousValues = model.OrderBy(kvp => kvp.Key).ToArray();
             snapshot = snapshot.Update(items, remove ? null : expiresAtUtc, utcNow, remove, out long removed);
+            indexed |= snapshot.IsIndexed;
 
             foreach (int key in model.Where(kvp => kvp.Value < utcNow).Select(kvp => kvp.Key).ToArray())
                 model.Remove(key);
@@ -172,7 +179,10 @@ public class InMemoryListSnapshotTests
             var view = snapshot.AsReadOnlyDictionary();
             Assert.Equal(model.Count, view.Count);
             Assert.Equal(model.OrderBy(kvp => kvp.Key), view.OrderBy(kvp => kvp.Key));
+            Assert.Equal(previousValues, previous.AsReadOnlyDictionary().OrderBy(kvp => kvp.Key));
         }
+
+        Assert.True(indexed);
     }
 
     [Fact]
@@ -215,5 +225,11 @@ public class InMemoryListSnapshotTests
     private static Dictionary<int, DateTime?> CreateValues(int count, Func<int, DateTime?>? expiresAtUtc = null)
     {
         return Enumerable.Range(0, count).ToDictionary(i => i, i => expiresAtUtc?.Invoke(i));
+    }
+
+    private sealed class CollidingModuloComparer : IEqualityComparer<int>
+    {
+        public bool Equals(int x, int y) => x % 1500 == y % 1500;
+        public int GetHashCode(int obj) => 0;
     }
 }
