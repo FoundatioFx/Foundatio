@@ -15,9 +15,36 @@ namespace Foundatio.Lock;
 /// </summary>
 internal static class LockSetOperations
 {
-    public static Task RenewAllAsync(IEnumerable<ILock> locks, TimeSpan? timeUntilExpires, ILogger logger)
+    public static async Task RenewAsync(ILock @lock, TimeSpan? timeUntilExpires, ILogger logger, Func<LockException, Task>? onLockLost = null)
     {
-        return WhenAllAsync(locks.Select(async l => await l.RenewAsync(timeUntilExpires).AnyContext()), logger);
+        if (@lock is DisposableLockCollection collection)
+        {
+            await collection.RenewAsync(timeUntilExpires, onLockLost).AnyContext();
+            return;
+        }
+
+        try
+        {
+            await @lock.RenewAsync(timeUntilExpires).AnyContext();
+        }
+        catch (LockException ex) when (onLockLost is not null)
+        {
+            try
+            {
+                await onLockLost(ex).AnyContext();
+            }
+            catch (Exception callbackError)
+            {
+                logger.LogError(callbackError, "Error reporting lost lock {Resource}: {Message}", @lock.Resource, callbackError.Message);
+            }
+
+            throw;
+        }
+    }
+
+    public static Task RenewAllAsync(IEnumerable<ILock> locks, TimeSpan? timeUntilExpires, ILogger logger, Func<LockException, Task>? onLockLost = null)
+    {
+        return WhenAllAsync(locks.Select(l => RenewAsync(l, timeUntilExpires, logger, onLockLost)), logger);
     }
 
     public static Task ReleaseAllAsync(IEnumerable<ILock> locks, ILogger logger)

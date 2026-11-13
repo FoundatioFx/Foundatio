@@ -149,11 +149,14 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             // was also cancelled meanwhile
             if (leaseLoss.IsLost)
             {
+                var lostResult = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Lost work item lease in handler {workItemDataType.Name}");
+                activity?.SetErrorStatus(message: lostResult.Message);
+                if (queueEntry.Value.SendProgressReports)
+                    await ReportProgressAsync(handler, queueEntry, -1, "Failed: Lost work item lease").AnyContext();
+
                 if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
                     await queueEntry.AbandonAsync().AnyContext();
 
-                var lostResult = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Lost work item lease in handler {workItemDataType.Name}");
-                activity?.SetErrorStatus(message: lostResult.Message);
                 return lostResult;
             }
 
@@ -227,12 +230,11 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         {
             try
             {
-                await workItemLock.RenewAsync().AnyContext();
+                await LockSetOperations.RenewAsync(workItemLock, null, handler.Log, _ => leaseLoss.SignalAsync()).AnyContext();
             }
             catch (LockException ex)
             {
                 handler.Log.LogWarning(ex, "Lost work item lock {Resource} for queue entry {Id}, cancelling work item: {Message}", workItemLock.Resource, queueEntry.Id, ex.Message);
-                await leaseLoss.SignalAsync().AnyContext();
             }
             catch (Exception ex)
             {
