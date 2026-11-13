@@ -27,6 +27,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly int? _maxItems;
     private readonly long? _maxMemorySize;
     private readonly bool _hasSizeCalculator;
+    private readonly bool _usesBuiltInDynamicSizing;
     private readonly bool _canShareListValues;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
@@ -77,7 +78,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
-        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
+        _usesBuiltInDynamicSizing = _sizeCalculator?.Target is SizeCalculator calculator && _sizeCalculator == calculator.CalculateSize;
+        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _usesBuiltInDynamicSizing || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -659,7 +661,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
             {
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                var replacement = current.WithValue(list, list.ExpiresAt, entry.Size);
+                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(list) : entry.Size;
+                if (listSize < 0)
+                    return (current, 0L);
+
+                var replacement = current.WithValue(list, list.ExpiresAt, listSize);
                 return entry.IsExpired ? (current, 0L) : (replacement, (long)items.Count);
             }
 
@@ -749,8 +755,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (current?.StoredValue is ListSnapshot<T> { Snapshot: null } list)
             {
                 var replacement = list.Update(items, null, _timeProvider.GetUtcNow().UtcDateTime, remove: true, out long count);
-                return ReferenceEquals(list, replacement) ? (current, 0L)
-                    : (replacement.Count == 0 ? null : current.WithValue(replacement, replacement.ExpiresAt, current.Size), count);
+                if (ReferenceEquals(list, replacement))
+                    return (current, 0L);
+                if (replacement.Count == 0)
+                    return (null, count);
+
+                long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(replacement) : current.Size;
+                return listSize < 0
+                    ? (current, 0L)
+                    : (current.WithValue(replacement, replacement.ExpiresAt, listSize), count);
             }
 
             object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;
@@ -1410,11 +1423,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private interface IListSnapshot
     {
         object GetSnapshot();
+        string ValueTypeName { get; }
     }
 
     // Updates copy one bounded block and the block directory, not the entire list. The immutable
     // key index shares unchanged nodes. Raw dictionary reads retain their existing public shape.
-    private sealed class ListSnapshot<T> : IListSnapshot where T : notnull
+    private sealed class ListSnapshot<T> : IListSnapshot, ICollection where T : notnull
     {
         public const int BlockSize = 32;
         private ImmutableDictionary<T, int>? _indices;
@@ -1460,6 +1474,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         public int Count => _indices?.Count ?? _initialValues!.Count;
+        public string ValueTypeName => typeof(Dictionary<T, DateTime?>).Name;
+        bool ICollection.IsSynchronized => false;
+        object ICollection.SyncRoot => this;
+
+        void ICollection.CopyTo(Array array, int index) => ((ICollection)CopyValues()).CopyTo(array, index);
+
+        IEnumerator IEnumerable.GetEnumerator()
+        {
+            foreach (var block in _blocks)
+                foreach (var item in block)
+                    if (item.Present)
+                        yield return new KeyValuePair<T, DateTime?>(item.Key, item.Expiration);
+        }
+
         private ImmutableDictionary<T, int> Indices
         {
             get
@@ -1833,7 +1861,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error calculating entry size for type {EntryType}, using fallback estimation",
-                value?.GetType().Name ?? "null");
+                GetEntryTypeName(value));
 
             // Fallback to simple estimation
             size = value switch
@@ -1849,22 +1877,24 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
                 "Custom SizeCalculator functions must return non-negative values.",
-                size, value?.GetType().Name ?? "null");
+                size, GetEntryTypeName(value));
             return -1;
         }
 
         if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
         {
             if (_shouldThrowOnMaxEntrySizeExceeded)
-                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, GetEntryTypeName(value));
 
             _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+                size, _maxEntrySize.Value, GetEntryTypeName(value));
             return -1;
         }
 
         return size;
     }
+
+    private static string GetEntryTypeName(object? value) => value is IListSnapshot list ? list.ValueTypeName : value?.GetType().Name ?? "null";
 
     private static bool TypeRequiresCloning(Type? t)
     {
