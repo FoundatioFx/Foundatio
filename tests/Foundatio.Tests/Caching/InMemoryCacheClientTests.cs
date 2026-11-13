@@ -19,6 +19,28 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true).ShouldThrowOnSerializationError(shouldThrowOnSerializationError));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithConcurrentAddsAndRemovesOnTheSameKey_LosesNoValue(bool cloneValues)
+    {
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(cloneValues));
+        await cache.ListAddAsync("index", ["kept"], TimeSpan.FromMinutes(1));
+
+        for (int round = 0; round < 20; round++)
+        {
+            int current = round;
+            var adds = Enumerable.Range(0, 16).Select(i => Task.Run(() => cache.ListAddAsync("index", [$"r{current}-{i}"], TimeSpan.FromMinutes(1)), TestCancellationToken));
+            var removes = Enumerable.Range(0, 16).Select(i => Task.Run(() => cache.ListRemoveAsync("index", [$"r{current - 1}-{i}"]), TestCancellationToken));
+            var reads = Enumerable.Range(0, 4).Select(_ => Task.Run(() => cache.GetListAsync<string>("index"), TestCancellationToken));
+            await Task.WhenAll(adds.Concat<Task>(removes).Concat(reads));
+        }
+
+        var list = await cache.GetListAsync<string>("index");
+        var expected = Enumerable.Range(0, 16).Select(i => $"r19-{i}").Append("kept").Order(StringComparer.Ordinal);
+        Assert.Equal(expected, list.Value!.Order(StringComparer.Ordinal));
+    }
+
     [Fact]
     public override Task AddAsync_WithConcurrentRequests_OnlyOneSucceeds()
     {
