@@ -244,6 +244,9 @@ public sealed class KafkaMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+
+    /// <inheritdoc />
     /// <remarks>
     /// Deletes the source's consumer group and the topics only it uses: a queue's topic, a subscription's own topic
     /// (not the shared topic it subscribes to), and the dead-letter topic. Deleting a subscription's group drops its

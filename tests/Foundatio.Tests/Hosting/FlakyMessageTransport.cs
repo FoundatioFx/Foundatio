@@ -42,6 +42,8 @@ public sealed class FlakyMessageTransport(TimeProvider timeProvider) : IMessageT
         return receiver;
     }
 
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => _inner.GetStatsAsync(source, cancellationToken);
+
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => _inner.DeleteAsync(source, cancellationToken);
 
     public ValueTask DisposeAsync() => _inner.DisposeAsync();

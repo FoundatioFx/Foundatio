@@ -209,6 +209,9 @@ public sealed class SqsMessageTransport : IMessageTransport
         return receiver;
     }
 
+    /// <inheritdoc />
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+
     /// <summary>
     /// Removes the messages and dead letters the source held when called, and unsubscribes a durable subscription from
     /// its topic, but keeps the queues, so the source can be used again at once. Messages sent during the call are kept;

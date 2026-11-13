@@ -40,6 +40,8 @@ public class InMemoryMessageTransportTests(ITestOutputHelper output) : MessageTr
             return receiver;
         }
 
+        public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => broker.GetStatsAsync(source, cancellationToken);
+
         public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
         {
             ThrowIfDisposed();

@@ -210,6 +210,9 @@ public sealed class RedisMessageTransport : IMessageTransport
         return receiver;
     }
 
+    /// <inheritdoc />
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+
     /// <summary>
     /// Deletes a queue or durable subscription with its messages and dead letters, or only the dead letters of a
     /// <see cref="MessageSourceKind.DeadLetter"/> source. A deleted subscription is first removed from its topic, so it

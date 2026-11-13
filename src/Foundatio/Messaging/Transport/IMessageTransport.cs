@@ -59,4 +59,16 @@ public interface IMessageTransport : IAsyncDisposable
     /// </summary>
     /// <exception cref="ArgumentException">The source is an instance subscription; dispose its receiver instead.</exception>
     Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Counts the messages in a queue or durable subscription, as the broker reports them. Return null for a source
+    /// the transport cannot count, such as an instance subscription; within the result, leave a count null when the
+    /// broker does not report it. A source that does not exist yet counts as empty. The counts may be approximate
+    /// and lag sends and settlements by a few seconds. Keep the call cheap and never wait for in-flight work to settle:
+    /// a dashboard may call it every few seconds for every source.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// The source is a dead-letter source; its count is <see cref="MessageSourceStats.DeadLettered"/> of the source it belongs to.
+    /// </exception>
+    Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default);
 }

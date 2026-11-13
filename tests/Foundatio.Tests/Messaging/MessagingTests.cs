@@ -950,6 +950,8 @@ public class MessagingTests : TestWithLoggingBase
         public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
             => new Receiver(this, await inner.CreateReceiverAsync(source, options, cancellationToken));
 
+        public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.GetStatsAsync(source, cancellationToken);
+
         public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.DeleteAsync(source, cancellationToken);
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

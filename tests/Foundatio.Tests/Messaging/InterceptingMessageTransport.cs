@@ -73,6 +73,8 @@ public sealed class InterceptingMessageTransport(IMessageTransport inner, Transp
         return receiver;
     }
 
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.GetStatsAsync(source, cancellationToken);
+
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default) => inner.DeleteAsync(source, cancellationToken);
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

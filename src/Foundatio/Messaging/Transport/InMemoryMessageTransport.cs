@@ -136,6 +136,9 @@ public sealed class InMemoryMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
+    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+
+    /// <inheritdoc />
     public Task DeleteAsync(MessageSource source, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(source);
