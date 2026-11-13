@@ -204,37 +204,41 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
     /// process may now own the work, and the job then abandons the entry instead of completing it.
     /// </summary>
     /// <remarks>
-    /// A failed queue entry renewal doesn't cancel the work item: queues report only provider errors, not a definite
-    /// loss, and while the work item lock is held a redelivered entry can't be processed concurrently because its
-    /// worker fails to acquire the same lock and abandons it.
+    /// Queue renewal errors do not prove ownership was lost. Protection against concurrent redelivery requires
+    /// an exclusive work item lock; the default handler uses an empty lock and provides no such protection.
     /// </remarks>
     private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, WorkItemLeaseLoss leaseLoss)
     {
-        var queueEntryRenewal = RenewQueueEntryLockAsync();
-        var workItemLockRenewal = RenewWorkItemLockAsync();
+        await Task.WhenAll(RenewQueueEntryLockAsync(), RenewWorkItemLockAsync()).AnyContext();
 
-        try
+        async Task RenewQueueEntryLockAsync()
         {
-            await Task.WhenAll(queueEntryRenewal, workItemLockRenewal).AnyContext();
-        }
-        catch (Exception ex) when (workItemLockRenewal.Exception?.InnerException is not LockException)
-        {
-            handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
-        }
-        catch
-        {
-            if (queueEntryRenewal.Exception?.InnerException is { } queueError)
-                handler.Log.LogError(queueError, "Error renewing queue entry lock: {Message}", queueError.Message);
+            try
+            {
+                await queueEntry.RenewLockAsync().AnyContext();
+            }
+            catch (Exception ex)
+            {
+                handler.Log.LogError(ex, "Error renewing queue entry lock: {Message}", ex.Message);
+            }
         }
 
-        if (workItemLockRenewal.Exception?.InnerException is not LockException)
-            return;
-
-        handler.Log.LogWarning("Lost work item lock {Resource} for queue entry {Id}, cancelling work item", workItemLock.Resource, queueEntry.Id);
-        await leaseLoss.SignalAsync().AnyContext();
-
-        async Task RenewQueueEntryLockAsync() => await queueEntry.RenewLockAsync().AnyContext();
-        async Task RenewWorkItemLockAsync() => await workItemLock.RenewAsync().AnyContext();
+        async Task RenewWorkItemLockAsync()
+        {
+            try
+            {
+                await workItemLock.RenewAsync().AnyContext();
+            }
+            catch (LockException ex)
+            {
+                handler.Log.LogWarning(ex, "Lost work item lock {Resource} for queue entry {Id}, cancelling work item: {Message}", workItemLock.Resource, queueEntry.Id, ex.Message);
+                await leaseLoss.SignalAsync().AnyContext();
+            }
+            catch (Exception ex)
+            {
+                handler.Log.LogError(ex, "Error renewing work item lock: {Message}", ex.Message);
+            }
+        }
     }
 
     /// <summary>

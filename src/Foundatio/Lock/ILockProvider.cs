@@ -320,6 +320,7 @@ public static class LockProviderExtensions
         {
             foreach (string resource in resourceList)
             {
+                var acquireStartedUtc = timeProvider.GetUtcNow();
                 var l = await provider.TryAcquireAsync(resource, timeUntilExpires, releaseOnDispose, cancellationToken).AnyContext();
                 if (l is null)
                 {
@@ -327,10 +328,10 @@ public static class LockProviderExtensions
                     return null;
                 }
 
-                acquiredLocks.Add((l, timeProvider.GetUtcNow()));
+                acquiredLocks.Add((l, acquireStartedUtc));
 
-                // Renew earlier locks while waiting for the remaining resources.
-                if (acquiredLocks.Count > 1 && renewTime > TimeSpan.Zero && !await TryRenewEarlierLocksAsync(acquiredLocks, timeUntilExpires, renewTime, timeProvider, logger).AnyContext())
+                // Include acquisition latency: even the newest lease may need renewal before it can be returned.
+                if (renewTime > TimeSpan.Zero && !await TryRenewAcquiredLocksAsync(acquiredLocks, timeUntilExpires, renewTime, timeProvider, logger).AnyContext())
                     return null;
             }
 
@@ -349,14 +350,14 @@ public static class LockProviderExtensions
     }
 
     /// <summary>
-    /// Renews earlier locks whose renewal interval has elapsed and checks every acquired lease after awaiting renewal.
+    /// Renews locks whose renewal interval has elapsed and checks every acquired lease after awaiting renewal.
     /// Returns <c>false</c> when a lease was lost or its conservative lifetime elapsed; provider errors propagate.
     /// </summary>
-    private static async Task<bool> TryRenewEarlierLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewedUtc)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
+    private static async Task<bool> TryRenewAcquiredLocksAsync(List<(ILock Lock, DateTimeOffset LastRenewedUtc)> acquiredLocks, TimeSpan? timeUntilExpires, TimeSpan renewTime, TimeProvider timeProvider, ILogger logger)
     {
         var utcNow = timeProvider.GetUtcNow();
         var renewBeforeUtc = utcNow.Subtract(renewTime);
-        int[] locksToRenew = Enumerable.Range(0, acquiredLocks.Count - 1).Where(index => acquiredLocks[index].LastRenewedUtc < renewBeforeUtc).ToArray();
+        int[] locksToRenew = Enumerable.Range(0, acquiredLocks.Count).Where(index => acquiredLocks[index].LastRenewedUtc < renewBeforeUtc).ToArray();
         if (locksToRenew.Length is 0)
             return true;
 
