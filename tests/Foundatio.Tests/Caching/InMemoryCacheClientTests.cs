@@ -1609,7 +1609,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
                 Assert.False((await cache.GetAsync<int>("test0")).HasValue);
                 Assert.Equal(1, cache.Misses);
 
-                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), TestCancellationToken); // keep the last access ticks from being the same for all items
+                await Task.Delay(TimeSpan.FromMilliseconds(50), TimeProvider.System, TestCancellationToken); // keep the last access ticks from being the same for all items
                 Assert.NotNull(await cache.GetAsync<int?>("test1"));
                 Assert.Equal(1, cache.Hits);
 
