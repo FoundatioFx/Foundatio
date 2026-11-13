@@ -45,6 +45,7 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan ForwarderRestartDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxForwarderRestartDelay = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan MinimumCommittedWait = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
     /// The shortest retention of a delay tier topic. A record moves on within six hours while forwarders run; the rest
@@ -591,34 +592,57 @@ public sealed class KafkaMessageTransport : IMessageTransport
         }
     }
 
-    /// <summary>
-    /// The partitions a group has no committed offset for, read through a consumer of the group. The admin client's
-    /// ListConsumerGroupOffsets is not used: on a client without a consumer group, librdkafka crashes the process when
-    /// the group coordinator answers with a retriable error, as a broker that is still starting does.
-    /// </summary>
-    private Task<List<TopicPartition>> GetUncommittedPartitionsAsync(string groupId, List<TopicPartition> partitions, CancellationToken cancellationToken)
+    /// <summary>The partitions a group has no committed offset for.</summary>
+    private async Task<List<TopicPartition>> GetUncommittedPartitionsAsync(string groupId, List<TopicPartition> partitions, CancellationToken cancellationToken)
     {
-        return Task.Run(async () =>
-        {
-            using var consumer = new ConsumerBuilder<byte[]?, byte[]?>(CreateConsumerConfig(groupId))
-                .SetLogHandler((_, message) => OnLog(message))
-                .SetErrorHandler((_, error) => OnError(error))
-                .Build();
+        using var consumer = CreateOffsetReader(groupId);
+        var committed = await GetCommittedOffsetsAsync(consumer, partitions, TopicReadyTimeout, cancellationToken).AnyContext();
+        return committed.Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
+    }
 
-            long started = Stopwatch.GetTimestamp();
-            while (true)
+    /// <summary>
+    /// A consumer of <paramref name="groupId"/> that only reads the group's committed offsets: it never subscribes, so
+    /// it never joins the group, and it never commits. The admin client's ListConsumerGroupOffsets is not used: on a
+    /// client without a consumer group, librdkafka crashes the process when the group coordinator answers with a
+    /// retriable error, as a broker that is still starting does.
+    /// </summary>
+    internal IConsumer<byte[]?, byte[]?> CreateOffsetReader(string groupId)
+    {
+        var config = CreateConsumerConfig(groupId);
+        config.EnableAutoCommit = false;
+        config.GroupInstanceId = null;
+        return new ConsumerBuilder<byte[]?, byte[]?>(config)
+            .SetLogHandler((_, message) => OnLog(message))
+            .SetErrorHandler((_, error) => OnError(error))
+            .Build();
+    }
+
+    /// <summary>
+    /// The committed offsets of <paramref name="partitions"/>, read through <paramref name="reader"/> (see
+    /// <see cref="CreateOffsetReader"/>) within about <paramref name="timeout"/>, retrying while the group coordinator
+    /// moves or loads, which <c>Committed</c> does not. Returns only once the reader is no longer in use, so the
+    /// caller may dispose it. A partition of a topic that no longer exists has no committed offset.
+    /// </summary>
+    internal async Task<List<TopicPartitionOffset>> GetCommittedOffsetsAsync(IConsumer<byte[]?, byte[]?> reader, IReadOnlyList<TopicPartition> partitions, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        long started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            var remaining = timeout - Stopwatch.GetElapsedTime(started);
+            try
             {
-                try
-                {
-                    return consumer.Committed(partitions, AdminTimeout).Where(p => p.Offset == Offset.Unset).Select(p => p.TopicPartition).ToList();
-                }
-                catch (KafkaException ex) when (IsCoordinatorUnavailable(ex.Error) && Stopwatch.GetElapsedTime(started) < TopicReadyTimeout)
-                {
-                    Logger.LogDebug(ex, "Retrying reading the committed offsets of group {GroupId}", groupId);
-                    await Task.Delay(100, cancellationToken).AnyContext();
-                }
+                return await Task.Run(() => reader.Committed(partitions, remaining > MinimumCommittedWait ? remaining : MinimumCommittedWait)).AnyContext();
             }
-        }, cancellationToken);
+            catch (TopicPartitionOffsetException ex) when (ex.Results.All(r => r.Error.Code is ErrorCode.NoError or ErrorCode.UnknownTopicOrPart))
+            {
+                return ex.Results.Select(r => r.Error.IsError ? new TopicPartitionOffset(r.TopicPartition, Offset.Unset) : r.TopicPartitionOffset).ToList();
+            }
+            catch (KafkaException ex) when (IsCoordinatorUnavailable(ex.Error) && Stopwatch.GetElapsedTime(started) < timeout)
+            {
+                Logger.LogDebug(ex, "Retrying reading committed offsets: {Reason}", ex.Error.Reason);
+                await Task.Delay(100, cancellationToken).AnyContext();
+            }
+        }
     }
 
     private static bool IsCoordinatorUnavailable(AlterConsumerGroupOffsetsException ex)
