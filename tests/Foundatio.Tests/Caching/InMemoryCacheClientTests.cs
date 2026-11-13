@@ -1127,6 +1127,146 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData("Enumeration", 10, false, false)]
+    [InlineData("Enumeration", 10, false, true)]
+    [InlineData("Enumeration", 10, true, false)]
+    [InlineData("Enumeration", 10, true, true)]
+    [InlineData("Enumeration", 1000, false, false)]
+    [InlineData("Enumeration", 1000, false, true)]
+    [InlineData("Enumeration", 1000, true, false)]
+    [InlineData("Enumeration", 1000, true, true)]
+    [InlineData("Sizing", 10, false, false)]
+    [InlineData("Sizing", 10, false, true)]
+    [InlineData("Sizing", 10, true, false)]
+    [InlineData("Sizing", 10, true, true)]
+    [InlineData("Sizing", 1000, false, false)]
+    [InlineData("Sizing", 1000, false, true)]
+    [InlineData("Sizing", 1000, true, false)]
+    [InlineData("Sizing", 1000, true, true)]
+    public async Task ListAddAsync_WithExpirationDuringPreparation_PreservesLiveList(string stage, int count, bool cloneValues, bool supportsReadOnlyCollections)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider();
+        bool delaySizing = false;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).MaxMemorySize(100_000)
+            .SizeCalculator(value =>
+            {
+                int size = ((IDictionary<int, DateTime?>)value).Count;
+                if (delaySizing && size == count + 1)
+                {
+                    delaySizing = false;
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                }
+                return size;
+            }, supportsReadOnlyCollections));
+        var originalValues = Enumerable.Range(0, count).ToArray();
+        await cache.ListAddAsync("set", originalValues, TimeSpan.FromMinutes(10));
+        await cache.ListAddAsync("set", [-1], TimeSpan.FromMinutes(10));
+        await cache.ListRemoveAsync("set", [-1]);
+        await cache.SetExpirationAsync("set", TimeSpan.FromMinutes(1));
+        var originalEntry = GetEntry(cache, "set");
+        delaySizing = stage == "Sizing";
+
+        // Act
+        long added = await cache.ListAddAsync("set", GetValues(), TimeSpan.FromSeconds(1));
+
+        // Assert
+        Assert.Equal(0, added);
+        Assert.Same(originalEntry, GetEntry(cache, "set"));
+        Assert.Equal(originalValues, (await cache.GetListAsync<int>("set")).Value.Order());
+        Assert.Equal(TimeSpan.FromSeconds(58), await cache.GetExpirationAsync("set"));
+        Assert.Equal(count, cache.CurrentMemorySize);
+
+        IEnumerable<int> GetValues()
+        {
+            if (stage == "Enumeration")
+                clock.Advance(TimeSpan.FromSeconds(2));
+            yield return 0;
+            yield return count;
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithExpirationDuringRetry_PreservesConcurrentEntry(bool supportsReadOnlyCollections)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider();
+        using var sizing = new Barrier(2);
+        bool synchronizeSizing = false;
+        int sizingAttempts = 0;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).MaxMemorySize(100_000)
+            .SizeCalculator(value =>
+            {
+                int size = ((IDictionary<int, DateTime?>)value).Count;
+                if (synchronizeSizing && size == 1001)
+                {
+                    Interlocked.Increment(ref sizingAttempts);
+                    Synchronize();
+                    Synchronize();
+                }
+                return size;
+            }, supportsReadOnlyCollections));
+        await cache.ListAddAsync("set", Enumerable.Range(0, 1000), TimeSpan.FromMinutes(10));
+        var concurrentEntry = GetEntry(cache, "set").WithExpiration(clock.GetUtcNow().UtcDateTime.AddMinutes(2));
+        synchronizeSizing = true;
+
+        // Act
+        var adding = Task.Run(() => cache.ListAddAsync("set", [0, 1000], TimeSpan.FromSeconds(1)), TestCancellationToken);
+        long added;
+        try
+        {
+            Synchronize();
+            Publish(cache, "set", concurrentEntry);
+            Synchronize();
+            Synchronize();
+            clock.Advance(TimeSpan.FromSeconds(2));
+            Synchronize();
+            added = await adding.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        }
+        finally
+        {
+            sizing.RemoveParticipant();
+            await adding.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        }
+
+        // Assert
+        Assert.Equal(2, sizingAttempts);
+        Assert.Equal(0, added);
+        Assert.Same(concurrentEntry, GetEntry(cache, "set"));
+        Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("set")).Value.Order());
+        Assert.Equal(TimeSpan.FromSeconds(118), await cache.GetExpirationAsync("set"));
+        Assert.Equal(1000, cache.CurrentMemorySize);
+
+        void Synchronize()
+        {
+            if (!sizing.SignalAndWait(TimeSpan.FromSeconds(10), TestCancellationToken))
+                throw new TimeoutException("List update did not reach the expected sizing attempt.");
+        }
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(1000)]
+    public async Task ListAddAsync_WithSubminimumExpiration_RemovesOnlyRequestedItems(int count)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(new FakeTimeProvider()).MaxMemorySize(100_000)
+            .SizeCalculator(value => ((IDictionary<int, DateTime?>)value).Count));
+        await cache.ListAddAsync("set", Enumerable.Range(0, count));
+
+        // Act
+        long added = await cache.ListAddAsync("set", [0, count], TimeSpan.FromMilliseconds(1));
+
+        // Assert
+        Assert.Equal(0, added);
+        Assert.Equal(Enumerable.Range(1, count - 1), (await cache.GetListAsync<int>("set")).Value.Order());
+        Assert.Null(await cache.GetExpirationAsync("set"));
+        Assert.Equal(count - 1, cache.CurrentMemorySize);
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]

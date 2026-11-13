@@ -680,6 +680,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool entryCreated = false;
         return UpdateEntry(key, current =>
         {
+            if (expiresAt.HasValue && expiresAt < _timeProvider.GetUtcNow().UtcDateTime)
+                return (current, 0L);
+
+            var update = PrepareUpdate(current);
+            return expiresAt.HasValue && expiresAt < _timeProvider.GetUtcNow().UtcDateTime ? (current, 0L) : update;
+        }, serializeAfterConflict: true);
+
+        (CacheEntry? Entry, long Result) PrepareUpdate(CacheEntry? current)
+        {
             if (current?.StoredValue is ListSnapshot<T> { IsSourceOfTruth: true } stored)
             {
                 if (_hasSizeCalculator && !_sizesListsInPlace)
@@ -727,7 +736,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return size < 0
                 ? (current, 0L)
                 : (WithListValues(current, dictionary, size), (long)items.Count);
-        }, serializeAfterConflict: true);
+        }
     }
 
     /// <summary>
