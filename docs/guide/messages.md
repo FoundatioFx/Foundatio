@@ -27,7 +27,7 @@ public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceip
 // Registration
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")             // names this service's subscriptions
-    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...) or UseAzureServiceBus(...); see Transports
+    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...), UseAzureServiceBus(...) or UseRabbitMQ(...); see Transports
     .AddSubscriber<OrderPlacedHandler>()  // events
     .AddConsumer<SendReceiptHandler>());  // commands
 
@@ -127,6 +127,25 @@ m.UseAzureServiceBus(new AzureServiceBusMessageTransportOptions
 - Delays are scheduled messages, for any length of time. Leases follow each entity's lock duration (1 minute by default, at most 5), renewed by Foundatio.
 - The transport creates queues, topics and subscriptions as it needs them. Set `CreateEntities = false` when they are provisioned for you.
 - See the [Azure Service Bus README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for names, sessions, sizes and the emulator.
+
+### Using RabbitMQ
+
+`dotnet add package Foundatio.RabbitMQ`. It needs RabbitMQ 4. Queues and subscriptions are quorum queues; topics are fanout exchanges, and each durable subscription is a queue bound to its topic's exchange.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseRabbitMQ("amqp://guest:guest@localhost:5672")
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options, on the IConnection registered in DI (for example by Aspire's AddRabbitMQClient)
+m.UseRabbitMQ(new RabbitMQMessageTransportOptions { Prefix = "myapp" });
+```
+
+- Without a `ConnectionString`, `UseRabbitMQ` uses the `IConnection` registered in DI, and the host fails to start without one; that connection stays yours. With one, the transport opens and closes its own connections.
+- It delays messages for up to about 8.5 years, in whole seconds, through delay queues on the broker that need no plugin and survive restarts. It doesn't order groups or deduplicate, and leases never expire.
+- A handler that holds a message longer than the broker's `consumer_timeout` (30 minutes by default) loses its channel, and the message is delivered again; raise it for long handlers, or use jobs.
+- See the [RabbitMQ README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ#message-transport-preview) for how it maps to RabbitMQ, headers, counts and limits.
 
 ## Send or publish?
 
@@ -241,7 +260,7 @@ Delays longer than the transport supports natively (for example 15 minutes on SQ
 `GroupKey` and `DeduplicationId` only guarantee something on transports that declare `OrderedGroups` and `Deduplication` in their `TransportCapabilities`. On other transports the message is still sent, and Foundatio logs a warning once per message type:
 
 - Without ordered groups, messages of one group may be handled concurrently and out of order. SQS standard queues still send the key as the `MessageGroupId` of fair queues.
-- Without deduplication (Kafka and SQS standard queues), a repeated `DeduplicationId` is delivered again.
+- Without deduplication (Kafka, RabbitMQ and SQS standard queues), a repeated `DeduplicationId` is delivered again.
 
 To throw `MessageBusException` instead of sending, set `m.Configure(o => o.RequireTransportCapabilities = true)`.
 

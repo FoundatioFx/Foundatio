@@ -41,6 +41,48 @@ IMessageBus messageBus = new RabbitMQMessageBus(o => o
 await messageBus.PublishAsync(new MyMessage { Data = "Hello" });
 ```
 
+### Message transport (preview)
+
+`RabbitMQMessageTransport` plugs RabbitMQ 4 into Foundatio's newer messaging (`IMessageClient`, `AddConsumer`, `AddSubscriber`) and supports queues (competing consumers), topics with durable and per-instance subscriptions, dead letters, and durable delays without the archived delayed-message plugin. It has been tested on RabbitMQ 4.2 and 4.3.
+
+```csharp
+services.AddFoundatioMessaging(m => m
+    .UseRabbitMQ(new RabbitMQMessageTransportOptions
+    {
+        ConnectionString = "amqp://guest:guest@localhost:5672",
+        Prefix = "myapp",
+        ManagementEndpoint = new Uri("http://localhost:15672")   // optional, to count in-flight messages
+    }));
+```
+
+- `UseRabbitMQ("amqp://guest:guest@localhost:5672")` uses the default options.
+- `UseRabbitMQ()`, or options without a `ConnectionString`, uses the `IConnection` registered in DI (Aspire's `AddRabbitMQClient` registers one), which stays the app's. `UseRabbitMQ(connection, options)` takes one explicitly.
+- `UseRabbitMQ(sp => new RabbitMQMessageTransportOptions { ... })` builds the options from the service provider, for example from configuration.
+- The service provider creates the transport and disposes it at shutdown. `LoggerFactory` and `TimeProvider` come from DI unless the options set them.
+
+How it maps to RabbitMQ:
+
+- **Queue**: a quorum queue `<prefix>.queue.<name>`. **Topic**: a fanout exchange `<prefix>.topic.<name>`. **Durable subscription**: a quorum queue `<prefix>.subscription.<topic>:<name>` bound to it; a new subscription gets messages published after it is created, and `MessageDestination.Subscription` sends (dead-letter replays) go straight to its queue. **Instance subscription**: an exclusive, auto-deleted classic queue bound to the exchange, which the broker deletes when the receiver closes or its connection is lost, so nothing is left behind by a crashed process.
+- **Dead letters**: a quorum queue per source, `<prefix>.deadletter.queue.<name>` or `<prefix>.deadletter.subscription.<topic>:<name>`. Dead-lettering sends a copy with the reason (cut to 4 KiB) and then acknowledges the original; a dead letter released by a peek goes back to its place.
+- **Sending**: every send and publish waits for publisher confirms. The queue, or the topic's exchange and the subscription's binding, is declared first, so nothing sent before a receiver exists is lost. A send to a queue another process deleted comes back as unroutable, and the transport declares it again and sends once more. A publish to a topic without subscriptions is dropped.
+- **Leases**: a delivery stays with its receiver's channel until it is settled, so leases never expire (`LeaseExpiration = false`); renewing reports a delivery whose channel has closed. Unsettled deliveries go back to their queue when the receiver or its connection closes. A receiver whose channel closes, or whose queue is deleted, faults and Foundatio replaces it. RabbitMQ closes a channel that holds a delivery longer than `consumer_timeout` (30 minutes by default): raise it, for example with a `consumer-timeout` policy, for handlers that run longer, or use jobs.
+- **Delivery counts and retries**: quorum queues are declared with `x-delivery-limit: -1`, so the broker never dead-letters or drops a message on its own; Foundatio decides. They count a delivery returned by a closed channel, but not one released with a requeue, so an abandoned message is sent to its queue again carrying its delivery count, and the original is then acknowledged. A crash between the two delivers it twice.
+- **Delays**: 28 shared levels, `<prefix>.delay.00` to `<prefix>.delay.27`, each a topic exchange and a quorum queue that holds messages for 2^level seconds and then dead-letters them, at least once, to the next level; the routing key spells the delay in binary, and `<prefix>.delay` delivers by target name. Delayed sends, publishes and retries wait on the broker, survive restarts with no process running, and arrive within about a second after they are due (delays are whole seconds, rounded up; Foundatio holds retries under a second in-process). The longest delay is 2^28 - 1 seconds, about 8.5 years. A delayed message for a queue that was deleted, or a topic without subscriptions, goes to `<prefix>.discard`, a queue that keeps nothing, so it cannot hold up its level. `DelayedDelivery = false` declares none of this: Foundatio then holds retries in-process and rejects delayed sends.
+- **Flow control**: each receiver has its own channel; the broker pushes deliveries into a buffer, up to a prefetch of twice the handler concurrency (Foundatio's `PrefetchCount`), the messages being handled plus as many ahead. A caller holding a whole prefetch of unsettled messages still receives: the receiver starts a fresh consumer and cancels the old one, whose deliveries can still be settled.
+- **Headers**: application headers are AMQP headers with UTF-8 string values, so other clients see them; the id is the AMQP message id (or `x-foundatio-id` when longer than 255 bytes) and the timestamp is when it was sent. Names the broker or RabbitMQ.Client set or route by (`x-*`, `CC`, `BCC`, and `traceparent`, `tracestate` and `baggage`, which the client replaces while it is traced) travel as `x-foundatio-h-<name>`. Headers too large for the AMQP properties frame (more than 64 KiB, or a name over 255 bytes) move into an envelope at the start of the body. Messages from other producers are read as they are: their headers that don't start with `x-` become headers.
+- **Size**: `MaxMessageBytes` (16 MiB) is the broker's `max_message_size`; messages may be that less 16 KiB as `MessageSize` measures them.
+- **Connections**: the transport opens one connection to publish and declare on and one for its receivers, with automatic recovery off: it opens a new one when it next needs it, and Foundatio replaces the receivers of a lost one. `Hosts` lists hosts to fail over between, and `ConfigureConnectionFactory` adjusts the factory (TLS, heartbeats).
+- **Provisioning**: exchanges, queues and bindings are declared on first use, always with the same arguments. One declared elsewhere with other arguments fails with `MessageBusException` naming it; delete it, or use another `Prefix`.
+- **Deletion**: `DeleteAsync` deletes the source's queue and dead-letter queue (or only the dead-letter queue); receivers open on it, in any process, are cancelled by the broker and replaced. A subscription's topic exchange stays.
+
+**Monitoring**: `GetStatsAsync(source)` counts a queue's or durable subscription's messages without declaring anything; a source that does not exist counts as empty, and an instance subscription returns `null`.
+
+- Without `ManagementEndpoint`: `Queued` and `DeadLettered` are the ready messages of the queue and its dead-letter queue, from passive declares (one round trip each), current at the moment of the call. `InFlight` is `null`: AMQP does not report delivered, unacknowledged messages, and they are counted nowhere.
+- With `ManagementEndpoint` (credentials from its URI, or else the connection string's): `Queued` is `messages_ready` and `InFlight` is `messages_unacknowledged`, which includes messages a receiver has buffered and not handed out yet; `DeadLettered` counts every message in the dead-letter queue, peeked ones too. The management API refreshes its counts every 5 seconds by default (`collect_statistics_interval`).
+- `Delayed` is `null`: delayed messages and delayed retries wait in delay queues every source shares.
+
+Limits: groups are not ordered and messages are not deduplicated; a crash between an abandon's or a dead-letter's copy and the original's acknowledgement delivers both; messages a receiver had buffered but not handed out count one more delivery when its connection is lost; delays have one-second resolution. The tests ran against a local broker started through Aspire.
+
 ## 📦 Provider Implementations
 
 | Provider | Caching | Queues | Messaging | Storage | Locks |
@@ -75,7 +117,7 @@ The `rabbitmq_delayed_message_exchange` plugin is [archived and no longer mainta
 
 - On RabbitMQ < 4.3: The plugin still works but logs a deprecation warning at startup.
 - On RabbitMQ >= 4.3: Delayed messages use the in-memory fallback automatically. Be aware that these are not durable across process restarts.
-- For durable delayed delivery on RabbitMQ 4.3+, consider implementing TTL + Dead-Letter Exchange patterns or using an external scheduler.
+- For durable delayed delivery on RabbitMQ 4.3+, use the [message transport](#message-transport-preview), whose delays wait in delay queues on the broker, or an external scheduler.
 
 ### RabbitMQ 4.3 Feature Support
 

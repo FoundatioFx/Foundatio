@@ -57,7 +57,7 @@ The suite skips tests for capabilities you don't declare.
 
 When a receiver can never deliver again (a fatal client error), throw `MessageReceiverFaultedException` from `ReceiveAsync`: Foundatio lets in-flight messages finish, disposes the receiver and opens a new one. Other receive errors are retried with backoff, and after five in a row the receiver is replaced too.
 
-Push-based client libraries (RabbitMQ consumers, the Service Bus processor) can buffer deliveries in a bounded channel inside the receiver and return them from `ReceiveAsync`. Derive from `IncomingMessage` to carry your receipt (delivery tag, receipt handle, stream id).
+Push-based client libraries (RabbitMQ consumers, the Service Bus processor) can buffer deliveries in a bounded channel inside the receiver and return them from `ReceiveAsync`. `PrefetchCount` is how many to buffer ahead of what Foundatio is handling, which is at most that many again; a broker whose prefetch counts every unsettled delivery (RabbitMQ) must still deliver to a caller that holds more, since the suite receives 100 messages without settling them. Derive from `IncomingMessage` to carry your receipt (delivery tag, receipt handle, stream id).
 
 ### Counts {#counts}
 
@@ -103,7 +103,7 @@ Use the database's clock for "now" so workers with skewed clocks agree. Prove it
 
 ## Experimental API {#experimental-api}
 
-The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have not been tried against RabbitMQ yet, and against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
+The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have been tried against Azure Service Bus only on its emulator, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
 
 Any reference to one of these types is a compile error, FOUNDATIO0001, until you suppress it. Suppress it for the whole provider project and its test project:
 
