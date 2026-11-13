@@ -16,7 +16,7 @@ Decisions: side-by-side with the legacy APIs for v14 (delete them in v15); store
   Foundatio core     routing · serialization · retries · dead letters · concurrency · leases
                      delays · shutdown drain · tracing · metrics · CRON · startup gate
   ───────────────────────────────────────────────────────────────────────────────────────
-  Provider SPI       IMessageTransport + IMessageReceiver (8 methods)    IJobStore (10 members)
+  Provider SPI       IMessageTransport + IMessageReceiver (9 methods)    IJobStore (10 members)
 ```
 
 The provider SPI is `[Experimental("FOUNDATIO0001")]` in v14, because it has not yet been tried against Service Bus or RabbitMQ and may change in a minor release. That covers `IMessageTransport`, `IMessageReceiver`, `IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease-lost and receiver-faulted exceptions, `IJobStore` with `JobClaimRequest`, `JobCompletion`, `JobLeaseStatus` and `JobInfo`, and the conformance suites. The diagnostic is an error by default, so provider projects suppress it with `NoWarn`. App code that uses the builders, the provider helpers, the clients, the handlers and the test harness never sees it. `TransportCapabilities` (the harness and the in-memory transport take it), `MessageSource` (`IMessageAdmin` takes it) and `MessageTooLargeException` (apps catch it) stay unmarked.
@@ -31,12 +31,13 @@ Messaging and jobs are independent: neither depends on the other's contracts. Th
 | `SendAsync(destination, messages)` | To a queue, to a topic's subscriptions, or to one durable subscription. Batch-first. |
 | `CreateReceiverAsync(source, options)` | Queue, durable subscription, instance subscription, or a dead-letter queue. |
 | `DeleteAsync(source)` | Remove a queue or subscription (with its dead letters), or only a source's dead letters. |
+| `GetStatsAsync(source)` | Approximate queued, delayed, in-flight and dead-lettered counts for dashboards; each null when the broker can't tell. |
 | `ReceiveAsync(max, maxWait)` | Leased deliveries. |
 | `CompleteAsync` / `AbandonAsync(delay)` / `DeadLetterAsync(reason)` / `RenewAsync` | Settlement. |
 
 A transport whose broker decides the lease (Service Bus sets a lock duration per entity) sets `IncomingMessage.LeaseExpiresAt`, and core renews a third of the way through the remaining lease instead of by its own `LeaseDuration`.
 
-Everything else is core: there are no optional capability interfaces to discover, no push/pull split, no provisioning API, no stats API and no outcome model in the SPI. `TransportCapabilities` (send, publish and retry delay limits, batch/message/lease limits, lease expiration, ordered groups, deduplication) is data, not interfaces, and the conformance suite reads it to decide which tests apply.
+Everything else is core: there are no optional capability interfaces to discover, no push/pull split, no provisioning API and no outcome model in the SPI; the only read-side member is `GetStatsAsync`, whose counts are data the transport reads from the broker, never state it keeps for the purpose. `TransportCapabilities` (send, publish and retry delay limits, batch/message/lease limits, lease expiration, ordered groups, deduplication) is data, not interfaces, and the conformance suite reads it to decide which tests apply.
 
 How brokers map:
 
@@ -51,7 +52,7 @@ How brokers map:
 
 The Kafka transport sets `LeaseExpiration = false`, commits the lowest unfinished offset per partition, and copies abandoned messages to the source's own topic. Brokers with push client libraries buffer into a bounded channel inside the receiver.
 
-Proof: `MessageTransportTestsBase` (60 tests) plus `JobStoreTestsBase` (31 tests). A provider test class is one override, plus `CreatePeerTransport` when a second transport over the same backend, which the suite uses as another process, needs different setup. The suite fails a transport that keeps group order only within one receiver, or that settles by message id and ignores receipts.
+Proof: `MessageTransportTestsBase` (68 tests) plus `JobStoreTestsBase` (31 tests). A provider test class is one override, plus `CreatePeerTransport` when a second transport over the same backend, which the suite uses as another process, needs different setup. The suite fails a transport that keeps group order only within one receiver, or that settles by message id and ignores receipts.
 
 ### Redis proof
 
@@ -134,7 +135,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 
 ## Messaging semantics
 
-- **One handler model.** `Task HandleAsync(T message, IMessageContext context, CancellationToken ct)`. Return completes; throw retries by `RetryPolicy`, then dead-letters; `context.DeadLetter(reason)` and `context.Retry(delay)` decide without throwing. Manual settlement exists only for transport authors.
+- **One handler model.** `Task HandleAsync(T message, IMessageContext context, CancellationToken ct)`, the same shape as `IJobHandler<TArgs>`; both contexts extend `IHandlerContext` (`Attempt`, `CorrelationId`, `Headers`, `ReportProgressAsync`), so helper code can take either. Return completes; throw retries by `RetryPolicy`, then dead-letters; `context.DeadLetter(reason)` and `context.Retry(delay)` decide without throwing. Manual settlement exists only for transport authors.
 - **Send vs publish** is the only topology choice. `AddConsumer` (queue, competing) or `AddSubscriber` (topic; `Scope = Service | Instance`).
 - **Service names.** Durable subscriptions are named after the service, so on any transport but the in-memory one the host fails to start when a service subscriber has no `Name` and `UseServiceName(...)` isn't set. The application-name fallback is for the in-memory transport and the test harness only.
 - **Shared subscriptions.** A service has one subscription per topic, and the handlers on it share each delivery. Handlers on the same source must agree on `RetryPolicy`, `LeaseDuration` and `MaxConcurrency` (unset differs from set, and policies compare by value, delegates included); the host fails to start otherwise, naming both handlers. `SubscriptionOptions.Name` gives a handler a subscription of its own, at any scope.
@@ -162,10 +163,20 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 - **Shutdown releases** running jobs without consuming an attempt. Crashes (expired leases) do count, and a job that keeps crashing fails after `MaxAttempts`.
 - **Idempotency only when asked**: a caller-supplied `JobId`. Random ids reserve nothing.
 - **CRON without leaders or stored schedules.** Every instance computes the latest occurrence within the misfire threshold and creates `cron:{schedule}:{utc}`; the store keeps one. Each schedule is isolated in its own try/catch; overlap is skipped by default, checked against the previous occurrence in the store, so it holds across instances. Schedules are code, so removing one removes it.
-- **Cancellation and progress** ride on lease renewal; progress writes are throttled.
+- **Cancellation and progress** ride on lease renewal; progress writes are throttled. Message handlers report progress the same way; it goes to the monitor, a span event and a Debug log, never to the transport.
 - **Store time** is used for leases, availability and retention.
 - **Succeeded jobs drop their arguments** in both stores and keep the rest of the record until retention ends. Measured: a succeeded job takes about 1.6 KB in Redis, a failed one with 200 bytes of arguments about 2 KB, and an in-memory job about 1 KB.
 - **Startup gate**: workers, schedulers and message handlers wait for Foundatio.Extensions.Hosting startup actions, however long they take, and do not start if they fail.
+
+## Monitoring
+
+A dashboard sees in-flight work for messages and jobs together, stats for all work, and opt-in progress, without a store write per message (PR #533's broker tracking doubled the I/O on every send and receive, and disagreed with the broker after crashes):
+
+- **Tracker.** Every process tracks the work it runs, always on. A message or job shows as active once it has run past `ActiveThreshold` (1s) or reported progress; a capped buffer keeps recent visible work and every retry, failure, dead letter and cancellation; rolling one-minute buckets over `StatsWindow` (5 minutes) count every outcome and duration per message type and source or job name. Following one item costs about 90 ns and no allocation: the tracking fields live in the handler context. Payloads and headers are never recorded.
+- **Snapshots on `ICacheClient`.** `AddFoundatioMonitoring(m => m.UseCache())` makes each instance write a versioned JSON snapshot every `SnapshotInterval` (5s), sooner when visible work changes, with an expiry of three intervals plus a membership entry, so a crashed instance drops out and a stopped one removes itself. Any shared cache works, so no store SPI was added; a hybrid or in-memory cache shows partial data.
+- **Backlog.** `IMessageTransport.GetStatsAsync` reads approximate counts from the broker: Redis from the stream, group and lease, retry and delay sets in one script (exact at that moment); SQS from queue attributes (retries waiting out their visibility timeout count as in flight; FIFO has no delayed count); Kafka from consumer lag read without joining the group (no in-flight or delayed counts; a received message stays queued until its offset is committed). A broker that can't tell two states apart counts a message in the nearest one and documents it. `IMessageAdmin.GetStatsAsync` exposes one source.
+- **`IWorkMonitor`** reads instances, active and recent work and stats across instances, the backlog of every source they receive from, and job counts per name and state, each cached for one interval however many dashboards poll; `GetOverviewAsync` returns a dashboard page in one call. A process with no handlers or jobs only reads. The dashboard UI itself is not part of this PR.
+- Deliveries through `AddLegacyMessageBus` are not tracked.
 
 ## Testing and health
 
@@ -187,7 +198,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 | PR #533 issue | Here |
 |---|---|
 | `IJobRuntimeStore` mixes job queue, broker tracking, delayed dispatch, CRON storage, counters | `IJobStore` is jobs only. No broker tracking; delays are transport-native or emulated; CRON needs no storage |
-| About 155 public types; 18-member `IMessageBus`; about 7 settlement models; 11 `ISupports*` | About 72 new public types, including the test harness, health status and dead-letter admin; 5-member `IMessageClient`; one handler model; one SPI and a capabilities record |
+| About 155 public types; 18-member `IMessageBus`; about 7 settlement models; 11 `ISupports*` | About 87 new public types, including the test harness, health status, dead-letter admin and the work monitor; 5-member `IMessageClient`; one handler model; one SPI and a capabilities record |
 | No group/partition/dedup key; #579 GroupId regresses | `GroupKey` and `DeduplicationId` on every send; `OrderedGroups` and `Deduplication` capabilities with conformance tests |
 | In-repo `Foundatio.Redis`/`Foundatio.Aws` collide with published packages | Redis, AWS and Kafka move into this repo whole, with their history and unchanged package IDs (#603), so there is one source per package; the other providers stay in their own repos |
 | Mediator duplicates handler registration and routing | Core owns registration and routing; Mediator can map its handlers to `AddConsumer`/`AddSubscriber` |
@@ -204,7 +215,7 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 | Handlers registered after `AddFoundatioWorker` never run | Roles resolved at host start; registrations accumulate (tested) |
 | Hand-written 13-member fake to unit test a handler | `TestMessageContext`, `TestJobContext`; `AddFoundatioTestHarness()` for whole-app tests |
 
-Size: about 4.5k lines of new core source including doc comments (Messaging 1.9k, Transport SPI and in-memory 0.7k, Jobs 1.8k), plus 1.1k lines of conformance suites. PR #533's core Messaging and Jobs folders alone add about 8.2k lines.
+Size: about 10.4k lines of new core source including doc comments, which every public member has (Messaging 3.6k, Transport SPI and in-memory 1.4k, Jobs 2.7k, Monitoring 1.8k, test harness 0.9k), plus 2.7k lines of conformance suites. For scale, PR #533's core Messaging and Jobs folders alone add about 8.2k lines, without monitoring.
 
 ## Not done yet
 
