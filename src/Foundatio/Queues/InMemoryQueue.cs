@@ -24,7 +24,6 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
     private int _dequeuedCount;
     private int _completedCount;
     private int _abandonedCount;
-    private int _workerErrorCount;
     private int _workerItemTimeoutCount;
     private int _pendingRetryCount;
 
@@ -59,7 +58,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
             Dequeued = _dequeuedCount,
             Completed = _completedCount,
             Abandoned = _abandonedCount,
-            Errors = _workerErrorCount,
+            Errors = WorkerErrorCount,
             Timeouts = _workerItemTimeoutCount
         };
     }
@@ -127,71 +126,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
 
     protected override void StartWorkingImpl(Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(handler);
-
-        _logger.LogTrace("Queue {QueueName} start working", _options.Name);
-
-        var linkedCancellationTokenSource = GetLinkedDisposableCancellationTokenSource(cancellationToken);
-        _workers.Add(Task.Run(async () =>
-        {
-            using var _ = new DisposableAction(linkedCancellationTokenSource.Dispose);
-            _logger.LogTrace("WorkerLoop Start {QueueName}", _options.Name);
-
-            while (!linkedCancellationTokenSource.IsCancellationRequested)
-            {
-                _logger.LogTrace("WorkerLoop Signaled {QueueName}", _options.Name);
-
-                IQueueEntry<T>? queueEntry = null;
-                try
-                {
-                    queueEntry = await DequeueImplAsync(linkedCancellationTokenSource.Token).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error on Dequeue: {Message}", ex.Message);
-                }
-
-                if (linkedCancellationTokenSource.IsCancellationRequested || queueEntry is null)
-                    return;
-
-                try
-                {
-                    await handler(queueEntry, linkedCancellationTokenSource.Token).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Worker error: {Message}", ex.Message);
-
-                    if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                    {
-                        try
-                        {
-                            await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.AbandonAsync(), linkedCancellationTokenSource.Token).AnyContext();
-                        }
-                        catch (Exception abandonEx)
-                        {
-                            _logger.LogError(abandonEx, "Worker error abandoning queue entry: {Message}", abandonEx.Message);
-                        }
-                    }
-
-                    Interlocked.Increment(ref _workerErrorCount);
-                }
-
-                if (autoComplete && !queueEntry.IsAbandoned && !queueEntry.IsCompleted)
-                {
-                    try
-                    {
-                        await _resiliencePolicy.ExecuteAsync(async _ => await queueEntry.CompleteAsync(), linkedCancellationTokenSource.Token).AnyContext();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Worker error attempting to auto complete entry: {Message}", ex.Message);
-                    }
-                }
-            }
-
-            _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, linkedCancellationTokenSource.IsCancellationRequested);
-        }, linkedCancellationTokenSource.Token).ContinueWith(_ => linkedCancellationTokenSource.Dispose()));
+        _workers.Add(StartWorker(handler, autoComplete, cancellationToken));
     }
 
     protected override async Task<IQueueEntry<T>?> DequeueImplAsync(CancellationToken linkedCancellationToken)
@@ -380,7 +315,7 @@ public class InMemoryQueue<T> : QueueBase<T, InMemoryQueueOptions<T>> where T : 
         _dequeuedCount = 0;
         _completedCount = 0;
         _abandonedCount = 0;
-        _workerErrorCount = 0;
+        ResetWorkerErrorCount();
         _pendingRetryCount = 0;
 
         return Task.CompletedTask;

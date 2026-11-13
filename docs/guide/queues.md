@@ -376,6 +376,21 @@ await queue.StartWorkingAsync(
 );
 ```
 
+#### Worker Error Handling
+
+`InMemoryQueue` workers started with `StartWorkingAsync` keep running through transient failures. Other providers get the same behavior when they delegate to `QueueBase.StartWorker`:
+
+| Failure | What the worker does | Counted in `QueueStats.Errors` |
+|---------|---------------------|--------------------------------|
+| Queue setup or dequeue throws (network, provider outage, throwing `Dequeued` handler) | Logs the error and waits before the next dequeue: about 1s, doubling up to 30s, with jitter retained at the cap. The delay resets after a dequeue that doesn't throw. | Yes |
+| Your handler throws | Logs the error and attempts to abandon the entry (unless your handler already completed or abandoned it) so it is retried or dead-lettered. | Yes |
+| Abandon or auto-complete throws | Retries through the queue's resilience policy, then logs any remaining failure and keeps working. An unsettled entry can be redelivered after its lock expires. | Auto-complete failures that escape the policy only |
+| The worker's cancellation token is cancelled, or the queue is disposed | Stops. A handler that throws `OperationCanceledException` because of that cancellation isn't counted, and the worker attempts to abandon its entry. | No |
+
+Because entries can be redelivered after a failed complete or abandon, handlers should be idempotent.
+
+The worker checks queue setup before each dequeue so providers can recover after invalidating cached queue state. Settlement uses the policy resolved from the queue's `ResiliencePolicyProvider`; already completed or abandoned entries skip the policy.
+
 ## Queue Entry Options
 
 Configure enqueue behavior:
@@ -880,9 +895,10 @@ var entry = await queue.DequeueAsync(cts.Token);
 
 If you are writing a custom `IQueue<T>` implementation by extending `QueueBase<T>`:
 
-- **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.).
+- **`EnsureQueueCreatedAsync`** always receives `DisposedCancellationToken`. Use it for all setup operations (lock acquisition, API calls, etc.). The shared worker calls it before each dequeue, so return immediately when setup is current.
 - **`DequeueImplAsync`** receives a linked token (caller + disposal). Respect it for the wait/poll operation.
 - **`EnqueueImplAsync`** does not receive a cancellation token — keep enqueue fast and non-blocking.
+- **`StartWorkingImpl`** should call `StartWorker(handler, autoComplete, cancellationToken)` to use the shared loop (see [Worker Error Handling](#worker-error-handling)). Report `WorkerErrorCount` as `QueueStats.Errors` and call `ResetWorkerErrorCount()` when stats are reset.
 
 ## Best Practices
 
