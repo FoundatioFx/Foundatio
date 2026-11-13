@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -1654,6 +1655,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         private readonly object? _cacheValue;
         private static long _instanceCount;
         private readonly bool _shouldClone;
+        private readonly bool _cloneDictionaryKeys;
         private readonly TimeProvider _timeProvider;
 
 #if DEBUG
@@ -1664,7 +1666,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && TypeRequiresCloning(value?.GetType());
-            _cacheValue = _shouldClone ? value.DeepClone() : value;
+            _cloneDictionaryKeys = _shouldClone && RequiresDictionaryKeyCloning(value?.GetType());
+            _cacheValue = _shouldClone ? CloneValue(value, _cloneDictionaryKeys) : value;
             var utcNow = _timeProvider.GetUtcNow();
             LastAccessTicks = utcNow.Ticks;
             LastModifiedTicks = utcNow.Ticks;
@@ -1677,6 +1680,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             _timeProvider = source._timeProvider;
             _shouldClone = source._shouldClone;
+            _cloneDictionaryKeys = _shouldClone && (cacheValue?.GetType() == source._cacheValue?.GetType()
+                ? source._cloneDictionaryKeys
+                : RequiresDictionaryKeyCloning(cacheValue?.GetType()));
             _cacheValue = cacheValue;
             LastAccessTicks = source.LastAccessTicks;
             LastModifiedTicks = lastModifiedTicks;
@@ -1723,7 +1729,33 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         internal object? PeekValue()
         {
             object? value = _cacheValue is IListSnapshot list ? list.GetSnapshot() : _cacheValue;
-            return _shouldClone ? value.DeepClone() : value;
+            return _shouldClone ? CloneValue(value, _cloneDictionaryKeys) : value;
+        }
+
+        private static bool RequiresDictionaryKeyCloning(Type? type)
+        {
+            if (type is null || !type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Dictionary<,>))
+                return false;
+
+            var keyType = type.GenericTypeArguments[0];
+            return keyType.IsValueType && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(keyType);
+        }
+
+        private static object? CloneValue(object? value, bool cloneDictionaryKeys)
+        {
+            if (!cloneDictionaryKeys)
+                return value.DeepClone();
+
+            // The cloner's dictionary fast path can share mutable fields of struct keys.
+            var clone = (IDictionary)FastCloner.FastCloner.DeepCloneTo(value, FastCloner.FastCloner.ShallowClone(value))!;
+            var entries = new DictionaryEntry[clone.Count];
+            clone.CopyTo(entries, 0);
+            // Rehash cloned keys in place so reference-based hashes and root cycles remain valid.
+            clone.Clear();
+            foreach (var entry in entries)
+                clone.Add(entry.Key, entry.Value);
+
+            return clone;
         }
 
         /// <summary>

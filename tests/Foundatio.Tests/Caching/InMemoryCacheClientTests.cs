@@ -498,6 +498,99 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(32, true)]
+    [InlineData(33, true)]
+    [InlineData(100, false)]
+    [InlineData(100, true)]
+    public async Task ListAddAsync_WithReferenceHoldingStructs_HonorsCloneValues(int count, bool cloneValues)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        var original = Enumerable.Range(0, count).Select(id => new ReferenceHoldingListItem(id, [id])).ToArray();
+        await cache.ListAddAsync("set", original);
+        var added = new ReferenceHoldingListItem(-1, [-1]);
+        await cache.ListAddAsync("set", [added]);
+
+        original[0].Values.Add(42);
+        added.Values.Add(42);
+
+        var stored = (await cache.GetListAsync<ReferenceHoldingListItem>("set")).Value!;
+        Assert.Equal(cloneValues ? 1 : 2, stored.Single(item => item.Id == 0).Values.Count);
+        Assert.Equal(cloneValues ? 1 : 2, stored.Single(item => item.Id == -1).Values.Count);
+    }
+
+    [Theory]
+    [InlineData(1, "List", false)]
+    [InlineData(1, "List", true)]
+    [InlineData(32, "List", true)]
+    [InlineData(33, "List", true)]
+    [InlineData(1, "Dictionary", false)]
+    [InlineData(1, "Dictionary", true)]
+    [InlineData(32, "Dictionary", true)]
+    [InlineData(33, "Dictionary", true)]
+    [InlineData(1, "Items", false)]
+    [InlineData(1, "Items", true)]
+    [InlineData(32, "Items", true)]
+    [InlineData(33, "Items", true)]
+    public async Task ListRead_WithReferenceHoldingStructs_HonorsCloneValues(int count, string read, bool cloneValues)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).LoggerFactory(Log));
+        await cache.ListAddAsync("set", Enumerable.Range(0, count).Select(id => new ReferenceHoldingListItem(id, [id])));
+        await cache.SetExpirationAsync("set", TimeSpan.FromMinutes(1));
+
+        var exposed = read switch
+        {
+            "Dictionary" => (await cache.GetAsync<IDictionary<ReferenceHoldingListItem, DateTime?>>("set")).Value!.Keys,
+            "Items" => ((IDictionary<ReferenceHoldingListItem, DateTime?>)cache.Items.Single().Value!).Keys,
+            _ => (await cache.GetListAsync<ReferenceHoldingListItem>("set")).Value!
+        };
+        exposed.Single(item => item.Id == 0).Values.Add(42);
+
+        var stored = (await cache.GetListAsync<ReferenceHoldingListItem>("set")).Value!;
+        Assert.Equal(cloneValues ? 1 : 2, stored.Single(item => item.Id == 0).Values.Count);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("set"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetAsync_WithReferenceHashedStructKeys_PreservesLookupAndCycles(bool cloneValues)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).LoggerFactory(Log));
+        var source = new Dictionary<ReferenceHashedListItem, object>();
+        var key = new ReferenceHashedListItem([1]);
+        source.Add(key, source);
+        await cache.SetAsync("set", source);
+
+        var result = (await cache.GetAsync<Dictionary<ReferenceHashedListItem, object>>("set")).Value!;
+        var copiedKey = Assert.Single(result.Keys);
+
+        Assert.Equal(cloneValues, !ReferenceEquals(key.Values, copiedKey.Values));
+        Assert.Same(result, Assert.Single(result.Values));
+        Assert.True(result.ContainsKey(copiedKey));
+    }
+
+    [Fact]
+    public async Task IncrementAsync_AfterReferenceHoldingDictionaryWrite_ReturnsNumericValue()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        await cache.ListAddAsync("key", [new ReferenceHoldingListItem(1, [1])]);
+
+        Assert.Equal(1, await cache.IncrementAsync("key"));
+        Assert.Equal(1, (await cache.GetAsync<long>("key")).Value);
+    }
+
+    private readonly record struct ReferenceHoldingListItem(int Id, List<int> Values)
+    {
+        public bool Equals(ReferenceHoldingListItem other) => Id == other.Id;
+        public override int GetHashCode() => Id;
+    }
+
+    private readonly record struct ReferenceHashedListItem(List<int> Values);
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task ListAddAsync_WithConcurrentLargeListUpdates_PreservesUnrelatedValues(bool cloneValues)
