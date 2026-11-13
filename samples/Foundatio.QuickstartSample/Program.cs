@@ -2,11 +2,14 @@
 //   curl -X POST localhost:5000/orders                  publish an event; a subscriber sends a command
 //   curl -X POST localhost:5000/reports                 enqueue a durable job with arguments
 //   curl localhost:5000/reports/{id}                    poll the job's status and progress
+//   curl localhost:5000/monitor                         what messages and jobs are doing: active, recent, stats, backlog
 // `dotnet run -- --verify` runs the same flow once and exits (used in CI).
 // To run several instances, add Foundatio.Redis, register an IConnectionMultiplexer and replace both UseInMemory() calls
-// with UseRedis(). Handlers and jobs do not change.
+// with UseRedis(); register a RedisCacheClient as ICacheClient and call UseCache() on AddFoundatioMonitoring so the
+// monitor shows every instance. Handlers and jobs do not change.
 using Foundatio.Jobs;
 using Foundatio.Messaging;
+using Foundatio.Monitoring;
 using Foundatio.QuickstartSample;
 
 bool verify = args.Contains("--verify");
@@ -23,6 +26,8 @@ builder.Services.AddFoundatioJobs(j => j
     .UseInMemory()
     .AddJob<GenerateReportJob>()
     .AddCronJob<CleanupJob>("*/2 * * * * *"));
+
+builder.Services.AddFoundatioMonitoring();
 
 var app = builder.Build();
 
@@ -44,6 +49,8 @@ app.MapGet("/reports/{id}", async (string id, IJobClient jobs) =>
         ? Results.Ok(new { job.Id, State = job.State.ToString(), job.Progress, job.Message, job.Error })
         : Results.NotFound());
 
+app.MapGet("/monitor", (IWorkMonitor monitor, CancellationToken cancellationToken) => monitor.GetOverviewAsync(cancellationToken: cancellationToken));
+
 if (!verify)
 {
     app.Run();
@@ -61,5 +68,16 @@ if (completed.State != JobState.Succeeded || completed.Progress != 100)
     throw new InvalidOperationException($"Report finished as {completed.State} at {completed.Progress}%.");
 
 await activity.CleanupRan.Task.WaitAsync(TimeSpan.FromSeconds(10));
-Console.WriteLine($"Verified: event -> command, job {completed.Id} -> {completed.Message}, CRON cleanup ran.");
+
+var overview = await app.Services.GetRequiredService<IWorkMonitor>().GetOverviewAsync();
+var receipts = overview.Stats.SingleOrDefault(s => s.Name == "orders.send-receipt");
+var receipt = overview.Recent.FirstOrDefault(r => r.Name == "orders.send-receipt");
+var reports = overview.Jobs.SingleOrDefault(j => j.Name == "reports.generate");
+if (overview.Instances.Count != 1 || receipts?.Succeeded != 1 || receipt is not { Outcome: WorkOutcome.Succeeded, Progress: 100 }
+    || reports?.Succeeded != 1 || !overview.Backlog.Any(b => b.Source.Name == "orders.send-receipt"))
+{
+    throw new InvalidOperationException($"The monitor did not show the flow: {receipts} {receipt} {reports}.");
+}
+
+Console.WriteLine($"Verified: event -> command, job {completed.Id} -> {completed.Message}, CRON cleanup ran, monitor saw {receipts.Succeeded} receipt ({receipt.ProgressMessage}).");
 await app.StopAsync();

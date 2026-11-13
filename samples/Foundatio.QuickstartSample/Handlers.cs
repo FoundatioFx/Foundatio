@@ -14,14 +14,18 @@ public sealed class OrderPlacedHandler(IMessageClient messages, ILogger<OrderPla
     }
 }
 
-/// <summary>Handles a command. Throwing retries it with backoff; after the last attempt it is dead-lettered.</summary>
+/// <summary>
+/// Handles a command. Throwing retries it with backoff; after the last attempt it is dead-lettered. Reporting progress
+/// shows the delivery in the monitor, however quickly it finishes.
+/// </summary>
 public sealed class SendReceiptHandler(SampleActivity activity, ILogger<SendReceiptHandler> logger) : IMessageHandler<SendReceipt>
 {
-    public Task HandleAsync(SendReceipt receipt, IMessageContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(SendReceipt receipt, IMessageContext context, CancellationToken cancellationToken)
     {
+        await context.ReportProgressAsync(50, $"Rendering the receipt for order {receipt.OrderId}", cancellationToken);
         logger.LogInformation("Receipt for order {OrderId} sent to {Email} (attempt {Attempt}, correlation {CorrelationId})",
             receipt.OrderId, receipt.Email, context.Attempt, context.CorrelationId);
+        await context.ReportProgressAsync(100, $"Sent to {receipt.Email}", cancellationToken);
         activity.ReceiptSent.TrySetResult();
-        return Task.CompletedTask;
     }
 }
