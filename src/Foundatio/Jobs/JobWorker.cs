@@ -254,7 +254,7 @@ internal sealed class JobWorker
             completion = Decide(job, policy, error, cancelled.IsCancellationRequested);
         }
 
-        await CompleteAsync(job, completion, context.Message).AnyContext();
+        await CompleteAsync(job, completion, context).AnyContext();
 
         RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
         if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
@@ -336,8 +336,8 @@ internal sealed class JobWorker
 
     /// <param name="job">The claimed job.</param>
     /// <param name="completion">How the run ended.</param>
-    /// <param name="message">The run's last progress message, which the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
-    private async Task CompleteAsync(JobInfo job, JobCompletion completion, string? message = null)
+    /// <param name="context">The run's context, whose last progress message the store holds as the job's message unless <paramref name="completion"/> sets one.</param>
+    private async Task CompleteAsync(JobInfo job, JobCompletion completion, JobRunContext? context = null)
     {
         for (int attempt = 1; ; attempt++)
         {
@@ -346,7 +346,7 @@ internal sealed class JobWorker
                 if (!await _runtime.Store.CompleteAsync(job.Id, job.ClaimToken!, completion, CancellationToken.None).AnyContext())
                     _logger.LogWarning("Could not record the result of job {JobId}: another worker has claimed it", job.Id);
                 else
-                    _runtime.Observer?.OnCompleted(message is null ? job : job with { Message = message }, completion);
+                    _runtime.Observer?.OnCompleted(context is null ? job : job with { Message = context.Message ?? job.Message, Progress = context.Progress ?? job.Progress }, completion);
 
                 return;
             }

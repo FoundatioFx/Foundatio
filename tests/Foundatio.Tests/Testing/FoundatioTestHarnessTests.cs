@@ -185,6 +185,36 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task HandledMessages_WhenTheHandlerReportsProgress_RecordsTheLastPercentAndMessage()
+    {
+        var host = await StartAppAsync(services => services.AddFoundatioMessaging(m => m.AddConsumer<ImportCatalog>(async (_, context, ct) =>
+        {
+            await context.ReportProgressAsync(50, "importing", ct);
+            await context.ReportProgressAsync(100, cancellationToken: ct);
+        })));
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await host.Services.GetRequiredService<IMessageClient>().SendAsync(new ImportCatalog("spring"), cancellationToken: TestCancellationToken);
+        var handled = Assert.Single(await harness.WaitForHandledAsync<ImportCatalog>(cancellationToken: TestCancellationToken));
+
+        Assert.Equal(100, handled.Progress);
+        Assert.Equal("importing", handled.ProgressMessage);
+    }
+
+    [Fact]
+    public async Task JobRuns_WhenTheJobReportsProgress_RecordsTheLastPercentAndMessage()
+    {
+        var host = await StartAppAsync();
+        var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+        await harness.TriggerCronJobAsync<NightlyCleanupJob>(TestCancellationToken);
+        var run = Assert.Single(await harness.WaitForJobAsync<NightlyCleanupJob>(cancellationToken: TestCancellationToken));
+
+        Assert.Equal(100, run.Progress);
+        Assert.Equal("cleaned", run.Message);
+    }
+
+    [Fact]
     public async Task WaitForJobAsync_ReturnsFinishedRunsIncludingFailures()
     {
         var host = await StartAppAsync();
@@ -294,6 +324,8 @@ public class FoundatioTestHarnessTests : TestWithLoggingBase
     }
 
     public record ArchiveOrders(int OlderThanDays);
+
+    public record ImportCatalog(string Season);
 
     [Job(Name = "tests.legacy-report")]
     public sealed class LegacyReportJob : IJob

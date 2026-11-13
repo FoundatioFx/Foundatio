@@ -11,7 +11,6 @@ namespace Foundatio.Jobs;
 internal sealed class JobRunContext : IJobContext
 {
     private static readonly AsyncLocal<JobRunContext?> CurrentContext = new();
-    private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly IJobStore _store;
     private readonly string _claimToken;
@@ -48,6 +47,9 @@ internal sealed class JobRunContext : IJobContext
     /// <summary>The latest reported message, whether or not it has been saved yet.</summary>
     public string? Message { get; private set; }
 
+    /// <summary>The latest reported percentage, whether or not it has been saved yet.</summary>
+    public int? Progress { get; private set; }
+
     /// <summary>The job running on this async flow, used to propagate the correlation id.</summary>
     public static JobRunContext? Current
     {
@@ -57,15 +59,15 @@ internal sealed class JobRunContext : IJobContext
 
     public async Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
-        if (percent is { } value)
-            ArgumentOutOfRangeException.ThrowIfNotEqual(Math.Clamp(value, 0, 100), value, nameof(percent));
+        HandlerProgress.ThrowIfInvalid(percent);
 
         lock (_lock)
         {
             _pending = new ProgressReport(percent, message).Over(_pending);
             Message = message ?? Message;
+            Progress = percent ?? Progress;
             var now = _timeProvider.GetUtcNow();
-            if (now - _lastReport < ProgressInterval && percent != 100)
+            if (now - _lastReport < HandlerProgress.Interval && percent != 100)
                 return;
 
             _lastReport = now;

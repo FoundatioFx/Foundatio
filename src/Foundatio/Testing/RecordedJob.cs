@@ -25,6 +25,9 @@ public sealed record RecordedJob
     /// <summary>The job's message when the run ended: its result or cancellation message, or its last progress message.</summary>
     public string? Message { get; init; }
 
+    /// <summary>The job's last reported percentage when the run ended, from this run or an earlier one, or null.</summary>
+    public int? Progress { get; init; }
+
     /// <summary>The run's error when it failed or will be retried, otherwise null.</summary>
     public string? Error { get; init; }
     /// <summary>The correlation id the job was enqueued with, or null.</summary>

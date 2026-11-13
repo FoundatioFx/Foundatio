@@ -11,7 +11,8 @@ internal interface IMessagingObserver
 
     /// <summary>
     /// Called after a delivery was settled. <paramref name="outcome"/> is the metrics outcome: success, retry,
-    /// dead-lettered, skipped, expired, cancelled or lease-lost.
+    /// dead-lettered, skipped, expired, cancelled or lease-lost. <paramref name="context"/> is the handlers' context,
+    /// or null when no handler ran.
     /// </summary>
-    void OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error);
+    void OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context = null);
 }

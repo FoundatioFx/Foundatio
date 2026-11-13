@@ -41,4 +41,10 @@ public sealed record RecordedMessage
 
     /// <summary>The exception a handler threw, if any.</summary>
     public Exception? Exception { get; init; }
+
+    /// <summary>The last percentage the handler passed to <see cref="IHandlerContext.ReportProgressAsync"/>, or null.</summary>
+    public int? Progress { get; init; }
+
+    /// <summary>The last message the handler passed to <see cref="IHandlerContext.ReportProgressAsync"/>, or null.</summary>
+    public string? ProgressMessage { get; init; }
 }

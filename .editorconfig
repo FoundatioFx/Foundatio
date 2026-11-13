@@ -210,7 +210,7 @@ dotnet_diagnostic.CS1591.severity = warning
 [src/{Foundatio.Redis/Jobs,Foundatio.Extensions.Hosting/HealthChecks}/*.cs]
 dotnet_diagnostic.CS1591.severity = warning
 
-[src/Foundatio/{Utility/IStartupGate,Utility/ProcessingState,Utility/ProcessingStatus,Utility/ProcessingStatusTracker,Utility/ProviderApi,Resilience/RetryPolicy}.cs]
+[src/Foundatio/{IHandlerContext,Utility/IStartupGate,Utility/ProcessingState,Utility/ProcessingStatus,Utility/ProcessingStatusTracker,Utility/ProviderApi,Resilience/RetryPolicy}.cs]
 dotnet_diagnostic.CS1591.severity = warning
 
 [src/{Foundatio.Extensions.Hosting/Startup/StartupActionsGate,Foundatio.TestHarness/Jobs/JobStoreTestsBase,Foundatio.TestHarness/Messaging/MessageTransportTestsBase,Foundatio.TestHarness/Messaging/MessagingTestHost}.cs]

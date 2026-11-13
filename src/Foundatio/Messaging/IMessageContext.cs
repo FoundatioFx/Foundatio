@@ -1,10 +1,16 @@
 using System;
-using System.Collections.Generic;
 
 namespace Foundatio.Messaging;
 
 /// <summary>Information about the message being handled, and ways to decide its outcome without throwing.</summary>
-public interface IMessageContext
+/// <remarks>
+/// <see cref="IHandlerContext.Attempt"/> is the delivery attempt, <see cref="IHandlerContext.CorrelationId"/> the
+/// <see cref="DeliveryOptions.CorrelationId"/> the message was sent with, and <see cref="IHandlerContext.Headers"/> every
+/// header, including <see cref="KnownHeaders"/>. <see cref="IHandlerContext.ReportProgressAsync"/> updates the monitor,
+/// adds an event to the handler's trace span and logs at Debug; it never calls the transport, and the message's lease
+/// is renewed whether or not progress is reported.
+/// </remarks>
+public interface IMessageContext : IHandlerContext
 {
     /// <summary>The id the message was sent with: <see cref="DeliveryOptions.MessageId"/>, or a generated one.</summary>
     string MessageId { get; }
@@ -12,20 +18,11 @@ public interface IMessageContext
     /// <summary>The stable type name the message was sent with.</summary>
     string MessageType { get; }
 
-    /// <summary>The <see cref="DeliveryOptions.CorrelationId"/> the message was sent with, or null.</summary>
-    string? CorrelationId { get; }
-
-    /// <summary>The 1-based delivery attempt.</summary>
-    int Attempt { get; }
-
     /// <summary>When the message was first sent, or null when that is unknown.</summary>
     DateTimeOffset? SentAt { get; }
 
     /// <summary>The <see cref="DeliveryOptions.GroupKey"/> the message was sent with, or null.</summary>
     string? GroupKey { get; }
-
-    /// <summary>All headers, including <see cref="KnownHeaders"/>.</summary>
-    IReadOnlyDictionary<string, string> Headers { get; }
 
     /// <summary>Where the message was received from, for example <c>queue:orders</c>.</summary>
     string Source { get; }

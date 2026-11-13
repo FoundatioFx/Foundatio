@@ -88,6 +88,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             return deserializeOutcome == "dead-lettered";
         }
 
+        using var activity = StartActivity(messageType, headers);
         var context = new MessageContext
         {
             MessageId = message.MessageId,
@@ -97,13 +98,14 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             SentAt = TryGetTime(headers, KnownHeaders.SentAt),
             GroupKey = message.GroupKey,
             Headers = headers,
-            Source = _source.ToString()
+            Source = _source.ToString(),
+            Activity = activity,
+            Logger = _logger
         };
 
         var policy = matches[0].Handler.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
         using var handlerCancellation = CancellationTokenSource.CreateLinkedTokenSource(abortToken);
         delivery.AttachHandler(handlerCancellation);
-        using var activity = StartActivity(messageType, headers);
         long started = Stopwatch.GetTimestamp();
 
         Exception? error = null;
@@ -128,7 +130,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         }
 
         var (outcome, settleError) = await SettleAfterHandlingAsync(delivery, context, policy, error, abortToken).AnyContext();
-        _runtime.Observer?.OnHandled(_source, message, payloads[0].Payload, outcome, context.DeadLetterReason, error ?? settleError);
+        _runtime.Observer?.OnHandled(_source, message, payloads[0].Payload, outcome, context.DeadLetterReason, error ?? settleError, context);
 
         var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", _source.Kind.ToString() }, { "outcome", outcome } };
         MessagingInstruments.Handled.Add(1, tags);

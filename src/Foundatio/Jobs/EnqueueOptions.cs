@@ -25,7 +25,7 @@ public sealed record EnqueueOptions
     public string? CorrelationId { get; init; }
 
     /// <summary>
-    /// Stored with the job and visible to it as <see cref="IJobContext.Headers"/>. When an activity is current, its W3C
+    /// Stored with the job and visible to it as <see cref="IHandlerContext.Headers"/>. When an activity is current, its W3C
     /// trace context is added as <c>traceparent</c> and <c>tracestate</c> unless you set <c>traceparent</c> yourself, so
     /// the job's activity continues the caller's trace.
     /// </summary>

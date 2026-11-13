@@ -204,7 +204,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
         NotifyChanged();
     }
 
-    void IMessagingObserver.OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error)
+    void IMessagingObserver.OnHandled(MessageSource source, IncomingMessage message, object? payload, string outcome, string? reason, Exception? error, MessageContext? context)
     {
         string messageType = message.Headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
         var result = outcome switch
@@ -228,7 +228,9 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             Headers = message.Headers,
             Outcome = result,
             Error = DescribeError(result, outcome, reason, error),
-            Exception = error
+            Exception = error,
+            Progress = context?.Progress,
+            ProgressMessage = context?.ProgressMessage
         };
 
         lock (_lock)
@@ -247,6 +249,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
             State = completion.State,
             Attempt = job.Attempt,
             Message = completion.Message ?? job.Message,
+            Progress = job.Progress,
             Error = completion.Error,
             CorrelationId = job.CorrelationId,
             ScheduleName = job.ScheduleName

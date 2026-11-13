@@ -1,3 +1,4 @@
+using Foundatio;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
@@ -31,10 +32,25 @@ public class OrderPlacedHandler(IMessageClient messages) : IMessageHandler<Order
     }
 }
 
+public class SendReceiptHandler : IMessageHandler<SendReceipt>
+{
+    public Task HandleAsync(SendReceipt message, IMessageContext context, CancellationToken cancellationToken) =>
+        Progress.ReportHalfwayAsync(context, $"receipt {message.OrderId}", cancellationToken);
+}
+
 public class GenerateReportJob : IJobHandler<GenerateReport>
 {
-    public Task HandleAsync(GenerateReport arguments, IJobContext context, CancellationToken cancellationToken) =>
-        context.ReportProgressAsync(100, arguments.Format, cancellationToken);
+    public async Task HandleAsync(GenerateReport arguments, IJobContext context, CancellationToken cancellationToken)
+    {
+        await Progress.ReportHalfwayAsync(context, arguments.Format, cancellationToken);
+        await context.ReportProgressAsync(100, cancellationToken: cancellationToken);
+    }
+}
+
+public static class Progress
+{
+    public static Task ReportHalfwayAsync(IHandlerContext context, string message, CancellationToken cancellationToken) =>
+        context.ReportProgressAsync(context.Attempt > 1 ? 75 : 50, $"{message} ({context.CorrelationId}, {context.Headers.Count} headers)", cancellationToken);
 }
 
 public class CleanupJob : IJobHandler
@@ -51,7 +67,7 @@ public static class Registrations
             .UseRedis(redis, new RedisMessageTransportOptions { Prefix = "orders" })
             .Configure(o => o.RequireTransportCapabilities = true)
             .AddSubscriber<OrderPlacedHandler>(new SubscriptionOptions { Scope = SubscriptionScope.Service })
-            .AddConsumer<SendReceipt>((message, context, cancellationToken) => Task.CompletedTask));
+            .AddConsumer<SendReceiptHandler>());
         services.AddFoundatioMessaging(m => m.UseSqs(new SqsMessageTransportOptions { ConnectionString = "serviceurl=http://localhost:4566" }));
         services.AddFoundatioMessaging(m => m.UseKafka("localhost:9092"));
         services.AddFoundatioJobs(j => j
@@ -108,7 +124,11 @@ public static class AppUsage
 
         var context = new TestMessageContext();
         await new OrderPlacedHandler(messages).HandleAsync(new OrderPlaced(2), context, CancellationToken.None);
+        var receiptContext = new TestMessageContext();
+        await new SendReceiptHandler().HandleAsync(new SendReceipt(2), receiptContext, CancellationToken.None);
         var jobContext = new TestJobContext();
         await new GenerateReportJob().HandleAsync(new GenerateReport("csv"), jobContext, CancellationToken.None);
+        if (receiptContext.Progress != 50 || receiptContext.ProgressMessage is null || jobContext.Progress != 100 || harness.HandledMessages.Any(m => m.Progress > 100))
+            throw new InvalidOperationException("Progress was not recorded.");
     }
 }

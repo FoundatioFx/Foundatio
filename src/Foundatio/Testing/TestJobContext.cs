@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs;
+using Foundatio.Utility;
 
 namespace Foundatio.Testing;
 
@@ -11,7 +12,7 @@ namespace Foundatio.Testing;
 /// <example>
 /// <code>
 /// var context = new TestJobContext();
-/// await new GenerateReportJob(...).RunAsync(new GenerateReport("pdf"), context, CancellationToken.None);
+/// await new GenerateReportJob(...).HandleAsync(new GenerateReport("pdf"), context, CancellationToken.None);
 /// Assert.Equal(100, context.Progress);
 /// </code>
 /// </example>
@@ -36,7 +37,14 @@ public sealed class TestJobContext : IJobContext
     public IReadOnlyDictionary<string, string> Headers { get; init; } = ReadOnlyDictionary<string, string>.Empty;
 
     /// <summary>Every call to <see cref="ReportProgressAsync"/>, in order.</summary>
-    public IReadOnlyList<(int? Percent, string? Message)> ProgressReports => _reports;
+    public IReadOnlyList<(int? Percent, string? Message)> ProgressReports
+    {
+        get
+        {
+            lock (_reports)
+                return _reports.ToArray();
+        }
+    }
 
     /// <summary>The last reported percentage.</summary>
     public int? Progress { get; private set; }
@@ -45,11 +53,17 @@ public sealed class TestJobContext : IJobContext
     public string? Message { get; private set; }
 
     /// <summary>Records the report in <see cref="ProgressReports"/>, <see cref="Progress"/> and <see cref="Message"/>.</summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="percent"/> is below 0 or above 100.</exception>
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
-        _reports.Add((percent, message));
-        Progress = percent ?? Progress;
-        Message = message ?? Message;
+        HandlerProgress.ThrowIfInvalid(percent);
+        lock (_reports)
+        {
+            _reports.Add((percent, message));
+            Progress = percent ?? Progress;
+            Message = message ?? Message;
+        }
+
         return Task.CompletedTask;
     }
 }
