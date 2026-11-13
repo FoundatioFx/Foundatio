@@ -456,6 +456,31 @@ public abstract class LockTestBase : TestWithLoggingBase
         Assert.Equal(0, lockInstance.RenewalCount);
     }
 
+    public virtual async Task AcquireAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds, bool tryAcquire)
+    {
+        var locker = GetLockProvider();
+        if (locker is null)
+            return;
+
+        string lockName = Guid.NewGuid().ToString("N")[..10];
+        await using var current = await locker.AcquireAsync(lockName, timeUntilExpires: TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+        var duration = TimeSpan.FromMilliseconds(milliseconds);
+        var cancellationToken = new CancellationToken(true);
+
+        var error = await Record.ExceptionAsync(async () =>
+        {
+            await using var attempted = tryAcquire
+                ? await locker.TryAcquireAsync(lockName, duration, cancellationToken: cancellationToken)
+                : await locker.AcquireAsync(lockName, duration, cancellationToken: cancellationToken);
+        });
+
+        Assert.True(await locker.IsLockedAsync(lockName));
+        var argumentError = Assert.IsType<ArgumentOutOfRangeException>(error);
+        Assert.Equal("timeUntilExpires", argumentError.ParamName);
+        await current.RenewAsync();
+        Assert.Equal(1, current.RenewalCount);
+    }
+
     public virtual async Task RenewAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds)
     {
         // Arrange

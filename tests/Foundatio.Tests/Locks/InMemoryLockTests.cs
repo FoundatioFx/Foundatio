@@ -218,6 +218,99 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         second.Verify(l => l.ReleaseAsync(), Times.Once);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReleaseAsync_WithMultipleResources_WhenDisposeOverlaps_AwaitsReleaseAndRetriesFailure(bool releaseFails)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        var error = new CacheException("Release unavailable");
+        var finishRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = new Mock<ILock>();
+        int releaseAttempts = 0;
+        first.Setup(l => l.ReleaseAsync()).Returns(() => ++releaseAttempts == 1 ? finishRelease.Task : Task.CompletedTask);
+        var second = new Mock<ILock>();
+        second.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", first.Object), ("b", second.Object));
+        await using var lockInstance = await locker.Object.AcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        var release = lockInstance.ReleaseAsync();
+        var disposal = lockInstance.DisposeAsync().AsTask();
+        try
+        {
+            // Assert
+            Assert.False(release.IsCompleted);
+            Assert.False(disposal.IsCompleted);
+            first.Verify(l => l.ReleaseAsync(), Times.Once);
+            second.Verify(l => l.ReleaseAsync(), Times.Once);
+        }
+        finally
+        {
+            if (releaseFails)
+                finishRelease.TrySetException(error);
+            else
+                finishRelease.TrySetResult();
+
+            if (releaseFails)
+                Assert.Same(error, await Assert.ThrowsAsync<CacheException>(() => release.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken)));
+            else
+                await release.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+            await disposal.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+
+        await lockInstance.ReleaseAsync();
+        await lockInstance.DisposeAsync();
+        first.Verify(l => l.ReleaseAsync(), Times.Exactly(releaseFails ? 2 : 1));
+        second.Verify(l => l.ReleaseAsync(), Times.Exactly(releaseFails ? 2 : 1));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RenewAsync_WithMultipleResources_WhenLossCallbackReleasesCollection_AwaitsRenewalsAndReleasesOnce(bool nested)
+    {
+        // Arrange
+        var timeProvider = new FakeTimeProvider();
+        var lostError = new LockException("Lock lost");
+        var lost = new Mock<ILock>();
+        lost.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Throws(lostError);
+        lost.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var nestedProvider = CreateMockLockProvider(timeProvider, ("lost", lost.Object));
+        ILock first = nested
+            ? await nestedProvider.Object.AcquireAsync(["lost"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken)
+            : lost.Object;
+        var finishRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var pending = new Mock<ILock>();
+        pending.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Returns(finishRenewal.Task);
+        pending.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var locker = CreateMockLockProvider(timeProvider, ("a", first), ("b", pending.Object));
+        await using var lockInstance = await locker.Object.AcquireAsync(["a", "b"], TimeSpan.FromMinutes(1), cancellationToken: TestCancellationToken);
+
+        // Act
+        var renewal = LockSetOperations.RenewAsync(lockInstance, null, _logger, _ => lockInstance.ReleaseAsync());
+        try
+        {
+            // Assert
+            Assert.False(renewal.IsCompleted);
+            lost.Verify(l => l.ReleaseAsync(), Times.Once);
+            pending.Verify(l => l.ReleaseAsync(), Times.Once);
+            pending.Verify(l => l.RenewAsync(It.IsAny<TimeSpan?>()), Times.Once);
+        }
+        finally
+        {
+            finishRenewal.TrySetResult();
+            Assert.Same(lostError, await Assert.ThrowsAsync<LockException>(() => renewal.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken)));
+        }
+
+        await lockInstance.ReleaseAsync();
+        await lockInstance.DisposeAsync();
+        Assert.Equal(0, lockInstance.RenewalCount);
+        lost.Verify(l => l.ReleaseAsync(), Times.Once);
+        pending.Verify(l => l.ReleaseAsync(), Times.Once);
+    }
+
     [Fact]
     public override Task Lock_AcquiredTimeUtc_ReturnsValidTimestamp()
     {
@@ -338,6 +431,18 @@ public class InMemoryLockTests : LockTestBase, IDisposable
         // Assert
         Assert.True(await locker.IsLockedAsync("resource"));
         Assert.Equal(1, lockInstance.RenewalCount);
+    }
+
+    [Theory]
+    [InlineData(-1, false)]
+    [InlineData(-1, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(4, false)]
+    [InlineData(4, true)]
+    public override Task AcquireAsync_WithInvalidDuration_PreservesCurrentOwner(int milliseconds, bool tryAcquire)
+    {
+        return base.AcquireAsync_WithInvalidDuration_PreservesCurrentOwner(milliseconds, tryAcquire);
     }
 
     [Theory]

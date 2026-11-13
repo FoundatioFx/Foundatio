@@ -129,20 +129,38 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
         using var workItemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var leaseLoss = new WorkItemLeaseLoss(workItemCancellation);
+        var progressReports = new WorkItemProgress();
         var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
         {
-            if (handler.AutoRenewLockOnProgress)
-                await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, leaseLoss).AnyContext();
+            if (!progressReports.TryStart())
+                return;
 
-            await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
+            try
+            {
+                if (handler.AutoRenewLockOnProgress)
+                    await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, leaseLoss).AnyContext();
+
+                await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
+                handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
+            }
+            finally
+            {
+                progressReports.Complete();
+            }
         });
 
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
             var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, workItemCancellation.Token, progressCallback);
-            await handler.HandleItemAsync(workItemContext).AnyContext();
+            try
+            {
+                await handler.HandleItemAsync(workItemContext).AnyContext();
+            }
+            finally
+            {
+                await progressReports.StopAsync().AnyContext();
+            }
 
             // A handler that stops cooperatively after a lost lease (returning early or swallowing the cancellation)
             // hasn't finished the work, and another worker may now own it: never acknowledge it, even if the job
@@ -243,6 +261,47 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         }
     }
 
+    private sealed class WorkItemProgress
+    {
+        private readonly object _sync = new();
+        private int _activeCount;
+        private bool _stopped;
+        private TaskCompletionSource? _completion;
+
+        public bool TryStart()
+        {
+            lock (_sync)
+            {
+                if (_stopped)
+                    return false;
+
+                _activeCount++;
+                return true;
+            }
+        }
+
+        public void Complete()
+        {
+            lock (_sync)
+            {
+                if (--_activeCount == 0)
+                    _completion?.TrySetResult();
+            }
+        }
+
+        public Task StopAsync()
+        {
+            lock (_sync)
+            {
+                _stopped = true;
+                if (_activeCount == 0)
+                    return Task.CompletedTask;
+
+                return (_completion ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+        }
+    }
+
     /// <summary>
     /// Records that the work item lease was lost and cancels the work item. The flag, not the token, decides whether
     /// the entry may be completed, because the job's own token can be cancelled at any time afterward.
@@ -253,17 +312,10 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
 
         public bool IsLost => _isLost;
 
-        public async Task SignalAsync()
+        public Task SignalAsync()
         {
             _isLost = true;
-            try
-            {
-                await workItemCancellation.CancelAsync().AnyContext();
-            }
-            catch (ObjectDisposedException)
-            {
-                // A progress report that wasn't awaited can finish after the work item; nothing is left to cancel
-            }
+            return workItemCancellation.CancelAsync();
         }
     }
 

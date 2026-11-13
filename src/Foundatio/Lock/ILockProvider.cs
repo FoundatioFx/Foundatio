@@ -21,6 +21,7 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier to lock. Use consistent naming across processes.</param>
     /// <param name="timeUntilExpires">
     /// How long the lock is held before automatic release. Defaults to 20 minutes.
+    /// Cache-backed locks accept zero for no expiration; other durations must be at least 5 milliseconds.
     /// For long-running operations, call <see cref="ILock.RenewAsync"/> periodically.
     /// </param>
     /// <param name="releaseOnDispose">If true, the lock is released when disposed.</param>
@@ -33,6 +34,9 @@ public interface ILockProvider
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>.</returns>
     /// <exception cref="LockAcquisitionTimeoutException">The lock could not be acquired before cancellation.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="CacheLockProvider"/> received a nonzero duration less than 5 milliseconds.
+    /// </exception>
     /// <remarks>
     /// Use this when the work cannot run safely without the lock. For best-effort acquisition where
     /// failure is a normal control-flow outcome, call <see cref="TryAcquireAsync(string, TimeSpan?, bool, CancellationToken)"/>
@@ -47,6 +51,7 @@ public interface ILockProvider
     /// <param name="resource">The resource identifier to lock. Use consistent naming across processes.</param>
     /// <param name="timeUntilExpires">
     /// How long the lock is held before automatic release. Defaults to 20 minutes.
+    /// Cache-backed locks accept zero for no expiration; other durations must be at least 5 milliseconds.
     /// For long-running operations, call <see cref="ILock.RenewAsync"/> periodically.
     /// </param>
     /// <param name="releaseOnDispose">If true, the lock is released when disposed.</param>
@@ -58,6 +63,9 @@ public interface ILockProvider
     /// if it fails.
     /// </param>
     /// <returns>The acquired <see cref="ILock"/>, or <c>null</c> if the lock could not be obtained.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="CacheLockProvider"/> received a nonzero duration less than 5 milliseconds.
+    /// </exception>
     /// <remarks>
     /// Use this when lock unavailability is a normal control-flow outcome (best-effort dedupe,
     /// opportunistic work). When the work cannot run without the lock, call
@@ -299,7 +307,7 @@ public static class LockProviderExtensions
     {
         ArgumentNullException.ThrowIfNull(resources);
 
-        string[] resourceList = resources.Distinct().OrderBy(r => r).ToArray();
+        string[] resourceList = resources.Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).ToArray();
         if (resourceList.Length is 0)
             return EmptyLock.Empty;
 
