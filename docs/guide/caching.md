@@ -275,7 +275,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
 - Key writes, numeric updates, and list additions reject a replacement whose valid TTL elapses during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size. This includes time spent sizing or cloning a value. Expirations supplied below 5ms retain the removal behavior described in [Minimum Expiration](#minimum-expiration).
-- `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
+- `CurrentMemorySize` is approximate during concurrent writes, removals, clearing, disposal, or recounts. This is unchanged from earlier versions; a recount after compaction corrects drift once those operations have completed.
 :::
 
 List updates preserve the collection structure of previously returned snapshots. They preserve the comparers of `Dictionary`, `SortedDictionary`, `SortedList`, `ConcurrentDictionary`, and, on .NET 9 or later, `OrderedDictionary`. Other `IDictionary` implementations throw `NotSupportedException` when an update requires copying them; the original entry remains unchanged.
