@@ -349,52 +349,47 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             if (entry is null || cancellationToken.IsCancellationRequested)
                 continue;
 
-            await ProcessWorkerEntryAsync(entry, handler, autoComplete, cancellationToken).AnyContext();
+            try
+            {
+                await handler(entry, cancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Worker cancelled while processing queue entry {QueueEntryId}", entry.Id);
+                await AbandonWorkerEntryAsync(entry).AnyContext();
+                continue;
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _workerErrorCount);
+                _logger.LogError(ex, "Worker error: {Message}", ex.Message);
+                await AbandonWorkerEntryAsync(entry).AnyContext();
+                continue;
+            }
+
+            if (!autoComplete || entry.IsAbandoned || entry.IsCompleted)
+                continue;
+
+            try
+            {
+                await _resiliencePolicy.ExecuteAsync(async _ =>
+                {
+                    if (!entry.IsAbandoned && !entry.IsCompleted)
+                        await entry.CompleteAsync().AnyContext();
+                }, DisposedCancellationToken).AnyContext();
+            }
+            catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug("Queue disposed before entry {QueueEntryId} could be auto completed", entry.Id);
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _workerErrorCount);
+                _logger.LogError(ex, "Worker error attempting to auto complete entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
+            }
         }
 
         _logger.LogTrace("Worker exiting: {QueueName} Cancel Requested: {IsCancellationRequested}", _options.Name, cancellationToken.IsCancellationRequested);
-    }
-
-    private async Task ProcessWorkerEntryAsync(IQueueEntry<T> entry, Func<IQueueEntry<T>, CancellationToken, Task> handler, bool autoComplete, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await handler(entry, cancellationToken).AnyContext();
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            _logger.LogDebug("Worker cancelled while processing queue entry {QueueEntryId}", entry.Id);
-            await AbandonWorkerEntryAsync(entry).AnyContext();
-            return;
-        }
-        catch (Exception ex)
-        {
-            Interlocked.Increment(ref _workerErrorCount);
-            _logger.LogError(ex, "Worker error: {Message}", ex.Message);
-            await AbandonWorkerEntryAsync(entry).AnyContext();
-            return;
-        }
-
-        if (!autoComplete || entry.IsAbandoned || entry.IsCompleted)
-            return;
-
-        try
-        {
-            await _resiliencePolicy.ExecuteAsync(async _ =>
-            {
-                if (!entry.IsAbandoned && !entry.IsCompleted)
-                    await entry.CompleteAsync().AnyContext();
-            }, DisposedCancellationToken).AnyContext();
-        }
-        catch (OperationCanceledException) when (DisposedCancellationToken.IsCancellationRequested)
-        {
-            _logger.LogDebug("Queue disposed before entry {QueueEntryId} could be auto completed", entry.Id);
-        }
-        catch (Exception ex)
-        {
-            Interlocked.Increment(ref _workerErrorCount);
-            _logger.LogError(ex, "Worker error attempting to auto complete entry {QueueEntryId}: {Message}", entry.Id, ex.Message);
-        }
     }
 
     private async Task AbandonWorkerEntryAsync(IQueueEntry<T> entry)
