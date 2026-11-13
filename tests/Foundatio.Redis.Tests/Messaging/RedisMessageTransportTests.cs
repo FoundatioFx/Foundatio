@@ -89,10 +89,9 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     {
         string topic = NewName("delete-keys");
         var source = MessageSource.Subscription(topic, "held");
-        var transport = (RedisMessageTransport)Transport;
         await (await CreateReceiverAsync(source)).DisposeAsync();
         await Transport.SendAsync(MessageDestination.Topic(topic), Enumerable.Range(0, 3).Select(i => Message($"a{i}") with { GroupKey = "a" }).ToList(), TestCancellationToken);
-        Assert.Equal(3, await transport.GetMessageCountAsync(source));
+        await AssertStatsAsync(source, queued: 3);
 
         await Transport.DeleteAsync(source, TestCancellationToken);
         // As seen by a publisher that read the topic's subscriptions just before the delete.
@@ -100,7 +99,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await Transport.SendAsync(MessageDestination.Topic(topic), [Message("while deleted") with { GroupKey = "a" }], TestCancellationToken);
 
         Assert.Empty(await FindKeysAsync($"*{{s:{topic}/held}}*"));
-        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        await AssertStatsAsync(source);
     }
 
     [Fact]
@@ -257,7 +256,6 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     public async Task SendAsync_AfterTheStreamWasLost_ReleasesTheGroupWaitingOnIt()
     {
         var source = MessageSource.Queue(NewName("lost-stream"));
-        var transport = (RedisMessageTransport)Transport;
         await using var receiver = await CreateReceiverAsync(source);
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("g0", "g-0") with { GroupKey = "g" }], TestCancellationToken);
         await LoseKeyAsync(source, "stream");
@@ -276,7 +274,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         Assert.Equal("g-2", next.MessageId);
         await receiver.CompleteAsync(next, TestCancellationToken);
 
-        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        await AssertStatsAsync(source);
         AssertLostMessageWarning(source);
     }
 
@@ -286,7 +284,6 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     public async Task ReceiveAsync_AfterTheStreamWasLost_ReleasesHeldMessages(bool receiverCreatedBeforeTheLoss)
     {
         var source = MessageSource.Queue(NewName("lost-held"));
-        var transport = (RedisMessageTransport)Transport;
         var early = receiverCreatedBeforeTheLoss ? await CreateReceiverAsync(source) : null;
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [
             Message("g0", "g-0") with { GroupKey = "g" },
@@ -299,7 +296,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
         Assert.Equal("g-1", next.MessageId);
         await receiver.CompleteAsync(next, TestCancellationToken);
-        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        await AssertStatsAsync(source);
         AssertLostMessageWarning(source);
     }
 
@@ -307,7 +304,6 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
     public async Task ReceiveAsync_AfterADelayedMessageWasLost_ReleasesItsGroup()
     {
         var source = MessageSource.Queue(NewName("lost-delayed"));
-        var transport = (RedisMessageTransport)Transport;
         await Transport.SendAsync(MessageDestination.Queue(source.Name), [
             Message("g0", "g-0") with { GroupKey = "g", DeliverAt = DateTimeOffset.UtcNow.AddMilliseconds(500) },
             Message("g1", "g-1") with { GroupKey = "g" }
@@ -319,7 +315,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
         Assert.Equal("g-1", next.MessageId);
         await receiver.CompleteAsync(next, TestCancellationToken);
-        Assert.Equal(0, await transport.GetMessageCountAsync(source));
+        await AssertStatsAsync(source);
         AssertLostMessageWarning(source);
     }
 
@@ -442,7 +438,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         foreach (var message in (await ReceiveAsync(receiver, 4)).OrderBy(m => m.MessageId))
             await receiver.DeadLetterAsync(message, "conformance", TestCancellationToken);
 
-        Assert.Equal(2, await transport.GetMessageCountAsync(MessageSource.DeadLetter(source)));
+        await AssertStatsAsync(source, deadLettered: 2, transport: transport);
         await using var deadLetters = await transport.CreateReceiverAsync(MessageSource.DeadLetter(source), new ReceiverOptions(), TestCancellationToken);
         Assert.Equal(["m-2", "m-3"], (await ReceiveAsync(deadLetters, 2)).Select(m => m.MessageId));
     }
@@ -462,7 +458,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await Task.Delay(retention * 1.5, TestCancellationToken);
         await receiver.DeadLetterAsync(messages["new"], "conformance", TestCancellationToken);
 
-        Assert.Equal(1, await transport.GetMessageCountAsync(deadLetterSource));
+        await AssertStatsAsync(source, deadLettered: 1, transport: transport);
         await using var deadLetters = await transport.CreateReceiverAsync(deadLetterSource, new ReceiverOptions(), TestCancellationToken);
         var kept = await ReceiveOneAsync(deadLetters);
         Assert.Equal("new", kept.MessageId);
@@ -471,7 +467,7 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         // Receiving removes dead letters that expired since the last one was added.
         await Task.Delay(retention * 1.5, TestCancellationToken);
         Assert.Empty(await deadLetters.ReceiveAsync(10, TimeSpan.FromMilliseconds(500), TestCancellationToken));
-        Assert.Equal(0, await transport.GetMessageCountAsync(deadLetterSource));
+        await AssertStatsAsync(source, transport: transport);
     }
 
     [Fact]
@@ -527,6 +523,159 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
         await second.CompleteAsync(third, TestCancellationToken);
     }
 
+    [Theory]
+    [InlineData(MessageSourceKind.Queue)]
+    [InlineData(MessageSourceKind.Subscription)]
+    public async Task GetStatsAsync_SourceThatDoesNotExist_CountsAsEmptyAndCreatesNothing(MessageSourceKind kind)
+    {
+        string name = NewName("stats-missing");
+        var source = kind == MessageSourceKind.Queue ? MessageSource.Queue(name) : MessageSource.Subscription(name, "missing");
+
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+
+        Assert.Equal(new MessageSourceStats { Source = source, Queued = 0, Delayed = 0, InFlight = 0, DeadLettered = 0 }, stats);
+        Assert.Empty(await FindKeysAsync($"*{name}*"));
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_AsMessagesAreSentReceivedAndSettled_CountsEachState()
+    {
+        var source = MessageSource.Queue(NewName("stats-states"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [
+            Message("a", "a"),
+            Message("b", "b"),
+            Message("c", "c"),
+            Message("later", "later") with { DeliverAt = DateTimeOffset.UtcNow.AddHours(1) }
+        ], TestCancellationToken);
+        await AssertStatsAsync(source, queued: 3, delayed: 1);
+
+        var received = (await ReceiveAsync(receiver, 3)).ToDictionary(m => m.MessageId);
+        await AssertStatsAsync(source, delayed: 1, inFlight: 3);
+
+        await receiver.CompleteAsync(received["a"], TestCancellationToken);
+        await receiver.DeadLetterAsync(received["b"], "stats", TestCancellationToken);
+        await receiver.AbandonAsync(received["c"], TimeSpan.FromHours(1), TestCancellationToken);
+        await AssertStatsAsync(source, delayed: 2, deadLettered: 1);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_RetryWaitingOutItsDelay_CountsAsDelayedUntilItIsDue()
+    {
+        var source = MessageSource.Queue(NewName("stats-retry"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("retry", "retry"), Message("now", "now")], TestCancellationToken);
+        var received = (await ReceiveAsync(receiver, 2)).ToDictionary(m => m.MessageId);
+
+        await receiver.AbandonAsync(received["retry"], ShortDelay, TestCancellationToken);
+        await receiver.AbandonAsync(received["now"], TimeSpan.Zero, TestCancellationToken);
+
+        await AssertStatsAsync(source, queued: 1, delayed: 1);
+        await AssertStatsAsync(source, queued: 2, timeout: ShortDelay + DeliveryTimeout);
+        var redelivered = await ReceiveAsync(receiver, 2);
+        await AssertStatsAsync(source, inFlight: 2);
+        foreach (var message in redelivered)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+        await AssertStatsAsync(source);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_MessageWhoseLeaseLapsed_CountsAsQueued()
+    {
+        var source = MessageSource.Queue(NewName("stats-lapsed"));
+        await using var receiver = await CreateReceiverAsync(source, ShortLease);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("lapses")], TestCancellationToken);
+        await ReceiveOneAsync(receiver);
+        await AssertStatsAsync(source, inFlight: 1);
+
+        await AssertStatsAsync(source, queued: 1, timeout: ShortLease + DeliveryTimeout);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_MessagesHeldBehindTheirGroup_CountAsQueued()
+    {
+        var source = MessageSource.Queue(NewName("stats-held"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name),
+            Enumerable.Range(0, 3).Select(i => Message($"g{i}", $"g-{i}") with { GroupKey = "g" }).ToList(), TestCancellationToken);
+        await AssertStatsAsync(source, queued: 3);
+
+        var outstanding = await ReceiveOneAsync(receiver);
+        await AssertStatsAsync(source, queued: 2, inFlight: 1);
+
+        await receiver.CompleteAsync(outstanding, TestCancellationToken);
+        await AssertStatsAsync(source, queued: 2);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_WhenRedisCannotTellTheGroupsLag_CountsTheUnreadMessages()
+    {
+        var source = MessageSource.Queue(NewName("stats-lag"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 5).Select(i => Message($"m{i}", $"m-{i}")).ToList(), TestCancellationToken);
+        var first = await ReceiveOneAsync(receiver);
+        var second = await ReceiveOneAsync(receiver);
+
+        // Deleting the last entry the group read, while an earlier one is pending, leaves Redis 7+ unable to tell its lag.
+        await receiver.CompleteAsync(second, TestCancellationToken);
+        var group = (await GetMuxer().GetDatabase().StreamGroupInfoAsync($"{KeyPrefix}:{{q:{source.Name}}}:stream")).Single();
+        Assert.Null(group.Lag);
+
+        await AssertStatsAsync(source, queued: 3, inFlight: 1);
+        await receiver.CompleteAsync(first, TestCancellationToken);
+        await AssertStatsAsync(source, queued: 3);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_SubscriptionsOfATopic_EachCountTheirOwnCopies()
+    {
+        string topic = NewName("stats-topic");
+        var first = MessageSource.Subscription(topic, "first");
+        var second = MessageSource.Subscription(topic, "second");
+        await using var firstReceiver = await CreateReceiverAsync(first);
+        await using var secondReceiver = await CreateReceiverAsync(second);
+
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("one"), Message("two")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Subscription(topic, second.Name), [Message("only second")], TestCancellationToken);
+        await ReceiveOneAsync(firstReceiver);
+
+        await AssertStatsAsync(first, queued: 1, inFlight: 1);
+        await AssertStatsAsync(second, queued: 3);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_InstanceSubscription_ReturnsNull()
+    {
+        var source = MessageSource.InstanceSubscription(NewName("stats-instance"), "instance");
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Topic(source.Topic!), [Message("event")], TestCancellationToken);
+
+        Assert.Null(await Transport.GetStatsAsync(source, TestCancellationToken));
+    }
+
+    [Fact]
+    public Task GetStatsAsync_DeadLetterSource_ThrowsArgumentException()
+    {
+        var source = MessageSource.DeadLetter(MessageSource.Queue(NewName("stats-dlq")));
+
+        return Assert.ThrowsAsync<ArgumentException>(() => Transport.GetStatsAsync(source, TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_WithDeadLetterRetention_DoesNotCountExpiredDeadLetters()
+    {
+        var retention = TimeSpan.FromSeconds(1);
+        var transport = Track(new RedisMessageTransport(GetMuxer(), new RedisMessageTransportOptions { Prefix = KeyPrefix, LoggerFactory = Log, DeadLetterRetention = retention }));
+        var source = MessageSource.Queue(NewName("stats-retention"));
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison")], TestCancellationToken);
+        await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "stats", TestCancellationToken);
+        await AssertStatsAsync(source, deadLettered: 1, transport: transport);
+
+        await AssertStatsAsync(source, transport: transport, timeout: retention + DeliveryTimeout);
+    }
+
     // Polls too rarely to deliver within DeliveryTimeout, so only a wake-up can.
     private RedisMessageTransportOptions SlowPollingOptions => new()
     {
@@ -542,6 +691,23 @@ public class RedisMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
     private void AssertLostMessageWarning(MessageSource source) =>
         Assert.Contains(Log.LogEntries, e => e.LogLevel == LogLevel.Warning && e.Message.Contains(source.ToString()) && e.Message.Contains("noeviction"));
+
+    // Polls until the counts match, since a dashboard reads them while messages move between states.
+    private async Task AssertStatsAsync(MessageSource source, long queued = 0, long delayed = 0, long inFlight = 0, long deadLettered = 0,
+        IMessageTransport? transport = null, TimeSpan? timeout = null)
+    {
+        transport ??= Transport;
+        var expected = new MessageSourceStats { Source = source, Queued = queued, Delayed = delayed, InFlight = inFlight, DeadLettered = deadLettered };
+        var deadline = DateTime.UtcNow + (timeout ?? DeliveryTimeout);
+        var stats = await transport.GetStatsAsync(source, TestCancellationToken);
+        while (stats != expected && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(50, TestCancellationToken);
+            stats = await transport.GetStatsAsync(source, TestCancellationToken);
+        }
+
+        Assert.Equal(expected, stats);
+    }
 
     private static void AssertWithinReceiveBudget(IReadOnlyList<IncomingMessage> batch, int messageSize, int total)
     {

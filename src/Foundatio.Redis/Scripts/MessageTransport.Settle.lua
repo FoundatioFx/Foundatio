@@ -1,4 +1,4 @@
--- KEYS: stream, leases, dead-letter stream, groups, held, delayed, delayed-data
+-- KEYS: stream, leases, dead-letter stream, groups, held, delayed, delayed-data, retries
 -- ARGV: operation, group, consumer, entry id, expected delivery count, value (delay ms, lease ms or reason), released consumer,
 --       reason field, has message group, message group, dead letters to keep (0 = all), dead-letter retention ms (0 = forever)
 -- Returns 0 when the lease was lost, 1 when settled, 2 when settled and the next held message of its group was released
@@ -16,9 +16,13 @@ if operation == 'renew' then
 end
 
 if operation == 'abandon' then
-    local availableAt = nowMs() + tonumber(ARGV[6])
+    local delay = tonumber(ARGV[6])
+    local availableAt = nowMs() + delay
     redis.call('XCLAIM', stream, group, ARGV[7], 0, id, 'JUSTID')
     redis.call('ZADD', leases, availableAt, id)
+    if delay > 0 then
+        redis.call('ZADD', KEYS[8], availableAt, id)
+    end
     return 1
 end
 

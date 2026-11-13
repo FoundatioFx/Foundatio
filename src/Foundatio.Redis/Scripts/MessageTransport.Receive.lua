@@ -1,4 +1,4 @@
--- KEYS: stream, leases, delayed, delayed-data, groups, held
+-- KEYS: stream, leases, delayed, delayed-data, groups, held, retries
 -- ARGV: group, consumer, max messages, lease ms, max delayed messages to promote, max bytes, max message bytes,
 --       dead letters to keep and dead-letter retention ms (0 for sources that are not dead-letter queues)
 -- Reads stop once about max bytes were read, always returning at least one message when one is available.
@@ -11,6 +11,9 @@ local maxMessages, lease = tonumber(ARGV[3]), tonumber(ARGV[4])
 local maxBytes, maxMessageBytes = tonumber(ARGV[6]), tonumber(ARGV[7])
 local now = nowMs()
 
+-- Retries are kept in the retries set only while they wait out their delay, so their source's stats can tell them
+-- from messages that are in flight; once due they are leases like any other.
+redis.call('ZREMRANGEBYSCORE', KEYS[7], '-inf', now)
 local released = ensureStream(k, group, now)
 released = released + promote(k, now, tonumber(ARGV[5]), maxBytes)
 trimDeadLetters(stream, tonumber(ARGV[8]), tonumber(ARGV[9]))

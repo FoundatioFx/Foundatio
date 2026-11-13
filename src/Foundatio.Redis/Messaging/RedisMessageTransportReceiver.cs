@@ -164,7 +164,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
     {
         bool deadLetters = Source.Kind == MessageSourceKind.DeadLetter;
         var result = (RedisResult[])(await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.ReceiveScript,
-            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held],
+            [_keys.Stream, _keys.Leases, _keys.Delayed, _keys.DelayedData, _keys.Groups, _keys.Held, _keys.Retries],
             [RedisMessageTransport.GroupName, _consumer, count, (long)Math.Ceiling(_options.LeaseDuration.TotalMilliseconds), MaxPromotedPerReceive,
                 RedisMessageTransport.ReceiveBatchBytes, _transport.Options.MaxMessageSize,
                 deadLetters ? _transport.DeadLetterMaxLength : 0, deadLetters ? _transport.DeadLetterRetentionMilliseconds : 0]).AnyContext())!;
@@ -236,7 +236,7 @@ internal sealed class RedisMessageReceiver : IMessageReceiver
 
         bool ordered = _keys.OrderedGroups && delivery.GroupKey is not null;
         long result = (long)await _transport.Database.ScriptEvaluateAsync(RedisMessageTransport.SettleScript,
-            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData],
+            [_keys.Stream, _keys.Leases, _keys.DeadLetterStream, _keys.Groups, _keys.Held, _keys.Delayed, _keys.DelayedData, _keys.Retries],
             [operation, RedisMessageTransport.GroupName, _consumer, delivery.EntryId, delivery.Deliveries, value, RedisMessageTransport.ReleasedConsumer,
                 RedisMessageTransport.DeadLetterReasonField, ordered ? 1 : 0, ordered ? delivery.GroupKey : String.Empty,
                 _transport.DeadLetterMaxLength, _transport.DeadLetterRetentionMilliseconds]).AnyContext();

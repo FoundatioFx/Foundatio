@@ -23,6 +23,7 @@ internal sealed class RedisSourceKeys
         DelayedData = baseKey + ":delayed-data";
         Groups = baseKey + ":groups";
         Held = baseKey + ":held";
+        Retries = baseKey + ":retries";
         DeadLetterStream = (deadLetterBase ?? baseKey + ":dlq") + ":stream";
         Signal = RedisChannel.Literal(baseKey + ":signal");
         DeadLetterSignal = RedisChannel.Literal((deadLetterBase ?? baseKey + ":dlq") + ":signal");
@@ -42,6 +43,10 @@ internal sealed class RedisSourceKeys
     public RedisKey DelayedData { get; }
     public RedisKey Groups { get; }
     public RedisKey Held { get; }
+
+    /// <summary>The abandoned messages waiting out a retry delay, scored by when they are due, like their leases.</summary>
+    public RedisKey Retries { get; }
+
     public RedisKey DeadLetterStream { get; }
 
     /// <summary>Published to when the source may have a message to receive, so idle receivers poll at once.</summary>
@@ -49,7 +54,7 @@ internal sealed class RedisSourceKeys
 
     public RedisChannel DeadLetterSignal { get; }
 
-    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held];
+    public RedisKey[] All => [Stream, Leases, Delayed, DelayedData, Groups, Held, Retries];
 
     public RedisKey DeduplicationKey(string deduplicationId) => $"{_base}:dedup:{deduplicationId}";
 

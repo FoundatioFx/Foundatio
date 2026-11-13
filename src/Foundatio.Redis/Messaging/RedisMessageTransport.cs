@@ -53,6 +53,7 @@ public sealed class RedisMessageTransport : IMessageTransport
     private static readonly string PruneScript = LoadScript("Prune");
     private static readonly string DeleteScript = LoadScript("Delete");
     private static readonly string CreateScript = LoadScript("Create");
+    private static readonly string StatsScript = LoadScript("Stats");
     internal static readonly string ReceiveScript = LoadScript("Receive");
     internal static readonly string SettleScript = LoadScript("Settle");
     internal static readonly string ReleaseScript = LoadScript("Release");
@@ -210,8 +211,32 @@ public sealed class RedisMessageTransport : IMessageTransport
         return receiver;
     }
 
-    /// <inheritdoc />
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+    /// <summary>
+    /// Counts the messages in a queue or durable subscription with one script, so the counts are read at a single moment
+    /// and do not lag. <see cref="MessageSourceStats.Queued"/> includes the messages held behind an unsettled message of
+    /// their group, abandoned messages and those whose lease lapsed; <see cref="MessageSourceStats.Delayed"/> includes
+    /// retries waiting out their delay. Dead letters older than <see cref="RedisMessageTransportOptions.DeadLetterRetention"/>
+    /// are removed first, so they are not counted. Instance subscriptions are not counted (null): their keys are named
+    /// for the receiver that owns them.
+    /// </summary>
+    /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
+    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            throw new ArgumentException("A dead-letter queue is counted as the DeadLettered count of the source it belongs to.", nameof(source));
+
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            return null;
+
+        var keys = GetKeys(source);
+        var counts = (long[])(await Database.ScriptEvaluateAsync(StatsScript, [keys.Stream, keys.Leases, keys.Retries, keys.Delayed, keys.Held, keys.DeadLetterStream],
+            [GroupName, DeadLetterMaxLength, DeadLetterRetentionMilliseconds]).AnyContext())!;
+
+        return new MessageSourceStats { Source = source, Queued = counts[0], Delayed = counts[1], InFlight = counts[2], DeadLettered = counts[3] };
+    }
 
     /// <summary>
     /// Deletes a queue or durable subscription with its messages and dead letters, or only the dead letters of a
@@ -236,20 +261,6 @@ public sealed class RedisMessageTransport : IMessageTransport
 
         RedisKey[] deleted = source.Kind == MessageSourceKind.DeadLetter ? keys.All : [.. keys.All, .. keys.DeadLetter.All];
         await Database.ScriptEvaluateAsync(DeleteScript, deleted).AnyContext();
-    }
-
-    /// <summary>The number of pending, delayed, held and in-flight messages in a source.</summary>
-    internal async Task<long> GetMessageCountAsync(MessageSource source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
-        if (source.Kind == MessageSourceKind.InstanceSubscription)
-            throw new ArgumentException("Instance subscriptions are private to their receiver.", nameof(source));
-
-        var keys = GetKeys(source);
-        var streamLength = Database.StreamLengthAsync(keys.Stream);
-        var delayed = Database.SortedSetLengthAsync(keys.Delayed);
-        var held = Database.HashLengthAsync(keys.Held);
-        return await streamLength.AnyContext() + await delayed.AnyContext() + await held.AnyContext();
     }
 
     /// <inheritdoc />
