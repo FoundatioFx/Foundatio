@@ -145,7 +145,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     }
 
     /// <summary>
-    /// Recalculates the current memory size by summing all non-expired cache entries.
+    /// Recalculates the current memory size by summing all stored cache entries.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -565,13 +565,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         T difference = UpdateEntry(key, current =>
         {
+            if (newEntry.IsExpired)
+                return (current, T.Zero);
+
             if (current is null)
                 return (newEntry, value);
 
             if (GetNumericValue<T>(current) is { } currentValue && (higher ? currentValue < value : currentValue > value))
-                return (current.WithValue(value, expiresAt, newEntry.Size), higher ? value - currentValue : currentValue - value);
+            {
+                var replacement = current.WithValue(value, expiresAt, newEntry.Size);
+                return replacement.IsExpired ? (current, T.Zero) : (replacement, higher ? value - currentValue : currentValue - value);
+            }
 
-            return (current.WithExpiration(expiresAt), T.Zero);
+            var unchanged = current.WithExpiration(expiresAt);
+            return (unchanged.IsExpired ? current : unchanged, T.Zero);
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -629,15 +636,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         return UpdateEntry(key, current =>
         {
+            if (entry.IsExpired)
+                return (current, 0L);
+
             if (current is null)
-                return (_canShareListValues && items.Count > ListSnapshot<T>.BlockSize
+            {
+                var replacement = _canShareListValues && items.Count > ListSnapshot<T>.BlockSize
                     ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
-                    : entry, (long)items.Count);
+                    : entry;
+                return entry.IsExpired ? (current, 0L) : (replacement, (long)items.Count);
+            }
 
             if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
             {
                 var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
-                return (current.WithValue(list, list.ExpiresAt, entry.Size), (long)items.Count);
+                var replacement = current.WithValue(list, list.ExpiresAt, entry.Size);
+                return entry.IsExpired ? (current, 0L) : (replacement, (long)items.Count);
             }
 
             if (CopyListValues<T>(current) is not { } dictionary)
@@ -649,9 +663,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 dictionary[kvp.Key] = kvp.Value;
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
-            return size < 0
-                ? (current, 0L)
-                : (WithListValues(current, dictionary, size), (long)items.Count);
+            if (size < 0)
+                return (current, 0L);
+
+            var merged = WithListValues(current, dictionary, size);
+            return entry.IsExpired ? (current, 0L) : (merged, (long)items.Count);
         });
     }
 
@@ -803,14 +819,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         ArgumentException.ThrowIfNullOrEmpty(key);
 
         if (entry.IsExpired)
-        {
-            RemoveExpiredKey(key);
-            return false;
-        }
+            return UpdateEntry(key, current => (current, false));
 
         Interlocked.Increment(ref _writes);
 
-        bool wasUpdated = UpdateEntry(key, current => mode switch
+        bool wasUpdated = UpdateEntry(key, current => entry.IsExpired ? (current, false) : mode switch
         {
             WriteMode.Add when current is not null => (current, false),
             WriteMode.Replace when current is null => (current, false),
@@ -939,12 +952,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         T result = UpdateEntry(key, current =>
         {
+            if (newEntry.IsExpired)
+                return (current, T.Zero);
+
             if (current is null)
                 return (newEntry, amount);
 
             T newValue = (GetNumericValue<T>(current) ?? T.Zero) + amount;
             long size = _hasSizeCalculator ? CalculateEntrySize(newValue) : 0;
-            return size < 0 ? (current, T.Zero) : (current.WithValue(newValue, expiresAt, size), newValue);
+            if (size < 0)
+                return (current, T.Zero);
+
+            var replacement = current.WithValue(newValue, expiresAt, size);
+            return replacement.IsExpired ? (current, T.Zero) : (replacement, newValue);
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -1497,7 +1517,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             // When a batch could copy every block, one dictionary copy is cheaper than
             // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
-            if (items.Count >= Math.Max(1, Count / BlockSize))
+            // Rebuild sparse storage so small writes do not keep copying peak-sized blocks.
+            if (items.Count >= Math.Max(1, Count / BlockSize) || Count < _nextIndex / 4)
             {
                 var dictionary = CopyValues();
                 if (prune)
@@ -1760,34 +1781,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (value is null)
             return 0;
 
+        long size;
         try
         {
-            long size = _sizeCalculator!(value);
-
-            // Validate the size returned by the calculator
-            if (size < 0)
-            {
-                _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
-                    "Custom SizeCalculator functions must return non-negative values.",
-                    size, value?.GetType().Name ?? "null");
-                return -1;
-            }
-
-            // Check if entry exceeds maximum size
-            if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
-            {
-                if (_shouldThrowOnMaxEntrySizeExceeded)
-                {
-                    throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-                }
-
-                _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                    size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-
-                return -1;
-            }
-
-            return size;
+            size = _sizeCalculator!(value);
         }
         catch (MaxEntrySizeExceededCacheException)
         {
@@ -1799,13 +1796,34 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 value?.GetType().Name ?? "null");
 
             // Fallback to simple estimation
-            return value switch
+            size = value switch
             {
                 null => 8,
                 string stringValue => 24 + ((long)stringValue.Length * 2),
                 _ => 64 // Default object overhead
             };
         }
+
+        // Validate both the calculator result and fallback estimate.
+        if (size < 0)
+        {
+            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
+                "Custom SizeCalculator functions must return non-negative values.",
+                size, value?.GetType().Name ?? "null");
+            return -1;
+        }
+
+        if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
+        {
+            if (_shouldThrowOnMaxEntrySizeExceeded)
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+
+            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+                size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+            return -1;
+        }
+
+        return size;
     }
 
     private static bool TypeRequiresCloning(Type? t)

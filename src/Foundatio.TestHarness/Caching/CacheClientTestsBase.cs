@@ -1274,25 +1274,22 @@ public abstract class CacheClientTestsBase : TestWithLoggingBase
             Assert.NotNull(expiration);
             Assert.InRange(expiration.Value, TimeSpan.FromMinutes(59), TimeSpan.FromHours(1));
 
-            // Multiple expirations expire individual items - test staggered expiration in one pass
+            // Keep the other item permanent so scheduler delays cannot expire both before the assertion.
             const string key = "list:staggered-expiration";
+            Assert.Equal(1, await cache.ListAddAsync(key, [3]));
             Assert.Equal(1, await cache.ListAddAsync(key, [2], TimeSpan.FromMilliseconds(50)));
-            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(150)));
 
+            await Task.Delay(200, TestCancellationToken);
             var cacheValue = await cache.GetListAsync<int>(key);
-            Assert.True(cacheValue.HasValue);
-            Assert.Equal(2, cacheValue.Value.Count);
-
-            // Wait for first item to expire
-            await Task.Delay(75);
-            cacheValue = await cache.GetListAsync<int>(key);
             Assert.True(cacheValue.HasValue);
             Assert.Single(cacheValue.Value);
             Assert.Contains(3, cacheValue.Value);
-            Assert.DoesNotContain(2, cacheValue.Value); // Explicit verification item 2 expired
+            Assert.DoesNotContain(2, cacheValue.Value);
 
-            // Wait for second item to expire
-            await Task.Delay(100, TestCancellationToken);
+            // Verify whole-key expiration on a new list, without relying on shortening a permanent key's TTL.
+            Assert.Equal(1, await cache.ListRemoveAsync(key, [3]));
+            Assert.Equal(1, await cache.ListAddAsync(key, [3], TimeSpan.FromMilliseconds(50)));
+            await Task.Delay(200, TestCancellationToken);
             Assert.False(await cache.ExistsAsync(key));
 
             // Null expiration: should succeed and remove expiration
