@@ -3001,6 +3001,123 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task IncrementAsync_WhenStoredEntryExpiresDuringSizing_StartsFromMissing(bool useDouble, bool competingWrite)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        bool observedMissing = false;
+        InMemoryCacheClient? client = null;
+        using var cache = client = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(1000).SizeCalculator(value =>
+            {
+                if (Convert.ToDouble(value) == 101)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                    observedMissing = !client!.ExistsAsync("key").GetAwaiter().GetResult();
+                    if (competingWrite)
+                        Publish(client, "key", CreateEntry(1000L, clock));
+                }
+                return 8;
+            }));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        Publish(cache, "key", CreateEntry(100L, clock, TimeSpan.FromMinutes(1)));
+
+        double result = useDouble
+            ? await cache.IncrementAsync("key", 1d)
+            : await cache.IncrementAsync("key", 1L);
+
+        long expected = competingWrite ? 1001 : 1;
+        Assert.True(observedMissing);
+        Assert.Equal(expected, result);
+        Assert.Equal(expected, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(8, cache.CurrentMemorySize);
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+    }
+
+    [Theory]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, false)]
+    [InlineData(true, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(false, false, true)]
+    public async Task ConditionalNumericUpdate_WhenStoredEntryExpiresDuringConversion_StartsFromMissing(bool higher, bool changesValue, bool useDouble)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).WithFixedSizing(1000, 8));
+        bool observedMissing = false;
+        var number = new ConvertedNumber(() =>
+        {
+            clock.Advance(TimeSpan.FromMinutes(2));
+            observedMissing = !cache.ExistsAsync("key").GetAwaiter().GetResult();
+        });
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        Publish(cache, "key", CreateEntry(number, clock, TimeSpan.FromMinutes(1)));
+        long value = higher ? (changesValue ? 200 : 50) : (changesValue ? 20 : 200);
+
+        double result = (higher, useDouble) switch
+        {
+            (true, true) => await cache.SetIfHigherAsync("key", (double)value),
+            (true, false) => await cache.SetIfHigherAsync("key", value),
+            (false, true) => await cache.SetIfLowerAsync("key", (double)value),
+            _ => await cache.SetIfLowerAsync("key", value)
+        };
+
+        Assert.True(observedMissing);
+        Assert.Equal(value, result);
+        Assert.Equal(value, (await cache.GetAsync<long>("key")).Value);
+        Assert.Equal(8, cache.CurrentMemorySize);
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListUpdate_WhenStoredEntryExpiresDuringSizing_StartsFromMissing(bool remove)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        bool observedMissing = false;
+        InMemoryCacheClient? client = null;
+        using var cache = client = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).CloneValues(false)
+            .MaxMemorySize(1000).SizeCalculator(value =>
+            {
+                var dictionary = (IDictionary<string, DateTime?>)value;
+                if (dictionary.Count == 2)
+                {
+                    clock.Advance(TimeSpan.FromMinutes(2));
+                    observedMissing = !client!.ExistsAsync("key").GetAwaiter().GetResult();
+                }
+                return dictionary.Count;
+            }));
+        var expired = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = cache.ItemExpired.AddSyncHandler((_, args) => expired.TrySetResult(args.Key));
+        var values = new Dictionary<string, DateTime?> { ["old"] = null };
+        if (remove)
+        {
+            values["other"] = null;
+            values["remaining"] = null;
+        }
+        Publish(cache, "key", CreateEntry(values, clock, TimeSpan.FromMinutes(1)));
+
+        long result = remove
+            ? await cache.ListRemoveAsync("key", ["old"])
+            : await cache.ListAddAsync("key", ["new"]);
+
+        Assert.True(observedMissing);
+        Assert.Equal(remove ? 0 : 1, result);
+        Assert.Equal(remove ? [] : ["new"], (await cache.GetListAsync<string>("key")).Value ?? []);
+        Assert.Equal(remove ? 0 : 1, cache.CurrentMemorySize);
+        Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+    }
+
+    [Theory]
     [InlineData("Add", true)]
     [InlineData("Increment", 10L)]
     [InlineData("Replace", false)]
@@ -3085,6 +3202,35 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     private static void Publish(InMemoryCacheClient cache, string key, InMemoryCacheClient.CacheEntry entry)
     {
         cache.UpdateEntry<bool>(key, _ => (entry, true));
+    }
+
+    private sealed class ConvertedNumber(Action duringFirstConversion) : IConvertible
+    {
+        private Action? _duringFirstConversion = duringFirstConversion;
+
+        private long GetValue()
+        {
+            Interlocked.Exchange(ref _duringFirstConversion, null)?.Invoke();
+            return 100;
+        }
+
+        public TypeCode GetTypeCode() => TypeCode.Int64;
+        public long ToInt64(IFormatProvider? provider) => GetValue();
+        public double ToDouble(IFormatProvider? provider) => GetValue();
+        public bool ToBoolean(IFormatProvider? provider) => throw new NotSupportedException();
+        public byte ToByte(IFormatProvider? provider) => throw new NotSupportedException();
+        public char ToChar(IFormatProvider? provider) => throw new NotSupportedException();
+        public DateTime ToDateTime(IFormatProvider? provider) => throw new NotSupportedException();
+        public decimal ToDecimal(IFormatProvider? provider) => throw new NotSupportedException();
+        public short ToInt16(IFormatProvider? provider) => throw new NotSupportedException();
+        public int ToInt32(IFormatProvider? provider) => throw new NotSupportedException();
+        public sbyte ToSByte(IFormatProvider? provider) => throw new NotSupportedException();
+        public float ToSingle(IFormatProvider? provider) => throw new NotSupportedException();
+        public string ToString(IFormatProvider? provider) => "100";
+        public object ToType(Type conversionType, IFormatProvider? provider) => throw new NotSupportedException();
+        public ushort ToUInt16(IFormatProvider? provider) => throw new NotSupportedException();
+        public uint ToUInt32(IFormatProvider? provider) => throw new NotSupportedException();
+        public ulong ToUInt64(IFormatProvider? provider) => throw new NotSupportedException();
     }
 
     /// <summary>

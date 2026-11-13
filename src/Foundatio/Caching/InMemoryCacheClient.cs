@@ -348,7 +348,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// <param name="update">
     /// Receives the current live entry (<c>null</c> when the key is missing or expired) and returns the entry the
     /// key should hold: the same instance to leave it unchanged, a new instance to add or replace it, or
-    /// <c>null</c> to remove it. It runs again with the latest entry when another writer changes the key first,
+    /// <c>null</c> to remove it. It runs again when the entry expires during the callback or another writer changes the key first,
     /// so it must not have side effects; only the result of the attempt that was published is returned.
     /// </param>
     internal TResult UpdateEntry<TResult>(string key, Func<CacheEntry?, (CacheEntry? Entry, TResult Result)> update)
@@ -356,9 +356,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         bool reclaimedExpired = false;
         var result = UpdateStoredEntry(key, stored =>
         {
-            // Checked once per attempt, so the decision and the event always agree
             reclaimedExpired = stored is { IsExpired: true };
-            return update(reclaimedExpired ? null : stored);
+            var decision = update(reclaimedExpired ? null : stored);
+            if (!reclaimedExpired && stored is { IsExpired: true })
+            {
+                // Sizing, cloning or conversion can outlive the observed entry. Recompute from a missing key
+                // instead of publishing a decision that would revive its expired value.
+                reclaimedExpired = true;
+                return update(null);
+            }
+
+            return decision;
         });
 
         if (reclaimedExpired)
