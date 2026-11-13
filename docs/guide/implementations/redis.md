@@ -698,6 +698,19 @@ Redis/Valkey replication is asynchronous. When using `PreferReplica`, reads may 
 - [AWS Implementation](./aws) - S3 and SQS
 - [In-Memory Implementation](./in-memory) - Local development
 
+## Running the Tests
+
+The Redis provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.Redis`, with its tests in `tests/Foundatio.Redis.Tests`. By default the tests connect to a six-node Redis cluster at `127.0.0.1:7005`, which `docker-compose.yml` at the repository root starts:
+
+```bash
+docker compose up -d && docker compose up ready
+dotnet test --project tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj
+```
+
+The cluster nodes announce `HOST_IP`, which defaults to `172.17.0.1` (the Docker bridge on Linux). On Docker Desktop, set `HOST_IP` to your machine's IP address before starting them, or run `start-all-services.ps1`, which does that for you.
+
+To test against a single node, Sentinel or Valkey, start `docker-compose.redis.yml`, `docker-compose.redis-sentinel.yml` or `docker-compose.valkey.yml` with `docker compose -f <file> up -d` and set the `ConnectionStrings__RedisConnectionString` environment variable, for example to `127.0.0.1:6379,abortConnect=false,allowAdmin=true`.
+
 ## GitHub Repository
 
-- [Foundatio.Redis](https://github.com/FoundatioFx/Foundatio.Redis) - View source code and contribute
+- [Foundatio.Redis](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis) - View source code and contribute

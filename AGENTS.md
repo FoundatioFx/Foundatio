@@ -31,7 +31,9 @@ dotnet test Foundatio.slnx
 dotnet format Foundatio.slnx
 ```
 
-**Note**: When building within a workspace, use `Foundatio.All.slnx` instead to include all Foundatio projects in the build and test cycle.
+`Foundatio.slnx` includes the Redis, AWS, Kafka, Azure Service Bus and RabbitMQ providers, so the build and the test run cover them too. Their tests need the services in `docker-compose.yml`, except RabbitMQ's, which start their own brokers through Aspire; see [Provider Tests](#provider-tests). Without Docker you can still build everything and run core's own tests with `dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj`.
+
+**Note**: When building within a workspace, use `Foundatio.All.slnx` instead to also include the Foundatio projects that live in sibling repositories (Azure Storage, Aliyun, SSH.NET, Parsers, Repositories).
 
 ## Project Structure
 
@@ -48,13 +50,47 @@ src
 │   ├── Serializer                    # ISerializer abstractions
 │   └── Extensions                    # Extension methods for DI and utilities
 ├── Foundatio.Extensions.Hosting      # ASP.NET Core hosting integration
-└── Foundatio.TestHarness             # Shared test base classes
+├── Foundatio.TestHarness             # Shared test base classes
+├── Foundatio.Redis                   # Redis provider
+│   ├── Cache                         # ICacheClient implementations for Redis
+│   ├── Queues                        # IQueue<T> implementations for Redis
+│   ├── Messaging                     # IMessageBus implementations for Redis
+│   ├── Storage                       # IFileStorage implementations for Redis
+│   ├── Extensions                    # Extension methods for DI
+│   ├── Scripts                       # Redis Lua scripts
+│   └── Utility                       # Utility classes
+├── Foundatio.AWS                     # AWS provider
+│   ├── Messaging                     # SNS/SQS message bus
+│   ├── Queues                        # SQS queue implementations
+│   ├── Storage                       # S3 storage implementations
+│   └── Extensions                    # Extension methods for DI
+├── Foundatio.Kafka                   # Kafka provider
+│   ├── Messaging                     # IMessageBus implementations for Kafka
+│   └── Extensions                    # Extension methods
+├── Foundatio.AzureServiceBus         # Azure Service Bus provider
+│   ├── Queues                        # IQueue<T> implementations for Azure Service Bus
+│   ├── Messaging                     # IMessageBus implementations for Azure Service Bus
+│   ├── Extensions                    # Extension methods
+│   └── Utility                       # Utility classes
+└── Foundatio.RabbitMQ                # RabbitMQ provider
+    ├── Messaging                     # IMessageBus implementations for RabbitMQ
+    ├── Extensions                    # Extension methods
+    └── Utility                       # Utility classes
 tests
-└── Foundatio.Tests                   # Unit and integration tests
-samples                               # Sample applications
-benchmarks                            # Performance benchmarks
+├── Foundatio.Tests                   # Core unit and integration tests
+├── Foundatio.Redis.Tests             # Redis provider tests (need Redis)
+├── Foundatio.AWS.Tests               # AWS provider tests (need the Floci emulator)
+├── Foundatio.Kafka.Tests             # Kafka provider tests (need Kafka)
+├── Foundatio.AzureServiceBus.Tests   # Azure Service Bus provider tests (need the Service Bus emulator)
+├── Foundatio.RabbitMQ.Tests          # RabbitMQ provider tests (start their brokers through Aspire; need Docker)
+└── Foundatio.RabbitMQ.AppHost        # Aspire AppHost for the RabbitMQ test brokers
+samples                               # Sample applications, including Redis, Kafka, Azure Service Bus and RabbitMQ samples
+benchmarks                            # Performance benchmarks (Foundatio.Redis.Benchmarks for Redis)
 docs                                  # Documentation site
+docker-compose*.yml                   # Services for the provider tests
 ```
+
+Each provider keeps its own `README.md` in its `src` folder; it is the package's NuGet readme. The other providers (Azure Storage, Aliyun, SSH.NET) still live in their own repositories.
 
 ## Coding Standards
 
@@ -71,7 +107,7 @@ docs                                  # Documentation site
 - **Dependency Injection**: Use constructor injection; extend via `IServiceCollection` extensions
 - **In-memory implementations**: Always provide for testing and local development
 - **Naming**: `Foundatio.[Feature]` for projects, `I[Feature]` for interfaces
-- **External providers**: Redis, Azure, AWS implementations live in separate repositories
+- **External providers**: Redis, AWS, Kafka, Azure Service Bus and RabbitMQ live in this repo under `src/`; Azure Storage, Aliyun and SSH.NET implementations live in separate repositories
 
 ### Code Quality
 
@@ -178,7 +214,7 @@ Before marking work complete, verify:
 7. **Feature documentation**: Add entries to [docs/](docs/) folder for new features or significant changes
 8. **Skill updated**: When changing core abstractions, interfaces, or docs, update [`.agents/skills/foundatio/SKILL.md`](.agents/skills/foundatio/SKILL.md) to keep patterns, gotchas, and the implementation matrix in sync. The skill delegates to context7 for full docs, so only compact patterns and non-obvious gotchas need maintenance.
 9. **Breaking changes flagged**: Clearly identify any breaking changes for review
-10. **Providers validated**: For changes to core abstractions or `Foundatio.TestHarness`, follow [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) to build and test each affected provider repo against local core, using parallel subagents
+10. **Providers validated**: For changes to core abstractions or `Foundatio.TestHarness`, run the in-repo Redis, AWS, Kafka, Azure Service Bus and RabbitMQ tests (see [Provider Tests](#provider-tests)), and follow [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) to build and test each affected provider that still lives in its own repo against local core, using parallel subagents
 
 ### Error Handling
 
@@ -305,6 +341,40 @@ dotnet test --filter "FullyQualifiedName~InMemoryCacheClientTests"
 dotnet test --logger "console;verbosity=detailed"
 ```
 
+### Provider Tests
+
+The Redis, AWS, Kafka, Azure Service Bus and RabbitMQ tests talk to real services. `docker-compose.yml` at the repo root starts all of them except RabbitMQ's, the same way CI does:
+
+```bash
+docker compose up -d && docker compose up ready
+
+dotnet test --project tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj
+dotnet test --project tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj
+dotnet test --project tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj
+dotnet test --project tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj
+dotnet test --project tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj
+
+# One test class (xUnit v3 on Microsoft.Testing.Platform)
+dotnet test --project tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj --filter-class "*RedisCacheClientTests"
+
+docker compose down --remove-orphans
+```
+
+| Tests | Service | Endpoint |
+| ----- | ------- | -------- |
+| `Foundatio.Redis.Tests` | 6-node Redis cluster (`bitnamilegacy/redis-cluster`) | `ConnectionStrings:RedisConnectionString` in `appsettings.json`, default `127.0.0.1:7005`; override with the `ConnectionStrings__RedisConnectionString` environment variable |
+| `Foundatio.AWS.Tests` | [Floci](https://github.com/floci-io/floci) AWS emulator | `http://localhost:4566`. Only the SQS message bus tests read `ConnectionStrings:SQSMessageBus`; the SQS queue and S3 tests use `localhost:4566` directly |
+| `Foundatio.Kafka.Tests` | `apache/kafka` in KRaft mode | `127.0.0.1:9092` |
+| `Foundatio.AzureServiceBus.Tests` | [Azure Service Bus emulator](https://learn.microsoft.com/azure/service-bus-messaging/overview-emulator) (`servicebus-emulator`, with `sqledge`) | `ConnectionStrings:AzureServiceBusConnectionString` in `appsettings.json`, default `localhost:5672` with `UseDevelopmentEmulator=true`; override with the `ConnectionStrings__AzureServiceBusConnectionString` environment variable |
+| `Foundatio.RabbitMQ.Tests` | RabbitMQ containers started by `tests/Foundatio.RabbitMQ.AppHost` through Aspire, not `docker-compose.yml` | Assigned by Aspire; only Docker needs to be running |
+
+- The Redis cluster announces `HOST_IP` (default `172.17.0.1`, the Docker bridge on Linux). On Docker Desktop, set `HOST_IP` to your machine's IP first; `start-all-services.ps1` does this for you.
+- To run the Redis tests against a single node, Sentinel or Valkey instead, start `docker-compose.redis.yml`, `docker-compose.redis-sentinel.yml` or `docker-compose.valkey.yml` with `docker compose -f <file> up -d` and point `ConnectionStrings__RedisConnectionString` at it (`appsettings.json` has `RedisConnectionString.single` and `RedisConnectionString.sentinel` examples).
+- The Service Bus emulator reads `build/servicebus-emulator/Config.json` only at startup and takes 1-2 minutes to become ready. After editing the config, recreate it with `docker compose up -d --force-recreate servicebus-emulator sqledge`.
+- The RabbitMQ AppHost starts a broker, a broker with the delayed-message plugin built from `build/rabbitmq-delayed`, and a three-node cluster for the chaos tests.
+- Start only what you need with `docker compose up -d floci`, `docker compose up -d kafka` or `docker compose up -d servicebus-emulator`.
+- Without Docker, `dotnet test --solution Foundatio.slnx` reports the provider tests as failed (the RabbitMQ tests skip); run core's tests on their own with `dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj`.
+
 ## Debugging
 
 1. **Reproduce** with minimal steps
@@ -329,7 +399,7 @@ The following skills are available in this repository under `.agents/skills/`:
 | Skill | Description |
 | ----- | ----------- |
 | [foundatio](.agents/skills/foundatio/SKILL.md) | Foundatio infrastructure abstractions — caching, queuing, messaging, file storage, locking, jobs, resilience |
-| [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) | Build and test provider repos against local core in parallel, emulator setup, preview bumps and PR updates. Use automatically for core or TestHarness changes |
+| [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) | Build and test the provider repos that live outside this repo against local core in parallel, emulator setup, preview bumps and PR updates. Use automatically for core or TestHarness changes |
 | [foundatio-release](.agents/skills/foundatio-release/SKILL.md) | Staged, verified release of core and provider repos: CI on exact commits, API compat gate, nuget.org restorability, stable version bumps, tagging order |
 | [analyzing-dotnet-performance](.agents/skills/analyzing-dotnet-performance/SKILL.md) | Scans .NET code for ~50 performance anti-patterns across async, memory, strings, collections, LINQ, regex, serialization, and I/O |
 | [microbenchmarking](.agents/skills/microbenchmarking/SKILL.md) | Creating, running, configuring, or reviewing BenchmarkDotNet benchmarks |

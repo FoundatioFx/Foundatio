@@ -325,7 +325,7 @@ await tenantCache.RemoveByPrefixAsync("");  // Removes tenant:abc:*
 
 Distributed cache using Redis (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Cache/RedisCacheClient.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Cache/RedisCacheClient.cs)
 
 ```csharp
 // dotnet add package Foundatio.Redis
@@ -343,7 +343,7 @@ await cache.SetAsync("user:123", user, TimeSpan.FromHours(1));
 
 Combines `RedisCacheClient` with `HybridCacheClient`:
 
-[View source](https://github.com/FoundatioFx/Foundatio.Redis/blob/main/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.Redis/Cache/RedisHybridCacheClient.cs)
 
 ```csharp
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost:6379");
