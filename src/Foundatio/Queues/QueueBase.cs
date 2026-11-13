@@ -59,7 +59,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
         _serializer = options.Serializer;
         options.Behaviors.ForEach(AttachBehavior);
 
-        var resiliencePolicyProvider = _options.GetResiliencePolicyProvider() ?? DefaultResiliencePolicyProvider.Instance;
+        var resiliencePolicyProvider = _options.ResiliencePolicyProvider;
         _resiliencePolicy = resiliencePolicyProvider.GetPolicy<QueueBase<T, TOptions>, IQueue<T>, IQueue>(_logger, _timeProvider);
 
         // setup meters
@@ -289,19 +289,19 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     protected void ResetWorkerErrorCount() => Interlocked.Exchange(ref _workerErrorCount, 0);
 
     /// <summary>
-    /// Starts a background worker that dequeues entries with <see cref="DequeueImplAsync"/> and runs <paramref name="handler"/>
+    /// Starts a background worker that ensures queue setup before dequeuing entries with <see cref="DequeueImplAsync"/> and runs <paramref name="handler"/>
     /// for each one until <paramref name="cancellationToken"/> is cancelled or the queue is disposed.
     /// Providers call this from <see cref="StartWorkingImpl"/> so every implementation handles worker errors the same way.
     /// </summary>
     /// <remarks>
     /// <list type="bullet">
     /// <item>Cancellation stops the worker and is not counted as an error.</item>
-    /// <item>A dequeue failure is logged, counted in <see cref="WorkerErrorCount"/> and followed by an exponential backoff with jitter
+    /// <item>A setup or dequeue failure is logged, counted in <see cref="WorkerErrorCount"/> and followed by an exponential backoff with jitter
     /// (about 1 second, doubling up to 30 seconds). The backoff resets after the next dequeue that doesn't throw.</item>
     /// <item>A handler failure is logged and counted, and the entry is abandoned unless the handler already completed or abandoned it.
     /// A handler that throws <see cref="OperationCanceledException"/> because the worker was cancelled isn't counted.</item>
     /// <item>Abandon and auto-complete run through the queue's resilience policy. If they still fail, the error is logged
-    /// (auto-complete failures are also counted) and the worker keeps running; the entry becomes available again when its lock expires.</item>
+    /// (auto-complete failures are also counted) and the worker keeps running; unsettled entries can be redelivered after their locks expire.</item>
     /// <item>An entry dequeued after cancellation was requested isn't processed; it becomes available again when its lock expires.</item>
     /// </list>
     /// </remarks>
@@ -327,6 +327,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             IQueueEntry<T>? entry;
             try
             {
+                await EnsureQueueCreatedAsync(DisposedCancellationToken).AnyContext();
                 entry = await DequeueImplAsync(cancellationToken).AnyContext();
                 consecutiveDequeueErrors = 0;
             }
@@ -374,7 +375,7 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
             return;
         }
 
-        if (!autoComplete)
+        if (!autoComplete || entry.IsAbandoned || entry.IsCompleted)
             return;
 
         try
@@ -398,6 +399,9 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
 
     private async Task AbandonWorkerEntryAsync(IQueueEntry<T> entry)
     {
+        if (entry.IsAbandoned || entry.IsCompleted)
+            return;
+
         try
         {
             await _resiliencePolicy.ExecuteAsync(async _ =>
@@ -419,10 +423,11 @@ public abstract class QueueBase<T, TOptions> : MaintenanceBase, IQueue<T>, IHave
     private static TimeSpan GetWorkerErrorDelay(int consecutiveErrors)
     {
         var delay = _workerErrorBackoff(Math.Min(consecutiveErrors, 16));
-        double jitter = delay.TotalMilliseconds * 0.5 * (Random.Shared.NextDouble() - 0.5);
-        delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds + jitter);
+        if (delay > _maxWorkerErrorDelay)
+            delay = _maxWorkerErrorDelay;
 
-        return delay > _maxWorkerErrorDelay ? _maxWorkerErrorDelay : delay;
+        double jitter = delay.TotalMilliseconds * 0.25 * Random.Shared.NextDouble();
+        return TimeSpan.FromMilliseconds(delay.TotalMilliseconds - jitter);
     }
 
     public IReadOnlyCollection<IQueueBehavior<T>> Behaviors => _behaviors;

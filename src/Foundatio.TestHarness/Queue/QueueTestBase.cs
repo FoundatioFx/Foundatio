@@ -981,11 +981,8 @@ public abstract class QueueTestBase : TestWithLoggingBase
             });
 
             var processed = new AsyncManualResetEvent(false);
-            await queue.StartWorkingAsync((entry, _) =>
-            {
-                processed.Set();
-                return Task.CompletedTask;
-            }, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
+            using var completedHandler = queue.Completed.AddSyncHandler((_, _) => processed.Set());
+            await queue.StartWorkingAsync((_, _) => Task.CompletedTask, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
@@ -1013,23 +1010,32 @@ public abstract class QueueTestBase : TestWithLoggingBase
             await AssertEmptyQueueAsync(queue);
 
             int abandonedCount = 0;
+            var abandonFailed = new AsyncManualResetEvent(false);
             using var abandonedHandler = queue.Abandoned.AddSyncHandler((_, _) =>
             {
                 if (Interlocked.Increment(ref abandonedCount) == 1)
+                {
+                    abandonFailed.Set();
                     throw new InvalidOperationException("Simulated abandon failure");
+                }
             });
 
             var processedSecond = new AsyncManualResetEvent(false);
+            using var completedHandler = queue.Completed.AddSyncHandler((_, args) =>
+            {
+                if (args.Entry.Value.Data == "Second")
+                    processedSecond.Set();
+            });
             await queue.StartWorkingAsync((entry, _) =>
             {
                 if (entry.Value.Data == "First")
                     throw new InvalidOperationException("Simulated handler failure");
 
-                processedSecond.Set();
                 return Task.CompletedTask;
             }, autoComplete: true, cancellationToken: cancellationTokenSource.Token);
 
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "First" });
+            await abandonFailed.WaitAsync(cancellationTokenSource.Token);
             await queue.EnqueueAsync(new SimpleWorkItem { Data = "Second" });
 
             await processedSecond.WaitAsync(cancellationTokenSource.Token);
