@@ -264,6 +264,24 @@ public class WorkMonitorTests : TestWithLoggingBase
         Assert.Contains("ICacheClient", exception.Message);
     }
 
+    [Fact]
+    public async Task GetInstancesAsync_WithoutAServiceNameOption_UsesTheMessagingServiceNameEvenWithoutHandlers()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<ILoggerFactory>(Log);
+        services.AddSingleton(_probe);
+        services.AddFoundatioMessaging(m => m.UseTransport(_transport).UseServiceName("billing"));
+        services.AddFoundatioJobs(j => j.UseStore(_store).AddJob<RebuildJob>());
+        services.AddFoundatioMonitoring();
+        await using var provider = services.BuildServiceProvider();
+
+        var instance = Assert.Single(await provider.GetRequiredService<IWorkMonitor>().GetInstancesAsync(TestCancellationToken));
+
+        Assert.Equal("billing", instance.ServiceName);
+        Assert.Empty(instance.MessageSources);
+        Assert.Equal(["tests.rebuild"], instance.JobNames);
+    }
+
     [Theory]
     [InlineData("interval")]
     [InlineData("expiry")]

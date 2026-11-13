@@ -110,8 +110,16 @@ internal sealed class MonitoringRuntime : IAsyncDisposable
         if (Options.ServiceName is { } serviceName)
             return serviceName;
 
-        if (_services.GetService<MessagingRegistrations>()?.Handlers.Count > 0 && _services.GetService<MessagingRuntime>() is { } messaging)
-            return messaging.ServiceName;
+        if (_services.GetService<MessagingRegistrations>() is { } registrations)
+        {
+            // Read from the registrations rather than the runtime, which a process without handlers may not be able to create.
+            var messaging = new MessagingOptions();
+            foreach (var configure in registrations.ConfigureOptions)
+                configure(messaging);
+
+            if (messaging.ServiceName is { } messagingServiceName)
+                return MessageTypeRegistry.NormalizeName(messagingServiceName);
+        }
 
         return _services.GetService<IHostEnvironment>()?.ApplicationName
             ?? Assembly.GetEntryAssembly()?.GetName().Name
