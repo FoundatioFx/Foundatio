@@ -10,7 +10,7 @@ Write-Host "Starting services in directory: $PSScriptRoot"
 docker compose -f (Join-Path -Path $PSScriptRoot -ChildPath "docker-compose.yml") up --detach
 
 # These providers now live in this repo; skip old clones of them next to it.
-$inRepoProviders = @("Foundatio.Redis", "Foundatio.AWS", "Foundatio.Kafka")
+$inRepoProviders = @("Foundatio.Redis", "Foundatio.AWS", "Foundatio.Kafka", "Foundatio.AzureServiceBus", "Foundatio.RabbitMQ")
 $parentDirectory = Split-Path -Path $PSScriptRoot -Parent
 $directories = Get-ChildItem -Path $parentDirectory -Directory -Filter "Foundatio.*" | Where-Object { $_.Name -notin $inRepoProviders }
 

@@ -128,7 +128,7 @@ The sample applications default to the Azure Service Bus Emulator connection str
 Start the emulator using Docker Compose from the repository root:
 
 ```bash
-docker-compose up -d
+docker compose up -d servicebus-emulator
 ```
 
 ### Connection String Priority
@@ -144,7 +144,7 @@ The applications check for connection strings in this order:
 
 1. Start the emulator:
    ```bash
-   docker-compose up -d
+   docker compose up -d servicebus-emulator
    ```
 
 2. In one terminal, start the dequeue process:
@@ -165,7 +165,7 @@ The applications check for connection strings in this order:
 
 1. Start the emulator:
    ```bash
-   docker-compose up -d
+   docker compose up -d servicebus-emulator
    ```
 
 2. In one terminal, start the subscriber:
