@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Foundatio.RabbitMQ\Foundatio.RabbitMQ.csproj" />
+    <ProjectReference Include="..\Foundatio.RabbitMQ.AppHost\Foundatio.RabbitMQ.AppHost.csproj" IsAspireProjectResource="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.Testing" Version="13.6.5" />
+  </ItemGroup>
+</Project>
