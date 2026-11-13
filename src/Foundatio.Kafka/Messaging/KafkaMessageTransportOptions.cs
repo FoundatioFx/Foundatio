@@ -99,4 +99,10 @@ public sealed record KafkaMessageTransportOptions
 
     /// <summary>How many times the delay forwarder tries a record that its target rejects before dropping it.</summary>
     internal int DelayForwardMaxAttempts { get; init; } = 12;
+
+    /// <summary>How long a consumer kept open to read a group's committed offsets for stats stays open while unused.</summary>
+    internal TimeSpan StatsReaderIdleTimeout { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>How many consumers are kept open to read committed offsets for stats; past that, each read opens its own.</summary>
+    internal int MaxStatsReaders { get; init; } = 32;
 }

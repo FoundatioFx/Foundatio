@@ -70,6 +70,8 @@ public sealed class KafkaMessageTransport : IMessageTransport
     private readonly object _stateStoreLock = new();
     private Task<KafkaReceiverStateStore?>? _stateStore;
     private long _stateStoreFailedAt;
+    private readonly object _statsLock = new();
+    private KafkaSourceStatsReader? _stats;
     private int _disposed;
 
     /// <summary>Creates a transport with its own producer and admin client. Receivers each get their own consumer.</summary>
@@ -245,7 +247,49 @@ public sealed class KafkaMessageTransport : IMessageTransport
     }
 
     /// <inheritdoc />
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+    /// <remarks>
+    /// <para>
+    /// <see cref="MessageSourceStats.Queued"/> is the source's consumer lag: for each partition it reads (a queue's
+    /// topic, or a subscription's share of its topic and the subscription's own topic), the latest offset less the
+    /// group's committed offset, or less the earliest offset before the group has committed one. A subscription has no
+    /// copies of messages published before its first receiver created it, only messages sent to it. A message counts
+    /// until its offset is committed, so the count includes messages received and not yet settled, messages finished
+    /// behind an unfinished one, and delayed messages with a group key, which wait in the source's own topic; it lags
+    /// settlements by about <see cref="KafkaMessageTransportOptions.CommitInterval"/>.
+    /// </para>
+    /// <para>
+    /// <see cref="MessageSourceStats.DeadLettered"/> counts the dead-letter topic's records after its own consumer
+    /// group's committed offset: what retention still holds (at least 14 days), less dead letters a replay completed.
+    /// <see cref="MessageSourceStats.InFlight"/> and <see cref="MessageSourceStats.Delayed"/> are null: Kafka does not
+    /// know what a receiver holds, and delayed messages without a group key wait in delay topics every source shares.
+    /// </para>
+    /// <para>
+    /// Nothing is created or joined. Committed offsets are read through a consumer of each group that never subscribes,
+    /// kept open while the group keeps being read; topic partitions are cached for up to 30 seconds. A call takes a
+    /// round trip for the offsets of the source's partitions and one per consumer group, and fails with
+    /// <see cref="MessageBusException"/> after 10 seconds.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
+    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ThrowIfDisposed();
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            throw new ArgumentException("Dead letters are counted in the DeadLettered count of the source they belong to.", nameof(source));
+
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            return null;
+
+        KafkaSourceStatsReader stats;
+        lock (_statsLock)
+        {
+            ThrowIfDisposed();
+            stats = _stats ??= new KafkaSourceStatsReader(this, _admin);
+        }
+
+        return await stats.GetAsync(source, cancellationToken).AnyContext();
+    }
 
     /// <inheritdoc />
     /// <remarks>
@@ -292,6 +336,13 @@ public sealed class KafkaMessageTransport : IMessageTransport
             return;
 
         await Task.WhenAll(_receivers.Keys.Select(r => r.DisposeAsync().AsTask())).AnyContext();
+
+        KafkaSourceStatsReader? stats;
+        lock (_statsLock)
+            stats = _stats;
+
+        if (stats is not null)
+            await stats.DisposeAsync().ConfigureAwait(false);
 
         Task<KafkaReceiverStateStore?>? stateStore;
         lock (_stateStoreLock)
@@ -445,6 +496,16 @@ public sealed class KafkaMessageTransport : IMessageTransport
 
     /// <summary>How many receivers are open. For tests.</summary>
     internal int ReceiverCount => _receivers.Count;
+
+    /// <summary>How many consumers are kept open to read committed offsets for stats. For tests.</summary>
+    internal int StatsReaderCount
+    {
+        get
+        {
+            lock (_statsLock)
+                return _stats?.ReaderCount ?? 0;
+        }
+    }
 
     /// <summary>Starts the delay forwarder if needed and returns it. For tests.</summary>
     internal async Task<KafkaDelayForwarder> GetForwarderAsync()
