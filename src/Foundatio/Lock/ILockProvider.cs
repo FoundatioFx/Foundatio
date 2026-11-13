@@ -41,6 +41,7 @@ public interface ILockProvider
     /// Use this when the work cannot run safely without the lock. For best-effort acquisition where
     /// failure is a normal control-flow outcome, call <see cref="TryAcquireAsync(string, TimeSpan?, bool, CancellationToken)"/>
     /// and check the result for <c>null</c>.
+    /// Cache-backed acquisition also fails if the successful cache write's response consumes the lease lifetime.
     /// </remarks>
     Task<ILock> AcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
 
@@ -70,6 +71,7 @@ public interface ILockProvider
     /// Use this when lock unavailability is a normal control-flow outcome (best-effort dedupe,
     /// opportunistic work). When the work cannot run without the lock, call
     /// <see cref="AcquireAsync(string, TimeSpan?, bool, CancellationToken)"/> instead.
+    /// Cache-backed acquisition also returns <c>null</c> if the successful cache write's response consumes the lease lifetime.
     /// </remarks>
     Task<ILock?> TryAcquireAsync(string resource, TimeSpan? timeUntilExpires = null, bool releaseOnDispose = true, CancellationToken cancellationToken = default);
 

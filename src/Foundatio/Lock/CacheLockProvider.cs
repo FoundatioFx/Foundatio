@@ -129,6 +129,8 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
         {
             do
             {
+                long attemptStartedTimestamp = _timeProvider.GetTimestamp();
+                var attemptStartedUtc = _timeProvider.GetUtcNow();
                 try
                 {
                     if (timeUntilExpires.Value == TimeSpan.Zero) // no lock timeout
@@ -142,7 +144,25 @@ public class CacheLockProvider : ILockProvider, IHaveLogger, IHaveLoggerFactory,
                 }
 
                 if (gotLock)
+                {
+                    if (timeUntilExpires.Value > TimeSpan.Zero &&
+                        (_timeProvider.GetElapsedTime(attemptStartedTimestamp) >= timeUntilExpires.Value ||
+                        _timeProvider.GetUtcNow() - attemptStartedUtc >= timeUntilExpires.Value))
+                    {
+                        gotLock = false;
+                        _logger.LogWarning("Lock {Resource} ({LockId}) may have expired before acquisition completed", resource, lockId);
+                        try
+                        {
+                            await ReleaseAsync(resource, lockId).AnyContext();
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Unable to release expired acquisition of lock {Resource} ({LockId})", resource, lockId);
+                        }
+                    }
+
                     break;
+                }
 
                 _logger.LogDebug("Failed to acquire lock {Resource} ({LockId})", resource, lockId);
                 if (cancellationToken.IsCancellationRequested)

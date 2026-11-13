@@ -16,6 +16,74 @@ namespace Foundatio.Tests.Locks;
 
 public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLoggingBase(output)
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task AcquireAsync_WhenCacheResponseOutlastsLease_DoesNotReturnExpiredHandle(bool tryAcquire, bool replaced)
+    {
+        var clock = new FakeTimeProvider();
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log));
+        var delayedCache = new Mock<ICacheClient>();
+        var response = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var added = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        delayedCache.Setup(c => c.AddAsync("lock:resource", It.IsAny<string>(), It.IsAny<TimeSpan?>()))
+            .Returns(async (string key, string value, TimeSpan? duration) =>
+            {
+                bool result = await cache.AddAsync(key, value, duration);
+                added.TrySetResult();
+                await response.Task;
+                return result;
+            });
+        delayedCache.Setup(c => c.RemoveIfEqualAsync("lock:resource", It.IsAny<string>()))
+            .Returns((string key, string value) => cache.RemoveIfEqualAsync(key, value));
+        var provider = new CacheLockProvider(delayedCache.Object, null, clock, null, Log);
+        var acquisitionToken = new CancellationToken(true);
+        ILock? acquired = null;
+        var acquisition = AcquireAsync();
+
+        try
+        {
+            await added.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+            clock.Advance(TimeSpan.FromSeconds(61));
+            if (replaced)
+                Assert.True(await cache.AddAsync("lock:resource", "replacement", TimeSpan.FromMinutes(10)));
+
+            response.TrySetResult();
+            if (tryAcquire)
+            {
+                await acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+                Assert.Null(acquired);
+            }
+            else
+                await Assert.ThrowsAsync<LockAcquisitionTimeoutException>(() => acquisition.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
+
+            var owner = await cache.GetAsync<string>("lock:resource");
+            Assert.Equal(replaced, owner.HasValue);
+            if (replaced)
+                Assert.Equal("replacement", owner.Value);
+        }
+        finally
+        {
+            response.TrySetResult();
+            try
+            {
+                await acquisition;
+                if (acquired is not null)
+                    await acquired.ReleaseAsync();
+            }
+            catch (LockAcquisitionTimeoutException) { }
+        }
+
+        async Task AcquireAsync()
+        {
+            acquired = tryAcquire
+                ? await provider.TryAcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: acquisitionToken)
+                : await provider.AcquireAsync("resource", TimeSpan.FromMinutes(1), cancellationToken: acquisitionToken);
+        }
+    }
+
     [Fact]
     public async Task TryAcquireAsync_WithDifferentCultures_UsesConsistentResourceOrder()
     {

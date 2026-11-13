@@ -262,6 +262,7 @@ A supplied renewal duration must be at least 5 milliseconds; a shorter duration 
 - Cache-backed acquisition also rejects nonzero durations under 5 milliseconds before accessing the cache. Earlier versions could delete another owner's live lock through the cache's short-expiration path. `TimeSpan.Zero` still acquires a non-expiring lock.
 - Multi-resource acquisition uses ordinal resource ordering, independent of the worker's culture. For culture-sensitive resource names, coordinate upgrades so workers sharing a lock set use the same acquisition order.
 - Multi-resource `AcquireAsync` throws `LockAcquisitionTimeoutException` when an earlier lease is lost while waiting for the remaining resources; `TryAcquireAsync` returns `null`.
+- Direct cache-backed acquisition also fails when the successful cache write takes the full lease lifetime to return. The check measures that individual write attempt, so earlier contention does not invalidate a fresh acquisition. Cleanup compares the attempted owner ID and preserves any replacement owner.
 - `ScopedLockProvider.RenewAsync` must be passed the held lock's `ILock.Resource`, which includes the scope, and `ILock.LockId`. Renewing with the unscoped resource name used to succeed silently without renewing anything; it now throws `LockException`.
 - `WorkItemContext.CancellationToken` is a token linked to the job's token, cancelled also when `AutoRenewLockOnProgress` detects a lost work item lock. Compare it by cancellation state, not by identity with the job token.
 :::
