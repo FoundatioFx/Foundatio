@@ -262,7 +262,7 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 
 #### In-memory update behavior
 
-Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size.
+Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size. `MaxEntrySize` also applies to the fallback estimate used when a custom size calculator throws.
 
 Every write treats an expired entry as missing, even before background maintenance removes it, matching Redis: `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync` and `ListAddAsync` start fresh, `ReplaceAsync`, `SetExpirationAsync` and `ListRemoveAsync` find nothing to change, and `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` rather than letting a stale owner remove or renew it. A write that finds an expired entry reclaims it and raises `ItemExpired` once, without touching a concurrent replacement.
 
@@ -274,7 +274,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - `Items` returns the cached values rather than the internal entry objects.
 - `IncrementAsync` recalculates the entry's tracked size after each increment.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
-- `ReplaceIfEqualAsync` returns `false` if the replacement expires during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size.
+- Key writes, numeric updates, and list additions reject a replacement whose valid TTL elapses during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size. This includes time spent sizing or cloning a value. Expirations supplied below 5ms retain the removal behavior described in [Minimum Expiration](#minimum-expiration).
 - `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
 :::
 
@@ -283,7 +283,7 @@ List updates preserve the collection structure of previously returned snapshots.
 `Items` returns cached values without changing eviction order. Both `Items` and ordinary reads honor `CloneValues`. With cloning disabled, mutable payloads and list elements can remain shared: a collection snapshot is not a deep copy. Do not mutate shared objects concurrently with cache operations.
 
 ::: tip Large list updates
-Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
+Batch values into a single `ListAddAsync` or `ListRemoveAsync` call. Cloning, custom size calculation, and raw dictionary access can require copies proportional to the list size. Lists that shrink substantially rebuild their internal storage so subsequent writes do not retain arrays sized for peak occupancy. Benchmark representative list sizes and read/write patterns before choosing these options; atomic updates do not make every workload allocation-free.
 :::
 
 ### HybridCacheClient
