@@ -207,6 +207,9 @@ dotnet_diagnostic.CS1591.severity = warning
 [src/{Foundatio.AWS,Foundatio.Kafka,Foundatio.Redis}/{Messaging/*,Extensions/*BuilderExtensions}.cs]
 dotnet_diagnostic.CS1591.severity = warning
 
+[src/Foundatio.AzureServiceBus/{Messaging/AzureServiceBus{MessageTransport,MessageReceiver,SessionReceiver,Session,ReceiverEntity,IncomingMessage}*,Extensions/*BuilderExtensions}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
 [src/{Foundatio.Redis/Jobs,Foundatio.Extensions.Hosting/HealthChecks}/*.cs]
 dotnet_diagnostic.CS1591.severity = warning
 
