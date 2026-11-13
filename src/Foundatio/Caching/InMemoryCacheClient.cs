@@ -1517,7 +1517,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             // When a batch could copy every block, one dictionary copy is cheaper than
             // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
-            if (items.Count >= Math.Max(1, Count / BlockSize))
+            // Rebuild sparse storage so small writes do not keep copying peak-sized blocks.
+            if (items.Count >= Math.Max(1, Count / BlockSize) || Count < _nextIndex / 4)
             {
                 var dictionary = CopyValues();
                 if (prune)
@@ -1780,34 +1781,10 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (value is null)
             return 0;
 
+        long size;
         try
         {
-            long size = _sizeCalculator!(value);
-
-            // Validate the size returned by the calculator
-            if (size < 0)
-            {
-                _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
-                    "Custom SizeCalculator functions must return non-negative values.",
-                    size, value?.GetType().Name ?? "null");
-                return -1;
-            }
-
-            // Check if entry exceeds maximum size
-            if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
-            {
-                if (_shouldThrowOnMaxEntrySizeExceeded)
-                {
-                    throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-                }
-
-                _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
-                    size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
-
-                return -1;
-            }
-
-            return size;
+            size = _sizeCalculator!(value);
         }
         catch (MaxEntrySizeExceededCacheException)
         {
@@ -1819,13 +1796,34 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 value?.GetType().Name ?? "null");
 
             // Fallback to simple estimation
-            return value switch
+            size = value switch
             {
                 null => 8,
                 string stringValue => 24 + ((long)stringValue.Length * 2),
                 _ => 64 // Default object overhead
             };
         }
+
+        // Validate both the calculator result and fallback estimate.
+        if (size < 0)
+        {
+            _logger.LogWarning("SizeCalculator returned negative size {Size} for type {EntryType}. Entry will not be cached. " +
+                "Custom SizeCalculator functions must return non-negative values.",
+                size, value?.GetType().Name ?? "null");
+            return -1;
+        }
+
+        if (_maxEntrySize.HasValue && size > _maxEntrySize.Value)
+        {
+            if (_shouldThrowOnMaxEntrySizeExceeded)
+                throw new MaxEntrySizeExceededCacheException(size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+
+            _logger.LogWarning("Cache entry size {EntrySize:N0} bytes exceeds maximum allowed size {MaxEntrySize:N0} bytes for type {EntryType}. Entry will not be cached.",
+                size, _maxEntrySize.Value, value?.GetType().Name ?? "null");
+            return -1;
+        }
+
+        return size;
     }
 
     private static bool TypeRequiresCloning(Type? t)

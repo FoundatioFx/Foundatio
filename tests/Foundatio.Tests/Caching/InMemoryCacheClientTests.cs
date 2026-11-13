@@ -787,6 +787,65 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListRemoveAsync_WithIncrementalShrink_ReclaimsSparseStorage()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log));
+        var ttl = TimeSpan.FromMinutes(5);
+        await cache.ListAddAsync("shrunk", Enumerable.Range(0, 10_000), ttl);
+        var previous = (await cache.GetAsync<IDictionary<int, DateTime?>>("shrunk")).Value!;
+        await cache.ListAddAsync("fresh", Enumerable.Range(9_000, 1_000), ttl);
+        await UpdateAsync("fresh");
+        for (int i = 0; i < 9_000; i++)
+            await cache.ListRemoveAsync("shrunk", [i]);
+        await UpdateAsync("shrunk");
+
+        long freshAllocation = await MeasureAsync("fresh");
+        long shrunkAllocation = await MeasureAsync("shrunk");
+
+        _logger.LogInformation("List update allocated {Fresh} bytes fresh and {Shrunk} bytes after shrinking", freshAllocation, shrunkAllocation);
+        Assert.True(shrunkAllocation <= freshAllocation + 2048,
+            $"Storage should follow the live list, not its peak size: fresh={freshAllocation}, shrunk={shrunkAllocation} bytes.");
+        Assert.Equal(Enumerable.Range(9_000, 1_000), (await cache.GetListAsync<int>("shrunk")).Value!.Order());
+        Assert.Equal(ttl, await cache.GetExpirationAsync("shrunk"));
+        Assert.Equal(Enumerable.Range(0, 10_000), previous.Keys.Order());
+
+        async Task UpdateAsync(string key)
+        {
+            await cache.ListAddAsync(key, [-1], ttl);
+            await cache.ListRemoveAsync(key, [-1]);
+        }
+
+        async Task<long> MeasureAsync(string key)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            await UpdateAsync(key);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WithIncrementalShrink_PreservesComparerAndExpirations()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock).LoggerFactory(Log));
+        var values = Enumerable.Range(0, 1000).ToDictionary(i => $"item-{i}",
+            i => (DateTime?)clock.GetUtcNow().UtcDateTime.AddMinutes(i % 2 + 1), StringComparer.OrdinalIgnoreCase);
+        await cache.SetAsync("set", values);
+        for (int i = 0; i < 800; i++)
+            await cache.ListRemoveAsync("set", [$"ITEM-{i}"]);
+        clock.Advance(TimeSpan.FromSeconds(90));
+
+        long removed = await cache.ListRemoveAsync("set", ["ITEM-999"]);
+        var current = await cache.GetListAsync<string>("set");
+
+        Assert.Equal(1, removed);
+        Assert.Equal(Enumerable.Range(800, 199).Where(i => i % 2 == 1).Select(i => $"item-{i}").Order(), current.Value!.Order());
+        Assert.Equal(TimeSpan.FromSeconds(30), await cache.GetExpirationAsync("set"));
+        Assert.Equal(1000, values.Count);
+    }
+
+    [Fact]
     public async Task ListRemoveAsync_WithMissingValue_DoesNotAllocateInProportionToListSize()
     {
         // Arrange
@@ -2692,6 +2751,30 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             Assert.False((await cache.GetAsync<string>("oversized")).HasValue);
             Assert.Equal(0, cache.CurrentMemorySize);
         }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SetAsync_WithOversizedCalculatorFallback_PreservesEntry(bool shouldThrow, bool stringValue)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1000)
+            .SizeCalculator(value => value is "old" ? 3 : throw new InvalidOperationException("Sizing failed"))
+            .MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow));
+        await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
+        object replacement = stringValue ? "replacement" : new object();
+
+        if (shouldThrow)
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync("key", replacement, TimeSpan.FromMinutes(5)));
+        else
+            Assert.False(await cache.SetAsync("key", replacement, TimeSpan.FromMinutes(5)));
+
+        Assert.Equal("old", (await cache.GetAsync<string>("key")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
+        Assert.Equal(3, cache.CurrentMemorySize);
     }
 
     [Fact]
