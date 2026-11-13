@@ -85,7 +85,7 @@ var queue = new RedisQueue<WorkItem>(o => {
 
 Queue using Azure Service Bus (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Queues/AzureServiceBusQueue.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureServiceBus

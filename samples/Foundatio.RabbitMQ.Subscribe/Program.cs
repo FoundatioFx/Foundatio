@@ -1,0 +1,278 @@
+using System;
+using System.Collections.Generic;
+using System.CommandLine;
+using System.Diagnostics;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
+using Foundatio.Messaging;
+using Foundatio.RabbitMQ;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+
+Option<string> connectionStringOption = new("--connection-string")
+{
+    Description = "RabbitMQ connection string (provides credentials and vhost)",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("ConnectionStrings__messaging") ?? "amqp://localhost:5672"
+};
+
+Option<string> hostsOption = new("--hosts")
+{
+    Description = "Comma-separated list of hosts for failover (e.g., localhost:5672,localhost:5673,localhost:5674)",
+    DefaultValueFactory = _ => Environment.GetEnvironmentVariable("RABBITMQ_HOSTS") ?? ""
+};
+
+Option<string> topicOption = new("--topic")
+{
+    Description = "Message topic/exchange name",
+    DefaultValueFactory = _ => "sample-topic"
+};
+
+Option<bool> durableOption = new("--durable")
+{
+    Description = "Use durable queues that survive broker restarts"
+};
+
+Option<bool> delayedOption = new("--delayed")
+{
+    Description = "Use delayed exchange (connects to port 5673)"
+};
+
+Option<string> acknowledgmentStrategyOption = new("--acknowledgment-strategy")
+{
+    Description = "Acknowledgment strategy: fireandforget or automatic",
+    DefaultValueFactory = _ => "fireandforget"
+};
+
+Option<ushort> prefetchCountOption = new("--prefetch-count")
+{
+    Description = "Consumer prefetch count",
+    DefaultValueFactory = _ => 10
+};
+
+Option<long> deliveryLimitOption = new("--delivery-limit")
+{
+    Description = "Maximum delivery attempts before discarding",
+    DefaultValueFactory = _ => 2
+};
+
+Option<int> subscriberCountOption = new("--subscriber-count")
+{
+    Description = "Number of concurrent subscribers",
+    DefaultValueFactory = _ => 1
+};
+
+Option<string> groupIdOption = new("--group-id")
+{
+    Description = "Subscriber group identifier for queue naming",
+    DefaultValueFactory = _ => "sample-subscriber"
+};
+
+Option<LogLevel> logLevelOption = new("--log-level")
+{
+    Description = "Minimum log level",
+    DefaultValueFactory = _ => LogLevel.Information
+};
+
+RootCommand rootCommand = new("RabbitMQ Order Subscriber Sample")
+{
+    connectionStringOption,
+    hostsOption,
+    topicOption,
+    durableOption,
+    delayedOption,
+    acknowledgmentStrategyOption,
+    prefetchCountOption,
+    deliveryLimitOption,
+    subscriberCountOption,
+    groupIdOption,
+    logLevelOption
+};
+
+rootCommand.SetAction(parseResult =>
+{
+    string? connectionString = parseResult.GetValue(connectionStringOption);
+    string? hosts = parseResult.GetValue(hostsOption);
+    string? topic = parseResult.GetValue(topicOption);
+    bool durable = parseResult.GetValue(durableOption);
+    bool delayed = parseResult.GetValue(delayedOption);
+    string? acknowledgmentStrategy = parseResult.GetValue(acknowledgmentStrategyOption);
+    ushort prefetchCount = parseResult.GetValue(prefetchCountOption);
+    long deliveryLimit = parseResult.GetValue(deliveryLimitOption);
+    int subscriberCount = parseResult.GetValue(subscriberCountOption);
+    string? groupId = parseResult.GetValue(groupIdOption);
+    LogLevel logLevel = parseResult.GetValue(logLevelOption);
+
+    return RunSubscriberAsync(
+        connectionString, hosts, topic, durable, delayed, acknowledgmentStrategy,
+        prefetchCount, deliveryLimit, subscriberCount, groupId, logLevel);
+});
+
+return await rootCommand.Parse(args).InvokeAsync();
+
+static async Task RunSubscriberAsync(
+    string? connectionString,
+    string? hosts,
+    string? topic,
+    bool durable,
+    bool delayed,
+    string? acknowledgmentStrategy,
+    ushort prefetchCount,
+    long deliveryLimit,
+    int subscriberCount,
+    string? groupId,
+    LogLevel logLevel)
+{
+    ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+    ArgumentException.ThrowIfNullOrWhiteSpace(topic);
+    ArgumentException.ThrowIfNullOrWhiteSpace(groupId);
+
+    var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+    var serviceName = Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") ?? "subscriber";
+    var resourceBuilder = ResourceBuilder.CreateDefault().AddService(serviceName);
+
+    TracerProvider? tracerProvider = null;
+    MeterProvider? meterProvider = null;
+
+    if (!string.IsNullOrEmpty(otlpEndpoint))
+    {
+        tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddSource("Foundatio", "RabbitMQ.Client.*")
+            .AddOtlpExporter()
+            .Build();
+
+        meterProvider = Sdk.CreateMeterProviderBuilder()
+            .SetResourceBuilder(resourceBuilder)
+            .AddMeter("Foundatio")
+            .AddRuntimeInstrumentation()
+            .AddOtlpExporter()
+            .Build();
+    }
+
+    using var tracerDisposable = tracerProvider;
+    using var meterDisposable = meterProvider;
+
+    using ILoggerFactory loggerFactory = LoggerFactory.Create(builder =>
+    {
+        builder.AddConsole().SetMinimumLevel(logLevel);
+
+        if (!string.IsNullOrEmpty(otlpEndpoint))
+        {
+            builder.AddOpenTelemetry(otel =>
+            {
+                otel.SetResourceBuilder(resourceBuilder);
+                otel.IncludeFormattedMessage = true;
+                otel.IncludeScopes = true;
+                otel.AddOtlpExporter();
+            });
+        }
+    });
+    var logger = loggerFactory.CreateLogger("Subscriber");
+
+    if (delayed)
+    {
+        Uri uri = new(connectionString);
+        connectionString = new UriBuilder(uri) { Port = 5673 }.Uri.ToString();
+    }
+
+    var ackStrategy = String.Equals("automatic", acknowledgmentStrategy, StringComparison.OrdinalIgnoreCase)
+        ? AcknowledgementStrategy.Automatic
+        : AcknowledgementStrategy.FireAndForget;
+
+    // Parse hosts into a list if provided
+    List<string> hostsList = [];
+    if (!String.IsNullOrEmpty(hosts))
+    {
+        hostsList.AddRange(hosts.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                               .Select(h => h.Trim()));
+    }
+
+    logger.LogInformation("Config: ConnectionString={ConnectionString}, Topic={Topic}, Durable={Durable}, AckStrategy={AckStrategy}, PrefetchCount={PrefetchCount}, DeliveryLimit={DeliveryLimit}, SubscriberCount={SubscriberCount}, GroupId={GroupId}",
+        connectionString, topic, durable, ackStrategy, prefetchCount, deliveryLimit, subscriberCount, groupId);
+    if (hostsList.Count > 0)
+        logger.LogInformation("Hosts: {Hosts}", String.Join(", ", hostsList));
+
+    var messageBuses = new List<IMessageBus>(subscriberCount);
+    var subscriptions = new List<Task>(subscriberCount);
+    int totalProcessed = 0;
+
+    try
+    {
+        for (int i = 0; i < subscriberCount; i++)
+        {
+            int subscriberId = i + 1;
+            string queueName = durable
+                ? $"{groupId}-{nameof(OrderEvent).ToLower()}"
+                : $"{groupId}-{nameof(OrderEvent).ToLower()}-{Guid.NewGuid():N}";
+
+            RabbitMQMessageBusOptions options = new()
+            {
+                ConnectionString = connectionString,
+                Hosts = hostsList,
+                Topic = topic,
+                AcknowledgementStrategy = ackStrategy,
+                IsDurable = durable,
+                SubscriptionQueueName = queueName,
+                IsSubscriptionQueueExclusive = !durable,
+                SubscriptionQueueAutoDelete = !durable,
+                PrefetchCount = prefetchCount,
+                DeliveryLimit = deliveryLimit,
+                LoggerFactory = loggerFactory
+            };
+
+            RabbitMQMessageBus messageBus = new(options);
+            messageBuses.Add(messageBus);
+
+            subscriptions.Add(messageBus.SubscribeAsync<OrderEvent>(order =>
+            {
+                int processed = Interlocked.Increment(ref totalProcessed);
+                TimeSpan latency = DateTimeOffset.UtcNow - order.CreatedAt;
+                logger.LogInformation(
+                    "Order #{Seq} | {OrderId} | Customer: {Customer} | ${Amount} | Processed: {Processed} | Latency: {Latency}ms",
+                    order.SequenceNumber, order.OrderId, order.CustomerId, order.Amount, processed, latency.TotalMilliseconds.ToString("F1"));
+            }));
+
+            logger.LogInformation("Subscriber {SubscriberId} started with queue: {QueueName}", subscriberId, queueName);
+        }
+
+        await Task.WhenAll(subscriptions);
+
+        logger.LogInformation("Waiting for messages. Press Ctrl+C to quit...");
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        var statsTimer = Stopwatch.StartNew();
+        int lastProcessed = 0;
+
+        try
+        {
+            while (!cts.Token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10), cts.Token);
+                int current = Interlocked.CompareExchange(ref totalProcessed, 0, 0);
+                int delta = current - lastProcessed;
+                lastProcessed = current;
+                logger.LogInformation("Stats | Processed: {Total} | Last 10s: +{Delta} | Rate: {Rate}/s | Uptime: {Uptime:hh\\:mm\\:ss}",
+                    current, delta, (delta / 10.0).ToString("F1"), statsTimer.Elapsed);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+    finally
+    {
+        logger.LogInformation("Shutting down. Total orders processed: {Count}", totalProcessed);
+        foreach (var messageBus in messageBuses)
+            messageBus.Dispose();
+
+        logger.LogInformation("All subscribers stopped.");
+    }
+}

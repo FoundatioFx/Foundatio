@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+
+    <ProjectReference Include="..\Foundatio\Foundatio.csproj" />
+  </ItemGroup>
+</Project>

@@ -136,6 +136,27 @@ services:
     ports:
       - 4566:4566
 
+  servicebus-emulator:
+    image: mcr.microsoft.com/azure-messaging/servicebus-emulator:latest
+    pull_policy: always
+    volumes:
+      - ./build/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
+    ports:
+      - "5672:5672"
+    environment:
+      SQL_SERVER: sqledge
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
+      ACCEPT_EULA: ${ACCEPT_EULA:-Y}
+    depends_on:
+      - sqledge
+
+  sqledge:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    pull_policy: always
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
+      ACCEPT_EULA: ${ACCEPT_EULA:-Y}
+
   ready:
     image: andrewlock/wait-for-dependencies
     depends_on:
@@ -155,6 +176,8 @@ services:
         condition: service_started
       floci:
         condition: service_started
+      servicebus-emulator:
+        condition: service_started
     command: >
       redis-node-0:7000
       redis-node-1:7001
@@ -164,6 +187,7 @@ services:
       redis-node-5:7005
       kafka:9092
       floci:4566
+      servicebus-emulator:5672
 
 volumes:
   kafkadata:
