@@ -7,12 +7,15 @@ using System.Threading;
 using System.Threading.Tasks;
 using Exceptionless;
 using Foundatio.AsyncEx;
+using Foundatio.Caching;
 using Foundatio.Jobs;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Tests.Extensions;
 using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Jobs;
@@ -333,6 +336,445 @@ public class WorkItemJobTests : TestWithLoggingBase
         Assert.Equal(0, await job.RunUntilEmptyAsync(cancellationToken: TestCancellationToken));
         await countdown.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.Equal(0, countdown.CurrentCount);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProcessAsync_WhenHandlerExitsWithPendingProgress_WaitsBeforeFinishing(bool handlerThrows, bool lockIsLost)
+    {
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+
+        var statuses = new ConcurrentQueue<WorkItemStatus>();
+        var publisher = new Mock<IMessagePublisher>();
+        publisher.Setup(p => p.PublishAsync(typeof(WorkItemStatus), It.IsAny<object>(), It.IsAny<MessageOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns((Type _, object message, MessageOptions? options, CancellationToken token) =>
+            {
+                statuses.Enqueue((WorkItemStatus)message);
+                return Task.CompletedTask;
+            });
+        var firstRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var workItemLock = new Mock<ILock>();
+        workItemLock.SetupSequence(l => l.RenewAsync(It.IsAny<TimeSpan?>()))
+            .Returns(firstRenewal.Task)
+            .Returns(secondRenewal.Task);
+        workItemLock.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(Log.CreateLogger<WorkItemJobTests>());
+        handler.SetupGet(h => h.AutoRenewLockOnProgress).Returns(true);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(workItemLock.Object);
+        WorkItemContext? workItemContext = null;
+        Task firstProgress = Task.CompletedTask;
+        Task secondProgress = Task.CompletedTask;
+        var handlerError = new InvalidOperationException("Handler failed");
+        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns((WorkItemContext context) =>
+        {
+            workItemContext = context;
+            firstProgress = context.ReportProgressAsync(25);
+            secondProgress = context.ReportProgressAsync(50);
+            return handlerThrows ? Task.FromException(handlerError) : Task.CompletedTask;
+        });
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(handler.Object);
+        var job = new WorkItemJob(queue, publisher.Object, handlers, Log);
+
+        var processing = job.ProcessAsync(entry, TestCancellationToken);
+        try
+        {
+            Assert.False(processing.IsCompleted);
+            Assert.False(entry.IsCompleted);
+            Assert.False(entry.IsAbandoned);
+            workItemLock.Verify(l => l.ReleaseAsync(), Times.Never);
+
+            secondRenewal.SetResult();
+            await secondProgress.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+            Assert.False(processing.IsCompleted);
+            Assert.False(entry.IsCompleted);
+            Assert.False(entry.IsAbandoned);
+            workItemLock.Verify(l => l.ReleaseAsync(), Times.Never);
+        }
+        finally
+        {
+            secondRenewal.TrySetResult();
+            if (lockIsLost)
+                firstRenewal.TrySetException(new LockException("Lost work item lease"));
+            else
+                firstRenewal.TrySetResult();
+
+            await Task.WhenAll(processing, firstProgress, secondProgress).WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+
+        bool succeeds = !handlerThrows && !lockIsLost;
+        var result = await processing;
+        Assert.Equal(succeeds, result.IsSuccess);
+        Assert.Same(handlerThrows ? handlerError : null, result.Error);
+        Assert.Equal(succeeds, entry.IsCompleted);
+        Assert.Equal(!succeeds, entry.IsAbandoned);
+        Assert.NotNull(workItemContext);
+        Assert.Equal(lockIsLost, workItemContext.CancellationToken.IsCancellationRequested);
+        Assert.Equal([0, 50, 25, succeeds ? 100 : -1], statuses.Select(status => status.Progress));
+        workItemLock.Verify(l => l.ReleaseAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenProgressIsReportedAfterCompletion_DoesNotRenewOrPublish()
+    {
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+
+        var workItemLock = new Mock<ILock>();
+        workItemLock.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Returns(Task.CompletedTask);
+        workItemLock.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(Log.CreateLogger<WorkItemJobTests>());
+        handler.SetupGet(h => h.AutoRenewLockOnProgress).Returns(true);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(workItemLock.Object);
+        WorkItemContext? workItemContext = null;
+        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns((WorkItemContext context) =>
+        {
+            workItemContext = context;
+            return Task.CompletedTask;
+        });
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(handler.Object);
+        var job = new WorkItemJob(queue, messageBus, handlers, Log);
+
+        Assert.True((await job.ProcessAsync(entry, TestCancellationToken)).IsSuccess);
+        Assert.NotNull(workItemContext);
+        Assert.Equal(2, messageBus.MessagesSent);
+
+        await workItemContext.ReportProgressAsync(50);
+
+        Assert.Equal(2, messageBus.MessagesSent);
+        workItemLock.Verify(l => l.RenewAsync(It.IsAny<TimeSpan?>()), Times.Never);
+        workItemLock.Verify(l => l.ReleaseAsync(), Times.Once);
+        Assert.True(entry.IsCompleted);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsLost_CancelsBeforeQueueRenewalCompletes(bool queueRenewalFails)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var queueMock = new Mock<InMemoryQueue<WorkItemData>>(new InMemoryQueueOptions<WorkItemData>
+        {
+            LoggerFactory = Log,
+            RetryDelay = TimeSpan.Zero,
+            Retries = 0
+        })
+        { CallBase = true };
+        using var queue = queueMock.Object;
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" });
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+
+        var queueRenewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        queueMock.Setup(q => q.RenewLockAsync(entry)).Returns(queueRenewal.Task);
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        await using var workItemLock = await locker.AcquireAsync("work-item", cancellationToken: TestCancellationToken);
+        await workItemLock.ReleaseAsync();
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(Log.CreateLogger<WorkItemJobTests>());
+        handler.SetupGet(h => h.AutoRenewLockOnProgress).Returns(true);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(workItemLock);
+        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns(async (WorkItemContext context) =>
+        {
+            using var registration = context.CancellationToken.Register(() => cancellationObserved.TrySetResult());
+            await context.ReportProgressAsync(50);
+        });
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(handler.Object);
+        var job = new WorkItemJob(queue, messageBus, handlers, Log);
+
+        // Act
+        var processing = job.ProcessAsync(entry, TestCancellationToken);
+        try
+        {
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            Assert.False(queueRenewal.Task.IsCompleted);
+            Assert.False(processing.IsCompleted);
+        }
+        finally
+        {
+            if (queueRenewalFails)
+                queueRenewal.TrySetException(new InvalidOperationException("Queue renewal failed"));
+            else
+                queueRenewal.TrySetResult();
+
+            await processing.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+
+        Assert.False((await processing).IsSuccess);
+        Assert.True(entry.IsAbandoned);
+        Assert.False(entry.IsCompleted);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ProcessAsync_WhenCollectionMemberLockIsLost_CancelsBeforeOtherMembersRenew(bool nested, bool renewalFails)
+    {
+        // Arrange
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" });
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+
+        var renewal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var lost = new Mock<ILock>();
+        lost.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).ThrowsAsync(new LockException("Lost work item lease"));
+        lost.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var pending = new Mock<ILock>();
+        pending.Setup(l => l.RenewAsync(It.IsAny<TimeSpan?>())).Returns(renewal.Task);
+        pending.Setup(l => l.ReleaseAsync()).Returns(Task.CompletedTask);
+        var logger = Log.CreateLogger<WorkItemJobTests>();
+        ILock workItemLock = new DisposableLockCollection([lost.Object, pending.Object], "work-item", DateTime.UtcNow, TimeSpan.Zero, logger);
+        if (nested)
+            workItemLock = new DisposableLockCollection([workItemLock], "outer", DateTime.UtcNow, TimeSpan.Zero, logger);
+
+        var handler = new Mock<IWorkItemHandler>();
+        handler.SetupGet(h => h.Log).Returns(logger);
+        handler.SetupGet(h => h.AutoRenewLockOnProgress).Returns(true);
+        handler.Setup(h => h.GetWorkItemLockAsync(It.IsAny<object>(), It.IsAny<CancellationToken>())).ReturnsAsync(workItemLock);
+        handler.Setup(h => h.HandleItemAsync(It.IsAny<WorkItemContext>())).Returns(async (WorkItemContext context) =>
+        {
+            using var registration = context.CancellationToken.Register(() => cancellationObserved.TrySetResult());
+            await context.ReportProgressAsync(50);
+        });
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(handler.Object);
+        var job = new WorkItemJob(queue, messageBus, handlers, Log);
+
+        // Act
+        var processing = job.ProcessAsync(entry, TestCancellationToken);
+        try
+        {
+            await cancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+            // Assert
+            Assert.False(renewal.Task.IsCompleted);
+            Assert.False(processing.IsCompleted);
+            lost.Verify(l => l.ReleaseAsync(), Times.Never);
+            pending.Verify(l => l.ReleaseAsync(), Times.Never);
+        }
+        finally
+        {
+            if (renewalFails)
+                renewal.TrySetException(new InvalidOperationException("Provider renewal failed"));
+            else
+                renewal.TrySetResult();
+
+            await processing.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+        }
+
+        Assert.False((await processing).IsSuccess);
+        Assert.True(entry.IsAbandoned);
+        Assert.False(entry.IsCompleted);
+        lost.Verify(l => l.ReleaseAsync(), Times.Once);
+        pending.Verify(l => l.ReleaseAsync(), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(LostLeaseResponse.Throw)]
+    [InlineData(LostLeaseResponse.ReturnEarly)]
+    [InlineData(LostLeaseResponse.SwallowCancellation)]
+    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsLost_CancelsHandlerAndAbandonsEntry(LostLeaseResponse response)
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        var handler = new LockedWorkItemHandler(locker, Log, response: response) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        var statuses = new ConcurrentQueue<(WorkItemStatus Status, bool IsAbandoned)>();
+        await messageBus.SubscribeAsync<WorkItemStatus>(status => statuses.Enqueue((status, entry.IsAbandoned)), TestCancellationToken);
+
+        // Act
+        var result = await job.ProcessAsync(entry, TestCancellationToken);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.True(handler.ObservedCancellation);
+        Assert.False(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Abandoned);
+        Assert.Equal([0, 50, -1], statuses.Select(status => status.Status.Progress));
+        var failure = Assert.Single(statuses, status => status.Status.Progress == -1);
+        Assert.StartsWith("Failed:", failure.Status.Message);
+        Assert.False(failure.IsAbandoned);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenAutoRenewedWorkItemLockIsHeld_DoesNotCancelHandler()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        var handler = new LockedWorkItemHandler(locker, Log, loseLock: false) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+
+        // Act
+        var result = await job.RunAsync(TestCancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.False(handler.ObservedCancellation);
+        Assert.True(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(1, stats.Completed);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenJobIsCancelledAfterWorkItemLockIsLost_AbandonsEntry()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var queue = new InMemoryQueue<WorkItemData>(o => o.RetryDelay(TimeSpan.Zero).Retries(0).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        using var jobCancellation = CancellationTokenSource.CreateLinkedTokenSource(TestCancellationToken);
+        var handler = new LockedWorkItemHandler(locker, Log, response: LostLeaseResponse.ReturnEarly, cancelAfterLoss: jobCancellation) { AutoRenewLockOnProgress = true };
+        var handlerRegistry = new WorkItemHandlers();
+        handlerRegistry.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlerRegistry, Log);
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" }, true);
+
+        // Act
+        var result = await job.RunAsync(jobCancellation.Token);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.True(handler.ObservedCancellation);
+        Assert.False(handler.CompletedWork);
+        var stats = await queue.GetQueueStatsAsync();
+        Assert.Equal(0, stats.Completed);
+        Assert.Equal(1, stats.Abandoned);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_WhenQueueRenewalFails_DoesNotCancelHandler()
+    {
+        // Arrange
+        using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        var queueMock = new Mock<InMemoryQueue<WorkItemData>>(new InMemoryQueueOptions<WorkItemData> { LoggerFactory = Log }) { CallBase = true };
+        using var queue = queueMock.Object;
+        await queue.EnqueueAsync(new MyWorkItem { SomeData = "Test" });
+        var entry = await queue.DequeueAsync(TestCancellationToken);
+        Assert.NotNull(entry);
+        queueMock.Setup(q => q.RenewLockAsync(entry)).ThrowsAsync(new InvalidOperationException("Queue renewal failed"));
+        var locker = new CacheLockProvider(cache, messageBus, null, null, Log);
+        var handler = new LockedWorkItemHandler(locker, Log, loseLock: false) { AutoRenewLockOnProgress = true };
+        var handlers = new WorkItemHandlers();
+        handlers.Register<MyWorkItem>(handler);
+        var job = new WorkItemJob(queue, messageBus, handlers, Log);
+
+        // Act
+        var result = await job.ProcessAsync(entry, TestCancellationToken);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        Assert.False(handler.ObservedCancellation);
+        Assert.True(handler.CompletedWork);
+        Assert.True(entry.IsCompleted);
+        Assert.False(entry.IsAbandoned);
+    }
+
+}
+
+public enum LostLeaseResponse
+{
+    Throw,
+    ReturnEarly,
+    SwallowCancellation
+}
+
+public class LockedWorkItemHandler : WorkItemHandlerBase
+{
+    private readonly ILockProvider _locker;
+    private readonly bool _loseLock;
+    private readonly LostLeaseResponse _response;
+    private readonly CancellationTokenSource? _cancelAfterLoss;
+
+    public LockedWorkItemHandler(ILockProvider locker, ILoggerFactory loggerFactory, bool loseLock = true, LostLeaseResponse response = LostLeaseResponse.Throw, CancellationTokenSource? cancelAfterLoss = null) : base(loggerFactory)
+    {
+        _locker = locker;
+        _loseLock = loseLock;
+        _response = response;
+        _cancelAfterLoss = cancelAfterLoss;
+    }
+
+    public bool ObservedCancellation { get; private set; }
+    public bool CompletedWork { get; private set; }
+
+    public override Task<ILock?> GetWorkItemLockAsync(object workItem, CancellationToken cancellationToken = default)
+    {
+        return _locker.TryAcquireAsync("work-item", TimeSpan.FromMinutes(1), cancellationToken: cancellationToken);
+    }
+
+    public override async Task HandleItemAsync(WorkItemContext context)
+    {
+        Assert.NotNull(context.WorkItemLock);
+        if (_loseLock)
+            await _locker.ReleaseAsync(context.WorkItemLock.Resource);
+
+        await context.ReportProgressAsync(50);
+        ObservedCancellation = context.CancellationToken.IsCancellationRequested;
+        if (_cancelAfterLoss is not null)
+            await _cancelAfterLoss.CancelAsync();
+
+        switch (_response)
+        {
+            case LostLeaseResponse.ReturnEarly when ObservedCancellation:
+                return;
+            case LostLeaseResponse.SwallowCancellation:
+                try
+                {
+                    context.CancellationToken.ThrowIfCancellationRequested();
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                break;
+            default:
+                context.CancellationToken.ThrowIfCancellationRequested();
+                break;
+        }
+
+        CompletedWork = true;
     }
 }
 

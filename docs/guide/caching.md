@@ -315,6 +315,8 @@ var sameUser = await hybridCache.GetAsync<User>("user:123");
 - **Key-specific invalidation**: Only affected keys are cleared on other instances
 - **Message bus coordination**: Automatic invalidation across all hybrid cache instances
 
+When a distributed write succeeds but the local update is rejected, such as by a size limit or an expiration that elapses during preparation, the hybrid cache evicts the affected local entries. Later reads fetch the distributed state. A partial local bulk or list update also invalidates the affected keys. If the local update throws, the cache attempts local eviction and the operation's usual peer invalidation before propagating the original error; secondary cleanup or publication errors are logged. The distributed write may already have committed when that error reaches the caller.
+
 ::: tip Full Documentation
 See [Hybrid Cache Implementation](/guide/implementations/hybrid-cache) for detailed configuration, performance considerations, and best practices.
 :::

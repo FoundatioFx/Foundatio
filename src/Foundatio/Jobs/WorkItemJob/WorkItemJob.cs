@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Lock;
 using Foundatio.Messaging;
 using Foundatio.Queues;
 using Foundatio.Serializer;
@@ -126,32 +127,56 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
             return JobResult.CancelledWithMessage($"Unable to acquire work item lock. Abandoning {queueEntry.Value.Type} queue entry: {queueEntry.Id}");
         }
 
+        using var workItemCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var leaseLoss = new WorkItemLeaseLoss(workItemCancellation);
+        var progressReports = new WorkItemProgress();
         var progressCallback = new Func<int, string?, Task>(async (progress, message) =>
         {
-            if (handler.AutoRenewLockOnProgress)
-            {
-                try
-                {
-                    await Task.WhenAll(
-                        queueEntry.RenewLockAsync(),
-                        lockValue.RenewAsync()
-                    ).AnyContext();
-                }
-                catch (Exception ex)
-                {
-                    handler.Log.LogError(ex, "Error renewing work item locks: {Message}", ex.Message);
-                }
-            }
+            if (!progressReports.TryStart())
+                return;
 
-            await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
-            handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
+            try
+            {
+                if (handler.AutoRenewLockOnProgress)
+                    await RenewWorkItemLocksAsync(handler, queueEntry, lockValue, leaseLoss).AnyContext();
+
+                await ReportProgressAsync(handler, queueEntry, progress, message).AnyContext();
+                handler.Log.LogInformation("{TypeName} Progress {Progress}%: {Message}", workItemDataType.Name, progress, message);
+            }
+            finally
+            {
+                progressReports.Complete();
+            }
         });
 
         try
         {
             handler.LogProcessingQueueEntry(queueEntry, workItemDataType, workItemData);
-            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, cancellationToken, progressCallback);
-            await handler.HandleItemAsync(workItemContext).AnyContext();
+            var workItemContext = new WorkItemContext(workItemData, JobId, lockValue, workItemCancellation.Token, progressCallback);
+            try
+            {
+                await handler.HandleItemAsync(workItemContext).AnyContext();
+            }
+            finally
+            {
+                await progressReports.StopAsync().AnyContext();
+            }
+
+            // A handler that stops cooperatively after a lost lease (returning early or swallowing the cancellation)
+            // hasn't finished the work, and another worker may now own it: never acknowledge it, even if the job
+            // was also cancelled meanwhile
+            if (leaseLoss.IsLost)
+            {
+                var lostResult = JobResult.FailedWithMessage($"Abandoning {queueEntry.Value.Type} work item: {queueEntry.Id}: Lost work item lease in handler {workItemDataType.Name}");
+                activity?.SetErrorStatus(message: lostResult.Message);
+                if (queueEntry.Value.SendProgressReports)
+                    await ReportProgressAsync(handler, queueEntry, -1, "Failed: Lost work item lease").AnyContext();
+
+                if (!queueEntry.IsAbandoned && !queueEntry.IsCompleted)
+                    await queueEntry.AbandonAsync().AnyContext();
+
+                return lostResult;
+            }
 
             if (!workItemContext.Result.IsSuccess)
             {
@@ -191,6 +216,106 @@ public class WorkItemJob : IQueueJob<WorkItemData>, IHaveLogger, IHaveLoggerFact
         finally
         {
             await lockValue.ReleaseAsync().AnyContext();
+        }
+    }
+
+    /// <summary>
+    /// Renews the queue entry and work item locks. Renewal errors are logged so progress reporting continues,
+    /// but a lost work item lock cancels <see cref="WorkItemContext.CancellationToken"/> because another
+    /// process may now own the work, and the job then abandons the entry instead of completing it.
+    /// </summary>
+    /// <remarks>
+    /// Queue renewal errors do not prove ownership was lost. Protection against concurrent redelivery requires
+    /// an exclusive work item lock; the default handler uses an empty lock and provides no such protection.
+    /// </remarks>
+    private static async Task RenewWorkItemLocksAsync(IWorkItemHandler handler, IQueueEntry<WorkItemData> queueEntry, ILock workItemLock, WorkItemLeaseLoss leaseLoss)
+    {
+        await Task.WhenAll(RenewQueueEntryLockAsync(), RenewWorkItemLockAsync()).AnyContext();
+
+        async Task RenewQueueEntryLockAsync()
+        {
+            try
+            {
+                await queueEntry.RenewLockAsync().AnyContext();
+            }
+            catch (Exception ex)
+            {
+                handler.Log.LogError(ex, "Error renewing queue entry lock: {Message}", ex.Message);
+            }
+        }
+
+        async Task RenewWorkItemLockAsync()
+        {
+            try
+            {
+                await LockSetOperations.RenewAsync(workItemLock, null, handler.Log, _ => leaseLoss.SignalAsync()).AnyContext();
+            }
+            catch (LockException ex)
+            {
+                handler.Log.LogWarning(ex, "Lost work item lock {Resource} for queue entry {Id}, cancelling work item: {Message}", workItemLock.Resource, queueEntry.Id, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                handler.Log.LogError(ex, "Error renewing work item lock: {Message}", ex.Message);
+            }
+        }
+    }
+
+    private sealed class WorkItemProgress
+    {
+        private readonly object _sync = new();
+        private int _activeCount;
+        private bool _stopped;
+        private TaskCompletionSource? _completion;
+
+        public bool TryStart()
+        {
+            lock (_sync)
+            {
+                if (_stopped)
+                    return false;
+
+                _activeCount++;
+                return true;
+            }
+        }
+
+        public void Complete()
+        {
+            lock (_sync)
+            {
+                if (--_activeCount == 0)
+                    _completion?.TrySetResult();
+            }
+        }
+
+        public Task StopAsync()
+        {
+            lock (_sync)
+            {
+                _stopped = true;
+                if (_activeCount == 0)
+                    return Task.CompletedTask;
+
+                return (_completion ??= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).Task;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Records that the work item lease was lost and cancels the work item. The flag, not the token, decides whether
+    /// the entry may be completed, because the job's own token can be cancelled at any time afterward.
+    /// </summary>
+    private sealed class WorkItemLeaseLoss(CancellationTokenSource workItemCancellation)
+    {
+        private volatile bool _isLost;
+
+        public bool IsLost => _isLost;
+
+        public Task SignalAsync()
+        {
+            _isLost = true;
+            return workItemCancellation.CancelAsync();
         }
     }
 

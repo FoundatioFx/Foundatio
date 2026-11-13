@@ -73,8 +73,10 @@ public interface IWorkItemHandler
     Task HandleItemAsync(WorkItemContext context);
 
     /// <summary>
-    /// When <c>true</c>, the lock on the queue entry is automatically renewed each time
+    /// When <c>true</c>, the queue entry and work item lock are automatically renewed each time
     /// the handler reports progress. This prevents long-running work items from timing out.
+    /// Renewal errors are logged; if the work item lock is lost, <see cref="WorkItemContext.CancellationToken"/>
+    /// is cancelled so cooperative handlers can stop.
     /// </summary>
     bool AutoRenewLockOnProgress { get; set; }
 

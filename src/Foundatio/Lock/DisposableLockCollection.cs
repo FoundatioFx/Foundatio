@@ -17,8 +17,9 @@ internal class DisposableLockCollection : ILock
     private int _renewalCount;
     private readonly AsyncLock _lock = new();
     private readonly Stopwatch _duration;
+    private readonly bool _shouldReleaseOnDispose;
 
-    public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, DateTime acquiredTimeUtc, TimeSpan timeWaitedForLock, ILogger logger)
+    public DisposableLockCollection(IEnumerable<ILock> locks, string lockId, DateTime acquiredTimeUtc, TimeSpan timeWaitedForLock, ILogger logger, bool shouldReleaseOnDispose = true)
     {
         ArgumentNullException.ThrowIfNull(locks);
 
@@ -29,6 +30,7 @@ internal class DisposableLockCollection : ILock
         AcquiredTimeUtc = acquiredTimeUtc;
         _duration = Stopwatch.StartNew();
         _logger = logger;
+        _shouldReleaseOnDispose = shouldReleaseOnDispose;
     }
 
     public IReadOnlyCollection<ILock> Locks => _locks.AsReadOnly();
@@ -38,14 +40,19 @@ internal class DisposableLockCollection : ILock
     public TimeSpan TimeWaitedForLock { get; }
     public int RenewalCount => _renewalCount;
 
-    public async Task RenewAsync(TimeSpan? lockExtension = null)
+    public Task RenewAsync(TimeSpan? lockExtension = null)
+    {
+        return RenewAsync(lockExtension, null);
+    }
+
+    internal async Task RenewAsync(TimeSpan? lockExtension, Func<LockException, Task>? onLockLost)
     {
         _logger.LogTrace("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
 
-        await Task.WhenAll(_locks.Select(l => l.RenewAsync(lockExtension))).AnyContext();
+        await LockSetOperations.RenewAllAsync(_locks, lockExtension, _logger, onLockLost).AnyContext();
         _renewalCount++;
 
-        _logger.LogDebug("Renewing {LockCount} locks {Resource}", _locks.Count, Resource);
+        _logger.LogDebug("Renewed {LockCount} locks {Resource}", _locks.Count, Resource);
     }
 
     public async Task ReleaseAsync()
@@ -58,22 +65,25 @@ internal class DisposableLockCollection : ILock
             if (_isReleased)
                 return;
 
-            _isReleased = true;
-            _duration.Stop();
-
             _logger.LogDebug("Releasing {LockCount} locks {Resource} after {Duration:g}", _locks.Count, Resource, _duration.Elapsed);
 
-            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
+            await LockSetOperations.ReleaseAllAsync(_locks, _logger).AnyContext();
+
+            _isReleased = true;
+            _duration.Stop();
         }
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (!_shouldReleaseOnDispose)
+            return;
+
         _logger.LogTrace("Disposing {LockCount} locks {Resource}", _locks.Count, Resource);
 
         try
         {
-            await Task.WhenAll(_locks.Select(l => l.ReleaseAsync())).AnyContext();
+            await ReleaseAsync().AnyContext();
         }
         catch (Exception ex)
         {
