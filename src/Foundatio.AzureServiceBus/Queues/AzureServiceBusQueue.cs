@@ -312,7 +312,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
                 break;
             }
 
-            await _timeProvider.Delay(nextScheduledUtc.Value - utcNow, DisposedCancellationToken).AnyContext();
+            await Task.Delay(nextScheduledUtc.Value - utcNow, _timeProvider, DisposedCancellationToken).AnyContext();
         }
 
         if (totalDrained > 0)
@@ -559,7 +559,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
             {
                 try
                 {
-                    await _timeProvider.Delay(_options.DequeueInterval, linkedCancellationToken).AnyContext();
+                    await Task.Delay(_options.DequeueInterval, _timeProvider, linkedCancellationToken).AnyContext();
                 }
                 catch (OperationCanceledException)
                 {
@@ -907,7 +907,7 @@ public class AzureServiceBusQueue<T> : QueueBase<T, AzureServiceBusQueueOptions<
                     var errorBackoff = _options.DequeueInterval > MinDequeueErrorBackoff ? _options.DequeueInterval : MinDequeueErrorBackoff;
                     try
                     {
-                        await _timeProvider.Delay(errorBackoff, linkedCancellationToken.Token).AnyContext();
+                        await Task.Delay(errorBackoff, _timeProvider, linkedCancellationToken.Token).AnyContext();
                     }
                     catch (OperationCanceledException) { }
                 }
