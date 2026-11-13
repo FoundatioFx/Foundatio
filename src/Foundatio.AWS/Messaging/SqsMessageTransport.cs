@@ -209,8 +209,50 @@ public sealed class SqsMessageTransport : IMessageTransport
         return receiver;
     }
 
-    /// <inheritdoc />
-    public Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default) => Task.FromResult<MessageSourceStats?>(null);
+    /// <summary>
+    /// Reads the approximate counts SQS keeps for the source's queue and its dead-letter queue, with one
+    /// GetQueueAttributes call each, and creates neither. SQS can take a minute to bring them up to date.
+    /// <see cref="MessageSourceStats.InFlight"/> counts every message SQS hides: deliveries, retries waiting out their
+    /// delay, and messages a receiver hid until a delivery time SQS could not apply (delayed publishes, delays on FIFO
+    /// queues and delays past 15 minutes). <see cref="MessageSourceStats.Delayed"/> counts only the delays SQS applies,
+    /// so it is null on FIFO queues, which apply none. <see cref="MessageSourceStats.DeadLettered"/> includes dead
+    /// letters a receiver holds. Instance subscriptions are not counted (null): each receiver has its own queue.
+    /// </summary>
+    /// <exception cref="ArgumentException">The source is a dead-letter source.</exception>
+    public async Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Kind == MessageSourceKind.DeadLetter)
+            throw new ArgumentException("A dead-letter queue is counted as the DeadLettered count of the source it belongs to.", nameof(source));
+
+        ThrowIfDisposed();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (source.Kind == MessageSourceKind.InstanceSubscription)
+            return null;
+
+        string queueName = source.Kind == MessageSourceKind.Subscription ? _names.Subscription(source.Topic!, source.Name) : _names.Queue(source.Name);
+        try
+        {
+            var queue = GetQueueCountsAsync(queueName, cancellationToken);
+            var deadLetters = GetQueueCountsAsync(_names.DeadLetter(source), cancellationToken);
+            await Task.WhenAll(queue, deadLetters).AnyContext();
+
+            var (queued, delayed, inFlight) = await queue.AnyContext();
+            var (deadVisible, deadDelayed, deadInFlight) = await deadLetters.AnyContext();
+            return new MessageSourceStats
+            {
+                Source = source,
+                Queued = queued,
+                Delayed = Options.Fifo ? null : delayed,
+                InFlight = inFlight,
+                DeadLettered = deadVisible + deadDelayed + deadInFlight
+            };
+        }
+        catch (AmazonServiceException ex)
+        {
+            throw new MessageBusException($"Could not read the counts of {source}: {ex.Message}", ex);
+        }
+    }
 
     /// <summary>
     /// Removes the messages and dead letters the source held when called, and unsubscribes a durable subscription from
@@ -539,20 +581,50 @@ public sealed class SqsMessageTransport : IMessageTransport
     private Task<string> GetQueueUrlAsync(string queueName, CancellationToken cancellationToken, string? topicArn = null) =>
         GetOrCreateAsync(_queueUrls, queueName, () => ResolveQueueUrlAsync(queueName, topicArn), cancellationToken);
 
-    /// <summary>Returns the queue's URL without creating it, or <c>null</c> when it does not exist.</summary>
+    /// <summary>Returns the queue's URL without creating it, or <c>null</c> when it does not exist. A URL found is cached.</summary>
     private async Task<string?> FindQueueUrlAsync(string queueName, CancellationToken cancellationToken)
     {
         if (await GetCachedAsync(_queueUrls, queueName).AnyContext() is { } cached)
             return cached;
 
+        string queueUrl;
         try
         {
-            return (await Sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = queueName }, cancellationToken).AnyContext()).QueueUrl;
+            queueUrl = (await Sqs.GetQueueUrlAsync(new GetQueueUrlRequest { QueueName = queueName }, cancellationToken).AnyContext()).QueueUrl;
         }
         catch (QueueDoesNotExistException)
         {
             return null;
         }
+
+        _queueUrls.TryAdd(queueName, new Lazy<Task<string>>(Task.FromResult(queueUrl)));
+        return queueUrl;
+    }
+
+    /// <summary>The queue's visible, delayed and hidden message counts, all 0 when the queue does not exist, and null where SQS does not report one.</summary>
+    private async Task<(long? Visible, long? Delayed, long? Hidden)> GetQueueCountsAsync(string queueName, CancellationToken cancellationToken)
+    {
+        string? queueUrl = await FindQueueUrlAsync(queueName, cancellationToken).AnyContext();
+        if (queueUrl is null)
+            return (0, 0, 0);
+
+        GetQueueAttributesResponse response;
+        try
+        {
+            response = await Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+            {
+                QueueUrl = queueUrl,
+                AttributeNames = [QueueAttributeName.ApproximateNumberOfMessages, QueueAttributeName.ApproximateNumberOfMessagesDelayed, QueueAttributeName.ApproximateNumberOfMessagesNotVisible]
+            }, cancellationToken).AnyContext();
+        }
+        catch (QueueDoesNotExistException)
+        {
+            return (0, 0, 0);
+        }
+
+        return (GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessages),
+            GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessagesDelayed),
+            GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessagesNotVisible));
     }
 
     private Task<string> GetTopicArnAsync(string topicName, CancellationToken cancellationToken) =>

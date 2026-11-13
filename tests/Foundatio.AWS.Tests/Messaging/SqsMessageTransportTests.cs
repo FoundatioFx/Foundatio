@@ -691,6 +691,129 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.Equal("audited", Encoding.UTF8.GetString((await ReceiveOneAsync(receiver)).Body.Span));
     }
 
+    [Theory]
+    [InlineData(MessageSourceKind.Queue)]
+    [InlineData(MessageSourceKind.Subscription)]
+    public async Task GetStatsAsync_SourceThatDoesNotExist_CountsAsEmptyAndCreatesNothing(MessageSourceKind kind)
+    {
+        // Arrange
+        string name = NewName("stats-missing");
+        var source = kind == MessageSourceKind.Queue ? MessageSource.Queue(name) : MessageSource.Subscription(name, "missing");
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+
+        // Act
+        var stats = await transport.GetStatsAsync(source, TestCancellationToken);
+
+        // Assert
+        Assert.Equal(new MessageSourceStats { Source = source, Queued = 0, Delayed = Fifo ? null : 0, InFlight = 0, DeadLettered = 0 }, stats);
+        Assert.Empty(sqsInterceptor.RequestsOf<CreateQueueRequest>());
+        using var sqs = CreateSqsClient();
+        Assert.Empty((await sqs.ListQueuesAsync(new ListQueuesRequest { QueueNamePrefix = NamePrefix + name }, TestCancellationToken)).QueueUrls ?? []);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_AsMessagesAreReceivedAndSettled_CountsEachState()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("stats-states"));
+        await using var receiver = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a", "a"), Message("b", "b"), Message("c", "c")], TestCancellationToken);
+        await AssertStatsAsync(source, queued: 3);
+
+        // Act
+        var received = (await ReceiveAsync(receiver, 3)).ToDictionary(m => m.MessageId);
+        await AssertStatsAsync(source, inFlight: 3);
+        await receiver.CompleteAsync(received["a"], TestCancellationToken);
+        await receiver.DeadLetterAsync(received["b"], "stats", TestCancellationToken);
+        await receiver.AbandonAsync(received["c"], TimeSpan.FromHours(1), TestCancellationToken);
+
+        // Assert: a retry waiting out its delay is hidden, which SQS counts as in flight.
+        await AssertStatsAsync(source, inFlight: 1, deadLettered: 1);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_DelayedSend_CountsAsDelayedOnlyOnAStandardQueue()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("stats-delayed"));
+        DeleteAfterTest(source);
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("later") with { DeliverAt = DateTimeOffset.UtcNow.AddMinutes(10) }], TestCancellationToken);
+
+        // Assert: a FIFO queue cannot delay one message, so it waits visible until a receiver hides it.
+        if (Fifo)
+            await AssertStatsAsync(source, queued: 1);
+        else
+            await AssertStatsAsync(source, delayed: 1);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_SubscriptionsOfATopic_EachCountTheirOwnCopies()
+    {
+        // Arrange
+        string topic = NewName("stats-topic");
+        var first = MessageSource.Subscription(topic, "first");
+        var second = MessageSource.Subscription(topic, "second");
+        await using var firstReceiver = await CreateReceiverAsync(first);
+        await using var secondReceiver = await CreateReceiverAsync(second);
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Topic(topic), [Message("one"), Message("two")], TestCancellationToken);
+        await Transport.SendAsync(MessageDestination.Subscription(topic, second.Name), [Message("only second")], TestCancellationToken);
+        await ReceiveOneAsync(firstReceiver);
+
+        // Assert
+        await AssertStatsAsync(first, queued: 1, inFlight: 1);
+        await AssertStatsAsync(second, queued: 3);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_CalledAgain_OnlyReadsTheAttributesOfTheQueueAndItsDeadLetterQueue()
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("stats-cost"));
+        await using (var receiver = await CreateReceiverAsync(source))
+        {
+            await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("poison"), Message("waiting")], TestCancellationToken);
+            await receiver.DeadLetterAsync(await ReceiveOneAsync(receiver), "stats", TestCancellationToken);
+        }
+
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        await transport.GetStatsAsync(source, TestCancellationToken);
+        sqsInterceptor.Requests.Clear();
+
+        // Act
+        var stats = await transport.GetStatsAsync(source, TestCancellationToken);
+
+        // Assert
+        Assert.Equal(2, sqsInterceptor.Requests.Count);
+        Assert.All(sqsInterceptor.Requests, request => Assert.IsType<GetQueueAttributesRequest>(request));
+        Assert.Equal(1, stats!.DeadLettered);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_InstanceSubscription_ReturnsNull()
+    {
+        // Arrange
+        var source = MessageSource.InstanceSubscription(NewName("stats-instance"), "instance");
+        await using var receiver = await CreateReceiverAsync(source);
+
+        // Act
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+
+        // Assert
+        Assert.Null(stats);
+    }
+
+    [Fact]
+    public Task GetStatsAsync_DeadLetterSource_ThrowsArgumentException()
+    {
+        var source = MessageSource.DeadLetter(MessageSource.Queue(NewName("stats-dlq")));
+
+        return Assert.ThrowsAsync<ArgumentException>(() => Transport.GetStatsAsync(source, TestCancellationToken));
+    }
+
     public override async ValueTask DisposeAsync()
     {
         await base.DisposeAsync();
@@ -727,6 +850,22 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         }
 
         return sqs.SendMessageAsync(request, TestCancellationToken);
+    }
+
+    // Polls until the counts match: SQS's approximate counts can lag sends and settlements. FIFO queues do not delay
+    // single messages, so the transport does not report a delayed count for them.
+    private async Task AssertStatsAsync(MessageSource source, long queued = 0, long delayed = 0, long inFlight = 0, long deadLettered = 0)
+    {
+        var expected = new MessageSourceStats { Source = source, Queued = queued, Delayed = Fifo ? null : delayed, InFlight = inFlight, DeadLettered = deadLettered };
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        var stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+        while (stats != expected && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(100, TestCancellationToken);
+            stats = await Transport.GetStatsAsync(source, TestCancellationToken);
+        }
+
+        Assert.Equal(expected, stats);
     }
 
     /// <summary>What SQS counts against its size limit: the body plus every attribute's name, data type and value.</summary>
