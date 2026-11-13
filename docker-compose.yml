@@ -143,6 +143,7 @@ services:
       - ./build/servicebus-emulator/Config.json:/ServiceBus_Emulator/ConfigFiles/Config.json
     ports:
       - "5672:5672"
+      - "127.0.0.1:5300:5300" # management (ServiceBusAdministrationClient) and /health
     environment:
       SQL_SERVER: sqledge
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-YourStrong@Passw0rd}
