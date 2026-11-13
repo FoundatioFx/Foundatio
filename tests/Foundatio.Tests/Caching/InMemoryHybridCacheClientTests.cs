@@ -1,8 +1,14 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Messaging;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
+using Moq;
 using Xunit;
 
 namespace Foundatio.Tests.Caching;
@@ -19,6 +25,195 @@ public class InMemoryHybridCacheClientTests : HybridCacheClientTestBase
     protected override HybridCacheClient GetDistributedHybridCacheClient(bool shouldThrowOnSerializationError = true)
     {
         return new InMemoryHybridCacheClient(_distributedCache, _messageBus, Log, shouldThrowOnSerializationError);
+    }
+
+    [Theory]
+    [InlineData("Add", false)]
+    [InlineData("Add", true)]
+    [InlineData("Set", false)]
+    [InlineData("Set", true)]
+    [InlineData("SetAll", false)]
+    [InlineData("SetAll", true)]
+    [InlineData("Replace", false)]
+    [InlineData("Replace", true)]
+    [InlineData("ReplaceIfEqual", false)]
+    [InlineData("ReplaceIfEqual", true)]
+    [InlineData("IncrementLong", false)]
+    [InlineData("IncrementLong", true)]
+    [InlineData("IncrementDouble", false)]
+    [InlineData("IncrementDouble", true)]
+    [InlineData("HigherLong", false)]
+    [InlineData("HigherLong", true)]
+    [InlineData("HigherDouble", false)]
+    [InlineData("HigherDouble", true)]
+    [InlineData("LowerLong", false)]
+    [InlineData("LowerLong", true)]
+    [InlineData("LowerDouble", false)]
+    [InlineData("LowerDouble", true)]
+    public async Task WriteAsync_WhenLocalFallbackExceedsSizeLimit_NextReadReturnsUpdatedValue(string operation, bool shouldThrow)
+    {
+        bool rejectLocalWrites = false;
+        using var distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        using var cache = new HybridCacheClient(distributedCache, messageBus, new InMemoryCacheClientOptions
+        {
+            LoggerFactory = Log,
+            MaxMemorySize = 1000,
+            MaxEntrySize = 10,
+            ShouldThrowOnMaxEntrySizeExceeded = shouldThrow,
+            SizeCalculator = value => !rejectLocalWrites || value is 42L ? 3 : throw new InvalidOperationException("Sizing failed")
+        }, Log);
+        using var peer = new HybridCacheClient(distributedCache, messageBus, loggerFactory: Log);
+        const string key = "rejected-local-write";
+        Assert.True(await cache.SetAsync(key, 10L));
+        Assert.Equal(10L, (await cache.LocalCache.GetAsync<long>(key)).Value);
+        Assert.Equal(10L, (await peer.GetAsync<long>(key)).Value);
+        if (operation == "Add")
+            Assert.True(await distributedCache.RemoveAsync(key));
+        rejectLocalWrites = true;
+
+        Task write = operation switch
+        {
+            "Add" => cache.AddAsync(key, 15L),
+            "Set" => cache.SetAsync(key, 15L),
+            "SetAll" => cache.SetAllAsync(new Dictionary<string, long> { [key] = 15L, ["accepted-local-write"] = 42L }),
+            "Replace" => cache.ReplaceAsync(key, 15L),
+            "ReplaceIfEqual" => cache.ReplaceIfEqualAsync(key, 15L, 10L),
+            "IncrementLong" => cache.IncrementAsync(key, 5L),
+            "IncrementDouble" => cache.IncrementAsync(key, 5d),
+            "HigherLong" => cache.SetIfHigherAsync(key, 15L),
+            "HigherDouble" => cache.SetIfHigherAsync(key, 15d),
+            "LowerLong" => cache.SetIfLowerAsync(key, 5L),
+            "LowerDouble" => cache.SetIfLowerAsync(key, 5d),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+        if (shouldThrow)
+        {
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => write);
+            Assert.False((await cache.LocalCache.GetAsync<long>(key)).HasValue);
+            rejectLocalWrites = false;
+        }
+        else
+        {
+            await write;
+        }
+
+        long expected = operation.StartsWith("Lower", StringComparison.Ordinal) ? 5L : 15L;
+        Assert.Equal(expected, (await distributedCache.GetAsync<long>(key)).Value);
+        Assert.Equal(expected, (await cache.GetAsync<long>(key)).Value);
+        if (operation != "Add")
+            Assert.Equal(expected, (await peer.GetAsync<long>(key)).Value);
+        if (operation == "SetAll")
+            Assert.Equal(42L, (await cache.GetAsync<long>("accepted-local-write")).Value);
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public async Task ListWriteAsync_WhenLocalFallbackExceedsSizeLimit_NextReadReturnsUpdatedValues(bool remove, bool stringValue, bool shouldThrow)
+    {
+        bool rejectLocalWrites = false;
+        using var distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.LoggerFactory(Log));
+        using var cache = new HybridCacheClient(distributedCache, messageBus, new InMemoryCacheClientOptions
+        {
+            LoggerFactory = Log,
+            MaxMemorySize = 1000,
+            MaxEntrySize = 10,
+            ShouldThrowOnMaxEntrySizeExceeded = shouldThrow,
+            SizeCalculator = _ => !rejectLocalWrites ? 3 : throw new InvalidOperationException("Sizing failed")
+        }, Log);
+        using var peer = new HybridCacheClient(distributedCache, messageBus, loggerFactory: Log);
+        const string key = "rejected-local-list-write";
+        Assert.Equal(2, await cache.ListAddAsync(key, ["old", "keep"]));
+        Assert.Equal(["keep", "old"], (await cache.LocalCache.GetListAsync<string>(key)).Value!.Order());
+        Assert.Equal(["keep", "old"], (await peer.GetListAsync<string>(key)).Value!.Order());
+        rejectLocalWrites = true;
+
+        var write = (remove, stringValue) switch
+        {
+            (false, false) => cache.ListAddAsync(key, ["new"]),
+            (false, true) => cache.ListAddAsync(key, "new"),
+            (true, false) => cache.ListRemoveAsync(key, ["old"]),
+            (true, true) => cache.ListRemoveAsync(key, "old")
+        };
+        if (shouldThrow)
+        {
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => write);
+            Assert.False((await cache.LocalCache.GetListAsync<string>(key)).HasValue);
+            rejectLocalWrites = false;
+        }
+        else
+        {
+            Assert.Equal(1, await write);
+        }
+
+        string[] expected = remove ? ["keep"] : ["keep", "new", "old"];
+        Assert.Equal(expected, (await distributedCache.GetListAsync<string>(key)).Value!.Order());
+        Assert.Equal(expected, (await cache.GetListAsync<string>(key)).Value!.Order());
+        Assert.Equal(expected, (await peer.GetListAsync<string>(key)).Value!.Order());
+    }
+
+    [Fact]
+    public async Task SetAsync_WhenReplacementExpiresDuringLocalSizing_DoesNotReturnOldValue()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var distributedCache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log));
+        using var messageBus = new InMemoryMessageBus(o => o.TimeProvider(clock).LoggerFactory(Log));
+        using var cache = new HybridCacheClient(distributedCache, messageBus, new InMemoryCacheClientOptions
+        {
+            TimeProvider = clock,
+            LoggerFactory = Log,
+            MaxMemorySize = 1000,
+            SizeCalculator = value =>
+            {
+                if (value is "replacement")
+                    clock.Advance(TimeSpan.FromSeconds(1));
+                return 3;
+            }
+        }, Log);
+        const string key = "expired-local-write";
+        Assert.True(await cache.SetAsync(key, "old", TimeSpan.FromMinutes(1)));
+
+        Assert.True(await cache.SetAsync(key, "replacement", TimeSpan.FromMilliseconds(10)));
+
+        Assert.False((await distributedCache.GetAsync<string>(key)).HasValue);
+        Assert.False((await cache.GetAsync<string>(key)).HasValue);
+    }
+
+    [Fact]
+    public async Task SetAsync_WhenLocalWriteAndInvalidationThrow_PreservesWriteError()
+    {
+        bool failInvalidation = false;
+        var messageBus = new Mock<IMessageBus>();
+        messageBus.Setup(b => b.SubscribeAsync(It.IsAny<Func<HybridCacheClient.InvalidateCache, CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        messageBus.Setup(b => b.PublishAsync(typeof(HybridCacheClient.InvalidateCache), It.IsAny<object>(), It.IsAny<MessageOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(() => failInvalidation ? Task.FromException(new InvalidOperationException("Invalidation failed")) : Task.CompletedTask);
+        using var distributedCache = new InMemoryCacheClient(o => o.LoggerFactory(Log));
+        using var cache = new HybridCacheClient(distributedCache, messageBus.Object, new InMemoryCacheClientOptions
+        {
+            LoggerFactory = Log,
+            MaxMemorySize = 1000,
+            MaxEntrySize = 10,
+            ShouldThrowOnMaxEntrySizeExceeded = true,
+            SizeCalculator = value => value is "old" ? 3 : throw new InvalidOperationException("Sizing failed")
+        }, Log);
+        const string key = "failed-local-write";
+        Assert.True(await cache.SetAsync(key, "old"));
+        failInvalidation = true;
+
+        await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync(key, "replacement"));
+
+        Assert.Equal("replacement", (await distributedCache.GetAsync<string>(key)).Value);
+        Assert.False((await cache.LocalCache.GetAsync<string>(key)).HasValue);
+        messageBus.Verify(b => b.PublishAsync(typeof(HybridCacheClient.InvalidateCache), It.IsAny<object>(), It.IsAny<MessageOptions?>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
