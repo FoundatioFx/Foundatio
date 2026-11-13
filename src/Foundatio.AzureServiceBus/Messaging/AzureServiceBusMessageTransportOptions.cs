@@ -44,14 +44,15 @@ public sealed record AzureServiceBusMessageTransportOptions
     /// <summary>
     /// Creates every queue and subscription with sessions, so messages with the same
     /// <see cref="OutgoingMessage.GroupKey"/> are delivered in order and never two at a time
-    /// (<see cref="TransportCapabilities.OrderedGroups"/>). A message without a group key is a session of its own.
+    /// (<see cref="TransportCapabilities.OrderedGroups"/>). The group key is the session id.
     /// </summary>
     /// <remarks>
-    /// A receiver accepts sessions one at a time and holds each until its handed-out messages are settled, so ungrouped
-    /// messages, each a session, are received one accept at a time; give messages a group key for throughput. A delayed
-    /// message with a group key, and a retry with a delay, keep their session locked by the receiver that got them
-    /// until they are due, renewing the lock, so they hold back their group. Existing entities must match: a queue or
-    /// subscription without sessions is refused.
+    /// A receiver accepts sessions as it needs them, up to <see cref="MaxConcurrentSessions"/>, and takes no more of a
+    /// session while a message it handed out of it is unsettled. Messages without a group key share 8 sessions, which
+    /// receivers take many messages from at a time, so at most 8 receivers handle them at once. A delayed message with a
+    /// group key, and a retry with a delay, keep their session locked by the receiver that got them until they are due,
+    /// renewing the lock, so they hold back their group. Existing entities must match: a queue or subscription without
+    /// sessions is refused.
     /// </remarks>
     public bool RequiresSession { get; init; }
 

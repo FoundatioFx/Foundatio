@@ -27,7 +27,7 @@ public class SendReceiptHandler(IEmailSender email) : IMessageHandler<SendReceip
 // Registration
 builder.Services.AddFoundatioMessaging(m => m
     .UseServiceName("orders")             // names this service's subscriptions
-    .UseInMemory()                        // or UseRedis(), UseSqs() or UseKafka(...); see Transports
+    .UseInMemory()                        // or UseRedis(), UseSqs(), UseKafka(...) or UseAzureServiceBus(...); see Transports
     .AddSubscriber<OrderPlacedHandler>()  // events
     .AddConsumer<SendReceiptHandler>());  // commands
 
@@ -102,6 +102,31 @@ m.UseKafka(new KafkaMessageTransportOptions { BootstrapServers = "broker:9092", 
 - It orders groups and delays messages through delay topics. It doesn't deduplicate, and leases never expire.
 - Competing instances share a topic's partitions, so create topics with at least as many partitions as you run instances.
 - See the [Kafka README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka#message-transport-preview) for how it maps to Kafka, retention and limits.
+
+### Using Azure Service Bus
+
+`dotnet add package Foundatio.AzureServiceBus`. Queues are Service Bus queues, topics are topics, and each subscription is a topic subscription.
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseAzureServiceBus(builder.Configuration.GetConnectionString("ServiceBus")!)
+    .UseServiceName("billing")
+    .AddConsumer<SendReceiptHandler>());
+
+// Or with options, for example Microsoft Entra ID and sessions
+m.UseAzureServiceBus(new AzureServiceBusMessageTransportOptions
+{
+    FullyQualifiedNamespace = "my-namespace.servicebus.windows.net",
+    Credential = new DefaultAzureCredential(),
+    RequiresSession = true
+});
+```
+
+- Without a connection in the options (`UseAzureServiceBus()`), it uses the `ServiceBusClient` and `ServiceBusAdministrationClient` registered in DI, which stay yours.
+- Without options it neither orders groups nor deduplicates. `RequiresSession = true` orders groups with sessions and `RequiresDuplicateDetection = true` deduplicates; entities must be created in the same mode.
+- Delays are scheduled messages, for any length of time. Leases follow each entity's lock duration (1 minute by default, at most 5), renewed by Foundatio.
+- The transport creates queues, topics and subscriptions as it needs them. Set `CreateEntities = false` when they are provisioned for you.
+- See the [Azure Service Bus README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus#message-transport-preview) for names, sessions, sizes and the emulator.
 
 ## Send or publish?
 

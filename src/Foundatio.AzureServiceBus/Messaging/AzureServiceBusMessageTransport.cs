@@ -33,7 +33,7 @@ namespace Foundatio.Messaging.Transport;
 /// retry is a scheduled copy carrying the delivery count, and the original is completed: in one transaction on a queue,
 /// one after the other on a subscription (a transaction there would span two entities), where a failure in between can
 /// deliver the message twice. With <see cref="AzureServiceBusMessageTransportOptions.RequiresSession"/>, a delayed
-/// retry instead keeps its session locked until it is due, so it holds back its group.
+/// retry of a message with a group key instead keeps its session locked until it is due, so it holds back its group.
 /// </para>
 /// </remarks>
 public sealed class AzureServiceBusMessageTransport : IMessageTransport
