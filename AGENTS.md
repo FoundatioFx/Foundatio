@@ -330,6 +330,7 @@ The following skills are available in this repository under `.agents/skills/`:
 | ----- | ----------- |
 | [foundatio](.agents/skills/foundatio/SKILL.md) | Foundatio infrastructure abstractions — caching, queuing, messaging, file storage, locking, jobs, resilience |
 | [cross-repo-validation](.agents/skills/cross-repo-validation/SKILL.md) | Build and test provider repos against local core in parallel, emulator setup, preview bumps and PR updates. Use automatically for core or TestHarness changes |
+| [foundatio-release](.agents/skills/foundatio-release/SKILL.md) | Staged, verified release of core and provider repos: CI on exact commits, API compat gate, nuget.org restorability, stable version bumps, tagging order |
 | [analyzing-dotnet-performance](.agents/skills/analyzing-dotnet-performance/SKILL.md) | Scans .NET code for ~50 performance anti-patterns across async, memory, strings, collections, LINQ, regex, serialization, and I/O |
 | [microbenchmarking](.agents/skills/microbenchmarking/SKILL.md) | Creating, running, configuring, or reviewing BenchmarkDotNet benchmarks |
 | [dotnet-trace-collect](.agents/skills/dotnet-trace-collect/SKILL.md) | Capturing diagnostic artifacts to diagnose production .NET performance issues |
