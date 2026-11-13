@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
+using Foundatio.Monitoring;
 using Foundatio.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -34,6 +35,7 @@ public static class JobsServiceCollectionExtensions
         {
             registrations = new JobsRegistrations();
             services.AddSingleton(registrations);
+            services.TryAddSingleton(WorkTracker.Create);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton(sp => new JobClient(sp.GetRequiredService<JobsRuntime>()));
             services.TryAddSingleton<IJobClient>(sp => sp.GetRequiredService<JobClient>());
@@ -68,7 +70,8 @@ public static class JobsServiceCollectionExtensions
             services.GetService<ILoggerFactory>() ?? NullLoggerFactory.Instance,
             services.GetService<TimeProvider>() ?? TimeProvider.System)
         {
-            Observer = services.GetService<IJobsObserver>()
+            Observer = services.GetService<IJobsObserver>(),
+            Tracker = services.GetRequiredService<WorkTracker>()
         };
     }
 }

@@ -3,17 +3,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Foundatio.Monitoring;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Messaging;
 
-internal sealed class MessageContext : IMessageContext
+internal sealed class MessageContext : TrackedWork, IMessageContext
 {
     private static readonly AsyncLocal<MessageContext?> CurrentContext = new();
 
-    private int _progress = -1;
-    private string? _progressMessage;
     private long _progressEmittedAt;
 
     public required string MessageId { get; init; }
@@ -36,12 +35,6 @@ internal sealed class MessageContext : IMessageContext
     public bool RetryRequested { get; private set; }
     public TimeSpan? RetryDelay { get; private set; }
 
-    /// <summary>The last reported percentage, or null.</summary>
-    public int? Progress => Volatile.Read(ref _progress) is >= 0 and var percent ? percent : null;
-
-    /// <summary>The last reported progress message, or null.</summary>
-    public string? ProgressMessage => Volatile.Read(ref _progressMessage);
-
     /// <summary>The message being handled on this async flow, used to propagate the correlation id.</summary>
     public static MessageContext? Current
     {
@@ -52,16 +45,16 @@ internal sealed class MessageContext : IMessageContext
     public Task ReportProgressAsync(int? percent = null, string? message = null, CancellationToken cancellationToken = default)
     {
         HandlerProgress.ThrowIfInvalid(percent);
-        if (percent is { } value)
-            Volatile.Write(ref _progress, value);
-        if (message is not null)
-            Volatile.Write(ref _progressMessage, message);
-
+        UpdateProgress(percent, message);
         if (ShouldEmit(percent))
             Emit();
 
         return Task.CompletedTask;
     }
+
+    internal override string TrackedId => MessageId;
+    internal override int TrackedAttempt => Attempt;
+    internal override string? TrackedCorrelationId => CorrelationId;
 
     public void DeadLetter(string reason)
     {

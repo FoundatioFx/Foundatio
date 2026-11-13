@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
+using Foundatio.Monitoring;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
@@ -58,6 +59,9 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
 
     /// <summary>Notified of sends and settled deliveries; set by the test harness.</summary>
     public IMessagingObserver? Observer { get; init; }
+
+    /// <summary>Follows every delivery for monitoring.</summary>
+    public required WorkTracker Tracker { get; init; }
 
     /// <summary>Whether the hosted service is waiting for the startup gate, has started the processors, or has stopped.</summary>
     public ProcessingState HostState

@@ -3,6 +3,7 @@ using System.Linq;
 using System.Reflection;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Monitoring;
 using Foundatio.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +36,7 @@ public static class MessagingServiceCollectionExtensions
         {
             registrations = new MessagingRegistrations();
             services.AddSingleton(registrations);
+            services.TryAddSingleton(WorkTracker.Create);
             services.TryAddSingleton(sp => CreateRuntime(sp, registrations));
             services.TryAddSingleton<IMessageClient>(sp => new MessageClient(sp.GetRequiredService<MessagingRuntime>()));
             services.TryAddSingleton<IMessageAdmin>(sp => new MessageAdmin(sp.GetRequiredService<MessagingRuntime>()));
@@ -75,7 +77,8 @@ public static class MessagingServiceCollectionExtensions
             services.GetService<TimeProvider>() ?? TimeProvider.System,
             serviceName, serviceNameIsDefault: options.ServiceName is null)
         {
-            Observer = services.GetService<IMessagingObserver>()
+            Observer = services.GetService<IMessagingObserver>(),
+            Tracker = services.GetRequiredService<WorkTracker>()
         };
 
         HandlerRegistrationValidator.Validate(runtime, registrations.Handlers);

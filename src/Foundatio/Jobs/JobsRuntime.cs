@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
+using Foundatio.Monitoring;
 using Foundatio.Serializer;
 using Foundatio.Utility;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,6 +44,9 @@ internal sealed class JobsRuntime
 
     /// <summary>Notified of finished runs; set by the test harness.</summary>
     public IJobsObserver? Observer { get; init; }
+
+    /// <summary>Follows every job run for monitoring.</summary>
+    public required WorkTracker Tracker { get; init; }
 
     /// <summary>False under the test harness, which triggers CRON jobs explicitly.</summary>
     public bool RunSchedules => Observer?.RunSchedules ?? true;

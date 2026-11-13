@@ -3,10 +3,12 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Messaging.Transport;
+using Foundatio.Monitoring;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -27,10 +29,12 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
 
     private readonly MessagingRuntime _runtime;
     private readonly MessageSource _source;
+    private readonly string _sourceName;
     private readonly IReadOnlyList<MessageHandlerRegistration> _handlers;
     private readonly ProcessingStatusTracker _status;
     private readonly ILogger _logger;
-    private readonly ConcurrentDictionary<string, IReadOnlyList<HandlerMatch>> _matches = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, HandlerSet> _matches = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, WorkCounter> _counters = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _reportedUnknownTypes = new(StringComparer.Ordinal);
     private readonly FailedDeadLetters _failedDeadLetters = new();
 
@@ -38,6 +42,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     {
         _runtime = runtime;
         _source = source;
+        _sourceName = source.ToString();
         _handlers = handlers;
         _status = status;
         _logger = runtime.LoggerFactory.CreateLogger<MessageProcessor>();
@@ -50,6 +55,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         string messageType = headers.GetValueOrDefault(KnownHeaders.MessageType) ?? String.Empty;
         using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["message.id"] = message.MessageId, ["message.type"] = messageType });
         var now = _runtime.TimeProvider.GetUtcNow();
+        var counter = GetCounter(messageType);
 
         if (TryGetTime(headers, KnownHeaders.ExpiresAt) is { } expiresAt && expiresAt <= now)
         {
@@ -57,6 +63,9 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             MessagingInstruments.Discarded.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
             bool removed = await CompleteAsync(delivery).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "expired", null, null);
+            if (removed)
+                RecordUnhandled(counter, message, "expired", null);
+
             return removed;
         }
 
@@ -64,11 +73,12 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             return await RescheduleAsync(delivery, deliverAt).AnyContext();
 
         if (_failedDeadLetters.TryGetReason(message.MessageId, out string pendingReason))
-            return await RetryDeadLetterAsync(delivery, pendingReason, abortToken).AnyContext();
+            return await RetryDeadLetterAsync(delivery, counter, pendingReason, abortToken).AnyContext();
 
-        var matches = FindHandlers(messageType, headers);
+        var handlerSet = FindHandlers(messageType, headers);
+        var matches = handlerSet.Matches;
         if (matches.Count == 0)
-            return await HandleUnmatchedAsync(delivery, messageType, abortToken).AnyContext();
+            return await HandleUnmatchedAsync(delivery, counter, messageType, abortToken).AnyContext();
 
         var payloads = new List<(Type Type, object Payload)>(1);
         try
@@ -85,6 +95,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             string reason = $"Deserialization failed: {ex.Message}";
             var (deserializeOutcome, deadLetterError) = await DeadLetterOrDropAsync(delivery, reason, abortToken).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, deserializeOutcome, reason, deadLetterError ?? ex);
+            RecordUnhandled(counter, message, deserializeOutcome, reason);
             return deserializeOutcome == "dead-lettered";
         }
 
@@ -98,7 +109,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             SentAt = TryGetTime(headers, KnownHeaders.SentAt),
             GroupKey = message.GroupKey,
             Headers = headers,
-            Source = _source.ToString(),
+            Source = _sourceName,
             Activity = activity,
             Logger = _logger
         };
@@ -111,6 +122,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         Exception? error = null;
         var previous = MessageContext.Current;
         MessageContext.Current = context;
+        _runtime.Tracker.Start(context, counter, handlerSet.Names);
         try
         {
             foreach (var match in matches)
@@ -127,10 +139,12 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         finally
         {
             MessageContext.Current = previous;
+            _runtime.Tracker.Stop(context);
         }
 
         var (outcome, settleError) = await SettleAfterHandlingAsync(delivery, context, policy, error, abortToken).AnyContext();
         _runtime.Observer?.OnHandled(_source, message, payloads[0].Payload, outcome, context.DeadLetterReason, error ?? settleError, context);
+        _runtime.Tracker.Complete(context, ToWorkOutcome(outcome), DescribeError(outcome, context, error));
 
         var tags = new TagList { { "messaging.message.type", messageType }, { "messaging.source", _source.Kind.ToString() }, { "outcome", outcome } };
         MessagingInstruments.Handled.Add(1, tags);
@@ -257,7 +271,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return await CompleteAsync(delivery).AnyContext();
     }
 
-    private async Task<bool> HandleUnmatchedAsync(MessageDelivery delivery, string messageType, CancellationToken abortToken)
+    private async Task<bool> HandleUnmatchedAsync(MessageDelivery delivery, WorkCounter counter, string messageType, CancellationToken abortToken)
     {
         var message = delivery.Message;
         MessagingInstruments.Unmatched.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
@@ -277,6 +291,9 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
 
             bool skipped = await CompleteAsync(delivery).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "skipped", null, null);
+            if (skipped)
+                RecordUnhandled(counter, message, "skipped", null);
+
             return skipped;
         }
 
@@ -289,21 +306,24 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             _logger.LogWarning("No handler for message type {MessageType} on {Source}; retrying (attempt {Attempt} of {MaxAttempts})", messageType, _source, attempt, policy.MaxAttempts);
             await RetryAsync(delivery, policy.GetDelay(attempt), abortToken).AnyContext();
             _runtime.Observer?.OnHandled(_source, message, null, "retry", reason, null);
+            RecordUnhandled(counter, message, "retry", reason);
             return false;
         }
 
         _logger.LogError("No handler for message type {MessageType} on {Source}; dead-lettering message {MessageId}", messageType, _source, message.MessageId);
         var (outcome, error) = await DeadLetterOrDropAsync(delivery, reason, abortToken).AnyContext();
         _runtime.Observer?.OnHandled(_source, message, null, outcome, reason, error);
+        RecordUnhandled(counter, message, outcome, reason);
         return outcome == "dead-lettered";
     }
 
     /// <summary>Dead-letters a message whose earlier dead-letter failed, without running its handlers again.</summary>
-    private async Task<bool> RetryDeadLetterAsync(MessageDelivery delivery, string reason, CancellationToken abortToken)
+    private async Task<bool> RetryDeadLetterAsync(MessageDelivery delivery, WorkCounter counter, string reason, CancellationToken abortToken)
     {
         _logger.LogWarning("Dead-lettering message {MessageId} again without running its handlers: dead-lettering it failed before", delivery.Message.MessageId);
         var (outcome, error) = await DeadLetterOrDropAsync(delivery, reason, abortToken).AnyContext();
         _runtime.Observer?.OnHandled(_source, delivery.Message, null, outcome, reason, error);
+        RecordUnhandled(counter, delivery.Message, outcome, reason);
         return outcome == "dead-lettered";
     }
 
@@ -352,10 +372,10 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     /// another service, matches handlers for any of the base types and interfaces its publisher listed, and is
     /// deserialized as the most derived one each handler accepts.
     /// </summary>
-    private IReadOnlyList<HandlerMatch> FindHandlers(string messageType, IReadOnlyDictionary<string, string> headers)
+    private HandlerSet FindHandlers(string messageType, IReadOnlyDictionary<string, string> headers)
     {
         if (messageType.Length == 0)
-            return [];
+            return HandlerSet.None;
 
         bool known = _runtime.Types.TryGetType(messageType, out var type);
         string? baseTypes = known ? null : headers.GetValueOrDefault(KnownHeaders.MessageBaseTypes);
@@ -385,10 +405,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
                 matches.Add(new HandlerMatch(handler, payloadType));
         }
 
+        var handlerSet = new HandlerSet(matches, String.Join(", ", matches.Select(m => m.Handler.HandlerName).Distinct()));
         if (_matches.Count < MaxCachedTypes)
-            _matches.TryAdd(key, matches);
+            _matches.TryAdd(key, handlerSet);
 
-        return matches;
+        return handlerSet;
     }
 
     private static DateTimeOffset? TryGetTime(IReadOnlyDictionary<string, string> headers, string name)
@@ -404,5 +425,51 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return activity;
     }
 
+    /// <summary>The counter for <paramref name="messageType"/> on this source, cached like the handler matches.</summary>
+    private WorkCounter GetCounter(string messageType)
+    {
+        if (_counters.TryGetValue(messageType, out var counter))
+            return counter;
+
+        counter = _runtime.Tracker.GetCounter(WorkKind.Message, messageType, _sourceName);
+        if (_counters.Count < MaxCachedTypes)
+            _counters.TryAdd(messageType, counter);
+
+        return counter;
+    }
+
+    /// <summary>Counts a delivery that ended without its handlers running.</summary>
+    private void RecordUnhandled(WorkCounter counter, IncomingMessage message, string outcome, string? reason)
+    {
+        _runtime.Tracker.Record(counter, ToWorkOutcome(outcome), message.MessageId, Math.Max(1, message.DeliveryCount),
+            message.Headers.GetValueOrDefault(KnownHeaders.CorrelationId), reason);
+    }
+
+    /// <summary>Maps an outcome as metrics name it to how monitoring counts it.</summary>
+    internal static WorkOutcome ToWorkOutcome(string outcome) => outcome switch
+    {
+        "success" => WorkOutcome.Succeeded,
+        "retry" => WorkOutcome.Retried,
+        "dead-lettered" => WorkOutcome.DeadLettered,
+        "skipped" or "expired" => WorkOutcome.Skipped,
+        "settle-failed" or "dead-letter-failed" => WorkOutcome.Failed,
+        _ => WorkOutcome.Cancelled
+    };
+
+    private static string? DescribeError(string outcome, MessageContext context, Exception? error) => outcome switch
+    {
+        "success" => null,
+        "lease-lost" => "The lease was lost; another consumer will handle the message",
+        "cancelled" => "Interrupted by shutdown; the message will be delivered again",
+        "settle-failed" => "Could not complete the message; it will be delivered again",
+        _ => context.DeadLetterReason ?? (error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}")
+    };
+
     private readonly record struct HandlerMatch(MessageHandlerRegistration Handler, Type PayloadType);
+
+    /// <summary>The handlers for one message type and the names monitoring shows for them.</summary>
+    private sealed record HandlerSet(IReadOnlyList<HandlerMatch> Matches, string Names)
+    {
+        public static readonly HandlerSet None = new([], String.Empty);
+    }
 }

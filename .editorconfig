@@ -201,7 +201,7 @@ generated_code = true
 
 # XML docs are required (CS1591) in the messaging and durable jobs code added in v14. New files in these folders are
 # covered automatically; list new files elsewhere explicitly.
-[src/{Foundatio/Messaging,Foundatio/Messaging/Transport,Foundatio/Jobs,Foundatio/Jobs/Store,Foundatio/Testing}/*.cs]
+[src/{Foundatio/Messaging,Foundatio/Messaging/Transport,Foundatio/Jobs,Foundatio/Jobs/Store,Foundatio/Monitoring,Foundatio/Testing}/*.cs]
 dotnet_diagnostic.CS1591.severity = warning
 
 [src/{Foundatio.AWS,Foundatio.Kafka,Foundatio.Redis}/{Messaging/*,Extensions/*BuilderExtensions}.cs]

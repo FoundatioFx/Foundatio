@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
+using Foundatio.Monitoring;
 using Foundatio.Utility;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Jobs;
 
-internal sealed class JobRunContext : IJobContext
+internal sealed class JobRunContext : TrackedWork, IJobContext
 {
     private static readonly AsyncLocal<JobRunContext?> CurrentContext = new();
 
@@ -47,9 +48,6 @@ internal sealed class JobRunContext : IJobContext
     /// <summary>The latest reported message, whether or not it has been saved yet.</summary>
     public string? Message { get; private set; }
 
-    /// <summary>The latest reported percentage, whether or not it has been saved yet.</summary>
-    public int? Progress { get; private set; }
-
     /// <summary>The job running on this async flow, used to propagate the correlation id.</summary>
     public static JobRunContext? Current
     {
@@ -65,7 +63,7 @@ internal sealed class JobRunContext : IJobContext
         {
             _pending = new ProgressReport(percent, message).Over(_pending);
             Message = message ?? Message;
-            Progress = percent ?? Progress;
+            UpdateProgress(percent, message);
             var now = _timeProvider.GetUtcNow();
             if (now - _lastReport < HandlerProgress.Interval && percent != 100)
                 return;
@@ -82,6 +80,10 @@ internal sealed class JobRunContext : IJobContext
             _logger.LogWarning(ex, "Could not save the progress of job {JobId}; it will be saved with the next report", JobId);
         }
     }
+
+    internal override string TrackedId => JobId;
+    internal override int TrackedAttempt => Attempt;
+    internal override string? TrackedCorrelationId => CorrelationId;
 
     /// <summary>Writes a throttled or failed progress report that has not been stored yet.</summary>
     public Task FlushAsync(CancellationToken cancellationToken) => WritePendingAsync(cancellationToken);

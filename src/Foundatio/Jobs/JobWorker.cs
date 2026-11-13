@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
+using Foundatio.Monitoring;
 using Foundatio.Resilience;
 using Foundatio.Serializer;
 using Foundatio.Utility;
@@ -27,6 +28,7 @@ internal sealed class JobWorker
     private readonly ILogger _logger;
     private readonly SemaphoreSlim _slots;
     private readonly ConcurrentDictionary<string, int> _runningByName = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (WorkCounter Counter, string Handler)> _tracking;
     private readonly CancellationTokenSource _stopClaiming = new();
     private readonly CancellationTokenSource _abortJobs = new();
     private Task _loop = Task.CompletedTask;
@@ -38,6 +40,8 @@ internal sealed class JobWorker
         _logger = runtime.LoggerFactory.CreateLogger<JobWorker>();
         _slots = new SemaphoreSlim(runtime.Options.MaxConcurrency, runtime.Options.MaxConcurrency);
         Status = new ProcessingStatusTracker(runtime.TimeProvider);
+        _tracking = runtime.Jobs.Values.ToDictionary(j => j.Name,
+            j => (runtime.Tracker.GetCounter(WorkKind.Job, j.Name, null), JobNaming.GetDisplayName(j.JobType)), StringComparer.Ordinal);
     }
 
     /// <summary>Read by health checks. Claim errors are recorded here; they never stop the worker.</summary>
@@ -170,16 +174,17 @@ internal sealed class JobWorker
         var registration = _runtime.Jobs[job.Name];
         var policy = registration.Options.RetryPolicy ?? _runtime.Options.DefaultRetryPolicy;
         using var logScope = _logger.BeginScope(new Dictionary<string, object> { ["job.id"] = job.Id, ["job.name"] = job.Name });
+        var (counter, handler) = _tracking[job.Name];
 
         if (job.CancellationRequested)
         {
-            await CompleteAsync(job, JobCompletion.Cancelled(_runtime.Options.RetainFailedFor, "Cancelled before it started")).AnyContext();
+            await CompleteWithoutRunningAsync(job, counter, JobCompletion.Cancelled(_runtime.Options.RetainFailedFor, "Cancelled before it started")).AnyContext();
             return;
         }
 
         if (job.Attempt > policy.MaxAttempts)
         {
-            await CompleteAsync(job, JobCompletion.Failed(_runtime.Options.RetainFailedFor,
+            await CompleteWithoutRunningAsync(job, counter, JobCompletion.Failed(_runtime.Options.RetainFailedFor,
                 $"Gave up after {policy.MaxAttempts} attempts; the last attempt stopped without finishing (its worker crashed or lost the lease).")).AnyContext();
             return;
         }
@@ -194,7 +199,7 @@ internal sealed class JobWorker
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Could not deserialize the arguments of job {JobId}", job.Id);
-                await CompleteAsync(job, JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"Could not deserialize the arguments: {ex.Message}")).AnyContext();
+                await CompleteWithoutRunningAsync(job, counter, JobCompletion.Failed(_runtime.Options.RetainFailedFor, $"Could not deserialize the arguments: {ex.Message}")).AnyContext();
                 return;
             }
         }
@@ -212,6 +217,7 @@ internal sealed class JobWorker
         Exception? error = null;
         var previous = JobRunContext.Current;
         JobRunContext.Current = context;
+        _runtime.Tracker.Start(context, counter, handler);
         try
         {
             await using var scope = _runtime.ScopeFactory.CreateAsyncScope();
@@ -224,6 +230,7 @@ internal sealed class JobWorker
         finally
         {
             JobRunContext.Current = previous;
+            _runtime.Tracker.Stop(context);
         }
 
         await lease.StopAsync().AnyContext();
@@ -231,6 +238,7 @@ internal sealed class JobWorker
         {
             _logger.LogWarning(error, "Job {JobId} lost its lease while running; its result is not recorded and another worker may run it again", job.Id);
             RecordRun(job, "lost", started);
+            _runtime.Tracker.Complete(context, WorkOutcome.Cancelled, "The lease was lost; another worker may run the job again");
             return;
         }
 
@@ -257,9 +265,33 @@ internal sealed class JobWorker
         await CompleteAsync(job, completion, context).AnyContext();
 
         RecordRun(job, completion.State == JobState.Queued ? (completion.RefundAttempt ? "released" : "retry") : completion.State.ToString().ToLowerInvariant(), started);
+        _runtime.Tracker.Complete(context, ToWorkOutcome(completion), DescribeError(completion));
         if (completion.State is JobState.Failed or JobState.Queued && !completion.RefundAttempt)
             activity?.SetErrorStatus(error, completion.Error);
     }
+
+    /// <summary>Records the result of a job that ends without running, and counts it.</summary>
+    private async Task CompleteWithoutRunningAsync(JobInfo job, WorkCounter counter, JobCompletion completion)
+    {
+        await CompleteAsync(job, completion).AnyContext();
+        _runtime.Tracker.Record(counter, ToWorkOutcome(completion), job.Id, job.Attempt, job.CorrelationId, DescribeError(completion));
+    }
+
+    private static WorkOutcome ToWorkOutcome(JobCompletion completion) => completion.State switch
+    {
+        JobState.Succeeded => WorkOutcome.Succeeded,
+        JobState.Failed => WorkOutcome.Failed,
+        JobState.Queued when !completion.RefundAttempt => WorkOutcome.Retried,
+        _ => WorkOutcome.Cancelled
+    };
+
+    private static string? DescribeError(JobCompletion completion) => completion.State switch
+    {
+        JobState.Succeeded => null,
+        JobState.Queued when completion.RefundAttempt => "Interrupted by shutdown; the job will run again",
+        JobState.Cancelled => completion.Message ?? "Cancelled",
+        _ => completion.Error
+    };
 
     private static void RecordRun(JobInfo job, string outcome, long started)
     {
