@@ -29,6 +29,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private readonly bool _hasSizeCalculator;
     private readonly bool _usesBuiltInDynamicSizing;
     private readonly bool _canShareListValues;
+    private readonly bool _shouldIsolateListSizing;
     private readonly bool _shouldTrackMemory;
     private Func<object, long>? _sizeCalculator;
     private readonly long? _maxEntrySize;
@@ -81,6 +82,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _usesBuiltInDynamicSizing = _sizeCalculator?.Target is SizeCalculator calculator && _sizeCalculator == calculator.CalculateSize;
         bool usesBuiltInFixedSizing = _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator fixedCalculator && _sizeCalculator == fixedCalculator.Calculate;
         _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _usesBuiltInDynamicSizing || usesBuiltInFixedSizing);
+        _shouldIsolateListSizing = _shouldClone && _hasSizeCalculator && !usesBuiltInFixedSizing;
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();
@@ -675,7 +677,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             // Merge from the new entry's stored values, which were cloned when CloneValues is enabled
             ExpireListValues(dictionary, key);
-            foreach (var kvp in (Dictionary<T, DateTime?>)entry.StoredValue!)
+            var addedValues = (Dictionary<T, DateTime?>)entry.StoredValue!;
+            EnsureListCapacity(dictionary, addedValues);
+            foreach (var kvp in addedValues)
                 dictionary[kvp.Key] = kvp.Value;
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
@@ -692,24 +696,44 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         object value = _canShareListValues && dictionary is Dictionary<T, DateTime?> values && values.Count > ListSnapshot<T>.BlockSize
             ? new ListSnapshot<T>(values)
             : dictionary;
-        return current.WithValue(value, GetListExpiration(dictionary), size);
+        bool clone = _shouldIsolateListSizing && (!_usesBuiltInDynamicSizing || !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T)));
+        return clone
+            ? current.WithClonedValue(value, GetListExpiration(dictionary), size)
+            : current.WithValue(value, GetListExpiration(dictionary), size);
+    }
+
+    private static void EnsureListCapacity<T>(IDictionary<T, DateTime?> dictionary, Dictionary<T, DateTime?> items) where T : notnull
+    {
+        if (dictionary is not Dictionary<T, DateTime?> values || items.Count <= values.EnsureCapacity(0) - values.Count)
+            return;
+
+        var distinctKeys = items.Count > 1 && !ReferenceEquals(values.Comparer, items.Comparer)
+            ? new HashSet<T>(values.Comparer)
+            : null;
+        int capacity = values.Count;
+        foreach (var key in items.Keys)
+            if (!values.ContainsKey(key) && (distinctKeys is null || distinctKeys.Add(key)))
+                capacity = checked(capacity + 1);
+
+        values.EnsureCapacity(capacity);
     }
 
     /// <summary>
     /// Returns a private copy of an entry's list values that can be modified and published with
     /// <see cref="CacheEntry.WithValue"/>, or <c>null</c> if the entry does not hold a list.
     /// </summary>
-    private static IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
+    private IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
     {
-        object? value = entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
+        bool clone = _shouldIsolateListSizing && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
+        object? value = clone ? entry.PeekValue() : entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
         return value switch
         {
-            Dictionary<T, DateTime?> dictionary => new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-            SortedDictionary<T, DateTime?> dictionary => new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
-            SortedList<T, DateTime?> dictionary => new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
-            ConcurrentDictionary<T, DateTime?> dictionary => new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            Dictionary<T, DateTime?> dictionary => clone ? dictionary : new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedDictionary<T, DateTime?> dictionary => clone ? dictionary : new SortedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            SortedList<T, DateTime?> dictionary => clone ? dictionary : new SortedList<T, DateTime?>(dictionary, dictionary.Comparer),
+            ConcurrentDictionary<T, DateTime?> dictionary => clone ? dictionary : new ConcurrentDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
 #if NET9_0_OR_GREATER
-            OrderedDictionary<T, DateTime?> dictionary => new OrderedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
+            OrderedDictionary<T, DateTime?> dictionary => clone ? dictionary : new OrderedDictionary<T, DateTime?>(dictionary, dictionary.Comparer),
 #endif
             IDictionary<T, DateTime?> dictionary => throw new NotSupportedException($"List updates cannot preserve the comparer of {dictionary.GetType().FullName}."),
             _ => null
@@ -1427,12 +1451,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         string ValueTypeName { get; }
     }
 
-    // Updates copy one bounded block and the block directory, not the entire list. The immutable
-    // key index shares unchanged nodes. Raw dictionary reads retain their existing public shape.
+    // Updates copy bounded value blocks and key buckets, sharing unchanged storage.
+    // Raw dictionary reads retain their existing public shape.
     private sealed class ListSnapshot<T> : IListSnapshot, ICollection where T : notnull
     {
         public const int BlockSize = 32;
-        private ImmutableDictionary<T, int>? _indices;
+        private KeyIndex? _indices;
         private readonly Dictionary<T, DateTime?>? _initialValues;
         private readonly Item[][] _blocks;
         private readonly ImmutableSortedDictionary<DateTime, int> _expirations;
@@ -1463,7 +1487,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             _freeIndices = ImmutableStack<int>.Empty;
         }
 
-        private ListSnapshot(ImmutableDictionary<T, int> indices, Item[][] blocks,
+        private ListSnapshot(KeyIndex indices, Item[][] blocks,
             ImmutableSortedDictionary<DateTime, int> expirations, ImmutableStack<int> freeIndices, int nextIndex, int permanentCount)
         {
             _indices = indices;
@@ -1489,18 +1513,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                         yield return new KeyValuePair<T, DateTime?>(item.Key, item.Expiration);
         }
 
-        private ImmutableDictionary<T, int> Indices
+        private KeyIndex Indices
         {
             get
             {
                 if (Volatile.Read(ref _indices) is { } existing)
                     return existing;
 
-                var builder = ImmutableDictionary.CreateBuilder<T, int>(_initialValues!.Comparer);
-                int index = 0;
-                foreach (var key in _initialValues.Keys)
-                    builder.Add(key, index++);
-                var indices = builder.ToImmutable();
+                var indices = new KeyIndex(_initialValues!);
                 return Interlocked.CompareExchange(ref _indices, indices, null) ?? indices;
             }
         }
@@ -1553,10 +1573,22 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (remove && !prune && !items.Any(key => _initialValues?.ContainsKey(key) ?? Indices.ContainsKey(key)))
                 return this;
 
-            // When a batch could copy every block, one dictionary copy is cheaper than
-            // rebuilding many index paths. It also avoids indexing short-lived bulk lists.
-            // Rebuild sparse storage so small writes do not keep copying peak-sized blocks.
-            if (items.Count >= Math.Max(1, Count / BlockSize) || Count < _nextIndex / 4)
+            if (!remove && !prune && _initialValues is not null)
+            {
+                bool unchanged = true;
+                foreach (var key in items)
+                {
+                    if (_initialValues.TryGetValue(key, out var currentExpiration) && currentExpiration == expiration)
+                        continue;
+                    unchanged = false;
+                    break;
+                }
+                if (unchanged)
+                    return this;
+            }
+
+            // Rebuild for large batches, sparse value storage, or a key index that has outgrown its buckets.
+            if (items.Count >= Math.Max(1, Count / BlockSize) || Count < _nextIndex / 4 || _indices is { NeedsRebuild: true })
             {
                 var dictionary = CopyValues();
                 if (prune)
@@ -1574,7 +1606,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             int capacity = Math.Max(_nextIndex, Count + (remove ? 0 : items.Count));
             var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
             Array.Copy(_blocks, blocks, _blocks.Length);
-            var copied = new bool[blocks.Length];
             ImmutableSortedDictionary<DateTime, int>.Builder? expirations = null;
             var freeIndices = _freeIndices;
             int nextIndex = _nextIndex;
@@ -1643,10 +1674,18 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             void CopyBlock(int index)
             {
                 int blockIndex = index / BlockSize;
-                if (copied[blockIndex])
-                    return;
-                blocks[blockIndex] = blockIndex < _blocks.Length ? (Item[])_blocks[blockIndex].Clone() : new Item[BlockSize];
-                copied[blockIndex] = true;
+                if (blockIndex < _blocks.Length)
+                {
+                    if (!ReferenceEquals(blocks[blockIndex], _blocks[blockIndex]))
+                        return;
+                    blocks[blockIndex] = (Item[])_blocks[blockIndex].Clone();
+                }
+                else
+                {
+                    if (blocks[blockIndex] is not null)
+                        return;
+                    blocks[blockIndex] = new Item[BlockSize];
+                }
                 changed = true;
             }
 
@@ -1663,6 +1702,170 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                     expirations.Remove(time);
                 else
                     expirations[time] = count;
+            }
+        }
+
+        private sealed class KeyIndex
+        {
+            private const int MaxBucketSize = BlockSize * 4;
+            private readonly Dictionary<T, int>[][] _buckets = [];
+            private readonly ImmutableDictionary<T, int>? _fallback;
+            private readonly int _bucketMask;
+
+            public KeyIndex(Dictionary<T, DateTime?> values)
+            {
+                KeyComparer = values.Comparer;
+                Count = values.Count;
+                int bucketCount = 1;
+                while ((long)bucketCount * BlockSize < Count)
+                    bucketCount *= 2;
+                _bucketMask = bucketCount - 1;
+
+                var counts = new int[bucketCount];
+                foreach (var key in values.Keys)
+                {
+                    if (++counts[GetBucket(key)] <= MaxBucketSize)
+                        continue;
+
+                    var fallback = ImmutableDictionary.CreateBuilder<T, int>(KeyComparer);
+                    int fallbackIndex = 0;
+                    foreach (var fallbackKey in values.Keys)
+                        fallback.Add(fallbackKey, fallbackIndex++);
+                    _fallback = fallback.ToImmutable();
+                    return;
+                }
+
+                _buckets = new Dictionary<T, int>[(bucketCount + BlockSize - 1) / BlockSize][];
+                for (int i = 0; i < _buckets.Length; i++)
+                {
+                    var block = new Dictionary<T, int>[Math.Min(BlockSize, bucketCount - i * BlockSize)];
+                    for (int j = 0; j < block.Length; j++)
+                        block[j] = new Dictionary<T, int>(counts[i * BlockSize + j], KeyComparer);
+                    _buckets[i] = block;
+                }
+
+                int index = 0;
+                foreach (var key in values.Keys)
+                {
+                    int bucket = GetBucket(key);
+                    _buckets[bucket / BlockSize][bucket % BlockSize].Add(key, index++);
+                }
+            }
+
+            private KeyIndex(KeyIndex source, Dictionary<T, int>[][] buckets, int count)
+            {
+                KeyComparer = source.KeyComparer;
+                _bucketMask = source._bucketMask;
+                _buckets = buckets;
+                Count = count;
+            }
+
+            private KeyIndex(ImmutableDictionary<T, int> fallback)
+            {
+                KeyComparer = fallback.KeyComparer;
+                Count = fallback.Count;
+                _fallback = fallback;
+            }
+
+            public IEqualityComparer<T> KeyComparer { get; }
+            public int Count { get; }
+            public bool NeedsRebuild => _fallback is null && Count > ((long)_bucketMask + 1) * BlockSize * 2;
+
+            // Mix all hash bits so structured keys, such as aligned numeric IDs, spread across buckets.
+            private int GetBucket(T key) => HashCode.Combine(KeyComparer.GetHashCode(key)) & _bucketMask;
+
+            public bool ContainsKey(T key) => TryGetValue(key, out _);
+
+            private bool TryGetValue(T key, out int index)
+            {
+                if (_fallback is not null)
+                    return _fallback.TryGetValue(key, out index);
+                int bucket = GetBucket(key);
+                return _buckets[bucket / BlockSize][bucket % BlockSize].TryGetValue(key, out index);
+            }
+
+            public Builder ToBuilder() => new(this);
+
+            public sealed class Builder(KeyIndex source)
+            {
+                private Dictionary<T, int>[][]? _buckets;
+                private readonly ImmutableDictionary<T, int>.Builder? _fallback = source._fallback?.ToBuilder();
+                private int _count = source.Count;
+                private bool _hasOversizedBucket;
+
+                public bool TryGetValue(T key, out int index)
+                {
+                    if (_fallback is not null)
+                        return _fallback.TryGetValue(key, out index);
+                    if (_buckets is null)
+                        return source.TryGetValue(key, out index);
+                    int bucket = source.GetBucket(key);
+                    return _buckets[bucket / BlockSize][bucket % BlockSize].TryGetValue(key, out index);
+                }
+
+                public int this[T key]
+                {
+                    set
+                    {
+                        if (_fallback is not null)
+                        {
+                            _fallback[key] = value;
+                            return;
+                        }
+                        if (TryGetValue(key, out int index) && index == value)
+                            return;
+                        var bucket = GetWritableBucket(key);
+                        if (!bucket.TryAdd(key, value))
+                            bucket[key] = value;
+                        else
+                            _count++;
+                        _hasOversizedBucket |= bucket.Count > MaxBucketSize;
+                    }
+                }
+
+                public bool Remove(T key)
+                {
+                    if (_fallback is not null)
+                        return _fallback.Remove(key);
+                    if (!TryGetValue(key, out _))
+                        return false;
+                    GetWritableBucket(key).Remove(key);
+                    _count--;
+                    return true;
+                }
+
+                public KeyIndex ToImmutable()
+                {
+                    if (_fallback is not null)
+                    {
+                        var fallback = _fallback.ToImmutable();
+                        return ReferenceEquals(fallback, source._fallback) ? source : new KeyIndex(fallback);
+                    }
+                    if (_buckets is null)
+                        return source;
+                    if (!_hasOversizedBucket)
+                        return new KeyIndex(source, _buckets, _count);
+
+                    var builder = ImmutableDictionary.CreateBuilder<T, int>(source.KeyComparer);
+                    foreach (var block in _buckets)
+                        foreach (var bucket in block)
+                            foreach (var pair in bucket)
+                                builder.Add(pair.Key, pair.Value);
+                    return new KeyIndex(builder.ToImmutable());
+                }
+
+                private Dictionary<T, int> GetWritableBucket(T key)
+                {
+                    int bucket = source.GetBucket(key);
+                    int blockIndex = bucket / BlockSize;
+                    int bucketIndex = bucket % BlockSize;
+                    _buckets ??= (Dictionary<T, int>[][])source._buckets.Clone();
+                    if (ReferenceEquals(_buckets[blockIndex], source._buckets[blockIndex]))
+                        _buckets[blockIndex] = (Dictionary<T, int>[])_buckets[blockIndex].Clone();
+                    if (ReferenceEquals(_buckets[blockIndex][bucketIndex], source._buckets[blockIndex][bucketIndex]))
+                        _buckets[blockIndex][bucketIndex] = new Dictionary<T, int>(_buckets[blockIndex][bucketIndex], source.KeyComparer);
+                    return _buckets[blockIndex][bucketIndex];
+                }
             }
         }
     }
@@ -1767,7 +1970,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return false;
 
             var keyType = type.GenericTypeArguments[0];
-            return keyType.IsValueType && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(keyType);
+            return !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(keyType);
         }
 
         private static object? CloneValue(object? value, bool cloneDictionaryKeys)
@@ -1775,7 +1978,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             if (!cloneDictionaryKeys)
                 return value.DeepClone();
 
-            // The cloner's dictionary fast path can share mutable fields of struct keys.
+            // The cloner's dictionary fast paths can share mutable key state.
             var clone = (IDictionary)FastCloner.FastCloner.DeepCloneTo(value, FastCloner.FastCloner.ShallowClone(value))!;
             var entries = new DictionaryEntry[clone.Count];
             clone.CopyTo(entries, 0);
@@ -1812,6 +2015,11 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             long utcNowTicks = _timeProvider.GetUtcNow().Ticks;
             return new CacheEntry(this, value, expiresAt, size, utcNowTicks) { LastAccessTicks = utcNowTicks };
+        }
+
+        internal CacheEntry WithClonedValue(object? value, DateTime? expiresAt, long size)
+        {
+            return WithValue(CloneValue(value, RequiresDictionaryKeyCloning(value?.GetType())), expiresAt, size);
         }
 
         [return: MaybeNull]
