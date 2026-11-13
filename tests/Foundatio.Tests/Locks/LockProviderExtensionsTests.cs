@@ -15,15 +15,18 @@ namespace Foundatio.Tests.Locks;
 public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLoggingBase(output)
 {
     [Theory]
-    [InlineData(1)]
-    [InlineData(2)]
-    public async Task TryAcquireAsync_WhenClockMovesBackward_DoesNotReturnExpiredLeases(int resourceCount)
+    [InlineData(1, false)]
+    [InlineData(2, false)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    public async Task TryAcquireAsync_WhenClockIsAdjusted_DoesNotReturnExpiredLeases(int resourceCount, bool moveClockForward)
     {
         var leaseClock = new FakeTimeProvider();
+        long initialTimestamp = leaseClock.GetTimestamp();
         var clockAdjustment = TimeSpan.Zero;
         var hostClock = new Mock<TimeProvider>();
         hostClock.Setup(t => t.GetUtcNow()).Returns(() => leaseClock.GetUtcNow() - clockAdjustment);
-        hostClock.Setup(t => t.GetTimestamp()).Returns(leaseClock.GetTimestamp);
+        hostClock.Setup(t => t.GetTimestamp()).Returns(() => moveClockForward ? initialTimestamp : leaseClock.GetTimestamp());
         hostClock.SetupGet(t => t.TimestampFrequency).Returns(leaseClock.TimestampFrequency);
 
         using var cache = new InMemoryCacheClient(o => o.TimeProvider(leaseClock).LoggerFactory(Log));
@@ -39,7 +42,7 @@ public class LockProviderExtensionsTests(ITestOutputHelper output) : TestWithLog
                 if (resource == resources[^1])
                 {
                     leaseClock.Advance(TimeSpan.FromSeconds(61));
-                    clockAdjustment = TimeSpan.FromMinutes(2);
+                    clockAdjustment = moveClockForward ? TimeSpan.Zero : TimeSpan.FromMinutes(2);
                     replacement = await inner.AcquireAsync(resources[0], TimeSpan.FromMinutes(10), cancellationToken: token);
                 }
 
