@@ -79,7 +79,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         _sizeCalculator = options.SizeCalculator;
         _hasSizeCalculator = _sizeCalculator is not null;
         _usesBuiltInDynamicSizing = _sizeCalculator?.Target is SizeCalculator calculator && _sizeCalculator == calculator.CalculateSize;
-        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _usesBuiltInDynamicSizing || _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator);
+        bool usesBuiltInFixedSizing = _sizeCalculator?.Target is InMemoryCacheClientOptionsBuilder.FixedSizeCalculator fixedCalculator && _sizeCalculator == fixedCalculator.Calculate;
+        _canShareListValues = !_shouldClone && (!_hasSizeCalculator || _usesBuiltInDynamicSizing || usesBuiltInFixedSizing);
         _shouldTrackMemory = _hasSizeCalculator && _maxMemorySize.HasValue;
 
         _memory = new ConcurrentDictionary<string, CacheEntry>();

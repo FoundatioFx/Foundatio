@@ -910,6 +910,56 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         return base.ListAddAsync_WithInvalidArguments_ThrowsException();
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ListUpdate_WithMulticastFixedSizer_PreservesFullDictionaryCallbacks(bool remove, bool reject)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var options = new InMemoryCacheClientOptionsBuilder().CloneValues(false).TimeProvider(clock)
+            .WithFixedSizing(100_000_000, 64).LoggerFactory(Log).Build();
+        var fixedCalculator = options.SizeCalculator!;
+        var observedCounts = new List<int>();
+        bool rejectReplacement = false;
+        options.SizeCalculator = value =>
+        {
+            var dictionary = Assert.IsType<Dictionary<int, DateTime?>>(value);
+            observedCounts.Add(dictionary.Count);
+            if (rejectReplacement && dictionary.Count > 1)
+                throw new MaxEntrySizeExceededCacheException(65, 64, dictionary.GetType().Name);
+            return dictionary.Count;
+        };
+        options.SizeCalculator += fixedCalculator;
+        using var cache = new InMemoryCacheClient(options);
+        var ttl = TimeSpan.FromMinutes(1);
+        await cache.ListAddAsync("list", Enumerable.Range(0, 64), ttl);
+        var previous = GetEntry(cache, "list");
+        observedCounts.Clear();
+        rejectReplacement = reject;
+
+        async Task<long> UpdateAsync() => remove
+            ? await cache.ListRemoveAsync("list", [0])
+            : await cache.ListAddAsync("list", [-1], ttl);
+        if (reject)
+        {
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(UpdateAsync);
+            Assert.Same(previous, GetEntry(cache, "list"));
+        }
+        else
+        {
+            Assert.Equal(1, await UpdateAsync());
+        }
+
+        Assert.Equal(remove ? [63] : new[] { 1, 65 }, observedCounts);
+        Assert.Equal(64, cache.CurrentMemorySize);
+        Assert.Equal(ttl, await cache.GetExpirationAsync("list"));
+        var expected = reject ? Enumerable.Range(0, 64)
+            : remove ? Enumerable.Range(1, 63) : Enumerable.Range(0, 64).Append(-1);
+        Assert.Equal(expected.Order(), (await cache.GetListAsync<int>("list")).Value.Order());
+    }
+
     [Fact]
     public async Task ListAddAsync_WithOverriddenFixedSizer_ValidatesReplacement()
     {
