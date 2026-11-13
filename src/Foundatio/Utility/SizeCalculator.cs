@@ -32,7 +32,7 @@ public class SizeCalculator : IDisposable
     private readonly int _maxTypeCacheSize;
     private long _cacheAccessCounter;
     private bool _disposed;
-    private readonly object _evictionLock = new();
+    private readonly System.Threading.Lock _evictionLock = new();
 
     private static readonly JsonSerializerOptions _jsonSerializerOptions = new()
     {
