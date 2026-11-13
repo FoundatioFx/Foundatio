@@ -4,7 +4,7 @@ A provider implements a small contract and proves it by passing a conformance su
 
 ## Message transport
 
-Implement `IMessageTransport` (3 methods) and `IMessageReceiver` (5 methods). [View source](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio/Messaging/Transport)
+Implement `IMessageTransport` (4 methods) and `IMessageReceiver` (5 methods). [View source](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio/Messaging/Transport)
 
 ```csharp
 public interface IMessageTransport : IAsyncDisposable
@@ -13,6 +13,7 @@ public interface IMessageTransport : IAsyncDisposable
     Task SendAsync(MessageDestination destination, IReadOnlyList<OutgoingMessage> messages, CancellationToken ct = default);
     Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken ct = default);
     Task DeleteAsync(MessageSource source, CancellationToken ct = default);
+    Task<MessageSourceStats?> GetStatsAsync(MessageSource source, CancellationToken ct = default);
 }
 
 public interface IMessageReceiver : IAsyncDisposable
@@ -39,6 +40,7 @@ What you must provide:
 | Leases | A received message is invisible for `LeaseDuration`; unsettled messages are delivered again with a higher `DeliveryCount`. If your broker decides the lease itself (a Service Bus lock duration is set per entity), set `IncomingMessage.LeaseExpiresAt` to when it ends, on this process's clock, in `ReceiveAsync` and again in `RenewAsync` when the broker extends it by its own duration. Foundatio then renews a third of the way through what is left of that lease, and bounds renewal retries by it, instead of following `LeaseDuration`. Only the transport writes it. |
 | Lost leases | Once a lease is lost (it expired and the message went out again, its receiver or transport was disposed, or its partition moved), `RenewAsync`, `AbandonAsync` and `DeadLetterAsync` on it throw `MessageLeaseLostException` (or `ObjectDisposedException` after a dispose) and leave the newer delivery alone. `CompleteAsync` should too; only where the broker cannot tell a stale receipt (SQS) may it remove the message instead. A renew after the lease expired but before anyone else got the message may take the lease back or throw. |
 | Bytes and headers | Body, headers and `GroupKey` delivered unchanged. Header names starting with `x-foundatio-` are reserved for your wire format: you may reject them with `ArgumentException` or pass them through. Ids, group keys and deduplication ids are 1 to `OutgoingMessage.MaxIdLength` (128) characters of any kind, spaces and non-ASCII included; map them if your broker is stricter. Names only contain letters, digits, `.`, `_` and `-`; shorten or hash them if your broker needs to, deterministically, from the source's own fields (not `ToString()`). |
+| Counts | `GetStatsAsync` reports a queue's or durable subscription's `Queued`, `Delayed`, `InFlight` and `DeadLettered` messages; see [Counts](#counts). |
 | Size | Accept any message within `MaxMessageSize`, measured by `MessageSize.Of` (body, headers, message id, group key and deduplication id), binary bodies included, on queues and topics alike, and throw `MessageTooLargeException` above it. `MessageSize.Of` counts no per-header overhead: declare the limit after your own encoding overhead, reserving framing for at least 100 headers and the dead-letter reason. Split a batch that exceeds your broker's request size. |
 
 All members may be called concurrently: settlement and renewal run while `ReceiveAsync` is waiting, and `ReceiveAsync` throws `OperationCanceledException` promptly when cancelled. Disposing the transport closes its receivers, and their unsettled messages go to the next receiver, in this process or another. An instance subscription left behind by a crashed process is your responsibility to remove; a heartbeat with an expiry, swept from the same timer that sends your heartbeats (or on publish), works well. A settlement call that fails for another reason must leave the message to be delivered again within a bounded time: after its lease, or, if leases don't expire, after a short delay you choose (Kafka waits five seconds), never only when the receiver closes. When `SendAsync` throws, forget the deduplication ids of the messages it did not send, or the caller's retry is dropped. `CreateReceiverAsync` returns once the receiver can deliver: wait for the broker's assignment, such as a Kafka consumer group join, so the first receive sees messages already waiting.
@@ -57,6 +59,23 @@ When a receiver can never deliver again (a fatal client error), throw `MessageRe
 
 Push-based client libraries (RabbitMQ consumers, the Service Bus processor) can buffer deliveries in a bounded channel inside the receiver and return them from `ReceiveAsync`. Derive from `IncomingMessage` to carry your receipt (delivery tag, receipt handle, stream id).
 
+### Counts {#counts}
+
+`GetStatsAsync(source)` feeds `IMessageAdmin.GetStatsAsync` and the backlog of the [monitor](./monitoring#backlog-counts), which may call it every few seconds for every source:
+
+| Count | Messages |
+|---|---|
+| `Queued` | Waiting to be delivered now: not delayed and not leased to a receiver |
+| `Delayed` | Waiting for a delivery time in the future, including retries waiting out their delay |
+| `InFlight` | Delivered to a receiver and not yet completed, abandoned or dead-lettered |
+| `DeadLettered` | In the source's dead-letter queue |
+
+- Leave a count null when your broker cannot tell it; never estimate one you cannot read. Return null instead of a `MessageSourceStats` for a source you cannot count at all, such as an instance subscription.
+- A source that does not exist yet counts as empty: return zeros (or nulls), don't throw, and don't create it.
+- Throw `ArgumentException` for a `DeadLetter` source: its count is `DeadLettered` of the source it belongs to.
+- The counts may be approximate and lag sends and settlements by a few seconds, as broker statistics do. Keep the call cheap (one round trip, or a few), and never wait for in-flight work to settle.
+- Set `Source` to the source you were asked about.
+
 ### Prove it
 
 ```csharp
@@ -66,7 +85,7 @@ public class MyTransportTests(ITestOutputHelper output) : MessageTransportTestsB
 }
 ```
 
-Start there. The suite (Foundatio.TestHarness, 60 tests) covers round-trips, ids and group keys with any characters, leases, renewal, lost and stale leases, abandon and delays, cancellation, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering across competing receivers and retries, and deduplication, plus end-to-end tests through the real client, handlers and dead-letter replay. Several tests use a second transport from `CreatePeerTransport` (by default another `CreateTransport()`) as another process on the same broker; override it if separate instances of your transport don't share state. Tests use unique names, so they can run in parallel against a shared broker, and delete the queues and subscriptions they open when they finish (call `DeleteAfterTest` for ones you create another way). Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers.
+Start there. The suite (Foundatio.TestHarness, 68 tests) covers round-trips, ids and group keys with any characters, leases, renewal, lost and stale leases, abandon and delays, cancellation, dead letters, fan-out, durable and instance subscriptions, sends to one subscription, deletion, competing receivers, batching, names, size limits, ordering across competing receivers and retries, deduplication, and counts, plus end-to-end tests through the real client, handlers and dead-letter replay. Several tests use a second transport from `CreatePeerTransport` (by default another `CreateTransport()`) as another process on the same broker; override it if separate instances of your transport don't share state. Tests use unique names, so they can run in parallel against a shared broker, and delete the queues and subscriptions they open when they finish (call `DeleteAfterTest` for ones you create another way). Override `DeliveryTimeout`, `ShortLease` or `ShortDelay` for slow brokers, and `StatsTimeout` (15 seconds) when your counts lag longer. The count tests poll until the counts match, skip each check whose count you leave null, and skip a test whose source you return null for.
 
 The suite cannot see your broker's internals, so add tests of your own for what only your transport does: the topology it creates and removes, cleanup of a crashed process's instance subscriptions, how it maps names and ids, messages written by other producers, and its own limits. Every in-repo provider has a few.
 
@@ -84,7 +103,7 @@ Use the database's clock for "now" so workers with skewed clocks agree. Prove it
 
 ## Experimental API {#experimental-api}
 
-The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have not been tried against Azure Service Bus or RabbitMQ yet, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
+The contracts on this page are marked `[Experimental("FOUNDATIO0001")]`: `IMessageTransport`, `IMessageReceiver`, `IJobStore`, the types only they use (`IncomingMessage`, `OutgoingMessage`, `MessageDestination`, `ReceiverOptions`, `MessageSize`, the lease and receiver exceptions, `JobInfo`, `JobClaimRequest`, `JobCompletion` and `JobLeaseStatus`) and the conformance suites. They have not been tried against Azure Service Bus or RabbitMQ yet, so they may change in a minor release, and a provider may need updating when you upgrade Foundatio. The app-facing API (`IMessageClient`, `IJobClient`, handlers, jobs, the builders and `Use*` helpers, `IMessageAdmin` with `MessageSourceStats`, `IWorkMonitor`, `FoundatioTestHarness`) is not affected and never reports the diagnostic.
 
 Any reference to one of these types is a compile error, FOUNDATIO0001, until you suppress it. Suppress it for the whole provider project and its test project:
 

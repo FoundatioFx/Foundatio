@@ -156,13 +156,40 @@ m.AddConsumer<ImportHandler>(new HandlerOptions
 
 Delivery is at least once: a crash or lost lease delivers a message again, so make handlers idempotent.
 
+## Reporting progress
+
+A long-running handler can report how far it has got, so it shows in the [monitor](./monitoring) with its progress:
+
+```csharp
+public class ImportCatalogHandler(ICatalog catalog) : IMessageHandler<ImportCatalog>
+{
+    public async Task HandleAsync(ImportCatalog message, IMessageContext context, CancellationToken ct)
+    {
+        var pages = await catalog.GetPagesAsync(message.Url, ct);
+        for (int i = 0; i < pages.Count; i++)
+        {
+            await catalog.ImportAsync(pages[i], ct);
+            await context.ReportProgressAsync((i + 1) * 100 / pages.Count, $"Page {i + 1} of {pages.Count}", ct);
+        }
+    }
+}
+```
+
+- Percent is 0 to 100, or null to keep the last value; anything else throws `ArgumentOutOfRangeException`. A null message keeps the last message too.
+- A handler that reports progress shows as active at once, even if it finishes in a few milliseconds. One that doesn't shows after it has run for a second.
+- Each report updates the monitor, adds a `progress` event to the handler's trace span and logs at Debug. Events and logs are throttled to about four a second, apart from 100 percent, so calling it in a tight loop is cheap.
+- It never calls the transport. The message's lease is renewed automatically while the handler runs, whether or not it reports progress.
+
+`ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [jobs](./durable-jobs#reporting-progress) share, so a helper that takes an `IHandlerContext` works for both.
+
 ## Dead letters
 
-Every queue and durable subscription has a dead-letter queue. Inspect and replay it with `IMessageAdmin`, on any transport:
+Every queue and durable subscription has a dead-letter queue. Count, inspect and replay it with `IMessageAdmin`, on any transport:
 
 ```csharp
 var source = MessageSource.Subscription("orders.order-placed", "billing");   // or MessageSource.Queue("orders.send-receipt")
 
+MessageSourceStats? counts = await admin.GetStatsAsync(source);   // Queued, Delayed, InFlight, DeadLettered; null where the transport can't tell
 IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);   // Reason, MessageType, Message (deserialized), Headers
 int replayed = await admin.ReplayDeadLettersAsync(source);   // back to that queue or subscription only
 await admin.PurgeDeadLettersAsync(source);
@@ -208,12 +235,13 @@ A subscriber ignores types on its topic that it has no handler for. A handler fo
 
 ## Testing
 
-Unit test a handler with `TestMessageContext`:
+Unit test a handler with `TestMessageContext`. It records the outcome the handler chose and the progress it reported:
 
 ```csharp
 var context = new TestMessageContext();
 await new SendReceiptHandler(fakeEmail).HandleAsync(new SendReceipt(1, "a@b.com"), context, CancellationToken.None);
 Assert.Null(context.DeadLetterReason);
+Assert.Empty(context.ProgressReports);   // every report, in order; Progress and ProgressMessage hold the last values
 ```
 
 To test your real registrations end to end, add `AddFoundatioTestHarness()` (namespace `Foundatio.Testing`) after them. It swaps your transport and job store for in-memory ones and records what happens, so a test acts, waits for the outcome and asserts, with no sleeps:
@@ -238,7 +266,7 @@ var deadLetter = Assert.Single(await harness.WaitForDeadLetteredAsync<SendReceip
 Assert.Equal(3, deadLetter.Attempt);
 ```
 
-- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`) and the error. `Sent<T>()` and `Published<T>()` return the messages themselves.
+- `SentMessages`, `PublishedMessages` and `HandledMessages` record each message with its id, correlation id, attempt and headers. Deliveries also record how they ended (`Completed`, `Retried`, `DeadLettered`, `Skipped`, `Expired` or `Released`), the error, and the last `Progress` and `ProgressMessage` the handler reported. `Sent<T>()` and `Published<T>()` return the messages themselves.
 - `WaitForHandledAsync<T>(count)` and `WaitForDeadLetteredAsync<T>(count)` return the deliveries once there are enough. On timeout (30 seconds by default) the exception says what happened instead.
 - `WaitForIdleAsync()` waits until no message is waiting for or being handled by your handlers, and no job is queued or running. Messages sent to queues your app does not consume, such as another service's commands, are ignored.
 - Waits use real time, and retries wait for their policy's delay, so give tests a short one: `m.Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(10)) })`.

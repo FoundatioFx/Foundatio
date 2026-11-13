@@ -55,6 +55,7 @@ export default defineConfig({
           items: [
             { text: 'Messages and Events', link: '/guide/messages' },
             { text: 'Durable Jobs', link: '/guide/durable-jobs' },
+            { text: 'Monitoring', link: '/guide/monitoring' },
             { text: 'Migrating', link: '/guide/migrating-to-messaging' },
             { text: 'Building a Transport or Job Store', link: '/guide/implementing-providers' }
           ]

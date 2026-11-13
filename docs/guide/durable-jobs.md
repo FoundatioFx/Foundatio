@@ -68,11 +68,10 @@ builder.Services.AddFoundatioJobs(j => j
 ## Running a job
 
 - **Return** to succeed. **Throw** to fail; the job is retried by its `RetryPolicy` (5 attempts with backoff by default).
-- `IJobContext` gives the job its `JobId`, `Attempt`, `CorrelationId`, `Headers` and `ScheduledFor`, and `ReportProgressAsync` to report progress and a result message.
+- `IJobContext` gives the job its `JobId`, `Attempt`, `CorrelationId`, `Headers` and `ScheduledFor`, and `ReportProgressAsync` to [report progress](#reporting-progress) and a result message.
 - The cancellation token fires when someone calls `CancelAsync`; the job ends as `Cancelled`. If it finishes anyway, the result counts.
 - A job interrupted by shutdown is run again later and the interrupted attempt is not counted.
 - The token also fires when the worker can no longer renew the job's lease, shortly before another worker could take it. That run's result is not recorded, and the job runs again.
-- A store error while reporting progress doesn't fail the job; the report is retried with the next one.
 - Jobs run at least once. Make them safe to repeat.
 - A job is identified by the runtime type of its arguments, so arguments passed as `object` or a base type run the job for their actual type.
 
@@ -83,6 +82,18 @@ j.AddJob<GenerateReportJob>(new JobTypeOptions
     RetryPolicy = new RetryPolicy { MaxAttempts = 3 }.DoNotRetry<InvalidReportException>()
 });
 ```
+
+## Reporting progress
+
+`context.ReportProgressAsync(percent, message)` saves the job's progress, where `IJobClient.GetAsync` and `WaitForCompletionAsync` read it, and shows it in the [monitor](./monitoring):
+
+- Percent is 0 to 100, or null to keep the last value; anything else throws `ArgumentOutOfRangeException`. A null message keeps the last message too.
+- Writes to the store are throttled to about four a second, apart from 100 percent; the report in between is saved with the next one, or when the job finishes. Calling it in a loop is cheap.
+- A store error doesn't fail the job: it is logged, and the report is saved with the next one.
+- The last message stays as the job's `Message` after it succeeds, so a job can report its result, such as a file name.
+- A job that reports progress shows as active in the monitor at once; one that doesn't shows after it has run for a second.
+
+`ReportProgressAsync`, `Attempt`, `CorrelationId` and `Headers` come from `IHandlerContext` in the `Foundatio` namespace, which [message handlers](./messages#reporting-progress) share.
 
 ## Enqueue options
 
@@ -197,7 +208,7 @@ await new GenerateReportJob(fakeReports).HandleAsync(new GenerateReport("pdf", 2
 Assert.Equal(100, context.Progress);
 ```
 
-With [`AddFoundatioTestHarness()`](./messages#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt and error:
+With [`AddFoundatioTestHarness()`](./messages#testing), jobs your app enqueues run on an in-memory store, and every finished run is recorded with its arguments, status, attempt, error, message and `Progress`:
 
 ```csharp
 await jobs.EnqueueAsync(new GenerateReport("pdf", 2));
