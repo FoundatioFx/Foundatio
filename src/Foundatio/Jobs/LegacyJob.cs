@@ -17,10 +17,10 @@ namespace Foundatio.Jobs;
 /// <see cref="JobResult"/>'s message becomes the job's message. A failed result fails the attempt with its error, or
 /// with its message when it has none, and the job's retry policy decides whether it runs again. A cancelled result ends
 /// the job as cancelled when its cancellation token fired, and fails the attempt otherwise. Implement
-/// <see cref="IDurableJob"/> instead to reach the job's context: its attempt, scheduled occurrence and progress.
+/// <see cref="IJobHandler"/> instead to reach the job's context: its attempt, scheduled occurrence and progress.
 /// </remarks>
 /// <typeparam name="TJob">The legacy job, resolved from the run's service scope or created with its constructor's services.</typeparam>
-public sealed class LegacyJob<TJob> : IDurableJob where TJob : class, IJob
+public sealed class LegacyJob<TJob> : IJobHandler where TJob : class, IJob
 {
     private readonly IServiceProvider _services;
 
@@ -33,7 +33,7 @@ public sealed class LegacyJob<TJob> : IDurableJob where TJob : class, IJob
     }
 
     /// <inheritdoc />
-    public async Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 

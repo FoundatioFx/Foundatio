@@ -432,15 +432,15 @@ public class ProcessingHealthCheckTests : TestWithLoggingBase
         public void Release() => _released.TrySetResult();
     }
 
-    public sealed class WorkJob(WorkGate gate) : IDurableJob<Work>
+    public sealed class WorkJob(WorkGate gate) : IJobHandler<Work>
     {
-        public Task RunAsync(Work arguments, IJobContext context, CancellationToken cancellationToken) => gate.Released.WaitAsync(cancellationToken);
+        public Task HandleAsync(Work arguments, IJobContext context, CancellationToken cancellationToken) => gate.Released.WaitAsync(cancellationToken);
     }
 
     [Job(Name = "tests.tick")]
-    public sealed class TickJob : IDurableJob
+    public sealed class TickJob : IJobHandler
     {
-        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class TestStartupGate : IStartupGate

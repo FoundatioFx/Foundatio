@@ -7,17 +7,17 @@ namespace Foundatio.Jobs;
 public interface IJobClient
 {
     /// <summary>
-    /// Enqueues the job whose <see cref="IDurableJob{TArgs}"/> takes these arguments. The job is identified by the
+    /// Enqueues the job whose <see cref="IJobHandler{TArgs}"/> takes these arguments. The job is identified by the
     /// arguments' runtime type (not <typeparamref name="TArgs"/>), so the caller does not need to reference the job
     /// class and can pass arguments typed as <see cref="object"/> or a base type.
     /// </summary>
     Task<JobHandle> EnqueueAsync<TArgs>(TArgs arguments, EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TArgs : class;
 
     /// <summary>
-    /// Enqueues the <see cref="IDurableJob"/> <typeparamref name="TJob"/>, which takes no arguments. Enqueue a legacy
+    /// Enqueues the <see cref="IJobHandler"/> <typeparamref name="TJob"/>, which takes no arguments. Enqueue a legacy
     /// <see cref="IJob"/> as <c>EnqueueAsync&lt;LegacyJob&lt;TJob&gt;&gt;()</c>.
     /// </summary>
-    Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IDurableJob;
+    Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IJobHandler;
 
     /// <summary>Returns the job, or null when it does not exist or its retention has run out.</summary>
     Task<JobDetails?> GetAsync(string jobId, CancellationToken cancellationToken = default);

@@ -11,9 +11,9 @@ Use a job when you need status, progress, cancellation or a schedule. Otherwise 
 [Job(Name = "reports.generate")]
 public record GenerateReport(string Format, int Days);
 
-public class GenerateReportJob(IReportService reports) : IDurableJob<GenerateReport>
+public class GenerateReportJob(IReportService reports) : IJobHandler<GenerateReport>
 {
-    public async Task RunAsync(GenerateReport args, IJobContext context, CancellationToken ct)
+    public async Task HandleAsync(GenerateReport args, IJobContext context, CancellationToken ct)
     {
         for (int day = 1; day <= args.Days; day++)
         {
@@ -25,9 +25,9 @@ public class GenerateReportJob(IReportService reports) : IDurableJob<GenerateRep
 
 // A job without arguments, enqueued by its type or run on a CRON schedule.
 [Job(Name = "reports.cleanup")]
-public class CleanupJob(IReportService reports) : IDurableJob
+public class CleanupJob(IReportService reports) : IJobHandler
 {
-    public Task RunAsync(IJobContext context, CancellationToken ct) =>
+    public Task HandleAsync(IJobContext context, CancellationToken ct) =>
         reports.DeleteOlderThanAsync(context.ScheduledFor.AddDays(-30), ct);
 }
 
@@ -132,7 +132,7 @@ A CRON job's `context.ScheduledFor` is the occurrence it runs for, even when it 
 
 ## Existing IJob and JobBase jobs
 
-`AddJob<T>()` and `AddCronJob<T>()` take `IDurableJob` and `IDurableJob<TArgs>` classes, and reject a legacy `IJob`. To run an existing `IJob` or `JobBase` class as a durable job without changing it, wrap it in `LegacyJob<T>`:
+`AddJob<T>()` and `AddCronJob<T>()` take `IJobHandler` and `IJobHandler<TArgs>` classes, and reject a legacy `IJob`. To run an existing `IJob` or `JobBase` class as a durable job without changing it, wrap it in `LegacyJob<T>`:
 
 ```csharp
 j.AddLegacyJob<QueueStatsJob>();                          // runs when enqueued
@@ -193,7 +193,7 @@ Unit test a job with `TestJobContext`:
 
 ```csharp
 var context = new TestJobContext();
-await new GenerateReportJob(fakeReports).RunAsync(new GenerateReport("pdf", 2), context, CancellationToken.None);
+await new GenerateReportJob(fakeReports).HandleAsync(new GenerateReport("pdf", 2), context, CancellationToken.None);
 Assert.Equal(100, context.Progress);
 ```
 

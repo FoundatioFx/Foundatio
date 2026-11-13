@@ -4,7 +4,7 @@ description: >
   Use when working with Foundatio infrastructure abstractions for .NET -- caching,
   queuing, messaging, file storage, distributed locking, or background jobs. Apply
   when using ICacheClient, IQueue, IMessageBus, IMessageClient, IMessageHandler, IJobClient,
-  IDurableJob, IJob, IMessageTransport, IJobStore, IFileStorage, ILockProvider,
+  IJobHandler, IJob, IMessageTransport, IJobStore, IFileStorage, ILockProvider,
   or resilience patterns like retry and circuit breakers. Covers in-memory and
   production implementations (Redis, Azure, AWS, Kafka, RabbitMQ). Use context7
   MCP to fetch current API docs and examples.
@@ -34,7 +34,7 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
 | `IMessageClient` | Send commands / publish events to `IMessageHandler<T>` | `UseInMemory()` (`InMemoryMessageTransport`) | Provider `IMessageTransport`s |
-| `IJobClient` | Durable jobs (`IDurableJob<TArgs>`, `IDurableJob`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
+| `IJobClient` | Durable jobs (`IJobHandler<TArgs>`, `IJobHandler`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
 | `IJob` | Background job processing | N/A | Hosted services, or durable via `j.AddLegacyJob<T>()` |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
 | `IResiliencePolicy` | Retry, circuit breaker, timeout | `ResiliencePolicyBuilder` | N/A |
@@ -278,8 +278,8 @@ public class SendReceiptHandler(IEmail email) : IMessageHandler<SendReceipt>
 
 builder.Services.AddFoundatioJobs(j => j
     .UseInMemory()                          // or UseRedis()
-    .AddJob<GenerateReportJob>()            // IDurableJob<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
-    .AddCronJob<CleanupJob>("0 3 * * *"));  // IDurableJob (no args, gets IJobContext); one run per occurrence cluster-wide
+    .AddJob<GenerateReportJob>()            // IJobHandler<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
+    .AddCronJob<CleanupJob>("0 3 * * *"));  // IJobHandler (no args, gets IJobContext); one run per occurrence cluster-wide
 ```
 
 - Registered handlers/jobs start with the host; `AddFoundatio*` calls accumulate. No handlers registered = send/enqueue only.
@@ -287,12 +287,12 @@ builder.Services.AddFoundatioJobs(j => j
 - Throw to retry (`RetryPolicy`, default 5 attempts, 1s/4s/16s/64s), then dead-letter (messages) or `Failed` (jobs). `context.DeadLetter(reason)` / `context.Retry(delay)` decide without throwing; `RetryPolicy.Default.DoNotRetry<T>()` fails fast.
 - At-least-once: handlers and jobs must be idempotent. Give contracts stable names: `[Message("orders.placed")]`, `[Job(Name = "reports.generate")]` (defaults are full type names).
 - Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext`.
-- Jobs: `IDurableJob` (no args; `jobs.EnqueueAsync<CleanupJob>()`, `[Job(Name)]` on the class) or `IDurableJob<TArgs>`; both get `IJobContext` (`Attempt`, `ScheduledFor` = the CRON occurrence, `Headers`, `ReportProgressAsync`). `j.AddJob<T>()` throws for a legacy `IJob`: wrap it with `j.AddLegacyJob<T>()` + `EnqueueAsync<LegacyJob<T>>()` / `j.AddCronJob<LegacyJob<T>>(...)` (keeps its name), or keep continuous jobs on `services.AddJob<T>()`. `GetAsync`/`QueryAsync` return `JobDetails` (no claim token or payload; `GetArguments<T>()` is null once the job succeeded, since succeeded jobs drop their payload). Enqueue stores `Activity.Current` as `traceparent`/`tracestate` headers and defaults `CorrelationId` to its id; the job's activity continues the trace. A retained job costs ~1.6 KB in Redis: size for rate x `RetainSucceededFor` (1 day).
+- Jobs: `IJobHandler` (no args; `jobs.EnqueueAsync<CleanupJob>()`, `[Job(Name)]` on the class) or `IJobHandler<TArgs>`; both get `IJobContext` (`Attempt`, `ScheduledFor` = the CRON occurrence, `Headers`, `ReportProgressAsync`). `j.AddJob<T>()` throws for a legacy `IJob`: wrap it with `j.AddLegacyJob<T>()` + `EnqueueAsync<LegacyJob<T>>()` / `j.AddCronJob<LegacyJob<T>>(...)` (keeps its name), or keep continuous jobs on `services.AddJob<T>()`. `GetAsync`/`QueryAsync` return `JobDetails` (no claim token or payload; `GetArguments<T>()` is null once the job succeeded, since succeeded jobs drop their payload). Enqueue stores `Activity.Current` as `traceparent`/`tracestate` headers and defaults `CorrelationId` to its id; the job's activity continues the trace. A retained job costs ~1.6 KB in Redis: size for rate x `RetainSucceededFor` (1 day).
 - `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
 - One subscription per service and topic, shared by all its subscribers: one delivery, so if any handler throws all of them run again, and they must set equal `RetryPolicy`/`LeaseDuration`/`MaxConcurrency` (unset != set; share one `RetryPolicy` instance) or startup throws. Same for consumers of types routed to one queue. Isolate a handler with `new SubscriptionOptions { Name = "billing-crm" }`; a new name starts at "now" and orphans the old subscription's backlog.
 - `GroupKey` without `Capabilities.OrderedGroups` (SQS standard) or `DeduplicationId` without `Capabilities.Deduplication` (SQS standard, Kafka) is sent anyway with a once-per-type warning; `o.RequireTransportCapabilities = true` throws `MessageBusException` instead.
 - Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
-- Gotchas: `[Job(Name)]` for `IDurableJob<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
+- Gotchas: `[Job(Name)]` for `IJobHandler<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
 - Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; when the broker sets the lease (Service Bus lock duration), set `IncomingMessage.LeaseExpiresAt` in `ReceiveAsync` and `RenewAsync` so core renews by it; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
 - FOUNDATIO0001 (an error, not a warning): the provider SPI (`IMessageTransport`, `IMessageReceiver`, `IncomingMessage`/`OutgoingMessage`, `IJobStore`, `JobInfo` and its request types, the conformance suites) is `[Experimental]` and may change in a minor release, so a provider project adds `<NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>`; app code never needs it (use the `Use*` helpers, or pass a concrete transport/store to `UseTransport`/`UseStore`).
 

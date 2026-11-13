@@ -16,10 +16,10 @@ namespace Foundatio.Jobs;
 /// the current time. The cancellation token fires when someone cancels the job, when the host shuts down, or when this
 /// worker can no longer prove it holds the job's lease. Jobs run at least once, so make them safe to repeat.
 /// </remarks>
-public interface IDurableJob
+public interface IJobHandler
 {
-    /// <summary>Runs the job.</summary>
+    /// <summary>Handles the job.</summary>
     /// <param name="context">The job's id, attempt and scheduled time, and a way to report progress.</param>
     /// <param name="cancellationToken">Fires when the job is cancelled, the host stops or the lease is lost.</param>
-    Task RunAsync(IJobContext context, CancellationToken cancellationToken);
+    Task HandleAsync(IJobContext context, CancellationToken cancellationToken);
 }

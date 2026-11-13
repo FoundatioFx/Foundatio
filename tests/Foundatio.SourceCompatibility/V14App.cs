@@ -31,15 +31,15 @@ public class OrderPlacedHandler(IMessageClient messages) : IMessageHandler<Order
     }
 }
 
-public class GenerateReportJob : IDurableJob<GenerateReport>
+public class GenerateReportJob : IJobHandler<GenerateReport>
 {
-    public Task RunAsync(GenerateReport arguments, IJobContext context, CancellationToken cancellationToken) =>
+    public Task HandleAsync(GenerateReport arguments, IJobContext context, CancellationToken cancellationToken) =>
         context.ReportProgressAsync(100, arguments.Format, cancellationToken);
 }
 
-public class CleanupJob : IDurableJob
+public class CleanupJob : IJobHandler
 {
-    public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
 }
 
 public static class Registrations
@@ -109,6 +109,6 @@ public static class AppUsage
         var context = new TestMessageContext();
         await new OrderPlacedHandler(messages).HandleAsync(new OrderPlaced(2), context, CancellationToken.None);
         var jobContext = new TestJobContext();
-        await new GenerateReportJob().RunAsync(new GenerateReport("csv"), jobContext, CancellationToken.None);
+        await new GenerateReportJob().HandleAsync(new GenerateReport("csv"), jobContext, CancellationToken.None);
     }
 }

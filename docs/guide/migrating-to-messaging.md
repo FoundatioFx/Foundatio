@@ -11,9 +11,9 @@ The original queue, message bus and job APIs keep working alongside the new ones
 | `IMessagePublisher.PublishAsync(msg)` | `IMessageClient.PublishAsync(msg)` |
 | `IMessageSubscriber.SubscribeAsync<T>(...)` (every instance) | `AddSubscriber<THandler>(new SubscriptionOptions { Scope = SubscriptionScope.Instance })`, or `IMessageClient.SubscribeAsync` |
 | A queue processed by one service while others publish to it | `AddSubscriber<THandler>()`; each service, named with `UseServiceName`, gets its own copy |
-| `WorkItemJob` + `WorkItemHandlerBase` with progress | `IDurableJob<TArgs>` + `IJobClient.EnqueueAsync(args)`; progress via `IJobContext` |
-| `JobWithLockBase` CRON jobs, `services.AddCronJob<T>(...)` | An `IDurableJob` + `AddFoundatioJobs(j => j.AddCronJob<T>("..."))`; one run per occurrence, no lock needed |
-| `IJob` / `JobBase` run on demand or on a schedule | `IDurableJob` ([see below](#converting-an-ijob-or-jobbase)), or unchanged through `j.AddLegacyJob<T>()` and `j.AddCronJob<LegacyJob<T>>("...")` |
+| `WorkItemJob` + `WorkItemHandlerBase` with progress | `IJobHandler<TArgs>` + `IJobClient.EnqueueAsync(args)`; progress via `IJobContext` |
+| `JobWithLockBase` CRON jobs, `services.AddCronJob<T>(...)` | An `IJobHandler` + `AddFoundatioJobs(j => j.AddCronJob<T>("..."))`; one run per occurrence, no lock needed |
+| `IJob` / `JobBase` run on demand or on a schedule | `IJobHandler` ([see below](#converting-an-ijob-or-jobbase)), or unchanged through `j.AddLegacyJob<T>()` and `j.AddCronJob<LegacyJob<T>>("...")` |
 | `IJob` / `JobBase` run continuously with `services.AddJob<T>()` | Unchanged: keep `services.AddJob<T>()`. Durable jobs only run when enqueued or scheduled |
 | Queue behaviors, duplicate detection | `SendOptions.DeduplicationId` where the transport supports it (elsewhere a warning is logged); otherwise idempotent handlers |
 | `QueueEntryOptions.GroupId` | `SendOptions.GroupKey` |
@@ -23,8 +23,8 @@ The original queue, message bus and job APIs keep working alongside the new ones
 1. Add `AddFoundatioMessaging(m => m.UseRedis())` next to your existing registrations. It uses the `IConnectionMultiplexer` you already register for Redis; for SQS or Kafka, see [Transports](./messages#transports).
 2. Add `m.AddLegacyMessageBus()` so code that injects `IMessageBus`, including `HybridCacheClient` and `CacheLockProvider`, uses the same transport.
 3. Move a queue: change its producers to `SendAsync`, turn its `QueueJobBase<T>` into an `IMessageHandler<T>`, and register it with `AddConsumer`. Drain the old queue before removing its job.
-4. Move scheduled jobs: convert each to `IDurableJob` and replace `services.AddCronJob<T>(...)` with `j.AddCronJob<T>(...)`, or schedule it unchanged with `j.AddCronJob<LegacyJob<T>>(...)`. Give each job a stable `[Job(Name = "...")]`. Leave jobs that run continuously on `services.AddJob<T>()`.
-5. Move work items: make each work item record the arguments of an `IDurableJob<TArgs>`, and enqueue with `IJobClient`.
+4. Move scheduled jobs: convert each to `IJobHandler` and replace `services.AddCronJob<T>(...)` with `j.AddCronJob<T>(...)`, or schedule it unchanged with `j.AddCronJob<LegacyJob<T>>(...)`. Give each job a stable `[Job(Name = "...")]`. Leave jobs that run continuously on `services.AddJob<T>()`.
+5. Move work items: make each work item record the arguments of an `IJobHandler<TArgs>`, and enqueue with `IJobClient`.
 
 Message and job names default to the type's full name. Set stable names before your first deployment so later renames are safe.
 
@@ -32,7 +32,7 @@ Name each service with `m.UseServiceName("orders")`. Its durable subscriptions a
 
 ## Converting an IJob or JobBase
 
-A durable job without arguments implements `IDurableJob`. It gets an `IJobContext`, so a CRON job can see the occurrence it runs for, its attempt and its id, and report progress.
+A durable job without arguments implements `IJobHandler`. It gets an `IJobContext`, so a CRON job can see the occurrence it runs for, its attempt and its id, and report progress.
 
 ```csharp
 // Before
@@ -48,9 +48,9 @@ public class ArchiveOrdersJob(IOrderArchive archive, ILoggerFactory loggerFactor
 
 // After
 [Job(Name = "orders.archive")]
-public class ArchiveOrdersJob(IOrderArchive archive) : IDurableJob
+public class ArchiveOrdersJob(IOrderArchive archive) : IJobHandler
 {
-    public async Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
     {
         int archived = await archive.ArchiveOlderThanAsync(context.ScheduledFor.AddDays(-30), cancellationToken);
         await context.ReportProgressAsync(100, $"Archived {archived} orders", cancellationToken);

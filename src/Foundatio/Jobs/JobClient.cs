@@ -28,7 +28,7 @@ internal sealed class JobClient : IJobClient
         return CreateAsync(JobNaming.GetName(arguments.GetType()), _runtime.Serializer.SerializeToBytes<object>(arguments), options, cancellationToken);
     }
 
-    public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IDurableJob
+    public Task<JobHandle> EnqueueAsync<TJob>(EnqueueOptions? options = null, CancellationToken cancellationToken = default) where TJob : class, IJobHandler
     {
         return CreateAsync(JobNaming.GetName(typeof(TJob)), ReadOnlyMemory<byte>.Empty, options, cancellationToken);
     }

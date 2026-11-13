@@ -53,8 +53,8 @@ public sealed class FoundatioJobsBuilder
     }
 
     /// <summary>
-    /// Runs <typeparamref name="TJob"/> in this process when it is enqueued. It implements <see cref="IDurableJob{TArgs}"/>
-    /// (enqueued by its arguments), <see cref="IDurableJob"/> (enqueued by its type), or both.
+    /// Runs <typeparamref name="TJob"/> in this process when it is enqueued. It implements <see cref="IJobHandler{TArgs}"/>
+    /// (enqueued by its arguments), <see cref="IJobHandler"/> (enqueued by its type), or both.
     /// </summary>
     /// <exception cref="ArgumentException">
     /// <typeparamref name="TJob"/> implements neither. Register a legacy <see cref="IJob"/> with <see cref="AddLegacyJob{TJob}"/>,
@@ -97,7 +97,7 @@ public sealed class FoundatioJobsBuilder
     /// </summary>
     /// <param name="cronExpression">Five fields (minute precision) or six (seconds first), for example <c>"0 * * * *"</c> for hourly.</param>
     /// <param name="options">The schedule's time zone, name, overlap and misfire behavior.</param>
-    public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IDurableJob
+    public FoundatioJobsBuilder AddCronJob<TJob>(string cronExpression, CronJobOptions? options = null) where TJob : class, IJobHandler
     {
         options ??= new CronJobOptions();
         AddJob<TJob>(options.JobTypeOptions);

@@ -125,7 +125,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
 
     /// <summary>
     /// Waits until <paramref name="count"/> runs in total of the job that takes <typeparamref name="TJobOrArgs"/> (or of
-    /// the job class <typeparamref name="TJobOrArgs"/>: an <see cref="IDurableJob{TArgs}"/>, an <see cref="IDurableJob"/>,
+    /// the job class <typeparamref name="TJobOrArgs"/>: an <see cref="IJobHandler{TArgs}"/>, an <see cref="IJobHandler"/>,
     /// or a <see cref="LegacyJob{TJob}"/> or the legacy job it runs) have finished, and returns them. Check
     /// <see cref="RecordedJob.State"/>: a run that failed for good finishes too.
     /// </summary>
@@ -498,7 +498,7 @@ public sealed class FoundatioTestHarness : IMessagingObserver, IJobsObserver
     private static IReadOnlyCollection<string> GetJobNames(Type type)
     {
         var names = JobRegistration.GetArgumentsTypes(type).Select(JobNaming.GetName).ToList();
-        if (names.Count == 0 || typeof(IDurableJob).IsAssignableFrom(type))
+        if (names.Count == 0 || typeof(IJobHandler).IsAssignableFrom(type))
             names.Add(JobNaming.GetName(type));
 
         return names;

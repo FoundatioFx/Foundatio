@@ -790,21 +790,21 @@ public class DurableJobsTests : TestWithLoggingBase
 
     public record DetailedExport(string Format, int Detail) : Export(Format);
 
-    public sealed class ExportJob : IDurableJob<Export>
+    public sealed class ExportJob : IJobHandler<Export>
     {
-        public Task RunAsync(Export arguments, IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, arguments.Format, cancellationToken);
+        public Task HandleAsync(Export arguments, IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, arguments.Format, cancellationToken);
     }
 
-    public sealed class DetailedExportJob : IDurableJob<DetailedExport>
+    public sealed class DetailedExportJob : IJobHandler<DetailedExport>
     {
-        public Task RunAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
+        public Task HandleAsync(DetailedExport arguments, IJobContext context, CancellationToken cancellationToken) =>
             context.ReportProgressAsync(100, $"{arguments.Format} with detail {arguments.Detail}", cancellationToken);
     }
 
     /// <summary>Runs until cancelled on its first attempt, recording when it starts and stops; later attempts succeed at once.</summary>
-    public sealed class OverlapJob(JobProbe probe) : IDurableJob<Overlap>
+    public sealed class OverlapJob(JobProbe probe) : IJobHandler<Overlap>
     {
-        public async Task RunAsync(Overlap arguments, IJobContext context, CancellationToken cancellationToken)
+        public async Task HandleAsync(Overlap arguments, IJobContext context, CancellationToken cancellationToken)
         {
             using var _ = probe.Enter();
             probe.Events.Enqueue($"start {context.Attempt}");
@@ -870,23 +870,23 @@ public class DurableJobsTests : TestWithLoggingBase
         public Task<bool> DeleteAsync(string jobId, CancellationToken cancellationToken = default) => Inner.DeleteAsync(jobId, cancellationToken);
     }
 
-    public sealed class ResizeImageJob : IDurableJob<ResizeImage>
+    public sealed class ResizeImageJob : IJobHandler<ResizeImage>
     {
-        public async Task RunAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken)
+        public async Task HandleAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken)
         {
             await context.ReportProgressAsync(50, "halfway", cancellationToken);
             await context.ReportProgressAsync(100, $"resized {arguments.File} to {arguments.Width}px", cancellationToken);
         }
     }
 
-    public sealed class OtherResizeImageJob : IDurableJob<ResizeImage>
+    public sealed class OtherResizeImageJob : IJobHandler<ResizeImage>
     {
-        public Task RunAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandleAsync(ResizeImage arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    public sealed class FlakyJob(JobProbe probe) : IDurableJob<Flaky>
+    public sealed class FlakyJob(JobProbe probe) : IJobHandler<Flaky>
     {
-        public Task RunAsync(Flaky arguments, IJobContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(Flaky arguments, IJobContext context, CancellationToken cancellationToken)
         {
             probe.Runs.Add(context.Attempt);
             if (context.Attempt <= arguments.FailTimes)
@@ -896,9 +896,9 @@ public class DurableJobsTests : TestWithLoggingBase
         }
     }
 
-    public sealed class WaitForCancellationJob(JobProbe probe) : IDurableJob<WaitForCancellation>
+    public sealed class WaitForCancellationJob(JobProbe probe) : IJobHandler<WaitForCancellation>
     {
-        public async Task RunAsync(WaitForCancellation arguments, IJobContext context, CancellationToken cancellationToken)
+        public async Task HandleAsync(WaitForCancellation arguments, IJobContext context, CancellationToken cancellationToken)
         {
             if (Interlocked.Increment(ref probe.RunCount) > 1 && arguments.CompleteOnSecondRun)
                 return;
@@ -909,14 +909,14 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Job(Name = "ignored")]
-    public sealed class NamedArgumentsJob : IDurableJob<Slow>
+    public sealed class NamedArgumentsJob : IJobHandler<Slow>
     {
-        public Task RunAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    public sealed class SlowJob(JobProbe probe) : IDurableJob<Slow>
+    public sealed class SlowJob(JobProbe probe) : IJobHandler<Slow>
     {
-        public async Task RunAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken)
+        public async Task HandleAsync(Slow arguments, IJobContext context, CancellationToken cancellationToken)
         {
             using var _ = probe.Enter();
             await Task.Delay(100, cancellationToken);
@@ -924,9 +924,9 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Job(Name = "tick")]
-    public sealed class TickJob(JobProbe probe) : IDurableJob
+    public sealed class TickJob(JobProbe probe) : IJobHandler
     {
-        public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
         {
             probe.Runs.Add(0);
             probe.Contexts.Enqueue(context);
@@ -935,9 +935,9 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     /// <summary>Records the activity it runs in and the headers it was enqueued with.</summary>
-    public sealed class TracedJob(JobProbe probe) : IDurableJob
+    public sealed class TracedJob(JobProbe probe) : IJobHandler
     {
-        public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
         {
             var activity = Activity.Current;
             probe.Traces.Enqueue((activity?.TraceId ?? default, activity?.ParentSpanId ?? default, activity?.TraceStateString, context.Headers));
@@ -946,9 +946,9 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Job(Name = "legacy-cleanup")]
-    public sealed class NamedLikeTheLegacyJob : IDurableJob
+    public sealed class NamedLikeTheLegacyJob : IJobHandler
     {
-        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>Returns the <see cref="JobResult"/> that <see cref="JobProbe.LegacyResult"/> names; "wait" waits to be cancelled.</summary>

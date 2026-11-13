@@ -11,7 +11,7 @@ Decisions: side-by-side with the legacy APIs for v14 (delete them in v15); store
 ## Layers
 
 ```
-  Application        IMessageClient   IMessageHandler<T>   IJobClient   IDurableJob<TArgs> / IDurableJob
+  Application        IMessageClient   IMessageHandler<T>   IJobClient   IJobHandler<TArgs> / IJobHandler
   ───────────────────────────────────────────────────────────────────────────────────────
   Foundatio core     routing · serialization · retries · dead letters · concurrency · leases
                      delays · shutdown drain · tracing · metrics · CRON · startup gate
@@ -152,8 +152,8 @@ Not added: a maintenance hook. A transport already runs a timer for instance-sub
 
 ## Job semantics
 
-- **Contract-first**: `IDurableJob<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. A job without arguments implements `IDurableJob` and gets the same `IJobContext`.
-- **Legacy jobs** run through one bridge, `LegacyJob<TJob>` (`AddLegacyJob<TJob>()`, `AddCronJob<LegacyJob<TJob>>`), named after the job class; a failed `JobResult` fails the attempt and a success message becomes the job's message. `EnqueueAsync<TJob>` and `AddCronJob<TJob>` require `IDurableJob`, and `AddJob<TJob>` rejects an `IJob` at registration, so the bridge can be made `[Obsolete]` together with `IJob`.
+- **Contract-first**: `IJobHandler<TArgs>` is identified by its argument type, so producers enqueue `new GenerateReport(...)` without referencing the job class. A job without arguments implements `IJobHandler` and gets the same `IJobContext`.
+- **Legacy jobs** run through one bridge, `LegacyJob<TJob>` (`AddLegacyJob<TJob>()`, `AddCronJob<LegacyJob<TJob>>`), named after the job class; a failed `JobResult` fails the attempt and a success message becomes the job's message. `EnqueueAsync<TJob>` and `AddCronJob<TJob>` require `IJobHandler`, and `AddJob<TJob>` rejects an `IJob` at registration, so the bridge can be made `[Obsolete]` together with `IJob`.
 - **App view and store record.** `IJobClient` returns `JobDetails`, with `GetArguments<TArgs>()`; `JobInfo` in `Foundatio.Jobs.Store` is the store's record, part of the SPI.
 - **Headers and tracing.** `EnqueueOptions.Headers` are stored with the job and passed to `IJobContext.Headers`. Enqueueing under an activity stores its `traceparent` and `tracestate`, and the job's activity continues that trace. `CorrelationId` defaults to the current message's, then the current job's, then `Activity.Current.Id`, as `QueueBase` does.
 - **Claim token fencing.** A run's result is accepted unless another worker has claimed the job since, even if the lease expired. The worker also cancels a job shortly before its lease would run out when it can no longer renew it, and records no result for that run.

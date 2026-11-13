@@ -38,7 +38,7 @@ internal sealed class JobRegistration
             .ToList();
 
         // A job with arguments is named after its arguments type, so producers can enqueue it without the job class.
-        bool argumentFree = typeof(IDurableJob).IsAssignableFrom(jobType);
+        bool argumentFree = typeof(IJobHandler).IsAssignableFrom(jobType);
         if (registrations.Count > 0 && !argumentFree && jobType.GetCustomAttribute<JobAttribute>(inherit: false)?.Name is { Length: > 0 } ignored)
         {
             throw new ArgumentException($"[Job(Name = \"{ignored}\")] on {jobType.FullName} has no effect: a job with arguments is named after its arguments type. "
@@ -53,7 +53,7 @@ internal sealed class JobRegistration
                 JobType = jobType,
                 Options = options,
                 Invoke = (services, _, context, cancellationToken) =>
-                    ((IDurableJob)ActivatorUtilities.GetServiceOrCreateInstance(services, jobType)).RunAsync(context, cancellationToken)
+                    ((IJobHandler)ActivatorUtilities.GetServiceOrCreateInstance(services, jobType)).HandleAsync(context, cancellationToken)
             });
         }
 
@@ -62,19 +62,19 @@ internal sealed class JobRegistration
             string name = jobType.Name;
             throw new ArgumentException(typeof(IJob).IsAssignableFrom(jobType)
                 ? $"{name} is a legacy IJob, which durable jobs do not run directly. To run it when it is enqueued or on a CRON schedule, register it with "
-                    + $"AddLegacyJob<{name}>() (schedule it with AddCronJob<LegacyJob<{name}>>(...)), or implement IDurableJob. To run it continuously as a hosted "
+                    + $"AddLegacyJob<{name}>() (schedule it with AddCronJob<LegacyJob<{name}>>(...)), or implement IJobHandler. To run it continuously as a hosted "
                     + $"service, register it with services.AddJob<{name}>() from Foundatio.Extensions.Hosting instead."
-                : $"{jobType.FullName} does not implement IDurableJob or IDurableJob<TArgs>.", nameof(jobType));
+                : $"{jobType.FullName} does not implement IJobHandler or IJobHandler<TArgs>.", nameof(jobType));
         }
 
         return registrations;
     }
 
-    /// <summary>The arguments types of the <see cref="IDurableJob{TArgs}"/> interfaces <paramref name="jobType"/> implements.</summary>
+    /// <summary>The arguments types of the <see cref="IJobHandler{TArgs}"/> interfaces <paramref name="jobType"/> implements.</summary>
     public static IEnumerable<Type> GetArgumentsTypes(Type jobType)
     {
         return jobType.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDurableJob<>))
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IJobHandler<>))
             .Select(i => i.GetGenericArguments()[0]);
     }
 
@@ -85,7 +85,7 @@ internal sealed class JobRegistration
     public static void ThrowIfJob(object arguments, Func<string, string> argumentFreeCall, string paramName)
     {
         var type = arguments.GetType();
-        if (arguments is IDurableJob)
+        if (arguments is IJobHandler)
             throw new ArgumentException($"{type.Name} is a job, not job arguments. Call {argumentFreeCall(type.Name)} instead.", paramName);
 
         if (arguments is IJob)
@@ -96,9 +96,9 @@ internal sealed class JobRegistration
     }
 
     private static Func<IServiceProvider, object?, IJobContext, CancellationToken, Task> CreateInvoker<TJob, TArgs>()
-        where TJob : class, IDurableJob<TArgs> where TArgs : class
+        where TJob : class, IJobHandler<TArgs> where TArgs : class
     {
         return (services, arguments, context, cancellationToken) =>
-            ActivatorUtilities.GetServiceOrCreateInstance<TJob>(services).RunAsync((TArgs)arguments!, context, cancellationToken);
+            ActivatorUtilities.GetServiceOrCreateInstance<TJob>(services).HandleAsync((TArgs)arguments!, context, cancellationToken);
     }
 }

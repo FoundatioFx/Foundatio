@@ -3,9 +3,9 @@ using Foundatio.Jobs;
 namespace Foundatio.QuickstartSample;
 
 /// <summary>A durable job with arguments, progress and cancellation. Throwing retries it with backoff.</summary>
-public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IDurableJob<GenerateReport>
+public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IJobHandler<GenerateReport>
 {
-    public async Task RunAsync(GenerateReport report, IJobContext context, CancellationToken cancellationToken)
+    public async Task HandleAsync(GenerateReport report, IJobContext context, CancellationToken cancellationToken)
     {
         for (int day = 1; day <= report.Days; day++)
         {
@@ -20,9 +20,9 @@ public sealed class GenerateReportJob(ILogger<GenerateReportJob> logger) : IDura
 
 /// <summary>A recurring job without arguments. It runs once per CRON occurrence across all instances.</summary>
 [Job(Name = "maintenance.cleanup")]
-public sealed class CleanupJob(SampleActivity activity, ILogger<CleanupJob> logger) : IDurableJob
+public sealed class CleanupJob(SampleActivity activity, ILogger<CleanupJob> logger) : IJobHandler
 {
-    public Task RunAsync(IJobContext context, CancellationToken cancellationToken)
+    public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
     {
         logger.LogInformation("Cleanup for the {Occurrence:u} occurrence ran", context.ScheduledFor);
         activity.CleanupRan.TrySetResult();

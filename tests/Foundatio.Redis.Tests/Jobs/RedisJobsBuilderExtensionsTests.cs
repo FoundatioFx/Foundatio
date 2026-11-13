@@ -65,9 +65,9 @@ public class RedisJobsBuilderExtensionsTests(ITestOutputHelper output) : TestWit
 
     public record Greet(string Name);
 
-    public class GreetJob : IDurableJob<Greet>
+    public class GreetJob : IJobHandler<Greet>
     {
-        public Task RunAsync(Greet args, IJobContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(Greet args, IJobContext context, CancellationToken cancellationToken)
             => context.ReportProgressAsync(100, $"Hello, {args.Name}", cancellationToken);
     }
 }

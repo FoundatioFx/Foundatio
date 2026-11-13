@@ -51,9 +51,9 @@ public static class OrdersApp
     public record GenerateInvoice(int OrderId, bool Fail = false);
 
     [Job(Name = "orders.nightly-cleanup")]
-    public sealed class NightlyCleanupJob : IDurableJob
+    public sealed class NightlyCleanupJob : IJobHandler
     {
-        public Task RunAsync(IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, "cleaned", cancellationToken);
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => context.ReportProgressAsync(100, "cleaned", cancellationToken);
     }
 
     public sealed class EmailSender
@@ -100,9 +100,9 @@ public static class OrdersApp
         }
     }
 
-    public sealed class GenerateInvoiceJob : IDurableJob<GenerateInvoice>
+    public sealed class GenerateInvoiceJob : IJobHandler<GenerateInvoice>
     {
-        public Task RunAsync(GenerateInvoice arguments, IJobContext context, CancellationToken cancellationToken)
+        public Task HandleAsync(GenerateInvoice arguments, IJobContext context, CancellationToken cancellationToken)
         {
             if (arguments.Fail)
                 throw new InvalidOperationException($"No billing address for order {arguments.OrderId}");
