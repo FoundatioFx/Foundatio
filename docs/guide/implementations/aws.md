@@ -191,6 +191,17 @@ builder.Services.AddFoundatioMessaging(m => m
 
 See [Using SQS](/guide/messages#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
 
+### Monitoring Messages
+
+The transport's `GetStatsAsync` reads SQS's approximate counts for the source's queue and its `-dlq` queue, two `GetQueueAttributes` calls. They can take a minute to catch up after sends and settlements.
+
+- **Queued**: visible messages. That includes delayed messages SQS could not delay itself, until a receiver first hides them.
+- **Delayed**: the delays SQS applies, on standard queues for up to 15 minutes. Null in FIFO mode.
+- **InFlight**: every hidden message, so retries waiting out their delay and early messages hidden until due count here too.
+- **DeadLettered**: every message in the `-dlq` queue.
+
+Instance subscriptions are not counted (null), and a queue that does not exist counts as empty.
+
 ## Running the Tests
 
 The AWS provider lives in the [Foundatio repository](https://github.com/FoundatioFx/Foundatio) under `src/Foundatio.AWS`, with its tests in `tests/Foundatio.AWS.Tests`. The tests run against [Floci](https://github.com/floci-io/floci), a local AWS emulator, at `http://localhost:4566`. Start it from the repository root and run them:

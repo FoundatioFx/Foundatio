@@ -117,6 +117,21 @@ Everything is kept in Redis memory, which is often shared with the app's cache a
 - Signals use classic `PUBLISH`, which Redis Cluster forwards to every node.
 - One receive returns at most about 8 MiB, but always at least one message. Large messages still block Redis while scripts copy them, so store large payloads elsewhere and send a reference.
 
+### Monitoring
+
+`GetStatsAsync` counts a queue's or durable subscription's messages with one script on its cluster slot, a handful of O(1) and O(log n) commands, so it is cheap to call every few seconds for every source. The counts are read at one moment and do not lag:
+
+| Count | On Redis |
+|---|---|
+| `Queued` | Stream entries the consumer group has not read, plus messages held behind an unsettled message of their group, abandoned messages, messages whose lease lapsed and delayed messages that are due, until a receiver takes them. |
+| `Delayed` | Messages sent with a later delivery time, and retries waiting out their delay. |
+| `InFlight` | Messages leased to a receiver whose lease has not lapsed. |
+| `DeadLettered` | The length of the source's dead-letter stream, once dead letters past `DeadLetterRetention` are removed. |
+
+- No count is null. Instance subscriptions are not counted (`GetStatsAsync` returns null), since each belongs to one receiver.
+- A source that does not exist counts as empty, and nothing is created.
+- Unread entries are the group's `lag` where Redis reports it. Redis 6.2 does not, and Redis 7+ cannot after some deletes, such as completing the newest message read while an older one is pending. The transport then counts the stream's entries less the group's pending ones, which is the same number, because a settle acknowledges and deletes its entry together.
+
 ## Redis job store
 
 `RedisJobStore` stores Foundatio durable jobs (`IJobClient`, `AddJob`, `AddCronJob`) in Redis, so every instance shares them and they survive restarts. Register it with `UseRedis`:

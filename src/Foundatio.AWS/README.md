@@ -88,6 +88,19 @@ Things to plan for:
 - **New subscriptions**: queues are created with the policy that lets their topic send to them. A subscription whose queue already existed without that permission, for example one re-created after `DeleteAsync`, gets it with `SetQueueAttributes`, which AWS can take a minute to apply; SNS drops what it is not allowed to deliver meanwhile.
 - **Names**: an empty `Prefix` shares names with `SQSQueue<T>` and `SQSMessageBus`, whose messages the transport cannot read. Use a prefix while both run side by side.
 
+Monitoring: `GetStatsAsync` reads `GetQueueAttributes` for the source's queue and its `-dlq` queue, two calls with cached queue URLs. SQS's counts are approximate, and can take a minute to catch up after sends and settlements.
+
+| Count | On SQS |
+|---|---|
+| `Queued` | `ApproximateNumberOfMessages`, the visible messages. That includes delayed messages SQS could not delay itself, until a receiver first hides them. |
+| `Delayed` | `ApproximateNumberOfMessagesDelayed`, the delays SQS applies: sends to a standard queue or subscription, for up to 15 minutes. Null with `Fifo = true`, where SQS delays nothing. |
+| `InFlight` | `ApproximateNumberOfMessagesNotVisible`, every hidden message: deliveries, but also retries waiting out their delay and early messages hidden until due. |
+| `DeadLettered` | Every message in the `-dlq` queue, including those a receiver is reading. |
+
+- Instance subscriptions are not counted (`GetStatsAsync` returns null), since each has its own queue.
+- A queue that does not exist counts as empty, and nothing is created.
+- After `DeleteAsync`, messages that were hidden or delayed during the delete still count until a receiver discards them.
+
 IAM actions the transport needs at runtime:
 
 - `sqs:CreateQueue`, `sqs:GetQueueUrl`, `sqs:GetQueueAttributes`, `sqs:SetQueueAttributes`, `sqs:TagQueue`, `sqs:ListQueueTags`, `sqs:ListQueues`, `sqs:DeleteQueue`, `sqs:SendMessage`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`

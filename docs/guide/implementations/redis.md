@@ -340,6 +340,17 @@ builder.Services.AddFoundatioJobs(j => j
 
 See [Using Redis](/guide/messages#using-redis) for messaging, [Using Redis](/guide/durable-jobs#using-redis) for jobs, and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#redis-message-transport) for every option.
 
+### Monitoring Messages
+
+The transport's `GetStatsAsync` counts a queue or durable subscription with one cheap script, read at one moment, so the counts do not lag:
+
+- **Queued**: entries the consumer group has not read, plus messages held behind their group, abandoned messages, lapsed leases and delayed messages that are due.
+- **Delayed**: messages sent with a later delivery time, and retries waiting out their delay.
+- **InFlight**: messages leased to a receiver whose lease has not lapsed.
+- **DeadLettered**: the length of the dead-letter stream, without dead letters past `DeadLetterRetention`.
+
+No count is null. Instance subscriptions are not counted (null), and a source that does not exist counts as empty. See the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis#monitoring) for how Redis 6.2 is counted.
+
 ## RedisFileStorage
 
 Store files in Redis (suitable for small files and caching scenarios).
