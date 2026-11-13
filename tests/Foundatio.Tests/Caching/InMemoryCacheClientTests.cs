@@ -748,6 +748,45 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task ListAddAsync_WithCustomSizeCalculator_BoundsAllocationToDictionaryCopies(bool cloneValues)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).MaxMemorySize(100_000_000)
+            .SizeCalculator(value => ((Dictionary<int, DateTime?>)value).Count));
+        var values = Enumerable.Range(0, 10_000).ToDictionary(key => key, _ => (DateTime?)null);
+        await cache.ListAddAsync("list", values.Keys);
+        int[] item = [-1];
+        await UpdateAsync();
+        await UpdateAsync();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var added = new Dictionary<int, DateTime?>(values) { [-1] = null };
+        var removed = new Dictionary<int, DateTime?>(added);
+        removed.Remove(-1);
+        long copyAllocation = GC.GetAllocatedBytesForCurrentThread() - before;
+        GC.KeepAlive(removed);
+
+        // Act
+        before = GC.GetAllocatedBytesForCurrentThread();
+        await UpdateAsync();
+        long allocation = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Assert
+        Assert.True(allocation <= copyAllocation + 8192,
+            $"Custom sizing should only pay for its required dictionary copies: copies={copyAllocation}, actual={allocation} bytes.");
+        Assert.Equal(10_000, cache.CurrentMemorySize);
+        Assert.Equal(values.Keys, (await cache.GetListAsync<int>("list")).Value);
+
+        async Task UpdateAsync()
+        {
+            await cache.ListAddAsync("list", item);
+            await cache.ListRemoveAsync("list", item);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task ListAddAsync_WithCustomSizeCalculator_ReceivesDictionaryOfCurrentItems(bool multicast)
     {
         // Arrange
@@ -1025,6 +1064,66 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task ListAddAsync_WithSingleString_StoresAsStringNotCharArray()
     {
         return base.ListAddAsync_WithSingleString_StoresAsStringNotCharArray();
+    }
+
+    [Theory]
+    [InlineData(false, 10)]
+    [InlineData(false, 1000)]
+    [InlineData(true, 10)]
+    [InlineData(true, 1000)]
+    public async Task ListAddAsync_WithStaggeredExpirations_ExpiresItemsIndependently(bool scoped, int count)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var memory = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log));
+        using ICacheClient cache = scoped ? new ScopedCacheClient(memory, "scoped", shouldDispose: true) : memory;
+        await cache.ListAddAsync("set", Enumerable.Range(0, count), TimeSpan.FromMinutes(1));
+        await cache.ListAddAsync("set", [count], TimeSpan.FromMinutes(3));
+
+        // Act
+        clock.Advance(TimeSpan.FromMinutes(2));
+        var remaining = await cache.GetListAsync<int>("set");
+        clock.Advance(TimeSpan.FromMinutes(2));
+        var expired = await cache.GetListAsync<int>("set");
+
+        // Assert
+        Assert.Equal([count], remaining.Value);
+        Assert.False(expired.HasValue);
+        Assert.False(await cache.ExistsAsync("set"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListAddAsync_WithUnchangedCustomSizedList_ReusesValuesAndRestoresExpiration(bool cloneValues)
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        int sizeCalls = 0;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues).TimeProvider(clock).MaxMemorySize(100_000_000)
+            .SizeCalculator(value =>
+            {
+                sizeCalls++;
+                return ((Dictionary<int, DateTime?>)value).Count;
+            }));
+        await cache.ListAddAsync("list", Enumerable.Range(0, 10_000));
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [-1]);
+        await cache.SetExpirationAsync("list", TimeSpan.FromMinutes(1));
+        sizeCalls = 0;
+
+        // Act
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        long added = await cache.ListAddAsync("list", [0]);
+        long allocation = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Assert
+        Assert.Equal(1, added);
+        Assert.Equal(0, sizeCalls);
+        Assert.True(allocation < 8192, $"An unchanged list should not be copied: allocated {allocation} bytes.");
+        Assert.Null(await cache.GetExpirationAsync("list"));
+        Assert.Equal(10_000, cache.CurrentMemorySize);
+        Assert.Equal(Enumerable.Range(0, 10_000), (await cache.GetListAsync<int>("list")).Value);
     }
 
     [Theory]

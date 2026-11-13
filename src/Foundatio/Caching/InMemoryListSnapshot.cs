@@ -158,16 +158,8 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
         bool compact = Volatile.Read(ref _layout) is { } layout && Count < layout.NextSlot / 4;
         if (batch || compact || (!IsIndexed && !_fromIncrementalChange))
         {
-            var dictionary = ToDictionary();
-            if (prune)
-                foreach (var key in dictionary.Where(pair => pair.Value?.Ticks < utcNowTicks).Select(pair => pair.Key).ToArray())
-                    dictionary.Remove(key);
-            if (remove)
-                removed = items.Count(dictionary.Remove);
-            else
-                foreach (var key in items)
-                    dictionary[key] = expiresAtUtc;
-            return new ListSnapshot<T>(dictionary, fromIncrementalChange: !batch);
+            var dictionary = CopyAndUpdate(items, expiresAtUtc, utcNow, remove, out removed);
+            return dictionary is null ? this : new ListSnapshot<T>(dictionary, fromIncrementalChange: !batch);
         }
 
         var update = new LayoutUpdate(GetLayout(), _comparer, Count);
@@ -189,6 +181,29 @@ internal sealed class ListSnapshot<T> : IListSnapshot where T : notnull
         }
 
         return update.Changed ? new ListSnapshot<T>(update.Build(), _comparer, update.Count) : this;
+    }
+
+    // Custom calculators requiring a concrete dictionary can update that copy directly, without building an index
+    // that would immediately be flattened again for sizing. An unchanged list needs no copy unless pruning is due.
+    public Dictionary<T, DateTime?>? CopyAndUpdate(ICollection<T> items, DateTime? expiresAtUtc, DateTime utcNow, bool remove, out long removed)
+    {
+        removed = 0;
+        bool prune = _minExpiresAtUtcTicks < utcNow.Ticks;
+        if (!prune && (remove
+            ? !items.Any(ContainsKey)
+            : items.All(key => TryGetExpiresAtUtc(key, out var current) && current == expiresAtUtc)))
+            return null;
+
+        var dictionary = ToDictionary();
+        if (prune)
+            foreach (var key in dictionary.Where(pair => pair.Value < utcNow).Select(pair => pair.Key).ToArray())
+                dictionary.Remove(key);
+        if (remove)
+            removed = items.Count(dictionary.Remove);
+        else
+            foreach (var key in items)
+                dictionary[key] = expiresAtUtc;
+        return dictionary;
     }
 
     private bool ContainsKey(T key) => TryGetExpiresAtUtc(key, out _);
