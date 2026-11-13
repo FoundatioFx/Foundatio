@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.Extensions.Logging;
 
 namespace Foundatio.Utility;
@@ -8,7 +8,7 @@ public class InstrumentsValues<T1, T2, T3>
                 where T2 : struct
                 where T3 : struct
 {
-    private readonly object _lock = new();
+    private readonly System.Threading.Lock _lock = new();
     private int _readCount;
     private T1? _value1;
     private T2? _value2;

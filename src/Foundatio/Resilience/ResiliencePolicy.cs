@@ -654,11 +654,7 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
         if (UseJitter)
         {
             double offset = delay.TotalMilliseconds * 0.5 / 2;
-#if NET6_0_OR_GREATER
             double randomDelay = delay.TotalMilliseconds * 0.5 * Random.Shared.NextDouble() - offset;
-#else
-            double randomDelay = delay.TotalMilliseconds * 0.5 * _random.Value.NextDouble() - offset;
-#endif
             double newDelay = delay.TotalMilliseconds + randomDelay;
             delay = TimeSpan.FromMilliseconds(newDelay);
         }
@@ -696,10 +692,6 @@ public class ResiliencePolicy : IResiliencePolicy, IHaveTimeProvider, IHaveLogge
 
         return "None";
     }
-
-#if !NET6_0_OR_GREATER
-    private static readonly ThreadLocal<Random> _random = new(() => new Random());
-#endif
 
     public static Func<int, TimeSpan> ExponentialDelay(TimeSpan baseDelay, double exponentialFactor = 2.0)
     {
