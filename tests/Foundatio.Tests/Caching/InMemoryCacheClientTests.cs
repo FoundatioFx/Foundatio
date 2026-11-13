@@ -4,7 +4,10 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
@@ -235,6 +238,271 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task GetListAsync_WithPaging_ReturnsCorrectResults()
     {
         return base.GetListAsync_WithPaging_ReturnsCorrectResults();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetListAsync_WithClonedSafeKeys_AllocatesOnlyTheReturnedList(bool stringKeys)
+    {
+        if (stringKeys)
+            await VerifyAsync(Enumerable.Range(0, 10_000).Select(value => value.ToString()).ToArray());
+        else
+            await VerifyAsync(Enumerable.Range(0, 10_000).ToArray());
+
+        async Task VerifyAsync<T>(T[] values) where T : notnull
+        {
+            var source = values.ToDictionary(value => value, _ => (DateTime?)null);
+            long sharedAllocation = await MeasureAsync(false);
+            long clonedAllocation = await MeasureAsync(true);
+            Assert.True(clonedAllocation <= sharedAllocation + 16_384,
+                $"Reading safe keys should not clone the backing dictionary: shared={sharedAllocation}, cloned={clonedAllocation} bytes.");
+
+            async Task<long> MeasureAsync(bool cloneValues)
+            {
+                using var cache = new InMemoryCacheClient(o => o.CloneValues(cloneValues)
+                    .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log));
+                await cache.SetAsync("list", source);
+                await cache.GetListAsync<T>("list");
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                var result = await cache.GetListAsync<T>("list");
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.Equal(values, result.Value);
+                return allocated;
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("Live", true, true)]
+    [InlineData("Empty", true, false)]
+    [InlineData("ExpiredMembers", true, false)]
+    [InlineData("Missing", false, false)]
+    [InlineData("ExpiredKey", false, false)]
+    public async Task GetListAsync_WithClonedSafeKeys_PreservesReadStatistics(string state, bool hit, bool hasValue)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        InMemoryCacheClient.CacheEntry? entry = null;
+        if (state != "Missing")
+        {
+            var values = new Dictionary<int, DateTime?>();
+            if (state != "Empty")
+                values[1] = state == "ExpiredMembers" ? clock.GetUtcNow().UtcDateTime : null;
+            await cache.SetAsync("list", values, state == "ExpiredKey" ? TimeSpan.FromMinutes(1) : null);
+            entry = GetEntry(cache, "list");
+        }
+        long previousAccess = entry?.LastAccessTicks ?? 0;
+        clock.Advance(TimeSpan.FromMinutes(2));
+        cache.ResetStats();
+
+        var result = await cache.GetListAsync<int>("list");
+
+        Assert.Equal(hasValue, result.HasValue);
+        Assert.Equal(hasValue ? [1] : [], result.Value);
+        Assert.Equal(hit ? 1 : 0, cache.Hits);
+        Assert.Equal(hit ? 0 : 1, cache.Misses);
+        Assert.Equal(1, cache.Reads);
+        Assert.Equal(0, cache.Writes);
+        if (entry is not null)
+        {
+            if (hit)
+                Assert.Same(entry, GetEntry(cache, "list"));
+            Assert.Equal(hit ? clock.GetUtcNow().Ticks : previousAccess, entry.LastAccessTicks);
+            Assert.Equal(state == "Empty" ? 0 : 1, Assert.IsType<Dictionary<int, DateTime?>>(entry.StoredValue).Count);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, 0, 1, 4)]
+    [InlineData(1, 2, 1, 2)]
+    [InlineData(2, 2, 3, 2)]
+    [InlineData(3, 2, 1, 0)]
+    [InlineData(1, 0, 1, 0)]
+    [InlineData(1, -1, 1, 0)]
+    [InlineData(Int32.MaxValue, 2, 1, 2)]
+    public async Task GetListAsync_WithClonedSafeKeys_PreservesPagingAndArrayIsolation(int? page, int pageSize, int first, int count)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log));
+        var source = Enumerable.Range(0, 5).ToDictionary(value => value, _ => (DateTime?)null);
+        source[0] = clock.GetUtcNow().UtcDateTime.AddTicks(-1);
+        await cache.SetAsync("list", source);
+
+        var result = await cache.GetListAsync<int>("list", page, pageSize);
+
+        Assert.True(result.HasValue);
+        Assert.Equal(Enumerable.Range(first, count), result.Value);
+        var returned = Assert.IsType<int[]>(result.Value);
+        if (returned.Length > 0)
+            returned[0] = -1;
+        Assert.Equal([1, 2, 3, 4], (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(5, Assert.IsType<Dictionary<int, DateTime?>>(GetEntry(cache, "list").StoredValue).Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetListAsync_WithNonListValues_PreservesErrorHandling(bool shouldThrow)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).ShouldThrowOnSerializationError(shouldThrow).LoggerFactory(Log));
+        await cache.SetAsync("wrong", 1);
+        await cache.SetAsync<string?>("null", null);
+        cache.ResetStats();
+
+        if (shouldThrow)
+            await Assert.ThrowsAsync<InvalidCastException>(() => cache.GetListAsync<int>("wrong"));
+        else
+        {
+            var result = await cache.GetListAsync<int>("wrong");
+            Assert.False(result.HasValue);
+            Assert.Empty(result.Value);
+        }
+        Assert.Equal(1, cache.Hits);
+        Assert.Equal(0, cache.Misses);
+
+        var error = await Assert.ThrowsAsync<ArgumentNullException>(() => cache.GetListAsync<int>("null"));
+        Assert.Equal("source", error.ParamName);
+        Assert.Equal(2, cache.Hits);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => cache.GetListAsync<int>("wrong", 0));
+        Assert.Equal(2, cache.Reads);
+    }
+
+    [Fact]
+    public async Task GetListAsync_WithDictionarySubclass_EnumeratesAClonedDictionary()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var source = new EnumerationCountingListDictionary { [1] = null };
+        await cache.SetAsync("list", source);
+        var stored = Assert.IsType<EnumerationCountingListDictionary>(GetEntry(cache, "list").StoredValue);
+        int previousEnumerations = stored.Enumerations;
+        int previousSourceEnumerations = source.Enumerations;
+
+        var result = await cache.GetListAsync<int>("list");
+
+        Assert.Equal([1], result.Value);
+        Assert.Equal(previousEnumerations, stored.Enumerations);
+        Assert.Equal(previousSourceEnumerations, source.Enumerations);
+    }
+
+    private sealed class EnumerationCountingListDictionary : Dictionary<int, DateTime?>, IEnumerable<KeyValuePair<int, DateTime?>>
+    {
+        public int Enumerations { get; private set; }
+
+        IEnumerator<KeyValuePair<int, DateTime?>> IEnumerable<KeyValuePair<int, DateTime?>>.GetEnumerator()
+        {
+            Enumerations++;
+            return base.GetEnumerator();
+        }
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [InlineData(2, false)]
+    [InlineData(2, true)]
+    public async Task ListAddAsync_WithOwnedSafeKeys_AvoidsCloningThePrivateInput(int sizing, bool stringKeys)
+    {
+        if (stringKeys)
+            await VerifyAsync(Enumerable.Range(0, 10_000).Select(value => value.ToString()).ToArray());
+        else
+            await VerifyAsync(Enumerable.Range(0, 10_000).ToArray());
+
+        async Task VerifyAsync<T>(T[] values) where T : notnull
+        {
+            long sharedAllocation = await MeasureAsync(false);
+            long clonedAllocation = await MeasureAsync(true);
+            Assert.True(clonedAllocation <= sharedAllocation + 32_768,
+                $"Safe input dictionaries are already private: shared={sharedAllocation}, cloned={clonedAllocation} bytes.");
+
+            async Task<long> MeasureAsync(bool cloneValues)
+            {
+                using var cache = new InMemoryCacheClient(o =>
+                {
+                    o.CloneValues(cloneValues).TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)).LoggerFactory(Log);
+                    return sizing switch
+                    {
+                        1 => o.WithFixedSizing(100_000_000, 64),
+                        2 => o.WithDynamicSizing(100_000_000, Log),
+                        _ => o
+                    };
+                });
+                await cache.ListAddAsync("warm", values.Take(100));
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                long added = await cache.ListAddAsync("list", values);
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.Equal(values.Length, added);
+                return allocated;
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ListAddAsync_WithOwnedSafeKeys_PreservesFutureCloneOnRead(int sizing)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log);
+            return sizing switch
+            {
+                1 => o.WithFixedSizing(100_000_000, 64),
+                2 => o.WithDynamicSizing(100_000_000, Log),
+                _ => o
+            };
+        });
+        await cache.ListAddAsync("list", Enumerable.Range(0, 1000));
+        var stored = Assert.IsType<Dictionary<int, DateTime?>>(GetEntry(cache, "list").StoredValue);
+
+        var returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        Assert.NotSame(stored, returned);
+        returned.Clear();
+        var item = Assert.IsType<Dictionary<int, DateTime?>>(Assert.Single(cache.Items).Value);
+        Assert.NotSame(stored, item);
+        item.Clear();
+        await cache.SetExpirationAsync("list", TimeSpan.FromMinutes(1));
+        (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value.Clear();
+
+        Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("list"));
+        Assert.Equal(1000, stored.Count);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ListAddAsync_WithCustomSizingOfSafeKeys_IsolatesRetainedInput(int calculatorType)
+    {
+        Dictionary<int, DateTime?>? retained = null;
+        using var calculator = new SizeCalculator(Log);
+        Func<object, long> capture = value =>
+        {
+            retained = Assert.IsType<Dictionary<int, DateTime?>>(value);
+            return retained.Count;
+        };
+        long CaptureAndCalculate(object value)
+        {
+            capture(value);
+            return calculator.CalculateSize(value);
+        }
+        Func<object, long> calculate = calculatorType switch
+        {
+            1 => CaptureAndCalculate,
+            2 => capture + new Func<object, long>(calculator.CalculateSize),
+            _ => capture
+        };
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).MaxMemorySize(100_000_000).SizeCalculator(calculate).LoggerFactory(Log));
+
+        await cache.ListAddAsync("list", Enumerable.Range(0, 1000));
+        retained!.Clear();
+
+        Assert.Equal(Enumerable.Range(0, 1000), (await cache.GetListAsync<int>("list")).Value);
     }
 
     [Fact]
@@ -606,6 +874,203 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
+    public async Task ListAddAsync_WithRejectedFirstUpdate_DoesNotRetainProposedIndex()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var calculator = new SizeCalculator(Log);
+        int[] values = Enumerable.Range(0, 10_000).ToArray();
+        long size = calculator.CalculateSize(values.ToDictionary(value => value, _ => (DateTime?)null));
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock)
+            .WithDynamicSizing(100_000_000, Log).MaxEntrySize(size));
+        await cache.ListAddAsync("list", values);
+        var previous = GetEntry(cache, "list");
+        long previousStorage = GetStorageArraySize(previous.StoredValue!);
+
+        Assert.Equal(0, await cache.ListAddAsync("list", [-1]));
+
+        Assert.Same(previous, GetEntry(cache, "list"));
+        Assert.Equal(previousStorage, GetStorageArraySize(previous.StoredValue!));
+        Assert.Equal(values, (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(size, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithLargeIntegerList_UsesLessBackingStorageThanDictionary()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+            .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
+        int[] values = Enumerable.Range(0, 10_000).ToArray();
+        await cache.ListAddAsync("list", values);
+        await cache.ListAddAsync("list", [-1]);
+        await cache.ListRemoveAsync("list", [-1]);
+        long dictionaryStorage = GetStorageArraySize(values.ToDictionary(value => value, _ => (DateTime?)null));
+        long listStorage = GetStorageArraySize(GetEntry(cache, "list").StoredValue!);
+
+        Assert.True(listStorage < dictionaryStorage,
+            $"Shared list backing arrays should use less storage than one dictionary: list={listStorage}, dictionary={dictionaryStorage} bytes.");
+        Assert.Equal(values, (await cache.GetListAsync<int>("list")).Value);
+    }
+
+    [Fact]
+    public async Task GetAsync_WithUpdatedList_ReleasesMaterializedStorage()
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+            .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
+        await cache.ListAddAsync("list", Enumerable.Range(0, 10_000));
+        await cache.ListAddAsync("list", [-1]);
+        var previous = (await cache.GetListAsync<int>("list")).Value;
+        var storage = GetStorageArrayReferences(cache, "list");
+        Assert.NotEmpty(storage);
+
+        var dictionary = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.All(storage, reference => Assert.False(reference.IsAlive));
+        Assert.Same(dictionary, (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value);
+        dictionary[-2] = null;
+        Assert.Equal(1, await cache.ListAddAsync("list", [-3]));
+        Assert.Contains(-2, (await cache.GetListAsync<int>("list")).Value);
+        Assert.DoesNotContain(-3, dictionary.Keys);
+        Assert.Equal(Enumerable.Range(0, 10_000).Append(-1), previous);
+        GC.KeepAlive(cache);
+    }
+
+    [Fact]
+    public async Task ListUpdate_WithCollidingHeadMiddleAndTail_ReusesSlotsWithoutLosingMembers()
+    {
+        var comparer = new ListIndexComparer(true);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+            .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
+        var expected = new Dictionary<int, DateTime?>(comparer);
+        for (int i = 0; i < 128; i++)
+            expected.Add(i, null);
+        await cache.SetAsync("list", new Dictionary<int, DateTime?>(expected, comparer));
+        await cache.ListAddAsync("list", [0]);
+        await cache.ListAddAsync("list", [-1]);
+        expected[-1] = null;
+        var previous = (await cache.GetListAsync<int>("list")).Value;
+
+        foreach (int value in new[] { 0, 64, -1, 127 })
+        {
+            Assert.Equal(1, await cache.ListRemoveAsync("list", [value]));
+            expected.Remove(value);
+        }
+        foreach (int value in new[] { -10, -11, -12, -13 })
+        {
+            Assert.Equal(1, await cache.ListAddAsync("list", [value]));
+            expected[value] = null;
+        }
+
+        Assert.Equal(Enumerable.Range(0, 128).Append(-1), previous);
+        Assert.Equal(expected.Keys, (await cache.GetListAsync<int>("list")).Value);
+        var dictionary = (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value;
+        Assert.Same(comparer, dictionary.Comparer);
+        Assert.Equal(expected.Keys, dictionary.Keys);
+    }
+
+    [Fact]
+    public async Task ListRemoveAsync_WithDistinctHashesInOneBucket_AvoidsUnnecessaryEqualityCalls()
+    {
+        int[] values = Enumerable.Range(1, 1_000_000).Where(value => (HashCode.Combine(value) & 127) == 0).Take(194).ToArray();
+        var comparer = new CountingListComparer();
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false)
+            .TimeProvider(new FakeTimeProvider(DateTimeOffset.UtcNow)));
+        var dictionary = new Dictionary<int, DateTime?>(comparer);
+        foreach (int value in values.Take(192))
+            dictionary.Add(value, null);
+        await cache.SetAsync("list", dictionary);
+        await cache.ListAddAsync("list", [values[0]]);
+        await cache.ListAddAsync("list", [values[192]]);
+        comparer.EqualityCalls = 0;
+
+        Assert.Equal(0, await cache.ListRemoveAsync("list", [values[193]]));
+
+        Assert.Equal(0, comparer.EqualityCalls);
+        Assert.Equal(values.Take(193), (await cache.GetListAsync<int>("list")).Value);
+    }
+
+    [Theory]
+    [InlineData(64)]
+    [InlineData(1024)]
+    [InlineData(1056)]
+    public async Task ListRemoveAsync_AfterExpirationUpdateAtPageBoundary_PreservesReservedPages(int count)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        await cache.ListAddAsync("list", Enumerable.Range(0, count));
+        var previous = (await cache.GetListAsync<int>("list")).Value;
+
+        Assert.Equal(1, await cache.ListAddAsync("list", [0], TimeSpan.FromMinutes(1)));
+        Assert.Equal(1, await cache.ListRemoveAsync("list", [1]));
+        Assert.Equal(1, await cache.ListAddAsync("list", [count]));
+
+        Assert.Equal(Enumerable.Range(0, count), previous);
+        Assert.Equal(Enumerable.Range(0, count).Where(value => value != 1).Append(count).Order(),
+            (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Equal(clock.GetUtcNow().UtcDateTime.AddMinutes(1),
+            (await cache.GetAsync<Dictionary<int, DateTime?>>("list")).Value[0]);
+        Assert.Null(await cache.GetExpirationAsync("list"));
+    }
+
+    private sealed class CountingListComparer : IEqualityComparer<int>
+    {
+        public int EqualityCalls { get; set; }
+        public bool Equals(int x, int y)
+        {
+            EqualityCalls++;
+            return x == y;
+        }
+        public int GetHashCode(int obj) => obj;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static WeakReference[] GetStorageArrayReferences(InMemoryCacheClient cache, string key)
+    {
+        return GetStorageArrays(GetEntry(cache, key).StoredValue!).Select(array => new WeakReference(array)).ToArray();
+    }
+
+    private static long GetStorageArraySize(object value)
+    {
+        return GetStorageArrays(value).Sum(array =>
+        {
+            var method = typeof(InMemoryCacheClientTests).GetMethod(nameof(GetStorageElementSize), BindingFlags.Static | BindingFlags.NonPublic)!;
+            int elementSize = (int)method.MakeGenericMethod(array.GetType().GetElementType()!).Invoke(null, null)!;
+            long size = 3L * IntPtr.Size + array.LongLength * elementSize;
+            return (size + IntPtr.Size - 1) / IntPtr.Size * IntPtr.Size;
+        });
+    }
+
+    private static int GetStorageElementSize<T>() => Unsafe.SizeOf<T>();
+
+    private static ICollection<Array> GetStorageArrays(object value)
+    {
+        var arrays = new List<Array>();
+        var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+        Visit(value);
+        return arrays;
+
+        void Visit(object? item)
+        {
+            if (item is null || !visited.Add(item))
+                return;
+            if (item is Array array)
+            {
+                arrays.Add(array);
+                if (!array.GetType().GetElementType()!.IsValueType)
+                    foreach (var child in array)
+                        Visit(child);
+            }
+            else if (item is IDictionary || item.GetType().FullName!.StartsWith(typeof(InMemoryCacheClient).FullName + "+ListSnapshot", StringComparison.Ordinal))
+            {
+                foreach (var field in item.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                    Visit(field.GetValue(item));
+            }
+        }
+    }
+
+    [Fact]
     public async Task ListUpdate_WithBoundaryExpirations_PreservesValuesAndDateTimeKinds()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero));
@@ -639,6 +1104,81 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
             Assert.Equal(pair.Value?.Kind, current[pair.Key]?.Kind);
         }
         Assert.Null(await cache.GetExpirationAsync("list"));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetListAsync_WithExpirationAtCurrentTick_FiltersOnlyAfterTheBoundary(bool indexed)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        var now = clock.GetUtcNow().UtcDateTime;
+        var values = Enumerable.Range(0, 97).ToDictionary(value => value, _ => (DateTime?)null);
+        values[1] = now;
+        values[2] = now.AddTicks(1);
+        await cache.SetAsync("list", values);
+        await cache.ListAddAsync("list", [0]);
+        if (indexed)
+        {
+            await cache.ListAddAsync("list", [-1]);
+            await cache.ListRemoveAsync("list", [-1]);
+        }
+
+        var previous = (await cache.GetListAsync<int>("list")).Value;
+        Assert.Equal(Enumerable.Range(0, 97), previous);
+        clock.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(Enumerable.Range(0, 97).Where(value => value != 1), (await cache.GetListAsync<int>("list")).Value);
+        Assert.Equal(new[] { 0, 2, 3, 4, 5 }, (await cache.GetListAsync<int>("list", 1, 5)).Value);
+        clock.Advance(TimeSpan.FromTicks(1));
+        Assert.Equal(Enumerable.Range(0, 97).Where(value => value is not (1 or 2)), (await cache.GetListAsync<int>("list")).Value);
+
+        await cache.ListAddAsync("list", [97]);
+        Assert.Equal(Enumerable.Range(0, 97), previous);
+        Assert.Equal(Enumerable.Range(0, 98).Where(value => value is not (1 or 2)).Order(),
+            (await cache.GetListAsync<int>("list")).Value.Order());
+        Assert.Null(await cache.GetExpirationAsync("list"));
+    }
+
+    [Fact]
+    public async Task GetListAsync_WhenDictionaryIsExposedDuringRead_FiltersChangedExpirations()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var clock = new CallbackTimeProvider(now);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).TimeProvider(clock));
+        await cache.ListAddAsync("list", Enumerable.Range(0, 100));
+        clock.SetReadCallback(() =>
+        {
+            var exposed = cache.GetAsync<Dictionary<int, DateTime?>>("list").GetAwaiter().GetResult().Value;
+            exposed[0] = now.UtcDateTime.AddTicks(-1);
+        });
+
+        var result = await cache.GetListAsync<int>("list");
+
+        Assert.Equal(Enumerable.Range(1, 99), result.Value);
+    }
+
+    private sealed class CallbackTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        private Action? _callback;
+        private int _callbackThreadId;
+
+        public void SetReadCallback(Action callback)
+        {
+            _callbackThreadId = Environment.CurrentManagedThreadId;
+            _callback = callback;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            if (Environment.CurrentManagedThreadId != _callbackThreadId)
+                return now;
+
+            var callback = _callback;
+            _callback = null;
+            callback?.Invoke();
+            return now;
+        }
     }
 
     [Fact]
@@ -1018,7 +1558,7 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Fact]
-    public async Task ListAddAsync_WithExistingClonedValues_DoesNotCloneThemAgain()
+    public async Task ListAddAsync_WithExistingClonedValues_PreservesIndependentGraphs()
     {
         // Arrange
         using var cache = new InMemoryCacheClient(o => o.LoggerFactory(Log).CloneValues(true));
@@ -1032,8 +1572,16 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         // Assert
         var after = Assert.IsType<Dictionary<SimpleModel, DateTime?>>(GetEntry(cache, "set").StoredValue);
         Assert.NotSame(before, after);
-        Assert.Contains(after.Keys, value => ReferenceEquals(original, value));
+        Assert.NotSame(original, after.Keys.Single(value => value.Data1 == "first"));
+        Assert.Contains(after.Keys, value => value.Data1 == "second");
         Assert.Single(before);
+        Assert.Equal("first", original.Data1);
+
+        var returned = (await cache.GetListAsync<SimpleModel>("set")).Value;
+        returned.Single(value => value.Data1 == "first").Data1 = "changed";
+        var current = (await cache.GetListAsync<SimpleModel>("set")).Value;
+        Assert.Contains(current, value => value.Data1 == "first");
+        Assert.DoesNotContain(current, value => value.Data1 == "changed");
     }
 
     [Fact]
@@ -1180,7 +1728,9 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
     [Theory]
     [InlineData(1)]
+    [InlineData(32)]
     [InlineData(33)]
+    [InlineData(1000)]
     public async Task GetAsync_WithCachedDictionaryViews_PreservesRootCyclesAndClonesPayloads(int count)
     {
         using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
@@ -1248,6 +1798,8 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(32)]
+    [InlineData(33)]
+    [InlineData(1000)]
     public async Task SetAsync_WithSparseDictionary_DoesNotCopyUnusedCapacity(int count)
     {
         using var cache = new InMemoryCacheClient(o => o.CloneValues(true)
@@ -1265,16 +1817,474 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
 
         long before = GC.GetAllocatedBytesForCurrentThread();
         await cache.SetAsync("sparse", source);
-        var returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("sparse")).Value;
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.True(allocated < 100_000, $"Cloning {count} dictionary items should not copy unused capacity: {allocated} bytes.");
+        int expectedCapacity = new Dictionary<int, DateTime?>(count).EnsureCapacity(0);
+        var stored = Assert.IsType<Dictionary<int, DateTime?>>(GetEntry(cache, "sparse").StoredValue);
+        Assert.Equal(expectedCapacity, stored.EnsureCapacity(0));
+        var returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("sparse")).Value;
         Assert.Equal(count, returned.Count);
         Assert.Equal(Enumerable.Range(0, count), returned.Keys);
         Assert.Equal(Enumerable.Repeat<DateTime?>(DateTime.UnixEpoch, count), returned.Values);
-        Assert.Equal(new Dictionary<int, DateTime?>(count).EnsureCapacity(0), returned.EnsureCapacity(0));
+        Assert.Equal(expectedCapacity, returned.EnsureCapacity(0));
         returned.Clear();
         Assert.Equal(count, (await cache.GetAsync<Dictionary<int, DateTime?>>("sparse")).Value.Count);
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(32, false)]
+    [InlineData(33, false)]
+    [InlineData(1000, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(32, true)]
+    [InlineData(33, true)]
+    [InlineData(1000, true)]
+    public async Task GetAsync_WithMutableComparer_PreservesOwnedDictionaryGraph(int count, bool sparse)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var comparer = new StatefulListComparer();
+        var source = new Dictionary<string, DateTime?>(sparse ? 100_000 : count, comparer);
+        foreach (int index in Enumerable.Range(0, count))
+            source.Add($"item-{index}", null);
+        comparer.Dictionary = source;
+        comparer.Keys = source.Keys;
+        comparer.Values = source.Values;
+        await cache.SetAsync("dictionary", source);
+        comparer.Metadata.Add(2);
+        source.Clear();
+
+        var returned = (await cache.GetAsync<Dictionary<string, DateTime?>>("dictionary")).Value;
+        var returnedComparer = Assert.IsType<StatefulListComparer>(returned.Comparer);
+
+        Assert.Equal(count, returned.Count);
+        Assert.Equal(count > 0, returned.ContainsKey("ITEM-0"));
+        Assert.NotSame(comparer, returnedComparer);
+        Assert.Equal([1], returnedComparer.Metadata);
+        Assert.Same(returned, returnedComparer.Dictionary);
+        Assert.Same(returned.Keys, returnedComparer.Keys);
+        Assert.Same(returned.Values, returnedComparer.Values);
+        int compactCapacity = Math.Max(3, new Dictionary<string, DateTime?>(count).EnsureCapacity(0));
+        Assert.True(returned.EnsureCapacity(0) <= compactCapacity,
+            $"Cloned {count}-item dictionary should not retain unused capacity: {returned.EnsureCapacity(0)} slots.");
+        returnedComparer.Metadata.Add(3);
+        returned.Clear();
+
+        var current = (await cache.GetAsync<Dictionary<string, DateTime?>>("dictionary")).Value;
+        var currentComparer = Assert.IsType<StatefulListComparer>(current.Comparer);
+        Assert.Equal(count, current.Count);
+        Assert.Equal(count, current.Keys.Count);
+        Assert.Equal(count, current.Values.Count);
+        Assert.Equal(count > 0, current.ContainsKey("ITEM-0"));
+        Assert.Equal([1], currentComparer.Metadata);
+        Assert.Same(current, currentComparer.Dictionary);
+        Assert.Same(current.Keys, currentComparer.Keys);
+        Assert.Same(current.Values, currentComparer.Values);
+    }
+
+    [Theory]
+    [InlineData(0, 3, false)]
+    [InlineData(0, 3, true)]
+    [InlineData(0, 40, false)]
+    [InlineData(0, 40, true)]
+    [InlineData(1, 3, false)]
+    [InlineData(1, 3, true)]
+    [InlineData(1, 40, false)]
+    [InlineData(1, 40, true)]
+    [InlineData(2, 3, false)]
+    [InlineData(2, 3, true)]
+    [InlineData(2, 40, false)]
+    [InlineData(2, 40, true)]
+    public async Task ListUpdate_WithComparerRootReferences_PreservesOwnedGraph(int sizing, int count, bool remove)
+    {
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(true).LoggerFactory(Log);
+            return sizing switch
+            {
+                1 => o.WithFixedSizing(100_000_000, 64),
+                2 => o.WithDynamicSizing(100_000_000, Log),
+                _ => o
+            };
+        });
+        var comparer = new SizingGraphListComparer(instanceHash: true);
+        var source = Enumerable.Range(0, count).ToDictionary(key => $"item-{key}", _ => (DateTime?)null, comparer);
+        comparer.Owner = source;
+        comparer.Keys = source.Keys;
+        comparer.Values = source.Values;
+        await cache.SetAsync("list", source);
+        var previous = Assert.IsType<Dictionary<string, DateTime?>>(GetEntry(cache, "list").StoredValue);
+        var previousComparer = Assert.IsType<SizingGraphListComparer>(previous.Comparer);
+        Assert.Same(previous, previousComparer.Owner);
+
+        Assert.Equal(1, remove
+            ? await cache.ListRemoveAsync("list", ["ITEM-0"])
+            : await cache.ListAddAsync("list", ["new"]));
+
+        var current = (await cache.GetAsync<Dictionary<string, DateTime?>>("list")).Value;
+        var currentComparer = Assert.IsType<SizingGraphListComparer>(current.Comparer);
+        Assert.Equal(count + (remove ? -1 : 1), current.Count);
+        Assert.Same(current, currentComparer.Owner);
+        Assert.Same(current.Keys, currentComparer.Keys);
+        Assert.Same(current.Values, currentComparer.Values);
+        Assert.Equal(!remove, current.ContainsKey("ITEM-0"));
+        Assert.True(current.ContainsKey("ITEM-1"));
+        Assert.Equal(count, previous.Count);
+        Assert.Same(previous, previousComparer.Owner);
+        Assert.Equal(count, previousComparer.Keys!.Count);
+        Assert.Equal(count, previousComparer.Values!.Count);
+        currentComparer.Metadata.Add(42);
+        current.Clear();
+
+        var returned = (await cache.GetAsync<Dictionary<string, DateTime?>>("list")).Value;
+        var returnedComparer = Assert.IsType<SizingGraphListComparer>(returned.Comparer);
+        Assert.Equal(count + (remove ? -1 : 1), returned.Count);
+        Assert.Empty(returnedComparer.Metadata);
+        Assert.Same(returned, returnedComparer.Owner);
+        Assert.Same(returned.Keys, returnedComparer.Keys);
+        Assert.Same(returned.Values, returnedComparer.Values);
+    }
+
+    [Theory]
+    [InlineData(0, 3, false)]
+    [InlineData(0, 3, true)]
+    [InlineData(0, 40, false)]
+    [InlineData(0, 40, true)]
+    [InlineData(1, 3, false)]
+    [InlineData(1, 3, true)]
+    [InlineData(1, 40, false)]
+    [InlineData(1, 40, true)]
+    [InlineData(2, 3, false)]
+    [InlineData(2, 3, true)]
+    [InlineData(2, 40, false)]
+    [InlineData(2, 40, true)]
+    public async Task ListUpdate_WithKeyRootReferences_PreservesOwnedGraph(int sizing, int count, bool remove)
+    {
+        using var cache = new InMemoryCacheClient(o =>
+        {
+            o.CloneValues(true).LoggerFactory(Log);
+            return sizing switch
+            {
+                1 => o.WithFixedSizing(100_000_000, 64),
+                2 => o.WithDynamicSizing(100_000_000, Log),
+                _ => o
+            };
+        });
+        var source = Enumerable.Range(0, count).ToDictionary(id => new RootReferencingListItem(id), _ => (DateTime?)null);
+        foreach (var key in source.Keys)
+        {
+            key.Owner = source;
+            key.Keys = source.Keys;
+            key.Values = source.Values;
+        }
+        await cache.SetAsync("list", source);
+        var previous = Assert.IsType<Dictionary<RootReferencingListItem, DateTime?>>(GetEntry(cache, "list").StoredValue);
+        var previousKey = previous.Keys.Single(key => key.Id == 1);
+        Assert.True(ReferenceEquals(previous, previousKey.Owner), "Key references must belong to their dictionary root.");
+
+        Assert.Equal(1, remove
+            ? await cache.ListRemoveAsync("list", [new RootReferencingListItem(0)])
+            : await cache.ListAddAsync("list", [new RootReferencingListItem(count)]));
+
+        var current = (await cache.GetAsync<Dictionary<RootReferencingListItem, DateTime?>>("list")).Value;
+        var currentKey = current.Keys.Single(key => key.Id == 1);
+        Assert.Equal(count + (remove ? -1 : 1), current.Count);
+        Assert.True(ReferenceEquals(current, currentKey.Owner), "Key references must belong to their dictionary root.");
+        Assert.True(ReferenceEquals(current.Keys, currentKey.Keys), "Key references must belong to their dictionary root.");
+        Assert.True(ReferenceEquals(current.Values, currentKey.Values), "Key references must belong to their dictionary root.");
+        Assert.Equal(!remove, current.ContainsKey(new RootReferencingListItem(0)));
+        Assert.True(current.ContainsKey(new RootReferencingListItem(1)));
+        Assert.Equal(count, previous.Count);
+        Assert.True(ReferenceEquals(previous, previousKey.Owner), "Key references must belong to their dictionary root.");
+        Assert.Equal(count, previousKey.Keys!.Count);
+        Assert.Equal(count, previousKey.Values!.Count);
+        currentKey.Owner = null;
+        current.Clear();
+
+        var returned = (await cache.GetAsync<Dictionary<RootReferencingListItem, DateTime?>>("list")).Value;
+        var returnedKey = returned.Keys.Single(key => key.Id == 1);
+        Assert.Equal(count + (remove ? -1 : 1), returned.Count);
+        Assert.True(ReferenceEquals(returned, returnedKey.Owner), "Key references must belong to their dictionary root.");
+        Assert.True(ReferenceEquals(returned.Keys, returnedKey.Keys), "Key references must belong to their dictionary root.");
+        Assert.True(ReferenceEquals(returned.Values, returnedKey.Values), "Key references must belong to their dictionary root.");
+    }
+
+    private sealed class RootReferencingListItem(int id) : IEquatable<RootReferencingListItem>
+    {
+        public int Id { get; } = id;
+        public Dictionary<RootReferencingListItem, DateTime?>? Owner { get; set; }
+        public ICollection<RootReferencingListItem>? Keys { get; set; }
+        public ICollection<DateTime?>? Values { get; set; }
+        public bool Equals(RootReferencingListItem? other) => other?.Id == Id;
+        public override bool Equals(object? other) => other is RootReferencingListItem value && Equals(value);
+        public override int GetHashCode() => Id;
+    }
+
+    private sealed class StatefulListComparer : IEqualityComparer<string>
+    {
+        public List<int> Metadata { get; } = [1];
+        public Dictionary<string, DateTime?>? Dictionary { get; set; }
+        public ICollection<string>? Keys { get; set; }
+        public ICollection<DateTime?>? Values { get; set; }
+        public bool Equals(string? x, string? y) => StringComparer.OrdinalIgnoreCase.Equals(x, y);
+        public int GetHashCode(string value) => StringComparer.OrdinalIgnoreCase.GetHashCode(value);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(1, 1)]
+    [InlineData(1, 32)]
+    [InlineData(1, 33)]
+    [InlineData(1, 1000)]
+    [InlineData(2, 0)]
+    [InlineData(2, 1)]
+    [InlineData(2, 32)]
+    [InlineData(2, 33)]
+    [InlineData(2, 1000)]
+    [InlineData(3, 0)]
+    [InlineData(3, 1)]
+    [InlineData(3, 33)]
+    [InlineData(3, 1000)]
+    [InlineData(4, 0)]
+    [InlineData(4, 1)]
+    [InlineData(4, 32)]
+    [InlineData(4, 33)]
+    [InlineData(4, 1000)]
+    public async Task GetAsync_WithOtherMutableComparers_PreservesOwnedDictionaryGraph(int dictionaryType, int count)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var comparer = new SizingGraphListComparer(instanceHash: true);
+        var source = CreateListDictionary(dictionaryType, comparer);
+        foreach (int index in Enumerable.Range(0, count))
+            source.Add($"item-{index}", DateTime.UnixEpoch);
+        comparer.Owner = source;
+        comparer.Keys = source.Keys;
+        comparer.Values = source.Values;
+        bool cachesKeys = ReferenceEquals(source.Keys, comparer.Keys);
+        bool cachesValues = ReferenceEquals(source.Values, comparer.Values);
+        await cache.SetAsync("dictionary", source);
+        comparer.Metadata.Add(1);
+        source.Clear();
+
+        var returned = (await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value;
+        var returnedComparer = Assert.IsType<SizingGraphListComparer>(GetListComparer(returned));
+
+        Assert.IsType(source.GetType(), returned);
+        Assert.Equal(count, returned.Count);
+        Assert.NotSame(comparer, returnedComparer);
+        Assert.Empty(returnedComparer.Metadata);
+        Assert.Same(returned, returnedComparer.Owner);
+        Assert.NotNull(returnedComparer.Keys);
+        Assert.NotNull(returnedComparer.Values);
+        if (dictionaryType != 3)
+        {
+            Assert.Equal(cachesKeys, ReferenceEquals(returned.Keys, returnedComparer.Keys));
+            Assert.Equal(cachesValues, ReferenceEquals(returned.Values, returnedComparer.Values));
+        }
+        Assert.Equal(returned.Keys.OrderBy(key => key), returnedComparer.Keys.OrderBy(key => key));
+        Assert.Equal(returned.Values.Count, returnedComparer.Values.Count);
+        Assert.All(Enumerable.Range(0, count), index => Assert.Equal(DateTime.UnixEpoch, returned[$"ITEM-{index}"]));
+        returnedComparer.Metadata.Add(2);
+        returned.Add("probe", DateTime.UnixEpoch);
+        // ConcurrentDictionary exposes snapshots instead of live key and value views.
+        Assert.Equal(dictionaryType == 3 ? count : count + 1, returnedComparer.Keys.Count);
+        Assert.Equal(dictionaryType == 3 ? count : count + 1, returnedComparer.Values.Count);
+        returned.Clear();
+        Assert.Equal(dictionaryType == 3 ? count : 0, returnedComparer.Keys.Count);
+        Assert.Equal(dictionaryType == 3 ? count : 0, returnedComparer.Values.Count);
+
+        var current = (await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value;
+        var currentComparer = Assert.IsType<SizingGraphListComparer>(GetListComparer(current));
+        Assert.Equal(count, current.Count);
+        Assert.Empty(currentComparer.Metadata);
+        Assert.Same(current, currentComparer.Owner);
+        if (dictionaryType != 3)
+        {
+            Assert.Equal(cachesKeys, ReferenceEquals(current.Keys, currentComparer.Keys));
+            Assert.Equal(cachesValues, ReferenceEquals(current.Values, currentComparer.Values));
+        }
+        Assert.All(Enumerable.Range(0, count), index => Assert.Equal(DateTime.UnixEpoch, current[$"ITEM-{index}"]));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public async Task GetAsync_WithOtherDictionaryPayloadCycles_IsolatesPayloads(int dictionaryType)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var comparer = new SizingGraphListComparer(instanceHash: true);
+        IDictionary<string, object> source = dictionaryType switch
+        {
+            1 => new SortedDictionary<string, object>(comparer),
+            2 => new SortedList<string, object>(comparer),
+            _ => new OrderedDictionary<string, object>(comparer)
+        };
+        var payload = new List<int> { 1 };
+        source.Add("self", source);
+        source.Add("payload", payload);
+        _ = source.Keys;
+        _ = source.Values;
+        await cache.SetAsync("dictionary", source);
+        payload.Add(2);
+        source.Clear();
+
+        var returned = (await cache.GetAsync<IDictionary<string, object>>("dictionary")).Value;
+
+        Assert.IsType(source.GetType(), returned);
+        Assert.Equal(2, returned.Count);
+        Assert.Same(returned, returned["SELF"]);
+        Assert.Equal([1], Assert.IsType<List<int>>(returned["PAYLOAD"]));
+        Assert.Contains(returned, returned.Values);
+        Assert.IsType<List<int>>(returned["PAYLOAD"]).Add(3);
+        returned.Clear();
+
+        var current = (await cache.GetAsync<IDictionary<string, object>>("dictionary")).Value;
+        Assert.Equal(2, current.Count);
+        Assert.Equal(2, current.Keys.Count);
+        Assert.Equal(2, current.Values.Count);
+        Assert.Same(current, current["SELF"]);
+        Assert.Equal([1], Assert.IsType<List<int>>(current["PAYLOAD"]));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public async Task GetAsync_WithOtherSafeComparers_PreservesComparerIdentity(int dictionaryType)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var comparer = StringComparer.OrdinalIgnoreCase;
+        IDictionary<string, DateTime?> source = dictionaryType switch
+        {
+            1 => new SortedDictionary<string, DateTime?>(comparer),
+            2 => new SortedList<string, DateTime?>(comparer),
+            _ => new OrderedDictionary<string, DateTime?>(comparer)
+        };
+        source.Add("one", DateTime.UnixEpoch);
+        await cache.SetAsync("dictionary", source);
+        source.Clear();
+
+        var returned = (await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value;
+
+        Assert.IsType(source.GetType(), returned);
+        Assert.Same(comparer, GetListComparer(returned));
+        Assert.Equal(DateTime.UnixEpoch, returned["ONE"]);
+        returned.Clear();
+        Assert.Single((await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task GetAsync_WithoutCloning_PreservesDictionaryAndComparerIdentity(int dictionaryType)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log));
+        var comparer = new SizingGraphListComparer();
+        var source = CreateListDictionary(dictionaryType, comparer);
+        source.Add("one", DateTime.UnixEpoch);
+        await cache.SetAsync("dictionary", source);
+        comparer.Metadata.Add(1);
+
+        var returned = (await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value;
+
+        Assert.Same(source, returned);
+        Assert.Same(comparer, GetListComparer(returned));
+        Assert.Equal([1], Assert.IsType<SizingGraphListComparer>(GetListComparer(returned)).Metadata);
+        returned.Clear();
+        Assert.Empty((await cache.GetAsync<IDictionary<string, DateTime?>>("dictionary")).Value);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ListUpdate_WhenSizerReservesDictionaryCapacity_CompactsPublishedGraph(bool remove)
+    {
+        bool armed = false;
+        Dictionary<string, DateTime?>? retained = null;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log)
+            .MaxMemorySize(100_000).SizeCalculator(value =>
+            {
+                var dictionary = Assert.IsType<Dictionary<string, DateTime?>>(value);
+                if (armed && dictionary.Comparer is SizingGraphListComparer comparer)
+                {
+                    dictionary.EnsureCapacity(100_000);
+                    comparer.Metadata.Add(1);
+                    comparer.Owner = dictionary;
+                    comparer.Keys = dictionary.Keys;
+                    comparer.Values = dictionary.Values;
+                    retained = dictionary;
+                }
+                return dictionary.Count;
+            }));
+        var originalComparer = new SizingGraphListComparer(instanceHash: true);
+        var source = Enumerable.Range(0, 33).ToDictionary(index => $"item-{index}", _ => (DateTime?)null, originalComparer);
+        await cache.SetAsync("dictionary", source);
+        armed = true;
+
+        Assert.Equal(1, remove
+            ? await cache.ListRemoveAsync("dictionary", ["ITEM-32"])
+            : await cache.ListAddAsync("dictionary", ["item-33"]));
+        Assert.NotNull(retained);
+        var retainedComparer = Assert.IsType<SizingGraphListComparer>(retained.Comparer);
+        retainedComparer.Metadata.Add(2);
+        retained.Clear();
+
+        int count = remove ? 32 : 34;
+        var current = Assert.IsType<Dictionary<string, DateTime?>>(GetEntry(cache, "dictionary").StoredValue);
+        var currentComparer = Assert.IsType<SizingGraphListComparer>(current.Comparer);
+        Assert.Equal(count, current.Count);
+        Assert.Equal(new Dictionary<string, DateTime?>(count).EnsureCapacity(0), current.EnsureCapacity(0));
+        Assert.Equal(count, cache.CurrentMemorySize);
+        Assert.Empty(originalComparer.Metadata);
+        Assert.NotSame(retainedComparer, currentComparer);
+        Assert.Equal([1], currentComparer.Metadata);
+        Assert.Same(current, currentComparer.Owner);
+        Assert.Same(current.Keys, currentComparer.Keys);
+        Assert.Same(current.Values, currentComparer.Values);
+        Assert.All(Enumerable.Range(0, count), index => Assert.True(current.ContainsKey($"ITEM-{index}")));
+    }
+
+    [Theory]
+    [InlineData(4000)]
+    [InlineData(4096)]
+    [InlineData(10000)]
+    public async Task GetAsync_WithLargeSafeDictionary_AvoidsUnpooledCloneTracking(int count)
+    {
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log));
+        var source = Enumerable.Range(0, count).ToDictionary(key => key, _ => (DateTime?)DateTime.UnixEpoch);
+        _ = source.Keys;
+        _ = source.Values;
+        await cache.SetAsync("dictionary", source);
+        for (int i = 0; i < 4; i++)
+            await cache.GetAsync<Dictionary<int, DateTime?>>("dictionary");
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var copy = new Dictionary<int, DateTime?>(source, source.Comparer);
+        long copySize = GC.GetAllocatedBytesForCurrentThread() - before;
+        GC.KeepAlive(copy);
+
+        const int iterations = 4;
+        Dictionary<int, DateTime?>? returned = null;
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < iterations; i++)
+            returned = (await cache.GetAsync<Dictionary<int, DateTime?>>("dictionary")).Value;
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(allocated <= iterations * (copySize + 16_384),
+            $"Cloning {count} dictionary items should stay near the owned-copy allocation: {allocated} bytes for {iterations} reads, copy size {copySize} bytes.");
+        Assert.NotNull(returned);
+        Assert.Equal(count, returned.Count);
+        Assert.Equal(count, returned.Keys.Count);
+        Assert.Equal(count, returned.Values.Count);
+        returned.Clear();
+        Assert.Equal(count, (await cache.GetAsync<Dictionary<int, DateTime?>>("dictionary")).Value.Count);
     }
 
     [Theory]
@@ -1310,6 +2320,266 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     {
         public bool Equals(string? x, string? y) => StringComparer.OrdinalIgnoreCase.Equals(x, y);
         public int GetHashCode(string value) => StringComparer.OrdinalIgnoreCase.GetHashCode(value) ^ RuntimeHelpers.GetHashCode(this);
+    }
+
+    [Theory]
+    [InlineData(1, false, false)]
+    [InlineData(1, false, true)]
+    [InlineData(1, true, false)]
+    [InlineData(1, true, true)]
+    [InlineData(32, false, false)]
+    [InlineData(32, false, true)]
+    [InlineData(32, true, false)]
+    [InlineData(32, true, true)]
+    [InlineData(33, false, false)]
+    [InlineData(33, false, true)]
+    [InlineData(33, true, false)]
+    [InlineData(33, true, true)]
+    [InlineData(40, false, false)]
+    [InlineData(40, false, true)]
+    [InlineData(40, true, false)]
+    [InlineData(40, true, true)]
+    [InlineData(1000, false, false)]
+    [InlineData(1000, false, true)]
+    [InlineData(1000, true, false)]
+    [InlineData(1000, true, true)]
+    public async Task ListUpdate_WithMutableSizingComparer_IsolatesDictionaryGraph(int count, bool remove, bool reject)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        int phase = 0;
+        bool sizingGraphIsConsistent = false;
+        Dictionary<string, DateTime?>? retained = null;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(100_000).SizeCalculator(value =>
+            {
+                var dictionary = Assert.IsType<Dictionary<string, DateTime?>>(value);
+                if (phase > 0 && dictionary.Comparer is SizingGraphListComparer comparer)
+                {
+                    if (phase == 2)
+                    {
+                        sizingGraphIsConsistent = ReferenceEquals(dictionary, comparer.Owner)
+                            && ReferenceEquals(dictionary.Keys, comparer.Keys)
+                            && ReferenceEquals(dictionary.Values, comparer.Values);
+                    }
+                    comparer.Metadata.Add(phase);
+                    comparer.Owner = dictionary;
+                    comparer.Keys = dictionary.Keys;
+                    comparer.Values = dictionary.Values;
+                    retained = dictionary;
+                    if (phase == 2 && reject)
+                        return -1;
+                }
+                return dictionary.Count;
+            }));
+        var originalComparer = new SizingGraphListComparer(instanceHash: true);
+        var source = Enumerable.Range(0, count).ToDictionary(value => $"item-{value}",
+            _ => (DateTime?)clock.GetUtcNow().UtcDateTime.AddMinutes(1), originalComparer);
+        await cache.SetAsync("list", source, TimeSpan.FromMinutes(1));
+        phase = 1;
+        Assert.Equal(1, await cache.ListAddAsync("list", ["seed"], TimeSpan.FromMinutes(1)));
+        var previous = GetEntry(cache, "list");
+        var previousDictionary = Assert.IsType<Dictionary<string, DateTime?>>(previous.StoredValue);
+        var previousComparer = Assert.IsType<SizingGraphListComparer>(previousDictionary.Comparer);
+        phase = 2;
+
+        long changed = remove
+            ? await cache.ListRemoveAsync("list", ["SEED"])
+            : await cache.ListAddAsync("list", ["new"], TimeSpan.FromMinutes(2));
+        var retainedComparer = Assert.IsType<SizingGraphListComparer>(retained!.Comparer);
+        retainedComparer.Metadata.Add(42);
+        retained.Clear();
+
+        var current = GetEntry(cache, "list");
+        var dictionary = Assert.IsType<Dictionary<string, DateTime?>>(current.StoredValue);
+        var comparer = Assert.IsType<SizingGraphListComparer>(dictionary.Comparer);
+        Assert.True(sizingGraphIsConsistent);
+        Assert.Equal(reject ? 0 : 1, changed);
+        Assert.Equal(count + (reject ? 1 : remove ? 0 : 2), dictionary.Count);
+        Assert.Equal(dictionary.Count, cache.CurrentMemorySize);
+        Assert.Equal(TimeSpan.FromMinutes(!reject && !remove ? 2 : 1), await cache.GetExpirationAsync("list"));
+        Assert.Empty(originalComparer.Metadata);
+        Assert.Equal([1], previousComparer.Metadata);
+        Assert.Equal(reject ? [1] : new[] { 1, 2 }, comparer.Metadata);
+        Assert.NotSame(retainedComparer, comparer);
+        Assert.Same(dictionary, comparer.Owner);
+        Assert.Same(dictionary.Keys, comparer.Keys);
+        Assert.Same(dictionary.Values, comparer.Values);
+        Assert.All(Enumerable.Range(0, count), value => Assert.True(dictionary.ContainsKey($"ITEM-{value}")));
+        if (reject)
+            Assert.Same(previous, current);
+    }
+
+    [Theory]
+    [InlineData(1, false, false)]
+    [InlineData(1, false, true)]
+    [InlineData(1, true, false)]
+    [InlineData(1, true, true)]
+    [InlineData(2, false, false)]
+    [InlineData(2, false, true)]
+    [InlineData(2, true, false)]
+    [InlineData(2, true, true)]
+    [InlineData(4, false, false)]
+    [InlineData(4, false, true)]
+    [InlineData(4, true, false)]
+    [InlineData(4, true, true)]
+    public async Task ListUpdate_WithOtherMutableSizingComparers_IsolatesComparer(int dictionaryType, bool remove, bool reject)
+    {
+        bool armed = false;
+        SizingGraphListComparer? retained = null;
+        IDictionary<string, DateTime?>? retainedDictionary = null;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).LoggerFactory(Log)
+            .MaxMemorySize(100_000).SizeCalculator(value =>
+            {
+                var dictionary = Assert.IsAssignableFrom<IDictionary<string, DateTime?>>(value);
+                if (armed && GetListComparer(dictionary) is SizingGraphListComparer comparer)
+                {
+                    retained = comparer;
+                    retainedDictionary = dictionary;
+                    comparer.Metadata.Add(1);
+                    comparer.Owner = dictionary;
+                    comparer.Keys = dictionary.Keys;
+                    comparer.Values = dictionary.Values;
+                    if (reject)
+                        return -1;
+                }
+                return dictionary.Count;
+            }));
+        var source = CreateListDictionary(dictionaryType, new SizingGraphListComparer());
+        source["one"] = null;
+        source["two"] = null;
+        await cache.SetAsync("list", source);
+        var previous = GetEntry(cache, "list");
+        var previousComparer = Assert.IsType<SizingGraphListComparer>(GetListComparer((IDictionary<string, DateTime?>)previous.StoredValue!));
+        armed = true;
+
+        long changed = remove
+            ? await cache.ListRemoveAsync("list", ["ONE"])
+            : await cache.ListAddAsync("list", ["three"]);
+        retained!.Metadata.Add(42);
+        retainedDictionary!.Clear();
+
+        var current = GetEntry(cache, "list");
+        var dictionary = Assert.IsAssignableFrom<IDictionary<string, DateTime?>>(current.StoredValue);
+        var comparer = Assert.IsType<SizingGraphListComparer>(GetListComparer(dictionary));
+        Assert.Equal(reject ? 0 : 1, changed);
+        Assert.IsType(source.GetType(), dictionary);
+        Assert.Equal(reject ? 2 : remove ? 1 : 3, dictionary.Count);
+        Assert.True(dictionary.ContainsKey("TWO"));
+        Assert.Empty(previousComparer.Metadata);
+        Assert.Null(previousComparer.Owner);
+        Assert.Equal(reject ? [] : new[] { 1 }, comparer.Metadata);
+        Assert.NotSame(retained, comparer);
+        if (reject)
+            Assert.Same(previous, current);
+        else
+        {
+            Assert.Same(dictionary, comparer.Owner);
+            Assert.Equal(dictionary.Keys, comparer.Keys);
+            Assert.Equal(dictionary.Values, comparer.Values);
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public async Task ListUpdate_WithoutCloning_PreservesSharedSizingComparer(int dictionaryType)
+    {
+        bool armed = false;
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).LoggerFactory(Log)
+            .MaxMemorySize(100_000).SizeCalculator(value =>
+            {
+                var dictionary = Assert.IsAssignableFrom<IDictionary<string, DateTime?>>(value);
+                if (armed && GetListComparer(dictionary) is SizingGraphListComparer comparer)
+                {
+                    comparer.Metadata.Add(1);
+                    return -1;
+                }
+                return dictionary.Count;
+            }));
+        var comparer = new SizingGraphListComparer();
+        var source = CreateListDictionary(dictionaryType, comparer);
+        source["one"] = null;
+        await cache.SetAsync("list", source);
+        armed = true;
+
+        Assert.Equal(0, await cache.ListAddAsync("list", ["two"]));
+
+        var current = (await cache.GetAsync<IDictionary<string, DateTime?>>("list")).Value;
+        Assert.Single(current);
+        Assert.Same(comparer, GetListComparer(current));
+        Assert.Equal([1], comparer.Metadata);
+    }
+
+    private static IDictionary<string, DateTime?> CreateListDictionary(int dictionaryType, SizingGraphListComparer comparer) => dictionaryType switch
+    {
+        0 => new Dictionary<string, DateTime?>(comparer),
+        1 => new SortedDictionary<string, DateTime?>(comparer),
+        2 => new SortedList<string, DateTime?>(comparer),
+        3 => new ConcurrentDictionary<string, DateTime?>(comparer),
+        _ => new OrderedDictionary<string, DateTime?>(comparer)
+    };
+
+    private static object GetListComparer(IDictionary<string, DateTime?> dictionary) => dictionary switch
+    {
+        Dictionary<string, DateTime?> value => value.Comparer,
+        SortedDictionary<string, DateTime?> value => value.Comparer,
+        SortedList<string, DateTime?> value => value.Comparer,
+        ConcurrentDictionary<string, DateTime?> value => value.Comparer,
+        OrderedDictionary<string, DateTime?> value => value.Comparer,
+        _ => throw new NotSupportedException()
+    };
+
+    private sealed class SizingGraphListComparer(bool instanceHash = false) : IEqualityComparer<string>, IComparer<string>
+    {
+        public List<int> Metadata { get; } = [];
+        public IDictionary<string, DateTime?>? Owner { get; set; }
+        public ICollection<string>? Keys { get; set; }
+        public ICollection<DateTime?>? Values { get; set; }
+        public bool Equals(string? x, string? y) => StringComparer.OrdinalIgnoreCase.Equals(x, y);
+        public int Compare(string? x, string? y) => StringComparer.OrdinalIgnoreCase.Compare(x, y);
+        public int GetHashCode(string value) => StringComparer.OrdinalIgnoreCase.GetHashCode(value) ^ (instanceHash ? RuntimeHelpers.GetHashCode(this) : 0);
+    }
+
+    [Fact]
+    public async Task ListAddAsync_WithDynamicSizingConverter_IsolatesMutableKeys()
+    {
+        ConverterListItem? retained = null;
+        var previous = ConverterListItemConverter.OnWrite.Value;
+        ConverterListItemConverter.OnWrite.Value = value => retained = value;
+        using var restore = new DisposableAction(() => ConverterListItemConverter.OnWrite.Value = previous);
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(true).WithDynamicSizing(100_000_000, Log).LoggerFactory(Log));
+
+        await cache.ListAddAsync("list", [new ConverterListItem { Id = 1, Values = [1] }]);
+        Assert.NotNull(retained);
+        retained.Values.Add(42);
+        await cache.ListAddAsync("list", [new ConverterListItem { Id = 2, Values = [2] }]);
+        retained!.Values.Add(43);
+
+        var values = (await cache.GetListAsync<ConverterListItem>("list")).Value;
+        Assert.Equal([1], values.Single(value => value.Id == 1).Values);
+        Assert.Equal([2], values.Single(value => value.Id == 2).Values);
+    }
+
+    [JsonConverter(typeof(ConverterListItemConverter))]
+    private sealed class ConverterListItem
+    {
+        public int Id { get; set; }
+        public List<int> Values { get; set; } = [];
+    }
+
+    private sealed class ConverterListItemConverter : JsonConverter<ConverterListItem>
+    {
+        public ConverterListItemConverter() { }
+        public static readonly AsyncLocal<Action<ConverterListItem>?> OnWrite = new();
+        public override ConverterListItem Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => throw new NotSupportedException();
+        public override void Write(Utf8JsonWriter writer, ConverterListItem value, JsonSerializerOptions options)
+        {
+            OnWrite.Value?.Invoke(value);
+            writer.WriteNumberValue(value.Id);
+        }
     }
 
     [Theory]
