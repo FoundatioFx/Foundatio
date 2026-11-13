@@ -1,8 +1,10 @@
 using Foundatio;
+using Foundatio.Caching;
 using Foundatio.Jobs;
 using Foundatio.Jobs.Store;
 using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
+using Foundatio.Monitoring;
 using Foundatio.Testing;
 using StackExchange.Redis;
 
@@ -86,6 +88,32 @@ public static class Registrations
         services.AddFoundatioJobs(j => j.UseStore(_ => new RedisJobStore(redis)));
     }
 
+    public static void UseMonitoring(IServiceCollection services, IConnectionMultiplexer redis)
+    {
+        services.AddSingleton<ICacheClient>(_ => new RedisCacheClient(o => o.ConnectionMultiplexer(redis)));
+        services.AddFoundatioMonitoring(m => m
+            .UseCache()
+            .Configure(o =>
+            {
+                o.SnapshotInterval = TimeSpan.FromSeconds(10);
+                o.SnapshotExpiry = TimeSpan.FromSeconds(45);
+                o.ActiveThreshold = TimeSpan.FromSeconds(2);
+                o.RecentCapacity = 200;
+                o.StatsWindow = TimeSpan.FromMinutes(10);
+                o.KeyPrefix = "orders:monitoring";
+                o.ServiceName = "orders";
+            }));
+        services.AddFoundatioMonitoring(m => m.UseCache(new InMemoryCacheClient()));
+        services.AddFoundatioMonitoring(m => m.UseCache(sp => sp.GetRequiredService<ICacheClient>()));
+    }
+
+    public static void MapMonitor(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/monitor", (IWorkMonitor monitor, CancellationToken cancellationToken) => monitor.GetOverviewAsync(cancellationToken: cancellationToken));
+        endpoints.MapGet("/monitor/jobs", (IWorkMonitor monitor, CancellationToken cancellationToken) =>
+            monitor.GetActiveAsync(new WorkFilter { Kind = WorkKind.Job }, cancellationToken));
+    }
+
     public static void UseTestHarness(IServiceCollection services)
     {
         services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { OrderedGroups = false });
@@ -107,6 +135,24 @@ public static class AppUsage
 
         await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retired-service"));
         return await admin.ReplayDeadLettersAsync(source);
+    }
+
+    public static async Task<string> DescribeWorkAsync(IWorkMonitor monitor)
+    {
+        WorkOverview overview = await monitor.GetOverviewAsync(new WorkFilter { Kind = WorkKind.Message, Name = "orders.send-receipt", InstanceId = null });
+        IReadOnlyList<WorkInstance> instances = await monitor.GetInstancesAsync();
+        IReadOnlyList<ActiveWork> active = await monitor.GetActiveAsync();
+        IReadOnlyList<CompletedWork> recent = await monitor.GetRecentAsync(new WorkFilter { InstanceId = instances.FirstOrDefault()?.InstanceId });
+        IReadOnlyList<WorkStats> stats = await monitor.GetStatsAsync();
+        IReadOnlyList<MessageSourceStats> backlog = await monitor.GetBacklogAsync();
+        IReadOnlyList<JobCounts> jobs = await monitor.GetJobCountsAsync();
+
+        var slowest = active.OrderBy(a => a.StartedAt).FirstOrDefault();
+        var failures = recent.Count(r => r.Outcome is WorkOutcome.DeadLettered or WorkOutcome.Failed);
+        return $"{overview.GeneratedAt:u}: {instances.Count} instances ({String.Join(", ", instances.Select(i => $"{i.ServiceName}@{i.MachineName}:{i.ProcessId} {i.MessageSources.Count}/{i.JobNames.Count} {i.IsCurrent}"))}); "
+            + $"slowest {slowest?.Name} {slowest?.Progress}% {slowest?.ProgressMessage} on {slowest?.InstanceId}; {failures} failures ({recent.FirstOrDefault()?.Error}); "
+            + $"{stats.Sum(s => s.Succeeded + s.Retried + s.DeadLettered + s.Skipped)} handled, max {stats.Max(s => s.MaxDuration)}, avg {stats.FirstOrDefault()?.AverageDuration} over {stats.FirstOrDefault()?.Window}; "
+            + $"{backlog.Sum(b => b.Queued ?? 0)} queued; {jobs.Sum(j => j.Queued ?? 0)} jobs queued, {jobs.Sum(j => j.Failed ?? 0)} failed";
     }
 
     public static async Task<JobState?> EnqueueReportAsync(IJobClient jobs)

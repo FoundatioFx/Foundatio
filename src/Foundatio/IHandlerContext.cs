@@ -20,9 +20,10 @@ public interface IHandlerContext
     IReadOnlyDictionary<string, string> Headers { get; }
 
     /// <summary>
-    /// Reports how far the work has got, for monitoring. Calling it makes the work visible in <c>IWorkMonitor</c> even
-    /// when it finishes quickly. Pass only what changed: a null argument keeps the previously reported value. It is
-    /// cheap to call often, because updates are throttled, and safe to call from parallel branches.
+    /// Reports how far the work has got, for monitoring. Calling it makes the work visible in
+    /// <see cref="Monitoring.IWorkMonitor"/> even when it finishes quickly. Pass only what changed: a null argument keeps
+    /// the previously reported value. It is cheap to call often, because updates are throttled, and safe to call from
+    /// parallel branches.
     /// </summary>
     /// <param name="percent">How much is done, from 0 to 100, or null to keep the last value.</param>
     /// <param name="message">What is happening now, or null to keep the last message.</param>

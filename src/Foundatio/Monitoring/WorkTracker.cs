@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Foundatio.Monitoring;
 
 /// <summary>
-/// Follows the messages and jobs this process handles, for <c>IWorkMonitor</c>: what is running, what finished
+/// Follows the messages and jobs this process handles, for <see cref="IWorkMonitor"/>: what is running, what finished
 /// recently, and rolling counts per message type and source and per job name. It is always on. Following fast work
 /// costs a few interlocked updates and two short locks; the lists are only built when a snapshot is taken.
 /// </summary>
@@ -61,7 +61,8 @@ internal sealed class WorkTracker
     /// <summary>Creates the tracker the service provider shares between messaging, jobs and monitoring.</summary>
     public static WorkTracker Create(IServiceProvider services)
     {
-        return new WorkTracker(services.GetService<TimeProvider>() ?? TimeProvider.System, TimeSpan.FromSeconds(1), 100, TimeSpan.FromMinutes(5));
+        var options = services.GetService<MonitoringRegistrations>()?.Options ?? new MonitoringOptions();
+        return new WorkTracker(services.GetService<TimeProvider>() ?? TimeProvider.System, options.ActiveThreshold, options.RecentCapacity, options.StatsWindow);
     }
 
     /// <summary>How long work runs before it is listed as active, unless it reports progress sooner.</summary>
