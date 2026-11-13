@@ -278,9 +278,9 @@ Successful removal of a live matching value, or removal of the last list value, 
 - If a custom `SizeCalculator` throws, the fallback estimate is also checked against `MaxEntrySize`. An oversized fallback now rejects the write (or throws `MaxEntrySizeExceededCacheException` when configured), preserving the previous entry. Earlier versions bypassed this limit on the fallback path.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
 - `ReplaceIfEqualAsync` returns `false` if the replacement expires during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size.
-- `CurrentMemorySize` is approximate while `RemoveAllAsync()` or `Dispose` races concurrent writes. This is unchanged from earlier versions; it self-corrects on the next recount after compaction.
+- Size-changing writes, clears, and recounts coordinate their memory accounting so concurrent operations do not leave a stale `CurrentMemorySize`. Disposal clears the tracked size together with the stored entries. Sizing and logging callbacks run outside the accounting lock.
 - List size limits (`MaxEntrySize`, a negative `SizeCalculator` result) apply to the whole resulting list on every `ListAddAsync` and `ListRemoveAsync`, so a removal that leaves the list over the limit is rejected and returns `0`.
-- A rejected `ListAddAsync` on an expired key still reclaims the expired entry and raises `ItemExpired`, and every `ListAddAsync` call counts as a write in `Writes`, including rejected ones.
+- A rejected nonempty `ListAddAsync` on an expired key still reclaims the expired entry and raises `ItemExpired`. Size-rejected, nonempty list additions are included in `Writes`.
 - Adding items reapplies the resulting list expiration, even when every supplied item is already present with the same TTL. This can replace a key expiration previously set with `SetExpirationAsync`.
 - Raw dictionary list expirations may change to `DateTimeKind.Utc` when an incremental update builds the snapshot index; preserving `DateTime.Kind` is not guaranteed.
 :::

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Foundatio.Caching;
 using Foundatio.Utility;
+using Foundatio.Xunit;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
@@ -1649,6 +1650,117 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     public override Task RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(string pattern)
     {
         return base.RemoveByPrefixAsync_WithWildcardPattern_TreatsAsLiteral(pattern);
+    }
+
+    [Theory]
+    [InlineData(1, "None")]
+    [InlineData(8, "None")]
+    [InlineData(8, "RemoveAll")]
+    [InlineData(8, "Recalculate")]
+    public async Task MemorySize_WithConcurrentMutations_MatchesStoredEntries(int keyCount, string maintenance)
+    {
+        // Arrange
+        const int workerCount = 8;
+        const int iterations = 20_000;
+        var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
+        using var cache = new InMemoryCacheClient(o => o.CloneValues(false).MaxItems(null).TimeProvider(clock)
+            .WithFixedSizing(1_000_000_000, 100));
+        bool runMaintenance = maintenance != "None";
+        using var start = new Barrier(workerCount + (runMaintenance ? 1 : 0));
+        var keys = Enumerable.Range(0, keyCount).Select(i => $"key-{i}").ToArray();
+
+        // Act
+        var workers = Enumerable.Range(0, workerCount).Select(worker => Task.Factory.StartNew(async () =>
+        {
+            Synchronize();
+            for (int iteration = 0; iteration < iterations; iteration++)
+            {
+                string key = keys[(iteration + worker) % keys.Length];
+                await cache.AddAsync(key, worker);
+                await cache.RemoveAsync(key);
+            }
+        }, TestCancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap()).ToList();
+        if (runMaintenance)
+        {
+            workers.Add(Task.Factory.StartNew(async () =>
+            {
+                Synchronize();
+                for (int iteration = 0; iteration < iterations; iteration++)
+                {
+                    if (maintenance == "RemoveAll")
+                        await cache.RemoveAllAsync();
+                    else
+                        cache.RecalculateMemorySize();
+                }
+            }, TestCancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap());
+        }
+        await Task.WhenAll(workers).WaitAsync(TimeSpan.FromSeconds(30), TestCancellationToken);
+
+        // Assert
+        var stored = cache.Items;
+        Assert.Empty(stored);
+        Assert.Equal(stored.Count * 100L, cache.CurrentMemorySize);
+
+        void Synchronize()
+        {
+            if (!start.SignalAndWait(TimeSpan.FromSeconds(10), TestCancellationToken))
+                throw new TimeoutException("Concurrent cache workers did not start together.");
+        }
+    }
+
+    [Fact]
+    public async Task MemorySize_WithLoggerCallback_AllowsConcurrentClear()
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
+        using var logger = new TestLogger(o => o.DefaultLogLevel = LogLevel.Trace);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100).LoggerFactory(logger));
+        using var cleared = new ManualResetEventSlim();
+        int callbacks = 0;
+        bool completedDuringCallback = false;
+        Task<int>? clearing = null;
+        logger.Options.WriteLogEntryFunc = entry =>
+        {
+            if (!entry.Message.StartsWith("UpdateMemorySize:", StringComparison.Ordinal) || Interlocked.CompareExchange(ref callbacks, 1, 0) != 0)
+                return;
+
+            clearing = Task.Run(async () =>
+            {
+                int removed = await cache.RemoveAllAsync();
+                cleared.Set();
+                return removed;
+            }, TestCancellationToken);
+            completedDuringCallback = cleared.Wait(TimeSpan.FromSeconds(5), TestCancellationToken);
+        };
+
+        // Act
+        await cache.SetAsync("key", 1);
+
+        // Assert
+        Assert.Equal(1, callbacks);
+        Assert.NotNull(clearing);
+        Assert.Equal(1, await clearing.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.True(completedDuringCallback, "The memory-size logger callback must not hold the publication lock.");
+        Assert.Empty(cache.Items);
+        Assert.Equal(0, cache.CurrentMemorySize);
+    }
+
+    [Fact]
+    public async Task Dispose_WithTrackedEntries_ClearsMemorySize()
+    {
+        // Arrange
+        var clock = new FakeTimeProvider(new DateTimeOffset(DateTime.MinValue, TimeSpan.Zero).AddMilliseconds(100));
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).WithFixedSizing(10_000, 100));
+        await cache.SetAsync("first", 1);
+        await cache.SetAsync("second", 2);
+        Assert.Equal(200, cache.CurrentMemorySize);
+
+        // Act
+        cache.Dispose();
+
+        // Assert
+        Assert.Empty(cache.Items);
+        Assert.Equal(0, cache.CurrentMemorySize);
     }
 
     [Fact]

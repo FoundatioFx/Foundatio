@@ -42,6 +42,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     private long _hits;
     private long _misses;
     private long _currentMemorySize;
+    private readonly System.Threading.Lock _memorySizeLock = new();
     private readonly TimeProvider _timeProvider;
     private readonly IResiliencePolicyProvider _resiliencePolicyProvider;
     private readonly ILogger _logger;
@@ -105,66 +106,12 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public long CurrentMemorySize => _currentMemorySize;
 
     /// <summary>
-    /// Safely updates the current memory size, ensuring it never goes negative and handles overflow.
-    /// </summary>
-    /// <remarks>
-    /// This method is a no-op when memory tracking is disabled or when the delta is zero.
-    /// </remarks>
-    private void UpdateMemorySize(long delta)
-    {
-        if (!_shouldTrackMemory || delta == 0)
-            return;
-
-        long currentValue;
-        long newValue;
-
-        if (delta < 0)
-        {
-            // For negative deltas (removals), ensure we don't go below zero
-            do
-            {
-                currentValue = _currentMemorySize;
-                newValue = Math.Max(0, currentValue + delta);
-            } while (Interlocked.CompareExchange(ref _currentMemorySize, newValue, currentValue) != currentValue);
-        }
-        else
-        {
-            // For positive deltas (additions), check for overflow and clamp to long.MaxValue
-            bool overflowed = false;
-            do
-            {
-                currentValue = _currentMemorySize;
-                if (currentValue > Int64.MaxValue - delta)
-                {
-                    newValue = Int64.MaxValue;
-                    overflowed = true;
-                }
-                else
-                {
-                    newValue = currentValue + delta;
-                }
-            } while (Interlocked.CompareExchange(ref _currentMemorySize, newValue, currentValue) != currentValue);
-
-            if (overflowed)
-            {
-                _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
-                    Int64.MaxValue, currentValue, delta);
-            }
-        }
-
-        _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
-            delta, currentValue, newValue, _maxMemorySize);
-    }
-
-    /// <summary>
     /// Recalculates the current memory size by summing all stored cache entries.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Note: This method iterates over the cache dictionary which may be modified concurrently.
-    /// The calculated total may be temporarily inaccurate if entries are added/removed during
-    /// iteration, but this is acceptable for memory tracking purposes and will self-correct
-    /// on subsequent operations or recalculations.
+    /// The snapshot and counter assignment are serialized with size-changing writes and clears,
+    /// so a concurrent publication cannot have its size counted twice or overwritten by the recount.
     /// </para>
     /// <para>
     /// Expired entries that are still stored are counted, because removing them later subtracts their size again.
@@ -175,14 +122,15 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (!_shouldTrackMemory)
             return 0;
 
-        // Take a snapshot of values to reduce (but not eliminate) race condition window
-        var entries = _memory.Values.ToArray();
-        long totalSize = 0;
-        foreach (var entry in entries)
-            totalSize += entry.Size;
+        lock (_memorySizeLock)
+        {
+            long totalSize = 0;
+            foreach (var entry in _memory.Values)
+                totalSize = totalSize > Int64.MaxValue - entry.Size ? Int64.MaxValue : totalSize + entry.Size;
 
-        Interlocked.Exchange(ref _currentMemorySize, totalSize);
-        return totalSize;
+            Interlocked.Exchange(ref _currentMemorySize, totalSize);
+            return totalSize;
+        }
     }
 
     public long Calls => _writes + _hits + _misses;
@@ -288,14 +236,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     public Task<int> RemoveAllAsync(IEnumerable<string>? keys = null)
     {
         if (keys is null)
-        {
-            int count = _memory.Count;
-            _memory.Clear();
-            if (_shouldTrackMemory)
-                Interlocked.Exchange(ref _currentMemorySize, 0);
-
-            return Task.FromResult(count);
-        }
+            return Task.FromResult(ClearEntries());
 
         int removed = 0;
         foreach (string key in keys.Distinct())
@@ -308,6 +249,17 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         return Task.FromResult(removed);
+    }
+
+    private int ClearEntries()
+    {
+        lock (_memorySizeLock)
+        {
+            int count = _memory.Count;
+            _memory.Clear();
+            Interlocked.Exchange(ref _currentMemorySize, 0);
+            return count;
+        }
     }
 
     public Task<int> RemoveByPrefixAsync(string prefix)
@@ -473,17 +425,41 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     private bool TryPublish(string key, CacheEntry? current, CacheEntry? desired)
     {
-        bool published = (current, desired) switch
+        long delta = (desired?.Size ?? 0) - (current?.Size ?? 0);
+        if (!_shouldTrackMemory || delta == 0)
+            return TryPublishValue(key, current, desired);
+
+        long before;
+        long after;
+        bool overflowed;
+        lock (_memorySizeLock)
+        {
+            if (!TryPublishValue(key, current, desired))
+                return false;
+
+            before = _currentMemorySize;
+            overflowed = delta > 0 && before > Int64.MaxValue - delta;
+            after = overflowed ? Int64.MaxValue : Math.Max(0, before + delta);
+            Interlocked.Exchange(ref _currentMemorySize, after);
+        }
+
+        if (overflowed)
+            _logger.LogWarning("Memory size counter would overflow. Clamping to {MaxValue}. Current={Current}, Delta={Delta}",
+                Int64.MaxValue, before, delta);
+
+        _logger.LogTrace("UpdateMemorySize: Delta={Delta}, Before={Before}, After={After}, Max={Max}",
+            delta, before, after, _maxMemorySize);
+        return true;
+    }
+
+    private bool TryPublishValue(string key, CacheEntry? current, CacheEntry? desired)
+    {
+        return (current, desired) switch
         {
             (null, not null) => _memory.TryAdd(key, desired),
             (not null, null) => _memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, current)),
             _ => _memory.TryUpdate(key, desired!, current!)
         };
-
-        if (published)
-            UpdateMemorySize((desired?.Size ?? 0) - (current?.Size ?? 0));
-
-        return published;
     }
 
     /// <summary>
@@ -1483,7 +1459,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return;
 
         _isDisposed = true;
-        _memory.Clear();
+        ClearEntries();
         _disposedCancellationTokenSource.Cancel();
         _disposedCancellationTokenSource.Dispose();
         ItemExpired?.Dispose();
