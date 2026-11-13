@@ -355,12 +355,13 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
         var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { ManagementEndpoint = Fixture.ManagementEndpoint }));
         var source = MessageSource.Queue(NewName("stats-mgmt"));
         DeleteAfterTest(source);
+        // A prefetch of one buffers two deliveries: one handled and one ahead. Both count as in flight.
         await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { PrefetchCount = 1 }, TestCancellationToken);
         await transport.SendAsync(MessageDestination.Queue(source.Name), [Message("a"), Message("b"), Message("c")], TestCancellationToken);
         var held = await ReceiveOneAsync(receiver);
 
         // Act
-        var leased = await WaitForStatsAsync(transport, source, s => s is { Queued: 2, InFlight: 1 });
+        var leased = await WaitForStatsAsync(transport, source, s => s is { Queued: 1, InFlight: 2 });
         await receiver.DeadLetterAsync(held, "counted", TestCancellationToken);
         var deadLettered = await WaitForStatsAsync(transport, source, s => s.DeadLettered == 1);
 

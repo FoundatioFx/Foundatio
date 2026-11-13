@@ -17,10 +17,12 @@ namespace Foundatio.Messaging.Transport;
 /// into a buffer that <see cref="ReceiveAsync"/> hands out from.
 /// </summary>
 /// <remarks>
-/// RabbitMQ counts every unacknowledged delivery against its consumer's prefetch, and a new prefetch only applies to
-/// new consumers. So when a caller holds as many unsettled deliveries as the prefetch and asks for more, the receiver
-/// starts another consumer and cancels the old one: deliveries of a cancelled consumer stay with the channel and can
-/// still be settled, and the new consumer has its whole prefetch to fill the buffer.
+/// RabbitMQ counts every unacknowledged delivery against its consumer's prefetch, the ones being handled as well as
+/// the ones buffered. So the consumer's prefetch is twice <see cref="ReceiverOptions.PrefetchCount"/>, which Foundatio
+/// sets to the number of messages it handles at once: room for those, and as many again buffered ahead. A new prefetch
+/// only applies to new consumers, so when a caller holds a whole prefetch of unsettled deliveries and asks for more, the
+/// receiver starts another consumer and cancels the old one: deliveries of a cancelled consumer stay with the channel
+/// and can still be settled, and the new consumer has its whole prefetch to fill the buffer.
 /// </remarks>
 internal sealed class RabbitMQMessageReceiver : IMessageReceiver
 {
@@ -45,7 +47,7 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         Source = source;
         _queue = queue;
         _topicExchange = topicExchange;
-        _prefetch = (ushort)Math.Clamp(options.PrefetchCount, 1, UInt16.MaxValue);
+        _prefetch = (ushort)Math.Clamp(2L * options.PrefetchCount, 1, UInt16.MaxValue);
     }
 
     public MessageSource Source { get; }
