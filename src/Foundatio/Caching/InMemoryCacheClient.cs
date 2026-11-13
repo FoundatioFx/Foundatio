@@ -1458,31 +1458,47 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         public const int BlockSize = 32;
         private KeyIndex? _indices;
         private readonly Dictionary<T, DateTime?>? _initialValues;
-        private readonly Item[][] _blocks;
+        private readonly Item[][]? _blocks;
         private readonly ImmutableSortedDictionary<DateTime, int> _expirations;
         private readonly ImmutableStack<int> _freeIndices;
         private readonly int _nextIndex;
         private readonly int _permanentCount;
         private Dictionary<T, DateTime?>? _snapshot;
 
-        private readonly record struct Item(T Key, DateTime? Expiration, bool Present);
+        private readonly struct Item(T key, DateTime? expiration, bool present)
+        {
+            private readonly DateTime _expiration = expiration.GetValueOrDefault();
+            public T Key { get; } = key;
+            public bool Present { get; } = present;
+            private readonly bool _hasExpiration = expiration.HasValue;
+            public DateTime? Expiration => _hasExpiration ? _expiration : null;
+        }
 
         public ListSnapshot(Dictionary<T, DateTime?> values)
         {
             _initialValues = values;
+            _nextIndex = values.Count;
             var expirations = ImmutableSortedDictionary.CreateBuilder<DateTime, int>();
-            _blocks = new Item[(values.Count + BlockSize - 1) / BlockSize][];
-            for (int i = 0; i < _blocks.Length; i++)
-                _blocks[i] = new Item[BlockSize];
+            DateTime? previousExpiration = null;
+            int expirationCount = 0;
             foreach (var pair in values)
             {
-                _blocks[_nextIndex / BlockSize][_nextIndex % BlockSize] = new Item(pair.Key, pair.Value, true);
-                _nextIndex++;
                 if (pair.Value is { } expiration)
-                    expirations[expiration] = expirations.GetValueOrDefault(expiration) + 1;
+                {
+                    if (expiration != previousExpiration)
+                    {
+                        if (previousExpiration is { } previous)
+                            expirations[previous] = expirations.GetValueOrDefault(previous) + expirationCount;
+                        previousExpiration = expiration;
+                        expirationCount = 0;
+                    }
+                    expirationCount++;
+                }
                 else
                     _permanentCount++;
             }
+            if (previousExpiration is { } last)
+                expirations[last] = expirations.GetValueOrDefault(last) + expirationCount;
             _expirations = expirations.ToImmutable();
             _freeIndices = ImmutableStack<int>.Empty;
         }
@@ -1507,7 +1523,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         IEnumerator IEnumerable.GetEnumerator()
         {
-            foreach (var block in _blocks)
+            if (_initialValues is not null)
+            {
+                foreach (var pair in _initialValues)
+                    yield return pair;
+                yield break;
+            }
+
+            foreach (var block in _blocks!)
                 foreach (var item in block)
                     if (item.Present)
                         yield return new KeyValuePair<T, DateTime?>(item.Key, item.Expiration);
@@ -1532,10 +1555,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         {
             var result = new T[Count];
             int count = 0;
-            foreach (var block in _blocks)
-                foreach (var item in block)
-                    if (item.Present && (item.Expiration is null || item.Expiration >= utcNow))
-                        result[count++] = item.Key;
+            if (_initialValues is not null)
+            {
+                foreach (var pair in _initialValues)
+                    if (pair.Value is null || pair.Value >= utcNow)
+                        result[count++] = pair.Key;
+            }
+            else
+            {
+                foreach (var block in _blocks!)
+                    foreach (var item in block)
+                        if (item.Present && (item.Expiration is null || item.Expiration >= utcNow))
+                            result[count++] = item.Key;
+            }
             if (count != result.Length)
                 Array.Resize(ref result, count);
             return result;
@@ -1559,11 +1591,31 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 return new Dictionary<T, DateTime?>(_initialValues, _initialValues.Comparer);
 
             var dictionary = new Dictionary<T, DateTime?>(Count, Indices.KeyComparer);
-            foreach (var block in _blocks)
+            foreach (var block in _blocks!)
                 foreach (var item in block)
                     if (item.Present)
                         dictionary.Add(item.Key, item.Expiration);
             return dictionary;
+        }
+
+        private Item[][] CopyBlocks(int capacity)
+        {
+            var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
+            if (_blocks is not null)
+            {
+                Array.Copy(_blocks, blocks, _blocks.Length);
+                return blocks;
+            }
+
+            for (int i = 0; i < blocks.Length; i++)
+                blocks[i] = new Item[BlockSize];
+            int index = 0;
+            foreach (var pair in _initialValues!)
+            {
+                blocks[index / BlockSize][index % BlockSize] = new Item(pair.Key, pair.Value, true);
+                index++;
+            }
+            return blocks;
         }
 
         public ListSnapshot<T> Update(ICollection<T> items, DateTime? expiration, DateTime utcNow, bool remove, out long removed)
@@ -1604,8 +1656,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             var indices = Indices.ToBuilder();
             int capacity = Math.Max(_nextIndex, Count + (remove ? 0 : items.Count));
-            var blocks = new Item[(capacity + BlockSize - 1) / BlockSize][];
-            Array.Copy(_blocks, blocks, _blocks.Length);
+            var blocks = CopyBlocks(capacity);
             ImmutableSortedDictionary<DateTime, int>.Builder? expirations = null;
             var freeIndices = _freeIndices;
             int nextIndex = _nextIndex;
@@ -1613,7 +1664,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             bool changed = false;
 
             if (prune)
-                foreach (var block in _blocks)
+                foreach (var block in _blocks ?? blocks)
                     foreach (var item in block)
                         if (item.Present && item.Expiration < utcNow)
                             Remove(item.Key);
@@ -1673,8 +1724,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             void CopyBlock(int index)
             {
+                changed = true;
                 int blockIndex = index / BlockSize;
-                if (blockIndex < _blocks.Length)
+                if (_blocks is not null && blockIndex < _blocks.Length)
                 {
                     if (!ReferenceEquals(blocks[blockIndex], _blocks[blockIndex]))
                         return;
@@ -1686,7 +1738,6 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                         return;
                     blocks[blockIndex] = new Item[BlockSize];
                 }
-                changed = true;
             }
 
             void AdjustExpiration(DateTime? value, int delta)
@@ -1975,14 +2026,27 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         private static object? CloneValue(object? value, bool cloneDictionaryKeys)
         {
-            if (!cloneDictionaryKeys)
+            var type = value?.GetType();
+            if (type is null || !type.IsGenericType || type.GetGenericTypeDefinition() != typeof(Dictionary<,>))
                 return value.DeepClone();
 
-            // The cloner's dictionary fast paths can share mutable key state.
+            // The vendored cloner rebuilds dictionaries of at most 32 entries, preserving their comparer
+            // and discarding cached views and unused capacity. Mutable keys still need the adapter below.
+            if (!cloneDictionaryKeys && ((IDictionary)value!).Count <= 32)
+                return value.DeepClone();
+
+            // Track the dictionary root so cached Keys and Values views belong to the clone.
             var clone = (IDictionary)FastCloner.FastCloner.DeepCloneTo(value, FastCloner.FastCloner.ShallowClone(value))!;
+            if (!cloneDictionaryKeys)
+            {
+                var comparer = type.GetProperty("Comparer")!;
+                if (ReferenceEquals(comparer.GetValue(value), comparer.GetValue(clone)))
+                    return clone;
+            }
+
             var entries = new DictionaryEntry[clone.Count];
             clone.CopyTo(entries, 0);
-            // Rehash cloned keys in place so reference-based hashes and root cycles remain valid.
+            // Rehash when cloning can change hashes, preserving references back to the dictionary root.
             clone.Clear();
             foreach (var entry in entries)
                 clone.Add(entry.Key, entry.Value);
