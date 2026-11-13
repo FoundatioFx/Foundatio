@@ -1252,7 +1252,10 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await WaitForStatsAsync(source, "3 queued and none in flight", s => s.Queued == 3 && Is(s.InFlight, 0) && Is(s.Delayed, 0));
     }
 
-    /// <summary>A received message that is not settled yet counts as in flight instead of queued, and as neither once it is completed.</summary>
+    /// <summary>
+    /// A received message that is not settled yet counts as in flight instead of queued, and as neither once it is
+    /// completed. A transport that cannot count in-flight messages may keep counting it as queued until it is settled.
+    /// </summary>
     [Fact]
     public async Task GetStats_WhileAMessageIsReceivedAndNotSettled_CountsItInFlightInsteadOfQueued()
     {
@@ -1266,7 +1269,7 @@ public abstract class MessageTransportTestsBase : TestWithLoggingBase
         await using var receiver = await CreateReceiverAsync(source);
         var message = await ReceiveOneAsync(receiver);
 
-        await WaitForStatsAsync(source, "1 in flight and none queued", s => Is(s.InFlight, 1) && Is(s.Queued, 0));
+        await WaitForStatsAsync(source, "1 in flight and none queued", s => s.InFlight is null || s.InFlight == 1 && Is(s.Queued, 0));
         await receiver.CompleteAsync(message, TestCancellationToken);
         await WaitForStatsAsync(source, "none in flight or queued after the complete", s => Is(s.InFlight, 0) && Is(s.Queued, 0));
     }

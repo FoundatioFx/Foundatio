@@ -145,19 +145,19 @@ Each count of a `MessageSourceStats` is approximate, may lag sends and settlemen
 
 | Count | Meaning |
 |---|---|
-| `Queued` | Waiting to be delivered now: not delayed and not leased to a receiver |
+| `Queued` | Waiting to be delivered now: not delayed and not leased to a receiver. Where `InFlight` is null, it also counts delivered messages until they are settled |
 | `Delayed` | Waiting for a delivery time in the future, including retries waiting out their delay |
 | `InFlight` | Delivered to a receiver and not yet completed, abandoned or dead-lettered |
 | `DeadLettered` | In the source's dead-letter queue |
 
-Instance subscriptions are not counted. What the counts rest on depends on the broker:
+Instance subscriptions are not counted. A broker that cannot tell two states apart counts a message in the nearest one it can report. What the counts rest on depends on the broker:
 
 | Transport | Where the counts come from |
 |---|---|
 | In-memory | Exact counts of the process's own queues and subscriptions. |
-| Redis | The source's stream and consumer group, its lease and delay sets, and its dead-letter stream, read from Redis on each call. |
-| SQS | The queue's approximate message attributes (visible, delayed and not visible) and its dead-letter queue's. A retry waiting out its visibility timeout, and a send longer than 15 minutes that the transport holds, are not visible, so they count as in flight. AWS documents the attributes as approximate and eventually consistent. |
-| Kafka | Consumer group lag: the records after the group's committed offsets. A count the offsets cannot separate is null. |
+| Redis | The source's stream and consumer group, its lease, retry and delay sets, and its dead-letter stream, read in one script, so the four counts are exact at the moment of the call. Messages held behind an unsettled message of their ordered group count as queued. |
+| SQS | The queue's approximate message attributes (visible, delayed and not visible) and its dead-letter queue's. A retry waiting out its visibility timeout, and a send longer than 15 minutes that the transport holds, are not visible, so they count as in flight. FIFO queues never delay a message, so `Delayed` is null there. AWS documents the attributes as approximate; they can lag by about a minute. |
+| Kafka | Consumer group lag, read without joining the group: the records after the group's committed offsets on the source's topic (and a subscription's own topic). A received message counts as queued until its offset is committed, about a second after it is settled. `InFlight` and `Delayed` are null: receivers' holdings aren't visible across processes, and delayed messages wait in delay topics that all sources share. `DeadLettered` counts the dead letters not yet replayed. |
 
 ## Cost
 
