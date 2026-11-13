@@ -143,14 +143,13 @@ internal sealed class WorkTracker
             return;
 
         Stop(work);
-        long now = _timeProvider.GetTimestamp();
         var duration = _timeProvider.GetElapsedTime(work.StartedTimestamp, work.StoppedTimestamp);
-        counter.Record(now, outcome, duration);
+        counter.Record(work.StoppedTimestamp, outcome, duration);
 
         if (!IsFailure(outcome) && duration < ActiveThreshold && work.ProgressTimestamp == 0)
             return;
 
-        var completedAt = _timeProvider.GetUtcNow() - _timeProvider.GetElapsedTime(work.StoppedTimestamp, now);
+        var completedAt = _timeProvider.GetUtcNow() - _timeProvider.GetElapsedTime(work.StoppedTimestamp, _timeProvider.GetTimestamp());
         AddRecent(new CompletedWorkEntry
         {
             Kind = counter.Kind,
