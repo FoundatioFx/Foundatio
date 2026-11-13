@@ -262,7 +262,7 @@ var limitedCache = new InMemoryCacheClient(o => o.MaxItems(1000));
 
 #### In-memory update behavior
 
-Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size.
+Conditional writes and list updates publish replacement entries atomically. An oversized update rejected by size validation preserves the previous value, expiration, and tracked size. `MaxEntrySize` also applies to the fallback estimate used when a custom size calculator throws.
 
 Every write treats an expired entry as missing, even before background maintenance removes it, matching Redis: `IncrementAsync`, `SetIfHigherAsync`, `SetIfLowerAsync` and `ListAddAsync` start fresh, `ReplaceAsync`, `SetExpirationAsync` and `ListRemoveAsync` find nothing to change, and `RemoveIfEqualAsync` and `ReplaceIfEqualAsync` return `false` rather than letting a stale owner remove or renew it. A write that finds an expired entry reclaims it and raises `ItemExpired` once, without touching a concurrent replacement.
 
@@ -277,7 +277,7 @@ Successful removal of a live matching value, or removal of the last list value, 
 - If an accepted item TTL elapses while `ListAddAsync` enumerates, prepares, sizes, or retries its update, it returns `0` and preserves the existing live list, key expiration, and tracked size. Explicitly supplying a TTL below 5ms still removes the supplied items.
 - If a custom `SizeCalculator` throws, the fallback estimate is also checked against `MaxEntrySize`. An oversized fallback now rejects the write (or throws `MaxEntrySizeExceededCacheException` when configured), preserving the previous entry. Earlier versions bypassed this limit on the fallback path.
 - `ReplaceAsync` on an expired key returns `false` and raises `ItemExpired` once while reclaiming it.
-- `ReplaceIfEqualAsync` returns `false` if the replacement expires during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size.
+- Key writes, numeric updates, and list additions reject a replacement whose valid TTL elapses during preparation or a retry, preserving any still-live entry's value, expiration, and tracked size. `ReplaceIfEqualAsync` returns `false` for an expired replacement. Expirations supplied below 5ms retain the removal behavior described in [Minimum Expiration](#minimum-expiration).
 - Size-changing writes, clears, and recounts coordinate their memory accounting so concurrent operations do not leave a stale `CurrentMemorySize`. Disposal clears the tracked size together with the stored entries. Sizing and logging callbacks run outside the accounting lock.
 - List size limits (`MaxEntrySize`, a negative `SizeCalculator` result) apply to the whole resulting list on every `ListAddAsync` and `ListRemoveAsync`, so a removal that leaves the list over the limit is rejected and returns `0`.
 - A rejected nonempty `ListAddAsync` on an expired key still reclaims the expired entry and raises `ItemExpired`. Size-rejected, nonempty list additions are included in `Writes`.

@@ -3421,24 +3421,24 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SetAsync_WithOversizedCalculatorFallback_PreservesEntry(bool shouldThrow)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task SetAsync_WithOversizedCalculatorFallback_PreservesEntry(bool shouldThrow, bool stringValue)
     {
-        // Arrange
-        var timeProvider = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(timeProvider).MaxMemorySize(1000)
-            .SizeCalculator(value => (string)value! == "old" ? 3 : throw new InvalidOperationException("Sizing failed"))
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log).MaxMemorySize(1000)
+            .SizeCalculator(value => value is "old" ? 3 : throw new InvalidOperationException("Sizing failed"))
             .MaxEntrySize(10).ShouldThrowOnMaxEntrySizeExceeded(shouldThrow));
         await cache.SetAsync("key", "old", TimeSpan.FromMinutes(1));
+        object replacement = stringValue ? "replacement" : new object();
 
-        // Act
         if (shouldThrow)
-            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync("key", "replacement", TimeSpan.FromMinutes(5)));
+            await Assert.ThrowsAsync<MaxEntrySizeExceededCacheException>(() => cache.SetAsync("key", replacement, TimeSpan.FromMinutes(5)));
         else
-            Assert.False(await cache.SetAsync("key", "replacement", TimeSpan.FromMinutes(5)));
+            Assert.False(await cache.SetAsync("key", replacement, TimeSpan.FromMinutes(5)));
 
-        // Assert
         Assert.Equal("old", (await cache.GetAsync<string>("key")).Value);
         Assert.Equal(TimeSpan.FromMinutes(1), await cache.GetExpirationAsync("key"));
         Assert.Equal(3, cache.CurrentMemorySize);
@@ -3551,30 +3551,28 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
     [InlineData("Add")]
     [InlineData("Replace")]
     [InlineData("Set")]
+    [InlineData("SetAll")]
     public async Task WriteAsync_WithExpirationDuringSizing_PreservesLiveEntry(string operation)
     {
-        // Arrange
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        bool delaySizing = false;
-        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).MaxMemorySize(1000).SizeCalculator(_ =>
-        {
-            if (delaySizing)
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(1000).SizeCalculator(_ =>
+            {
                 clock.Advance(TimeSpan.FromSeconds(1));
-            return 50;
-        }));
-        await cache.SetAsync("key", "current-owner", TimeSpan.FromMinutes(1));
-        var original = GetEntry(cache, "key");
-        delaySizing = true;
+                return 100;
+            }));
+        var original = CreateEntry("current-owner", clock, TimeSpan.FromMinutes(1));
+        Publish(cache, "key", original);
+        var expiration = TimeSpan.FromMilliseconds(10);
 
-        // Act
         bool result = operation switch
         {
-            "Add" => await cache.AddAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10)),
-            "Replace" => await cache.ReplaceAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10)),
-            _ => await cache.SetAsync("key", "stale-owner", TimeSpan.FromMilliseconds(10))
+            "Add" => await cache.AddAsync("key", "stale-owner", expiration),
+            "Replace" => await cache.ReplaceAsync("key", "stale-owner", expiration),
+            "SetAll" => await cache.SetAllAsync(new Dictionary<string, string> { ["key"] = "stale-owner" }, expiration) > 0,
+            _ => await cache.SetAsync("key", "stale-owner", expiration)
         };
 
-        // Assert
         Assert.False(result);
         Assert.Equal("current-owner", (await cache.GetAsync<string>("key")).Value);
         Assert.Same(original, GetEntry(cache, "key"));
@@ -3613,6 +3611,83 @@ public class InMemoryCacheClientTests : CacheClientTestsBase
         Assert.Equal(0, cache.CurrentMemorySize);
         Assert.Equal("key", await expired.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
         Assert.False((await cache.GetAsync<string>("key")).HasValue);
+    }
+
+    [Theory]
+    [InlineData("Increment", false, 1)]
+    [InlineData("Increment", true, 1)]
+    [InlineData("Increment", false, 2)]
+    [InlineData("Increment", true, 2)]
+    [InlineData("Higher", false, 1)]
+    [InlineData("Higher", true, 1)]
+    [InlineData("Lower", false, 1)]
+    [InlineData("Lower", true, 1)]
+    [InlineData("HigherUnchanged", false, 1)]
+    [InlineData("HigherUnchanged", true, 1)]
+    [InlineData("LowerUnchanged", false, 1)]
+    [InlineData("LowerUnchanged", true, 1)]
+    public async Task NumericWriteAsync_WithExpirationDuringSizing_PreservesLiveEntry(string operation, bool useDouble, int expireOnSizingCall)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        int sizingCalls = 0;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(1000).SizeCalculator(_ =>
+            {
+                if (++sizingCalls == expireOnSizingCall)
+                    clock.Advance(TimeSpan.FromSeconds(1));
+                return 100;
+            }));
+        var original = CreateEntry(10L, clock, TimeSpan.FromMinutes(1));
+        Publish(cache, "key", original);
+        var expiration = TimeSpan.FromMilliseconds(10);
+
+        double result = (operation, useDouble) switch
+        {
+            ("Increment", false) => await cache.IncrementAsync("key", 5L, expiration),
+            ("Increment", true) => await cache.IncrementAsync("key", 5d, expiration),
+            ("Higher", false) => await cache.SetIfHigherAsync("key", 15L, expiration),
+            ("Higher", true) => await cache.SetIfHigherAsync("key", 15d, expiration),
+            ("Lower", false) => await cache.SetIfLowerAsync("key", 5L, expiration),
+            ("Lower", true) => await cache.SetIfLowerAsync("key", 5d, expiration),
+            ("HigherUnchanged", false) => await cache.SetIfHigherAsync("key", 5L, expiration),
+            ("HigherUnchanged", true) => await cache.SetIfHigherAsync("key", 5d, expiration),
+            ("LowerUnchanged", false) => await cache.SetIfLowerAsync("key", 15L, expiration),
+            ("LowerUnchanged", true) => await cache.SetIfLowerAsync("key", 15d, expiration),
+            _ => throw new ArgumentOutOfRangeException(nameof(operation))
+        };
+
+        Assert.Equal(0, result);
+        Assert.Equal(10, (await cache.GetAsync<long>("key")).Value);
+        Assert.Same(original, GetEntry(cache, "key"));
+        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("key"));
+        Assert.Equal(50, cache.CurrentMemorySize);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ListAddAsync_WithExpirationDuringSizing_PreservesLiveValues(int expireOnSizingCall)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        int sizingCalls = 0;
+        using var cache = new InMemoryCacheClient(o => o.TimeProvider(clock).LoggerFactory(Log)
+            .MaxMemorySize(1000).SizeCalculator(_ =>
+            {
+                if (++sizingCalls == expireOnSizingCall)
+                    clock.Advance(TimeSpan.FromSeconds(1));
+                return 100;
+            }));
+        var values = new Dictionary<int, DateTime?> { [1] = clock.GetUtcNow().UtcDateTime.AddMinutes(1) };
+        var original = CreateEntry(values, clock, TimeSpan.FromMinutes(1));
+        Publish(cache, "key", original);
+
+        long added = await cache.ListAddAsync("key", [1, 2], TimeSpan.FromMilliseconds(10));
+
+        Assert.Equal(0, added);
+        Assert.Equal([1], (await cache.GetListAsync<int>("key")).Value);
+        Assert.Same(original, GetEntry(cache, "key"));
+        Assert.Equal(TimeSpan.FromSeconds(59), await cache.GetExpirationAsync("key"));
+        Assert.Equal(50, cache.CurrentMemorySize);
     }
 
     [Theory]

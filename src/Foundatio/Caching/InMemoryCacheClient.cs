@@ -593,13 +593,20 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         T difference = UpdateEntry(key, current =>
         {
+            if (newEntry.IsExpired)
+                return (current, T.Zero);
+
             if (current is null)
                 return (newEntry, value);
 
             if (GetNumericValue<T>(current) is { } currentValue && (higher ? currentValue < value : currentValue > value))
-                return (current.WithValue(value, expiresAt, newEntry.Size), higher ? value - currentValue : currentValue - value);
+            {
+                var replacement = current.WithValue(value, expiresAt, newEntry.Size);
+                return replacement.IsExpired ? (current, T.Zero) : (replacement, higher ? value - currentValue : currentValue - value);
+            }
 
-            return (current.WithExpiration(expiresAt), T.Zero);
+            var unchanged = current.WithExpiration(expiresAt);
+            return (unchanged.IsExpired ? current : unchanged, T.Zero);
         });
 
         await StartMaintenanceAsync().AnyContext();
@@ -1039,12 +1046,19 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         T result = UpdateEntry(key, current =>
         {
+            if (newEntry.IsExpired)
+                return (current, T.Zero);
+
             if (current is null)
                 return (newEntry, amount);
 
             T newValue = (GetNumericValue<T>(current) ?? T.Zero) + amount;
             long size = _hasSizeCalculator ? CalculateEntrySize(newValue) : 0;
-            return size < 0 ? (current, T.Zero) : (current.WithValue(newValue, expiresAt, size), newValue);
+            if (size < 0)
+                return (current, T.Zero);
+
+            var replacement = current.WithValue(newValue, expiresAt, size);
+            return replacement.IsExpired ? (current, T.Zero) : (replacement, newValue);
         });
 
         await StartMaintenanceAsync().AnyContext();
