@@ -5,7 +5,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 builder.AddRabbitMQ("messaging")
     .WithManagementPlugin();
 
-builder.AddContainer("messaging-delayed", "foundatiorabbitmq-rabbitmq-delayed", "latest")
+builder.AddDockerfile("messaging-delayed", "../../build/rabbitmq-delayed")
     .WithEndpoint(targetPort: 5672, name: "amqp", scheme: "tcp")
     .WithEndpoint(targetPort: 15672, name: "management", scheme: "http");
 

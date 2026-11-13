@@ -1,9 +1,15 @@
 <Solution>
   <Folder Name="/Samples/">
     <Project Path="samples/Foundatio.AppHost/Foundatio.AppHost.csproj" />
+    <Project Path="samples/Foundatio.AzureServiceBus.Dequeue/Foundatio.AzureServiceBus.Dequeue.csproj" />
+    <Project Path="samples/Foundatio.AzureServiceBus.Enqueue/Foundatio.AzureServiceBus.Enqueue.csproj" />
+    <Project Path="samples/Foundatio.AzureServiceBus.Publish/Foundatio.AzureServiceBus.Publish.csproj" />
+    <Project Path="samples/Foundatio.AzureServiceBus.Subscribe/Foundatio.AzureServiceBus.Subscribe.csproj" />
     <Project Path="samples/Foundatio.HostingSample/Foundatio.HostingSample.csproj" />
     <Project Path="samples/Foundatio.Kafka.Publish/Foundatio.Kafka.Publish.csproj" />
     <Project Path="samples/Foundatio.Kafka.Subscribe/Foundatio.Kafka.Subscribe.csproj" />
+    <Project Path="samples/Foundatio.RabbitMQ.Publish/Foundatio.RabbitMQ.Publish.csproj" />
+    <Project Path="samples/Foundatio.RabbitMQ.Subscribe/Foundatio.RabbitMQ.Subscribe.csproj" />
     <Project Path="samples/Foundatio.SampleJob/Foundatio.SampleJob.csproj" />
     <Project Path="samples/Foundatio.SampleJobClient/Foundatio.SampleJobClient.csproj" />
   </Folder>
@@ -21,7 +27,10 @@
   <Folder Name="/Tests/">
     <Project Path="src/Foundatio.TestHarness/Foundatio.TestHarness.csproj" />
     <Project Path="tests/Foundatio.AWS.Tests/Foundatio.AWS.Tests.csproj" />
+    <Project Path="tests/Foundatio.AzureServiceBus.Tests/Foundatio.AzureServiceBus.Tests.csproj" />
     <Project Path="tests/Foundatio.Kafka.Tests/Foundatio.Kafka.Tests.csproj" />
+    <Project Path="tests/Foundatio.RabbitMQ.AppHost/Foundatio.RabbitMQ.AppHost.csproj" />
+    <Project Path="tests/Foundatio.RabbitMQ.Tests/Foundatio.RabbitMQ.Tests.csproj" />
     <Project Path="tests/Foundatio.Redis.Tests/Foundatio.Redis.Tests.csproj" />
     <Project Path="tests/Foundatio.Tests/Foundatio.Tests.csproj" />
   </Folder>
@@ -30,11 +39,13 @@
     <Project Path="benchmarks/Foundatio.Redis.Benchmarks/Foundatio.Redis.Benchmarks.csproj" />
   </Folder>
   <Project Path="src/Foundatio.AWS/Foundatio.AWS.csproj" />
+  <Project Path="src/Foundatio.AzureServiceBus/Foundatio.AzureServiceBus.csproj" />
   <Project Path="src/Foundatio.DataProtection/Foundatio.DataProtection.csproj" />
   <Project Path="src/Foundatio.Extensions.Hosting/Foundatio.Extensions.Hosting.csproj" />
   <Project Path="src/Foundatio.JsonNet/Foundatio.JsonNet.csproj" />
   <Project Path="src/Foundatio.Kafka/Foundatio.Kafka.csproj" />
   <Project Path="src/Foundatio.MessagePack/Foundatio.MessagePack.csproj" />
+  <Project Path="src/Foundatio.RabbitMQ/Foundatio.RabbitMQ.csproj" />
   <Project Path="src/Foundatio.Redis/Foundatio.Redis.csproj" />
   <Project Path="src/Foundatio.Utf8Json/Foundatio.Utf8Json.csproj" />
   <Project Path="src/Foundatio.Xunit.v3/Foundatio.Xunit.v3.csproj" />
