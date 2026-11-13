@@ -7,16 +7,10 @@
 			"path": "../Foundatio.Repositories"
 		},
 		{
-			"path": "../Foundatio.RabbitMQ"
-		},
-		{
 			"path": "../Foundatio.Parsers"
 		},
 		{
 			"path": "../Foundatio.AzureStorage"
-		},
-		{
-			"path": "../Foundatio.AzureServiceBus"
 		},
 		{
 			"path": "../Foundatio.Aliyun"

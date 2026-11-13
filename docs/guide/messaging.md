@@ -52,7 +52,7 @@ await messageBus.PublishAsync(new OrderCreated { OrderId = 123 });
 
 Messaging using Azure Service Bus (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.AzureServiceBus/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.AzureServiceBus/Messaging/AzureServiceBusMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.AzureServiceBus
@@ -85,7 +85,7 @@ var messageBus = new KafkaMessageBus(o => {
 
 Messaging using RabbitMQ (separate package):
 
-[View source](https://github.com/FoundatioFx/Foundatio.RabbitMQ/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
+[View source](https://github.com/FoundatioFx/Foundatio/blob/main/src/Foundatio.RabbitMQ/Messaging/RabbitMQMessageBus.cs)
 
 ```csharp
 // dotnet add package Foundatio.RabbitMQ

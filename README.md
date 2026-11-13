@@ -61,9 +61,9 @@ await using var handle = await locker.AcquireAsync("resource-key");
 | [In-Memory](https://foundatio.dev/guide/implementations/in-memory) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Redis](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Redis) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | [Azure Storage](https://github.com/FoundatioFx/Foundatio.AzureStorage) | | ✅ | | ✅ | |
-| [Azure Service Bus](https://github.com/FoundatioFx/Foundatio.AzureServiceBus) | | ✅ | ✅ | | |
+| [Azure Service Bus](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AzureServiceBus) | | ✅ | ✅ | | |
 | [AWS (S3/SQS/SNS)](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS) | | ✅ | ✅ | ✅ | |
-| [RabbitMQ](https://github.com/FoundatioFx/Foundatio.RabbitMQ) | | | ✅ | | |
+| [RabbitMQ](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.RabbitMQ) | | | ✅ | | |
 | [Kafka](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.Kafka) | | | ✅ | | |
 | [Aliyun](https://github.com/FoundatioFx/Foundatio.Aliyun) | | | | ✅ | |
 | [SFTP](https://github.com/FoundatioFx/Foundatio.Storage.SshNet) | | | | ✅ | |
@@ -124,7 +124,7 @@ Contributions are welcome! Please feel free to submit a Pull Request. See our [d
 3. Run `dotnet build` to build
 4. Run `dotnet test` to run tests
 
-The Redis, AWS and Kafka providers live in this repo (`src/Foundatio.Redis`, `src/Foundatio.AWS`, `src/Foundatio.Kafka`), and their tests need real services. Start them with `docker compose up -d && docker compose up ready` before `dotnet test`. Without Docker, run only the core tests with `dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj`.
+The Redis, AWS, Kafka, Azure Service Bus and RabbitMQ providers live in this repo (`src/Foundatio.Redis`, `src/Foundatio.AWS`, `src/Foundatio.Kafka`, `src/Foundatio.AzureServiceBus`, `src/Foundatio.RabbitMQ`), and their tests need real services. Start them with `docker compose up -d && docker compose up ready` before `dotnet test`; the RabbitMQ tests start their own brokers through Aspire and only need Docker running. Without Docker, run only the core tests with `dotnet test --project tests/Foundatio.Tests/Foundatio.Tests.csproj`.
 
 ## 🔗 Related Projects
 
