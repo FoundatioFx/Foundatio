@@ -2,13 +2,6 @@ name: Build
 on:
   workflow_call:
     inputs:
-      # Temporary workaround: https://github.com/NuGet/NuGetGallery/issues/11000
-      # Callers opt out until reusable publishing and their policies are validated.
-      skip-nuget-publishing:
-        description: 'Skip NuGet publishing in this reusable workflow'
-        default: false
-        required: false
-        type: boolean
       solution:
         description: 'The solution to build'
         default: ''
@@ -148,42 +141,14 @@ jobs:
           fi
 
         done
-    - name: Select Release Packages
-      if: startsWith(github.ref, 'refs/tags/v') && inputs.skip-nuget-publishing
-      id: nuget-release
-      run: |
-        packages=$(find . -name "*.nupkg" | grep -v "minver" | grep -v "/EmptyFiles/" || true)
-        if [ -z "$packages" ]; then
-          echo "::error::No release packages found."
-          exit 1
-        fi
-        {
-          echo 'paths<<EOF'
-          while IFS= read -r package; do
-            echo "$package"
-            symbols="${package%.nupkg}.snupkg"
-            if [ -f "$symbols" ]; then
-              echo "$symbols"
-            fi
-          done <<< "$packages"
-          echo 'EOF'
-        } >> "$GITHUB_OUTPUT"
-    - name: Upload Release Packages
-      if: startsWith(github.ref, 'refs/tags/v') && inputs.skip-nuget-publishing
-      uses: actions/upload-artifact@v7
-      with:
-        name: nuget-release
-        path: ${{ steps.nuget-release.outputs.paths }}
-        include-hidden-files: true
-        if-no-files-found: error
     - name: NuGet Login
-      if: startsWith(github.ref, 'refs/tags/v') && !inputs.skip-nuget-publishing
+      if: startsWith(github.ref, 'refs/tags/v')
       uses: NuGet/login@v1
       id: login
       with:
         user: ${{ secrets.NUGET_USER }}
     - name: Publish Release Packages
-      if: startsWith(github.ref, 'refs/tags/v') && !inputs.skip-nuget-publishing
+      if: startsWith(github.ref, 'refs/tags/v')
       run: |
         for package in $(find . -name "*.nupkg" | grep -v "minver" | grep -v "/EmptyFiles/"); do
           echo "${0##*/}": Pushing $package...
