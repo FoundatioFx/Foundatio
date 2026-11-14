@@ -21,7 +21,9 @@ namespace Foundatio.Messaging.Transport;
 /// purge markers, and hides messages that arrive before their delivery time; on a FIFO queue it then also releases the
 /// later messages of that group it received, so none is handed out ahead of the hidden one. On a standard queue that
 /// already has <see cref="MaxHiddenInFlight"/> messages in flight, an early message is sent again with a delay of up to
-/// 15 minutes instead, since delayed messages do not count toward SQS's in-flight quota.
+/// 15 minutes instead, since delayed messages do not count toward SQS's in-flight quota. Receives may run concurrently:
+/// SQS hands a message, and a FIFO group with a message in flight, to one of them only, each receive handles the early
+/// and held-back messages it got itself, and they share one reading of the in-flight count.
 /// </summary>
 internal sealed class SqsMessageReceiver : IMessageReceiver
 {
@@ -65,6 +67,7 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     private readonly int _leaseSeconds;
     private readonly ConcurrentDictionary<string, SqsIncomingMessage> _inFlight = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _disposing = new();
+    private readonly SemaphoreSlim _inFlightCheck = new(1, 1);
     private Task _heartbeat = Task.CompletedTask;
     private long _inFlightCheckedAt;
     private long _measuredInFlight;
@@ -350,32 +353,60 @@ internal sealed class SqsMessageReceiver : IMessageReceiver
     /// <summary>
     /// Whether the queue has so many messages in flight that hiding another early one risks SQS's in-flight quota, past
     /// which no message of the queue can be received. Read from SQS at most every <see cref="InFlightCheckInterval"/>,
-    /// adding what this receiver has hidden since.
+    /// adding what this receiver has hidden since. Concurrent receives wait for a read in progress rather than judge
+    /// by the count it is replacing.
     /// </summary>
     private async Task<bool> IsCrowdedAsync()
     {
-        long checkedAt = Interlocked.Read(ref _inFlightCheckedAt);
-        if (checkedAt == 0 || Stopwatch.GetElapsedTime(checkedAt) > InFlightCheckInterval)
+        if (IsInFlightCountStale())
         {
-            Interlocked.Exchange(ref _inFlightCheckedAt, Stopwatch.GetTimestamp());
+            await _inFlightCheck.WaitAsync().AnyContext();
             try
             {
-                var response = await _transport.Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
-                {
-                    QueueUrl = _queueUrl,
-                    AttributeNames = [QueueAttributeName.ApproximateNumberOfMessagesNotVisible]
-                }).AnyContext();
-
-                Interlocked.Exchange(ref _measuredInFlight, SqsMessageTransport.GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessagesNotVisible) ?? 0);
-                Interlocked.Exchange(ref _hiddenSinceCheck, 0);
+                if (IsInFlightCountStale())
+                    await ReadInFlightCountAsync().AnyContext();
             }
-            catch (AmazonServiceException ex)
+            finally
             {
-                _transport.Logger.LogDebug(ex, "Could not read how many messages of {Source} are in flight", Source);
+                _inFlightCheck.Release();
             }
         }
 
         return Interlocked.Read(ref _measuredInFlight) + Interlocked.Read(ref _hiddenSinceCheck) >= MaxHiddenInFlight;
+    }
+
+    private bool IsInFlightCountStale()
+    {
+        long checkedAt = Interlocked.Read(ref _inFlightCheckedAt);
+        return checkedAt == 0 || Stopwatch.GetElapsedTime(checkedAt) > InFlightCheckInterval;
+    }
+
+    /// <summary>
+    /// Reads the queue's in-flight count. Messages hidden while the read runs may be missing from it, so only those
+    /// hidden before it started stop being counted separately.
+    /// </summary>
+    private async Task ReadInFlightCountAsync()
+    {
+        long hiddenBefore = Interlocked.Read(ref _hiddenSinceCheck);
+        try
+        {
+            var response = await _transport.Sqs.GetQueueAttributesAsync(new GetQueueAttributesRequest
+            {
+                QueueUrl = _queueUrl,
+                AttributeNames = [QueueAttributeName.ApproximateNumberOfMessagesNotVisible]
+            }).AnyContext();
+
+            Interlocked.Exchange(ref _measuredInFlight, SqsMessageTransport.GetNumber(response.Attributes, QueueAttributeName.ApproximateNumberOfMessagesNotVisible) ?? 0);
+            Interlocked.Add(ref _hiddenSinceCheck, -hiddenBefore);
+        }
+        catch (AmazonServiceException ex)
+        {
+            _transport.Logger.LogDebug(ex, "Could not read how many messages of {Source} are in flight", Source);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _inFlightCheckedAt, Stopwatch.GetTimestamp());
+        }
     }
 
     /// <summary>

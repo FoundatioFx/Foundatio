@@ -116,6 +116,31 @@ public class SqsFifoMessageTransportTests(ITestOutputHelper output) : SqsMessage
     }
 
     [Fact]
+    public async Task Fifo_ConcurrentReceivesOnOneReceiver_KeepEachGroupInOrder()
+    {
+        // Arrange: the first message of two groups is delayed, so a receive hides it and releases the rest of its group.
+        int concurrency = Transport.Capabilities.MaxConcurrentReceives;
+        Assert.True(concurrency > 1, $"MaxConcurrentReceives is {concurrency}.");
+        var source = MessageSource.Queue(NewName("fifo-concurrent"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var messages = Enumerable.Range(0, 90).Select(i => Message($"m{i}", $"g{i % 6}-{i / 6:D2}") with
+        {
+            GroupKey = $"g{i % 6}",
+            DeliverAt = i is 0 or 3 ? DateTimeOffset.UtcNow.Add(ShortDelay) : null
+        }).ToList();
+
+        // Act
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), messages, TestCancellationToken);
+        var received = await ReceiveConcurrentlyAsync(receiver, concurrency, messages.Count, DeliveryTimeout + ShortDelay);
+
+        // Assert
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+        Assert.Equal(messages.Select(m => m.MessageId).Order(), received.Select(m => m.MessageId).Order());
+        foreach (var group in messages.GroupBy(m => m.GroupKey))
+            Assert.Equal(group.Select(m => m.MessageId), received.Where(m => m.GroupKey == group.Key).Select(m => m.MessageId));
+    }
+
+    [Fact]
     public async Task Fifo_GroupKeysAndDeduplicationIdsThatSqsWouldReject_AreMapped()
     {
         // Arrange

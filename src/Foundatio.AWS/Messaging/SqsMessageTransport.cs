@@ -77,6 +77,13 @@ public sealed class SqsMessageTransport : IMessageTransport
     private const int MaxSubscriptionPagesPerSweep = 10;
     private const int MaxSubscriptionPagesPerDelete = 100;
     private const int SweepIntervalInTimeouts = 6;
+
+    /// <summary>
+    /// How many receives Foundatio may run at once on one receiver. A receive returns at most 10 messages per round
+    /// trip, so concurrent receives keep handlers busy; SQS never hands one message, or one FIFO group, to two of them.
+    /// </summary>
+    private const int MaxReceivesInFlight = 4;
+
     private static readonly TimeSpan MaxNativeDelay = TimeSpan.FromMinutes(15);
     private static readonly TimeSpan MessageRetention = TimeSpan.FromDays(14);
     private static readonly TimeSpan NewQueueRetryDelay = TimeSpan.FromMilliseconds(200);
@@ -135,8 +142,8 @@ public sealed class SqsMessageTransport : IMessageTransport
     /// message once received, again every 11 hours, until it is due; on FIFO queues that holds back the later messages
     /// of its group. Retries are delayed with a visibility timeout of up to 12 hours from the receive. Messages may be
     /// 252 KiB as <see cref="MessageSize"/> measures them: SQS and SNS accept 256 KiB including the transport's
-    /// envelope, which keeps 4 KiB for framing and the dead-letter reason. FIFO mode orders groups (dead letters
-    /// excepted) and deduplicates within 5 minutes.
+    /// envelope, which keeps 4 KiB for framing and the dead-letter reason. A receiver takes up to 4 concurrent receives
+    /// of up to 10 messages each. FIFO mode orders groups (dead letters excepted) and deduplicates within 5 minutes.
     /// </summary>
     public TransportCapabilities Capabilities { get; }
 
@@ -364,6 +371,7 @@ public sealed class SqsMessageTransport : IMessageTransport
         MinRetryDelay = TimeSpan.FromSeconds(1), // visibility timeouts are whole seconds
         MaxSendBatchSize = MaxBatchSize,
         MaxReceiveBatchSize = MaxBatchSize,
+        MaxConcurrentReceives = MaxReceivesInFlight,
         MaxMessageSize = SqsMessageTransportCodec.MaxMessageSize,
         MaxLeaseDuration = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
         LeaseExpiration = true,

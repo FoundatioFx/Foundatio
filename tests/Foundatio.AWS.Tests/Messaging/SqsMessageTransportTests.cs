@@ -391,6 +391,103 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
     }
 
     [Fact]
+    public async Task ReceiveAsync_ConcurrentCallsOnOneReceiver_HandOutEachMessageOnce()
+    {
+        // Arrange: publishes carry their delay, so each receive also hides the early messages it gets.
+        int concurrency = Transport.Capabilities.MaxConcurrentReceives;
+        Assert.True(concurrency > 1, $"MaxConcurrentReceives is {concurrency}.");
+        var transport = CreateInterceptedTransport(out var sqsInterceptor);
+        int receiving = 0;
+        int mostReceiving = 0;
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is not ReceiveMessageRequest)
+                return await send();
+
+            int current = Interlocked.Increment(ref receiving);
+            int most;
+            while (current > (most = Volatile.Read(ref mostReceiving)) && Interlocked.CompareExchange(ref mostReceiving, current, most) != most)
+            {
+            }
+
+            try
+            {
+                return await send();
+            }
+            finally
+            {
+                Interlocked.Decrement(ref receiving);
+            }
+        };
+
+        string topic = NewName("concurrent");
+        var source = MessageSource.Subscription(topic, "all");
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions { LeaseDuration = TimeSpan.FromSeconds(30) }, TestCancellationToken);
+        var messages = Enumerable.Range(0, 60).Select(i => Message($"m{i}", $"id-{i:D2}") with
+        {
+            GroupKey = $"g{i % 6}",
+            DeliverAt = i % 10 == 0 ? DateTimeOffset.UtcNow.Add(ShortDelay) : null
+        }).ToList();
+
+        // Act
+        await transport.SendAsync(MessageDestination.Topic(topic), messages, TestCancellationToken);
+        var received = await ReceiveConcurrentlyAsync(receiver, concurrency, messages.Count, DeliveryTimeout + ShortDelay);
+
+        // Assert
+        await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+        Assert.Equal(messages.Select(m => m.MessageId).Order(), received.Select(m => m.MessageId).Order());
+        Assert.True(Volatile.Read(ref mostReceiving) > 1, "The receives never overlapped.");
+    }
+
+    [Fact]
+    public async Task ReceiveAsync_ConcurrentCallsGetEarlyMessagesWhileManyAreInFlight_SendsEachAgainInsteadOfHidingIt()
+    {
+        Assert.SkipWhen(Fifo, "FIFO queues cannot delay a single message, so an early one is always hidden.");
+
+        // Arrange: reading the in-flight count takes a second, so the other receives get their early messages while
+        // it runs. Each delay moves the clock ahead by the delay and SQS shows the copy a second later.
+        var clock = new OffsetTimeProvider();
+        var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        sqsInterceptor.Intercept = async (request, send) =>
+        {
+            if (request is SendMessageRequest { DelaySeconds: > 1 } copy)
+            {
+                clock.Advance(TimeSpan.FromSeconds(copy.DelaySeconds.Value));
+                copy.DelaySeconds = 1;
+            }
+
+            bool isInFlightCount = request is GetQueueAttributesRequest attributes && attributes.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible);
+            if (isInFlightCount)
+                await Task.Delay(TimeSpan.FromSeconds(1));
+
+            var response = await send();
+            if (isInFlightCount)
+                ((GetQueueAttributesResponse)response).Attributes[QueueAttributeName.ApproximateNumberOfMessagesNotVisible] = "100000";
+
+            return response;
+        };
+
+        string topic = NewName("in-flight-concurrent");
+        var source = MessageSource.Subscription(topic, "later");
+        DeleteAfterTest(source);
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        var messages = Enumerable.Range(0, 4).Select(i => Message($"m{i}", $"id-{i}") with { DeliverAt = clock.GetUtcNow().AddMinutes(20) }).ToList();
+
+        // Act: one message per receive, so each early message goes through a different receive.
+        var receiving = ReceiveConcurrentlyAsync(receiver, messages.Count, messages.Count, TimeSpan.FromSeconds(30), maxMessages: 1);
+        await transport.SendAsync(MessageDestination.Topic(topic), messages, TestCancellationToken);
+        var received = await receiving;
+
+        // Assert
+        Assert.Equal(messages.Select(m => m.MessageId).Order(), received.Select(m => m.MessageId).Order());
+        Assert.All(received, m => Assert.Equal(1, m.DeliveryCount));
+        Assert.DoesNotContain(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>(), r => r.VisibilityTimeout > 0);
+        Assert.Equal(messages.Count, sqsInterceptor.RequestsOf<SendMessageRequest>().Count());
+        Assert.Single(sqsInterceptor.RequestsOf<GetQueueAttributesRequest>(), r => r.AttributeNames.Contains(QueueAttributeName.ApproximateNumberOfMessagesNotVisible));
+    }
+
+    [Fact]
     public async Task Delete_Subscription_UnsubscribesAndRevokesTheTopicButKeepsTheQueue()
     {
         // Arrange
@@ -894,6 +991,38 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         LoggerFactory = Log,
         InstanceSubscriptionTimeout = instanceSubscriptionTimeout ?? TimeSpan.FromMinutes(5)
     };
+
+    /// <summary>
+    /// Runs <paramref name="concurrency"/> receive loops on one receiver until <paramref name="count"/> messages arrive
+    /// or <paramref name="timeout"/> passes. Each loop records what a receive returned before it completes those
+    /// messages, so the result lists each group in the order SQS handed it out.
+    /// </summary>
+    protected async Task<IReadOnlyList<IncomingMessage>> ReceiveConcurrentlyAsync(IMessageReceiver receiver, int concurrency, int count, TimeSpan timeout, int maxMessages = 10)
+    {
+        var received = new List<IncomingMessage>();
+        var deadline = DateTime.UtcNow + timeout;
+        await Task.WhenAll(Enumerable.Range(0, concurrency).Select(_ => Task.Run(async () =>
+        {
+            while (DateTime.UtcNow < deadline)
+            {
+                lock (received)
+                {
+                    if (received.Count >= count)
+                        return;
+                }
+
+                var remaining = deadline - DateTime.UtcNow;
+                var messages = await receiver.ReceiveAsync(maxMessages, remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), TestCancellationToken);
+                lock (received)
+                    received.AddRange(messages);
+
+                foreach (var message in messages)
+                    await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }, TestCancellationToken)));
+
+        return received;
+    }
 
     /// <summary>Sends a message straight to SQS, as another producer would.</summary>
     protected Task<SendMessageResponse> RawSendAsync(IAmazonSQS sqs, SendMessageRequest request)

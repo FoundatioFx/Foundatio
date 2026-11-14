@@ -191,6 +191,7 @@ builder.Services.AddFoundatioMessaging(m => m
 
 - **Delays**: sends and publishes can be delayed by up to 13 days. SQS delays a send to a standard queue for its first 15 minutes. The rest of a longer delay, publish delays and FIFO delays are applied by hiding the message when it arrives early, and again every 11 hours, until it is due. Only sends delayed by more than 13 days are sent again, after 13 days.
 - **In-flight quota**: hidden messages count toward SQS's quota of about 120,000 in flight per queue. On a standard queue with 50,000 in flight, an early message is sent again with a delay of up to 15 minutes instead, at a send, a receive and a delete every 15 minutes. FIFO queues can only hide. Use jobs for long or high-volume delays.
+- **Receives**: each receive returns at most 10 messages, so a receiver takes up to 4 receives at once.
 
 See [Using SQS](/guide/messages#using-sqs) and the [package README](https://github.com/FoundatioFx/Foundatio/tree/main/src/Foundatio.AWS#message-transport-preview) for options, delays, quotas and IAM actions.
 
