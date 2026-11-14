@@ -30,6 +30,7 @@ public sealed class JobDetails
         Attempt = job.Attempt;
         CreatedAt = job.CreatedAt;
         AvailableAt = job.AvailableAt;
+        ScheduledFor = job.ScheduledFor;
         UpdatedAt = job.UpdatedAt;
         StartedAt = job.StartedAt;
         CompletedAt = job.CompletedAt;
@@ -60,8 +61,14 @@ public sealed class JobDetails
     /// <summary>When the job was enqueued.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>The job is not started before this time. For a CRON job this is the scheduled occurrence.</summary>
+    /// <summary>The job is not started before this time. Retries and shutdown interruptions move it; see <see cref="ScheduledFor"/>.</summary>
     public DateTimeOffset AvailableAt { get; init; }
+
+    /// <summary>
+    /// When the job was first due: for a CRON job the occurrence it runs for, otherwise the time it was enqueued to run.
+    /// Unlike <see cref="AvailableAt"/>, retries and shutdown interruptions do not change it.
+    /// </summary>
+    public DateTimeOffset ScheduledFor { get; init; }
 
     /// <summary>When the job last changed.</summary>
     public DateTimeOffset UpdatedAt { get; init; }

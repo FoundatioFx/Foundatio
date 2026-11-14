@@ -404,6 +404,40 @@ public abstract class JobStoreTestsBase : TestWithLoggingBase
         }
     }
 
+    /// <summary>
+    /// <see cref="JobInfo.ScheduledFor"/> defaults to <see cref="JobInfo.AvailableAt"/> at creation and stays the same
+    /// through claims, retries, releases and reclaims, while <see cref="JobInfo.AvailableAt"/> moves.
+    /// </summary>
+    [Fact]
+    public async Task CompleteRetryAndRelease_KeepScheduledFor()
+    {
+        var scheduledFor = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var job = NewJob() with { AvailableAt = scheduledFor, ScheduledFor = scheduledFor };
+        var unset = NewJob();
+        await Store.CreateAsync(job, TestCancellationToken);
+        await Store.CreateAsync(unset, TestCancellationToken);
+        AssertClose(unset.AvailableAt, (await Store.GetAsync(unset.Id, TestCancellationToken))!.ScheduledFor);
+
+        var first = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+        AssertClose(scheduledFor, first.ScheduledFor);
+        Assert.True(await Store.CompleteAsync(job.Id, first.ClaimToken!, JobCompletion.Retry(TimeSpan.Zero, "transient"), TestCancellationToken));
+        var retried = (await Store.GetAsync(job.Id, TestCancellationToken))!;
+        AssertClose(scheduledFor, retried.ScheduledFor);
+        Assert.True(retried.AvailableAt > scheduledFor.AddMinutes(5));
+
+        var second = await WaitForClaimAsync(Claim(job.Name));
+        AssertClose(scheduledFor, second.ScheduledFor);
+        Assert.True(await Store.CompleteAsync(job.Id, second.ClaimToken!, JobCompletion.Release(), TestCancellationToken));
+        AssertClose(scheduledFor, (await Store.GetAsync(job.Id, TestCancellationToken))!.ScheduledFor);
+
+        await Store.ClaimAsync(Claim(job.Name, lease: ShortLease), TestCancellationToken);
+        var reclaimed = await WaitForClaimAsync(Claim(job.Name));
+        AssertClose(scheduledFor, reclaimed.ScheduledFor);
+        Assert.True(await Store.CompleteAsync(job.Id, reclaimed.ClaimToken!, JobCompletion.Succeeded(TimeSpan.FromMinutes(5)), TestCancellationToken));
+        AssertClose(scheduledFor, (await Store.GetAsync(job.Id, TestCancellationToken))!.ScheduledFor);
+        AssertClose(scheduledFor, Assert.Single((await Store.QueryAsync(new JobQuery { Name = job.Name }, TestCancellationToken)).Jobs).ScheduledFor);
+    }
+
     /// <summary>Every header round-trips exactly, through reads, claims and retries.</summary>
     [Fact]
     public async Task Create_WithHeaders_KeepsThemThroughGetClaimAndRetry()

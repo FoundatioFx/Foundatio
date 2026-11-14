@@ -50,6 +50,26 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
     }
 
     [Fact]
+    public async Task GetAndRetry_JobStoredWithoutScheduledFor_FallBackToItsFirstAvailableAt()
+    {
+        var muxer = SharedConnection.GetMuxer(Log)!;
+        var scheduledFor = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var job = NewJob() with { AvailableAt = scheduledFor, ScheduledFor = scheduledFor };
+        await Store.CreateAsync(job, TestCancellationToken);
+        Assert.True(await muxer.GetDatabase().HashDeleteAsync($"{{foundatio-tests:jobs}}:job:{job.Id}", "scheduled"));
+
+        AssertNear(scheduledFor, (await Store.GetAsync(job.Id, TestCancellationToken))!.ScheduledFor);
+        var claimed = (await Store.ClaimAsync(Claim(job.Name), TestCancellationToken))!;
+        Assert.True(await Store.CompleteAsync(job.Id, claimed.ClaimToken!, JobCompletion.Retry(TimeSpan.FromMinutes(1), "transient"), TestCancellationToken));
+
+        var retried = (await Store.GetAsync(job.Id, TestCancellationToken))!;
+        AssertNear(scheduledFor, retried.ScheduledFor);
+        Assert.True(retried.AvailableAt > DateTimeOffset.UtcNow.AddSeconds(30));
+
+        static void AssertNear(DateTimeOffset expected, DateTimeOffset actual) => Assert.True((expected - actual).Duration() < TimeSpan.FromSeconds(1), $"Expected {expected:O}, got {actual:O}.");
+    }
+
+    [Fact]
     public async Task ClaimRenewAndComplete_RacingAcrossConnections_CompleteEachJobExactlyOnce()
     {
         string? connectionString = Configuration.GetConnectionString("RedisConnectionString");

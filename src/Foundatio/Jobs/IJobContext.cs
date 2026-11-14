@@ -17,7 +17,10 @@ public interface IJobContext : IHandlerContext
     /// <summary>The job's stable name.</summary>
     string JobName { get; }
 
-    /// <summary>The time the job was due. For a CRON job this is the scheduled occurrence.</summary>
+    /// <summary>
+    /// When the job was first due: for a CRON job the occurrence it runs for, otherwise the time it was enqueued to run.
+    /// It stays the same on every attempt, including after a retry or a shutdown interrupted a run.
+    /// </summary>
     DateTimeOffset ScheduledFor { get; }
 
     /// <summary>The CRON schedule that created this job, if any.</summary>

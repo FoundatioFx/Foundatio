@@ -92,6 +92,26 @@ public class DurableJobsTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task AddCronJob_RetriedOccurrence_KeepsTheOccurrenceAsScheduledFor()
+    {
+        await using var host = await StartAsync(j => j.AddCronJob<FlakyTickJob>("0 0 1 1 *", new CronJobOptions
+        {
+            JobTypeOptions = new JobTypeOptions { RetryPolicy = new RetryPolicy { MaxAttempts = 3, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) } }
+        }));
+        var newYear = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        const string jobId = "cron:flaky-tick:20200101T000000Z";
+
+        await host.CreateScheduler().RunDueAsync(newYear.AddSeconds(1), TestCancellationToken);
+        await WaitForAsync(async () => (await host.Jobs.GetAsync(jobId, TestCancellationToken))?.State == JobState.Succeeded);
+
+        Assert.Equal([1, 2], _probe.Contexts.Select(c => c.Attempt));
+        Assert.All(_probe.Contexts, c => Assert.Equal(newYear, c.ScheduledFor));
+        var job = (await host.Jobs.GetAsync(jobId, TestCancellationToken))!;
+        Assert.Equal(newYear, job.ScheduledFor);
+        Assert.True(job.AvailableAt > newYear);
+    }
+
+    [Fact]
     public async Task AddLegacyJob_JobBaseJob_RunsUnderItsOwnNameWithItsResultMessage()
     {
         await using var host = await StartAsync(j => j.AddLegacyJob<LegacyCleanupJob>());
@@ -239,6 +259,25 @@ public class DurableJobsTests : TestWithLoggingBase
         var job = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
         Assert.Equal(JobState.Succeeded, job.State);
         Assert.Equal(1, job.Attempt);
+    }
+
+    [Fact]
+    public async Task Shutdown_InterruptedJob_KeepsItsScheduledFor()
+    {
+        var runAt = new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var first = await StartAsync(j => j.Configure(o => o.ShutdownTimeout = TimeSpan.FromMilliseconds(100)).AddJob<WaitForCancellationJob>());
+        var handle = await first.Jobs.EnqueueAsync(new WaitForCancellation(CompleteOnSecondRun: true), new EnqueueOptions { RunAt = runAt }, TestCancellationToken);
+        await _probe.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestCancellationToken);
+
+        await first.DisposeAsync();
+        var interrupted = (await handle.GetAsync(TestCancellationToken))!;
+        Assert.Equal(runAt, interrupted.ScheduledFor);
+        Assert.True(interrupted.AvailableAt > runAt);
+
+        await using var second = await StartAsync(j => j.AddJob<WaitForCancellationJob>());
+        Assert.Equal(JobState.Succeeded, (await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10), TestCancellationToken)).State);
+        Assert.Equal(2, _probe.Contexts.Count);
+        Assert.All(_probe.Contexts, c => Assert.Equal(runAt, c.ScheduledFor));
     }
 
     [Fact]
@@ -900,6 +939,7 @@ public class DurableJobsTests : TestWithLoggingBase
     {
         public async Task HandleAsync(WaitForCancellation arguments, IJobContext context, CancellationToken cancellationToken)
         {
+            probe.Contexts.Enqueue(context);
             if (Interlocked.Increment(ref probe.RunCount) > 1 && arguments.CompleteOnSecondRun)
                 return;
 
@@ -920,6 +960,19 @@ public class DurableJobsTests : TestWithLoggingBase
         {
             using var _ = probe.Enter();
             await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    [Job(Name = "flaky-tick")]
+    public sealed class FlakyTickJob(JobProbe probe) : IJobHandler
+    {
+        public Task HandleAsync(IJobContext context, CancellationToken cancellationToken)
+        {
+            probe.Contexts.Enqueue(context);
+            if (context.Attempt == 1)
+                throw new InvalidOperationException("transient");
+
+            return Task.CompletedTask;
         }
     }
 

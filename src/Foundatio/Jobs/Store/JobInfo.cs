@@ -39,8 +39,14 @@ public sealed record JobInfo
     /// <summary>When the job was enqueued.</summary>
     public DateTimeOffset CreatedAt { get; init; }
 
-    /// <summary>The job is not started before this time.</summary>
+    /// <summary>The job is not started before this time. Retries and releases move it.</summary>
     public DateTimeOffset AvailableAt { get; init; }
+
+    /// <summary>
+    /// When the job was first due: the <see cref="AvailableAt"/> it was created with, which for a CRON job is its
+    /// occurrence. Set at creation and never changed, so retries and releases keep it.
+    /// </summary>
+    public DateTimeOffset ScheduledFor { get; init; }
 
     /// <summary>When the store last changed the job.</summary>
     public DateTimeOffset UpdatedAt { get; init; }

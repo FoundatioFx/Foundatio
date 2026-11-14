@@ -1,7 +1,7 @@
 -- KEYS: job, running, queued, expiring, running index, running name index, target status index, target status name index
 -- ARGV: id, claim token, status, retry delay us, refund attempt, retain us, has message, message, has error, error, name
 local id, status = ARGV[1], ARGV[3]
-local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt')
+local job = redis.call('HMGET', KEYS[1], 'status', 'token', 'name', 'index', 'attempt', 'available', 'scheduled')
 if job[1] ~= RUNNING or job[2] ~= ARGV[2] or job[3] ~= ARGV[11] then
     return 0
 end
@@ -12,6 +12,10 @@ redis.call('ZREM', KEYS[2], id)
 
 if status == QUEUED then
     local availableAt = now + tonumber(ARGV[4])
+    if not job[7] and job[6] then
+        -- A job stored before 'scheduled' existed: keep its first due time before 'available' moves.
+        redis.call('HSET', KEYS[1], 'scheduled', job[6])
+    end
     redis.call('HSET', KEYS[1], 'available', str(availableAt))
     if ARGV[5] == '1' then
         redis.call('HSET', KEYS[1], 'attempt', math.max(0, tonumber(job[5]) - 1))

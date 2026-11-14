@@ -77,7 +77,7 @@ public sealed class RedisJobStore : IJobStore
 
         string member = $"{job.CreatedAt.UtcTicks:x16}|{job.Id}";
         var values = new List<RedisValue> { job.Id, job.Name, ToMicroseconds(job.AvailableAt), member };
-        values.AddRange(["payload", job.Payload, "created", ToMicroseconds(job.CreatedAt)]);
+        values.AddRange(["payload", job.Payload, "created", ToMicroseconds(job.CreatedAt), "scheduled", ToMicroseconds(job.ScheduledFor == default ? job.AvailableAt : job.ScheduledFor)]);
         AddIfPresent(values, "correlation", job.CorrelationId);
         AddIfPresent(values, "schedule", job.ScheduleName);
         AddIfPresent(values, "started", job.StartedAt);
@@ -397,6 +397,7 @@ public sealed class RedisJobStore : IJobStore
             Attempt = (int)fields["attempt"],
             CreatedAt = Time("created") ?? default,
             AvailableAt = Time("available") ?? default,
+            ScheduledFor = Time("scheduled") ?? Time("available") ?? default,
             UpdatedAt = Time("updated") ?? default,
             StartedAt = Time("started"),
             CompletedAt = Time("completed"),

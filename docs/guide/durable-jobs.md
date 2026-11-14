@@ -68,7 +68,7 @@ builder.Services.AddFoundatioJobs(j => j
 ## Running a job
 
 - **Return** to succeed. **Throw** to fail; the job is retried by its `RetryPolicy` (5 attempts with backoff by default).
-- `IJobContext` gives the job its `JobId`, `Attempt`, `CorrelationId`, `Headers` and `ScheduledFor`, and `ReportProgressAsync` to [report progress](#reporting-progress) and a result message.
+- `IJobContext` gives the job its `JobId`, `Attempt`, `CorrelationId`, `Headers` and `ScheduledFor` (when it was first due, the same on every attempt), and `ReportProgressAsync` to [report progress](#reporting-progress) and a result message.
 - The cancellation token fires when someone calls `CancelAsync`; the job ends as `Cancelled`. If it finishes anyway, the result counts.
 - A job interrupted by shutdown is run again later and the interrupted attempt is not counted.
 - The token also fires when the worker can no longer renew the job's lease, shortly before another worker could take it. That run's result is not recorded, and the job runs again.
@@ -139,7 +139,7 @@ j.AddCronJob<SyncJob>("*/30 * * * * *", new CronJobOptions              // six f
 
 Every instance runs the scheduler, and each occurrence becomes exactly one job, so there is no leader to elect. Schedules live in code: change or remove a line and redeploy.
 
-A CRON job's `context.ScheduledFor` is the occurrence it runs for, even when it runs late after a misfire or a retry. Use it, not the clock, to choose the window to process, and as the key that makes a repeated run safe.
+A CRON job's `context.ScheduledFor` is the occurrence it runs for, even when it runs late after a misfire, a retry or a shutdown that interrupted it. Use it, not the clock, to choose the window to process, and as the key that makes a repeated run safe. `JobDetails.ScheduledFor` shows the same time; `JobDetails.AvailableAt` is when the job can run next, which a retry moves.
 
 ## Existing IJob and JobBase jobs
 

@@ -64,6 +64,7 @@ internal sealed class JobClient : IJobClient
             ArgumentException.ThrowIfNullOrWhiteSpace(requestedId, nameof(options));
 
         var now = _runtime.TimeProvider.GetUtcNow();
+        var availableAt = options?.RunAt ?? (options?.Delay is { } delay ? now.Add(delay) : now);
         var job = new JobInfo
         {
             Id = options?.JobId ?? Guid.NewGuid().ToString("N"),
@@ -74,7 +75,8 @@ internal sealed class JobClient : IJobClient
             Headers = CreateHeaders(options),
             CreatedAt = now,
             UpdatedAt = now,
-            AvailableAt = options?.RunAt ?? (options?.Delay is { } delay ? now.Add(delay) : now)
+            AvailableAt = availableAt,
+            ScheduledFor = availableAt
         };
 
         bool created = await _runtime.Store.CreateAsync(job, cancellationToken).AnyContext();

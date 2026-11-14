@@ -40,6 +40,7 @@ public sealed class InMemoryJobStore : IJobStore
                 State = JobState.Queued,
                 Attempt = 0,
                 UpdatedAt = now,
+                ScheduledFor = job.ScheduledFor == default ? job.AvailableAt : job.ScheduledFor,
                 ClaimToken = null,
                 LeaseExpiresAt = null,
                 WorkerId = null,

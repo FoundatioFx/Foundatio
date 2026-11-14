@@ -28,7 +28,7 @@ internal sealed class JobRunContext : TrackedWork, IJobContext
         JobName = job.Name;
         Attempt = job.Attempt;
         CorrelationId = job.CorrelationId;
-        ScheduledFor = job.AvailableAt;
+        ScheduledFor = job.ScheduledFor;
         ScheduleName = job.ScheduleName;
         Headers = job.Headers;
         _store = store;
