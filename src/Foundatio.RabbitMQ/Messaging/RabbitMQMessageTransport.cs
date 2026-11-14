@@ -219,8 +219,8 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// <remarks>
     /// Returns once the receiver's consumer is registered, so it gets every message already in the source. An
     /// instance subscription's queue is declared on the receiver's own channel and bound to the topic before then. A
-    /// source's queue, or an instance subscription's exchange, that another process deleted after this transport
-    /// declared it is declared again.
+    /// queue or exchange that another process deleted, or the broker lost, after this transport declared it is
+    /// declared again.
     /// </remarks>
     public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
     {
@@ -238,31 +238,35 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         };
         string? topicExchange = source.Kind == MessageSourceKind.InstanceSubscription ? Names.Topic(source.Topic!) : null;
 
-        await EnsureSourceAsync(source, queue, topicExchange, cancellationToken).AnyContext();
-        var connection = await GetConnectionAsync(consumer: true, cancellationToken).AnyContext();
         for (int attempt = 1; ; attempt++)
         {
-            var receiver = new RabbitMQMessageReceiver(this, source, queue, topicExchange, options);
-            _receivers.TryAdd(receiver, 0);
+            RabbitMQMessageReceiver? receiver = null;
             try
             {
+                await EnsureSourceAsync(source, queue, topicExchange, cancellationToken).AnyContext();
+                var connection = await GetConnectionAsync(consumer: true, cancellationToken).AnyContext();
+                receiver = new RabbitMQMessageReceiver(this, source, queue, topicExchange, options);
+                _receivers.TryAdd(receiver, 0);
                 await receiver.StartAsync(connection, cancellationToken).AnyContext();
                 ThrowIfDisposed();
                 return receiver;
             }
             catch (MessageBusException ex) when (attempt == 1 && ex.InnerException is OperationInterruptedException { ShutdownReason.ReplyCode: 404 })
             {
+                // Another process deleted something this transport declared, or the broker lost its definitions, so
+                // everything it remembers declaring is declared again: the exchanges a queue binds to as well.
                 Logger.LogDebug(ex, "What {Source} receives from no longer exists; declaring it again", source);
-                await receiver.DisposeAsync().AnyContext();
-                Topology.Forget(queue);
-                if (topicExchange is not null)
-                    Topology.ForgetTopic(topicExchange);
+                if (receiver is not null)
+                    await receiver.DisposeAsync().AnyContext();
 
-                await EnsureSourceAsync(source, queue, topicExchange, cancellationToken).AnyContext();
+                Topology.Forget(queue);
+                Topology.ForgetExchanges();
             }
             catch
             {
-                await receiver.DisposeAsync().AnyContext();
+                if (receiver is not null)
+                    await receiver.DisposeAsync().AnyContext();
+
                 throw;
             }
         }

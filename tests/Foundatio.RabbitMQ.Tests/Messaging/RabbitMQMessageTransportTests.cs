@@ -125,6 +125,39 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
     }
 
     [Fact]
+    public async Task CreateReceiver_AfterTheBrokerLostItsDefinitions_DeclaresThemAgain()
+    {
+        Assert.SkipUnless(DelayedDelivery, "Without delayed delivery a queue binds to no exchange.");
+
+        // Arrange
+        string prefix = $"{Prefix}-reset-{Guid.NewGuid():N}";
+        var transport = Track(new RabbitMQMessageTransport(CreateOptions() with { Prefix = prefix }));
+        var source = MessageSource.Queue(NewName("reset"));
+        try
+        {
+            await (await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken)).DisposeAsync();
+            await DeleteDefinitionsAsync(transport, source);
+
+            // Act
+            await using var replacement = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+            await transport.SendAsync(MessageDestination.Queue(source.Name), [new OutgoingMessage
+            {
+                MessageId = "id-delayed",
+                Body = "delayed"u8.ToArray(),
+                Headers = new Dictionary<string, string>(),
+                DeliverAt = DateTimeOffset.UtcNow.AddSeconds(1)
+            }], TestCancellationToken);
+
+            // Assert
+            await AssertOnlyReceivedAsync(replacement, "id-delayed");
+        }
+        finally
+        {
+            await DeleteDefinitionsAsync(transport, source);
+        }
+    }
+
+    [Fact]
     public async Task Receive_WhileHoldingMoreUnsettledMessagesThanItsPrefetch_KeepsDelivering()
     {
         // Arrange
@@ -413,6 +446,24 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
         var connection = await new ConnectionFactory { Uri = new Uri(Fixture.ConnectionString) }.CreateConnectionAsync(TestCancellationToken);
         _connections.Add(connection);
         return connection;
+    }
+
+    /// <summary>Deletes a source's queue and every exchange and queue the transport shares, as a broker reset does.</summary>
+    private async Task DeleteDefinitionsAsync(RabbitMQMessageTransport transport, MessageSource source)
+    {
+        var names = transport.Names;
+        var connection = await ConnectAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken);
+        await channel.QueueDeleteAsync(names.Queue(source.Name), ifUnused: false, ifEmpty: false, cancellationToken: TestCancellationToken);
+        for (int level = 0; level < RabbitMQDelayLevels.Count; level++)
+        {
+            await channel.QueueDeleteAsync(names.DelayLevel(level), ifUnused: false, ifEmpty: false, cancellationToken: TestCancellationToken);
+            await channel.ExchangeDeleteAsync(names.DelayLevel(level), ifUnused: false, cancellationToken: TestCancellationToken);
+        }
+
+        await channel.ExchangeDeleteAsync(names.DelayDelivery, ifUnused: false, cancellationToken: TestCancellationToken);
+        await channel.QueueDeleteAsync(names.Discard, ifUnused: false, ifEmpty: false, cancellationToken: TestCancellationToken);
+        await channel.ExchangeDeleteAsync(names.Discard, ifUnused: false, cancellationToken: TestCancellationToken);
     }
 
     private async Task<bool> QueueExistsAsync(string queue)
