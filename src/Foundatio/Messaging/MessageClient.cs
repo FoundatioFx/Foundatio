@@ -59,6 +59,7 @@ internal sealed class MessageClient : IMessageClient
         options = options with { Scope = options.Scope ?? SubscriptionScope.Instance };
 
         var registration = MessageHandlerRegistration.ForDelegate(handler, MessageHandlerKind.Subscriber, options);
+        _runtime.RegisterDerivedTypes(typeof(T));
         var processor = await _runtime.StartProcessorAsync(_runtime.GetSource(registration), [registration], retryInBackground: false, cancellationToken).AnyContext();
         return new AsyncDisposableAction(() => _runtime.StopProcessorAsync(processor));
     }

@@ -36,6 +36,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private readonly ConcurrentDictionary<string, HandlerSet> _matches = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, WorkCounter> _counters = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _reportedUnknownTypes = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _reportedUnresolvedTypes = new(StringComparer.Ordinal);
     private readonly FailedDeadLetters _failedDeadLetters = new();
 
     public MessageDispatcher(MessagingRuntime runtime, MessageSource source, IReadOnlyList<MessageHandlerRegistration> handlers, ProcessingStatusTracker status)
@@ -76,9 +77,12 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             return await RetryDeadLetterAsync(delivery, counter, pendingReason, abortToken).AnyContext();
 
         var handlerSet = FindHandlers(messageType, headers);
+        if (handlerSet.Unresolved is { } unresolved)
+            ReportUnresolved(messageType, unresolved);
+
         var matches = handlerSet.Matches;
         if (matches.Count == 0)
-            return await HandleUnmatchedAsync(delivery, counter, messageType, abortToken).AnyContext();
+            return await HandleUnmatchedAsync(delivery, counter, messageType, handlerSet.Unresolved is not null, abortToken).AnyContext();
 
         var payloads = new List<(Type Type, object Payload)>(1);
         try
@@ -271,7 +275,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         return await CompleteAsync(delivery).AnyContext();
     }
 
-    private async Task<bool> HandleUnmatchedAsync(MessageDelivery delivery, WorkCounter counter, string messageType, CancellationToken abortToken)
+    /// <summary>
+    /// Handles a message no handler here can take. With <paramref name="unresolved"/>, handlers accept a base type of
+    /// it, but only abstract or interface ones, so there is no type to deserialize it as.
+    /// </summary>
+    private async Task<bool> HandleUnmatchedAsync(MessageDelivery delivery, WorkCounter counter, string messageType, bool unresolved, CancellationToken abortToken)
     {
         var message = delivery.Message;
         MessagingInstruments.Unmatched.Add(1, new KeyValuePair<string, object?>("messaging.message.type", messageType));
@@ -279,7 +287,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         // Topics carry many message types; a subscriber ignores the ones it does not handle.
         if (_source.Kind is MessageSourceKind.Subscription or MessageSourceKind.InstanceSubscription)
         {
-            if (!_runtime.Types.TryGetType(messageType, out _) && _reportedUnknownTypes.Count < MaxCachedTypes && _reportedUnknownTypes.TryAdd(messageType, 0))
+            if (!unresolved && !_runtime.Types.TryGetType(messageType, out _) && _reportedUnknownTypes.Count < MaxCachedTypes && _reportedUnknownTypes.TryAdd(messageType, 0))
             {
                 _logger.LogInformation("Skipping messages of type {MessageType} on {Source}: the type is unknown here and names no base type a handler accepts. " +
                     "If a handler should receive it, have the publisher upgrade, or map the type with MapMessage", messageType, _source);
@@ -298,7 +306,9 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         }
 
         // A queue is owned by its consumer, so an unknown type usually means a deployment is still rolling out.
-        string reason = $"No handler for message type \"{messageType}\"";
+        string reason = unresolved
+            ? $"No concrete type for message type \"{messageType}\": its handlers here accept only abstract or interface types it derives from"
+            : $"No handler for message type \"{messageType}\"";
         var policy = _runtime.Options.DefaultRetryPolicy;
         int attempt = Math.Max(1, message.DeliveryCount);
         if (attempt < policy.MaxAttempts)
@@ -367,10 +377,22 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
     private Task<Exception?> AbandonAsync(MessageDelivery delivery, TimeSpan delay)
         => delivery.SettleAsync((receiver, message, ct) => receiver.AbandonAsync(message, delay, ct), "abandon", _logger);
 
+    /// <summary>Warns, once per message type, that handlers miss a message type because they accept only abstract or interface types of it.</summary>
+    private void ReportUnresolved(string messageType, string unresolved)
+    {
+        if (_reportedUnresolvedTypes.Count >= MaxCachedTypes || !_reportedUnresolvedTypes.TryAdd(messageType, 0))
+            return;
+
+        _logger.LogWarning("{Handlers} on {Source} cannot receive messages of type {MessageType}: the type is unknown here, and the only base types of it they accept " +
+            "are abstract or interfaces, which cannot be deserialized. Define {MessageType} in the assembly of its base type, such as a contracts assembly both services share, " +
+            "or map a concrete type to it here with MapMessage<T>(\"{MessageType}\")", unresolved, _source, messageType, messageType, messageType);
+    }
+
     /// <summary>
     /// Finds the handlers for a message and the type to deserialize it as for each. A type unknown here, published by
     /// another service, matches handlers for any of the base types and interfaces its publisher listed, and is
-    /// deserialized as the most derived one each handler accepts.
+    /// deserialized as the most derived concrete one each handler accepts. A handler that accepts only abstract or
+    /// interface candidates does not match, since there is nothing to deserialize the message as.
     /// </summary>
     private HandlerSet FindHandlers(string messageType, IReadOnlyDictionary<string, string> headers)
     {
@@ -398,14 +420,17 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         }
 
         var matches = new List<HandlerMatch>();
+        List<string>? unresolved = null;
         foreach (var handler in _handlers)
         {
-            var payloadType = candidates.Find(handler.MessageType.IsAssignableFrom);
-            if (payloadType is not null)
+            var accepted = candidates.FindAll(handler.MessageType.IsAssignableFrom);
+            if (accepted.Find(t => !t.IsAbstract && !t.IsInterface) is { } payloadType)
                 matches.Add(new HandlerMatch(handler, payloadType));
+            else if (accepted.Count > 0 && !(unresolved ??= []).Contains(handler.HandlerName))
+                unresolved.Add(handler.HandlerName);
         }
 
-        var handlerSet = new HandlerSet(matches, String.Join(", ", matches.Select(m => m.Handler.HandlerName).Distinct()));
+        var handlerSet = new HandlerSet(matches, String.Join(", ", matches.Select(m => m.Handler.HandlerName).Distinct()), unresolved is null ? null : String.Join(", ", unresolved));
         if (_matches.Count < MaxCachedTypes)
             _matches.TryAdd(key, handlerSet);
 
@@ -467,8 +492,11 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
 
     private readonly record struct HandlerMatch(MessageHandlerRegistration Handler, Type PayloadType);
 
-    /// <summary>The handlers for one message type and the names monitoring shows for them.</summary>
-    private sealed record HandlerSet(IReadOnlyList<HandlerMatch> Matches, string Names)
+    /// <summary>
+    /// The handlers for one message type, the names monitoring shows for them, and the names of handlers that accept
+    /// the type only through abstract or interface base types, so cannot receive it.
+    /// </summary>
+    private sealed record HandlerSet(IReadOnlyList<HandlerMatch> Matches, string Names, string? Unresolved = null)
     {
         public static readonly HandlerSet None = new([], String.Empty);
     }

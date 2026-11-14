@@ -13,6 +13,7 @@ internal sealed class MessageTypeRegistry
     private readonly ConcurrentDictionary<Type, MessageRoute> _routes = new();
     private readonly ConcurrentDictionary<string, Type> _types = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Type, string?> _baseTypeNames = new();
+    private readonly ConcurrentDictionary<Type, byte> _scannedBaseTypes = new();
     private readonly object _lock = new();
 
     public void Map(Type type, string name, string? queue = null, string? topic = null)
@@ -35,12 +36,7 @@ internal sealed class MessageTypeRegistry
         if (_routes.TryGetValue(type, out var route))
             return route;
 
-        var attribute = type.GetCustomAttribute<MessageAttribute>(inherit: false);
-        string name = attribute?.Name is { } attributeName ? ValidateName(attributeName, nameof(MessageAttribute.Name)) : GetDefaultName(type);
-        route = new MessageRoute(type, name,
-            attribute?.Queue is { } queue ? ValidateName(queue, nameof(MessageAttribute.Queue)) : name,
-            attribute?.Topic is { } topic ? ValidateName(topic, nameof(MessageAttribute.Topic)) : name);
-
+        route = CreateRoute(type);
         lock (_lock)
         {
             if (_routes.TryGetValue(type, out var existing))
@@ -52,6 +48,53 @@ internal sealed class MessageTypeRegistry
     }
 
     public bool TryGetType(string name, out Type type) => _types.TryGetValue(name, out type!);
+
+    /// <summary>
+    /// Registers the concrete types in <paramref name="baseType"/>'s assembly that can be assigned to it, under the names
+    /// their publishers give them, so a derived message from another service that shares the assembly is deserialized
+    /// as its own type. A type whose name another type already has keeps no name here, so explicit mappings win.
+    /// Each base type is scanned once.
+    /// </summary>
+    /// <returns>The types that were skipped because their name is taken, with the type that has it.</returns>
+    public IReadOnlyList<(Type Type, string Name, Type Existing)> RegisterDerivedTypes(Type baseType)
+    {
+        ArgumentNullException.ThrowIfNull(baseType);
+        if (baseType.IsSealed || !IsApplicationType(baseType) || !_scannedBaseTypes.TryAdd(baseType, 0))
+            return [];
+
+        List<(Type Type, string Name, Type Existing)>? conflicts = null;
+        foreach (var type in GetLoadableTypes(baseType.Assembly))
+        {
+            if (type == baseType || type.IsAbstract || type.IsInterface || type.ContainsGenericParameters || !baseType.IsAssignableFrom(type) || _routes.ContainsKey(type))
+                continue;
+
+            MessageRoute route;
+            try
+            {
+                route = CreateRoute(type);
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+
+            lock (_lock)
+            {
+                if (_routes.ContainsKey(type))
+                    continue;
+
+                if (_types.TryGetValue(route.Name, out var existing))
+                {
+                    (conflicts ??= []).Add((type, route.Name, existing));
+                    continue;
+                }
+
+                Register(route);
+            }
+        }
+
+        return conflicts ?? [];
+    }
 
     /// <summary>
     /// The names of <paramref name="type"/>'s base classes, most derived first, then its interfaces, separated by
@@ -90,6 +133,31 @@ internal sealed class MessageTypeRegistry
 
         _routes[route.Type] = route;
         _types[route.Name] = route.Type;
+    }
+
+    private static MessageRoute CreateRoute(Type type)
+    {
+        var attribute = type.GetCustomAttribute<MessageAttribute>(inherit: false);
+        string name = attribute?.Name is { } attributeName ? ValidateName(attributeName, nameof(MessageAttribute.Name)) : GetDefaultName(type);
+        return new MessageRoute(type, name,
+            attribute?.Queue is { } queue ? ValidateName(queue, nameof(MessageAttribute.Queue)) : name,
+            attribute?.Topic is { } topic ? ValidateName(topic, nameof(MessageAttribute.Topic)) : name);
+    }
+
+    private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
+    {
+        try
+        {
+            return assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            return ex.Types.OfType<Type>();
+        }
+        catch (NotSupportedException)
+        {
+            return [];
+        }
     }
 
     private string? ComputeBaseTypeNames(Type type)
@@ -146,5 +214,4 @@ internal sealed class MessageTypeRegistry
 
         return NormalizeName(name);
     }
-
 }

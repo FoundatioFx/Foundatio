@@ -76,6 +76,19 @@ internal sealed class MessagingRuntime : IAsyncDisposable, IDisposable
             return _processors.ToArray();
     }
 
+    /// <summary>
+    /// Makes the concrete types derived from a handled type known (see <see cref="MessageTypeRegistry.RegisterDerivedTypes"/>),
+    /// so the handler gets derived messages from other services as their own types.
+    /// </summary>
+    public void RegisterDerivedTypes(Type messageType)
+    {
+        foreach (var (type, name, existing) in Types.RegisterDerivedTypes(messageType))
+        {
+            _logger.LogDebug("Not mapping {Type}, which derives from handled type {HandledType}, to \"{Name}\": {Existing} has that name",
+                type.FullName, messageType.FullName, name, existing.FullName);
+        }
+    }
+
     public MessageSource GetSource(MessageHandlerRegistration registration)
     {
         var route = Types.GetRoute(registration.MessageType);

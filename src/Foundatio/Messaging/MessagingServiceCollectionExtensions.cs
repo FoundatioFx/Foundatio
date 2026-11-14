@@ -81,6 +81,9 @@ public static class MessagingServiceCollectionExtensions
             Tracker = services.GetRequiredService<WorkTracker>()
         };
 
+        foreach (var messageType in registrations.Handlers.Select(h => h.MessageType).Distinct())
+            runtime.RegisterDerivedTypes(messageType);
+
         HandlerRegistrationValidator.Validate(runtime, registrations.Handlers);
         return runtime;
     }

@@ -275,7 +275,11 @@ A message's name identifies it on the wire. By default it is the type's full nam
 [Message("orders.cancelled", Topic = "orders")] public record OrderCancelled(int OrderId);
 ```
 
-A subscriber ignores types on its topic that it has no handler for. A handler for a base type or interface receives derived types, including ones published by another service that this one doesn't know; it receives them deserialized as the type it handles.
+A subscriber ignores types on its topic that it has no handler for. A handler for a base type or interface also receives derived types:
+
+- **Derived types in the base type's assembly** arrive as themselves, with all their fields, even from another service. At startup Foundatio learns every concrete type in the assembly of each handled type, so keep events next to their base type in a contracts assembly both services share. A type whose name another type already has, such as one you mapped explicitly, is left out.
+- **Derived types this service can't load,** defined only in the publisher, arrive as the most derived concrete base type the handler accepts, without the fields that type lacks.
+- **When every base type the handler accepts is abstract or an interface,** there is nothing to deserialize such a message as. On a topic the handler misses it, and Foundatio logs a warning once per type; on a queue it is retried, then dead-lettered. Move the type into the base type's assembly, or map a concrete type to its name with `MapMessage<T>("name")`.
 
 ## Testing
 

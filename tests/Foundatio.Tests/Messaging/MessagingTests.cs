@@ -171,15 +171,104 @@ public class MessagingTests : TestWithLoggingBase
             received.Enqueue($"{context.MessageType}:{message.OrderId}:{message.GetType().Name}");
             return Task.CompletedTask;
         }));
-        await using var publisher = await MessagingTestHost.StartAsync(_transport, Log, "orders", _ => { });
+        await using var publisher = await MessagingTestHost.StartAsync(_transport, Log, "orders", m => m.MapMessage<AttributedOrderShipped>("partner.order-shipped", topic: "tests.order-events"));
 
         await publisher.Client.PublishAsync(new AttributedOrderShipped(7), cancellationToken: TestCancellationToken);
         await publisher.Client.PublishAsync(new AttributedOrderEvent(8), cancellationToken: TestCancellationToken);
 
         await WaitForAsync(() => received.Count == 2);
-        Assert.Equal(["tests.order-event:8:AttributedOrderEvent", "tests.order-shipped:7:AttributedOrderEvent"], received.Order(StringComparer.Ordinal));
+        Assert.Equal(["partner.order-shipped:7:AttributedOrderEvent", "tests.order-event:8:AttributedOrderEvent"], received.Order(StringComparer.Ordinal));
         Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(5), TestCancellationToken));
         Assert.Equal(2, received.Count);
+    }
+
+    [Fact]
+    public async Task Publish_FromAnotherServiceToAbstractAndInterfaceHandlers_DeliversDerivedEventsAsTheirOwnTypes()
+    {
+        var received = new ConcurrentQueue<string>();
+        await using var subscriber = await StartAsync(m => m
+            .MapMessage<IInventoryEvent>("tests.inventory-event", topic: "tests.inventory-events")
+            .AddSubscriber<ShipmentEvent>((message, _, _) =>
+            {
+                received.Enqueue(message is ShipmentDelivered delivered ? $"delivered {delivered.ShipmentId} {delivered.Signature}" : message.GetType().Name);
+                return Task.CompletedTask;
+            })
+            .AddSubscriber<IInventoryEvent>((message, _, _) =>
+            {
+                received.Enqueue($"{message.GetType().Name} {message.Sku}");
+                return Task.CompletedTask;
+            })
+            .AddSubscriber<AttributedOrderEvent>((message, _, _) =>
+            {
+                received.Enqueue($"{message.GetType().Name} {message.OrderId}");
+                return Task.CompletedTask;
+            }));
+        await using var publisher = await MessagingTestHost.StartAsync(_transport, Log, "shipping", _ => { });
+
+        await publisher.Client.PublishAsync(new ShipmentDelivered(1, "J. Doe"), cancellationToken: TestCancellationToken);
+        await publisher.Client.PublishAsync(new StockDepleted(42), cancellationToken: TestCancellationToken);
+        await publisher.Client.PublishAsync(new AttributedOrderShipped(7), cancellationToken: TestCancellationToken);
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Equal(["AttributedOrderShipped 7", "StockDepleted 42", "delivered 1 J. Doe"], received.Order(StringComparer.Ordinal));
+        Assert.Equal(0, _transport.GetMessageCount(MessageSource.DeadLetter(MessageSource.Subscription("tests.shipment-events", "tests"))));
+        Assert.Equal(0, _transport.GetMessageCount(MessageSource.DeadLetter(MessageSource.Subscription("tests.inventory-events", "tests"))));
+    }
+
+    [Fact]
+    public async Task Publish_OfAnUnknownTypeWhoseKnownBaseTypesAreAbstract_IsSkippedWithOneWarningInsteadOfDeadLettered()
+    {
+        var received = new ConcurrentQueue<ShipmentEvent>();
+        await using var subscriber = await StartAsync(m => m.AddSubscriber<ShipmentEvent>((message, _, _) =>
+        {
+            received.Enqueue(message);
+            return Task.CompletedTask;
+        }));
+
+        for (int i = 0; i < 2; i++)
+            await _transport.SendAsync(MessageDestination.Topic("tests.shipment-events"), [UnknownShipmentEvent()], TestCancellationToken);
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(10), TestCancellationToken));
+        Assert.Empty(received);
+        Assert.Equal(0, _transport.GetMessageCount(MessageSource.DeadLetter(MessageSource.Subscription("tests.shipment-events", "tests"))));
+        var warning = Assert.Single(Log.LogEntries, e => e.LogLevel == Microsoft.Extensions.Logging.LogLevel.Warning && e.Message.Contains("carrier.shipment-lost", StringComparison.Ordinal));
+        Assert.Contains("abstract", warning.Message);
+        Assert.Contains("MapMessage", warning.Message);
+        Assert.DoesNotContain(Log.LogEntries, e => e.Message.Contains("Could not deserialize", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Send_OfAnUnknownTypeToAnAbstractBaseConsumer_IsRetriedThenDeadLetteredWithoutDeserializing()
+    {
+        await using var consumer = await StartAsync(m => m
+            .Configure(o => o.DefaultRetryPolicy = new RetryPolicy { MaxAttempts = 2, Delay = RetryPolicy.Fixed(TimeSpan.FromMilliseconds(50)) })
+            .AddConsumer<ShipmentEvent>((_, _, _) => Task.CompletedTask));
+
+        await _transport.SendAsync(MessageDestination.Queue("tests.shipment-event"), [UnknownShipmentEvent()], TestCancellationToken);
+
+        await WaitForAsync(() => _transport.GetMessageCount(MessageSource.DeadLetter(MessageSource.Queue("tests.shipment-event"))) == 1);
+        var deadLetter = Assert.Single(await ReceiveDeadLettersAsync(MessageSource.Queue("tests.shipment-event")));
+        Assert.Contains("carrier.shipment-lost", deadLetter.Headers[KnownHeaders.DeadLetterReason]);
+        Assert.DoesNotContain("Deserialization failed", deadLetter.Headers[KnownHeaders.DeadLetterReason]);
+    }
+
+    [Fact]
+    public async Task AddSubscriber_ForABaseTypeWithADerivedTypeWhoseNameIsMappedToAnotherType_StartsAndKeepsTheMapping()
+    {
+        var notes = new ConcurrentQueue<string>();
+        await using var host = await StartAsync(m => m
+            .MapMessage<Note>("tests.claim-filed", topic: "tests.notes")
+            .AddSubscriber<ClaimEvent>((_, _, _) => Task.CompletedTask)
+            .AddSubscriber<Note>((message, _, _) =>
+            {
+                notes.Enqueue(message.Text);
+                return Task.CompletedTask;
+            }));
+
+        await host.Client.PublishAsync(new Note("hello"), cancellationToken: TestCancellationToken);
+
+        await WaitForAsync(() => notes.Count == 1);
+        Assert.Equal(["hello"], notes);
     }
 
     [Fact]
@@ -917,6 +1006,38 @@ public class MessagingTests : TestWithLoggingBase
 
     [Message("tests.order-shipped", Topic = "tests.order-events")]
     public record AttributedOrderShipped(int OrderId) : AttributedOrderEvent(OrderId);
+
+    [Message("tests.shipment-event", Topic = "tests.shipment-events")]
+    public abstract record ShipmentEvent(int ShipmentId);
+
+    [Message("tests.shipment-delivered", Topic = "tests.shipment-events")]
+    public record ShipmentDelivered(int ShipmentId, string Signature) : ShipmentEvent(ShipmentId);
+
+    public interface IInventoryEvent
+    {
+        int Sku { get; }
+    }
+
+    [Message("tests.stock-depleted", Topic = "tests.inventory-events")]
+    public record StockDepleted(int Sku) : IInventoryEvent;
+
+    [Message("tests.claim-event", Topic = "tests.claim-events")]
+    public abstract record ClaimEvent(int ClaimId);
+
+    [Message("tests.claim-filed", Topic = "tests.claim-events")]
+    public record ClaimFiled(int ClaimId) : ClaimEvent(ClaimId);
+
+    /// <summary>A shipment event from a carrier's service, of a type this process has never heard of.</summary>
+    private static OutgoingMessage UnknownShipmentEvent() => new()
+    {
+        MessageId = Guid.NewGuid().ToString("N"),
+        Body = System.Text.Encoding.UTF8.GetBytes("""{"shipmentId":1,"reason":"lost"}"""),
+        Headers = new Dictionary<string, string>
+        {
+            [KnownHeaders.MessageType] = "carrier.shipment-lost",
+            [KnownHeaders.MessageBaseTypes] = "tests.shipment-event"
+        }
+    };
 
     public sealed class ScopedDependency
     {
