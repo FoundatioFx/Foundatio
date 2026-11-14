@@ -9,12 +9,20 @@ using System.Threading.Tasks;
 namespace Foundatio.Jobs.Store;
 
 /// <summary>A process-local job store for development, tests and single-instance apps. Jobs are lost when the process stops.</summary>
+/// <remarks>
+/// Claims, counts and query pages use indexes, so they do not slow down as retained jobs pile up: per-name sets of the
+/// queued and running jobs ordered by when they are due, a set of the finished jobs ordered by when their retention
+/// runs out, and sets ordered by creation for each combination of state and name filters.
+/// </remarks>
 public sealed class InMemoryJobStore : IJobStore
 {
     private readonly Dictionary<string, Entry> _jobs = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SortedSet<Entry>> _dueByName = new(StringComparer.Ordinal);
+    private readonly SortedSet<Entry> _expiring = new(ExpiryComparer.Instance);
+    private readonly Dictionary<(JobState? State, string? Name), SortedSet<Entry>> _indexes = new();
     private readonly TimeProvider _timeProvider;
     private readonly object _lock = new();
-    private DateTimeOffset _nextCleanup;
+    private long _sequence;
 
     /// <summary>Creates an empty store that reads "now" from <paramref name="timeProvider"/>, or the system clock when null.</summary>
     public InMemoryJobStore(TimeProvider? timeProvider = null)
@@ -31,11 +39,11 @@ public sealed class InMemoryJobStore : IJobStore
 
         lock (_lock)
         {
-            var now = Now();
-            if (_jobs.TryGetValue(job.Id, out var existing) && !existing.IsExpired(now))
+            var now = RemoveExpired();
+            if (_jobs.ContainsKey(job.Id))
                 return Task.FromResult(false);
 
-            _jobs[job.Id] = new Entry(job with
+            var entry = new Entry(job with
             {
                 State = JobState.Queued,
                 Attempt = 0,
@@ -45,7 +53,11 @@ public sealed class InMemoryJobStore : IJobStore
                 LeaseExpiresAt = null,
                 WorkerId = null,
                 Headers = job.Headers is { Count: > 0 } headers ? new Dictionary<string, string>(headers, StringComparer.Ordinal) : ReadOnlyDictionary<string, string>.Empty
-            });
+            }, ++_sequence);
+
+            _jobs.Add(job.Id, entry);
+            Index(entry);
+            Schedule(entry, entry.Job.AvailableAt);
             return Task.FromResult(true);
         }
     }
@@ -55,7 +67,10 @@ public sealed class InMemoryJobStore : IJobStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         lock (_lock)
-            return Task.FromResult(Find(jobId, Now())?.Job);
+        {
+            RemoveExpired();
+            return Task.FromResult(_jobs.TryGetValue(jobId, out var entry) ? entry.Job : null);
+        }
     }
 
     /// <inheritdoc />
@@ -67,13 +82,18 @@ public sealed class InMemoryJobStore : IJobStore
 
         lock (_lock)
         {
-            var now = Now();
-            var page = Matching(query.State, query.Name, now)
-                .Where(j => after is null || j.CreatedAt.UtcTicks < after.Value.Ticks || j.CreatedAt.UtcTicks == after.Value.Ticks && String.CompareOrdinal(j.Id, after.Value.Id) < 0)
-                .OrderByDescending(j => j.CreatedAt.UtcTicks).ThenByDescending(j => j.Id, StringComparer.Ordinal)
-                .Take(query.Limit + 1)
-                .ToList();
+            RemoveExpired();
+            if (!_indexes.TryGetValue((query.State, query.Name), out var index))
+                return Task.FromResult(new JobPage<JobInfo>([], null));
 
+            IEnumerable<Entry> jobs = index;
+            if (after is { } cursor)
+            {
+                var start = Entry.CreationKey(cursor.Ticks, cursor.Id);
+                jobs = index.GetViewBetween(start, Entry.LastCreationKey).SkipWhile(e => CreationComparer.Instance.Compare(e, start) == 0);
+            }
+
+            var page = jobs.Take(query.Limit + 1).Select(e => e.Job).ToList();
             string? continuation = null;
             if (page.Count > query.Limit)
             {
@@ -102,7 +122,10 @@ public sealed class InMemoryJobStore : IJobStore
     public Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         lock (_lock)
-            return Task.FromResult((long)Matching(state, name, Now()).Count());
+        {
+            RemoveExpired();
+            return Task.FromResult(_indexes.TryGetValue((state, name), out var index) ? (long)index.Count : 0);
+        }
     }
 
     /// <inheritdoc />
@@ -114,36 +137,21 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(request.LeaseDuration, TimeSpan.Zero, nameof(request));
         lock (_lock)
         {
-            var now = Now();
-            CleanupExpired(now);
-
+            var now = RemoveExpired();
             Entry? next = null;
-            DateTimeOffset nextDue = default;
-            foreach (var entry in _jobs.Values)
+            foreach (string name in request.Names)
             {
-                var job = entry.Job;
-                DateTimeOffset due;
-                if (job.State == JobState.Queued && job.AvailableAt <= now)
-                    due = job.AvailableAt;
-                else if (job.State == JobState.Running && job.LeaseExpiresAt <= now)
-                    due = job.LeaseExpiresAt.Value;
-                else
-                    continue;
-
-                if (!request.Names.Contains(job.Name))
-                    continue;
-
-                if (next is null || due < nextDue)
+                if (_dueByName.TryGetValue(name, out var due) && due.Min is { } first && first.DueTicks <= now.UtcTicks
+                    && (next is null || DueComparer.Instance.Compare(first, next) < 0))
                 {
-                    next = entry;
-                    nextDue = due;
+                    next = first;
                 }
             }
 
             if (next is null)
                 return Task.FromResult<JobInfo?>(null);
 
-            next.Job = next.Job with
+            var job = next.Job with
             {
                 State = JobState.Running,
                 Attempt = next.Job.Attempt + 1,
@@ -154,7 +162,10 @@ public sealed class InMemoryJobStore : IJobStore
                 UpdatedAt = now
             };
 
-            return Task.FromResult<JobInfo?>(next.Job);
+            Unschedule(next);
+            Update(next, job);
+            Schedule(next, job.LeaseExpiresAt.Value);
+            return Task.FromResult<JobInfo?>(job);
         }
     }
 
@@ -165,12 +176,14 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         lock (_lock)
         {
-            var now = Now();
-            var entry = FindClaimed(jobId, claimToken, now);
+            var now = RemoveExpired();
+            var entry = FindClaimed(jobId, claimToken);
             if (entry is null)
                 return Task.FromResult(JobLeaseStatus.Lost);
 
+            Unschedule(entry);
             entry.Job = entry.Job with { LeaseExpiresAt = now.Add(leaseDuration), UpdatedAt = now };
+            Schedule(entry, entry.Job.LeaseExpiresAt.Value);
             return Task.FromResult(entry.Job.CancellationRequested ? JobLeaseStatus.CancellationRequested : JobLeaseStatus.Renewed);
         }
     }
@@ -182,8 +195,8 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(claimToken);
         lock (_lock)
         {
-            var now = Now();
-            var entry = FindClaimed(jobId, claimToken, now);
+            var now = RemoveExpired();
+            var entry = FindClaimed(jobId, claimToken);
             if (entry is null)
                 return Task.FromResult(false);
 
@@ -203,32 +216,34 @@ public sealed class InMemoryJobStore : IJobStore
 
         lock (_lock)
         {
-            var now = Now();
-            var entry = FindClaimed(jobId, claimToken, now);
+            var now = RemoveExpired();
+            var entry = FindClaimed(jobId, claimToken);
             if (entry is null)
                 return Task.FromResult(false);
 
+            Unschedule(entry);
             var job = entry.Job with { ClaimToken = null, LeaseExpiresAt = null, WorkerId = null, UpdatedAt = now, State = completion.State };
             if (completion.State == JobState.Queued)
             {
-                entry.Job = job with
+                Update(entry, job with
                 {
                     AvailableAt = now.Add(completion.RetryDelay),
                     Attempt = completion.RefundAttempt ? Math.Max(0, job.Attempt - 1) : job.Attempt,
                     Error = completion.Error ?? job.Error
-                };
+                });
+                Schedule(entry, entry.Job.AvailableAt);
             }
             else
             {
                 bool succeeded = completion.State == JobState.Succeeded;
-                entry.Job = job with
+                Update(entry, job with
                 {
                     CompletedAt = now,
                     Message = completion.Message ?? job.Message,
                     Error = completion.Error ?? (succeeded ? null : job.Error),
                     Payload = succeeded ? ReadOnlyMemory<byte>.Empty : job.Payload
-                };
-                entry.ExpiresAt = now.Add(completion.RetainFor);
+                });
+                Expire(entry, now.Add(completion.RetainFor));
             }
 
             return Task.FromResult(true);
@@ -241,15 +256,15 @@ public sealed class InMemoryJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         lock (_lock)
         {
-            var now = Now();
-            var entry = Find(jobId, now);
-            if (entry is null || entry.Job.State.IsTerminal())
+            var now = RemoveExpired();
+            if (!_jobs.TryGetValue(jobId, out var entry) || entry.Job.State.IsTerminal())
                 return Task.FromResult(false);
 
             if (entry.Job.State == JobState.Queued)
             {
-                entry.Job = entry.Job with { State = JobState.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now };
-                entry.ExpiresAt = now.Add(retainFor);
+                Unschedule(entry);
+                Update(entry, entry.Job with { State = JobState.Cancelled, CancellationRequested = true, CompletedAt = now, UpdatedAt = now });
+                Expire(entry, now.Add(retainFor));
             }
             else
             {
@@ -265,48 +280,195 @@ public sealed class InMemoryJobStore : IJobStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(jobId);
         lock (_lock)
-            return Task.FromResult(_jobs.Remove(jobId));
+        {
+            RemoveExpired();
+            if (!_jobs.TryGetValue(jobId, out var entry))
+                return Task.FromResult(false);
+
+            Remove(entry);
+            return Task.FromResult(true);
+        }
     }
 
-    private DateTimeOffset Now() => _timeProvider.GetUtcNow();
-
-    private Entry? Find(string jobId, DateTimeOffset now)
+    /// <summary>Reads the clock, and first removes the jobs whose retention has run out so no operation sees them.</summary>
+    private DateTimeOffset RemoveExpired()
     {
-        return _jobs.TryGetValue(jobId, out var entry) && !entry.IsExpired(now) ? entry : null;
+        var now = _timeProvider.GetUtcNow();
+        while (_expiring.Min is { } expired && expired.ExpiresAt <= now)
+            Remove(expired);
+
+        return now;
     }
 
-    private Entry? FindClaimed(string jobId, string claimToken, DateTimeOffset now)
+    private Entry? FindClaimed(string jobId, string claimToken)
     {
-        var entry = Find(jobId, now);
-        return entry is { Job.State: JobState.Running } && entry.Job.ClaimToken == claimToken ? entry : null;
+        return _jobs.TryGetValue(jobId, out var entry) && entry.Job is { State: JobState.Running } job && job.ClaimToken == claimToken ? entry : null;
     }
 
-    private IEnumerable<JobInfo> Matching(JobState? status, string? name, DateTimeOffset now)
+    /// <summary>Replaces the job, moving it to the indexes of its new state.</summary>
+    private void Update(Entry entry, JobInfo job)
     {
-        return _jobs.Values.Where(e => !e.IsExpired(now)).Select(e => e.Job)
-            .Where(j => (status is null || j.State == status) && (name is null || j.Name == name));
+        if (job.State == entry.Job.State)
+        {
+            entry.Job = job;
+            return;
+        }
+
+        Unindex(entry);
+        entry.Job = job;
+        Index(entry);
     }
 
-    private void CleanupExpired(DateTimeOffset now)
+    private void Remove(Entry entry)
     {
-        if (now < _nextCleanup)
+        Unschedule(entry);
+        if (entry.ExpiresAt is not null)
+            _expiring.Remove(entry);
+
+        Unindex(entry);
+        _jobs.Remove(entry.Id);
+    }
+
+    /// <summary>Makes a queued or running job claimable once <paramref name="due"/> has passed.</summary>
+    private void Schedule(Entry entry, DateTimeOffset due)
+    {
+        entry.DueTicks = due.UtcTicks;
+        if (!_dueByName.TryGetValue(entry.Job.Name, out var set))
+            _dueByName.Add(entry.Job.Name, set = new SortedSet<Entry>(DueComparer.Instance));
+
+        set.Add(entry);
+        entry.IsScheduled = true;
+    }
+
+    private void Unschedule(Entry entry)
+    {
+        if (!entry.IsScheduled)
             return;
 
-        _nextCleanup = now.AddSeconds(30);
-        foreach (string id in _jobs.Where(j => j.Value.IsExpired(now)).Select(j => j.Key).ToList())
-            _jobs.Remove(id);
+        if (_dueByName.TryGetValue(entry.Job.Name, out var set) && set.Remove(entry) && set.Count == 0)
+            _dueByName.Remove(entry.Job.Name);
+
+        entry.IsScheduled = false;
+    }
+
+    private void Expire(Entry entry, DateTimeOffset expiresAt)
+    {
+        entry.ExpiresAt = expiresAt;
+        _expiring.Add(entry);
+    }
+
+    private void Index(Entry entry)
+    {
+        AddToIndex((null, null), entry);
+        AddToIndex((null, entry.Job.Name), entry);
+        AddToIndex((entry.Job.State, null), entry);
+        AddToIndex((entry.Job.State, entry.Job.Name), entry);
+    }
+
+    private void Unindex(Entry entry)
+    {
+        RemoveFromIndex((null, null), entry);
+        RemoveFromIndex((null, entry.Job.Name), entry);
+        RemoveFromIndex((entry.Job.State, null), entry);
+        RemoveFromIndex((entry.Job.State, entry.Job.Name), entry);
+    }
+
+    private void AddToIndex((JobState? State, string? Name) key, Entry entry)
+    {
+        if (!_indexes.TryGetValue(key, out var index))
+            _indexes.Add(key, index = new SortedSet<Entry>(CreationComparer.Instance));
+
+        index.Add(entry);
+    }
+
+    private void RemoveFromIndex((JobState? State, string? Name) key, Entry entry)
+    {
+        if (_indexes.TryGetValue(key, out var index) && index.Remove(entry) && index.Count == 0)
+            _indexes.Remove(key);
     }
 
     private sealed class Entry
     {
-        public Entry(JobInfo job)
+        private static readonly JobInfo Placeholder = new() { Id = "-", Name = "-" };
+
+        public Entry(JobInfo job, long sequence)
         {
             Job = job;
+            Id = job.Id;
+            CreatedTicks = job.CreatedAt.UtcTicks;
+            Sequence = sequence;
         }
 
+        private Entry(long createdTicks, string id)
+        {
+            Job = Placeholder;
+            Id = id;
+            CreatedTicks = createdTicks;
+        }
+
+        /// <summary>Sorts after every job in a creation index, so it bounds a page's range.</summary>
+        public static Entry LastCreationKey { get; } = new(Int64.MinValue, String.Empty);
+
         public JobInfo Job { get; set; }
+
+        public string Id { get; }
+
+        public long CreatedTicks { get; }
+
+        /// <summary>Breaks ties between jobs due at the same time, oldest first.</summary>
+        public long Sequence { get; }
+
+        /// <summary>When a queued job becomes available, or a running job's lease runs out.</summary>
+        public long DueTicks { get; set; }
+
+        public bool IsScheduled { get; set; }
+
         public DateTimeOffset? ExpiresAt { get; set; }
 
-        public bool IsExpired(DateTimeOffset now) => ExpiresAt <= now;
+        /// <summary>An entry that sorts where a job created at <paramref name="createdTicks"/> with <paramref name="id"/> would.</summary>
+        public static Entry CreationKey(long createdTicks, string id) => new(createdTicks, id);
+    }
+
+    private sealed class DueComparer : IComparer<Entry>
+    {
+        public static readonly DueComparer Instance = new();
+
+        public int Compare(Entry? x, Entry? y)
+        {
+            if (x is null || y is null)
+                return x is null ? (y is null ? 0 : -1) : 1;
+
+            int result = x.DueTicks.CompareTo(y.DueTicks);
+            return result != 0 ? result : x.Sequence.CompareTo(y.Sequence);
+        }
+    }
+
+    private sealed class ExpiryComparer : IComparer<Entry>
+    {
+        public static readonly ExpiryComparer Instance = new();
+
+        public int Compare(Entry? x, Entry? y)
+        {
+            if (x is null || y is null)
+                return x is null ? (y is null ? 0 : -1) : 1;
+
+            int result = Nullable.Compare(x.ExpiresAt, y.ExpiresAt);
+            return result != 0 ? result : x.Sequence.CompareTo(y.Sequence);
+        }
+    }
+
+    /// <summary>Newest first, by creation time and then id, the order queries return.</summary>
+    private sealed class CreationComparer : IComparer<Entry>
+    {
+        public static readonly CreationComparer Instance = new();
+
+        public int Compare(Entry? x, Entry? y)
+        {
+            if (x is null || y is null)
+                return x is null ? (y is null ? 0 : -1) : 1;
+
+            int result = y.CreatedTicks.CompareTo(x.CreatedTicks);
+            return result != 0 ? result : String.CompareOrdinal(y.Id, x.Id);
+        }
     }
 }
