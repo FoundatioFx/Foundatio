@@ -8,3 +8,31 @@ jobs:
     with:
       solution: Foundatio.slnx
       new-test-runner: true
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+
+    steps:
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Download Packages
+        uses: actions/download-artifact@v8
+        with:
+          name: nuget-packages
+      - name: NuGet Login
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      - name: Publish Release Packages
+        run: |
+          for package in $(find . -name "*.nupkg" | grep -v "minver" | grep -v "/EmptyFiles/"); do
+            echo "${0##*/}": Pushing $package...
+            dotnet nuget push $package --source https://api.nuget.org/v3/index.json --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --skip-duplicate
+          done
