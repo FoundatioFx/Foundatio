@@ -8,6 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -628,8 +629,8 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         DateTime? expiresAt = expiresIn.HasValue ? utcNow.SafeAdd(expiresIn.Value) : null;
 
         long added = values is string stringValue
-            ? ListAdd(key, new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } }, expiresAt)
-            : ListAdd(key, new HashSet<T>(values.Where(v => v is not null)).ToDictionary(k => k, _ => expiresAt), expiresAt);
+            ? ListAddPrepared<string>(key, new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase) { { stringValue, expiresAt } }, expiresAt)
+            : ListAdd(key, GetDistinctListValues(values), expiresAt);
 
         if (added > 0)
             await StartMaintenanceAsync().AnyContext();
@@ -637,14 +638,35 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         return added;
     }
 
-    private long ListAdd<T>(string key, Dictionary<T, DateTime?> items, DateTime? expiresAt) where T : notnull
+    private static HashSet<T> GetDistinctListValues<T>(IEnumerable<T> values) where T : notnull
+    {
+        var items = new HashSet<T>();
+        bool canBeNull = default(T) is null;
+        foreach (var value in values)
+            if (!canBeNull || value is not null)
+                items.Add(value);
+        return items;
+    }
+
+    private long ListAdd<T>(string key, HashSet<T> items, DateTime? expiresAt) where T : notnull
     {
         if (items.Count is 0)
             return 0;
 
+        if (_canShareListValues && items.Count >= ListSnapshot<T>.BlockSize * ListSnapshot<T>.BlockSize)
+            return ListAddPrepared<T>(key, new ListSnapshot<T>(items, expiresAt, items.Comparer), expiresAt, items);
+
+        var values = new Dictionary<T, DateTime?>(items.Count, items.Comparer);
+        foreach (var item in items)
+            values.Add(item, expiresAt);
+        return ListAddPrepared<T>(key, values, expiresAt);
+    }
+
+    private long ListAddPrepared<T>(string key, ICollection values, DateTime? expiresAt, HashSet<T>? sharedItems = null) where T : notnull
+    {
         bool valueIsOwned = _shouldClone && FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T))
             && (!_shouldIsolateListSizing || _usesBuiltInDynamicSizing);
-        var entry = CreateEntry(items, expiresAt, valueIsOwned);
+        var entry = CreateEntry(values, expiresAt, valueIsOwned);
         if (entry is null)
             return 0;
 
@@ -657,39 +679,49 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
             if (current is null)
             {
-                var replacement = _canShareListValues && items.Count > ListSnapshot<T>.BlockSize
-                    ? entry.WithValue(new ListSnapshot<T>(items), expiresAt, entry.Size)
+                var replacement = _canShareListValues && values is Dictionary<T, DateTime?> initial && initial.Count > ListSnapshot<T>.BlockSize
+                    ? entry.WithValue(new ListSnapshot<T>(initial), expiresAt, entry.Size)
                     : entry;
-                return entry.IsExpired ? (current, 0L) : (replacement, (long)items.Count);
+                return entry.IsExpired ? (current, 0L) : (replacement, (long)values.Count);
             }
 
             if (current.StoredValue is ListSnapshot<T> { Snapshot: null } stored)
             {
-                var list = stored.Update(items.Keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
+                ICollection<T> keys = sharedItems is not null ? sharedItems : ((Dictionary<T, DateTime?>)entry.StoredValue!).Keys;
+                var list = stored.Update(keys, expiresAt, _timeProvider.GetUtcNow().UtcDateTime, remove: false, out _);
                 long listSize = _usesBuiltInDynamicSizing ? CalculateEntrySize(list) : entry.Size;
                 if (listSize < 0)
                     return (current, 0L);
 
                 var replacement = current.WithValue(list, list.ExpiresAt, listSize);
-                return entry.IsExpired ? (current, 0L) : (replacement, (long)items.Count);
+                return entry.IsExpired ? (current, 0L) : (replacement, (long)values.Count);
             }
 
             if (CopyListValues<T>(current) is not { } dictionary)
                 throw new InvalidOperationException($"Unable to add value for key: {key}. Cache value does not contain a set");
 
-            // Merge from the new entry's stored values, which were cloned when CloneValues is enabled
             ExpireListValues(dictionary, key);
-            var addedValues = (Dictionary<T, DateTime?>)entry.StoredValue!;
-            EnsureListCapacity(dictionary, addedValues);
-            foreach (var kvp in addedValues)
-                dictionary[kvp.Key] = kvp.Value;
+            if (sharedItems is { } addedKeys)
+            {
+                EnsureListCapacity(dictionary, addedKeys, addedKeys.Comparer);
+                foreach (var item in addedKeys)
+                    dictionary[item] = expiresAt;
+            }
+            else
+            {
+                // Merge values after sizing and cloning, which can change the input dictionary.
+                var addedValues = (Dictionary<T, DateTime?>)entry.StoredValue!;
+                EnsureListCapacity(dictionary, addedValues.Keys, addedValues.Comparer);
+                foreach (var kvp in addedValues)
+                    dictionary[kvp.Key] = kvp.Value;
+            }
 
             long size = _hasSizeCalculator ? CalculateEntrySize(dictionary) : 0;
             if (size < 0)
                 return (current, 0L);
 
             var merged = WithListValues(current, dictionary, size);
-            return entry.IsExpired ? (current, 0L) : (merged, (long)items.Count);
+            return entry.IsExpired ? (current, 0L) : (merged, (long)values.Count);
         });
     }
 
@@ -707,16 +739,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             : current.WithValue(value, GetListExpiration(dictionary), size);
     }
 
-    private static void EnsureListCapacity<T>(IDictionary<T, DateTime?> dictionary, Dictionary<T, DateTime?> items) where T : notnull
+    private static void EnsureListCapacity<T>(IDictionary<T, DateTime?> dictionary, ICollection<T> items, IEqualityComparer<T> comparer) where T : notnull
     {
         if (dictionary is not Dictionary<T, DateTime?> values || items.Count <= values.EnsureCapacity(0) - values.Count)
             return;
 
-        var distinctKeys = items.Count > 1 && !ReferenceEquals(values.Comparer, items.Comparer)
+        var distinctKeys = items.Count > 1 && !ReferenceEquals(values.Comparer, comparer)
             ? new HashSet<T>(values.Comparer)
             : null;
         int capacity = values.Count;
-        foreach (var key in items.Keys)
+        foreach (var key in items)
             if (!values.ContainsKey(key) && (distinctKeys is null || distinctKeys.Add(key)))
                 capacity = checked(capacity + 1);
 
@@ -729,10 +761,23 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
     /// </summary>
     private IDictionary<T, DateTime?>? CopyListValues<T>(CacheEntry entry) where T : notnull
     {
+        bool cloneRoot = _shouldClone && (entry.StoredValue switch
+        {
+            Dictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(Dictionary<T, DateTime?>),
+            SortedDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(SortedDictionary<T, DateTime?>),
+            SortedList<T, DateTime?> dictionary => dictionary.GetType() != typeof(SortedList<T, DateTime?>),
+            ConcurrentDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(ConcurrentDictionary<T, DateTime?>),
+#if NET9_0_OR_GREATER
+            OrderedDictionary<T, DateTime?> dictionary => dictionary.GetType() != typeof(OrderedDictionary<T, DateTime?>),
+#endif
+            _ => false
+        });
         bool cloneComparer = ShouldCloneListComparer<T>(entry.StoredValue);
-        bool clone = cloneComparer || _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
-        object? value = cloneComparer ? CloneDictionaryWithComparer((IDictionary<T, DateTime?>)entry.StoredValue!)
-            : clone ? entry.PeekValue() : entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
+        bool cloneKeys = _shouldClone && !FastCloner.Code.FastClonerSafeTypes.CanReturnSameObject(typeof(T));
+        bool clone = cloneRoot || cloneComparer || cloneKeys;
+        object? value = cloneComparer || cloneRoot && cloneKeys ? CloneDictionaryWithComparer((IDictionary<T, DateTime?>)entry.StoredValue!)
+            : cloneRoot ? FastCloner.FastCloner.DeepCloneTo(entry.StoredValue, FastCloner.FastCloner.ShallowClone(entry.StoredValue))
+            : cloneKeys ? entry.PeekValue() : entry.StoredValue is IListSnapshot list ? list.GetSnapshot() : entry.StoredValue;
         return value switch
         {
             Dictionary<T, DateTime?> dictionary => clone ? dictionary : new Dictionary<T, DateTime?>(dictionary, dictionary.Comparer),
@@ -807,7 +852,7 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         if (values is string stringValue)
             return Task.FromResult(ListRemove(key, new HashSet<string>([stringValue])));
 
-        var items = new HashSet<T>(values.Where(v => v is not null));
+        var items = GetDistinctListValues(values);
         if (items.Count is 0)
             return Task.FromResult<long>(0);
 
@@ -833,16 +878,47 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             }
 
             object? value = current?.StoredValue is IListSnapshot snapshot ? snapshot.GetSnapshot() : current?.StoredValue;
-            if (current is null || value is not IDictionary<T, DateTime?> { Count: > 0 } stored)
+            if (current is null || value is not IDictionary<T, DateTime?> stored)
                 return (current, 0L);
 
-            // A missing-value removal needs no private copy unless expired values also need pruning.
-            // Use the stored dictionary's comparer, which may differ from the input set's comparer.
-            var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
-            if (!items.Any(stored.ContainsKey) && !stored.Any(kvp => kvp.Value < utcNow))
-                return (current, 0L);
+            IDictionary<T, DateTime?>? dictionary = null;
+            bool canInspectStored = !_shouldClone || stored.GetType() == typeof(Dictionary<T, DateTime?>)
+                && (typeof(T) == typeof(string) || !RuntimeHelpers.IsReferenceOrContainsReferences<T>())
+                && ReferenceEquals(((Dictionary<T, DateTime?>)stored).Comparer, EqualityComparer<T>.Default);
+            if (!canInspectStored)
+            {
+                if (stored is not Dictionary<T, DateTime?> and not SortedDictionary<T, DateTime?>
+                    and not SortedList<T, DateTime?> and not ConcurrentDictionary<T, DateTime?>
+#if NET9_0_OR_GREATER
+                    and not OrderedDictionary<T, DateTime?>
+#endif
+                    )
+                {
+                    var inspection = stored.GetType().IsValueType ? stored.DeepClone()
+                        : FastCloner.FastCloner.DeepCloneTo(stored, FastCloner.FastCloner.ShallowClone(stored))!;
+                    if (inspection.Count == 0)
+                        return (current, 0L);
+                    var inspectionTime = _timeProvider.GetUtcNow().UtcDateTime;
+                    if (!items.Any(inspection.ContainsKey) && !inspection.Any(kvp => kvp.Value < inspectionTime))
+                        return (current, 0L);
+                    throw new NotSupportedException($"List updates cannot preserve the comparer of {stored.GetType().FullName}.");
+                }
 
-            var dictionary = CopyListValues<T>(current)!;
+                // Count, lookup and enumeration callbacks must run on the owned graph too.
+                dictionary = CopyListValues<T>(current)!;
+            }
+            else
+            {
+                if (stored.Count == 0)
+                    return (current, 0L);
+                var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+                if (!items.Any(stored.ContainsKey) && !stored.Any(kvp => kvp.Value < utcNow))
+                    return (current, 0L);
+            }
+
+            dictionary ??= CopyListValues<T>(current)!;
+            if (dictionary.Count == 0)
+                return (current, 0L);
             int expired = ExpireListValues(dictionary, key);
             long removedCount = items.Count(dictionary.Remove);
             if (expired is 0 && removedCount is 0)
@@ -881,12 +957,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 Interlocked.Increment(ref _hits);
                 entry.RecordAccess();
                 var now = _timeProvider.GetUtcNow().UtcDateTime;
+                if (page.HasValue)
+                    return list is not null
+                        ? list.ReadPage(now, page.Value, pageSize)
+                        : ReadListPage(dictionary!, now, page.Value, pageSize);
+
                 var values = list is not null ? list.Read(now) : ReadListValues(dictionary!, now);
                 if (values.Length == 0)
                     return new CacheValue<ICollection<T>>([], false);
-
-                if (page.HasValue)
-                    values = values.Skip((page.Value - 1) * pageSize).Take(pageSize).ToArray();
 
                 return new CacheValue<ICollection<T>>(values, true);
             }
@@ -898,6 +976,9 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
 
         // Filter out expired keys instead of mutating them via ExpireListValues.
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+        if (page.HasValue && dictionaryCacheValue.Value is Dictionary<T, DateTime?> pagedDictionary && pagedDictionary.GetType() == typeof(Dictionary<T, DateTime?>))
+            return ReadListPage(pagedDictionary, utcNow, page.Value, pageSize);
+
         var nonExpiredKeys = dictionaryCacheValue.Value.Where(kvp => kvp.Value is null || kvp.Value >= utcNow).Select(kvp => kvp.Key).ToArray();
         if (nonExpiredKeys.Length is 0)
             return new CacheValue<ICollection<T>>([], false);
@@ -908,6 +989,85 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         int skip = (page.Value - 1) * pageSize;
         var pagedItems = nonExpiredKeys.Skip(skip).Take(pageSize).ToArray();
         return new CacheValue<ICollection<T>>(pagedItems, true);
+    }
+
+    private static CacheValue<ICollection<T>> ReadListPage<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, int page, int pageSize, bool checkExpiration = true) where T : notnull
+    {
+        var result = new ListPage<T>(dictionary.Count, page, pageSize);
+        if (checkExpiration)
+        {
+            foreach (var pair in dictionary)
+            {
+                if (pair.Value < utcNow)
+                    continue;
+                if (result.TrySkip())
+                    continue;
+                result.Add(pair.Key);
+                if (result.IsFull)
+                    break;
+            }
+        }
+        else
+        {
+            foreach (var pair in dictionary)
+            {
+                if (result.TrySkip())
+                    continue;
+                result.Add(pair.Key);
+                if (result.IsFull)
+                    break;
+            }
+        }
+        return result.ToCacheValue();
+    }
+
+    private struct ListPage<T> where T : notnull
+    {
+        private int _skip;
+        private readonly int _initialSkip;
+        private readonly int _capacity;
+        private T[]? _values;
+        private int _count;
+        private bool _hasValue;
+
+        public ListPage(int count, int page, int pageSize)
+        {
+            _skip = Math.Max(0, unchecked((page - 1) * pageSize));
+            _initialSkip = _skip;
+            _capacity = Math.Min(Math.Max(0, pageSize), Math.Max(0, count - _skip));
+        }
+
+        public bool IsFull => _hasValue && _count == _capacity;
+        public bool CanSkip(int count) => _capacity > 0 && _skip >= count;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TrySkip(int count = 1)
+        {
+            if (!CanSkip(count))
+                return false;
+
+            _skip -= count;
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Add(T value)
+        {
+            _hasValue = true;
+            if (_capacity == 0)
+                return;
+
+            _values ??= new T[_capacity];
+            _values[_count++] = value;
+        }
+
+        public CacheValue<ICollection<T>> ToCacheValue()
+        {
+            var values = _values ?? [];
+            if (_count != values.Length)
+                Array.Resize(ref values, _count);
+            return new CacheValue<ICollection<T>>(values, _hasValue || _skip < _initialSkip);
+        }
     }
 
     private static T[] ReadListValues<T>(Dictionary<T, DateTime?> dictionary, DateTime utcNow, bool checkExpiration = true) where T : notnull
@@ -1538,6 +1698,39 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
         }
 
         public ListSnapshot(Dictionary<T, DateTime?> values) => _storage = new Storage(values);
+
+        public ListSnapshot(HashSet<T> keys, DateTime? expiration, IEqualityComparer<T> comparer)
+        {
+            int bucketCount = 1;
+            while ((long)bucketCount * 2 < keys.Count)
+                bucketCount *= 2;
+            var values = new Pages<Item>.Builder(null, keys.Count);
+            var heads = new Pages<int>.Builder(null, bucketCount);
+            var hashes = new Pages<int>.Builder(null, keys.Count);
+            Item[] valueBlock = [];
+            int[] hashBlock = [];
+            int index = 0;
+            foreach (var key in keys)
+            {
+                int hash = comparer.GetHashCode(key);
+                int bucket = HashCode.Combine(hash) & (bucketCount - 1);
+                int offset = index % BlockSize;
+                if (offset == 0)
+                {
+                    valueBlock = values.GetWritableBlock(index);
+                    hashBlock = hashes.GetWritableBlock(index);
+                }
+                valueBlock[offset] = new Item(key, expiration, true, heads[bucket]);
+                hashBlock[offset] = hash;
+                heads[bucket] = ++index;
+            }
+            var expirations = expiration is { } time
+                ? ImmutableSortedDictionary<DateTime, int>.Empty.Add(time, keys.Count)
+                : ImmutableSortedDictionary<DateTime, int>.Empty;
+            _storage = new Storage(values.Value, heads.Value, hashes.Value, comparer, keys.Count, bucketCount,
+                expirations, ImmutableStack<int>.Empty, keys.Count, expiration.HasValue ? 0 : keys.Count);
+        }
+
         private ListSnapshot(Storage storage) => _storage = storage;
 
         public int Count => Volatile.Read(ref _storage).Count;
@@ -1593,6 +1786,70 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             return result;
         }
 
+        public CacheValue<ICollection<T>> ReadPage(DateTime utcNow, int page, int pageSize)
+        {
+            var storage = Volatile.Read(ref _storage);
+            bool hasExpired = !storage.Expirations.IsEmpty && storage.Expirations.First().Key < utcNow;
+            if (storage.Dictionary is { } dictionary)
+                return ReadListPage(dictionary, utcNow, page, pageSize, storage.Exposed || hasExpired);
+
+            var result = new ListPage<T>(storage.Count, page, pageSize);
+            foreach (var group in storage.Items!.Groups)
+            {
+                if (group is null)
+                    continue;
+                foreach (var block in group)
+                {
+                    if (block is null)
+                        continue;
+                    if (result.CanSkip(block.Length))
+                    {
+                        int count = 0;
+                        if (hasExpired)
+                        {
+                            foreach (ref readonly var item in block.AsSpan())
+                                if (item.Present && !item.IsExpired(utcNow))
+                                    count++;
+                        }
+                        else
+                        {
+                            foreach (ref readonly var item in block.AsSpan())
+                                count += item.Present ? 1 : 0;
+                        }
+                        result.TrySkip(count);
+                        continue;
+                    }
+                    if (hasExpired)
+                    {
+                        foreach (ref readonly var item in block.AsSpan())
+                        {
+                            if (!item.Present || item.IsExpired(utcNow))
+                                continue;
+                            if (result.TrySkip())
+                                continue;
+                            result.Add(item.Key);
+                            if (result.IsFull)
+                                return result.ToCacheValue();
+                        }
+                    }
+                    else
+                    {
+                        foreach (ref readonly var item in block.AsSpan())
+                        {
+                            if (!item.Present)
+                                continue;
+                            if (result.TrySkip())
+                                continue;
+                            result.Add(item.Key);
+                            if (result.IsFull)
+                                return result.ToCacheValue();
+                        }
+                    }
+                }
+            }
+            return result.ToCacheValue();
+        }
+
         public object GetSnapshot()
         {
             var storage = Volatile.Read(ref _storage);
@@ -1646,15 +1903,16 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
             Pages<Item>.Builder? values = null;
             Pages<int>.Builder? heads = null;
             Pages<int>.Builder? hashes = null;
+            bool largeBatch = items.Count >= Math.Max(1, count / BlockSize);
             bool prune = storage.Exposed
                 ? storage.Dictionary!.Any(pair => pair.Value < utcNow)
                 : !storage.Expirations.IsEmpty && storage.Expirations.First().Key < utcNow;
             if (remove && !prune && !items.Any(key => storage.Dictionary?.ContainsKey(key) ?? Find(key, out _, out _, out _) >= 0))
                 return this;
-            if (!remove && !prune && storage.Dictionary is { } initial && items.All(key => initial.TryGetValue(key, out var previous) && previous == expiration))
+            if (!remove && !prune && (storage.Dictionary is not null || largeBatch) && items.All(IsUnchanged))
                 return this;
 
-            if (storage.Exposed || items.Count >= Math.Max(1, count / BlockSize) || count < storage.NextIndex / 4)
+            if (storage.Exposed || largeBatch || count < storage.NextIndex / 4)
             {
                 var dictionary = CopyValues(storage);
                 if (prune)
@@ -1756,6 +2014,14 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 ? new ListSnapshot<T>(new Storage(values.Value, heads.Value, hashes.Value, storage.Comparer, count, bucketCount,
                     expirations?.ToImmutable() ?? storage.Expirations, freeIndices, nextIndex, permanentCount))
                 : this;
+
+            bool IsUnchanged(T key)
+            {
+                if (storage.Dictionary is { } dictionary)
+                    return dictionary.TryGetValue(key, out var previous) && previous == expiration;
+                int index = Find(key, out _, out _, out _);
+                return index >= 0 && storage.Items![index].Expiration == expiration;
+            }
 
             int Find(T key, out int previous, out int bucket, out int hash)
             {
@@ -1915,28 +2181,31 @@ public class InMemoryCacheClient : IMemoryCacheClient, IHaveTimeProvider, IHaveL
                 public TValue this[int index]
                 {
                     get => Value[index];
-                    set
+                    set => GetWritableBlock(index)[index % BlockSize] = value;
+                }
+
+                [MethodImpl(MethodImplOptions.AggressiveInlining)]
+                public TValue[] GetWritableBlock(int index)
+                {
+                    if (ReferenceEquals(Value, source))
+                        Value = new Pages<TValue>(source, capacity);
+                    int groupIndex = index / (BlockSize * BlockSize);
+                    int blockIndex = index / BlockSize % BlockSize;
+                    var originalGroup = source is not null && groupIndex < source._groups.Length ? source._groups[groupIndex] : null;
+                    var group = Value._groups[groupIndex];
+                    if (group is null || ReferenceEquals(group, originalGroup))
                     {
-                        if (ReferenceEquals(Value, source))
-                            Value = new Pages<TValue>(source, capacity);
-                        int groupIndex = index / (BlockSize * BlockSize);
-                        int blockIndex = index / BlockSize % BlockSize;
-                        var originalGroup = source is not null && groupIndex < source._groups.Length ? source._groups[groupIndex] : null;
-                        var group = Value._groups[groupIndex];
-                        if (group is null || ReferenceEquals(group, originalGroup))
-                        {
-                            int blocks = Math.Min(BlockSize, (capacity + BlockSize - 1) / BlockSize - groupIndex * BlockSize);
-                            var copy = new TValue[Math.Max(blocks, group?.Length ?? 0)][];
-                            if (group is not null)
-                                Array.Copy(group, copy, group.Length);
-                            Value._groups[groupIndex] = group = copy;
-                        }
-                        var originalBlock = originalGroup is not null && blockIndex < originalGroup.Length ? originalGroup[blockIndex] : null;
-                        var block = group[blockIndex];
-                        if (block is null || ReferenceEquals(block, originalBlock))
-                            group[blockIndex] = block = block is null ? new TValue[BlockSize] : (TValue[])block.Clone();
-                        block[index % BlockSize] = value;
+                        int blocks = Math.Min(BlockSize, (capacity + BlockSize - 1) / BlockSize - groupIndex * BlockSize);
+                        var copy = new TValue[Math.Max(blocks, group?.Length ?? 0)][];
+                        if (group is not null)
+                            Array.Copy(group, copy, group.Length);
+                        Value._groups[groupIndex] = group = copy;
                     }
+                    var originalBlock = originalGroup is not null && blockIndex < originalGroup.Length ? originalGroup[blockIndex] : null;
+                    var block = group[blockIndex];
+                    if (block is null || ReferenceEquals(block, originalBlock))
+                        group[blockIndex] = block = block is null ? new TValue[BlockSize] : (TValue[])block.Clone();
+                    return block;
                 }
             }
         }
