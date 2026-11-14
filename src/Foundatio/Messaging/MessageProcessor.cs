@@ -118,18 +118,10 @@ internal sealed class MessageProcessor : IAsyncDisposable
             await WaitForInFlightAsync(AbortGracePeriod, CancellationToken.None).AnyContext();
         }
 
-        _renewer.Dispose();
         if (_receiver is { } receiver)
-        {
-            try
-            {
-                await receiver.DisposeAsync().AnyContext();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error closing receiver for {Source}", Source);
-            }
-        }
+            await DisposeReceiverAsync(receiver).AnyContext();
+
+        _renewer.Dispose();
     }
 
     public ValueTask DisposeAsync() => new(StopAsync(TimeSpan.Zero));
@@ -232,18 +224,19 @@ internal sealed class MessageProcessor : IAsyncDisposable
     /// </summary>
     private async Task<IMessageReceiver?> ReplaceReceiverAsync(IMessageReceiver failed, TimeSpan backoff, CancellationToken token)
     {
-        if (!await WaitForInFlightAsync(_settings.ReplaceTimeout, token).AnyContext() && token.IsCancellationRequested)
-            return null;
-
-        try
+        if (!await WaitForInFlightAsync(_settings.ReplaceTimeout, token).AnyContext())
         {
-            await failed.DisposeAsync().AnyContext();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error closing the failed receiver for {Source}", Source);
+            if (token.IsCancellationRequested)
+                return null;
+
+            // Disposing the receiver releases these messages to its replacement, so stop their handlers first.
+            _logger.LogWarning("Cancelling {Count} in-flight messages from the failed receiver for {Source}; they will be delivered again", Volatile.Read(ref _inFlight), Source);
+            _renewer.MarkLost(failed);
+            if (!await WaitForInFlightAsync(AbortGracePeriod, token).AnyContext() && token.IsCancellationRequested)
+                return null;
         }
 
+        await DisposeReceiverAsync(failed).AnyContext();
         _receiver = null;
         while (!token.IsCancellationRequested)
         {
@@ -268,6 +261,23 @@ internal sealed class MessageProcessor : IAsyncDisposable
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Marks the deliveries <paramref name="receiver"/> still holds lost, so handlers that outlived the drain are
+    /// cancelled and never settle on it, then disposes it, which releases their messages to another consumer.
+    /// </summary>
+    private async Task DisposeReceiverAsync(IMessageReceiver receiver)
+    {
+        _renewer.MarkLost(receiver);
+        try
+        {
+            await receiver.DisposeAsync().AnyContext();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error closing a receiver for {Source}", Source);
+        }
     }
 
     private static TimeSpan NextBackoff(TimeSpan backoff)

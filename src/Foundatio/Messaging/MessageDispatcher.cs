@@ -214,7 +214,7 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
             _logger.LogWarning(error, "Message {MessageId} failed on attempt {Attempt} of {MaxAttempts}; retrying in {Delay}",
                 message.MessageId, context.Attempt, policy.MaxAttempts, delay);
             await RetryAsync(delivery, delay, abortToken).AnyContext();
-            return ("retry", null);
+            return (delivery.IsLeaseLost ? "lease-lost" : "retry", null);
         }
 
         string description = error is null ? "Retry requested" : $"{error.GetType().Name}: {error.Message}";
@@ -230,8 +230,14 @@ internal sealed class MessageDispatcher : IMessageDeliveryHandler
         if (delay > TimeSpan.Zero && (maxDelay == TimeSpan.Zero || delay < capabilities.MinRetryDelay))
         {
             // The broker can't delay this retry (accurately): hold the lease, still renewed, for the backoff, then release at once.
+            // A lease lost meanwhile ends the hold, and the message is not released: another consumer may have it.
             delivery.ResumeRenewing();
-            await _runtime.TimeProvider.SafeDelay(delay, abortToken).AnyContext();
+            using var hold = CancellationTokenSource.CreateLinkedTokenSource(abortToken);
+            delivery.AttachHandler(hold);
+            await _runtime.TimeProvider.SafeDelay(delay, hold.Token).AnyContext();
+            if (delivery.IsLeaseLost)
+                return;
+
             delay = TimeSpan.Zero;
         }
         else if (maxDelay is { } max && delay > max)

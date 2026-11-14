@@ -225,6 +225,83 @@ public class MessageProcessorTests : TestWithLoggingBase
     }
 
     [Fact]
+    public async Task ReplaceReceiver_WhenAHandlerOutlivesTheReplaceTimeout_CancelsItBeforeTheMessageIsDeliveredAgain()
+    {
+        int invocations = 0, running = 0, maxRunning = 0, cancelled = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport);
+        await using var consumer = await StartAsync(transport, m => m
+            .Configure(o => o.ShutdownTimeout = TimeSpan.FromSeconds(1))
+            .AddConsumer<SlowCommand>(async (_, context, ct) =>
+            {
+                Interlocked.Increment(ref invocations);
+                InterlockedMax(ref maxRunning, Interlocked.Increment(ref running));
+                try
+                {
+                    started.TrySetResult();
+                    if (context.Attempt == 1)
+                        await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    Interlocked.Increment(ref cancelled);
+                    throw;
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref running);
+                }
+            }));
+
+        await consumer.Client.SendAsync(new SlowCommand(1), cancellationToken: TestCancellationToken);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        transport.FaultReceivers();
+
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal(2, Volatile.Read(ref invocations));
+        Assert.Equal(1, Volatile.Read(ref cancelled));
+        Assert.Equal(1, Volatile.Read(ref maxRunning));
+    }
+
+    [Fact]
+    public async Task LeaseRenewal_WhenRenewThrowsObjectDisposed_TreatsTheLeaseAsLostAndCancelsTheHandler()
+    {
+        int renewals = 0;
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var transport = new InterceptingMessageTransport(_transport)
+        {
+            OnRenew = (_, _) =>
+            {
+                Interlocked.Increment(ref renewals);
+                throw new ObjectDisposedException("receiver");
+            }
+        };
+
+        await using var consumer = await StartAsync(transport, m => m.AddConsumer<RenewedCommand>(async (_, context, ct) =>
+        {
+            if (context.Attempt > 1)
+                return;
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            }
+            catch (OperationCanceledException)
+            {
+                cancelled.TrySetResult();
+                throw;
+            }
+        }, new HandlerOptions { LeaseDuration = ShortLease }));
+
+        await consumer.Client.SendAsync(new RenewedCommand(1), cancellationToken: TestCancellationToken);
+
+        await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(10), TestCancellationToken);
+        Assert.True(await _transport.WaitUntilIdleAsync(TimeSpan.FromSeconds(20), TestCancellationToken));
+        Assert.Equal(1, Volatile.Read(ref renewals));
+        Assert.DoesNotContain(Log.LogEntries, e => e.Message.StartsWith("Could not renew the lease", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task DisposeServiceProvider_WithoutStoppingTheHost_StopsEveryProcessor()
     {
         var transport = new InterceptingMessageTransport(_transport);
@@ -296,6 +373,14 @@ public class MessageProcessorTests : TestWithLoggingBase
         => MessagingTestHost.StartAsync(transport, Log, "tests", configure);
 
     private static string QueueName<T>() => typeof(T).FullName!.Replace('+', '.');
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int current;
+        while (value > (current = Volatile.Read(ref target)) && Interlocked.CompareExchange(ref target, value, current) != current)
+        {
+        }
+    }
 
     private async Task WaitForAsync(Func<bool> condition, TimeSpan timeout)
     {

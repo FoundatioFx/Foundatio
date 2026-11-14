@@ -102,6 +102,44 @@ internal sealed class LeaseRenewer : IDisposable
         await renewal.AnyContext();
     }
 
+    /// <summary>
+    /// Stops renewing every delivery <paramref name="receiver"/> still holds and marks it lost, cancelling its handler,
+    /// so it is never settled. Called before the receiver is disposed, which releases those messages to another consumer.
+    /// </summary>
+    public void MarkLost(IMessageReceiver receiver)
+    {
+        List<MessageDelivery>? lost = null;
+        List<CancellationTokenSource>? renewals = null;
+        lock (_lock)
+        {
+            foreach (var delivery in _deliveries)
+            {
+                if (delivery.Receiver == receiver)
+                    (lost ??= []).Add(delivery);
+            }
+
+            if (lost is null)
+                return;
+
+            foreach (var delivery in lost)
+            {
+                delivery.Tracked = false;
+                _deliveries.Remove(delivery);
+                if (delivery.RenewalCancellation is { } cancellation)
+                    (renewals ??= []).Add(cancellation);
+            }
+        }
+
+        foreach (var delivery in lost)
+            delivery.MarkLeaseLost();
+
+        if (renewals is not null)
+        {
+            foreach (var cancellation in renewals)
+                TryCancel(cancellation);
+        }
+    }
+
     public void Dispose()
     {
         List<CancellationTokenSource> renewals = [];
@@ -189,8 +227,9 @@ internal sealed class LeaseRenewer : IDisposable
         {
             await delivery.Receiver.RenewAsync(delivery.Message, cancellation.Token).AnyContext();
         }
-        catch (MessageLeaseLostException)
+        catch (Exception ex) when (ex is MessageLeaseLostException or ObjectDisposedException)
         {
+            // A disposed receiver or transport has released the message, so it may already be with another consumer.
             lost = true;
         }
         catch (Exception ex)
