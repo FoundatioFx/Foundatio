@@ -154,6 +154,34 @@ public class AzureServiceBusMessageTransportTests(ITestOutputHelper output) : Me
     }
 
     [Fact]
+    public async Task ReceiveAsync_UpToMaxConcurrentReceivesAtOnce_HandsOutEachMessageOnce()
+    {
+        // Arrange
+        int receives = Transport.Capabilities.MaxConcurrentReceives;
+        Assert.SkipWhen(receives < 2, "The receiver takes one receive at a time.");
+        var source = MessageSource.Queue(NewName("concurrent"));
+        await using var receiver = await CreateReceiverAsync(source);
+        var sent = Enumerable.Range(0, 40).Select(i => $"id-{i}").ToList();
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [.. sent.Select(id => Message(id, id))], TestCancellationToken);
+
+        // Act
+        var received = new List<string>();
+        var deadline = DateTime.UtcNow + DeliveryTimeout;
+        while (received.Count < sent.Count && DateTime.UtcNow < deadline)
+        {
+            var batches = await Task.WhenAll(Enumerable.Range(0, receives).Select(_ => receiver.ReceiveAsync(5, TimeSpan.FromSeconds(1), TestCancellationToken)));
+            foreach (var message in batches.SelectMany(b => b))
+            {
+                received.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        // Assert
+        Assert.Equal(sent.Order(), received.Order());
+    }
+
+    [Fact]
     public async Task Send_HeadersOverTheServiceBusHeaderLimit_TravelInTheBodyAndRoundTrip()
     {
         // Arrange

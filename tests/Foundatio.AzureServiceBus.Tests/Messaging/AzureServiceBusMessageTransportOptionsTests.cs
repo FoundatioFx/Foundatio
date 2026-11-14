@@ -107,5 +107,6 @@ public class AzureServiceBusMessageTransportOptionsTests
         Assert.Equal(TimeSpan.FromMinutes(5), capabilities.MaxLeaseDuration);
         Assert.Equal(1024 * 1024 - AzureServiceBusMessageTransportCodec.ReservedBytes, capabilities.MaxMessageSize);
         Assert.Equal(new List<int> { 100, 100 }, new List<int> { capabilities.MaxSendBatchSize, capabilities.MaxReceiveBatchSize });
+        Assert.Equal(sessions ? 1 : 4, capabilities.MaxConcurrentReceives);
     }
 }

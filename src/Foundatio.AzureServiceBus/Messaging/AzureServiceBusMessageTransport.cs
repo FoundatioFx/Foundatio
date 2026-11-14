@@ -39,6 +39,7 @@ namespace Foundatio.Messaging.Transport;
 public sealed class AzureServiceBusMessageTransport : IMessageTransport
 {
     internal const int MaxBatchSize = 100;
+    internal const int MaxConcurrentReceives = 4;
     internal const int EmulatorManagementPort = 5300;
     internal static readonly TimeSpan MaxLockDuration = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MinLockDuration = TimeSpan.FromSeconds(5);
@@ -95,7 +96,8 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
     /// its properties and the dead-letter reason; headers too large for Service Bus's 64 KiB of application properties travel
     /// in the body. Retries shorter than a second are held by Foundatio, as a scheduled copy costs a send. Leases expire
     /// with the entity's lock (at most 5 minutes, renewed by Foundatio). Sessions order groups; duplicate detection
-    /// deduplicates.
+    /// deduplicates. Without sessions, up to 4 receives may be in flight on a receiver at once; a session receiver takes
+    /// one at a time, since it already receives from its sessions concurrently in the background.
     /// </summary>
     public TransportCapabilities Capabilities { get; }
 
@@ -553,6 +555,7 @@ public sealed class AzureServiceBusMessageTransport : IMessageTransport
         MinRetryDelay = TimeSpan.FromSeconds(1),
         MaxSendBatchSize = MaxBatchSize,
         MaxReceiveBatchSize = MaxBatchSize,
+        MaxConcurrentReceives = options.RequiresSession ? 1 : MaxConcurrentReceives,
         MaxMessageSize = options.MaxMessageSize - AzureServiceBusMessageTransportCodec.ReservedBytes,
         MaxLeaseDuration = MaxLockDuration,
         LeaseExpiration = true,
