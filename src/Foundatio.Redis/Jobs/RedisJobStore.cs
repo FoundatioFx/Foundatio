@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -15,21 +16,24 @@ namespace Foundatio.Jobs.Store;
 /// A job store on Redis. Each job is a hash; per-name sorted sets of queued jobs (by availability) and running jobs
 /// (by lease expiry) make claims a few log-time lookups, and lexicographic indexes ordered by creation time serve
 /// queries and counts. Every operation is a Lua script that reads "now" from the Redis clock and touches only the
-/// keys passed to it, so the store also runs on Redis-compatible servers that enforce declared keys.
+/// keys passed to it, so the store also runs on Redis-compatible servers that enforce declared keys. Claims and
+/// queries delete jobs whose retention has run out, in batches about once a second; counts of finished jobs do so
+/// first whenever one has expired.
 /// </summary>
 public sealed class RedisJobStore : IJobStore
 {
     private const int ClaimCandidates = 8;
     private const int MaxClaimRounds = 10;
     private const int MaxRetries = 3;
-    private const int SweepLimit = 100;
-    private const int CountSweepLimit = 1000;
+    private const int SweepBatchSize = 250;
+    private const int MaxSweepBatches = 20;
     private const int TokenNameOffset = 32;
     private const string HeaderFieldPrefix = "header:";
     private static readonly long SweepIntervalMilliseconds = (long)TimeSpan.FromSeconds(1).TotalMilliseconds;
+    private static readonly TimeSpan SweepTimeBudget = TimeSpan.FromMilliseconds(500);
 
     private static readonly string Common =
-        $"local QUEUED, RUNNING, SUCCEEDED, CANCELLED = '{Status(JobState.Queued)}', '{Status(JobState.Running)}', '{Status(JobState.Succeeded)}', '{Status(JobState.Cancelled)}'\n"
+        $"local QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED = '{Status(JobState.Queued)}', '{Status(JobState.Running)}', '{Status(JobState.Succeeded)}', '{Status(JobState.Failed)}', '{Status(JobState.Cancelled)}'\n"
         + EmbeddedResourceLoader.GetEmbeddedResource("Foundatio.Redis.Scripts.JobStore.Common.lua");
 
     private static readonly string CreateScript = LoadScript("Create");
@@ -43,12 +47,15 @@ public sealed class RedisJobStore : IJobStore
     private static readonly string CancelScript = LoadScript("Cancel");
     private static readonly string RemoveScript = LoadScript("Remove");
     private static readonly string ExpiredScript = LoadScript("Expired");
+    private static readonly string NamesScript = LoadScript("Names");
+    private static readonly string SweepScript = LoadScript("Sweep");
 
     private readonly IConnectionMultiplexer _connection;
     private readonly RedisJobStoreOptions _options;
     private readonly string _prefix;
+    private readonly object _sweepLock = new();
+    private Task _sweep = Task.CompletedTask;
     private long _nextSweep;
-    private int _sweeping;
 
     /// <summary>Creates a store on <paramref name="connection"/>, which the caller owns and disposes.</summary>
     /// <exception cref="ArgumentException"><see cref="RedisJobStoreOptions.Prefix"/> is empty or contains '{' or '}'.</exception>
@@ -73,7 +80,6 @@ public sealed class RedisJobStore : IJobStore
         ArgumentException.ThrowIfNullOrWhiteSpace(job.Id);
         ArgumentException.ThrowIfNullOrWhiteSpace(job.Name);
         cancellationToken.ThrowIfCancellationRequested();
-        await SweepIfDueAsync().AnyContext();
 
         string member = $"{job.CreatedAt.UtcTicks:x16}|{job.Id}";
         var values = new List<RedisValue> { job.Id, job.Name, ToMicroseconds(job.AvailableAt), member };
@@ -138,7 +144,11 @@ public sealed class RedisJobStore : IJobStore
     public async Task<long> CountAsync(JobState? state = null, string? name = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await SweepAsync(CountSweepLimit).AnyContext();
+
+        // Only finished jobs expire, so queued and running counts never include one.
+        if (state is not (JobState.Queued or JobState.Running))
+            await SweepExpiredAsync(cancellationToken).AnyContext();
+
         return await Database.SortedSetLengthAsync(IndexKey(state, name)).AnyContext();
     }
 
@@ -298,28 +308,97 @@ public sealed class RedisJobStore : IJobStore
         }
     }
 
-    /// <summary>Removes finished jobs whose retention has run out, at most once a second for calls that only need it eventually.</summary>
-    private async Task SweepIfDueAsync()
+    /// <summary>
+    /// Removes finished jobs whose retention has run out, at most once a second, for calls that only need it done
+    /// eventually. Returns at once while another call sweeps.
+    /// </summary>
+    private Task SweepIfDueAsync()
     {
-        if (Environment.TickCount64 < Volatile.Read(ref _nextSweep) || Interlocked.Exchange(ref _sweeping, 1) == 1)
-            return;
+        lock (_sweepLock)
+            return _sweep.IsCompleted && Environment.TickCount64 >= _nextSweep ? StartSweep() : Task.CompletedTask;
+    }
 
-        try
+    /// <summary>Waits for the sweep that is running, or starts one when some job's retention has run out.</summary>
+    private async Task SweepExpiredAsync(CancellationToken cancellationToken)
+    {
+        Task? sweep;
+        lock (_sweepLock)
+            sweep = _sweep.IsCompleted ? null : _sweep;
+
+        if (sweep is null)
         {
-            Volatile.Write(ref _nextSweep, Environment.TickCount64 + SweepIntervalMilliseconds);
-            await SweepAsync(SweepLimit).AnyContext();
+            if ((await GetExpiredAsync(1).AnyContext()).Length == 0)
+                return;
+
+            lock (_sweepLock)
+                sweep = _sweep.IsCompleted ? StartSweep() : _sweep;
         }
-        finally
+
+        await sweep.WaitAsync(cancellationToken).AnyContext();
+    }
+
+    /// <summary>Starts a sweep that callers share. Call it holding <see cref="_sweepLock"/>.</summary>
+    private Task StartSweep()
+    {
+        _nextSweep = Environment.TickCount64 + SweepIntervalMilliseconds;
+        return _sweep = SweepAsync();
+    }
+
+    /// <summary>
+    /// Removes expired jobs a batch at a time until a batch comes back short, so the sweep keeps up with however many
+    /// jobs expire, within <see cref="MaxSweepBatches"/> and <see cref="SweepTimeBudget"/>.
+    /// </summary>
+    private async Task SweepAsync()
+    {
+        long started = Stopwatch.GetTimestamp();
+        for (int batch = 0; batch < MaxSweepBatches && Stopwatch.GetElapsedTime(started) < SweepTimeBudget; batch++)
         {
-            Volatile.Write(ref _sweeping, 0);
+            string[] expired = await GetExpiredAsync(SweepBatchSize).AnyContext();
+            if (expired.Length > 0)
+                await RemoveExpiredAsync(expired).AnyContext();
+
+            if (expired.Length < SweepBatchSize)
+                return;
         }
     }
 
-    private async Task SweepAsync(int limit)
+    private async Task<string[]> GetExpiredAsync(int limit)
     {
-        var expired = (string[])(await Database.ScriptEvaluateAsync(ExpiredScript, [ExpiringKey], [limit]).AnyContext())!;
-        if (expired.Length > 0)
-            await Task.WhenAll(expired.Select(id => RemoveAsync(id, onlyIfExpired: true))).AnyContext();
+        return (string[])(await Database.ScriptEvaluateAsync(ExpiredScript, [ExpiringKey], [limit]).AnyContext())!;
+    }
+
+    /// <summary>
+    /// Removes a batch of expired jobs and their index entries in one script. Their names say which index keys hold
+    /// them, so they are read first and checked again by the script.
+    /// </summary>
+    private async Task RemoveExpiredAsync(string[] ids)
+    {
+        var jobKeys = ids.Select(JobKey).ToArray();
+        var names = (string[])(await Database.ScriptEvaluateAsync(NamesScript, jobKeys).AnyContext())!;
+        var distinct = new List<string>();
+        var ordinals = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (string name in names)
+        {
+            if (name.Length > 0 && ordinals.TryAdd(name, distinct.Count + 1))
+                distinct.Add(name);
+        }
+
+        var keys = new List<RedisKey>(5 + 6 * distinct.Count + jobKeys.Length)
+        {
+            ExpiringKey, IndexKey(null, null), IndexKey(JobState.Succeeded, null), IndexKey(JobState.Failed, null), IndexKey(JobState.Cancelled, null)
+        };
+        var values = new List<RedisValue>(1 + distinct.Count + 2 * ids.Length) { distinct.Count };
+        foreach (string name in distinct)
+        {
+            keys.AddRange([QueuedKey(name), RunningKey(name), IndexKey(null, name), IndexKey(JobState.Succeeded, name), IndexKey(JobState.Failed, name), IndexKey(JobState.Cancelled, name)]);
+            values.Add(name);
+        }
+
+        keys.AddRange(jobKeys);
+        for (int i = 0; i < ids.Length; i++)
+            values.AddRange([ids[i], names[i].Length > 0 ? ordinals[names[i]] : 0]);
+
+        await Database.ScriptEvaluateAsync(SweepScript, keys.ToArray(), values.ToArray()).AnyContext();
     }
 
     private async Task<JobInfo?> ReadJobAsync(string jobId)

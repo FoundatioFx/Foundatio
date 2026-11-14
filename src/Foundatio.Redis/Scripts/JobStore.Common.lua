@@ -1,4 +1,4 @@
--- Preceded by: local QUEUED, RUNNING, SUCCEEDED, CANCELLED = '<status>', '<status>', '<status>', '<status>'
+-- Preceded by: local QUEUED, RUNNING, SUCCEEDED, FAILED, CANCELLED = '<status>', '<status>', '<status>', '<status>', '<status>'
 -- Every key a script touches is passed in KEYS; scripts never build key names. The store's keys share one hash tag.
 local time = redis.call('TIME')
 local now = tonumber(time[1]) * 1000000 + tonumber(time[2])

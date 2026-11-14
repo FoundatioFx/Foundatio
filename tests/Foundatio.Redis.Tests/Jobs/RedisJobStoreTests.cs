@@ -10,6 +10,7 @@ using Foundatio.Jobs.Store;
 using Foundatio.Tests.Jobs;
 using Foundatio.Tests.Utility;
 using StackExchange.Redis;
+using StackExchange.Redis.Profiling;
 using Xunit;
 
 namespace Foundatio.Redis.Tests.Jobs;
@@ -67,6 +68,51 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         Assert.True(retried.AvailableAt > DateTimeOffset.UtcNow.AddSeconds(30));
 
         static void AssertNear(DateTimeOffset expected, DateTimeOffset actual) => Assert.True((expected - actual).Duration() < TimeSpan.FromSeconds(1), $"Expected {expected:O}, got {actual:O}.");
+    }
+
+    [Fact]
+    public async Task ClaimAsync_WithAnExpiredBacklogOfSeveralBatches_RemovesItInOneSweep()
+    {
+        var muxer = SharedConnection.GetMuxer(Log)!;
+        string prefix = NewPrefix();
+        await CreateExpiredBacklogAsync(new RedisJobStore(muxer, new RedisJobStoreOptions { Prefix = prefix }), NewName(), 600);
+
+        Assert.Null(await new RedisJobStore(muxer, new RedisJobStoreOptions { Prefix = prefix }).ClaimAsync(Claim(NewName()), TestCancellationToken));
+
+        var database = muxer.GetDatabase();
+        Assert.Equal(0, await database.SortedSetLengthAsync($"{{{prefix}}}:expiring"));
+        Assert.Equal(0, await database.SortedSetLengthAsync($"{{{prefix}}}:index"));
+    }
+
+    [Fact]
+    public async Task CountAsync_WithAnExpiredBacklog_LeavesOutTheExpiredJobs()
+    {
+        var store = new RedisJobStore(SharedConnection.GetMuxer(Log)!, new RedisJobStoreOptions { Prefix = NewPrefix() });
+        string name = NewName();
+        await CreateExpiredBacklogAsync(store, name, 1200);
+
+        Assert.Equal(0, await store.CountAsync(JobState.Cancelled, name, TestCancellationToken));
+        Assert.Equal(0, await store.CountAsync(name: name, cancellationToken: TestCancellationToken));
+        Assert.Equal(0, await store.CountAsync(cancellationToken: TestCancellationToken));
+    }
+
+    [Fact]
+    public async Task CountAsync_CalledConcurrentlyWithAnExpiredBacklog_SharesOneSweep()
+    {
+        string? connectionString = Configuration.GetConnectionString("RedisConnectionString");
+        Assert.SkipWhen(String.IsNullOrEmpty(connectionString), "RedisConnectionString is not configured.");
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(connectionString);
+        var store = new RedisJobStore(connection, new RedisJobStoreOptions { Prefix = NewPrefix() });
+        string name = NewName();
+        await CreateExpiredBacklogAsync(store, name, 600);
+
+        var session = new ProfilingSession();
+        connection.RegisterProfiler(() => session);
+        var counts = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => store.CountAsync(JobState.Cancelled, name, TestCancellationToken)));
+        int commands = session.FinishProfiling().Count();
+
+        Assert.All(counts, count => Assert.Equal(0, count));
+        Assert.True(commands < 100, $"20 counts sent {commands} commands.");
     }
 
     [Fact]
@@ -133,6 +179,26 @@ public class RedisJobStoreTests(ITestOutputHelper output) : JobStoreTestsBase(ou
         {
             foreach (var connection in connections)
                 await connection.DisposeAsync();
+        }
+    }
+
+    private static string NewPrefix() => $"foundatio-tests:sweep-{Guid.NewGuid():N}"[..36];
+
+    /// <summary>Creates <paramref name="count"/> jobs and cancels them with a 1 ms retention, then waits until they have all expired.</summary>
+    private async Task CreateExpiredBacklogAsync(RedisJobStore store, string name, int count)
+    {
+        var jobs = Enumerable.Range(0, count).Select(_ => NewJob(name)).ToList();
+        foreach (var chunk in jobs.Chunk(100))
+        {
+            Assert.All(await Task.WhenAll(chunk.Select(job => store.CreateAsync(job, TestCancellationToken))), Assert.True);
+            Assert.All(await Task.WhenAll(chunk.Select(job => store.RequestCancellationAsync(job.Id, TimeSpan.FromMilliseconds(1), TestCancellationToken))), Assert.True);
+        }
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (await store.GetAsync(jobs[^1].Id, TestCancellationToken) is not null)
+        {
+            Assert.True(DateTime.UtcNow < deadline, "The backlog did not expire in time.");
+            await Task.Delay(10, TestCancellationToken);
         }
     }
 }

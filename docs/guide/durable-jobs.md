@@ -158,7 +158,7 @@ await jobs.EnqueueAsync<LegacyJob<QueueStatsJob>>();
 
 Finished jobs stay in the store so you can read their results: succeeded jobs for `JobWorkerOptions.RetainSucceededFor` (1 day by default), failed and cancelled jobs for `RetainFailedFor` (7 days). A succeeded job's arguments are dropped when it finishes; failed and cancelled jobs keep theirs so you can see what they were given.
 
-Every retained job takes memory in the store. With a 55-character correlation id, a `traceparent` header and a short message, a succeeded job measured about 1.6 KB in Redis, a failed job with 200 bytes of arguments about 2 KB, and a job in the in-memory store about 1.2 KB. Longer messages, errors and headers add to that. Memory grows with rate × retention: at 10 jobs a second, a day of succeeded jobs is 864,000 jobs, about 1.4 GB in Redis; at 100 a second, about 14 GB. In Redis, all of a store's jobs live on one cluster shard, so size that shard for it. Shorten retention for high-volume jobs:
+Every retained job takes memory in the store. With a 55-character correlation id, a `traceparent` header and a short message, a succeeded job measured about 1.6 KB in Redis, a failed job with 200 bytes of arguments about 2 KB, and a job in the in-memory store about 1.2 KB. Longer messages, errors and headers add to that. Memory grows with rate × retention: at 10 jobs a second, a day of succeeded jobs is 864,000 jobs, about 1.4 GB in Redis; at 100 a second, about 14 GB. In Redis, all of a store's jobs live on one cluster shard, so size that shard for it. Redis job keys carry no TTL; each process that runs workers deletes the expired ones about once a second, up to 5,000 at a time. Shorten retention for high-volume jobs:
 
 ```csharp
 j.Configure(o =>
