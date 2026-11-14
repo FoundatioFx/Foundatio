@@ -1,4 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Confluent.Kafka" Version="2.16.0" />
 

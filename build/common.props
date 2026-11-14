@@ -13,7 +13,6 @@
     <Copyright>Copyright © $([System.DateTime]::Now.ToString(yyyy)) Foundatio.  All rights reserved.</Copyright>
     <Authors>FoundatioFx</Authors>
     <Nullable>enable</Nullable>
-    <NoWarn>$(NoWarn);CS1591;</NoWarn>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

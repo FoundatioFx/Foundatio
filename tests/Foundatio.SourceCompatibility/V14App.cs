@@ -1,0 +1,184 @@
+using Foundatio;
+using Foundatio.Caching;
+using Foundatio.Jobs;
+using Foundatio.Jobs.Store;
+using Foundatio.Messaging;
+using Foundatio.Messaging.Transport;
+using Foundatio.Monitoring;
+using Foundatio.Testing;
+using StackExchange.Redis;
+
+namespace V14App;
+
+// The app-facing messaging and jobs API, used the way an app does. This project does not suppress FOUNDATIO0001, so
+// it fails to build if any of it requires the [Experimental] provider API.
+
+public record OrderPlaced(int OrderId);
+
+public record SendReceipt(int OrderId);
+
+public record GenerateReport(string Format);
+
+public class OrderPlacedHandler(IMessageClient messages) : IMessageHandler<OrderPlaced>
+{
+    public async Task HandleAsync(OrderPlaced message, IMessageContext context, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await messages.SendAsync(new SendReceipt(message.OrderId), new SendOptions { CorrelationId = context.CorrelationId, GroupKey = context.GroupKey }, cancellationToken);
+        }
+        catch (MessageTooLargeException)
+        {
+            context.DeadLetter("The receipt is too large to send.");
+        }
+    }
+}
+
+public class SendReceiptHandler : IMessageHandler<SendReceipt>
+{
+    public Task HandleAsync(SendReceipt message, IMessageContext context, CancellationToken cancellationToken) =>
+        Progress.ReportHalfwayAsync(context, $"receipt {message.OrderId}", cancellationToken);
+}
+
+public class GenerateReportJob : IJobHandler<GenerateReport>
+{
+    public async Task HandleAsync(GenerateReport arguments, IJobContext context, CancellationToken cancellationToken)
+    {
+        await Progress.ReportHalfwayAsync(context, arguments.Format, cancellationToken);
+        await context.ReportProgressAsync(100, cancellationToken: cancellationToken);
+    }
+}
+
+public static class Progress
+{
+    public static Task ReportHalfwayAsync(IHandlerContext context, string message, CancellationToken cancellationToken) =>
+        context.ReportProgressAsync(context.Attempt > 1 ? 75 : 50, $"{message} ({context.CorrelationId}, {context.Headers.Count} headers)", cancellationToken);
+}
+
+public class CleanupJob : IJobHandler
+{
+    public Task HandleAsync(IJobContext context, CancellationToken cancellationToken) => Task.CompletedTask;
+}
+
+public static class Registrations
+{
+    public static void UseProviders(IServiceCollection services, IConnectionMultiplexer redis)
+    {
+        services.AddFoundatioMessaging(m => m
+            .UseServiceName("orders")
+            .UseRedis(redis, new RedisMessageTransportOptions { Prefix = "orders" })
+            .Configure(o => o.RequireTransportCapabilities = true)
+            .AddSubscriber<OrderPlacedHandler>(new SubscriptionOptions { Scope = SubscriptionScope.Service })
+            .AddConsumer<SendReceiptHandler>());
+        services.AddFoundatioMessaging(m => m.UseSqs(new SqsMessageTransportOptions { ConnectionString = "serviceurl=http://localhost:4566" }));
+        services.AddFoundatioMessaging(m => m.UseKafka("localhost:9092"));
+        services.AddFoundatioJobs(j => j
+            .UseRedis(redis, new RedisJobStoreOptions { Prefix = "orders" })
+            .AddJob<GenerateReportJob>()
+            .AddCronJob<CleanupJob>("0 * * * *"));
+        services.AddHealthChecks().AddFoundatioMessaging().AddFoundatioJobs();
+    }
+
+    public static void UseSharedInstances(IServiceCollection services, IConnectionMultiplexer redis)
+    {
+        var transport = new InMemoryMessageTransport(new TransportCapabilities { OrderedGroups = false, Deduplication = false, MaxMessageSize = 256 * 1024 });
+        services.AddFoundatioMessaging(m => m.UseTransport(transport));
+        services.AddFoundatioMessaging(m => m.UseTransport(_ => new RedisMessageTransport(redis)));
+        services.AddFoundatioJobs(j => j.UseStore(new InMemoryJobStore()));
+        services.AddFoundatioJobs(j => j.UseStore(_ => new RedisJobStore(redis)));
+    }
+
+    public static void UseMonitoring(IServiceCollection services, IConnectionMultiplexer redis)
+    {
+        services.AddSingleton<ICacheClient>(_ => new RedisCacheClient(o => o.ConnectionMultiplexer(redis)));
+        services.AddFoundatioMonitoring(m => m
+            .UseCache()
+            .Configure(o =>
+            {
+                o.SnapshotInterval = TimeSpan.FromSeconds(10);
+                o.SnapshotExpiry = TimeSpan.FromSeconds(45);
+                o.ActiveThreshold = TimeSpan.FromSeconds(2);
+                o.RecentCapacity = 200;
+                o.StatsWindow = TimeSpan.FromMinutes(10);
+                o.KeyPrefix = "orders:monitoring";
+                o.ServiceName = "orders";
+            }));
+        services.AddFoundatioMonitoring(m => m.UseCache(new InMemoryCacheClient()));
+        services.AddFoundatioMonitoring(m => m.UseCache(sp => sp.GetRequiredService<ICacheClient>()));
+    }
+
+    public static void MapMonitor(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/monitor", (IWorkMonitor monitor, CancellationToken cancellationToken) => monitor.GetOverviewAsync(cancellationToken: cancellationToken));
+        endpoints.MapGet("/monitor/jobs", (IWorkMonitor monitor, CancellationToken cancellationToken) =>
+            monitor.GetActiveAsync(new WorkFilter { Kind = WorkKind.Job }, cancellationToken));
+    }
+
+    public static void UseTestHarness(IServiceCollection services)
+    {
+        services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { OrderedGroups = false });
+    }
+}
+
+public static class AppUsage
+{
+    public static async Task<int> ReplayFailedReceiptsAsync(IMessageAdmin admin)
+    {
+        var source = MessageSource.Queue("orders.send-receipt");
+        MessageSourceStats? stats = await admin.GetStatsAsync(source);
+        if (stats is { DeadLettered: 0 })
+            return 0;
+
+        IReadOnlyList<DeadLetterMessage> failed = await admin.PeekDeadLettersAsync(source);
+        if (failed.Count == 0)
+            return 0;
+
+        await admin.DeleteAsync(MessageSource.Subscription("orders.order-placed", "retired-service"));
+        return await admin.ReplayDeadLettersAsync(source);
+    }
+
+    public static async Task<string> DescribeWorkAsync(IWorkMonitor monitor)
+    {
+        WorkOverview overview = await monitor.GetOverviewAsync(new WorkFilter { Kind = WorkKind.Message, Name = "orders.send-receipt", InstanceId = null });
+        IReadOnlyList<WorkInstance> instances = await monitor.GetInstancesAsync();
+        IReadOnlyList<ActiveWork> active = await monitor.GetActiveAsync();
+        IReadOnlyList<CompletedWork> recent = await monitor.GetRecentAsync(new WorkFilter { InstanceId = instances.FirstOrDefault()?.InstanceId });
+        IReadOnlyList<WorkStats> stats = await monitor.GetStatsAsync();
+        IReadOnlyList<MessageSourceStats> backlog = await monitor.GetBacklogAsync();
+        IReadOnlyList<JobCounts> jobs = await monitor.GetJobCountsAsync();
+
+        var slowest = active.OrderBy(a => a.StartedAt).FirstOrDefault();
+        var failures = recent.Count(r => r.Outcome is WorkOutcome.DeadLettered or WorkOutcome.Failed);
+        return $"{overview.GeneratedAt:u}: {instances.Count} instances ({String.Join(", ", instances.Select(i => $"{i.ServiceName}@{i.MachineName}:{i.ProcessId} {i.MessageSources.Count}/{i.JobNames.Count} {i.IsCurrent}"))}); "
+            + $"slowest {slowest?.Name} {slowest?.Progress}% {slowest?.ProgressMessage} on {slowest?.InstanceId}; {failures} failures ({recent.FirstOrDefault()?.Error}); "
+            + $"{stats.Sum(s => s.Succeeded + s.Retried + s.DeadLettered + s.Skipped)} handled, max {stats.Max(s => s.MaxDuration)}, avg {stats.FirstOrDefault()?.AverageDuration} over {stats.FirstOrDefault()?.Window}; "
+            + $"{backlog.Sum(b => b.Queued ?? 0)} queued; {jobs.Sum(j => j.Queued ?? 0)} jobs queued, {jobs.Sum(j => j.Failed ?? 0)} failed";
+    }
+
+    public static async Task<JobState?> EnqueueReportAsync(IJobClient jobs)
+    {
+        JobHandle handle = await jobs.EnqueueAsync(new GenerateReport("pdf"));
+        JobDetails completed = await handle.WaitForCompletionAsync(TimeSpan.FromSeconds(10));
+        JobPage<JobDetails> failed = await jobs.QueryAsync(new JobQuery { State = JobState.Failed, Name = completed.Name });
+        return failed.Jobs.FirstOrDefault()?.State;
+    }
+
+    public static async Task AssertReceiptSentAsync(IServiceProvider services, IMessageClient messages)
+    {
+        var harness = services.GetRequiredService<FoundatioTestHarness>();
+        await messages.PublishAsync(new OrderPlaced(1));
+        await harness.WaitForIdleAsync();
+        RecordedMessage sent = harness.SentMessages.Single();
+        if (harness.Sent<SendReceipt>().Single().OrderId != 1 || sent.Outcome is MessageOutcome.DeadLettered)
+            throw new InvalidOperationException("The receipt was not sent.");
+
+        var context = new TestMessageContext();
+        await new OrderPlacedHandler(messages).HandleAsync(new OrderPlaced(2), context, CancellationToken.None);
+        var receiptContext = new TestMessageContext();
+        await new SendReceiptHandler().HandleAsync(new SendReceipt(2), receiptContext, CancellationToken.None);
+        var jobContext = new TestJobContext();
+        await new GenerateReportJob().HandleAsync(new GenerateReport("csv"), jobContext, CancellationToken.None);
+        if (receiptContext.Progress != 50 || receiptContext.ProgressMessage is null || jobContext.Progress != 100 || harness.HandledMessages.Any(m => m.Progress > 100))
+            throw new InvalidOperationException("Progress was not recorded.");
+    }
+}

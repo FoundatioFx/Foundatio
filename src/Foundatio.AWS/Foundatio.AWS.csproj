@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>
     <PackageTags>$(PackageTags);Amazon;AWS;S3;SNS;SQS</PackageTags>
   </PropertyGroup>
   <ItemGroup>

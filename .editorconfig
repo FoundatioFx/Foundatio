@@ -157,6 +157,7 @@ csharp_space_between_square_brackets = false
 # Custom
 csharp_style_namespace_declarations = file_scoped:error
 dotnet_diagnostic.IDE0005.severity = error # Using directive is unnecessary.
+dotnet_diagnostic.CS1591.severity = none # Missing XML comment; turned on below for documented code.
 
 # C++ Files
 [*.{cpp,h,in}]
@@ -197,3 +198,36 @@ end_of_line = crlf
 # FastCloner is vendored from https://github.com/lofcz/FastCloner
 [src/Foundatio/FastCloner/**.cs]
 generated_code = true
+
+# XML docs are required (CS1591) in the messaging and durable jobs code added in v14. New files in these folders are
+# covered automatically; list new files elsewhere explicitly.
+[src/{Foundatio/Messaging,Foundatio/Messaging/Transport,Foundatio/Jobs,Foundatio/Jobs/Store,Foundatio/Monitoring,Foundatio/Testing}/*.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/{Foundatio.AWS,Foundatio.Kafka,Foundatio.Redis}/{Messaging/*,Extensions/*BuilderExtensions}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/Foundatio.AzureServiceBus/{Messaging/AzureServiceBus{MessageTransport,MessageReceiver,SessionReceiver,Session,ReceiverEntity,IncomingMessage}*,Extensions/*BuilderExtensions}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/{Foundatio.Redis/Jobs,Foundatio.Extensions.Hosting/HealthChecks}/*.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/Foundatio.RabbitMQ/{Messaging/RabbitMQMessageTransport*,Messaging/RabbitMQIncomingMessage,Messaging/RabbitMQDelayLevels,Messaging/RabbitMQChannelSlot,Messaging/RabbitMQSourceStatsReader,Extensions/*BuilderExtensions}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/Foundatio/{IHandlerContext,Utility/IStartupGate,Utility/ProcessingState,Utility/ProcessingStatus,Utility/ProcessingStatusTracker,Utility/ProviderApi,Resilience/RetryPolicy}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+[src/{Foundatio.Extensions.Hosting/Startup/StartupActionsGate,Foundatio.TestHarness/Jobs/JobStoreTestsBase,Foundatio.TestHarness/Messaging/MessageTransportTestsBase,Foundatio.TestHarness/Messaging/MessagingTestHost}.cs]
+dotnet_diagnostic.CS1591.severity = warning
+
+# Older files in those folders, not documented yet.
+[src/Foundatio/Messaging/{IMessageBus,IMessagePublisher,IMessageSubscriber,InMemoryMessageBus,InMemoryMessageBusOptions,Message,MessageBusBase,MessageBusException,NullMessageBus,SharedMessageBusOptions}.cs]
+dotnet_diagnostic.CS1591.severity = none
+
+[src/Foundatio/Jobs/{IJob,IQueueJob,JobAttribute,JobBase,JobContext,JobOptions,JobResult,JobRunner,JobWithLockBase,QueueEntryContext,QueueJobBase}.cs]
+dotnet_diagnostic.CS1591.severity = none
+
+[src/{Foundatio.AWS/Messaging/SQSMessageBus,Foundatio.Kafka/Messaging/KafkaMessageBus,Foundatio.Redis/Messaging/RedisMessageBus}*.cs]
+dotnet_diagnostic.CS1591.severity = none

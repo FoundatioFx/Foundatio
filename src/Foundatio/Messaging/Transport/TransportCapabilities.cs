@@ -1,0 +1,121 @@
+using System;
+
+namespace Foundatio.Messaging.Transport;
+
+/// <summary>
+/// What a transport supports natively. Foundatio emulates or rejects anything a transport cannot do, and the
+/// conformance suite skips tests for capabilities a transport does not declare.
+/// </summary>
+/// <remarks>
+/// Delay limits use the same convention: <c>null</c> means unlimited and <see cref="TimeSpan.Zero"/> means not
+/// supported. <see cref="MaxPublishDelay"/> and <see cref="MaxRetryDelay"/> default to <see cref="MaxDelay"/> when
+/// they are not set.
+/// </remarks>
+public sealed record TransportCapabilities
+{
+    private readonly TimeSpan? _maxPublishDelay;
+    private readonly bool _maxPublishDelaySet;
+    private readonly TimeSpan? _maxRetryDelay;
+    private readonly bool _maxRetryDelaySet;
+
+    /// <summary>
+    /// The longest <see cref="OutgoingMessage.DeliverAt"/> delay for messages sent to a queue or to one subscription.
+    /// Foundatio emulates longer delays by re-sending a message that arrives early. With <see cref="TimeSpan.Zero"/>,
+    /// delayed sends are rejected.
+    /// </summary>
+    public TimeSpan? MaxDelay { get; init; }
+
+    /// <summary>
+    /// The longest <see cref="OutgoingMessage.DeliverAt"/> delay for messages published to a topic; longer publishes
+    /// are rejected. A broker that cannot delay publishes natively (SNS) may still declare a limit if the transport
+    /// emulates it, for example by hiding an early delivery until it is due. Defaults to <see cref="MaxDelay"/>.
+    /// </summary>
+    public TimeSpan? MaxPublishDelay
+    {
+        get => _maxPublishDelaySet ? _maxPublishDelay : MaxDelay;
+        init
+        {
+            _maxPublishDelay = value;
+            _maxPublishDelaySet = true;
+        }
+    }
+
+    /// <summary>
+    /// The longest delay <see cref="IMessageReceiver.AbandonAsync"/> honours. Longer retry delays are shortened; with
+    /// <see cref="TimeSpan.Zero"/>, Foundatio holds the message (and keeps renewing it) for the backoff and then
+    /// abandons it without a delay. Defaults to <see cref="MaxDelay"/>.
+    /// </summary>
+    public TimeSpan? MaxRetryDelay
+    {
+        get => _maxRetryDelaySet ? _maxRetryDelay : MaxDelay;
+        init
+        {
+            _maxRetryDelay = value;
+            _maxRetryDelaySet = true;
+        }
+    }
+
+    /// <summary>
+    /// The shortest delay <see cref="IMessageReceiver.AbandonAsync"/> honours accurately, for brokers whose delays are
+    /// coarse (SQS visibility timeouts are whole seconds). Foundatio holds shorter retry delays in-process, keeping the
+    /// delivery leased, and then abandons it without a delay. A crash during the hold delivers the message again
+    /// sooner; it is never lost. Defaults to <see cref="TimeSpan.Zero"/>.
+    /// </summary>
+    public TimeSpan MinRetryDelay { get; init; }
+
+    /// <summary>The most messages accepted by one <see cref="IMessageTransport.SendAsync"/> call.</summary>
+    public int MaxSendBatchSize { get; init; } = 100;
+
+    /// <summary>The most messages returned by one <see cref="IMessageReceiver.ReceiveAsync"/> call.</summary>
+    public int MaxReceiveBatchSize { get; init; } = 100;
+
+    /// <summary>
+    /// The largest message the transport accepts, measured as body bytes plus the UTF-8 bytes of every header name and
+    /// value, the message id, the group key and the deduplication id (see <see cref="MessageSize"/>), or <c>null</c>
+    /// when there is no practical limit. Declare it after the transport's own encoding
+    /// overhead: any message within the limit must be accepted, including binary bodies, and a larger one must be
+    /// rejected with <see cref="MessageTooLargeException"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MessageSize"/> counts no overhead per header. A transport whose encoding frames each header reserves
+    /// room for that framing within the limit it declares, for at least 100 headers, plus room for the
+    /// <see cref="KnownHeaders.DeadLetterReason"/> it adds when dead-lettering. It may reject a message whose
+    /// header framing goes beyond what it reserved with <see cref="MessageTooLargeException"/>.
+    /// </remarks>
+    public long? MaxMessageSize { get; init; }
+
+    /// <summary>
+    /// The longest single lease the broker allows, or <c>null</c> when unlimited. A broker may also cap how long one
+    /// delivery can be held across renewals (SQS: 12 hours from the receive); <see cref="IMessageReceiver.RenewAsync"/>
+    /// then throws <see cref="MessageLeaseLostException"/> when that cap is reached.
+    /// </summary>
+    public TimeSpan? MaxLeaseDuration { get; init; }
+
+    /// <summary>
+    /// True when an unsettled message is delivered again after its lease expires. False for brokers that hold a
+    /// delivery until the connection closes (RabbitMQ) or that track progress by offset (Kafka). Foundatio still calls
+    /// <see cref="IMessageReceiver.RenewAsync"/> while handling, so such a transport can report a delivery that has
+    /// moved to another consumer.
+    /// </summary>
+    public bool LeaseExpiration { get; init; } = true;
+
+    /// <summary>
+    /// True when messages with the same <see cref="OutgoingMessage.GroupKey"/> are delivered in send order and no
+    /// message of a group is delivered to any receiver of the source, in any process, while an earlier one of that
+    /// group is unsettled. Send order is the order within one <see cref="IMessageTransport.SendAsync"/> call and of
+    /// calls that complete one after another; messages sent concurrently, for example by different processes, may be
+    /// ordered either way. Send order includes delayed and retried messages: a delayed message, or one abandoned with a
+    /// delay, holds back its group's later messages until it has been delivered again and settled.
+    /// A single receive may return several messages of one group, in order; Foundatio then handles them one after
+    /// another, and if one is not completed or dead-lettered, it abandons the rest of that group's messages in the
+    /// batch so they are delivered again in order. Dead-letter sources are not ordered: every dead letter of a group
+    /// can be received at once.
+    /// </summary>
+    public bool OrderedGroups { get; init; }
+
+    /// <summary>
+    /// True when the broker drops messages whose <see cref="OutgoingMessage.DeduplicationId"/> was already sent to the
+    /// same destination, from any process, within its deduplication window.
+    /// </summary>
+    public bool Deduplication { get; init; }
+}

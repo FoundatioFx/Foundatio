@@ -3,7 +3,8 @@ name: foundatio
 description: >
   Use when working with Foundatio infrastructure abstractions for .NET -- caching,
   queuing, messaging, file storage, distributed locking, or background jobs. Apply
-  when using ICacheClient, IQueue, IMessageBus, IFileStorage, ILockProvider, IJob,
+  when using ICacheClient, IQueue, IMessageBus, IMessageClient, IMessageHandler, IJobClient,
+  IJobHandler, IJob, IMessageTransport, IJobStore, IFileStorage, ILockProvider,
   or resilience patterns like retry and circuit breakers. Covers in-memory and
   production implementations (Redis, Azure, AWS, Kafka, RabbitMQ). Use context7
   MCP to fetch current API docs and examples.
@@ -32,7 +33,10 @@ Query with specific questions, not single keywords. All provider docs (Redis, Az
 | `IMessageBus` | Pub/sub messaging | `InMemoryMessageBus` | Redis, Kafka, RabbitMQ, Azure |
 | `IFileStorage` | File storage abstraction | `InMemoryFileStorage` | S3, Azure Blob |
 | `ILockProvider` | Distributed locking | `CacheLockProvider` | Redis-backed |
-| `IJob` | Background job processing | N/A | Hosted services |
+| `IMessageClient` | Send commands / publish events to `IMessageHandler<T>` | `UseInMemory()` (`InMemoryMessageTransport`) | Provider `IMessageTransport`s |
+| `IJobClient` | Durable jobs (`IJobHandler<TArgs>`, `IJobHandler`): progress, cancel, retry, CRON | `UseInMemory()` (`InMemoryJobStore`) | Provider `IJobStore`s |
+| `IWorkMonitor` | Active/recent work, stats, backlog and job counts across instances | `AddFoundatioMonitoring()` (this process only) | `AddFoundatioMonitoring(m => m.UseCache())` with a shared `ICacheClient` (Redis) |
+| `IJob` | Background job processing | N/A | Hosted services, or durable via `j.AddLegacyJob<T>()` |
 | `ISerializer` / `ITextSerializer` | Binary and text serialization | `SystemTextJsonSerializer` | MessagePack, JsonNet |
 | `IResiliencePolicy` | Retry, circuit breaker, timeout | `ResiliencePolicyBuilder` | N/A |
 
@@ -258,6 +262,78 @@ builder.Services.AddCronJob<CleanupJob>("0 */6 * * *");
 builder.Services.AddDistributedCronJob<CleanupJob>("0 */6 * * *");
 ```
 
+## Messages and Durable Jobs (new in v14, alongside IQueue/IMessageBus)
+
+```csharp
+builder.Services.AddFoundatioMessaging(m => m
+    .UseServiceName("orders")               // names durable subscriptions; required on every transport but in-memory
+    .UseInMemory()                          // or UseRedis() / UseSqs(options) / UseKafka("host:9092") / UseAzureServiceBus(connectionString) / UseRabbitMQ("amqp://...")
+    .AddConsumer<SendReceiptHandler>()      // commands: SendAsync -> exactly one consumer
+    .AddSubscriber<OrderPlacedHandler>()    // events: PublishAsync -> one copy per service
+    .AddSubscriber<CacheBuster>(new SubscriptionOptions { Scope = SubscriptionScope.Instance }));
+
+public class SendReceiptHandler(IEmail email) : IMessageHandler<SendReceipt>
+{
+    public Task HandleAsync(SendReceipt m, IMessageContext context, CancellationToken ct) => email.SendAsync(m, ct);
+}
+
+builder.Services.AddFoundatioJobs(j => j
+    .UseInMemory()                          // or UseRedis()
+    .AddJob<GenerateReportJob>()            // IJobHandler<GenerateReport>; enqueue by args: jobs.EnqueueAsync(new GenerateReport(...))
+    .AddCronJob<CleanupJob>("0 3 * * *"));  // IJobHandler (no args, gets IJobContext); one run per occurrence cluster-wide
+```
+
+- Registered handlers/jobs start with the host; `AddFoundatio*` calls accumulate. No handlers registered = send/enqueue only.
+- Providers: `UseRedis` (Foundatio.Redis, messaging and jobs), `UseSqs` (Foundatio.AWS), `UseKafka` (Foundatio.Kafka), `UseAzureServiceBus` (Foundatio.AzureServiceBus), `UseRabbitMQ` (Foundatio.RabbitMQ, RabbitMQ 4), in namespace `Microsoft.Extensions.DependencyInjection`. Each takes an options record or a `Func<IServiceProvider, TOptions>`; `UseRedis()` resolves `IConnectionMultiplexer` from DI (host fails to start without one) or takes one; `UseAzureServiceBus()` without a connection in its options resolves `ServiceBusClient` (+ `ServiceBusAdministrationClient` unless `CreateEntities = false`) from DI or takes them; `UseRabbitMQ()` without a `ConnectionString` resolves `IConnection` from DI (Aspire's `AddRabbitMQClient`) or takes one, and with one opens its own connections. DI creates and disposes the transport; unset `LoggerFactory`/`TimeProvider` come from DI. Options types live in `Foundatio.Messaging.Transport` / `Foundatio.Jobs.Store`. An enqueue-only process needs the workers' store, not `UseInMemory()`.
+- Throw to retry (`RetryPolicy`, default 5 attempts, 1s/4s/16s/64s), then dead-letter (messages) or `Failed` (jobs). `context.DeadLetter(reason)` / `context.Retry(delay)` decide without throwing; `RetryPolicy.Default.DoNotRetry<T>()` fails fast.
+- At-least-once: handlers and jobs must be idempotent. Give contracts stable names: `[Message("orders.placed")]`, `[Job(Name = "reports.generate")]` (defaults are full type names).
+- Delegate handlers get scoped services from `context.Services`. Unit test with `Foundatio.Testing.TestMessageContext` / `TestJobContext` (both record `ProgressReports`; last values in `Progress` and `ProgressMessage` / `Message`).
+- Jobs: `IJobHandler` (no args; `jobs.EnqueueAsync<CleanupJob>()`, `[Job(Name)]` on the class) or `IJobHandler<TArgs>`; both get `IJobContext` (`Attempt`, `ScheduledFor` = the CRON occurrence, `Headers`, `ReportProgressAsync`). `j.AddJob<T>()` throws for a legacy `IJob`: wrap it with `j.AddLegacyJob<T>()` + `EnqueueAsync<LegacyJob<T>>()` / `j.AddCronJob<LegacyJob<T>>(...)` (keeps its name), or keep continuous jobs on `services.AddJob<T>()`. `GetAsync`/`QueryAsync` return `JobDetails` (no claim token or payload; `GetArguments<T>()` is null once the job succeeded, since succeeded jobs drop their payload). Enqueue stores `Activity.Current` as `traceparent`/`tracestate` headers and defaults `CorrelationId` to its id; the job's activity continues the trace. A retained job costs ~1.6 KB in Redis: size for rate x `RetainSucceededFor` (1 day).
+- Progress: `IMessageContext` and `IJobContext` both derive from `Foundatio.IHandlerContext` (`Attempt`, `CorrelationId`, `Headers`, `ReportProgressAsync(percent, message)`). Percent 0-100 (else `ArgumentOutOfRangeException`); null keeps the last value; throttled, so call it in loops. Messages: updates the monitor, adds a `progress` span event, logs Debug, never touches the transport (leases renew anyway). Jobs: also saved to the store (`JobDetails.Progress`/`Message`).
+- Monitoring (`Foundatio.Monitoring`): every process tracks its messages and jobs; `services.AddFoundatioMonitoring(m => m.UseCache())` adds `IWorkMonitor` and writes a snapshot per instance to the shared `ICacheClient` every 5s (expires after 3 intervals; removed on graceful shutdown). `GetOverviewAsync()` returns instances, active work (running > 1s or reported progress), recent work (visible items + every retry/failure/dead letter), rolling 5-min stats for all work, backlog (`IMessageAdmin.GetStatsAsync` per durable source) and job counts. Without `UseCache` it shows only this process. `IMessageAdmin.GetStatsAsync(source)` counts one queue/subscription (`Queued`/`Delayed`/`InFlight`/`DeadLettered`, each nullable).
+- `m.AddLegacyMessageBus()` serves the original `IMessageBus` (HybridCache, CacheLockProvider) from the new transport.
+- One subscription per service and topic, shared by all its subscribers: one delivery, so if any handler throws all of them run again, and they must set equal `RetryPolicy`/`LeaseDuration`/`MaxConcurrency` (unset != set; share one `RetryPolicy` instance) or startup throws. Same for consumers of types routed to one queue. Isolate a handler with `new SubscriptionOptions { Name = "billing-crm" }`; a new name starts at "now" and orphans the old subscription's backlog.
+- `GroupKey` without `Capabilities.OrderedGroups` (SQS standard, Service Bus without `RequiresSession`, RabbitMQ) or `DeduplicationId` without `Capabilities.Deduplication` (SQS standard, Kafka, Service Bus without `RequiresDuplicateDetection`, RabbitMQ) is sent anyway with a once-per-type warning; `o.RequireTransportCapabilities = true` throws `MessageBusException` instead.
+- Dead letters: inject `IMessageAdmin` -> `PeekDeadLettersAsync(source)`, `ReplayDeadLettersAsync(source)` (back to that queue/subscription only), `PurgeDeadLettersAsync`, `DeleteAsync` (retired subscriptions). Sources: `MessageSource.Queue(name)` / `MessageSource.Subscription(topic, serviceName)`.
+- Monitoring gotchas: use a cache every instance shares (Redis); `HybridCacheClient`/`InMemoryCacheClient` show stale or partial data. A process with no handlers and no jobs (a dashboard) publishes nothing but reads all; for backlog and job counts it needs messaging/jobs on the same transport/store (no handlers). Fast handlers that don't report progress never show as active, only in stats. Errors are the exception type + message (1,024 chars max); payloads and headers are never recorded. Handlers using `IHandlerContext` need `using Foundatio;`.
+- Service Bus transport gotchas: entities are `{Prefix}queue.{name}` / `{Prefix}topic.{name}` (queues and topics share a namespace; names are case-insensitive); the lease is the entity's `LockDuration` (default 1 min, max 5), not the handler's `LeaseDuration`; `RequiresSession`/`RequiresDuplicateDetection` must match existing entities (a session mismatch throws); in session mode a delayed grouped message or retry keeps its session locked by one receiver until due; `CreateEntities = false` disables instance subscriptions and queue/subscription deletion; on the emulator `GetStatsAsync` returns null and `MaxDeliveryCount` must be at most 10.
+- RabbitMQ transport gotchas: leases never expire, but the broker closes a channel that holds a delivery past `consumer_timeout` (30 min default), redelivering everything on it, so raise it (a `consumer-timeout` policy) for long handlers or use jobs; delays are durable delay queues on the broker in whole seconds (no plugin); `GetStatsAsync` needs `ManagementEndpoint` to count in-flight messages.
+- Gotchas: `[Job(Name)]` for `IJobHandler<TArgs>` goes on the args record (on the job class it throws). Publish delays beyond the transport's `MaxPublishDelay` throw. Oversized messages throw `MessageTooLargeException`. With `GroupKey` on an ordering transport, a retry holds the group's later messages (each counts an attempt).
+- Writing a provider: implement `IMessageTransport` (send to queue/topic/one subscription, receive, delete, `GetStatsAsync` counts: null counts you can't read, null result for instance subscriptions, empty for unknown sources, `ArgumentException` for dead-letter sources) + `IMessageReceiver` or `IJobStore`, declare `TransportCapabilities` honestly (`MaxDelay`/`MaxPublishDelay`/`MaxRetryDelay`, `MinRetryDelay` for coarse delays, `MaxMessageSize` after encoding overhead); throw `MessageReceiverFaultedException` from `ReceiveAsync` when the client is dead so core replaces the receiver; when the broker sets the lease (Service Bus lock duration), set `IncomingMessage.LeaseExpiresAt` in `ReceiveAsync` and `RenewAsync` so core renews by it; without lease expiration, `RenewAsync` is still called about once a second, so throw `MessageLeaseLostException` there when a delivery moved, and derive tests from `MessageTransportTestsBase` / `JobStoreTestsBase` (override `CreateTransport`/`CreateStore`; override `CreatePeerTransport` when a second instance over the same backend needs different setup, since the suite uses it to act as another process).
+- FOUNDATIO0001 (an error, not a warning): the provider SPI (`IMessageTransport`, `IMessageReceiver`, `IncomingMessage`/`OutgoingMessage`, `IJobStore`, `JobInfo` and its request types, the conformance suites) is `[Experimental]` and may change in a minor release, so a provider project adds `<NoWarn>$(NoWarn);FOUNDATIO0001</NoWarn>`; app code never needs it (use the `Use*` helpers, or pass a concrete transport/store to `UseTransport`/`UseStore`).
+
+Whole-app integration tests (`Foundatio.Testing`, no xUnit dependency):
+
+```csharp
+builder.Services.AddOrdersApp();              // real AddFoundatioMessaging/AddFoundatioJobs registrations
+builder.Services.AddFoundatioTestHarness();   // LAST: replaces transport + job store with in-memory, records everything
+// emulate production: AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities { MaxDelay = TimeSpan.FromMinutes(15) })
+await host.StartAsync();
+var harness = host.Services.GetRequiredService<FoundatioTestHarness>();
+
+await messages.PublishAsync(new OrderPlaced(1));
+await harness.WaitForIdleAsync();                                   // handlers idle, no queued/running jobs
+Assert.Single(harness.Sent<SendReceipt>());                         // payloads; SentMessages/PublishedMessages for metadata
+var dead = await harness.WaitForDeadLetteredAsync<SendReceipt>();   // also WaitForHandledAsync<T>(count)
+var run = (await harness.WaitForJobAsync<GenerateReport>())[0];     // finished runs; check run.State
+await harness.TriggerCronJobAsync<CleanupJob>();                    // CRON never fires on its own under the harness
+```
+
+- `HandledMessages[i].Outcome`: `Completed`, `Retried`, `DeadLettered`, `Skipped` (no handler on a topic), `Expired`, `Released` (shutdown/lease lost); `Progress`/`ProgressMessage` hold the handler's last report. `JobRuns` includes retried runs (`State == Queued`); `Progress` is the job's last percentage.
+- Waits are real time (default 30s) and throw `TimeoutException` explaining what happened. Retries honor the policy delay: set `o.DefaultRetryPolicy` to a short `RetryPolicy.Fixed(...)` in tests. `WaitForIdleAsync` ignores queues the app sends to but does not consume, but waits for (and its timeout names) queued jobs nothing in the app runs.
+
+Health checks (`Foundatio.Extensions.Hosting`):
+
+```csharp
+builder.Services.AddHealthChecks()
+    .AddFoundatioMessaging(tags: ["ready"])                         // per-source data: queue:x, subscription:t/s
+    .AddFoundatioJobs(tags: ["ready"], unhealthyAfter: TimeSpan.FromMinutes(5)); // worker (running per job name) + scheduler
+```
+
+- Use these for readiness, not liveness: a broker outage would restart every pod. On a liveness probe pass `failureStatus: HealthStatus.Degraded`. The host fails to start if a check's feature isn't registered.
+
+- Starting (waiting for startup actions) = Healthy; retried receive/claim/schedule errors = Degraded with last error; Unhealthy (or `failureStatus`) only if a loop stopped, startup failed, or errors lasted `unhealthyAfter` (default 5 min). Handler/job exceptions never affect health. `MessagingStatus` / `JobsStatus` expose the raw `ProcessingStatus` snapshots.
+
 ## Testing
 
 Use `Foundatio.Xunit.v3` for test logging and DI integration. Two base classes:
@@ -345,7 +421,7 @@ public class OrderServiceTests : TestLoggerBase
 | ------- | -------- |
 | `Foundatio.Redis` | Redis cache, queue, messaging, locks, storage |
 | `Foundatio.AzureStorage` | Azure Blob storage, Azure Storage queues |
-| `Foundatio.AzureServiceBus` | Azure Service Bus queues + messaging |
+| `Foundatio.AzureServiceBus` | Azure Service Bus queues, messaging, `AzureServiceBusMessageTransport` (`UseAzureServiceBus`) |
 | `Foundatio.AWS` | SQS queues, SQS messaging, S3 storage |
 | `Foundatio.Kafka` | Kafka messaging |
 | `Foundatio.RabbitMQ` | RabbitMQ messaging |
@@ -356,7 +432,7 @@ public class OrderServiceTests : TestLoggerBase
 
 | Package | Provides |
 | ------- | -------- |
-| `Foundatio.TestHarness` | Shared test base classes for validating custom implementations |
+| `Foundatio.TestHarness` | Shared test base classes for validating custom implementations, including `MessageTransportTestsBase` and `JobStoreTestsBase` conformance suites |
 | `Foundatio.Xunit` | xUnit v2 test logging, retry attributes |
 | `Foundatio.Xunit.v3` | xUnit v3 test logging, retry attributes |
 | `Foundatio.DataProtection` | ASP.NET Core Data Protection key storage via `IFileStorage` |

@@ -20,7 +20,7 @@ public class KafkaMessageBusTestBase : MessageBusTestBase
     {
         return new KafkaMessageBus(o =>
         {
-            o.BootstrapServers("127.0.0.1:9092");
+            o.BootstrapServers(KafkaTestConnection.BootstrapServers);
             o.Topic(Topic);
             o.TopicReplicationFactor(1);
             o.TopicNumberOfPartitions(1);
