@@ -509,6 +509,137 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
     }
 
     [Fact]
+    public async Task Receive_WithAGroupBacklogHeldBehindAnUnsettledMessage_DeliversOtherGroupsOfItsPartition()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with { Partitions = 1, DelayedDelivery = false, ReceiverBufferLimit = 8 }));
+        var source = MessageSource.Queue(NewName("hot-group"));
+        await using var receiver = await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 100).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = "hot" }).ToList(), TestCancellationToken);
+        await transport.SendAsync(MessageDestination.Queue(source.Name), Enumerable.Range(0, 20).Select(i => Message($"cold-{i}", $"cold-{i}") with { GroupKey = $"cold-{i}" }).ToList(), TestCancellationToken);
+
+        // The hot group's first message is still being handled, so the rest of its backlog waits behind it.
+        var hot = await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", hot.MessageId);
+
+        var cold = await ReceiveAsync(receiver, 20);
+        Assert.Equal(Enumerable.Range(0, 20).Select(i => $"cold-{i}").Order(), cold.Select(m => m.MessageId).Order());
+        foreach (var message in cold)
+            await receiver.CompleteAsync(message, TestCancellationToken);
+
+        await receiver.CompleteAsync(hot, TestCancellationToken);
+        var order = new List<string> { hot.MessageId };
+        order.AddRange(await DrainAsync(receiver, 99));
+        Assert.Equal(Enumerable.Range(0, 100).Select(i => $"hot-{i}"), order);
+    }
+
+    [Fact]
+    public async Task Receive_WithAGroupBacklogOverItsPartitionsHeldLimit_PausesOnlyThatPartition()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 2,
+            DelayedDelivery = false,
+            ReceiverBufferLimit = 8,
+            ReceiverHeldLimit = 20
+        }));
+        var source = MessageSource.Queue(NewName("hot-partition"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var receiver = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // Learn which partition each group key lands on.
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message("probe", $"probe-{i}") with { GroupKey = $"key-{i}" }).ToList(), TestCancellationToken);
+        var probes = await ReceiveAsync(receiver, 20);
+        foreach (var probe in probes)
+            await receiver.CompleteAsync(probe, TestCancellationToken);
+
+        var partitions = probes.ToDictionary(m => m.GroupKey!, m => ((KafkaIncomingMessage)m).Partition.TopicPartition.Partition.Value);
+        string hotKey = "key-0";
+        var coldKeys = partitions.Where(p => p.Value != partitions[hotKey]).Select(p => p.Key).ToList();
+        Assert.NotEmpty(coldKeys);
+
+        await transport.SendAsync(destination, Enumerable.Range(0, 60).Select(i => Message($"hot-{i}", $"hot-{i}") with { GroupKey = hotKey }).ToList(), TestCancellationToken);
+        var hot = await ReceiveOneAsync(receiver);
+        Assert.Equal("hot-0", hot.MessageId);
+        await WaitForAsync(() => receiver.PausedCount > 0);
+
+        // While the hot group's first message is still being handled, the other partition keeps being read.
+        var cold = coldKeys.SelectMany(k => Enumerable.Range(0, 3).Select(i => $"{k}-{i}")).ToList();
+        await transport.SendAsync(destination, cold.Select(id => Message(id, id) with { GroupKey = id[..id.LastIndexOf('-')] }).ToList(), TestCancellationToken);
+        var coldReceived = await DrainAsync(receiver, cold.Count);
+        Assert.Equal(cold.Order(), coldReceived.Order());
+        foreach (string key in coldKeys)
+            Assert.Equal(Enumerable.Range(0, 3).Select(i => $"{key}-{i}"), coldReceived.Where(id => id.StartsWith($"{key}-", StringComparison.Ordinal)));
+
+        Assert.Equal(1, receiver.PausedCount);
+
+        // Once the hot group is handled, its partition is read again, and nothing of its backlog is lost or reordered.
+        await receiver.CompleteAsync(hot, TestCancellationToken);
+        var order = new List<string> { hot.MessageId };
+        order.AddRange(await DrainAsync(receiver, 59, TimeSpan.FromSeconds(60)));
+        Assert.Equal(Enumerable.Range(0, 60).Select(i => $"hot-{i}"), order);
+        await WaitForAsync(() => receiver.PausedCount == 0);
+    }
+
+    [Fact]
+    public async Task Rebalance_OfAPartitionPausedForAGroupBacklogAndBack_ResumesReadingIt()
+    {
+        var transport = Track(new KafkaMessageTransport(CreateOptions() with
+        {
+            Partitions = 2,
+            DelayedDelivery = false,
+            RebalanceGracePeriod = TimeSpan.FromMilliseconds(500),
+            ReceiverBufferLimit = 8,
+            ReceiverHeldLimit = 10
+        }));
+        var source = MessageSource.Queue(NewName("held-moved"));
+        var destination = MessageDestination.Queue(source.Name);
+        await using var first = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken);
+
+        // A group with a backlog on each partition, so whichever partition moves is paused for it.
+        await transport.SendAsync(destination, Enumerable.Range(0, 20).Select(i => Message("probe", $"probe-{i}") with { GroupKey = $"key-{i}" }).ToList(), TestCancellationToken);
+        var probes = await ReceiveAsync(first, 20);
+        foreach (var probe in probes)
+            await first.CompleteAsync(probe, TestCancellationToken);
+
+        string[] keys = [.. probes.GroupBy(m => ((KafkaIncomingMessage)m).Partition.TopicPartition.Partition.Value).Select(g => g.First().GroupKey!)];
+        Assert.Equal(2, keys.Length);
+        await transport.SendAsync(destination, keys.SelectMany(k => Enumerable.Range(0, 40).Select(i => Message($"{k}-{i}", $"{k}-{i}") with { GroupKey = k })).ToList(), TestCancellationToken);
+        // One at a time: once a group's first message is handed out, the next one received is the other group's.
+        IncomingMessage[] handling = [await ReceiveOneAsync(first), await ReceiveOneAsync(first)];
+        Assert.Equal(keys.Order(), handling.Select(m => m.GroupKey!).Order());
+        await WaitForAsync(() => first.PausedCount == 2);
+
+        await using (var second = (KafkaMessageReceiver)await transport.CreateReceiverAsync(source, new ReceiverOptions(), TestCancellationToken))
+            await WaitForAsync(() => first.Assignment.Count == 1 && second.Assignment.Count == 1, TimeSpan.FromSeconds(30));
+
+        await WaitForAsync(() => first.Assignment.Count == 2, TimeSpan.FromSeconds(30));
+
+        // The moved partition's message is delivered again; the other one is still this receiver's to complete.
+        var moved = new List<string>();
+        foreach (var message in handling)
+        {
+            try
+            {
+                await first.CompleteAsync(message, TestCancellationToken);
+            }
+            catch (MessageLeaseLostException)
+            {
+                moved.Add(message.GroupKey!);
+            }
+        }
+
+        Assert.Single(moved);
+        var received = await DrainAsync(first, 79, TimeSpan.FromSeconds(60));
+        foreach (string key in keys)
+        {
+            int start = moved.Contains(key) ? 0 : 1;
+            Assert.Equal(Enumerable.Range(start, 40 - start).Select(i => $"{key}-{i}"), received.Where(id => id.StartsWith($"{key}-", StringComparison.Ordinal)));
+        }
+
+        await WaitForAsync(() => first.PausedCount == 0);
+    }
+
+    [Fact]
     public async Task DeliverAt_ManyGroupedDelays_HoldsOnlyABoundedNumberInMemory()
     {
         var transport = Track(new KafkaMessageTransport(CreateOptions() with { Prefix = UniquePrefix(), Partitions = 1, ReceiverTimedLimit = 20 }));
@@ -667,6 +798,28 @@ public class KafkaMessageTransportTests(ITestOutputHelper output) : MessageTrans
 
     /// <summary>A prefix of its own, for tests that need the delay forwarders' consumer group to themselves.</summary>
     private static string UniquePrefix() => $"{Prefix}-{Guid.NewGuid():N}"[..(Prefix.Length + 9)];
+
+    /// <summary>Receives and completes <paramref name="count"/> messages, returning their ids in the order they were received.</summary>
+    private async Task<List<string>> DrainAsync(IMessageReceiver receiver, int count, TimeSpan? timeout = null)
+    {
+        var received = new List<string>();
+        var deadline = DateTime.UtcNow + (timeout ?? DeliveryTimeout);
+        while (received.Count < count)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+                throw new TimeoutException($"Received {received.Count} of {count} messages from {receiver.Source}: {String.Join(", ", received)}.");
+
+            var batch = await receiver.ReceiveAsync(10, remaining < TimeSpan.FromSeconds(1) ? remaining : TimeSpan.FromSeconds(1), TestCancellationToken);
+            foreach (var message in batch)
+            {
+                received.Add(message.MessageId);
+                await receiver.CompleteAsync(message, TestCancellationToken);
+            }
+        }
+
+        return received;
+    }
 
     private async Task<IncomingMessage> SendAndReceiveAsync(MessageSource source, IMessageReceiver receiver)
     {

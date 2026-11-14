@@ -27,6 +27,15 @@ internal sealed class KafkaPartitionState
     /// <summary>How many of the partition's records wait in memory for their delivery time.</summary>
     public int TimedCount { get; set; }
 
+    /// <summary>How many of the partition's records are held behind an earlier record of their group.</summary>
+    public int HeldCount { get; set; }
+
+    /// <summary>The <see cref="KafkaRecord.Size"/> of the partition's held records.</summary>
+    public long HeldBytes { get; set; }
+
+    /// <summary>The partition holds too many records behind their groups, so it is paused until they drain.</summary>
+    public bool HeldPaused { get; set; }
+
     /// <summary>The offset after the last one read, or -1 before the first read.</summary>
     public long NextOffset { get; set; } = -1;
 

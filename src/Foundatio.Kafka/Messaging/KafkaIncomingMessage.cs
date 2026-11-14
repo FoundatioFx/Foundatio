@@ -12,6 +12,9 @@ internal sealed class KafkaIncomingMessage : IncomingMessage
     /// <summary>The record's <see cref="KafkaRecord.Size"/>, kept for when it is released back into the buffer.</summary>
     public int Size { get; init; }
 
+    /// <summary>The record's <see cref="KafkaRecord.Sequence"/>, kept for when it is released back into the buffer.</summary>
+    public long Sequence { get; init; }
+
     /// <summary>Handed out from a record released in place (<see cref="KafkaRecord.Released"/>).</summary>
     public bool Released { get; init; }
 

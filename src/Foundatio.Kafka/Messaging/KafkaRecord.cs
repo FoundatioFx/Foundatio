@@ -25,6 +25,9 @@ internal sealed class KafkaRecord
     public KafkaPartitionState? Partition { get; set; }
     public long Offset { get; set; }
 
+    /// <summary>The order in which the receiver read the record, which its buffer and its group keep.</summary>
+    public long Sequence { get; set; }
+
     /// <summary>When the record may be handed out: a delayed message's delivery time, or a locally released record's retry time.</summary>
     public DateTimeOffset? AvailableAt { get; set; }
 }
