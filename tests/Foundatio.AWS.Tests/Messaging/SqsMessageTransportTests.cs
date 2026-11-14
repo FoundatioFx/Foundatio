@@ -18,6 +18,7 @@ using Foundatio.Messaging;
 using Foundatio.Messaging.Transport;
 using Foundatio.Tests.Messaging;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Xunit;
 using SqsMessageAttributeValue = Amazon.SQS.Model.MessageAttributeValue;
@@ -333,6 +334,60 @@ public class SqsMessageTransportTests(ITestOutputHelper output) : MessageTranspo
         Assert.InRange(delays[1], 280, 300);
         Assert.DoesNotContain(sqsInterceptor.RequestsOf<ChangeMessageVisibilityRequest>(), r => r.VisibilityTimeout > 0);
         await AssertNothingReceivedAsync(receiver, TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task SendAsync_CommandDelayedLongerThanSqsDelaysNatively_IsHiddenUntilDueInsteadOfSentAgain()
+    {
+        // Arrange: each native delay and each hide moves the clock ahead by its length, and SQS shows the message a
+        // second later. A command that core sent again every 15 minutes would show up as more sends.
+        var clock = new OffsetTimeProvider();
+        var transport = CreateInterceptedTransport(out var sqsInterceptor, clock);
+        sqsInterceptor.EnforceVisibilityLimit = true;
+        var hides = new ConcurrentQueue<int>();
+        sqsInterceptor.Intercept = (request, send) =>
+        {
+            if (request is SendMessageBatchRequest batch)
+            {
+                foreach (var entry in batch.Entries.Where(e => e.DelaySeconds > 1))
+                {
+                    clock.Advance(TimeSpan.FromSeconds(entry.DelaySeconds!.Value));
+                    entry.DelaySeconds = 1;
+                }
+            }
+            else if (request is ChangeMessageVisibilityRequest { VisibilityTimeout: > 1 } change)
+            {
+                hides.Enqueue(change.VisibilityTimeout.Value);
+                clock.Advance(TimeSpan.FromSeconds(change.VisibilityTimeout.Value));
+                change.VisibilityTimeout = 1;
+            }
+
+            return send();
+        };
+
+        string name = NewName("long-send");
+        DeleteAfterTest(MessageSource.Queue(name));
+        var handled = new TaskCompletionSource<(DateTimeOffset At, int Attempt)>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var host = await MessagingTestHost.StartAsync(transport, Log, "worker", m => m
+            .MapMessage<ConformanceMessage>(name)
+            .AddConsumer<ConformanceMessage>((_, context, _) =>
+            {
+                handled.TrySetResult((clock.GetUtcNow(), context.Attempt));
+                return Task.CompletedTask;
+            }), services => services.AddSingleton<TimeProvider>(clock));
+        var due = clock.GetUtcNow().AddHours(2);
+
+        // Act
+        await host.Client.SendAsync(new ConformanceMessage(1), new SendOptions { DeliverAt = due }, TestCancellationToken);
+        var (handledAt, attempt) = await handled.Task.WaitAsync(TimeSpan.FromSeconds(30), TestCancellationToken);
+
+        // Assert: one send, hidden once when it first arrived, and handled when due as the first attempt.
+        Assert.True(handledAt >= due.AddSeconds(-1), $"Handled at {handledAt}, before it was due at {due}.");
+        Assert.Equal(1, attempt);
+        Assert.Single(sqsInterceptor.RequestsOf<SendMessageBatchRequest>());
+        Assert.Empty(sqsInterceptor.RequestsOf<SendMessageRequest>());
+        Assert.InRange(Assert.Single(hides), (int)TimeSpan.FromMinutes(100).TotalSeconds, (int)TimeSpan.FromHours(2).TotalSeconds);
+        Assert.Equal(0, sqsInterceptor.RejectedVisibilityChanges);
     }
 
     [Fact]

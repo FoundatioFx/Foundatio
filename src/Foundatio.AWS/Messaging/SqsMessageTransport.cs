@@ -32,13 +32,15 @@ namespace Foundatio.Messaging.Transport;
 /// </summary>
 /// <remarks>
 /// <para>
-/// SNS cannot delay a publish and FIFO queues cannot delay a single message, so such a message carries its delivery
-/// time and is hidden with a visibility timeout when it is first received, again every 11 hours, until it is due.
-/// Hidden messages count toward SQS's quota of messages in flight per queue (about 120,000), past which SQS returns no
-/// message of the queue at all. So on a standard queue that already has 50,000 in flight, an early message is instead
-/// sent again with a delay of up to 15 minutes, which does not count toward the quota but costs a send and a delete
-/// every 15 minutes. FIFO queues can only hide, so a burst of long-delayed messages can stall one; use jobs for long or
-/// high-volume delays.
+/// SNS cannot delay a publish, FIFO queues cannot delay a single message, and standard queues delay a send by at most
+/// 15 minutes. So such a message carries its delivery time and is hidden with a visibility timeout when it is first
+/// received (on a standard queue, once the 15 minutes SQS can delay it have passed), again every 11 hours, until it is
+/// due: a receive and a visibility change every 11 hours, for delays of up to 13 days. Hidden messages count toward
+/// SQS's quota of messages in flight per queue (about 120,000), past which SQS returns no message of the queue at all.
+/// So on a standard queue that already has 50,000 in flight, an early message is instead sent again with a delay of up
+/// to 15 minutes, which does not count toward the quota but costs a send, a receive and a delete every 15 minutes.
+/// FIFO queues can only hide, so a burst of long-delayed messages can stall one; use jobs for long or high-volume
+/// delays.
 /// </para>
 /// <para>
 /// On FIFO queues a hidden message holds back the later messages of its group. SQS returns those in the same receive
@@ -128,12 +130,13 @@ public sealed class SqsMessageTransport : IMessageTransport
     }
 
     /// <summary>
-    /// Standard queues delay sends natively for up to 15 minutes. FIFO queues, and every publish, are delayed by hiding
-    /// the message once received, for up to 13 days; on FIFO queues that holds back the later messages of its group.
-    /// Retries are delayed with a visibility timeout of up to 12 hours from the receive. Messages may be 252 KiB as
-    /// <see cref="MessageSize"/> measures them: SQS and SNS accept 256 KiB including the transport's envelope, which
-    /// keeps 4 KiB for framing and the dead-letter reason. FIFO mode orders groups (dead letters excepted) and
-    /// deduplicates within 5 minutes.
+    /// Sends and publishes can be delayed by up to 13 days. Standard queues delay a send natively for up to 15 minutes;
+    /// the rest of a longer send's delay, every delay on FIFO queues, and every publish are applied by hiding the
+    /// message once received, again every 11 hours, until it is due; on FIFO queues that holds back the later messages
+    /// of its group. Retries are delayed with a visibility timeout of up to 12 hours from the receive. Messages may be
+    /// 252 KiB as <see cref="MessageSize"/> measures them: SQS and SNS accept 256 KiB including the transport's
+    /// envelope, which keeps 4 KiB for framing and the dead-letter reason. FIFO mode orders groups (dead letters
+    /// excepted) and deduplicates within 5 minutes.
     /// </summary>
     public TransportCapabilities Capabilities { get; }
 
@@ -355,7 +358,7 @@ public sealed class SqsMessageTransport : IMessageTransport
 
     private static TransportCapabilities CreateCapabilities(bool fifo) => new()
     {
-        MaxDelay = fifo ? MaxEmulatedDelay : MaxNativeDelay,
+        MaxDelay = MaxEmulatedDelay,
         MaxPublishDelay = MaxEmulatedDelay,
         MaxRetryDelay = TimeSpan.FromSeconds(MaxVisibilityTimeoutSeconds),
         MinRetryDelay = TimeSpan.FromSeconds(1), // visibility timeouts are whole seconds
