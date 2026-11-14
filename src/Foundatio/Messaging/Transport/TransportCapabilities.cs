@@ -70,6 +70,14 @@ public sealed record TransportCapabilities
     public int MaxReceiveBatchSize { get; init; } = 100;
 
     /// <summary>
+    /// The most <see cref="IMessageReceiver.ReceiveAsync"/> calls Foundatio may have in flight at once on one receiver,
+    /// each of which must hand out different messages. More than one keeps handlers busy on a broker whose receives
+    /// are slow next to the handlers, such as SQS, which returns at most 10 messages per call. Defaults to 1:
+    /// receives are never called concurrently.
+    /// </summary>
+    public int MaxConcurrentReceives { get; init; } = 1;
+
+    /// <summary>
     /// The largest message the transport accepts, measured as body bytes plus the UTF-8 bytes of every header name and
     /// value, the message id, the group key and the deduplication id (see <see cref="MessageSize"/>), or <c>null</c>
     /// when there is no practical limit. Declare it after the transport's own encoding
