@@ -14,7 +14,7 @@ public sealed class FoundatioTestHarnessOptions
     /// <code>
     /// services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities
     /// {
-    ///     MaxDelay = TimeSpan.FromMinutes(15),   // like SQS standard queues
+    ///     MaxDelay = TimeSpan.FromDays(13),   // like SQS
     ///     MaxMessageSize = 256 * 1024,
     ///     MaxSendBatchSize = 10,
     ///     MaxReceiveBatchSize = 10

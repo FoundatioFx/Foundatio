@@ -255,7 +255,7 @@ await messages.SendAsync(new SendReceipt(1, "a@b.com"), new SendOptions
 });
 ```
 
-Delays longer than the transport supports natively (for example 15 minutes on SQS) are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
+Delays longer than the transport supports are handled automatically for sends. A publish delay beyond the transport's `MaxPublishDelay` throws, because re-sending it would deliver duplicates to every subscriber; send a command or schedule a job instead. A message larger than the transport allows throws `MessageTooLargeException` before anything is sent. `SendBatchAsync` and `PublishBatchAsync` send many messages in as few broker calls as possible.
 
 `GroupKey` and `DeduplicationId` only guarantee something on transports that declare `OrderedGroups` and `Deduplication` in their `TransportCapabilities`. On other transports the message is still sent, and Foundatio logs a warning once per message type:
 
@@ -327,7 +327,7 @@ The harness's in-memory transport supports everything: ordered groups, deduplica
 builder.Services.AddFoundatioTestHarness(o => o.TransportCapabilities = new TransportCapabilities
 {
     // Like an SQS standard queue: no ordered groups or deduplication, and its limits
-    MaxDelay = TimeSpan.FromMinutes(15),
+    MaxDelay = TimeSpan.FromDays(13),
     MaxPublishDelay = TimeSpan.FromDays(13),
     MaxRetryDelay = TimeSpan.FromHours(12),
     MaxMessageSize = 256 * 1024

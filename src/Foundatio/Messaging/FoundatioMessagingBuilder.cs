@@ -69,6 +69,10 @@ public sealed class FoundatioMessagingBuilder
     /// on this transport, so existing code, including <c>HybridCacheClient</c> and <c>CacheLockProvider</c>, keeps working.
     /// Every running instance receives every message, as before.
     /// </summary>
+    /// <remarks>
+    /// It does not talk to the original buses, such as <c>RedisMessageBus</c>, so every process that shares a bus must
+    /// switch to it in the same deployment.
+    /// </remarks>
     public FoundatioMessagingBuilder AddLegacyMessageBus(Action<SharedMessageBusOptions>? configure = null)
     {
         Services.ReplaceSingleton<IMessageBus>(sp =>

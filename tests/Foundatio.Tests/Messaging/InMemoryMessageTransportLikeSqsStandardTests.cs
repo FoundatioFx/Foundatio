@@ -4,7 +4,11 @@ using Xunit;
 
 namespace Foundatio.Tests.Messaging;
 
-/// <summary>The conformance suite against the in-memory transport emulating an SQS standard queue: no ordered groups or deduplication, and SQS's limits.</summary>
+/// <summary>
+/// The conformance suite against the in-memory transport emulating an SQS standard queue: no ordered groups or
+/// deduplication, and SQS's limits, except that sends are limited to SQS's native 15 minutes, so the suite also covers
+/// core re-sending longer delays.
+/// </summary>
 public class InMemoryMessageTransportLikeSqsStandardTests(ITestOutputHelper output) : InMemoryMessageTransportTests(output)
 {
     protected override TransportCapabilities EmulatedCapabilities { get; } = new()
