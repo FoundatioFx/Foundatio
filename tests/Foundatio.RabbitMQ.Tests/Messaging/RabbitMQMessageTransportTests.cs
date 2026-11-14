@@ -95,6 +95,35 @@ public class RabbitMQMessageTransportTests(RabbitMQTransportFixture fixture, ITe
         await replacement.CompleteAsync(again, TestCancellationToken);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CreateReceiver_ForAQueueAnotherProcessDeleted_DeclaresItAgain(bool receiverOpen)
+    {
+        // Arrange
+        var source = MessageSource.Queue(NewName("deleted"));
+        var receiver = await CreateReceiverAsync(source);
+        if (!receiverOpen)
+            await receiver.DisposeAsync();
+
+        var connection = await ConnectAsync();
+        await using (var channel = await connection.CreateChannelAsync(cancellationToken: TestCancellationToken))
+            await channel.QueueDeleteAsync(RabbitTransport.Names.Queue(source.Name), ifUnused: false, ifEmpty: false, cancellationToken: TestCancellationToken);
+
+        if (receiverOpen)
+        {
+            await Assert.ThrowsAsync<MessageReceiverFaultedException>(() => receiver.ReceiveAsync(1, TimeSpan.FromSeconds(5), TestCancellationToken));
+            await receiver.DisposeAsync();
+        }
+
+        // Act
+        await using var replacement = await CreateReceiverAsync(source);
+        await Transport.SendAsync(MessageDestination.Queue(source.Name), [Message("after", "id-after")], TestCancellationToken);
+
+        // Assert
+        await AssertOnlyReceivedAsync(replacement, "id-after");
+    }
+
     [Fact]
     public async Task Receive_WhileHoldingMoreUnsettledMessagesThanItsPrefetch_KeepsDelivering()
     {

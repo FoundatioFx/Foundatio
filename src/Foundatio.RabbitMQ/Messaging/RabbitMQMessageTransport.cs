@@ -218,7 +218,9 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     /// <inheritdoc />
     /// <remarks>
     /// Returns once the receiver's consumer is registered, so it gets every message already in the source. An
-    /// instance subscription's queue is declared on the receiver's own channel and bound to the topic before then.
+    /// instance subscription's queue is declared on the receiver's own channel and bound to the topic before then. A
+    /// source's queue, or an instance subscription's exchange, that another process deleted after this transport
+    /// declared it is declared again.
     /// </remarks>
     public async Task<IMessageReceiver> CreateReceiverAsync(MessageSource source, ReceiverOptions options, CancellationToken cancellationToken = default)
     {
@@ -228,45 +230,42 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
 
-        string queue;
-        string? topicExchange = null;
-        switch (source.Kind)
+        string queue = source.Kind switch
         {
-            case MessageSourceKind.Queue:
-            case MessageSourceKind.DeadLetter:
-                queue = Names.For(source);
-                await Topology.EnsureQueueAsync(queue, cancellationToken).AnyContext();
-                break;
-            case MessageSourceKind.Subscription:
-                queue = Names.For(source);
-                await Topology.EnsureSubscriptionAsync(Names.Topic(source.Topic!), queue, cancellationToken).AnyContext();
-                break;
-            case MessageSourceKind.InstanceSubscription:
-                topicExchange = Names.Topic(source.Topic!);
-                queue = Names.Instance(source.Topic!, source.Name);
-                await Topology.EnsureTopicAsync(topicExchange, cancellationToken).AnyContext();
-                if (Options.DelayedDelivery)
-                    await Topology.EnsureDelaysAsync(cancellationToken).AnyContext();
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(source), source.Kind, "Unknown source kind.");
-        }
+            MessageSourceKind.Queue or MessageSourceKind.DeadLetter or MessageSourceKind.Subscription => Names.For(source),
+            MessageSourceKind.InstanceSubscription => Names.Instance(source.Topic!, source.Name),
+            _ => throw new ArgumentOutOfRangeException(nameof(source), source.Kind, "Unknown source kind.")
+        };
+        string? topicExchange = source.Kind == MessageSourceKind.InstanceSubscription ? Names.Topic(source.Topic!) : null;
 
+        await EnsureSourceAsync(source, queue, topicExchange, cancellationToken).AnyContext();
         var connection = await GetConnectionAsync(consumer: true, cancellationToken).AnyContext();
-        var receiver = new RabbitMQMessageReceiver(this, source, queue, topicExchange, options);
-        _receivers.TryAdd(receiver, 0);
-        try
+        for (int attempt = 1; ; attempt++)
         {
-            await receiver.StartAsync(connection, cancellationToken).AnyContext();
-            ThrowIfDisposed();
-        }
-        catch
-        {
-            await receiver.DisposeAsync().AnyContext();
-            throw;
-        }
+            var receiver = new RabbitMQMessageReceiver(this, source, queue, topicExchange, options);
+            _receivers.TryAdd(receiver, 0);
+            try
+            {
+                await receiver.StartAsync(connection, cancellationToken).AnyContext();
+                ThrowIfDisposed();
+                return receiver;
+            }
+            catch (MessageBusException ex) when (attempt == 1 && ex.InnerException is OperationInterruptedException { ShutdownReason.ReplyCode: 404 })
+            {
+                Logger.LogDebug(ex, "What {Source} receives from no longer exists; declaring it again", source);
+                await receiver.DisposeAsync().AnyContext();
+                Topology.Forget(queue);
+                if (topicExchange is not null)
+                    Topology.ForgetTopic(topicExchange);
 
-        return receiver;
+                await EnsureSourceAsync(source, queue, topicExchange, cancellationToken).AnyContext();
+            }
+            catch
+            {
+                await receiver.DisposeAsync().AnyContext();
+                throw;
+            }
+        }
     }
 
     /// <inheritdoc />
@@ -507,6 +506,26 @@ public sealed class RabbitMQMessageTransport : IMessageTransport
     internal void Remove(RabbitMQMessageReceiver receiver) => _receivers.TryRemove(receiver, out _);
 
     internal void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+
+    /// <summary>Declares what a receiver of <paramref name="source"/> consumes, except an instance subscription's own queue, which its receiver declares.</summary>
+    private async Task EnsureSourceAsync(MessageSource source, string queue, string? topicExchange, CancellationToken cancellationToken)
+    {
+        switch (source.Kind)
+        {
+            case MessageSourceKind.Queue:
+            case MessageSourceKind.DeadLetter:
+                await Topology.EnsureQueueAsync(queue, cancellationToken).AnyContext();
+                break;
+            case MessageSourceKind.Subscription:
+                await Topology.EnsureSubscriptionAsync(Names.Topic(source.Topic!), queue, cancellationToken).AnyContext();
+                break;
+            default:
+                await Topology.EnsureTopicAsync(topicExchange!, cancellationToken).AnyContext();
+                if (Options.DelayedDelivery)
+                    await Topology.EnsureDelaysAsync(cancellationToken).AnyContext();
+                break;
+        }
+    }
 
     private static (ConnectionFactory Factory, IList<AmqpTcpEndpoint> Endpoints) CreateFactory(RabbitMQMessageTransportOptions options)
     {

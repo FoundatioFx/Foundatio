@@ -59,6 +59,10 @@ internal static class RabbitMQMessageTransportCodec
 
     private const int MaxShortStringBytes = 255;
 
+    /// <summary>The Unix times, in seconds, of <see cref="DateTimeOffset.MinValue"/> and <see cref="DateTimeOffset.MaxValue"/>.</summary>
+    private const long MinUnixSeconds = -62_135_596_800;
+    private const long MaxUnixSeconds = 253_402_300_799;
+
     /// <summary>Application headers are in the AMQP header table.</summary>
     private const int TableFormat = 1;
 
@@ -122,8 +126,12 @@ internal static class RabbitMQMessageTransportCodec
         var table = properties.Headers;
         string messageId = GetString(table, IdHeader) ?? (String.IsNullOrEmpty(properties.MessageId) ? Guid.NewGuid().ToString("N") : properties.MessageId);
         string? groupKey = GetString(table, GroupHeader);
-        int deliveryCount = (int)Math.Min(Int32.MaxValue, 1L + GetCount(table, DeliveriesHeader) + GetCount(table, BrokerDeliveryCountHeader));
-        DateTimeOffset? enqueuedAt = properties.IsTimestampPresent() ? DateTimeOffset.FromUnixTimeSeconds(properties.Timestamp.UnixTime) : null;
+        long deliveries = 1L + Math.Min(GetCount(table, DeliveriesHeader), Int32.MaxValue) + Math.Min(GetCount(table, BrokerDeliveryCountHeader), Int32.MaxValue);
+        int deliveryCount = (int)Math.Min(Int32.MaxValue, deliveries);
+        // Other producers may set any timestamp, such as one in milliseconds, which no date can hold.
+        DateTimeOffset? enqueuedAt = properties.IsTimestampPresent() && properties.Timestamp.UnixTime is >= MinUnixSeconds and <= MaxUnixSeconds
+            ? DateTimeOffset.FromUnixTimeSeconds(properties.Timestamp.UnixTime)
+            : null;
         long format = GetCount(table, FormatHeader);
 
         if (format == EnvelopeFormat && TryReadEnvelope(body, out var envelopeHeaders, out var payload))

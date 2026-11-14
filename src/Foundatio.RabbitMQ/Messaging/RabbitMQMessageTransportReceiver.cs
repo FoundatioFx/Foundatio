@@ -242,7 +242,21 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
     private void OnDelivered(Consumer consumer, ulong deliveryTag, IReadOnlyBasicProperties properties, ReadOnlyMemory<byte> body)
     {
         // The client reuses the body's buffer once the handler returns.
-        var decoded = RabbitMQMessageTransportCodec.Decode(properties, body.ToArray());
+        var copy = body.ToArray();
+        RabbitMQMessageTransportCodec.Decoded decoded;
+        try
+        {
+            decoded = RabbitMQMessageTransportCodec.Decode(properties, copy);
+        }
+        catch (Exception ex)
+        {
+            // Handed out as it is, to be settled like any other: unsettled, it would hold its place in the prefetch
+            // until the broker closed the channel for it, and then again on the next channel.
+            _transport.Logger.LogWarning(ex, "Could not read the properties of a delivery from {Source}; it is received with its body alone", Source);
+            decoded = new RabbitMQMessageTransportCodec.Decoded(String.IsNullOrEmpty(properties.MessageId) ? Guid.NewGuid().ToString("N") : properties.MessageId,
+                copy, new Dictionary<string, string>(), GroupKey: null, DeliveryCount: 1, EnqueuedAt: null);
+        }
+
         var message = new RabbitMQIncomingMessage
         {
             MessageId = decoded.MessageId,
@@ -447,6 +461,8 @@ internal sealed class RabbitMQMessageReceiver : IMessageReceiver
         if (Interlocked.CompareExchange(ref _fault, error, null) is not null)
             return;
 
+        // The queue may have been deleted, so the receiver that replaces this one declares it again.
+        _transport.Topology.Forget(_queue);
         _transport.Logger.LogWarning("{Message}; Foundatio replaces the receiver", error.Message);
         _buffer.Writer.TryComplete();
     }

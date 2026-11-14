@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using Foundatio.Messaging.Transport;
 using Foundatio.Xunit;
+using RabbitMQ.Client;
 using Xunit;
 
 namespace Foundatio.RabbitMQ.Tests.Messaging;
@@ -81,6 +82,30 @@ public class RabbitMQMessageTransportCodecTests(ITestOutputHelper output) : Test
 
         // Assert
         Assert.Equal(6, decoded.DeliveryCount);
+    }
+
+    [Fact]
+    public void Decode_FromAProducerWithAMillisecondTimestampAndHugeCounts_HasNoEnqueuedTimeAndTheLargestCount()
+    {
+        // Arrange
+        var properties = new BasicProperties
+        {
+            MessageId = "foreign",
+            Timestamp = new AmqpTimestamp(SentAt.ToUnixTimeMilliseconds()),
+            Headers = new Dictionary<string, object?>
+            {
+                [RabbitMQMessageTransportCodec.DeliveriesHeader] = Int64.MaxValue,
+                [RabbitMQMessageTransportCodec.BrokerDeliveryCountHeader] = Int64.MaxValue
+            }
+        };
+
+        // Act
+        var decoded = RabbitMQMessageTransportCodec.Decode(properties, "body"u8.ToArray());
+
+        // Assert
+        Assert.Equal("foreign", decoded.MessageId);
+        Assert.Null(decoded.EnqueuedAt);
+        Assert.Equal(Int32.MaxValue, decoded.DeliveryCount);
     }
 
     [Fact]

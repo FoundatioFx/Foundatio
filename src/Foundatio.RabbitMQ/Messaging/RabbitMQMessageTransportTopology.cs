@@ -146,6 +146,9 @@ internal sealed class RabbitMQMessageTransportTopology : IAsyncDisposable
         _ensured.TryRemove($"subscription:{queue}", out _);
     }
 
+    /// <summary>Declares a topic's exchange again when it is next used.</summary>
+    public void ForgetTopic(string exchange) => _ensured.TryRemove($"topic:{exchange}", out _);
+
     /// <summary>Declares every exchange again when it is next used.</summary>
     public void ForgetExchanges()
     {
