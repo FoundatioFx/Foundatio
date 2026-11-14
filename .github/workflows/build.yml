@@ -6,9 +6,44 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     uses: ./.github/workflows/build-workflow.yml
     secrets: inherit
     with:
+      skip-nuget-publishing: true
       solution: Foundatio.slnx
       new-test-runner: true
+
+  # Temporary workaround: https://github.com/NuGet/NuGetGallery/issues/11000
+  # Remove this job and skip-nuget-publishing once reusable publishing/policies are validated; restore build id-token: write.
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+    - name: Download Release Packages
+      uses: actions/download-artifact@v8
+      with:
+        name: nuget-release
+    - name: NuGet Login
+      uses: NuGet/login@v1
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}
+    - name: Publish Release Packages
+      run: |
+        packages=$(find . -name "*.nupkg" | grep -v "minver" | grep -v "/EmptyFiles/" || true)
+        if [ -z "$packages" ]; then
+          echo "::error::No release packages found."
+          exit 1
+        fi
+        for package in $packages; do
+          echo "${0##*/}": Pushing $package...
+          dotnet nuget push $package --source https://api.nuget.org/v3/index.json --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --skip-duplicate
+        done
