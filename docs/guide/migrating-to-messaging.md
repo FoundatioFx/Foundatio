@@ -21,7 +21,7 @@ The original queue, message bus and job APIs keep working alongside the new ones
 ## Step by step
 
 1. Add `AddFoundatioMessaging(m => m.UseRedis())` next to your existing registrations. It uses the `IConnectionMultiplexer` you already register for Redis; for SQS or Kafka, see [Transports](./messages#transports).
-2. Add `m.AddLegacyMessageBus()` so code that injects `IMessageBus`, including `HybridCacheClient` and `CacheLockProvider`, uses the same transport.
+2. Keep your existing `IMessageBus` registration, such as `RedisMessageBus`, while you migrate. It runs side by side with the new messaging, and `HybridCacheClient`, `CacheLockProvider` and your subscribers keep using it unchanged. See [Moving IMessageBus to the new transport](#moving-imessagebus-to-the-new-transport) for the last step.
 3. Move a queue: change its producers to `SendAsync`, turn its `QueueJobBase<T>` into an `IMessageHandler<T>`, and register it with `AddConsumer`. Drain the old queue before removing its job.
 4. Move scheduled jobs: convert each to `IJobHandler` and replace `services.AddCronJob<T>(...)` with `j.AddCronJob<T>(...)`, or schedule it unchanged with `j.AddCronJob<LegacyJob<T>>(...)`. Give each job a stable `[Job(Name = "...")]`. Leave jobs that run continuously on `services.AddJob<T>()`.
 5. Move work items: make each work item record the arguments of an `IJobHandler<TArgs>`, and enqueue with `IJobClient`.
@@ -29,6 +29,20 @@ The original queue, message bus and job APIs keep working alongside the new ones
 Message and job names default to the type's full name. Set stable names before your first deployment so later renames are safe.
 
 Name each service with `m.UseServiceName("orders")`. Its durable subscriptions are kept under that name, so every service needs a name of its own, and on a real broker the host fails to start without one when the service subscribes to events.
+
+## Moving IMessageBus to the new transport
+
+`m.AddLegacyMessageBus()` replaces your `IMessageBus` with one that runs on the new transport, so you can retire the original bus. It is not wire compatible with the original buses:
+- it publishes to a transport topic with the new message headers;
+- `RedisMessageBus`, `SQSMessageBus`, `KafkaMessageBus`, `AzureServiceBusMessageBus` and `RabbitMQMessageBus` use their own channels and formats;
+- so a process on one never receives what a process on the other publishes.
+
+Switch every process that shares the bus in the same deployment. That means every instance of each service, and every service that publishes or subscribes to the same messages. Use a recreate deployment rather than a rolling one, or accept a short window during the deployment:
+- `HybridCacheClient` instances on different buses don't invalidate each other's local caches, so old and new instances can serve stale entries until those entries expire;
+- `CacheLockProvider` waiters on different buses don't get each other's release signals, so they fall back to polling;
+- your own subscribers miss messages published from the other side.
+
+If you can't switch everything at once, keep the original bus. It is still supported.
 
 ## Converting an IJob or JobBase
 

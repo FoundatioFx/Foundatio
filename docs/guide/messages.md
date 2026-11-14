@@ -349,4 +349,4 @@ If a liveness probe uses it, pass `failureStatus: HealthStatus.Degraded`, so an 
 
 ## Existing code using `IMessageBus`
 
-`m.AddLegacyMessageBus()` provides the original `IMessageBus` on the configured transport, so `HybridCacheClient`, `CacheLockProvider` and your existing subscribers keep working with the same semantics.
+`m.AddLegacyMessageBus()` provides the original `IMessageBus` on the configured transport, so `HybridCacheClient`, `CacheLockProvider` and your existing subscribers keep working with the same semantics. It doesn't talk to the original buses, such as `RedisMessageBus`, so switch every process that shares a bus in the same deployment. See [Moving IMessageBus to the new transport](./migrating-to-messaging#moving-imessagebus-to-the-new-transport).
