@@ -26,6 +26,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task AddAsync_WithConcurrentAcquireAndRelease_OnlyOneOwnerAtATime()
+    {
+        return base.AddAsync_WithConcurrentAcquireAndRelease_OnlyOneOwnerAtATime();
+    }
+
+    [Fact]
     public override Task AddAsync_WithConcurrentRequests_OnlyOneSucceeds()
     {
         return base.AddAsync_WithConcurrentRequests_OnlyOneSucceeds();
@@ -199,6 +205,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates()
+    {
+        return base.IncrementAsync_WithConcurrentRequests_DoesNotLoseUpdates();
+    }
+
+    [Fact]
     public override Task IncrementAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.IncrementAsync_WithExpiration_SetsExpirationCorrectly();
@@ -226,6 +238,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache()
     {
         return base.IncrementAsync_WithMultipleInstances_InvalidatesOtherClientLocalCache();
+    }
+
+    [Fact]
+    public override Task ListAddAsync_WithConcurrentRequests_DoesNotLoseValues()
+    {
+        return base.ListAddAsync_WithConcurrentRequests_DoesNotLoseValues();
     }
 
     [Fact]
@@ -639,6 +657,12 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     }
 
     [Fact]
+    public override Task SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum()
+    {
+        return base.SetIfHigherAsync_WithConcurrentRequests_DifferencesSumToMaximum();
+    }
+
+    [Fact]
     public override Task SetIfHigherAsync_WithDateTime_UpdatesWhenHigher()
     {
         return base.SetIfHigherAsync_WithDateTime_UpdatesWhenHigher();
@@ -654,6 +678,18 @@ public class InMemoryHybridAwareCacheClientTests : HybridCacheClientTestBase
     public override Task SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly()
     {
         return base.SetIfHigherAsync_WithExpiration_SetsExpirationCorrectly();
+    }
+
+    [Fact]
+    public override Task SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue()
+    {
+        return base.SetIfHigherAsync_WithLowerValue_ReturnsZeroAndKeepsValue();
+    }
+
+    [Fact]
+    public override Task SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease()
+    {
+        return base.SetIfLowerAsync_WithConcurrentRequests_DifferencesSumToDecrease();
     }
 
     [Fact]
